@@ -1,6 +1,6 @@
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::fixture::{Probe, Reply, object, run};
+use super::super::fixture::{Reply, fixture_probe, object, run};
 use super::super::support::{batch, titan_body};
 use crate::embedding_call::error::EmbeddingCallError;
 
@@ -15,33 +15,29 @@ pub(super) fn embedding_family_selection() {
 }
 
 fn provider_markers() {
-    let nova = run(&Probe {
-        model: String::from("amazon.nova-2-multimodal-embed-v1"),
-        replies: vec![Reply::ok("{\"embeddings\":[{\"embedding\":[0.5]}]}")],
-        ..Probe::default()
-    });
+    let mut nova_probe = fixture_probe();
+    nova_probe.model = String::from("amazon.nova-2-multimodal-embed-v1");
+    nova_probe.replies = vec![Reply::ok("{\"embeddings\":[{\"embedding\":[0.5]}]}")];
+    let nova = run(&nova_probe);
     assert!(nova.body().contains_key("schemaVersion"));
-    let marengo = run(&Probe {
-        model: String::from("twelvelabs.marengo-embed-2-7-v1:0"),
-        replies: vec![Reply::ok("{\"data\":[{\"embedding\":[0.5]}]}")],
-        ..Probe::default()
-    });
+    let mut marengo_probe = fixture_probe();
+    marengo_probe.model = String::from("twelvelabs.marengo-embed-2-7-v1:0");
+    marengo_probe.replies = vec![Reply::ok("{\"data\":[{\"embedding\":[0.5]}]}")];
+    let marengo = run(&marengo_probe);
     assert_eq!(
         marengo.body().get("inputType"),
         Some(&Json::Text(String::from("text")))
     );
-    let titan = run(&Probe {
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut titan_probe = fixture_probe();
+    titan_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let titan = run(&titan_probe);
     assert_eq!(titan.body(), object("{\"inputText\":\"hello\"}"));
 }
 
 fn unknown_provider_names_the_model() {
-    let outcome = run(&Probe {
-        model: String::from("anthropic.claude-3"),
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from("anthropic.claude-3");
+    let outcome = run(&outcome_probe);
     assert_eq!(
         outcome.error().to_string(),
         "Unable to determine bedrock embedding provider for model: anthropic.claude-3. Supported providers: ['cohere', 'amazon', 'twelvelabs', 'nova']"
@@ -53,11 +49,10 @@ fn unknown_provider_names_the_model() {
 }
 
 fn async_marker_is_removed_once() {
-    let stripped = run(&Probe {
-        model: String::from("async_invoke/amazon.titan-embed-text-v1"),
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut stripped_probe = fixture_probe();
+    stripped_probe.model = String::from("async_invoke/amazon.titan-embed-text-v1");
+    stripped_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let stripped = run(&stripped_probe);
     assert_eq!(
         stripped.posted().url,
         "https://bedrock-runtime.us-east-1.amazonaws.com/async-invoke"
@@ -66,10 +61,9 @@ fn async_marker_is_removed_once() {
         batch(stripped.response()).model,
         "amazon.titan-embed-text-v1"
     );
-    let doubled = run(&Probe {
-        model: String::from("async_invoke/async_invoke/amazon.titan-embed-text-v1"),
-        ..Probe::default()
-    });
+    let mut doubled_probe = fixture_probe();
+    doubled_probe.model = String::from("async_invoke/async_invoke/amazon.titan-embed-text-v1");
+    let doubled = run(&doubled_probe);
     assert!(matches!(doubled.error(), EmbeddingCallError::Unmapped));
     assert!(doubled.factory_requests.is_empty());
 }
@@ -77,11 +71,10 @@ fn async_marker_is_removed_once() {
 fn model_id_is_quoted() {
     let mut options = credential_options();
     options.push(("model_id", "\"custom/model id\""));
-    let outcome = run(&Probe {
-        optional_params: options,
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.optional_params = options;
+    outcome_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let outcome = run(&outcome_probe);
     assert_eq!(
         outcome.posted().url,
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/custom%2Fmodel%20id/invoke"
@@ -93,11 +86,10 @@ fn model_id_is_quoted() {
     assert!(!outcome.remaining.contains_key("model_id"));
     let mut empty_options = credential_options();
     empty_options.push(("model_id", "\"\""));
-    let empty = run(&Probe {
-        optional_params: empty_options,
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut empty_probe = fixture_probe();
+    empty_probe.optional_params = empty_options;
+    empty_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let empty = run(&empty_probe);
     assert!(
         empty
             .posted()
@@ -107,22 +99,20 @@ fn model_id_is_quoted() {
 }
 
 fn regions_follow_credentials() {
-    let explicit = run(&Probe {
-        environment: vec![("AWS_REGION", "eu-west-1")],
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut explicit_probe = fixture_probe();
+    explicit_probe.environment = vec![("AWS_REGION", "eu-west-1")];
+    explicit_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let explicit = run(&explicit_probe);
     assert_eq!(explicit.regions, ["us-east-1"]);
     assert!(explicit.posted().url.contains("bedrock-runtime.us-east-1."));
-    let environment = run(&Probe {
-        optional_params: identity_options_without_region(),
-        environment: vec![
-            ("AWS_REGION_NAME", "ap-south-1"),
-            ("AWS_REGION", "eu-west-1"),
-        ],
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut environment_probe = fixture_probe();
+    environment_probe.optional_params = identity_options_without_region();
+    environment_probe.environment = vec![
+        ("AWS_REGION_NAME", "ap-south-1"),
+        ("AWS_REGION", "eu-west-1"),
+    ];
+    environment_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let environment = run(&environment_probe);
     assert_eq!(environment.regions, ["eu-west-1"]);
     assert!(
         environment
@@ -130,11 +120,10 @@ fn regions_follow_credentials() {
             .url
             .contains("bedrock-runtime.eu-west-1.")
     );
-    let default = run(&Probe {
-        optional_params: identity_options_without_region(),
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut default_probe = fixture_probe();
+    default_probe.optional_params = identity_options_without_region();
+    default_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let default = run(&default_probe);
     assert_eq!(default.regions, ["us-west-2"]);
 }
 
@@ -155,12 +144,11 @@ fn options_are_copied_not_shared() {
     options.push(("dimensions", "512"));
     options.push(("user", "\"alice\""));
     options.push(("User", "\"bob\""));
-    let outcome = run(&Probe {
-        model: String::from("amazon.titan-embed-text-v2:0"),
-        optional_params: options,
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from("amazon.titan-embed-text-v2:0");
+    outcome_probe.optional_params = options;
+    outcome_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let outcome = run(&outcome_probe);
     assert_eq!(
         outcome.body(),
         object("{\"inputText\":\"hello\",\"User\":\"bob\",\"dimensions\":512}")
@@ -182,11 +170,10 @@ fn options_are_copied_not_shared() {
 }
 
 fn bearer_token_skips_credentials() {
-    let configured = run(&Probe {
-        bearer: Some(String::from("configured-token")),
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut configured_probe = fixture_probe();
+    configured_probe.bearer = Some(String::from("configured-token"));
+    configured_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let configured = run(&configured_probe);
     assert_eq!(
         configured.headers()["Authorization"],
         "Bearer configured-token"
@@ -194,12 +181,11 @@ fn bearer_token_skips_credentials() {
     assert!(configured.regions.is_empty());
     assert!(!configured.headers().contains_key("X-Amz-Date"));
     assert!(!configured.headers().contains_key("X-Amz-Security-Token"));
-    let caller = run(&Probe {
-        api_key: Some(String::from("caller-token")),
-        bearer: Some(String::from("configured-token")),
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut caller_probe = fixture_probe();
+    caller_probe.api_key = Some(String::from("caller-token"));
+    caller_probe.bearer = Some(String::from("configured-token"));
+    caller_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let caller = run(&caller_probe);
     assert_eq!(caller.headers()["Authorization"], "Bearer caller-token");
 }
 
@@ -215,11 +201,7 @@ fn credential_options() -> Vec<(&'static str, &'static str)> {
 }
 
 fn identity_options_without_region() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-        (
-            "aws_secret_access_key",
-            "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-        ),
-    ]
+    let mut options = credential_options();
+    options.pop();
+    options
 }

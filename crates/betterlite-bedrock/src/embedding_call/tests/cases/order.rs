@@ -1,4 +1,4 @@
-use super::super::fixture::{ClientCall, Probe, Reply, run};
+use super::super::fixture::{ClientCall, Reply, fixture_probe, run};
 use super::super::support::{batch, titan_body, vector};
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
 
@@ -11,15 +11,14 @@ pub(super) fn ordered_multi_input_result() {
 }
 
 fn sync_orders_replies() {
-    let outcome = run(&Probe {
-        input: vec![String::from("one"), String::from("two")],
-        timeout: Some(Timeout::Seconds(7.0)),
-        replies: vec![
-            Reply::ok(&titan_body("[1.5]", 3)),
-            Reply::ok(&titan_body("[2.5]", 5)),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.timeout = Some(Timeout::Seconds(7.0));
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.5]", 3)),
+        Reply::ok(&titan_body("[2.5]", 5)),
+    ];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.factory_requests.len(), 2);
     assert_eq!(
         outcome.factory_requests[0].body,
@@ -60,16 +59,15 @@ fn sync_orders_replies() {
 }
 
 fn async_keeps_its_timeout() {
-    let outcome = run(&Probe {
-        input: vec![String::from("one"), String::from("two")],
-        timeout: Some(Timeout::Seconds(2.5)),
-        aembedding: true,
-        replies: vec![
-            Reply::ok(&titan_body("[1.0]", 1)),
-            Reply::ok(&titan_body("[2.0]", 1)),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.timeout = Some(Timeout::Seconds(2.5));
+    outcome_probe.aembedding = true;
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 1)),
+        Reply::ok(&titan_body("[2.0]", 1)),
+    ];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.factory_requests.len(), 2);
     assert_eq!(
         outcome.calls,
@@ -90,10 +88,9 @@ fn async_keeps_its_timeout() {
 }
 
 fn empty_batch_still_transforms() {
-    let outcome = run(&Probe {
-        input: Vec::new(),
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = Vec::new();
+    let outcome = run(&outcome_probe);
     assert!(outcome.factory_requests.is_empty());
     assert!(outcome.calls.is_empty());
     let reply = batch(outcome.response());
@@ -105,49 +102,45 @@ fn empty_batch_still_transforms() {
 }
 
 fn supplied_client_needs_the_matching_kind() {
-    let matching = run(&Probe {
-        input: vec![String::from("one"), String::from("two")],
-        supplied: Some(ClientKind::Sync),
-        replies: vec![
-            Reply::ok(&titan_body("[1.0]", 1)),
-            Reply::ok(&titan_body("[2.0]", 1)),
-        ],
-        ..Probe::default()
-    });
+    let mut matching_probe = fixture_probe();
+    matching_probe.input = vec![String::from("one"), String::from("two")];
+    matching_probe.supplied = Some(ClientKind::Sync);
+    matching_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 1)),
+        Reply::ok(&titan_body("[2.0]", 1)),
+    ];
+    let matching = run(&matching_probe);
     assert_eq!(matching.supplied_requests.len(), 2);
     assert!(matching.factory_requests.is_empty());
     assert!(matching.calls.is_empty());
-    let other_kind = run(&Probe {
-        supplied: Some(ClientKind::Async),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut other_kind_probe = fixture_probe();
+    other_kind_probe.supplied = Some(ClientKind::Async);
+    other_kind_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let other_kind = run(&other_kind_probe);
     assert!(other_kind.supplied_requests.is_empty());
     assert_eq!(other_kind.calls.len(), 1);
     assert_eq!(other_kind.calls[0].kind, ClientKind::Sync);
-    let async_matching = run(&Probe {
-        aembedding: true,
-        supplied: Some(ClientKind::Async),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut async_matching_probe = fixture_probe();
+    async_matching_probe.aembedding = true;
+    async_matching_probe.supplied = Some(ClientKind::Async);
+    async_matching_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let async_matching = run(&async_matching_probe);
     assert_eq!(async_matching.supplied_requests.len(), 1);
     assert!(async_matching.calls.is_empty());
 }
 
 fn a_failure_stops_later_requests() {
-    let outcome = run(&Probe {
-        input: vec![
-            String::from("one"),
-            String::from("two"),
-            String::from("three"),
-        ],
-        replies: vec![
-            Reply::ok(&titan_body("[1.0]", 1)),
-            Reply::status(500, &[], "boom"),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![
+        String::from("one"),
+        String::from("two"),
+        String::from("three"),
+    ];
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 1)),
+        Reply::status(500, &[], "boom"),
+    ];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.error().status(), Some(500));
     assert_eq!(outcome.factory_requests.len(), 2);
     assert!(outcome.outcome.is_err());

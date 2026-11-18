@@ -4,8 +4,8 @@ use betterlite_models::decisions::Json as Decisions;
 use betterlite_openai::cohere_embedding::usage::BilledUnits;
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::fixture::{Probe, Reply, object, run};
-use super::super::support::{argument_fields, legacy, logged_response, phases};
+use super::super::fixture::{Reply, fixture_probe, object, run};
+use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
 use crate::embedding_call::error::EmbeddingCallError;
 
@@ -25,12 +25,11 @@ pub(super) fn cohere_batched_input() {
 }
 
 fn one_body_holds_every_input() {
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        input: vec![String::from("one"), String::from("two")],
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.replies = vec![Reply::ok(REPLY)];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.cohere_requests.len(), 1);
     assert!(outcome.factory_requests.is_empty());
     assert_eq!(
@@ -67,12 +66,11 @@ fn options_are_filtered_to_declared_fields() {
     options.push(("input_type", "\"search_query\""));
     options.push(("truncate", "\"NONE\""));
     options.push(("dimensions", "128"));
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        optional_params: options,
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.optional_params = options;
+    outcome_probe.replies = vec![Reply::ok(REPLY)];
+    let outcome = run(&outcome_probe);
     assert_eq!(
         outcome.body(),
         object("{\"input_type\":\"search_query\",\"texts\":[\"hello\"],\"truncate\":\"NONE\"}")
@@ -81,12 +79,11 @@ fn options_are_filtered_to_declared_fields() {
 }
 
 fn the_caller_timeout_does_not_reach_the_sync_handler() {
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        timeout: Some(Timeout::Seconds(2.5)),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.timeout = Some(Timeout::Seconds(2.5));
+    outcome_probe.replies = vec![Reply::ok(REPLY)];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.posted().deadline, Some(Duration::from_secs(600)));
     assert!(outcome.calls.is_empty());
     assert_eq!(
@@ -99,13 +96,12 @@ fn the_caller_timeout_does_not_reach_the_sync_handler() {
 }
 
 fn async_logging_carries_the_prepared_request() {
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        timeout: Some(Timeout::Seconds(2.5)),
-        aembedding: true,
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.timeout = Some(Timeout::Seconds(2.5));
+    outcome_probe.aembedding = true;
+    outcome_probe.replies = vec![Reply::ok(REPLY)];
+    let outcome = run(&outcome_probe);
     assert_eq!(
         outcome.posted().deadline,
         Some(Duration::from_secs_f64(2.5))
@@ -134,12 +130,11 @@ fn async_logging_carries_the_prepared_request() {
 }
 
 fn usage_falls_back_to_the_encoding() {
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        input: vec![String::from("one"), String::from("two")],
-        replies: vec![Reply::ok("{\"embeddings\":[[0.1],[0.2]]}")],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.replies = vec![Reply::ok("{\"embeddings\":[[0.1],[0.2]]}")];
+    let outcome = run(&outcome_probe);
     let reply = legacy(outcome.response());
     assert_eq!(reply.usage.prompt_tokens, 6);
     assert_eq!(reply.usage.total_tokens, 6);
@@ -147,15 +142,14 @@ fn usage_falls_back_to_the_encoding() {
 }
 
 fn headers_keep_their_precedence() {
-    let overridden = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        extra_headers: Some(vec![
-            (String::from("Content-Type"), String::from("text/plain")),
-            (String::from("X-Tenant"), String::from("abc")),
-        ]),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut overridden_probe = fixture_probe();
+    overridden_probe.model = String::from(COHERE_MODEL);
+    overridden_probe.extra_headers = Some(vec![
+        (String::from("Content-Type"), String::from("text/plain")),
+        (String::from("X-Tenant"), String::from("abc")),
+    ]);
+    overridden_probe.replies = vec![Reply::ok(REPLY)];
+    let overridden = run(&overridden_probe);
     assert_eq!(overridden.headers()["content-type"], "text/plain");
     assert_eq!(overridden.headers()["x-tenant"], "abc");
     assert_eq!(
@@ -163,44 +157,40 @@ fn headers_keep_their_precedence() {
         "unspecified:litellm"
     );
     assert_eq!(overridden.headers()["accept"], "application/json");
-    let basic = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        extra_headers: Some(vec![(
-            String::from("Authorization"),
-            String::from("Basic abc"),
-        )]),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut basic_probe = fixture_probe();
+    basic_probe.model = String::from(COHERE_MODEL);
+    basic_probe.extra_headers = Some(vec![(
+        String::from("Authorization"),
+        String::from("Basic abc"),
+    )]);
+    basic_probe.replies = vec![Reply::ok(REPLY)];
+    let basic = run(&basic_probe);
     assert_eq!(basic.headers()["authorization"], "Basic abc");
-    let aws4 = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        extra_headers: Some(vec![(
-            String::from("Authorization"),
-            String::from("AWS4-HMAC-SHA256 forged"),
-        )]),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut aws4_probe = fixture_probe();
+    aws4_probe.model = String::from(COHERE_MODEL);
+    aws4_probe.extra_headers = Some(vec![(
+        String::from("Authorization"),
+        String::from("AWS4-HMAC-SHA256 forged"),
+    )]);
+    aws4_probe.replies = vec![Reply::ok(REPLY)];
+    let aws4 = run(&aws4_probe);
     assert!(aws4.headers()["authorization"].starts_with("AWS4-HMAC-SHA256 Credential="));
 }
 
 fn a_bad_status_is_a_typed_failure() {
-    let outcome = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        replies: vec![Reply::status(400, &[], "bad request")],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.replies = vec![Reply::status(400, &[], "bad request")];
+    let outcome = run(&outcome_probe);
     assert!(matches!(outcome.error(), EmbeddingCallError::Cohere(_)));
     assert_eq!(outcome.error().status(), Some(400));
     assert_eq!(outcome.cohere_requests.len(), 1);
     assert!(outcome.original_response().is_none());
-    let asynchronous = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        aembedding: true,
-        replies: vec![Reply::status(400, &[], "bad request")],
-        ..Probe::default()
-    });
+    let mut asynchronous_probe = fixture_probe();
+    asynchronous_probe.model = String::from(COHERE_MODEL);
+    asynchronous_probe.aembedding = true;
+    asynchronous_probe.replies = vec![Reply::status(400, &[], "bad request")];
+    let asynchronous = run(&asynchronous_probe);
     assert_eq!(asynchronous.error().status(), Some(400));
     assert_eq!(
         logged_response(&asynchronous),
@@ -209,20 +199,18 @@ fn a_bad_status_is_a_typed_failure() {
 }
 
 fn only_a_matching_client_replaces_the_handler() {
-    let supplied = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        supplied: Some(ClientKind::Sync),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut supplied_probe = fixture_probe();
+    supplied_probe.model = String::from(COHERE_MODEL);
+    supplied_probe.supplied = Some(ClientKind::Sync);
+    supplied_probe.replies = vec![Reply::ok(REPLY)];
+    let supplied = run(&supplied_probe);
     assert_eq!(supplied.supplied_requests.len(), 1);
     assert!(supplied.cohere_requests.is_empty());
-    let other_kind = run(&Probe {
-        model: String::from(COHERE_MODEL),
-        supplied: Some(ClientKind::Async),
-        replies: vec![Reply::ok(REPLY)],
-        ..Probe::default()
-    });
+    let mut other_kind_probe = fixture_probe();
+    other_kind_probe.model = String::from(COHERE_MODEL);
+    other_kind_probe.supplied = Some(ClientKind::Async);
+    other_kind_probe.replies = vec![Reply::ok(REPLY)];
+    let other_kind = run(&other_kind_probe);
     assert!(other_kind.supplied_requests.is_empty());
     assert_eq!(other_kind.cohere_requests.len(), 1);
 }
@@ -253,5 +241,5 @@ fn numbers(value: &Json) -> Vec<f64> {
 
 fn parsed(text: &str) -> Decisions {
     let value: Json = serde_json::from_str(text).expect("the expected reply parses");
-    crate::embedding_call::decisions_value(&value).expect("the expected reply converts")
+    decisions_value(&value)
 }

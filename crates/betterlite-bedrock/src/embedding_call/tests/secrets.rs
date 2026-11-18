@@ -1,4 +1,4 @@
-use super::fixture::{Probe, Reply, now, run, secret};
+use super::fixture::{Probe, Reply, fixture_probe, now, run, secret};
 use super::support::titan_body;
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::transport::EmbeddingRequest;
@@ -80,26 +80,24 @@ fn a_successful_reply_carries_no_credentials() {
 }
 
 fn failure_runs() -> Vec<super::fixture::Run> {
+    let mut cohere = probe(vec![Reply::status(400, &[], "bad request")]);
+    cohere.model = String::from("cohere.embed-english-v3");
     vec![
         run(&probe(vec![Reply::status(500, &[], "boom")])),
         run(&probe(vec![Reply::Timeout])),
         run(&probe(vec![Reply::Failed])),
         run(&probe(vec![Reply::ok("[]")])),
-        run(&Probe {
-            model: String::from("cohere.embed-english-v3"),
-            ..probe(vec![Reply::status(400, &[], "bad request")])
-        }),
+        run(&cohere),
     ]
 }
 
 fn probe(replies: Vec<Reply>) -> Probe {
-    Probe {
-        replies,
-        access_key: String::from(ACCESS),
-        secret_key: String::from(SIGNING_SECRET),
-        session_token: Some(String::from(SESSION)),
-        ..Probe::default()
-    }
+    let mut built = fixture_probe();
+    built.replies = replies;
+    built.access_key = String::from(ACCESS);
+    built.secret_key = String::from(SIGNING_SECRET);
+    built.session_token = Some(String::from(SESSION));
+    built
 }
 
 fn assert_secret_safe(shown: &str) {

@@ -494,34 +494,32 @@ pub(super) struct Probe {
     pub(super) session_token: Option<String>,
 }
 
-impl Default for Probe {
-    fn default() -> Self {
-        Self {
-            model: String::from("amazon.titan-embed-text-v1"),
-            input: vec![String::from("hello")],
-            optional_params: vec![
-                ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-                (
-                    "aws_secret_access_key",
-                    "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-                ),
-                ("aws_region_name", "\"us-east-1\""),
-            ],
-            extra_headers: None,
-            api_base: None,
-            api_key: None,
-            bearer: None,
-            environment: Vec::new(),
-            runtime_endpoint: None,
-            timeout: None,
-            aembedding: false,
-            drop_params: false,
-            replies: Vec::new(),
-            supplied: None,
-            access_key: String::from("AKIAIOSFODNN7EXAMPLE"),
-            secret_key: String::from("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
-            session_token: Some(String::from("session-token")),
-        }
+pub(super) fn fixture_probe() -> Probe {
+    Probe {
+        model: String::from("amazon.titan-embed-text-v1"),
+        input: vec![String::from("hello")],
+        optional_params: vec![
+            ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
+            (
+                "aws_secret_access_key",
+                "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+            ),
+            ("aws_region_name", "\"us-east-1\""),
+        ],
+        extra_headers: None,
+        api_base: None,
+        api_key: None,
+        bearer: None,
+        environment: Vec::new(),
+        runtime_endpoint: None,
+        timeout: None,
+        aembedding: false,
+        drop_params: false,
+        replies: Vec::new(),
+        supplied: None,
+        access_key: String::from("AKIAIOSFODNN7EXAMPLE"),
+        secret_key: String::from("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+        session_token: Some(String::from("session-token")),
     }
 }
 

@@ -1,7 +1,7 @@
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::Object;
 
-use super::super::fixture::{Probe, Reply, Run, object, run};
+use super::super::fixture::{Reply, Run, fixture_probe, object, run};
 use super::super::support::{batch, titan_body, vector};
 use crate::bedrock_embedding_io::response::PromptTokenCounts;
 use crate::embedding_call::error::EmbeddingCallError;
@@ -36,23 +36,22 @@ fn the_four_exact_ids_build_their_bodies() {
 }
 
 fn with_dimensions(model: &str) -> Run {
-    run(&Probe {
-        model: model.to_owned(),
-        input: vec![String::from("hi")],
-        optional_params: vec![
-            ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-            (
-                "aws_secret_access_key",
-                "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-            ),
-            ("aws_region_name", "\"us-east-1\""),
-            ("dimensions", "256"),
-            ("user", "\"alice\""),
-            ("User", "\"bob\""),
-        ],
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    })
+    let mut probe = fixture_probe();
+    probe.model = model.to_owned();
+    probe.input = vec![String::from("hi")];
+    probe.optional_params = vec![
+        ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
+        (
+            "aws_secret_access_key",
+            "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+        ),
+        ("aws_region_name", "\"us-east-1\""),
+        ("dimensions", "256"),
+        ("user", "\"alice\""),
+        ("User", "\"bob\""),
+    ];
+    probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    run(&probe)
 }
 
 fn sent_body(run: &Run, index: usize) -> Object {
@@ -60,14 +59,13 @@ fn sent_body(run: &Run, index: usize) -> Object {
 }
 
 fn one_body_per_input_in_order() {
-    let outcome = run(&Probe {
-        input: vec![String::from("a"), String::from("b")],
-        replies: vec![
-            Reply::ok(&titan_body("[1.0]", 2)),
-            Reply::ok(&titan_body("[2.0]", 3)),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![String::from("a"), String::from("b")];
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 2)),
+        Reply::ok(&titan_body("[2.0]", 3)),
+    ];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.factory_requests.len(), 2);
     assert_eq!(sent_body(&outcome, 0), object("{\"inputText\":\"a\"}"));
     assert_eq!(sent_body(&outcome, 1), object("{\"inputText\":\"b\"}"));
@@ -75,22 +73,21 @@ fn one_body_per_input_in_order() {
 }
 
 fn another_amazon_model_unmaps() {
-    let outcome = run(&Probe {
-        model: String::from("amazon.titan-embed-text-v3"),
-        optional_params: vec![
-            ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-            (
-                "aws_secret_access_key",
-                "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-            ),
-            ("aws_region_name", "\"us-east-1\""),
-            (
-                "aws_bedrock_runtime_endpoint",
-                "\"https://runtime.example.test\"",
-            ),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from("amazon.titan-embed-text-v3");
+    outcome_probe.optional_params = vec![
+        ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
+        (
+            "aws_secret_access_key",
+            "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+        ),
+        ("aws_region_name", "\"us-east-1\""),
+        (
+            "aws_bedrock_runtime_endpoint",
+            "\"https://runtime.example.test\"",
+        ),
+    ];
+    let outcome = run(&outcome_probe);
     assert!(matches!(outcome.error(), EmbeddingCallError::Unmapped));
     assert_eq!(
         outcome.error().to_string(),
@@ -105,19 +102,18 @@ fn another_amazon_model_unmaps() {
 }
 
 fn response_model_ignores_model_id() {
-    let outcome = run(&Probe {
-        optional_params: vec![
-            ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-            (
-                "aws_secret_access_key",
-                "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-            ),
-            ("aws_region_name", "\"us-east-1\""),
-            ("model_id", "\"custom-model\""),
-        ],
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.optional_params = vec![
+        ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
+        (
+            "aws_secret_access_key",
+            "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+        ),
+        ("aws_region_name", "\"us-east-1\""),
+        ("model_id", "\"custom-model\""),
+    ];
+    outcome_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let outcome = run(&outcome_probe);
     assert_eq!(
         batch(outcome.response()).model,
         "amazon.titan-embed-text-v1"
@@ -129,13 +125,12 @@ fn response_model_ignores_model_id() {
 }
 
 fn v2_reads_the_binary_vector() {
-    let outcome = run(&Probe {
-        model: String::from("amazon.titan-embed-text-v2:0"),
-        replies: vec![Reply::ok(
-            "{\"embeddingsByType\":{\"binary\":\"QUJD\"},\"inputTextTokenCount\":2}",
-        )],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from("amazon.titan-embed-text-v2:0");
+    outcome_probe.replies = vec![Reply::ok(
+        "{\"embeddingsByType\":{\"binary\":\"QUJD\"},\"inputTextTokenCount\":2}",
+    )];
+    let outcome = run(&outcome_probe);
     let reply = batch(outcome.response());
     match &reply.data[0].embedding {
         EmbeddingVector::Base64(encoded) => assert_eq!(encoded, "QUJD"),
@@ -145,12 +140,11 @@ fn v2_reads_the_binary_vector() {
 }
 
 fn multimodal_counts_images() {
-    let outcome = run(&Probe {
-        model: String::from("amazon.titan-embed-image-v1"),
-        input: vec![String::from("data:image/png;base64,AAAA")],
-        replies: vec![Reply::ok(&titan_body("[0.5]", 1))],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from("amazon.titan-embed-image-v1");
+    outcome_probe.input = vec![String::from("data:image/png;base64,AAAA")];
+    outcome_probe.replies = vec![Reply::ok(&titan_body("[0.5]", 1))];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.body(), object("{\"inputImage\":\"AAAA\"}"));
     assert_eq!(
         batch(outcome.response()).usage.prompt_tokens_details,

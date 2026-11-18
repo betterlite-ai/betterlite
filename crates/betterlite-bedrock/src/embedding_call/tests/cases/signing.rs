@@ -1,8 +1,10 @@
 use betterlite_models::decisions::Json as Decisions;
 use betterlite_prompts::arguments::json::Object;
 
-use super::super::fixture::{Probe, Reply, run};
-use super::super::support::{argument_fields, fields, phases, titan_body};
+use super::super::fixture::{Reply, fixture_probe, run};
+use super::super::support::{
+    argument_fields, decisions_object, decisions_value, fields, phases, titan_body,
+};
 
 const SIGNED: &str = "SignedHeaders=content-type;host;x-amz-date;x-amz-security-token";
 
@@ -13,14 +15,13 @@ pub(super) fn signing_auth_isolation() {
 }
 
 fn every_request_carries_its_own_signature() {
-    let outcome = run(&Probe {
-        input: vec![String::from("one"), String::from("two")],
-        replies: vec![
-            Reply::ok(&titan_body("[1.0]", 1)),
-            Reply::ok(&titan_body("[2.0]", 1)),
-        ],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 1)),
+        Reply::ok(&titan_body("[2.0]", 1)),
+    ];
+    let outcome = run(&outcome_probe);
     assert_eq!(outcome.factory_requests.len(), 2);
     let first = &outcome.factory_requests[0];
     let second = &outcome.factory_requests[1];
@@ -45,9 +46,7 @@ fn every_request_carries_its_own_signature() {
     let sent: Object = serde_json::from_slice(&first.body).expect("the first body is an object");
     assert_eq!(
         fields(&outcome.snapshots[0]).get("input"),
-        Some(&Decisions::Object(
-            crate::embedding_call::decisions_object(&sent).expect("the body converts")
-        ))
+        Some(&Decisions::Object(decisions_object(&sent)))
     );
     let arguments = argument_fields(&outcome.snapshots[0]);
     assert_eq!(
@@ -56,26 +55,23 @@ fn every_request_carries_its_own_signature() {
     );
     assert_eq!(
         arguments.get("complete_input_dict"),
-        Some(&Decisions::Object(
-            crate::embedding_call::decisions_object(&sent).expect("the body converts")
-        ))
+        Some(&Decisions::Object(decisions_object(&sent)))
     );
     let reply = snapshot_response(&outcome.snapshots[1]);
     assert_eq!(reply, parsed(&titan_body("[1.0]", 1)));
 }
 
 fn custom_headers_merge_before_signing() {
-    let outcome = run(&Probe {
-        extra_headers: Some(vec![
-            (
-                String::from("Content-Type"),
-                String::from("application/json; charset=utf-8"),
-            ),
-            (String::from("X-Custom"), String::from("abc")),
-        ]),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.extra_headers = Some(vec![
+        (
+            String::from("Content-Type"),
+            String::from("application/json; charset=utf-8"),
+        ),
+        (String::from("X-Custom"), String::from("abc")),
+    ]);
+    outcome_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let outcome = run(&outcome_probe);
     let headers = outcome.headers();
     assert_eq!(headers["Content-Type"], "application/json; charset=utf-8");
     assert_eq!(headers["X-Custom"], "abc");
@@ -88,42 +84,38 @@ fn custom_headers_merge_before_signing() {
 }
 
 fn bearer_and_authorization_precedence() {
-    let bearer = run(&Probe {
-        api_key: Some(String::from("caller-token")),
-        bearer: Some(String::from("configured-token")),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut bearer_probe = fixture_probe();
+    bearer_probe.api_key = Some(String::from("caller-token"));
+    bearer_probe.bearer = Some(String::from("configured-token"));
+    bearer_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let bearer = run(&bearer_probe);
     assert_eq!(bearer.headers()["Authorization"], "Bearer caller-token");
     assert!(!bearer.headers().contains_key("X-Amz-Date"));
     assert!(bearer.regions.is_empty());
-    let overridden = run(&Probe {
-        extra_headers: Some(vec![(
-            String::from("Authorization"),
-            String::from("Basic abc"),
-        )]),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut overridden_probe = fixture_probe();
+    overridden_probe.extra_headers = Some(vec![(
+        String::from("Authorization"),
+        String::from("Basic abc"),
+    )]);
+    overridden_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let overridden = run(&overridden_probe);
     assert_eq!(overridden.headers()["Authorization"], "Basic abc");
-    let forged = run(&Probe {
-        extra_headers: Some(vec![(
-            String::from("Authorization"),
-            String::from("AWS4-HMAC-SHA256 forged"),
-        )]),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut forged_probe = fixture_probe();
+    forged_probe.extra_headers = Some(vec![(
+        String::from("Authorization"),
+        String::from("AWS4-HMAC-SHA256 forged"),
+    )]);
+    forged_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let forged = run(&forged_probe);
     assert!(
         forged.headers()["Authorization"]
             .starts_with("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/")
     );
-    let empty = run(&Probe {
-        api_key: Some(String::new()),
-        bearer: Some(String::new()),
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    });
+    let mut empty_probe = fixture_probe();
+    empty_probe.api_key = Some(String::new());
+    empty_probe.bearer = Some(String::new());
+    empty_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
+    let empty = run(&empty_probe);
     assert!(empty.headers()["Authorization"].starts_with("AWS4-HMAC-SHA256 Credential="));
     assert_eq!(empty.regions, ["us-east-1"]);
 }
@@ -139,5 +131,5 @@ fn snapshot_response(snapshot: &Decisions) -> Decisions {
 fn parsed(text: &str) -> Decisions {
     let value: betterlite_prompts::arguments::json::Json =
         serde_json::from_str(text).expect("the expected reply parses");
-    crate::embedding_call::decisions_value(&value).expect("the expected reply converts")
+    decisions_value(&value)
 }

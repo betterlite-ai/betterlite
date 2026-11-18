@@ -1,11 +1,12 @@
+use betterlite_models::decisions::Json;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingVector;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use indexmap::IndexMap;
 
 use super::fixture::Run;
 use crate::bedrock_embedding_io::response::EmbeddingReply;
 use crate::embedding_call::EmbeddingCallResponse;
-use betterlite_models::decisions::Json;
 
 pub(super) fn batch(response: &EmbeddingCallResponse) -> &EmbeddingReply {
     match response {
@@ -66,4 +67,14 @@ pub(super) fn logged_response(run: &Run) -> Json {
 
 pub(super) fn titan_body(embedding: &str, tokens: u32) -> String {
     format!("{{\"embedding\":{embedding},\"inputTextTokenCount\":{tokens}}}")
+}
+
+pub(super) fn decisions_object(value: &Object) -> Json {
+    serde_json::from_value(serde_json::to_value(value).expect("the body serializes"))
+        .expect("the body converts")
+}
+
+pub(super) fn decisions_value(value: &PromptJson) -> Json {
+    serde_json::from_value(serde_json::to_value(value).expect("the reply serializes"))
+        .expect("the reply converts")
 }

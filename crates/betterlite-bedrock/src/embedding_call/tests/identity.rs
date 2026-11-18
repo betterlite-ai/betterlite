@@ -1,4 +1,4 @@
-use super::fixture::{Probe, Reply, Run, Source, run, run_with_source};
+use super::fixture::{Reply, Run, Source, fixture_probe, run, run_with_source};
 use super::support::titan_body;
 
 const ONE_ACCESS: &str = "AKIAIDENTITYONE00000";
@@ -10,7 +10,8 @@ pub(super) fn embedding_call_credential_identity_isolation() {
 }
 
 fn distinct_sources_do_not_share_credentials() {
-    let probe = probe();
+    let mut probe = fixture_probe();
+    probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
     let first_source = Source::new(ONE_ACCESS, "first-secret", Some("first-token"));
     let second_source = Source::new(TWO_ACCESS, "second-secret", Some("second-token"));
     let first = run_with_source(&probe, &first_source);
@@ -49,25 +50,16 @@ fn each_call_resolves_its_own_region() {
     );
 }
 
-fn probe() -> Probe {
-    Probe {
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    }
-}
-
 fn regional(region: &'static str) -> Run {
-    let probe = Probe {
-        optional_params: vec![
-            ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
-            (
-                "aws_secret_access_key",
-                "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
-            ),
-        ],
-        environment: vec![("AWS_REGION", region)],
-        replies: vec![Reply::ok(&titan_body("[1.0]", 1))],
-        ..Probe::default()
-    };
+    let mut probe = fixture_probe();
+    probe.optional_params = vec![
+        ("aws_access_key_id", "\"AKIAIOSFODNN7EXAMPLE\""),
+        (
+            "aws_secret_access_key",
+            "\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+        ),
+    ];
+    probe.environment = vec![("AWS_REGION", region)];
+    probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
     run(&probe)
 }
