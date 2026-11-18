@@ -15,5 +15,6 @@ call:
       model_names: [hidden]
       user_role: internal_user
       with_router: false
+      broken_pattern: true
 env: {}
 compare: {ignore: []}
