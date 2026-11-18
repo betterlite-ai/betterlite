@@ -7,6 +7,7 @@ use serde_json::Number;
 
 use super::collect_resets;
 use crate::budget_reset_policy::cache_invalidation::InvalidatedCache;
+use crate::budget_reset_policy::phase_draining::ResetLimits;
 use crate::budget_reset_policy::rollover::RolloverPolicy;
 use crate::identity_budget_reset::phase::IdentityPhase;
 use crate::identity_budget_reset::rows::DueIdentity;
@@ -120,5 +121,34 @@ async fn per_row_failure_commits_the_good_rows_and_reports_the_chunk() {
         event.event_metadata.get("num_keys_found"),
         Some(&Json::Number(Number::from(2_u8)))
     );
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn per_row_failure_keeps_a_full_chunk_advancing_the_phase() {
+    let (fixture, store, client) = schema().await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_VerificationToken\" (token, spend, budget_duration, budget_reset_at) VALUES ('good', 10, '1d', '2025-12-30 00:00:00'), ('bad', 10, 'bad', '2025-12-30 00:00:00');",
+        )
+        .await
+        .unwrap();
+    let schedule = TestSchedule::failing_for(next(), "bad", "no schedule");
+    let mut harness = Harness::new(
+        store.clone(),
+        schedule,
+        RecordingCache::default(),
+        CountingReconnect::new(true),
+    );
+    harness.limits = ResetLimits {
+        batch_size: 2,
+        max_chunks_per_run: 2,
+    };
+    harness.run(IdentityPhase::Keys).await;
+    // The first chunk filled the batch, so the phase read again and the failing row failed a second time.
+    assert_spend(&client, "LiteLLM_VerificationToken", "token", "good", 0.0).await;
+    assert_eq!(harness.cache.calls().len(), 1);
+    assert!(harness.successes.events().is_empty());
+    assert_eq!(harness.failures.events().len(), 2);
     finish(fixture, store, client).await;
 }
