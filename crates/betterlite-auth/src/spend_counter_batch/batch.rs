@@ -41,7 +41,27 @@ pub(super) struct BatchState {
     pub(super) keys: BTreeSet<String>,
     pub(super) fetched: BTreeSet<String>,
     pub(super) loaded: BTreeMap<String, Option<Decimal>>,
-    pub(super) inflight: Vec<BatchResult<MgetValues>>,
+    pub(super) generations: BTreeMap<String, u64>,
+    pub(super) inflight: Vec<InflightRead>,
+}
+
+pub(super) struct InflightRead {
+    pub(super) result: BatchResult<MgetValues>,
+    pub(super) asked: BTreeMap<String, Option<u64>>,
+}
+
+impl BatchState {
+    // the generation snapshot is taken under the lock that marks the keys fetched, so no forget slips in
+    fn take_pending(&mut self) -> BTreeMap<String, Option<u64>> {
+        let pending: BTreeSet<String> = self.keys.difference(&self.fetched).cloned().collect();
+        self.fetched.extend(pending.iter().cloned());
+        let mut asked = BTreeMap::new();
+        for key in pending {
+            let generation = self.generations.get(&key).copied();
+            asked.insert(key, generation);
+        }
+        asked
+    }
 }
 
 mod load;
@@ -64,6 +84,7 @@ impl SpendCounterBatch {
                 keys: BTreeSet::new(),
                 fetched: BTreeSet::new(),
                 loaded: BTreeMap::new(),
+                generations: BTreeMap::new(),
                 inflight: Vec::new(),
             }),
             loading: Mutex::new(None),
@@ -121,6 +142,9 @@ impl SpendCounterBatch {
 
     pub fn forget(&self, counter_key: &str) {
         let mut state = lock(&self.state);
+        // a reply asked for before this forget must not refill the key
+        let generation = state.generations.entry(counter_key.to_owned()).or_default();
+        *generation = generation.wrapping_add(1);
         state.keys.remove(counter_key);
         state.fetched.remove(counter_key);
         state.loaded.remove(counter_key);
@@ -134,11 +158,12 @@ impl SpendCounterBatch {
         if state.phase == BatchPhase::Closed {
             return;
         }
-        let pending: Vec<String> = state.keys.difference(&state.fetched).cloned().collect();
-        if pending.is_empty() {
+        let asked = state.take_pending();
+        if asked.is_empty() {
             return;
         }
-        state.fetched.extend(pending.iter().cloned());
-        state.inflight.push(request_batch.mget(&pending));
+        let keys: Vec<String> = asked.keys().cloned().collect();
+        let result = request_batch.mget(&keys);
+        state.inflight.push(InflightRead { result, asked });
     }
 }

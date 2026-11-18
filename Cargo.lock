@@ -1592,6 +1592,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
@@ -2062,6 +2063,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-models",
  "bytes",
@@ -2099,6 +2101,14 @@ dependencies = [
  "uuid",
  "webpki-roots",
  "zip",
+]
+
+[[package]]
+name = "betterlite-http-fixture"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]
@@ -2851,6 +2861,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
@@ -3344,6 +3355,7 @@ dependencies = [
 name = "betterlite-oracle-policy"
 version = "0.1.0"
 dependencies = [
+ "betterlite-core",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
@@ -3352,6 +3364,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3631,6 +3645,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-routes",
  "betterlite-secrets",
@@ -3794,6 +3809,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tracing",
@@ -4443,6 +4459,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",

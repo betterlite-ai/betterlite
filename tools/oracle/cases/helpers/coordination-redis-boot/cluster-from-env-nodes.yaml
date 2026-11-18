@@ -1,0 +1,28 @@
+kind: helper
+name: coordination-redis-boot-cluster-from-env-nodes
+call:
+  b8377:
+    operation: usage_family
+    params:
+      host: 127.0.0.1
+      port: 6379
+    environment:
+      REDIS_CLUSTER_NODES: '[{"host": "127.0.0.1", "port": 7000}]'
+calls:
+  - b8377:
+      operation: usage_family
+      params:
+        host: 127.0.0.1
+        startup_nodes:
+          - {host: 127.0.0.1, port: 7001}
+      environment: {}
+  - b8377:
+      operation: usage_family
+      params:
+        host: 127.0.0.1
+        startup_nodes: []
+      environment:
+        REDIS_CLUSTER_NODES: '[{"host": "127.0.0.1", "port": 7000}]'
+env:
+  REDIS_CLUSTER_NODES: '[{"host": "127.0.0.1", "port": 7000}]'
+compare: {ignore: []}
