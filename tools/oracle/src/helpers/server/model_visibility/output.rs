@@ -2,19 +2,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_config::sections::model_visibility::Settings;
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_server::model_visibility::discoverable::{
     discoverable_rows, undiscoverable_model_names,
 };
 use betterlite_server::model_visibility::healthy::hidden_unhealthy_model_names;
+use betterlite_server::model_visibility::testing::{FixtureError, Snapshot};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use super::error::Failure;
 use super::fakes::{HealthReport, captured, user};
 use super::input::{Function, Input, RouterCall};
-use super::snapshot::{Snapshot, spec};
+use super::snapshot::{declared_rows, snapshot};
 
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     match input.function {
@@ -25,33 +24,24 @@ pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
 }
 
 fn undiscoverable(input: &Input) -> Result<Value, Failure> {
-    let snapshot = Snapshot::build(input)?;
-    let lookup = CatalogLookup {
-        catalog: &snapshot.catalog,
-        model_group_alias: &snapshot.aliases,
-        routing_groups: &snapshot.groups,
-        inferred_provider: &*snapshot.provider,
-    };
-    let router = matches!(
-        input.arguments.router,
-        RouterCall::Ready | RouterCall::BrokenPattern
-    )
-    .then_some(&lookup);
+    let fixture = snapshot(input)?;
+    let router = fixture.as_ref().map(Snapshot::lookup);
     let hidden = undiscoverable_model_names(
         &input.arguments.model_names,
-        router,
+        router.as_ref(),
         &user(input.arguments.user_role.as_deref())?,
         input.arguments.team_id.as_deref(),
-    )?;
+    )
+    .map_err(FixtureError::from)?;
     Ok(json!({ "hidden": hidden }))
 }
 
 fn discoverable(input: &Input) -> Result<Value, Failure> {
-    let mut rows: Vec<DeploymentSpec> = Vec::with_capacity(input.model_list.len());
-    for row in &input.model_list {
-        rows.push(spec(&row.model_name, &row.litellm_params, &row.model_info)?);
-    }
-    let kept = discoverable_rows(&rows, &user(input.arguments.user_role.as_deref())?);
+    let fixture = Snapshot::build(&declared_rows(input), &input.model_group_alias)?;
+    let kept = discoverable_rows(
+        &fixture.catalog.models,
+        &user(input.arguments.user_role.as_deref())?,
+    );
     let names: Vec<&str> = kept.iter().map(|row| row.model_name.as_str()).collect();
     Ok(json!({ "rows": names }))
 }

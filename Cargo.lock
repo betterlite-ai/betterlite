@@ -3631,7 +3631,6 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-redact",
  "betterlite-roi",
- "betterlite-router",
  "betterlite-routes",
  "betterlite-secrets",
  "betterlite-semantic",
