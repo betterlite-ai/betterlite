@@ -82,7 +82,10 @@ fn required_tier<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Result<
 where
     L: EnvironmentLookup,
 {
-    tier_value(value, path, lookup)?.ok_or_else(|| invalid_scalar(path))
+    let Some(tier) = tier_value(value, path, lookup)? else {
+        return Err(invalid_scalar(path));
+    };
+    Ok(tier)
 }
 
 fn resolve_strings<L>(
