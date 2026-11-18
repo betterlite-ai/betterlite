@@ -46,9 +46,6 @@ SET "last_run_at" = EXCLUDED."last_run_at",
 RETURNING "reload_revision""#,
 };
 
-// the payload clear_reload_interval stores: json.dumps of {"interval_hours": None}
-const CLEARED_INTERVAL: &str = r#"{"interval_hours":null}"#;
-
 // LiteLLM's awaits carry no deadline of their own; a drained pool or a lock wait fails the call instead of hanging
 #[derive(Debug, Clone, Copy)]
 pub struct ScheduleDeadlines {
@@ -140,32 +137,36 @@ pub async fn read_reload_schedule(
 
 // LiteLLM's two admin writes: a new interval creates the row, a clear only touches an existing one
 enum IntervalWrite {
-    Create,
+    Create(u32),
     Clear,
 }
 
 async fn store_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
-    param_value: &str,
     write: IntervalWrite,
 ) -> Result<(), ReloadScheduleError> {
     let repository = ConfigRepository::new(client, true);
     match write {
-        IntervalWrite::Create => {
+        IntervalWrite::Create(interval_hours) => {
+            let param_value = safe_dumps(&IntervalConfig {
+                interval_hours: Some(interval_hours),
+            })
+            .map_err(ReloadScheduleError::Encode)?;
             repository
-                .set_param(
-                    RELOAD_CONFIG_PARAM_NAME,
-                    JsonData::String(param_value.to_owned()),
-                )
+                .set_param(RELOAD_CONFIG_PARAM_NAME, JsonData::String(param_value))
                 .await?;
         }
         IntervalWrite::Clear => {
+            let param_value = safe_dumps(&IntervalConfig {
+                interval_hours: None,
+            })
+            .map_err(ReloadScheduleError::Encode)?;
             repository
                 .table()?
                 .update_many(
                     ConfigUpdate {
-                        param_value: Some(JsonData::String(param_value.to_owned())),
+                        param_value: Some(JsonData::String(param_value)),
                     },
                     RELOAD_CONFIG_PARAM_NAME.to_owned(),
                 )
@@ -181,18 +182,14 @@ pub async fn write_reload_interval(
     evictor: &dyn ConfigParamEvictor,
     interval_hours: u32,
 ) -> Result<(), ReloadScheduleError> {
-    let param_value = safe_dumps(&IntervalConfig {
-        interval_hours: Some(interval_hours),
-    })
-    .map_err(ReloadScheduleError::Encode)?;
-    store_interval(client, evictor, &param_value, IntervalWrite::Create).await
+    store_interval(client, evictor, IntervalWrite::Create(interval_hours)).await
 }
 
 pub async fn clear_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
 ) -> Result<(), ReloadScheduleError> {
-    store_interval(client, evictor, CLEARED_INTERVAL, IntervalWrite::Clear).await
+    store_interval(client, evictor, IntervalWrite::Clear).await
 }
 
 async fn record_statement(
