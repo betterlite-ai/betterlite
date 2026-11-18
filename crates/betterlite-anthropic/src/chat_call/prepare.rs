@@ -95,11 +95,14 @@ where
         })
     })
 }
-async fn map_request<Config: ChatConfig>(
+async fn map_request<Config>(
     config: &Config,
     request: &TransformRequest<'_>,
     style: CallStyle,
-) -> Result<TransformOutcome, ConfigError> {
+) -> Result<TransformOutcome, ConfigError>
+where
+    Config: ChatConfig,
+{
     if style == CallStyle::Async {
         config.async_transform_outcome(request).await
     } else {
