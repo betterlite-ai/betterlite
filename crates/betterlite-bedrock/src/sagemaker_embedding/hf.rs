@@ -1,6 +1,10 @@
+use betterlite_openai::embedding::{EmbeddingInput, EmbeddingVector};
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Deserialize;
 use serde::Serialize;
+use serde_json::Number;
+use thiserror::Error;
 
 const EMBEDDING_OBJECT: &str = "embedding";
 const RESPONSE_OBJECT: &str = "list";
@@ -19,7 +23,7 @@ pub struct HfEmbeddingResponse {
 pub struct HfEmbeddingRecord {
     pub object: &'static str,
     pub index: usize,
-    pub embedding: Json,
+    pub embedding: EmbeddingVector,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -29,10 +33,93 @@ pub struct HfUsage {
     pub total_tokens: u64,
 }
 
+#[derive(Debug, Error)]
+pub enum HfReplyError {
+    #[error("Failed to parse response: {source}")]
+    Parse {
+        status_code: u16,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the HF reply does not have the declared response shape")]
+    Shape {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("Unexpected response format. Expected list or dict with 'embedding' key, got: {kind}")]
+    Unexpected { kind: &'static str },
+    #[error("HF response not in expected format - {value}")]
+    NotAList { value: String },
+    #[error("the HF request inputs are neither a text nor a list of texts")]
+    Inputs {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the HF input word count exceeds the supported range")]
+    Overflow,
+}
+
+// the declared response: TEI's raw list, a dict under "embedding", or a value that only names its type
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum HfReplyBody {
+    Embeddings(Vec<EmbeddingVector>),
+    Wrapped(HfWrappedReply),
+    Scalar(HfScalar),
+}
+
+#[derive(Debug, Deserialize)]
+struct HfWrappedReply {
+    #[serde(default)]
+    embedding: HfEmbeddingValue,
+}
+
+// a missing key names the dict, a present value that is not a row list is read as its JSON text
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum HfEmbeddingValue {
+    Rows(Vec<EmbeddingVector>),
+    Other(Json),
+    #[default]
+    Absent,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum HfScalar {
+    Bool(bool),
+    Number(Number),
+    Text(String),
+    Null,
+}
+
+impl HfReplyError {
+    #[must_use]
+    pub const fn status_code(&self) -> u16 {
+        match self {
+            Self::Parse { status_code, .. } => *status_code,
+            Self::NotAList { .. } => NOT_A_LIST_STATUS,
+            Self::Shape { .. } | Self::Unexpected { .. } | Self::Inputs { .. } | Self::Overflow => {
+                UNEXPECTED_FORMAT
+            }
+        }
+    }
+}
+
+impl From<HfReplyError> for SagemakerError {
+    fn from(error: HfReplyError) -> Self {
+        Self {
+            status_code: error.status_code(),
+            message: error.to_string(),
+            headers: None,
+        }
+    }
+}
+
 // transform_embedding_request: the caller's options are the body around the input, and an "inputs" option wins
 #[must_use]
-pub fn transform_request(input: &Json, optional_params: &Object) -> Object {
-    let mut body = Object::from([(String::from("inputs"), input.clone())]);
+pub fn transform_request(input: &EmbeddingInput, optional_params: &Object) -> Object {
+    let mut body = Object::from([(String::from("inputs"), input_json(input))]);
     body.extend(optional_params.clone());
     body
 }
@@ -43,13 +130,12 @@ pub fn transform_response(
     status_code: u16,
     model: &str,
     request: &Object,
-) -> Result<HfEmbeddingResponse, SagemakerError> {
-    let decoded = decode_reply(body, status_code)?;
-    let embeddings = reply_embeddings(&decoded)?;
-    let prompt_tokens = count_input_words(request.get("inputs"))?;
+) -> Result<HfEmbeddingResponse, HfReplyError> {
+    let embeddings = reply_embeddings(decode_reply(body, status_code)?)?;
+    let prompt_tokens = count_input_words(request)?;
     Ok(HfEmbeddingResponse {
         object: RESPONSE_OBJECT,
-        data: embedding_rows(embeddings),
+        data: embedding_rows(&embeddings),
         model: model.to_owned(),
         usage: HfUsage {
             prompt_tokens,
@@ -59,38 +145,35 @@ pub fn transform_response(
     })
 }
 
-fn decode_reply(body: &[u8], status_code: u16) -> Result<Json, SagemakerError> {
-    serde_json::from_slice(body).map_err(|source| SagemakerError {
-        status_code,
-        message: format!("Failed to parse response: {source}"),
-        headers: None,
+fn decode_reply(body: &[u8], status_code: u16) -> Result<HfReplyBody, HfReplyError> {
+    serde_json::from_slice(body).map_err(|source| match source.is_data() {
+        true => HfReplyError::Shape { source },
+        false => HfReplyError::Parse {
+            status_code,
+            source,
+        },
     })
 }
 
-fn reply_embeddings(decoded: &Json) -> Result<&[Json], SagemakerError> {
-    let candidate = match decoded {
-        Json::List(_) => decoded,
-        Json::Object(fields) => fields.get("embedding").ok_or_else(|| unexpected(decoded))?,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
-            return Err(unexpected(decoded));
-        }
-    };
-    let Json::List(embeddings) = candidate else {
-        let rendered = serde_json::to_string(candidate).map_err(|source| SagemakerError {
-            status_code: UNEXPECTED_FORMAT,
-            message: format!("the HF reply value cannot be read: {source}"),
-            headers: None,
-        })?;
-        return Err(SagemakerError {
-            status_code: NOT_A_LIST_STATUS,
-            message: format!("HF response not in expected format - {rendered}"),
-            headers: None,
-        });
-    };
-    Ok(embeddings)
+fn reply_embeddings(body: HfReplyBody) -> Result<Vec<EmbeddingVector>, HfReplyError> {
+    match body {
+        HfReplyBody::Embeddings(rows) => Ok(rows),
+        HfReplyBody::Wrapped(wrapped) => match wrapped.embedding {
+            HfEmbeddingValue::Absent => Err(HfReplyError::Unexpected { kind: "dict" }),
+            HfEmbeddingValue::Rows(rows) => Ok(rows),
+            HfEmbeddingValue::Other(value) => {
+                let rendered = serde_json::to_string(&value)
+                    .map_err(|source| HfReplyError::Shape { source })?;
+                Err(HfReplyError::NotAList { value: rendered })
+            }
+        },
+        HfReplyBody::Scalar(scalar) => Err(HfReplyError::Unexpected {
+            kind: scalar.kind(),
+        }),
+    }
 }
 
-fn embedding_rows(embeddings: &[Json]) -> Vec<HfEmbeddingRecord> {
+fn embedding_rows(embeddings: &[EmbeddingVector]) -> Vec<HfEmbeddingRecord> {
     embeddings
         .iter()
         .enumerate()
@@ -102,48 +185,70 @@ fn embedding_rows(embeddings: &[Json]) -> Vec<HfEmbeddingRecord> {
         .collect()
 }
 
-fn unexpected(value: &Json) -> SagemakerError {
-    // LiteLLM names the value with type(value).__name__
-    let kind = match value {
-        Json::Null => "NoneType",
-        Json::Bool(_) => "bool",
-        Json::Number(number) if number.is_i64() || number.is_u64() => "int",
-        Json::Number(_) => "float",
-        Json::Text(_) => "str",
-        Json::List(_) => "list",
-        Json::Object(_) => "dict",
-    };
-    SagemakerError {
-        status_code: UNEXPECTED_FORMAT,
-        message: format!(
-            "Unexpected response format. Expected list or dict with 'embedding' key, got: {kind}"
+impl HfScalar {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Bool(_) => "bool",
+            Self::Number(number) => number_kind(number),
+            Self::Text(_) => "str",
+            Self::Null => "NoneType",
+        }
+    }
+}
+
+// LiteLLM names the value with type(value).__name__
+fn number_kind(number: &Number) -> &'static str {
+    match number.is_i64() || number.is_u64() {
+        true => "int",
+        false => "float",
+    }
+}
+
+fn input_json(input: &EmbeddingInput) -> Json {
+    match input {
+        EmbeddingInput::Text(text) => Json::Text(text.clone()),
+        EmbeddingInput::Texts(texts) => Json::List(texts.iter().cloned().map(Json::Text).collect()),
+        EmbeddingInput::Tokens(tokens) => Json::List(
+            tokens
+                .iter()
+                .map(|token| Json::Number(Number::from(*token)))
+                .collect(),
         ),
-        headers: None,
+        EmbeddingInput::TokenLists(lists) => Json::List(
+            lists
+                .iter()
+                .map(|tokens| {
+                    Json::List(
+                        tokens
+                            .iter()
+                            .map(|token| Json::Number(Number::from(*token)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        ),
     }
 }
 
 // request_data["inputs"]: a text counts its non-space characters, as Python walks the string it was given
-fn count_input_words(inputs: Option<&Json>) -> Result<u64, SagemakerError> {
-    let words = match inputs {
-        None | Some(Json::Null) => 0,
-        Some(Json::Text(text)) => text.chars().filter(|item| !item.is_whitespace()).count(),
-        Some(Json::List(items)) => items
+fn count_input_words(request: &Object) -> Result<u64, HfReplyError> {
+    let Some(inputs) = request.get("inputs") else {
+        return Ok(0);
+    };
+    if matches!(inputs, Json::Null) {
+        return Ok(0);
+    }
+    let value = serde_json::to_value(inputs).map_err(|source| HfReplyError::Shape { source })?;
+    let input = serde_json::from_value::<EmbeddingInput>(value)
+        .map_err(|source| HfReplyError::Inputs { source })?;
+    let words = match input {
+        EmbeddingInput::Text(text) => text.chars().filter(|item| !item.is_whitespace()).count(),
+        EmbeddingInput::Texts(texts) => texts
             .iter()
-            .filter_map(|item| item.as_str())
             .map(|text| text.split_whitespace().count())
             .sum(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-            return Err(SagemakerError {
-                status_code: UNEXPECTED_FORMAT,
-                message: String::from("the request inputs is neither a text nor a list of texts"),
-                headers: None,
-            });
-        }
+        EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => 0,
     };
-    u64::try_from(words).map_err(|_overflow| SagemakerError {
-        status_code: UNEXPECTED_FORMAT,
-        message: String::from("the HF input word count exceeds the supported range"),
-        headers: None,
-    })
+    u64::try_from(words).map_err(|_overflow| HfReplyError::Overflow)
 }
 mod tests;

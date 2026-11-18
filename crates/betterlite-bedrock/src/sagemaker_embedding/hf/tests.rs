@@ -1,16 +1,21 @@
 #![cfg(test)]
 
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_openai::embedding::{EmbeddingInput, EmbeddingVector};
+use betterlite_prompts::arguments::json::Object;
 
 use crate::sagemaker_embedding::hf::{
     HfEmbeddingRecord, HfUsage, transform_request, transform_response,
 };
 
-fn json(text: &str) -> Json {
+fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
 }
 
-fn object(text: &str) -> Object {
+fn input(text: &str) -> EmbeddingInput {
+    serde_json::from_str(text).unwrap()
+}
+
+fn vector(text: &str) -> EmbeddingVector {
     serde_json::from_str(text).unwrap()
 }
 
@@ -20,7 +25,7 @@ fn inputs(text: &str) -> Object {
 
 #[test]
 fn request_is_the_inputs_key_and_the_options() {
-    let built = transform_request(&json(r#""hello""#), &object(r#"{"truncate": true}"#));
+    let built = transform_request(&input(r#""hello""#), &object(r#"{"truncate": true}"#));
 
     assert_eq!(built, object(r#"{"inputs": "hello", "truncate": true}"#));
     assert_eq!(
@@ -32,16 +37,23 @@ fn request_is_the_inputs_key_and_the_options() {
 #[test]
 fn an_inputs_option_replaces_the_input() {
     let built = transform_request(
-        &json(r#""hello""#),
+        &input(r#""hello""#),
         &object(r#"{"inputs": ["kept"], "truncate": false}"#),
     );
 
     assert_eq!(built, object(r#"{"inputs": ["kept"], "truncate": false}"#));
     assert_eq!(
         built.get("inputs"),
-        Some(&json(r#"["kept"]"#)),
+        Some(&object(r#"{"inputs": ["kept"]}"#)["inputs"]),
         "the option wins over the request input"
     );
+}
+
+#[test]
+fn token_inputs_are_sent_as_they_came() {
+    let built = transform_request(&input(r#"[[2, 3]]"#), &Object::new());
+
+    assert_eq!(built, object(r#"{"inputs": [[2, 3]]}"#));
 }
 
 #[test]
@@ -62,12 +74,12 @@ fn a_raw_list_reply_becomes_embedding_rows() {
             HfEmbeddingRecord {
                 object: "embedding",
                 index: 0,
-                embedding: json("[0.1, 0.2]"),
+                embedding: vector("[0.1, 0.2]"),
             },
             HfEmbeddingRecord {
                 object: "embedding",
                 index: 1,
-                embedding: json("[0.3]"),
+                embedding: vector("[0.3]"),
             },
         ]
     );
@@ -96,7 +108,7 @@ fn a_wrapped_dict_reply_reads_its_embedding_field() {
         [HfEmbeddingRecord {
             object: "embedding",
             index: 0,
-            embedding: json("[1, 2]"),
+            embedding: vector("[1, 2]"),
         }]
     );
     assert_eq!(reply.usage.prompt_tokens, 3);
@@ -126,7 +138,14 @@ fn a_text_input_counts_its_non_space_characters() {
 
 #[test]
 fn a_token_input_adds_no_words() {
-    let reply = transform_response(br#"[]"#, 200, "model", &inputs(r#"[[1, 2], 3]"#)).unwrap();
+    let reply = transform_response(br#"[]"#, 200, "model", &inputs("[1, 2]")).unwrap();
+
+    assert_eq!(reply.usage.prompt_tokens, 0);
+}
+
+#[test]
+fn a_token_list_input_adds_no_words() {
+    let reply = transform_response(br#"[]"#, 200, "model", &inputs("[[1, 2]]")).unwrap();
 
     assert_eq!(reply.usage.prompt_tokens, 0);
 }
@@ -148,7 +167,7 @@ fn an_absent_inputs_key_counts_no_words() {
 #[test]
 fn an_inputs_option_changes_the_counted_words() {
     let request = transform_request(
-        &json(r#""one two three""#),
+        &input(r#""one two three""#),
         &object(r#"{"inputs": ["one two"]}"#),
     );
     let reply = transform_response(br#"[]"#, 200, "model", &request).unwrap();
@@ -160,18 +179,17 @@ fn an_inputs_option_changes_the_counted_words() {
 fn an_unparsable_reply_carries_the_http_status() {
     let error = transform_response(b"not json", 503, "model", &Object::new()).unwrap_err();
 
-    assert_eq!(error.status_code, 503);
-    assert!(error.message.starts_with("Failed to parse response: "));
-    assert!(error.headers.is_none());
+    assert_eq!(error.status_code(), 503);
+    assert!(error.to_string().starts_with("Failed to parse response: "));
 }
 
 #[test]
 fn a_dict_without_an_embedding_key_names_its_type() {
     let error = transform_response(br#"{"data": []}"#, 200, "model", &Object::new()).unwrap_err();
 
-    assert_eq!(error.status_code, 500);
+    assert_eq!(error.status_code(), 500);
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: dict"
     );
 }
@@ -181,7 +199,7 @@ fn a_text_reply_names_its_python_type() {
     let error = transform_response(br#""text""#, 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: str"
     );
 }
@@ -191,7 +209,7 @@ fn a_null_reply_names_its_python_type() {
     let error = transform_response(b"null", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: NoneType"
     );
 }
@@ -201,7 +219,7 @@ fn an_integer_reply_names_its_python_type() {
     let error = transform_response(b"7", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: int"
     );
 }
@@ -212,7 +230,7 @@ fn a_negative_integer_reply_names_its_python_type() {
     let error = transform_response(b"-7", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: int"
     );
 }
@@ -222,7 +240,7 @@ fn a_float_reply_names_its_python_type() {
     let error = transform_response(b"7.5", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: float"
     );
 }
@@ -232,7 +250,7 @@ fn a_boolean_reply_names_its_python_type() {
     let error = transform_response(b"true", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Unexpected response format. Expected list or dict with 'embedding' key, got: bool"
     );
 }
@@ -242,10 +260,22 @@ fn an_embedding_that_is_not_a_list_is_unexpected() {
     let error =
         transform_response(br#"{"embedding": "AAAA"}"#, 200, "model", &Object::new()).unwrap_err();
 
-    assert_eq!(error.status_code, 422);
+    assert_eq!(error.status_code(), 422);
     assert_eq!(
-        error.message,
+        error.to_string(),
         "HF response not in expected format - \"AAAA\""
+    );
+}
+
+#[test]
+fn a_null_embedding_is_not_a_list() {
+    let error =
+        transform_response(br#"{"embedding": null}"#, 200, "model", &Object::new()).unwrap_err();
+
+    assert_eq!(error.status_code(), 422);
+    assert_eq!(
+        error.to_string(),
+        "HF response not in expected format - null"
     );
 }
 
@@ -253,9 +283,9 @@ fn an_embedding_that_is_not_a_list_is_unexpected() {
 fn an_inputs_value_that_is_not_text_or_a_list_is_named() {
     let error = transform_response(br#"[]"#, 200, "model", &inputs("5")).unwrap_err();
 
-    assert_eq!(error.status_code, 500);
+    assert_eq!(error.status_code(), 500);
     assert_eq!(
-        error.message,
-        "the request inputs is neither a text nor a list of texts"
+        error.to_string(),
+        "the HF request inputs are neither a text nor a list of texts"
     );
 }

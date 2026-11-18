@@ -2,7 +2,8 @@
 
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_prompts::arguments::json::Object;
 use betterlite_tokenizer::engine::error::EngineError;
 use rstest::rstest;
 
@@ -18,7 +19,7 @@ impl TextEncoding for Words {
     }
 }
 
-fn json(text: &str) -> Json {
+fn input(text: &str) -> EmbeddingInput {
     serde_json::from_str(text).unwrap()
 }
 
@@ -77,7 +78,7 @@ fn an_absent_input_type_keeps_the_callers_optional_params() {
 fn a_text_input_becomes_one_text() {
     let built = transform_request(
         "cohere.embed-english-v3",
-        &json(r#""hello""#),
+        &input(r#""hello""#),
         &Object::new(),
     )
     .unwrap();
@@ -92,7 +93,7 @@ fn a_text_input_becomes_one_text() {
 fn a_list_of_texts_is_kept() {
     let built = transform_request(
         "cohere.embed-english-v3",
-        &json(r#"["a", "b"]"#),
+        &input(r#"["a", "b"]"#),
         &object(r#"{"truncate": "END"}"#),
     )
     .unwrap();
@@ -105,7 +106,7 @@ fn a_list_of_texts_is_kept() {
 
 #[test]
 fn an_empty_list_stays_empty() {
-    let built = transform_request("cohere.embed-english-v3", &json("[]"), &Object::new()).unwrap();
+    let built = transform_request("cohere.embed-english-v3", &input("[]"), &Object::new()).unwrap();
 
     assert_eq!(
         built,
@@ -114,40 +115,14 @@ fn an_empty_list_stays_empty() {
 }
 
 #[rstest]
-#[case::integers("[1, 2]")]
-#[case::nested_list(r#"[["tokens"]]"#)]
-#[case::boolean("[true]")]
-#[case::null("[null]")]
-fn a_list_of_integers_is_refused(#[case] input: &str) {
+#[case::tokens("[1, 2]")]
+#[case::token_lists("[[1, 2]]")]
+fn a_token_input_is_refused(#[case] value: &str) {
     let error =
-        transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
+        transform_request("cohere.embed-english-v3", &input(value), &Object::new()).unwrap_err();
 
-    assert_eq!(error, CohereRequestError::InputNotText, "{input}");
+    assert_eq!(error, CohereRequestError::InputNotText, "{value}");
     assert_eq!(error.to_string(), "Input must be a list of strings");
-}
-
-#[test]
-fn a_later_non_text_item_is_refused() {
-    let error = transform_request(
-        "cohere.embed-english-v3",
-        &json(r#"["ok", 2]"#),
-        &Object::new(),
-    )
-    .unwrap_err();
-
-    assert_eq!(error, CohereRequestError::InputNotText);
-}
-
-#[rstest]
-#[case::number("7")]
-#[case::boolean("true")]
-#[case::null("null")]
-#[case::object(r#"{"texts": ["a"]}"#)]
-fn a_value_that_is_not_text_or_a_list_is_refused(#[case] input: &str) {
-    let error =
-        transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
-
-    assert_eq!(error, CohereRequestError::InputNotText, "{input}");
 }
 
 #[test]
@@ -158,7 +133,8 @@ fn the_mapped_options_reach_the_body() {
         ),
         Object::new(),
     );
-    let built = transform_request("cohere.embed-english-v3", &json(r#""hello""#), &mapped).unwrap();
+    let built =
+        transform_request("cohere.embed-english-v3", &input(r#""hello""#), &mapped).unwrap();
 
     assert_eq!(
         built,
@@ -173,7 +149,7 @@ fn billed_units_win_over_the_counted_input() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5, 0.25]], "meta": {"billed_units": {"input_tokens": 7}}}"#,
         "cohere.embed-english-v3",
-        Some(&json(r#""one two three""#)),
+        Some(&input(r#""one two three""#)),
         &object(r#"{"texts": ["one two three"]}"#),
         &Words,
     )
@@ -191,7 +167,7 @@ fn the_logged_input_is_counted_when_the_reply_bills_nothing() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
         "cohere.embed-english-v3",
-        Some(&json(r#"["one two three", "four"]"#)),
+        Some(&input(r#"["one two three", "four"]"#)),
         &object(r#"{"texts": ["ignored"]}"#),
         &Words,
     )
@@ -205,7 +181,7 @@ fn an_empty_logged_input_falls_to_the_body_texts() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
         "cohere.embed-english-v3",
-        Some(&json("[]")),
+        Some(&input("[]")),
         &object(r#"{"texts": ["one two", "three"]}"#),
         &Words,
     )
@@ -229,6 +205,20 @@ fn empty_body_texts_fall_to_the_body_images() {
 }
 
 #[test]
+fn body_texts_win_over_the_body_images() {
+    let reply = transform_response(
+        br#"{"embeddings": [[0.5]]}"#,
+        "cohere.embed-english-v3",
+        None,
+        &object(r#"{"texts": ["one two three"], "images": ["aGVsbG8="]}"#),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(reply.usage.prompt_tokens, 3);
+}
+
+#[test]
 fn no_input_anywhere_counts_no_tokens() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
@@ -247,7 +237,7 @@ fn a_text_logged_input_becomes_one_item() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
         "cohere.embed-english-v3",
-        Some(&json(r#""one two""#)),
+        Some(&input(r#""one two""#)),
         &object(r#"{"texts": ["a", "b", "c"]}"#),
         &Words,
     )
@@ -256,12 +246,14 @@ fn a_text_logged_input_becomes_one_item() {
     assert_eq!(reply.usage.prompt_tokens, 2);
 }
 
-#[test]
-fn a_non_text_logged_input_is_refused() {
+#[rstest]
+#[case::tokens("[1]")]
+#[case::token_lists("[[1, 2]]")]
+fn a_token_logged_input_is_refused(#[case] value: &str) {
     let error = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
         "cohere.embed-english-v3",
-        Some(&json(r#"{"tokens": [1]}"#)),
+        Some(&input(value)),
         &Object::new(),
         &Words,
     )
