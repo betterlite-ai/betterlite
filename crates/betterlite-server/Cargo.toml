@@ -54,6 +54,7 @@ betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 betterlite-tracing = { path = "../betterlite-tracing" }
 betterlite-transcribe = { path = "../betterlite-transcribe" }
 betterlite-vertex = { path = "../betterlite-vertex" }
+bytes = "1.12.1"
 caseless = "0.2.2"
 chrono = { workspace = true }
 crc32fast = "1.5.3"

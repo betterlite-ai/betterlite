@@ -1,0 +1,3 @@
+- route_name: extra_field
+  utterances: ["one text"]
+  unknown_key: whatever

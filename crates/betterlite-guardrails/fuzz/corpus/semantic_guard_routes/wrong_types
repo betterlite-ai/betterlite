@@ -1,0 +1,3 @@
+- route_name: 12
+  utterances: "one text"
+  similarity_threshold: "high"
