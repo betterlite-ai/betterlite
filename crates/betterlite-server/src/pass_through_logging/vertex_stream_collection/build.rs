@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use super::super::gemini_passthrough_logging::assembly::{
     CollectedStreamError, complete_response, event_chunk, event_converter, gemini_chunks,
 };
+use super::super::gemini_passthrough_logging::counter::CollectedCounter;
 
 // LiteLLM tests the generate route first and the rawPredict route second; any other route builds no response.
 pub(super) fn vertex_response(
@@ -17,21 +18,27 @@ pub(super) fn vertex_response(
     url_route: &str,
     model: &str,
     now: i64,
+    counter: Option<&CollectedCounter>,
 ) -> Result<Option<Json>, CollectedStreamError> {
     let chunks =
         if url_route.contains("generateContent") || url_route.contains("streamGenerateContent") {
             gemini_chunks(lines, now)?
         } else if url_route.contains("rawPredict") || url_route.contains("streamRawPredict") {
-            raw_predict_chunks(lines, now)?
+            raw_predict_chunks(lines, now, counter)?
         } else {
             return Ok(None);
         };
-    complete_response(chunks, model, now)
+    complete_response(chunks, model, now, counter)
 }
 
 // A fresh parser per call, so tool indexes restart at 0; an invalid or non-object line is skipped silently.
-fn raw_predict_chunks(lines: &[String], now: i64) -> Result<Vec<Chunk>, CollectedStreamError> {
-    let mut converter = event_converter();
+fn raw_predict_chunks(
+    lines: &[String],
+    now: i64,
+    counter: Option<&CollectedCounter>,
+) -> Result<Vec<Chunk>, CollectedStreamError> {
+    let tokenizer = counter.ok_or(CollectedStreamError::Tokenizer)?;
+    let mut converter = event_converter(tokenizer);
     let mut chunks = Vec::with_capacity(lines.len());
     for line in lines {
         let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line);

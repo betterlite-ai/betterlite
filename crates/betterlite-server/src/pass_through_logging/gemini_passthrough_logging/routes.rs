@@ -188,7 +188,8 @@ impl CollectedChunksHandler for GeminiPassthroughLogger {
             Vec::new()
         };
         let Some(mut body) =
-            assembly::complete_response(chunks, &model, now).map_err(HandlerError::leaf)?
+            assembly::complete_response(chunks, &model, now, self.counter.as_ref())
+                .map_err(HandlerError::leaf)?
         else {
             tracing::error!(
                 "Unable to build complete streaming response for Gemini passthrough endpoint, not logging..."

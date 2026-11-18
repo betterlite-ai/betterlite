@@ -1,22 +1,18 @@
-use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use betterlite_anthropic::stream_events::StreamEventConverter;
 use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_anthropic::stream_events::error::StreamEventError;
 use betterlite_anthropic::stream_state::state::{
     StreamOptions as EventOptions, StreamState, UuidV4,
 };
-use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
-use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
 use betterlite_streaming::streamed_response_assembly::cost::{
     CostError, CostInput, StreamCostCalculator,
@@ -25,8 +21,7 @@ use betterlite_streaming::streamed_response_assembly::records::{Choice, Chunk};
 use betterlite_streaming::streamed_response_assembly::{
     AssemblyError, Request, stream_chunk_builder,
 };
-use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::count::request::Message as CountMessage;
+use betterlite_tokenizer::engine::error::EngineError;
 use betterlite_vertex::gemini_response_parts::projection::CallMode;
 use betterlite_vertex::gemini_stream::chunk::{Choice as StreamItem, StreamChunk};
 use betterlite_vertex::gemini_stream::error::StreamError;
@@ -38,6 +33,8 @@ use tokio::runtime::{Builder, Handle};
 use tokio::task::block_in_place;
 use uuid::Uuid;
 
+use super::counter::CollectedCounter;
+
 #[derive(Debug, Error)]
 pub(crate) enum CollectedStreamError {
     #[error("the collected Gemini chunk could not be decoded: {source}")]
@@ -48,7 +45,7 @@ pub(crate) enum CollectedStreamError {
     #[error("the collected Anthropic event could not be decoded: {source}")]
     Events {
         #[from]
-        source: StreamEventError,
+        source: StreamEventError<EngineError>,
     },
     #[error("the collected chunk could not be projected: {0}")]
     Projection(#[from] serde_json::Error),
@@ -67,6 +64,8 @@ pub(crate) enum CollectedStreamError {
         #[source]
         source: std::io::Error,
     },
+    #[error("the bundled cl100k tokenizer could not be built")]
+    Tokenizer,
 }
 
 // One fresh decoder per call, one push per line and no finish: what is still open at the end is lost.
@@ -147,15 +146,17 @@ pub(crate) fn event_chunk(
     })
 }
 
-// LiteLLM builds the logged response with no logging object and no tokenizer in reach, so both stay inert.
+// LiteLLM builds the logged response with no logging object, and its token_counter counts the assembled text.
 pub(crate) fn complete_response(
     mut chunks: Vec<Chunk>,
     model: &str,
     now: i64,
+    counter: Option<&CollectedCounter>,
 ) -> Result<Option<Json>, CollectedStreamError> {
     if chunks.is_empty() {
         return Ok(None);
     }
+    let tokenizer = counter.ok_or(CollectedStreamError::Tokenizer)?;
     // B2227 needs a model on the first chunk; LiteLLM's builder accepts a stream without one and logs no model at all.
     let named = chunks.iter().any(|chunk| chunk.model.is_some());
     for chunk in &mut chunks {
@@ -163,7 +164,6 @@ pub(crate) fn complete_response(
             chunk.model = Some(model.to_owned());
         }
     }
-    let counter = ZeroUsage;
     let costs = NoCosts;
     let request = Request {
         chunks: Some(&chunks),
@@ -171,7 +171,7 @@ pub(crate) fn complete_response(
         count_prompt_tokens: None,
         logging: None,
         costs: &costs,
-        counter: &counter,
+        counter: tokenizer,
         metadata: None,
         now,
     };
@@ -197,37 +197,6 @@ fn block_on<F: Future>(future: F) -> Result<F::Output, CollectedStreamError> {
                 .map_err(|source| CollectedStreamError::Runtime { source })?;
             Ok(runtime.block_on(future))
         }
-    }
-}
-
-pub(crate) struct ZeroReasoning;
-
-impl ReasoningTokenCounter for ZeroReasoning {
-    type Failure = Infallible;
-
-    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Infallible> {
-        Ok(0)
-    }
-}
-
-pub(crate) struct ZeroUsage;
-
-#[async_trait]
-impl UsageTokenCounter for ZeroUsage {
-    async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
-        Ok(0)
-    }
-
-    async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
-        Ok(0)
-    }
-
-    async fn count_messages(
-        &self,
-        _model: &str,
-        _messages: Option<&[CountMessage]>,
-    ) -> Result<i64, CountError> {
-        Ok(0)
     }
 }
 
@@ -291,10 +260,12 @@ fn silent_hooks() -> Result<VerboseHooks<SilentLogger, SilentConsole>, Collected
 }
 
 // The Anthropic per-stream state is public in full and starts from its defaults.
-pub(crate) fn event_converter() -> StreamEventConverter<ZeroReasoning> {
+pub(crate) fn event_converter(
+    counter: &CollectedCounter,
+) -> StreamEventConverter<CollectedCounter> {
     StreamEventConverter {
         state: StreamState::new(EventOptions::default(), &UuidV4),
-        counter: ZeroReasoning,
+        counter: counter.clone(),
         json_could_close: false,
     }
 }

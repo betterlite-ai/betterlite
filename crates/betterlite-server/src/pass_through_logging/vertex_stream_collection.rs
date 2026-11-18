@@ -19,12 +19,14 @@ use betterlite_vertex::vertex_relay_metadata::url_models::{
 };
 
 use super::gemini_passthrough_logging::cost::{FactoryCost, PassthroughCompletionCost};
+use super::gemini_passthrough_logging::counter::CollectedCounter;
 use super::gemini_passthrough_logging::relay::{RelayLogging, relay_kwargs};
 
 const VERTEX_LOCATION: &str = "vertex_location";
 
 pub struct VertexStreamCollector {
     cost: Arc<dyn PassthroughCompletionCost>,
+    counter: Option<CollectedCounter>,
 }
 
 impl CollectedChunksHandler for VertexStreamCollector {
@@ -32,11 +34,10 @@ impl CollectedChunksHandler for VertexStreamCollector {
         let vertex_location = get_vertex_location_from_url(call.url_route);
         // The location is stored before the response work, so it is set even when no response can be built.
         if let Some(location) = vertex_location {
-            let location = location.to_owned();
             call.logging_obj.edit(&mut |state| {
                 state
                     .optional_params
-                    .insert(VERTEX_LOCATION.to_owned(), Json::Text(location.clone()));
+                    .insert(VERTEX_LOCATION.to_owned(), Json::Text(location.to_owned()));
             });
         }
         let model = call
@@ -44,8 +45,14 @@ impl CollectedChunksHandler for VertexStreamCollector {
             .filter(|name| !name.is_empty())
             .map_or_else(|| extract_model_from_url(call.url_route), str::to_owned);
         let now = call.end_time.timestamp();
-        let Some(mut body) = build::vertex_response(call.lines, call.url_route, &model, now)
-            .map_err(HandlerError::leaf)?
+        let Some(mut body) = build::vertex_response(
+            call.lines,
+            call.url_route,
+            &model,
+            now,
+            self.counter.as_ref(),
+        )
+        .map_err(HandlerError::leaf)?
         else {
             tracing::error!(
                 "Unable to build complete streaming response for Vertex passthrough endpoint, not logging..."
@@ -66,7 +73,10 @@ impl CollectedChunksHandler for VertexStreamCollector {
 impl VertexStreamCollector {
     // ast-grep-ignore: no-one-line-functions - B8931 constructs the collector through this fixed name
     pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
-        Self { cost }
+        Self {
+            cost,
+            counter: CollectedCounter::bundled(),
+        }
     }
 
     // B3638's factory is written against its own logging object and cost trait, so the assembled body is projected onto both.

@@ -1,5 +1,6 @@
 pub(crate) mod assembly;
 pub mod cost;
+pub(crate) mod counter;
 mod payload;
 pub(crate) mod relay;
 mod reply;
@@ -19,6 +20,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use self::cost::{PassthroughCompletionCost, PassthroughCostError};
+use self::counter::CollectedCounter;
 
 pub struct GeminiPassthroughInput<'input> {
     pub logging_obj: &'input StreamLoggingObject,
@@ -58,28 +60,19 @@ pub enum GeminiPassthroughError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the collected Gemini chunks could not be assembled: {source}")]
-    Collected {
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-}
-
-impl From<assembly::CollectedStreamError> for GeminiPassthroughError {
-    fn from(source: assembly::CollectedStreamError) -> Self {
-        Self::Collected {
-            source: Box::new(source),
-        }
-    }
 }
 
 pub struct GeminiPassthroughLogger {
     cost: Arc<dyn PassthroughCompletionCost>,
+    counter: Option<CollectedCounter>,
 }
 
 impl GeminiPassthroughLogger {
     // ast-grep-ignore: no-one-line-functions - B8931 constructs the logger through this fixed name
     pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
-        Self { cost }
+        Self {
+            cost,
+            counter: CollectedCounter::bundled(),
+        }
     }
 }
