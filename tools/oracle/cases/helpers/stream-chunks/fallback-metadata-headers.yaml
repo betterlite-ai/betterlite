@@ -1,0 +1,31 @@
+kind: helper
+name: stream-chunks-fallback-metadata-headers
+call:
+  b8602:
+    function: fallback_meta
+    hidden:
+      - {}
+      - {additional_headers: null}
+      - {additional_headers: "x"}
+      - {additional_headers: {x-litellm-attempted-fallbacks: 0}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: "0"}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: "2.5"}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: 2.5}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: " 2 "}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: 2, x-litellm-model-group: gpt-4o}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: 1, x-litellm-model-group: ""}}
+      - {additional_headers: {x-litellm-attempted-fallbacks: 1, x-litellm-model-group: 5}}
+      - additional_headers:
+          x-litellm-attempted-fallbacks: 1
+          x-litellm-fallback-errors:
+            - {message: boom}
+            - 5
+            - {message: again}
+      - additional_headers:
+          x-litellm-attempted-fallbacks: 1
+          x-litellm-fallback-errors: '[{"message": "boom"}]'
+      - additional_headers:
+          x-litellm-attempted-fallbacks: 1
+          x-litellm-fallback-errors: {message: boom}
+env: {}
+compare: {ignore: []}
