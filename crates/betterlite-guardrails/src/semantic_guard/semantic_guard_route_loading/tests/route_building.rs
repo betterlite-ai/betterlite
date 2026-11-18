@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::semantic_guard::semantic_guard_route_loading::DEFAULT_SIMILARITY_THRESHOLD;
 use crate::semantic_guard::semantic_guard_route_loading::build_routes;
+use crate::semantic_guard::semantic_guard_route_loading::custom_routes::quote_pyyaml_text_scalars;
 use crate::semantic_guard::semantic_guard_route_loading::default_similarity_threshold;
 
 use super::support::{array, environment, object, route, routes_file, sources, text};
@@ -269,6 +270,12 @@ fn a_file_utterance_that_overflows_f64_stays_text() {
         build_routes(&sources).unwrap()[0].utterances,
         vec!["1e309".to_owned(), "1e999".to_owned()]
     );
+}
+
+#[test]
+fn a_root_sequence_does_not_quote_non_route_scalars() {
+    let source = b"- 1e309\n";
+    assert_eq!(quote_pyyaml_text_scalars(source).as_ref(), source);
 }
 
 #[test]

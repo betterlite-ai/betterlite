@@ -45,46 +45,30 @@ struct PyYamlTextSpans<'sink> {
 }
 
 enum YamlCollection {
-    Mapping {
-        expecting_key: bool,
-        key: Option<String>,
-    },
-    Sequence {
-        quote_text: bool,
-    },
+    Mapping { key: Option<String> },
+    Sequence { quote_text: bool },
 }
 
 impl PyYamlTextSpans<'_> {
     fn start_value(&mut self) -> bool {
         match self.collections.last_mut() {
-            Some(YamlCollection::Mapping { expecting_key, key }) if !*expecting_key => {
-                *expecting_key = true;
-                let field = key.take();
-                matches!(
-                    field.as_deref(),
-                    Some("route_name" | "description" | "utterances")
-                )
+            Some(YamlCollection::Mapping { key }) => {
+                key.take().is_some_and(|field| is_route_text_field(&field))
             }
             Some(YamlCollection::Sequence { quote_text }) => *quote_text,
-            Some(YamlCollection::Mapping { .. }) | None => false,
+            None => false,
         }
     }
 
     fn scalar(&mut self, text: &str) -> bool {
         match self.collections.last_mut() {
-            Some(YamlCollection::Mapping { expecting_key, key }) if *expecting_key => {
-                *key = Some(text.to_owned());
-                *expecting_key = false;
-                false
-            }
-            Some(YamlCollection::Mapping { expecting_key, key }) => {
-                *expecting_key = true;
-                let field = key.take();
-                matches!(
-                    field.as_deref(),
-                    Some("route_name" | "description" | "utterances")
-                )
-            }
+            Some(YamlCollection::Mapping { key }) => match key.take() {
+                Some(field) => is_route_text_field(&field),
+                None => {
+                    *key = Some(text.to_owned());
+                    false
+                }
+            },
             Some(YamlCollection::Sequence { quote_text }) => *quote_text,
             None => false,
         }
@@ -96,10 +80,7 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
         match event {
             Event::MappingStart(..) => {
                 let _ = self.start_value();
-                self.collections.push(YamlCollection::Mapping {
-                    expecting_key: true,
-                    key: None,
-                });
+                self.collections.push(YamlCollection::Mapping { key: None });
             }
             Event::SequenceStart(..) => {
                 let quote_text = self.start_value();
@@ -129,7 +110,7 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
 }
 
 #[must_use]
-fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
+pub(super) fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
     let Ok(source) = std::str::from_utf8(bytes) else {
         return Cow::Borrowed(bytes);
     };
@@ -158,6 +139,10 @@ fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
         || Cow::Borrowed(bytes),
         |rewritten| Cow::Owned(rewritten.into_bytes()),
     )
+}
+
+fn is_route_text_field(field: &str) -> bool {
+    matches!(field, "route_name" | "description" | "utterances")
 }
 
 fn rewritten_source(source: &str, spans: &[(Span, String)]) -> Option<String> {
