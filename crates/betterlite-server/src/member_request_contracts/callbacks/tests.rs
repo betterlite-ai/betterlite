@@ -7,7 +7,7 @@ use rstest::rstest;
 use serde::Serialize;
 use serde_json::json;
 
-use super::{AddTeamCallback, CallbackType, TeamCallbackMetadata};
+use super::{AddTeamCallback, CallbackSecrets, CallbackType, TeamCallbackMetadata};
 use crate::member_request_contracts::MemberContractError;
 
 fn parse(text: &str) -> Json {
@@ -40,7 +40,7 @@ fn defaults_the_callback_type_to_success_and_failure() {
     let request = callback(json!({ "callback_name": "langfuse", "callback_vars": {} })).unwrap();
     assert_eq!(request.callback_type, Some(CallbackType::SuccessAndFailure));
     assert_eq!(request.callback_name, "langfuse");
-    assert!(request.callback_vars.is_empty());
+    assert_eq!(request.callback_vars, CallbackSecrets::default());
 }
 
 #[test]
@@ -109,7 +109,68 @@ fn turns_number_callback_vars_into_their_text() {
         ("langfuse_prompt_version".to_owned(), "2".to_owned()),
         ("langfuse_host".to_owned(), "https://langfuse".to_owned()),
     ]);
-    assert_eq!(request.callback_vars, expected);
+    assert_eq!(request.callback_vars, CallbackSecrets::from(expected));
+}
+
+#[test]
+fn keeps_callback_credentials_out_of_debug() {
+    let request = callback(json!({
+        "callback_name": "langsmith",
+        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
+    }))
+    .unwrap();
+    let debug = format!("{request:?}");
+    assert!(!debug.contains("ls-secret-value"), "{debug}");
+    assert!(debug.contains("[REDACTED]"), "{debug}");
+    let fields = metadata(json!({
+        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
+    }))
+    .unwrap();
+    let debug = format!("{fields:?}");
+    assert!(!debug.contains("ls-secret-value"), "{debug}");
+    assert!(debug.contains("[REDACTED]"), "{debug}");
+}
+
+#[test]
+fn serializes_callback_credentials_in_plain_text() {
+    let request = callback(json!({
+        "callback_name": "langsmith",
+        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
+    }))
+    .unwrap();
+    let text = serde_json::to_string(&request).unwrap();
+    assert!(
+        text.contains(r#""langsmith_api_key":"ls-secret-value""#),
+        "{text}"
+    );
+    let fields = metadata(json!({
+        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
+    }))
+    .unwrap();
+    let text = serde_json::to_string(&fields).unwrap();
+    assert!(
+        text.contains(r#""langsmith_api_key":"ls-secret-value""#),
+        "{text}"
+    );
+}
+
+#[test]
+fn tells_callback_secrets_apart() {
+    let host = CallbackSecrets::from(BTreeMap::from([(
+        "langfuse_host".to_owned(),
+        "same-value".to_owned(),
+    )]));
+    assert_eq!(host, host.clone());
+    let other_value = CallbackSecrets::from(BTreeMap::from([(
+        "langfuse_host".to_owned(),
+        "other-value".to_owned(),
+    )]));
+    assert_ne!(host, other_value);
+    let other_name = CallbackSecrets::from(BTreeMap::from([(
+        "langsmith_base_url".to_owned(),
+        "same-value".to_owned(),
+    )]));
+    assert_ne!(host, other_name);
 }
 
 #[rstest]
@@ -192,7 +253,8 @@ fn keeps_a_valid_langfuse_environment(#[case] environment: &str) {
         "callback_vars": { "langfuse_environment": environment },
     }))
     .unwrap();
-    assert_eq!(request.callback_vars["langfuse_environment"], environment);
+    let expected = BTreeMap::from([("langfuse_environment".to_owned(), environment.to_owned())]);
+    assert_eq!(request.callback_vars, CallbackSecrets::from(expected));
 }
 
 #[rstest]
@@ -232,7 +294,8 @@ fn keeps_a_valid_langfuse_span_scope(#[case] scope: &str) {
         "callback_vars": { "langfuse_span_scope": scope },
     }))
     .unwrap();
-    assert_eq!(request.callback_vars["langfuse_span_scope"], scope);
+    let expected = BTreeMap::from([("langfuse_span_scope".to_owned(), scope.to_owned())]);
+    assert_eq!(request.callback_vars, CallbackSecrets::from(expected));
 }
 
 #[test]
@@ -282,7 +345,7 @@ fn drops_null_keys_and_keeps_the_others() {
     assert!(fields.success_callback.is_empty());
     assert_eq!(fields.failure_callback, vec!["slack"]);
     assert_eq!(fields.callbacks, vec!["langfuse"]);
-    assert!(fields.callback_vars.is_empty());
+    assert_eq!(fields.callback_vars, CallbackSecrets::default());
 }
 
 #[test]
@@ -294,7 +357,7 @@ fn ignores_an_unknown_key_that_is_not_null() {
     }))
     .unwrap();
     assert_eq!(fields.callbacks, vec!["langfuse"]);
-    assert!(fields.callback_vars.is_empty());
+    assert_eq!(fields.callback_vars, CallbackSecrets::default());
 }
 
 #[test]
@@ -317,10 +380,11 @@ fn accepts_callback_var_values_the_request_would_check() {
         "callback_vars": { "langfuse_host": "os.environ/LANGFUSE_HOST" },
     }))
     .unwrap();
-    assert_eq!(
-        fields.callback_vars["langfuse_host"],
-        "os.environ/LANGFUSE_HOST"
-    );
+    let expected = BTreeMap::from([(
+        "langfuse_host".to_owned(),
+        "os.environ/LANGFUSE_HOST".to_owned(),
+    )]);
+    assert_eq!(fields.callback_vars, CallbackSecrets::from(expected));
 }
 
 #[test]

@@ -3,9 +3,11 @@ use std::collections::BTreeMap;
 use betterlite_logging::logging_privacy::callbacks::{SpanScope, validate_environment};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use super::{MemberContractError, field, json_object, missing_field};
+use crate::key_fields::values::ExposedSecret;
 
 pub const CALLBACK_VARIABLE_NAMES: [&str; 34] = [
     "arize_api_key",
@@ -59,11 +61,44 @@ pub enum CallbackType {
     SuccessAndFailure,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct CallbackSecrets(
+    #[serde(
+        serialize_with = "serde_with::As::<BTreeMap<serde_with::Same, serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
+    BTreeMap<String, SecretString>,
+);
+
+impl PartialEq for CallbackSecrets {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self
+                .0
+                .iter()
+                .zip(&other.0)
+                .all(|((name, secret), (other_name, other_secret))| {
+                    name == other_name && secret.expose_secret() == other_secret.expose_secret()
+                })
+    }
+}
+
+impl Eq for CallbackSecrets {}
+
+impl From<BTreeMap<String, String>> for CallbackSecrets {
+    fn from(vars: BTreeMap<String, String>) -> Self {
+        let secrets = vars
+            .into_iter()
+            .map(|(name, value)| (name, SecretString::from(value)));
+        Self(secrets.collect())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AddTeamCallback {
     pub callback_name: String,
     pub callback_type: Option<CallbackType>,
-    pub callback_vars: BTreeMap<String, String>,
+    pub callback_vars: CallbackSecrets,
 }
 
 impl AddTeamCallback {
@@ -106,7 +141,7 @@ pub struct TeamCallbackMetadata {
     pub success_callback: Vec<String>,
     pub failure_callback: Vec<String>,
     pub callbacks: Vec<String>,
-    pub callback_vars: BTreeMap<String, String>,
+    pub callback_vars: CallbackSecrets,
 }
 
 impl TeamCallbackMetadata {
@@ -140,8 +175,7 @@ fn metadata(fields: &IndexMap<String, Json>) -> Result<TeamCallbackMetadata, Mem
     let success_callback: Option<Vec<String>> = field(fields, "success_callback", Json::Null)?;
     let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", Json::Null)?;
     let callbacks: Option<Vec<String>> = field(fields, "callbacks", Json::Null)?;
-    let decoded_vars: Option<BTreeMap<String, String>> =
-        field(fields, "callback_vars", Json::Null)?;
+    let decoded_vars: Option<CallbackSecrets> = field(fields, "callback_vars", Json::Null)?;
     Ok(TeamCallbackMetadata {
         success_callback: success_callback.unwrap_or_default(),
         failure_callback: failure_callback.unwrap_or_default(),
