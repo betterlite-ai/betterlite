@@ -668,6 +668,12 @@ fn search_where_and_list_rows() {
     .expect("a row with a key count");
     assert_eq!(keyed.users[0].key_count, 3);
     assert!(serde_json::from_str::<UserListResponse>(r#"{"users": []}"#).is_err());
+    assert!(
+        serde_json::from_str::<UserListResponse>(
+            r#"{"users": [], "total": 9223372036854775808, "page": 1, "page_size": 25, "total_pages": 1}"#
+        )
+        .is_err()
+    );
     let row_value: LiteLLMUserTable = serde_json::from_str(r#"{"user_id": "u", "key_count": 1}"#)
         .expect("a row ignores key_count");
     assert_eq!(row_value.user_id, "u");
