@@ -10,7 +10,7 @@ async fn an_absent_lock_manager_allows_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -36,7 +36,7 @@ async fn an_absent_cache_allows_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -64,7 +64,7 @@ async fn a_held_lock_publishes_then_suppresses_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -106,7 +106,7 @@ async fn a_vanished_lock_after_a_failed_acquisition_allows_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -139,7 +139,7 @@ async fn an_unreadable_lock_after_a_failed_acquisition_allows_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -167,7 +167,7 @@ async fn a_reentrant_owner_allows_the_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -198,7 +198,7 @@ async fn a_healthy_scheduled_check_does_not_claim_the_window() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "95")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));

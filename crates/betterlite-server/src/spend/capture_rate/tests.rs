@@ -5,6 +5,7 @@ use std::future::{Future, ready};
 use std::mem::take;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use betterlite_db::queues::pod_lock::owner::PodId;
@@ -83,11 +84,11 @@ fn empty_page() -> String {
     r#"{"data":[],"has_more":false}"#.to_owned()
 }
 
-fn ok_page(body: String) -> Result<BillingHttpResponse, BillingTransportError> {
-    Ok(BillingHttpResponse {
+fn ok_page(body: String) -> BillingHttpResponse {
+    BillingHttpResponse {
         status: 200,
         body: body.into_bytes(),
-    })
+    }
 }
 
 #[derive(Default)]
@@ -366,14 +367,17 @@ impl LockCache for FakeLeaseCache {
                 operation: "set_owner_if_absent",
             }));
         }
-        let mut lease = self.lease.lock().unwrap();
-        match &*lease {
-            Lease::Missing => {
-                *lease = Lease::Held(owner.to_owned());
-                ready(Ok(true))
+        let acquired = {
+            let mut lease = self.lease.lock().unwrap();
+            match &*lease {
+                Lease::Missing => {
+                    *lease = Lease::Held(owner.to_owned());
+                    true
+                }
+                Lease::Held(_) => false,
             }
-            Lease::Held(_) => ready(Ok(false)),
-        }
+        };
+        ready(Ok(acquired))
     }
 
     fn delete(&self, _key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
@@ -409,8 +413,8 @@ impl AzureOidcTokens for NoPorts {
 }
 
 impl OidcClock for NoPorts {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 
     fn unix_seconds(&self) -> i64 {

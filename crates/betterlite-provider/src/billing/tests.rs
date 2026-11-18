@@ -116,11 +116,11 @@ fn page(buckets: Vec<BucketFixture>, has_more: bool, next_page: Option<&str>) ->
     .unwrap()
 }
 
-fn ok(body: String) -> Result<BillingHttpResponse, BillingTransportError> {
-    Ok(BillingHttpResponse {
+fn ok(body: String) -> BillingHttpResponse {
+    BillingHttpResponse {
         status: 200,
         body: body.into_bytes(),
-    })
+    }
 }
 
 fn key() -> SecretString {
@@ -194,7 +194,7 @@ async fn aggregates_buckets_by_utc_day_across_pages() {
         false,
         None,
     );
-    let http = FakeHttpGet::with(vec![ok(first), ok(second)]);
+    let http = FakeHttpGet::with(vec![Ok(ok(first)), Ok(ok(second))]);
     let days = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-12"),
@@ -212,7 +212,7 @@ async fn aggregates_buckets_by_utc_day_across_pages() {
 
 #[tokio::test]
 async fn queries_the_fixed_window_and_repeats_project_ids() {
-    let http = FakeHttpGet::with(vec![ok(page(Vec::new(), false, None))]);
+    let http = FakeHttpGet::with(vec![Ok(ok(page(Vec::new(), false, None)))]);
     let projects = vec!["proj_a".to_owned(), "proj_b".to_owned()];
     let days = fetch_openai_daily_costs(
         date("2026-11-10"),
@@ -247,7 +247,7 @@ async fn queries_the_fixed_window_and_repeats_project_ids() {
 
 #[tokio::test]
 async fn omits_project_ids_when_none_are_configured() {
-    let http = FakeHttpGet::with(vec![ok(page(Vec::new(), false, None))]);
+    let http = FakeHttpGet::with(vec![Ok(ok(page(Vec::new(), false, None)))]);
     fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-12"),
@@ -271,7 +271,7 @@ async fn omits_project_ids_when_none_are_configured() {
 async fn appends_the_page_cursor_after_the_window() {
     let first = page(vec![bucket("2026-11-10", &["1"])], true, Some("cursor-1"));
     let second = page(vec![bucket("2026-11-11", &["2"])], false, None);
-    let http = FakeHttpGet::with(vec![ok(first), ok(second)]);
+    let http = FakeHttpGet::with(vec![Ok(ok(first)), Ok(ok(second))]);
     fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-12"),
@@ -293,7 +293,7 @@ async fn appends_the_page_cursor_after_the_window() {
 #[tokio::test]
 async fn stops_when_has_more_is_false_even_with_a_cursor() {
     let single = page(vec![bucket("2026-11-10", &["1"])], false, Some("ignored"));
-    let http = FakeHttpGet::with(vec![ok(single)]);
+    let http = FakeHttpGet::with(vec![Ok(ok(single))]);
     let days = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),
@@ -310,7 +310,7 @@ async fn stops_when_has_more_is_false_even_with_a_cursor() {
 #[tokio::test]
 async fn stops_when_has_more_has_no_cursor() {
     let single = page(vec![bucket("2026-11-10", &["1"])], true, None);
-    let http = FakeHttpGet::with(vec![ok(single)]);
+    let http = FakeHttpGet::with(vec![Ok(ok(single))]);
     fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),
@@ -327,7 +327,7 @@ async fn stops_when_has_more_has_no_cursor() {
 async fn rejects_a_repeated_pagination_cursor() {
     let first = page(vec![bucket("2026-11-10", &["1"])], true, Some("same"));
     let second = page(vec![bucket("2026-11-10", &["1"])], true, Some("same"));
-    let http = FakeHttpGet::with(vec![ok(first), ok(second)]);
+    let http = FakeHttpGet::with(vec![Ok(ok(first)), Ok(ok(second))]);
     let error = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),
@@ -366,7 +366,7 @@ async fn reports_a_network_failure_without_the_admin_key() {
 
 #[tokio::test]
 async fn reports_a_non_200_status_with_the_first_300_characters() {
-    let body = "é".repeat(301);
+    let body = "\u{e9}".repeat(301);
     let http = FakeHttpGet::with(vec![Ok(BillingHttpResponse {
         status: 500,
         body: body.into_bytes(),
@@ -385,7 +385,7 @@ async fn reports_a_non_200_status_with_the_first_300_characters() {
     };
     assert_eq!(status, 500);
     assert_eq!(detail.chars().count(), 300);
-    assert!(detail.chars().all(|character| character == 'é'));
+    assert!(detail.chars().all(|character| character == '\u{e9}'));
 }
 
 #[tokio::test]
@@ -429,7 +429,7 @@ async fn rejects_a_non_utf8_error_body() {
 
 #[tokio::test]
 async fn rejects_a_malformed_success_body() {
-    let http = FakeHttpGet::with(vec![ok("{".to_owned())]);
+    let http = FakeHttpGet::with(vec![Ok(ok("{".to_owned()))]);
     let error = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),
@@ -460,14 +460,14 @@ async fn rejects_a_window_past_the_calendar_before_any_request() {
 
 #[tokio::test]
 async fn rejects_a_bucket_outside_the_calendar() {
-    let http = FakeHttpGet::with(vec![ok(page(
+    let http = FakeHttpGet::with(vec![Ok(ok(page(
         vec![BucketFixture {
             start_time: i64::MAX,
             results: Vec::new(),
         }],
         false,
         None,
-    ))]);
+    )))]);
     let error = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),
@@ -486,14 +486,14 @@ async fn rejects_a_bucket_outside_the_calendar() {
 #[tokio::test]
 async fn rejects_an_overflowing_day_total() {
     let maximum = "79228162514264337593543950335";
-    let http = FakeHttpGet::with(vec![ok(page(
+    let http = FakeHttpGet::with(vec![Ok(ok(page(
         vec![
             bucket("2026-11-10", &[maximum]),
             bucket("2026-11-10", &[maximum]),
         ],
         false,
         None,
-    ))]);
+    )))]);
     let error = fetch_openai_daily_costs(
         date("2026-11-10"),
         date("2026-11-10"),

@@ -4,7 +4,7 @@ use betterlite_models::capture_rate::alert::alert_message;
 use betterlite_models::capture_rate::compute::{CaptureRateRequest, compute_capture_rate};
 use betterlite_models::capture_rate::report::{CaptureRateReport, CheckResult};
 use betterlite_models::capture_rate::settings::SpendCaptureProvider;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -68,9 +68,9 @@ fn report(case: &ReportCase) -> Result<CaptureRateReport, Box<HelperError>> {
 
 fn answer(case: &Case) -> Result<serde_json::Value, Box<HelperError>> {
     match case {
-        Case::Report(case) => Ok(serde_json::json!({"report": report(case)?})),
-        Case::AlertReport(case) => Ok(serde_json::json!({
-            "alert": alert_message(&CheckResult::Report(report(case)?)),
+        Case::Report(report_case) => Ok(serde_json::json!({"report": report(report_case)?})),
+        Case::AlertReport(report_case) => Ok(serde_json::json!({
+            "alert": alert_message(&CheckResult::Report(report(report_case)?)),
         })),
         Case::AlertCredentialMissing { provider, env_var } => {
             let missing = CheckResult::CredentialMissing {

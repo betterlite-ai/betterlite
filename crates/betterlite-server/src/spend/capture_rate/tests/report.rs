@@ -117,7 +117,7 @@ async fn a_report_covers_yesterday_and_the_preceding_lookback_days() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-16", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-16", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-16", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -155,7 +155,7 @@ async fn a_below_threshold_report_alerts_after_the_publication() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-16", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-16", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-16", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -194,7 +194,7 @@ async fn the_billing_request_carries_the_window_and_project_scope() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-16", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-16", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-16", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -234,7 +234,7 @@ async fn a_healthy_report_publishes_its_rate_without_alerting() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "95")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -263,7 +263,7 @@ async fn a_zero_bill_publishes_no_ratio_and_does_not_alert() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(empty_page())]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(empty_page()))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "5")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::new(Arc::clone(&timeline));
@@ -333,8 +333,8 @@ async fn a_later_failure_interrupts_before_any_publication() {
         key: Some(secret()),
     };
     let http = FakeHttpGet::with(vec![
-        ok_page(page("2026-11-17", "100")),
-        ok_page(page("2026-11-17", "100")),
+        Ok(ok_page(page("2026-11-17", "100"))),
+        Ok(ok_page(page("2026-11-17", "100"))),
     ]);
     let unreadable = CapturedSpendError::UnreadableAmount {
         date: "2026-11-17".to_owned(),
@@ -402,7 +402,7 @@ async fn an_alert_failure_propagates_after_the_publication() {
     let credentials = FakeCredentials {
         key: Some(secret()),
     };
-    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-17", "100"))]);
+    let http = FakeHttpGet::with(vec![Ok(ok_page(page("2026-11-17", "100")))]);
     let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-17", "45")]))]);
     let publisher = RecordingPublisher::new(Arc::clone(&timeline));
     let alert = RecordingAlert::failing(Arc::clone(&timeline));
@@ -426,22 +426,22 @@ async fn an_alert_failure_propagates_after_the_publication() {
 async fn reads_the_admin_key_through_the_secret_lookup() {
     let lookup = secret_lookup();
     let present = BTreeMap::from([("OPENAI_ADMIN_KEY".to_owned(), "sk-admin".to_owned())]);
-    let adapter = SecretBillingCredentials {
+    let present_adapter = SecretBillingCredentials {
         lookup: &lookup,
         environment: &present,
     };
-    let key = adapter.admin_key().unwrap().unwrap();
+    let key = present_adapter.admin_key().unwrap().unwrap();
     assert_eq!(key.expose_secret(), "sk-admin");
     let absent = BTreeMap::new();
-    let adapter = SecretBillingCredentials {
+    let absent_adapter = SecretBillingCredentials {
         lookup: &lookup,
         environment: &absent,
     };
-    assert!(adapter.admin_key().unwrap().is_none());
+    assert!(absent_adapter.admin_key().unwrap().is_none());
     let boolean = BTreeMap::from([("OPENAI_ADMIN_KEY".to_owned(), "true".to_owned())]);
-    let adapter = SecretBillingCredentials {
+    let boolean_adapter = SecretBillingCredentials {
         lookup: &lookup,
         environment: &boolean,
     };
-    assert!(adapter.admin_key().unwrap().is_none());
+    assert!(boolean_adapter.admin_key().unwrap().is_none());
 }
