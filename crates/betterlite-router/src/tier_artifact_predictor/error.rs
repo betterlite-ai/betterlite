@@ -31,6 +31,8 @@ pub enum PredictorError {
     },
     #[error("the tier artifact declares statistic {field} twice for tier {tier}")]
     DuplicateStatistic { field: String, tier: &'static str },
+    #[error("the tier artifact must carry exactly one global statistic for each of the four tiers")]
+    MissingGlobalStatistics,
     #[error("tier artifact request type {request_type} is not a known request type")]
     UnknownRequestType { request_type: String },
     #[error("tier artifact field {field} cannot be empty")]

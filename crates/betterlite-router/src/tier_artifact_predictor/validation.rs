@@ -57,6 +57,24 @@ declared_statistic!(GlobalStatistic);
 declared_statistic!(DomainStatistic);
 declared_statistic!(CohortStatistic);
 
+fn parse_statistic<S: DeclaredStatistic>(
+    statistic: &S,
+    field: &str,
+) -> Result<(TierNumber, TierStatistic), PredictorError> {
+    let (tier, successes, observations) = statistic.declared();
+    Ok((
+        TierNumber::declared(tier)?,
+        statistic_of(successes, observations, field)?,
+    ))
+}
+
+fn duplicate_statistic(field: &str, tier: TierNumber) -> PredictorError {
+    PredictorError::DuplicateStatistic {
+        field: field.to_owned(),
+        tier: tier.built_in().name(),
+    }
+}
+
 fn statistics_by_key<S, K, F>(
     statistics: &[S],
     list: &str,
@@ -71,23 +89,23 @@ where
     for (index, statistic) in statistics.iter().enumerate() {
         let field = format!("{list}[{index}]");
         let key = key(statistic, &field)?;
-        let (tier, successes, observations) = statistic.declared();
-        let tier = TierNumber::declared(tier)?;
-        let value = statistic_of(successes, observations, &field)?;
+        let (tier, value) = parse_statistic(statistic, &field)?;
         if by_key.entry(key).or_default().insert(tier, value).is_some() {
-            return Err(PredictorError::DuplicateStatistic {
-                field,
-                tier: tier.built_in().name(),
-            });
+            return Err(duplicate_statistic(&field, tier));
         }
     }
     Ok(by_key)
 }
 
 fn global_statistics(statistics: &[GlobalStatistic]) -> Result<GlobalStatistics, PredictorError> {
-    let mut by_tier = statistics_by_key(statistics, "global_statistics", |statistic, _field| {
-        Ok(TierNumber::declared(statistic.tier)?)
-    })?;
+    let mut by_tier: BTreeMap<TierNumber, TierStatistic> = BTreeMap::new();
+    for (index, statistic) in statistics.iter().enumerate() {
+        let field = format!("global_statistics[{index}]");
+        let (tier, value) = parse_statistic(statistic, &field)?;
+        if by_tier.insert(tier, value).is_some() {
+            return Err(duplicate_statistic(&field, tier));
+        }
+    }
     match (
         by_tier.remove(&TierNumber::One),
         by_tier.remove(&TierNumber::Two),
