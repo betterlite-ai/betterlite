@@ -113,11 +113,10 @@ def optional_row(value: Deployment | None) -> dict[str, JsonValue] | None:
     return row_view(VIEW.validate_json(value.model_dump_json()))
 
 
-def listing_rows(rows: object) -> list[JsonValue]:
-    listed = LISTING.validate_python(rows)
-    if listed is None:
+def listing_rows(rows: list[DeploymentView] | None) -> list[JsonValue]:
+    if rows is None:
         return []
-    return [row_view(view) for view in listed]
+    return [row_view(view) for view in rows]
 
 
 def lookup_answer(router: Router, call: Input) -> JsonValue:
@@ -161,14 +160,10 @@ def listing_answer(router: Router, call: Input) -> JsonValue:
             names.extend(router.get_model_names(arguments.get("team_id")))
             return names
         case "get_model_list":
-            listed: object = router.get_model_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
-                arguments.get("model_name"), arguments.get("team_id")
-            )
+            listed = LISTING.validate_python(router.get_model_list(arguments.get("model_name"), arguments.get("team_id")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
             return listing_rows(listed)
         case "get_model_list_from_model_alias":
-            aliased: object = router.get_model_list_from_model_alias(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
-                arguments.get("model_name")
-            )
+            aliased = LISTING.validate_python(router.get_model_list_from_model_alias(arguments.get("model_name")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
             return listing_rows(aliased)
         case "should_include_deployment":
             index = arguments.get("deployment_index")
