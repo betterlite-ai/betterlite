@@ -1,0 +1,20 @@
+kind: helper
+name: model-alerts-model-added-cost-formatting
+call:
+  b4030:
+    function: model_added
+    model_name: my-model
+    litellm_model_name: litellm_name
+    base_model: null
+    model_info:
+      litellm_name:
+        input_cost_per_token: 0.000002
+        output_cost_per_token: 2.5e-07
+        max_input_tokens: 128000
+        supports_function_calling: true
+        supports_vision: false
+        sample_rate: 0.5
+        deprecation_date: null
+    proxy_base_url: null
+env: {}
+compare: {ignore: []}
