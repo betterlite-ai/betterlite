@@ -1,0 +1,105 @@
+id: B9995
+title: A semantic guard post-call passthrough keeps the blocked response
+description: >-
+  Fix a LiteLLM bug B8214 (https://github.com/betterlite-ai/betterlite/pull/2408) copied into the semantic guard. The
+  review found it and the architect decided to fix it, but the PR was already in the merge queue.
+
+
+  The bug. SemanticGuard::match_failure in crates/betterlite-guardrails/src/semantic_guard_hook.rs builds a passthrough
+  failure with self.base.passthrough_failure(&message, data, Some(info), None), on the pre-call and the post-call path
+  alike. On the post-call path the blocked response is known, but it is dropped, so the synthetic passthrough reply
+  carries no usage and the client sees zero tokens for a call that consumed them. LiteLLM's semantic guard does the
+  same: _handle_match calls guardrail.raise_passthrough_exception without original_response (semantic_guard.py
+  L149-L155 and L235-L240). LiteLLM's own raise_passthrough_exception takes original_response for exactly this case;
+  its docstring says the blocked response "carries the real token usage the upstream call consumed"
+  (custom_guardrail.py L298-L340). Lost usage is lost data no working setup relies on, so rule
+  owned-behavior-is-built fixes it.
+
+
+  Rust change in semantic_guard_hook.rs. check and match_failure each take one more argument, original_response:
+  Option<&GuardrailValue>. async_pre_call_hook passes None. async_post_call_success_hook passes Some(&response), and
+  match_failure hands passthrough_failure original_response.cloned(). The non-passthrough path (violation_detail) and
+  everything else stay as they are.
+
+
+  Tests. In crates/betterlite-guardrails/src/semantic_guard_hook/tests/post_call.rs, replace
+  a_passthrough_post_call_match_has_no_original_response with a_passthrough_post_call_match_carries_the_original_response:
+  the same setup, and failure.original_response equals Some(reply) for the reply passed to the hook. Clone the reply
+  before the call. The pre-call test a_passthrough_match_raises_the_modify_response in tests/pre_call.rs keeps
+  asserting None.
+
+
+  Deviation. Add docs/deviations/B9995.yaml with task: B9995 and one row under deviations, with what, why and link as
+  given in this task's deviations list.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/semantic_guard_hook.rs
+  - crates/betterlite-guardrails/src/semantic_guard_hook/tests/post_call.rs
+  - docs/deviations/B9995.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L149-L155
+  why: The post-call hook calls _handle_match with the response text but not the response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L235-L240
+  why: _handle_match raises the passthrough exception with no original_response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L298-L340
+  why: raise_passthrough_exception takes original_response so the synthetic reply keeps the upstream usage.
+- url: https://github.com/betterlite-ai/betterlite/blob/d9783f78bc/crates/betterlite-guardrails/src/semantic_guard_hook.rs#L185-L193
+  why: match_failure passes None as the original response on every path.
+dod:
+- text: >-
+    A post-call passthrough match raises a ModifyResponse failure whose original_response is the response the hook
+    was given.
+  proof: [post-call-original]
+- text: >-
+    A pre-call passthrough match still carries no original response, and the other semantic guard tests pass.
+  proof: [semantic-guard-tests]
+- text: >-
+    The semantic guard helper cases still match LiteLLM.
+  proof: [oracle-guardrails]
+- text: >-
+    docs/deviations/B9995.yaml records the fix with its pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: post-call-original
+    why: The post-call passthrough still drops the blocked response, or the old test that asserts None is still there.
+    run: >-
+      ! grep -q 'a_passthrough_post_call_match_has_no_original_response' crates/betterlite-guardrails/src/semantic_guard_hook/tests/post_call.rs
+      && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^semantic_guard_hook::tests::post_call::a_passthrough_post_call_match_carries_the_original_response$/)'
+  - id: semantic-guard-tests
+    why: The change gave the pre-call path a response or broke another semantic guard case.
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_hook::/)'
+  - id: oracle-guardrails
+    why: The change altered a semantic guard outcome where LiteLLM and betterlite agreed.
+    run: >-
+      cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: deviation-row
+    why: The deviation row or its pinned link is missing.
+    run: >-
+      grep -q -F 'semantic_guard.py#L149-L155' docs/deviations/B9995.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A semantic guard match on the post-call path with on_flagged_action passthrough carries the blocked response into
+    the passthrough failure, so the synthetic reply keeps the upstream token usage. The pre-call path has no response
+    and carries none, as before.
+  why: >-
+    LiteLLM's semantic guard raises the passthrough exception without original_response, so the reply reports zero
+    usage for a call that consumed tokens. That is lost data no working setup relies on, and LiteLLM's
+    raise_passthrough_exception exists to carry it.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L149-L155
+out_of_scope:
+- Other guardrails that pass None as the original response, such as block_code_execution's error_handling.rs; each owner checks its own LiteLLM source.
+pitfalls:
+- 'Clone the response only for the passthrough failure. The hook still returns the response it was given when nothing matches.'
+- 'Do not add a second constructor for the failure. passthrough_failure in guardrail_base.rs already takes original_response.'
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0
