@@ -9,7 +9,6 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
-use betterlite_openai::stream::chunk::Function;
 use betterlite_tokenizer::engine::error::EngineError;
 use bytes::BytesMut;
 use serde_json::{Value, json};
@@ -160,12 +159,18 @@ fn chunk_view(chunk: &SagemakerChunk) -> Value {
                 "content": choice.delta.content,
                 "role": choice.delta.role,
                 "refusal": choice.delta.refusal,
-                "function_call": choice.delta.function_call.as_ref().map(function_view),
+                "function_call": choice.delta.function_call.as_ref().map(|function| json!({
+                    "name": function.name,
+                    "arguments": function.arguments,
+                })),
                 "tool_calls": choice.delta.tool_calls.as_ref().map(|calls| calls.iter().map(|call| json!({
                     "index": call.index,
                     "id": call.id,
                     "type": call.kind,
-                    "function": call.function.as_ref().map(function_view),
+                    "function": call.function.as_ref().map(|function| json!({
+                        "name": function.name,
+                        "arguments": function.arguments,
+                    })),
                 })).collect::<Vec<_>>()),
                 "logprobs": choice.logprobs.as_ref().map(|logprobs| json!({
                     "content": logprobs.content,
@@ -182,10 +187,6 @@ fn chunk_view(chunk: &SagemakerChunk) -> Value {
             "index": token.index,
         }),
     }
-}
-
-fn function_view(function: &Function) -> Value {
-    json!({ "name": function.name, "arguments": function.arguments })
 }
 
 // LiteLLM's usage path encodes every input text; the helper counts characters like a tokenizer of one id each
