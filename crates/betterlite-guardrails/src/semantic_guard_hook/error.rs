@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::Display;
 
 use thiserror::Error;
 
@@ -8,7 +7,6 @@ use crate::guardrail_base::error::GuardrailBaseError;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_records::error::GuardrailRecordError;
 use crate::semantic_guard::semantic_guard_route_loading::builder::RouterBuildError;
-use crate::semantic_guard::semantic_guard_route_loading::error::RouteLoadError;
 
 pub const NO_ROUTES_MESSAGE: &str =
     "SemanticGuardrail: no routes configured. Provide route_templates or custom_routes.";
@@ -24,14 +22,15 @@ where
     #[error(transparent)]
     Base(#[from] GuardrailBaseError),
     #[error(transparent)]
-    Load(#[from] RouteLoadError),
-    #[error(transparent)]
     Build(#[from] RouterBuildError<E>),
 }
 
-// the hook raises these out of the request, so they answer as an internal error
+// the hook raises these out of the request as an internal error, each cause kept as its source
 #[derive(Debug, Error)]
-pub enum SemanticGuardHookError {
+pub enum SemanticGuardHookError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
     #[error("the semantic guardrail request messages could not be read: {source}")]
     Messages {
         #[source]
@@ -42,24 +41,21 @@ pub enum SemanticGuardHookError {
         #[source]
         source: TextExtractionError,
     },
+    #[error("the semantic guardrail text could not be scored: {source}")]
+    Scoring {
+        #[source]
+        source: E,
+    },
 }
 
-impl From<SemanticGuardHookError> for GuardrailFailure {
-    fn from(error: SemanticGuardHookError) -> Self {
+impl<E> From<SemanticGuardHookError<E>> for GuardrailFailure
+where
+    E: Error + Send + Sync + 'static,
+{
+    fn from(error: SemanticGuardHookError<E>) -> Self {
         Self::Http {
             status: INTERNAL_STATUS,
             detail: error.to_string(),
         }
-    }
-}
-
-// the router's error type belongs to the builder, so the scoring failure is built where it is raised
-pub fn scoring_failure<E>(source: &E) -> GuardrailFailure
-where
-    E: Display + ?Sized,
-{
-    GuardrailFailure::Http {
-        status: INTERNAL_STATUS,
-        detail: format!("the semantic guardrail text could not be scored: {source}"),
     }
 }

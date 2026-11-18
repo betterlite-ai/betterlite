@@ -13,7 +13,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_context::local_ttl_cache::dual::DualLocalCache;
 use indexmap::IndexMap;
 
-use self::error::{SemanticGuardHookError, SemanticGuardSetupError, scoring_failure};
+use self::error::{SemanticGuardHookError, SemanticGuardSetupError};
 use self::init::SemanticGuardArgs;
 use self::scoring::SemanticRouteScorer;
 use crate::guardrail_base::GuardrailBase;
@@ -24,6 +24,8 @@ use crate::semantic_guard::semantic_guard_route_loading::build_routes;
 use crate::semantic_guard::semantic_guard_route_loading::builder::{
     SemanticRouterBuilder, build_router,
 };
+use crate::semantic_guard::semantic_guard_route_loading::error::RouteLoadError;
+use crate::semantic_guard::semantic_guard_route_loading::route::Route;
 use crate::semantic_guard::semantic_guard_route_loading::sources::RouteSources;
 
 pub const GUARDRAIL_PROVIDER: &str = "semantic_guard";
@@ -51,12 +53,23 @@ pub struct SemanticGuardrail<R> {
     pub route_count: usize,
 }
 
+// the loader reads template and YAML files, so it runs before the async router build
+pub fn load_routes(args: &SemanticGuardArgs) -> Result<Vec<Route>, RouteLoadError> {
+    build_routes(&RouteSources {
+        route_templates: args.route_templates.clone(),
+        custom_routes_file: args.custom_routes_file.clone(),
+        custom_routes: args.custom_routes.clone(),
+        global_threshold: args.similarity_threshold,
+    })
+}
+
 impl<R> SemanticGuardrail<R>
 where
     R: SemanticRouteScorer,
 {
     pub async fn new<B>(
         args: SemanticGuardArgs,
+        routes: Vec<Route>,
         builder: &B,
         strict_modes: bool,
     ) -> Result<Self, SemanticGuardSetupError<B::Error>>
@@ -64,13 +77,6 @@ where
         B: SemanticRouterBuilder<Router = R>,
     {
         let base = GuardrailBase::new(guardrail_settings(&args), strict_modes)?;
-        let sources = RouteSources {
-            route_templates: args.route_templates,
-            custom_routes_file: args.custom_routes_file,
-            custom_routes: args.custom_routes,
-            global_threshold: args.similarity_threshold,
-        };
-        let routes = build_routes(&sources)?;
         if routes.is_empty() {
             return Err(SemanticGuardSetupError::NoRoutes);
         }
@@ -99,17 +105,16 @@ where
         call_type: &str,
         tool_cache: &DualLocalCache,
     ) -> Result<(), GuardrailFailure> {
-        let Some(messages) = messages_for_call_type(call_type, Some(data), tool_cache)
-            .map_err(|source| SemanticGuardHookError::Messages { source })?
-        else {
+        let Some(text) = self.request_text(call_type, data, tool_cache)? else {
             return Ok(());
         };
-        let text =
-            text::user_text(&messages).map_err(|source| SemanticGuardHookError::Text { source })?;
         if text.is_empty() {
             return Ok(());
         }
-        self.check(&text, data).await
+        match self.check(&text, data).await? {
+            Some(failure) => Err(failure),
+            None => Ok(()),
+        }
     }
 
     pub async fn async_post_call_success_hook(
@@ -121,27 +126,50 @@ where
         if text.is_empty() {
             return Ok(response);
         }
-        self.check(&text, data).await?;
-        Ok(response)
+        match self.check(&text, data).await? {
+            Some(failure) => Err(failure),
+            None => Ok(response),
+        }
+    }
+
+    fn request_text(
+        &self,
+        call_type: &str,
+        data: &BTreeMap<String, GuardrailValue>,
+        tool_cache: &DualLocalCache,
+    ) -> Result<Option<String>, SemanticGuardHookError<R::Error>> {
+        let Some(messages) = messages_for_call_type(call_type, Some(data), tool_cache)
+            .map_err(|source| SemanticGuardHookError::<R::Error>::Messages { source })?
+        else {
+            return Ok(None);
+        };
+        let text =
+            text::user_text(&messages)
+                .map_err(|source| SemanticGuardHookError::<R::Error>::Text { source })?;
+        Ok(Some(text))
     }
 
     async fn check(
         &self,
         text: &str,
         data: &BTreeMap<String, GuardrailValue>,
-    ) -> Result<(), GuardrailFailure> {
+    ) -> Result<Option<GuardrailFailure>, SemanticGuardHookError<R::Error>> {
         let choices = self
             .router
             .score(text)
             .await
-            .map_err(|source| scoring_failure(&source))?;
+            .map_err(|source| SemanticGuardHookError::<R::Error>::Scoring { source })?;
         let Some(choice) = choices.first() else {
-            return Ok(());
+            return Ok(None);
         };
         let Some(route) = choice.name.as_deref().filter(|name| !name.is_empty()) else {
-            return Ok(());
+            return Ok(None);
         };
-        Err(self.match_failure(route, choice.similarity_score, data))
+        Ok(Some(self.match_failure(
+            route,
+            choice.similarity_score,
+            data,
+        )))
     }
 
     fn match_failure(

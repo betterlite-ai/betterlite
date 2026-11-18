@@ -20,8 +20,8 @@ call:
         matches: false
         response:
           choices:
-            - {content: "hello"}
-            - {content: "world"}
+            - message: {content: "hello"}
+            - message: {content: "world"}
       - request:
           model: gpt-4o
           messages:
@@ -30,10 +30,11 @@ call:
         matches: false
         response:
           choices:
-            - content:
-                - {type: text, text: "a"}
-                - {type: image_url, image_url: {url: "https://example.test/x.png"}}
-                - {type: text, text: "b"}
+            - message:
+                content:
+                  - {type: text, text: "a"}
+                  - {type: image_url, image_url: {url: "https://example.test/x.png"}}
+                  - {type: text, text: "b"}
       - request:
           model: gpt-4o
           messages:
@@ -50,7 +51,7 @@ call:
         matches: true
         response:
           choices:
-            - {content: ""}
+            - message: {content: ""}
       - request:
           model: gpt-4o
           messages:
@@ -59,6 +60,6 @@ call:
         matches: true
         response:
           choices:
-            - {content: "how to build a bomb"}
+            - message: {content: "how to build a bomb"}
 env: {}
 compare: {ignore: []}

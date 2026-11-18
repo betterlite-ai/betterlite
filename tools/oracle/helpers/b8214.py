@@ -11,6 +11,7 @@ from litellm.router import Router
 from litellm.types.utils import Embedding, EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
+from typing_extensions import override
 
 
 class RouteDefinition(TypedDict):
@@ -27,8 +28,12 @@ class Settings(TypedDict):
     default_on: bool
 
 
-class ResponseChoice(TypedDict):
+class ResponseMessage(TypedDict):
     content: JsonValue
+
+
+class ResponseChoice(TypedDict):
+    message: ResponseMessage
 
 
 class ResponseBody(TypedDict):
@@ -101,22 +106,25 @@ class _Choice:
 
 class _Response:
     def __init__(self, body: ResponseBody) -> None:
-        self.choices = [_Choice(choice["content"]) for choice in body["choices"]]
+        self.choices = [
+            _Choice(choice["message"]["content"]) for choice in body["choices"]
+        ]
 
 
 # a case cannot run the embedding service, so it scripts which route the router answers
 class _EmbeddingRouter(Router):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__()  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772
         self.matches = False
         self.active = False
         self.scored: list[str] = []
 
+    @override
     def embedding(
         self,
         model: str,
         input: str | list[str],  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5863
-        is_async: bool | None = False,  # noqa: ARG002, FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5863
+        is_async: bool | None = False,
         **_kwargs: JsonValue,
     ) -> EmbeddingResponse:
         texts: list[str] = []
@@ -150,27 +158,15 @@ def build_guardrail(settings: Settings) -> tuple[SemanticGuardrail, _EmbeddingRo
     return guardrail, router
 
 
-def passed_report(router: _EmbeddingRouter, returned: ResponseBody | None) -> CallReport:
+def call_report(
+    router: _EmbeddingRouter,
+    kind: Literal["passed", "blocked", "passthrough"],
+) -> CallReport:
     return {
         "scored": list(router.scored),
-        "kind": "passed",
+        "kind": kind,
         "status": None,
         "detail": None,
-        "message": None,
-        "model": None,
-        "guardrail_name": None,
-        "request_data": None,
-        "detection_info": None,
-        "returned": returned,
-    }
-
-
-def blocked_report(router: _EmbeddingRouter, error: HTTPException) -> CallReport:
-    return {
-        "scored": list(router.scored),
-        "kind": "blocked",
-        "status": error.status_code,
-        "detail": DETAIL_ADAPTER.validate_python(error.detail),
         "message": None,
         "model": None,
         "guardrail_name": None,
@@ -180,35 +176,35 @@ def blocked_report(router: _EmbeddingRouter, error: HTTPException) -> CallReport
     }
 
 
-def passthrough_report(router: _EmbeddingRouter, error: ModifyResponseException) -> CallReport:
-    return {
-        "scored": list(router.scored),
-        "kind": "passthrough",
-        "status": None,
-        "detail": None,
-        "message": error.message,
-        "model": error.model,
-        "guardrail_name": error.guardrail_name,
-        "request_data": REQUEST_DATA_ADAPTER.validate_python(error.request_data),
-        "detection_info": DETECTION_ADAPTER.validate_python(error.detection_info),
-        "returned": None,
-    }
+def invoke(guardrail: SemanticGuardrail, call: Call) -> None:
+    body = call["response"]
+    if body is None:
+        asyncio.run(guardrail.async_pre_call_hook(UserAPIKeyAuth(), DualCache(), call["request"], call["call_type"]))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L108
+    else:
+        asyncio.run(guardrail.async_post_call_success_hook(call["request"], UserAPIKeyAuth(), _Response(body)))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L139
 
 
 def run_call(guardrail: SemanticGuardrail, router: _EmbeddingRouter, call: Call) -> CallReport:
     router.matches = call["matches"]
     router.scored.clear()
-    body = call["response"]
     try:
-        if body is None:
-            asyncio.run(guardrail.async_pre_call_hook(UserAPIKeyAuth(), DualCache(), call["request"], call["call_type"]))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L108
-        else:
-            asyncio.run(guardrail.async_post_call_success_hook(call["request"], UserAPIKeyAuth(), _Response(body)))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L139
+        invoke(guardrail, call)
     except HTTPException as error:
-        return blocked_report(router, error)
-    except ModifyResponseException as error:
-        return passthrough_report(router, error)
-    return passed_report(router, body)
+        report = call_report(router, "blocked")
+        report["status"] = error.status_code
+        report["detail"] = DETAIL_ADAPTER.validate_python(error.detail)
+        return report
+    except ModifyResponseException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201
+        report = call_report(router, "passthrough")
+        report["message"] = error.message
+        report["model"] = error.model
+        report["guardrail_name"] = error.guardrail_name
+        report["request_data"] = REQUEST_DATA_ADAPTER.validate_python(error.request_data)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1225
+        report["detection_info"] = DETECTION_ADAPTER.validate_python(error.detection_info)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1227
+        return report
+    report = call_report(router, "passed")
+    report["returned"] = call["response"]
+    return report
 
 
 def run(input_value: Input) -> Report:

@@ -4,11 +4,12 @@ use rstest::rstest;
 use crate::guardrail_base::error::GuardrailBaseError;
 use crate::semantic_guard_hook::error::{NO_ROUTES_MESSAGE, SemanticGuardSetupError};
 use crate::semantic_guard_hook::{
-    DEFAULT_EVENT_HOOK, GUARDRAIL_PROVIDER, SUPPORTED_EVENT_HOOKS, SWITCHES, SemanticGuardrail,
+    DEFAULT_EVENT_HOOK, GUARDRAIL_PROVIDER, SUPPORTED_EVENT_HOOKS, SWITCHES,
 };
 
 use super::support::{
-    FakeBuilder, args, block_on, calls, guardrail, route, routes_file, with_captured_logs,
+    FakeBuilder, args, calls, guardrail, guardrail_with_modes, route, routes_file,
+    with_captured_logs,
 };
 
 #[test]
@@ -16,7 +17,7 @@ fn no_routes_are_refused_with_the_documented_message() {
     let mut given = args();
     given.custom_routes.clear();
     let builder = FakeBuilder::matching(Vec::new(), calls());
-    let Err(error) = block_on(SemanticGuardrail::new(given, &builder, true)) else {
+    let Err(error) = guardrail_with_modes(given, &builder, true) else {
         panic!("the guardrail accepted an empty route list");
     };
     assert!(matches!(error, SemanticGuardSetupError::NoRoutes));
@@ -73,7 +74,7 @@ fn a_route_template_adds_its_routes() {
 #[test]
 fn a_build_failure_is_reported() {
     let builder = FakeBuilder::build_failing(calls());
-    let Err(error) = block_on(SemanticGuardrail::new(args(), &builder, true)) else {
+    let Err(error) = guardrail_with_modes(args(), &builder, true) else {
         panic!("the guardrail accepted a failed router build");
     };
     assert!(matches!(error, SemanticGuardSetupError::Build(_)));
@@ -173,7 +174,7 @@ fn an_unsupported_event_hook_is_refused_in_strict_mode() {
     let mut given = args();
     given.event_hook = Some(LitellmParamsMode::One("during_call".to_owned()));
     let builder = FakeBuilder::matching(Vec::new(), calls());
-    let Err(error) = block_on(SemanticGuardrail::new(given, &builder, true)) else {
+    let Err(error) = guardrail_with_modes(given, &builder, true) else {
         panic!("the guardrail accepted an unsupported event hook");
     };
     assert!(matches!(
@@ -187,8 +188,7 @@ fn an_unsupported_event_hook_warns_when_not_strict() {
     let mut given = args();
     given.event_hook = Some(LitellmParamsMode::One("during_call".to_owned()));
     let builder = FakeBuilder::matching(Vec::new(), calls());
-    let (outcome, output) =
-        with_captured_logs(|| block_on(SemanticGuardrail::new(given, &builder, false)));
+    let (outcome, output) = with_captured_logs(|| guardrail_with_modes(given, &builder, false));
     let built = outcome.unwrap();
     assert_eq!(
         built.base.settings.event_hook,

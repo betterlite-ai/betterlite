@@ -6,17 +6,19 @@ use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::local_ttl_cache::Settings as CacheSettings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
-use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
+use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::semantic_guard::semantic_guard_route_loading::builder::SemanticRouterBuilder;
 use betterlite_guardrails::semantic_guard::semantic_guard_route_loading::route::Route;
 use betterlite_guardrails::semantic_guard_hook::init::SemanticGuardArgs;
 use betterlite_guardrails::semantic_guard_hook::scoring::{RouteChoice, SemanticRouteScorer};
-use betterlite_guardrails::semantic_guard_hook::{GUARDRAIL_PROVIDER, SemanticGuardrail};
+use betterlite_guardrails::semantic_guard_hook::{
+    GUARDRAIL_PROVIDER, SemanticGuardrail, load_routes,
+};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::sync::Mutex;
@@ -117,17 +119,21 @@ impl Helper for Op {
             matches: Arc::clone(&matches),
             scored: Arc::clone(&scored),
         };
+        let args = guardrail_args(&input.settings);
+        let routes = load_routes(&args).or_value_error()?;
         let built = runtime
-            .block_on(SemanticGuardrail::new(
-                guardrail_args(&input.settings),
-                &builder,
-                true,
-            ))
+            .block_on(SemanticGuardrail::new(args, routes, &builder, true))
             .or_value_error()?;
         let tool_cache = cache()?;
         let mut reports = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
-            reports.push(runtime.block_on(one_call(&built, &matches, &scored, &tool_cache, call)));
+            reports.push(runtime.block_on(one_call(
+                &built,
+                &matches,
+                &scored,
+                &tool_cache,
+                call,
+            ))?);
         }
         case_report(&built, &reports)
     }
@@ -173,7 +179,7 @@ async fn one_call(
     scored: &Mutex<Vec<String>>,
     tool_cache: &DualLocalCache,
     call: &Call,
-) -> Value {
+) -> Result<Value, Box<HelperError>> {
     *matches.lock().await = call.matches;
     scored.lock().await.clear();
     let outcome = match &call.response {
@@ -190,86 +196,69 @@ async fn one_call(
     call_report(&outcome, &texts)
 }
 
+#[derive(Serialize)]
+struct CallReport<'a> {
+    scored: &'a [String],
+    kind: &'a str,
+    status: Option<u16>,
+    detail: Option<&'a IndexMap<String, GuardrailValue>>,
+    message: Option<&'a str>,
+    model: Option<&'a str>,
+    guardrail_name: Option<&'a str>,
+    request_data: Option<&'a BTreeMap<String, GuardrailValue>>,
+    detection_info: Option<&'a BTreeMap<String, GuardrailValue>>,
+    returned: Option<&'a GuardrailValue>,
+}
+
+impl<'a> CallReport<'a> {
+    fn empty(scored: &'a [String], kind: &'a str) -> Self {
+        Self {
+            scored,
+            kind,
+            status: None,
+            detail: None,
+            message: None,
+            model: None,
+            guardrail_name: None,
+            request_data: None,
+            detection_info: None,
+            returned: None,
+        }
+    }
+}
+
 fn call_report(
     outcome: &Result<Option<GuardrailValue>, GuardrailFailure>,
     scored: &[String],
-) -> Value {
-    match outcome {
-        Ok(returned) => passed_report(returned.as_ref(), scored),
-        Err(GuardrailFailure::HttpObject { status, detail }) => {
-            blocked_report(*status, detail, scored)
+) -> Result<Value, Box<HelperError>> {
+    let report = match outcome {
+        Ok(returned) => {
+            let mut report = CallReport::empty(scored, "passed");
+            report.returned = returned.as_ref();
+            report
         }
-        Err(GuardrailFailure::ModifyResponse(failure)) => passthrough_report(failure, scored),
+        Err(GuardrailFailure::HttpObject { status, detail }) => {
+            let mut report = CallReport::empty(scored, "blocked");
+            report.status = Some(*status);
+            report.detail = Some(detail);
+            report
+        }
+        Err(GuardrailFailure::ModifyResponse(failure)) => {
+            let mut report = CallReport::empty(scored, "passthrough");
+            report.message = Some(failure.message.as_str());
+            report.model = Some(failure.model.as_str());
+            report.guardrail_name = failure.guardrail_name.as_deref();
+            report.request_data = Some(&failure.request_data);
+            report.detection_info = Some(&failure.detection_info);
+            report
+        }
         Err(GuardrailFailure::Http { .. })
         | Err(GuardrailFailure::GuardrailRaised { .. })
         | Err(GuardrailFailure::BlockedPii { .. })
         | Err(GuardrailFailure::SensitiveDataRoute(_))
-        | Err(GuardrailFailure::Other(_)) => error_report(scored),
-    }
-}
-
-fn passed_report(returned: Option<&GuardrailValue>, scored: &[String]) -> Value {
-    json!({
-        "scored": scored,
-        "kind": "passed",
-        "status": null,
-        "detail": null,
-        "message": null,
-        "model": null,
-        "guardrail_name": null,
-        "request_data": null,
-        "detection_info": null,
-        "returned": returned,
-    })
-}
-
-fn blocked_report(
-    status: u16,
-    detail: &IndexMap<String, GuardrailValue>,
-    scored: &[String],
-) -> Value {
-    json!({
-        "scored": scored,
-        "kind": "blocked",
-        "status": status,
-        "detail": detail,
-        "message": null,
-        "model": null,
-        "guardrail_name": null,
-        "request_data": null,
-        "detection_info": null,
-        "returned": null,
-    })
-}
-
-fn passthrough_report(failure: &ModifyResponseFailure, scored: &[String]) -> Value {
-    json!({
-        "scored": scored,
-        "kind": "passthrough",
-        "status": null,
-        "detail": null,
-        "message": failure.message,
-        "model": failure.model,
-        "guardrail_name": failure.guardrail_name,
-        "request_data": failure.request_data,
-        "detection_info": failure.detection_info,
-        "returned": null,
-    })
-}
-
-fn error_report(scored: &[String]) -> Value {
-    json!({
-        "scored": scored,
-        "kind": "error",
-        "status": null,
-        "detail": null,
-        "message": null,
-        "model": null,
-        "guardrail_name": null,
-        "request_data": null,
-        "detection_info": null,
-        "returned": null,
-    })
+        | Err(GuardrailFailure::Other(_)) => CallReport::empty(scored, "error"),
+    };
+    Ok(serde_json::to_value(&report)?)
 }
 
 fn cache() -> Result<DualLocalCache, Box<HelperError>> {

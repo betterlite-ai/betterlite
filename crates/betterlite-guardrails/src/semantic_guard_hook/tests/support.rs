@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::fs;
 use std::future::Future;
 use std::io::{self, Write};
@@ -19,9 +20,10 @@ use tracing_subscriber::fmt;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::semantic_guard::semantic_guard_route_loading::builder::SemanticRouterBuilder;
 use crate::semantic_guard::semantic_guard_route_loading::route::Route;
+use crate::semantic_guard_hook::error::SemanticGuardSetupError;
 use crate::semantic_guard_hook::init::SemanticGuardArgs;
 use crate::semantic_guard_hook::scoring::{RouteChoice, SemanticRouteScorer};
-use crate::semantic_guard_hook::{BLOCKED_STATUS, SemanticGuardrail};
+use crate::semantic_guard_hook::{BLOCKED_STATUS, SemanticGuardrail, load_routes};
 
 pub(super) const MESSAGE: &str =
     "Request blocked by semantic guardrail 'semantic-guard'. Matched route: attack";
@@ -171,21 +173,15 @@ impl FakeBuilder {
 
     pub(super) fn build_failing(calls: Arc<Mutex<Vec<String>>>) -> Self {
         Self {
-            choices: Vec::new(),
-            calls,
             build_fails: true,
-            score_fails: false,
-            builder_calls: Mutex::new(Vec::new()),
+            ..Self::matching(Vec::new(), calls)
         }
     }
 
     pub(super) fn score_failing(calls: Arc<Mutex<Vec<String>>>) -> Self {
         Self {
-            choices: Vec::new(),
-            calls,
-            build_fails: false,
             score_fails: true,
-            builder_calls: Mutex::new(Vec::new()),
+            ..Self::matching(Vec::new(), calls)
         }
     }
 }
@@ -239,10 +235,19 @@ pub(super) fn guardrail(
     args: SemanticGuardArgs,
     builder: &FakeBuilder,
 ) -> SemanticGuardrail<FakeRouter> {
-    block_on(SemanticGuardrail::new(args, builder, true)).unwrap()
+    guardrail_with_modes(args, builder, true).unwrap()
 }
 
-pub(super) fn failed(outcome: Result<(), GuardrailFailure>) -> GuardrailFailure {
+pub(super) fn guardrail_with_modes(
+    args: SemanticGuardArgs,
+    builder: &FakeBuilder,
+    strict_modes: bool,
+) -> Result<SemanticGuardrail<FakeRouter>, SemanticGuardSetupError<BuildFailure>> {
+    let routes = load_routes(&args).unwrap();
+    block_on(SemanticGuardrail::new(args, routes, builder, strict_modes))
+}
+
+pub(super) fn failed<T: Debug>(outcome: Result<T, GuardrailFailure>) -> GuardrailFailure {
     outcome.expect_err("the guardrail passed the request")
 }
 
