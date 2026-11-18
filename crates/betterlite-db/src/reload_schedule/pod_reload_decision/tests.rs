@@ -25,7 +25,9 @@ fn at() -> DateTime<Utc> {
 #[case::a_second_before_the_boundary_waits(Some(6), Some(3_600), 4, 21_599, false)]
 #[case::at_the_boundary_the_reload_fires(Some(6), Some(3_600), 4, 21_600, true)]
 #[case::past_the_boundary_the_reload_fires(Some(6), Some(3_600), 4, 25_200, true)]
+#[case::a_zero_interval_fires_immediately(Some(0), Some(3_600), 4, 0, true)]
 #[case::recent_data_waits_after_an_old_shared_run(Some(6), Some(36_000), 4, 3_600, false)]
+#[case::data_stamped_after_the_current_time_waits(Some(6), Some(3_600), 4, -60, false)]
 fn pod_reload_decision_reads_the_revision_interval_and_pod_data(
     #[case] interval_hours: Option<u32>,
     #[case] last_run_seconds_ago: Option<i64>,
