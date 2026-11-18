@@ -5,9 +5,9 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::chat_call::CallStyle;
-use crate::chat_call::EMBEDDING_REPLY;
 use crate::chat_call::error::ChatCallError;
 use crate::chat_call::transport::ClientKind;
+use crate::headers::request::{SKILLS_BETA, TOOL_SEARCH_BETA};
 use crate::response::wire::ResponseEnvelope;
 
 use super::fixture::{API_BASE, CALLER_KEY, FixtureReply, MODEL, Trip, messages, text_body};
@@ -108,6 +108,51 @@ fn messages_post_request() {
     assert_prepared(&synchronous, "sync");
     assert_eq!(synchronous.responses[0].json_mode, Some(true));
     assert!(!synchronous.responses[0].has_vertex_request);
+
+    header_params_with_skills();
+    vertex_header_params();
+}
+
+fn header_params_with_skills() {
+    let skills = execute(&Setup {
+        optional_params: IndexMap::from([(
+            "container".to_owned(),
+            Json::Object(IndexMap::from([(
+                "skills".to_owned(),
+                Json::List(vec![text("xlsx")]),
+            )])),
+        )]),
+        ..Setup::chat()
+    });
+    let beta = skills.transforms[0].headers.get("anthropic-beta").unwrap();
+    assert!(beta.contains(SKILLS_BETA));
+}
+
+fn vertex_header_params() {
+    let vertex = execute(&Setup {
+        optional_params: IndexMap::from([
+            ("is_vertex_request".to_owned(), Json::Bool(true)),
+            (
+                "tools".to_owned(),
+                Json::List(vec![Json::Object(IndexMap::from([
+                    ("type".to_owned(), text("tool_search_tool_regex_20251119")),
+                    ("name".to_owned(), text("lookup")),
+                ]))]),
+            ),
+        ]),
+        ..Setup::chat()
+    });
+    let vertex_transform = &vertex.transforms[0];
+    assert_eq!(
+        vertex_transform.optional_params.get("is_vertex_request"),
+        Some(&Json::Bool(true))
+    );
+    assert!(
+        !vertex_transform
+            .headers
+            .get("anthropic-beta")
+            .is_some_and(|beta| beta.contains(TOOL_SEARCH_BETA))
+    );
 }
 
 fn assert_posted(run: &Run) {
@@ -177,11 +222,13 @@ fn buffered_success() {
     let asynchronous = execute(&Setup {
         style: CallStyle::Async,
         optional_params: speed_options(),
+        litellm_params: tool_name_map(),
         ..Setup::chat()
     });
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_reply(&asynchronous);
     assert_buffered_logged(&asynchronous);
+    assert_eq!(asynchronous.responses[0].litellm_params, tool_name_map());
 
     let synchronous = execute(&Setup {
         optional_params: speed_options(),
@@ -351,7 +398,7 @@ fn native_error_body() {
 }
 
 fn unsupported_embedding() {
-    let reply: Option<ResponseEnvelope> = EMBEDDING_REPLY;
+    let reply: Option<ResponseEnvelope> = crate::chat_call::embedding();
     assert!(reply.is_none());
 }
 

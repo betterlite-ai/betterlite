@@ -1,4 +1,4 @@
-use betterlite_anthropic::chat_call::EMBEDDING_REPLY;
+use betterlite_anthropic::chat_call::embedding;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaNode;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -55,7 +55,7 @@ impl Helper for Op {
             Scenario::BufferedSuccess => scenarios::buffered_success(input),
             Scenario::StreamRequest => scenarios::stream_request(input),
             Scenario::PreStreamError | Scenario::NativeErrorBody => failures::failed_call(input),
-            Scenario::UnsupportedEmbedding => Ok(json!({"reply": EMBEDDING_REPLY})),
+            Scenario::UnsupportedEmbedding => Ok(json!({"reply": embedding()})),
             Scenario::ChatFailureProjection => failures::chat_failure_projection(input),
         }
     }

@@ -38,12 +38,12 @@ struct Params {
     transform_params: IndexMap<String, Json>,
     is_vertex_request: bool,
 }
-pub(super) fn prepare<'a, 'deps, Config, Client, Counter>(
-    call: &'a ChatCall<'_>,
-    deps: &'a mut ChatDeps<'deps, Config, Client, Counter>,
-) -> LocalBoxFuture<'a, ChatResult<Client, Counter>>
+pub(super) fn prepare<'request, 'deps, Config, Client, Counter>(
+    call: &'request ChatCall<'_>,
+    deps: &'request mut ChatDeps<'deps, Config, Client, Counter>,
+) -> LocalBoxFuture<'request, ChatResult<Client, Counter>>
 where
-    'deps: 'a,
+    'deps: 'request,
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter,

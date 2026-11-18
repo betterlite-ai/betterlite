@@ -226,6 +226,7 @@ pub(super) struct Recorded {
 pub(super) struct ResponseRecord {
     pub(super) json_mode: Option<bool>,
     pub(super) has_vertex_request: bool,
+    pub(super) litellm_params: IndexMap<String, Json>,
 }
 
 pub(super) struct FixtureConfig {
@@ -257,14 +258,15 @@ impl FixtureConfig {
                 litellm_params: request.litellm_params.clone(),
                 headers: request.headers.values.clone(),
             });
-        self.transform_failure.as_ref().map_or_else(
-            || Ok(self.body.clone()),
-            |message| {
-                Err(Box::new(FixtureFailure {
+        match &self.transform_failure {
+            None => Ok(self.body.clone()),
+            Some(message) => {
+                let error: ConfigError = Box::new(FixtureFailure {
                     message: message.clone(),
-                }))
-            },
-        )
+                });
+                Err(error)
+            }
+        }
     }
 }
 
@@ -331,6 +333,7 @@ impl ChatConfig for FixtureConfig {
             .push(ResponseRecord {
                 json_mode: request.json_mode,
                 has_vertex_request: request.optional_params.contains_key("is_vertex_request"),
+                litellm_params: request.litellm_params.clone(),
             });
         transform_response(envelope, raw, request, logging, counter)
     }

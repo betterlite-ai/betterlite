@@ -27,7 +27,9 @@ use prepare::Prepared;
 use send::streams::{StreamFacts, open_stream};
 use transport::{ChatTransport, SuppliedChatClient};
 // embedding() is an empty pass body: it builds no request, sends none and returns None
-pub const EMBEDDING_REPLY: Option<ResponseEnvelope> = None;
+pub fn embedding() -> Option<ResponseEnvelope> {
+    None
+}
 // LiteLLM runs acompletion for an async call and completion for a sync one, and each branch takes its own clients
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
@@ -72,8 +74,14 @@ pub enum ChatOutcome<ClientFailure, Counter> {
 }
 // Every branch answers this outcome or raises this error, carrying the client's and counter's own failures
 pub type ChatResult<Client, Counter> = Result<
-    ChatOutcome<<Client as ChatTransport>::Failure, Counter>,
-    ChatCallError<<Client as ChatTransport>::Failure, <Counter as ReasoningTokenCounter>::Failure>,
+    ChatOutcome<
+        <Client as crate::anthropic_http_stream::transport::StreamTransport>::Failure,
+        Counter,
+    >,
+    ChatCallError<
+        <Client as crate::anthropic_http_stream::transport::StreamTransport>::Failure,
+        <Counter as ReasoningTokenCounter>::Failure,
+    >,
 >;
 // LiteLLM's AnthropicChatCompletion.completion around the selected config: prepare, filter, log, then send
 pub fn chat_call<'call, Config, Client, Counter>(
