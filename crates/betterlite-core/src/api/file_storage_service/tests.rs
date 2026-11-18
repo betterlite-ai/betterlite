@@ -10,6 +10,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::schema_budget_windows::MIGRATION_CATALOG;
 use betterlite_db::schema_daily_usage::ADD_MANAGED_FILE_TABLE;
 use betterlite_error::proxy_exception::ProxyException;
+use betterlite_logging::azure_storage_logging::filename::IdSource;
 use betterlite_openai::files::records::{FileKind, FileStatus, FilesPurpose};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
@@ -32,8 +33,8 @@ use crate::api::file_storage_service::service::{StorageUpload, upload_file_to_st
 mod support;
 
 use support::{
-    FixedClock, FixedIds, Recorded, Recorder, backend_deps, backend_deps_without_environment,
-    upload_deps, upload_deps_without_environment,
+    Captured, FixedClock, FixedIds, HexIds, Recorded, Recorder, backend_deps,
+    backend_deps_without_environment, capture_logs, upload_deps, upload_deps_without_environment,
 };
 
 const FIXED_UUID: &str = "12345678-1234-5678-1234-567812345678";
@@ -100,10 +101,13 @@ async fn refusal(
     refused(error)
 }
 
-async fn refusal_without_environment(recorder: &Arc<Recorder>) -> ProxyException {
+async fn refusal_without_environment(
+    recorder: &Arc<Recorder>,
+    targets: &[String],
+) -> ProxyException {
     let deps =
         upload_deps_without_environment(recorder, None::<ManagedFileContentRepository<'static>>);
-    let error = upload_file_to_storage_backend(upload_with("azure_storage", &[]), deps)
+    let error = upload_file_to_storage_backend(upload_with("azure_storage", targets), deps)
         .await
         .err()
         .expect("the Azure settings are missing");
@@ -185,7 +189,12 @@ async fn assert_storage_error() {
     ));
 }
 
-fn projected(content: &[u8], filename: &str, purpose: FilesPurpose) -> StoredFile {
+fn projected(
+    content: &[u8],
+    filename: &str,
+    purpose: FilesPurpose,
+    ids: &dyn IdSource,
+) -> StoredFile {
     create_file_object_with_storage_metadata(
         FileMetadata {
             content,
@@ -195,7 +204,7 @@ fn projected(content: &[u8], filename: &str, purpose: FilesPurpose) -> StoredFil
             storage_url: "litellm_db://r",
         },
         &FixedClock,
-        &FixedIds,
+        ids,
     )
 }
 
@@ -293,8 +302,19 @@ async fn close_database(fixture: PostgresFixture, store: PostgresStore) {
     fixture.close_async().await.expect("the fixture closes");
 }
 
+fn assert_factory_logs(logs: &Captured) {
+    let text = logs.text();
+    for backend in ["azure_storage", "litellm_db", "other"] {
+        assert!(
+            text.contains(&format!("Creating storage backend: type={backend}")),
+            "the factory logs {backend}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn storage_factory_errors() {
+    let (logs, _guard) = capture_logs();
     let recorder = Recorder::new(&[]);
     let unsupported = get_storage_backend(
         "other",
@@ -322,15 +342,18 @@ async fn storage_factory_errors() {
     assert_invalid_request(&other, UNSUPPORTED_OTHER, "target_storage");
     let missing = refusal(LITELLM_DB_BACKEND_NAME, &[], &recorder).await;
     assert_invalid_request(&missing, DATABASE_REQUIRED, "target_storage");
-    let missing_settings = refusal_without_environment(&recorder).await;
+    let missing_settings = refusal_without_environment(&recorder, &[]).await;
     assert_invalid_request(&missing_settings, MISSING_ACCOUNT, "target_storage");
     assert!(recorder.calls().is_empty());
+    assert_factory_logs(&logs);
 }
 
 #[tokio::test]
 async fn storage_targets_before_write() {
     let recorder = Recorder::new(&[]);
     let targets = ["m".to_owned()];
+    let missing_settings = refusal_without_environment(&recorder, &targets).await;
+    assert_invalid_request(&missing_settings, MISSING_ACCOUNT, "target_storage");
     let invalid = refusal("other", &targets, &recorder).await;
     assert_invalid_request(&invalid, UNSUPPORTED_OTHER, "target_storage");
 
@@ -351,15 +374,32 @@ async fn storage_targets_before_write() {
 
 #[tokio::test]
 async fn storage_only_upload() {
+    let (logs, _guard) = capture_logs();
     assert_uploaded_file(&default_upload_result().await, "file", "");
+    let completed = format!(
+        "Storage backend upload complete: backend=azure_storage, url={AZURE_BLOB_PREFIX}{FIXED_UUID}"
+    );
+    assert!(logs.text().contains(&completed), "the upload debug line");
     assert_uploaded_file(&explicit_upload_result().await, "a.txt", ".txt");
     assert_upload_arguments();
     assert_storage_error().await;
+
+    let (fixture, store) = provision().await;
+    let availability = Availability::default();
+    let repository = database_repository(&store, &availability);
+    let recorder = Recorder::new(&[(201, ""), (202, ""), (200, "")]);
+    let deps = upload_deps(&recorder, Some(repository));
+    let stored = upload_file_to_storage_backend(default_upload("azure_storage"), deps)
+        .await
+        .expect("the connected storage-only upload");
+    assert_uploaded_file(&stored, "file", "");
+    assert_no_rows(&store).await;
+    close_database(fixture, store).await;
 }
 
 #[test]
 fn storage_file_projection() {
-    let stored = projected(b"abc", "a.bin", FilesPurpose::Batch);
+    let stored = projected(b"abc", "a.bin", FilesPurpose::Batch, &FixedIds);
     assert_eq!(stored.file.id, EXPECTED_FILE_ID);
     assert_eq!(stored.file.created_at, 1234);
     assert_eq!(stored.file.bytes, 3);
@@ -375,9 +415,12 @@ fn storage_file_projection() {
         r#"{"id":"file-123456781234567812345678","bytes":3,"created_at":1234,"filename":"a.bin","object":"file","purpose":"batch","status":"uploaded"}"#
     );
 
-    let empty = projected(b"", "empty.bin", FilesPurpose::UserData);
+    let empty = projected(b"", "empty.bin", FilesPurpose::UserData, &FixedIds);
     assert_eq!(empty.file.bytes, 0);
     assert_eq!(empty.file.id, stored.file.id);
+
+    let hex = projected(b"abc", "a.bin", FilesPurpose::Batch, &HexIds);
+    assert_eq!(hex.file.id, "file-abcdef1234567890abcdef12");
 }
 
 #[tokio::test]

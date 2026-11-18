@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,6 +16,8 @@ use betterlite_logging::azure_storage_logging::transport::{
 };
 use betterlite_logging::datadog_logging::clock::Clock;
 use secrecy::SecretString;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use crate::api::file_azure_storage::AzureFileStorageDeps;
 use crate::api::file_storage_service::factory::StorageBackendDeps;
@@ -36,6 +39,14 @@ pub(crate) struct FixedIds;
 impl IdSource for FixedIds {
     fn next_id(&self) -> String {
         FIXED_ID.to_owned()
+    }
+}
+
+pub(crate) struct HexIds;
+
+impl IdSource for HexIds {
+    fn next_id(&self) -> String {
+        "abcdef12-3456-7890-abcd-ef1234567890".to_owned()
     }
 }
 
@@ -127,6 +138,55 @@ impl StorageTransport for Recorder {
             });
         Ok(reply)
     }
+}
+
+// the test asserts a debug line by reading every record the thread writes
+#[derive(Clone, Default)]
+pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(crate) fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("the log is text")
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for Captured {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+pub(crate) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(captured.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
 
 pub(crate) fn environment() -> BTreeMap<String, String> {
