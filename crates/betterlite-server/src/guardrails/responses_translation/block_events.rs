@@ -20,13 +20,15 @@ use betterlite_core::api::response_synthetic_events::{
     stamping::{CostTarget, ResponsesCostCalculator},
 };
 use betterlite_guardrails::guardrail_message_scope::{StreamItem, fingerprint::stream_item_field};
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::responses_event_records::event_types::{
     ErrorEvent, ErrorEventError, Extra,
 };
-use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 use betterlite_guardrails::guardrail_message_scope::blocked_usage::blocked_responses_stream_usage;
@@ -249,6 +251,9 @@ pub fn build_block_sse_chunks(
         original_response,
         stamp,
     ))?;
+    let item: BTreeMap<String, Json> = serde_json::from_value(blocked_output_item(message, stamp))?;
+    // the synthetic events dump the item for the wire, and a typed parse would add fields LiteLLM's generic item omits
+    response.output = vec![ResponseOutputItem::Unknown(item)];
     let chunk_size = i64::try_from(message.chars().count())
         .unwrap_or(i64::MAX)
         .max(1);

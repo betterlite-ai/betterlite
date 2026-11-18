@@ -1,9 +1,10 @@
 #![cfg(test)]
+use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 use std::str;
 
 use super::{
-    BlockStamp, CostTarget, NoCost, ResponsesCostCalculator, build_block_sse_chunks,
+    BlockStamp, CostTarget, NoCost, ResponsesCostCalculator as _, build_block_sse_chunks,
     build_blocked_response, build_stream_error_items, continuation_identity,
     next_stream_sequence_number,
 };
@@ -107,6 +108,26 @@ fn standalone_block_starts_with_created_and_ends_completed() {
 }
 
 #[test]
+fn standalone_item_carries_only_the_blocked_fields() {
+    let frames = build_block_sse_chunks("x", "m", None, false, None, &stamp()).unwrap();
+    let added = frames
+        .iter()
+        .map(|frame| frame_value(frame))
+        .find(|event| event["type"] == "response.output_item.added")
+        .unwrap();
+    assert_eq!(
+        added["item"],
+        json!({
+            "type": "message",
+            "id": "msg_fixed",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "x", "annotations": []}],
+        })
+    );
+}
+
+#[test]
 fn standalone_frames_omit_null_fields() {
     let frames = build_block_sse_chunks("x", "m", None, false, None, &stamp()).unwrap();
     assert!(
@@ -146,24 +167,25 @@ fn standalone_frame_omits_only_model_nulls(#[case] input: Value, #[case] expecte
 
 #[test]
 fn standalone_keeps_non_ascii_message_in_delta() {
-    let frames = build_block_sse_chunks("é💥", "m", None, false, None, &stamp()).unwrap();
+    let frames =
+        build_block_sse_chunks("\u{e9}\u{1f4a5}", "m", None, false, None, &stamp()).unwrap();
     let delta = frames
         .iter()
         .map(|frame| frame_value(frame))
         .find(|event| event["type"] == "response.output_text.delta")
         .unwrap();
-    assert_eq!(delta["delta"], "é💥");
+    assert_eq!(delta["delta"], "\u{e9}\u{1f4a5}");
 }
 
 #[test]
 fn standalone_empty_message_emits_no_delta() {
     let frames = build_block_sse_chunks("", "m", None, false, None, &stamp()).unwrap();
     let events: Vec<Value> = frames.iter().map(|frame| frame_value(frame)).collect();
-    let deltas: Vec<&Value> = events
-        .iter()
-        .filter(|event| event["type"] == "response.output_text.delta")
-        .collect();
-    assert!(deltas.is_empty());
+    assert!(
+        !events
+            .iter()
+            .any(|event| event["type"] == "response.output_text.delta")
+    );
     let done = events
         .iter()
         .find(|event| event["type"] == "response.output_text.done")
@@ -276,8 +298,7 @@ fn continuation_identity_clamps_an_index_above_the_signed_range() {
 
 #[test]
 fn standalone_cost_calculator_reports_no_cost() {
-    let object: indexmap::IndexMap<String, betterlite_models::decisions::Json> =
-        indexmap::IndexMap::new();
+    let object: indexmap::IndexMap<String, Json> = indexmap::IndexMap::new();
     let cost = NoCost.response_cost(&CostTarget::Object(&object)).unwrap();
     assert!(cost.is_none());
 }
