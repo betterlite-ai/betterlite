@@ -115,7 +115,10 @@ where
 {
     let Resolved { route, candidates } = resolved;
     match candidates {
-        Candidates::Single(deployment) => single_route(context, route, *deployment).await,
+        Candidates::Single(deployment) => {
+            let selected = named_deployment(context, &route, *deployment).await?;
+            attempt(context, route, selected, None).await
+        }
         Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
@@ -131,16 +134,6 @@ pub fn resolve_catalog(
         authority: request.authority,
     };
     Ok(resolver.resolve(&lookup)?)
-}
-
-// A named deployment comes back once the generalization rules and the static gate accepted it, with no strategy.
-async fn single_route(
-    context: &RouteContext<'_>,
-    resolved: ResolvedRoute,
-    deployment: DeploymentSpec,
-) -> Result<AttemptResult, RoutingError> {
-    let selected = named_deployment(context, &resolved, deployment).await?;
-    attempt(context, resolved, selected, None).await
 }
 
 // get_model_info fills every registered deployment from the rules, a named one included, and the static gate then judges it
@@ -277,11 +270,10 @@ where
 async fn attempt(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
-    deployment: DeploymentSpec,
+    picked: DeploymentSpec,
     strategy: Option<Strategy>,
 ) -> Result<AttemptResult, RoutingError> {
-    let Some(deployment) = stage_single(context, RouteStage::ModelRateLimits, deployment).await?
-    else {
+    let Some(deployment) = stage_single(context, RouteStage::ModelRateLimits, picked).await? else {
         return Err(no_deployment_error(context, &resolved));
     };
     let client = acquire_client(context, &resolved.group, &deployment);

@@ -183,7 +183,7 @@ async fn model_info_limit_used_last() {
 }
 
 async fn missing_model_id_counts_under_none() {
-    let key = format!("None:{model}:tpm:{MINUTE}");
+    let key = format!("None:{}:tpm:{MINUTE}", model());
     let cache = Arc::new(FakeCache::new().seed_local(&key, 9));
     let check = service(Arc::clone(&cache), None);
     let mut deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);
@@ -196,7 +196,7 @@ async fn missing_model_id_counts_under_none() {
 }
 
 async fn empty_model_id_builds_keys() {
-    let key = format!(":{model}:tpm:{MINUTE}");
+    let key = format!(":{}:tpm:{MINUTE}", model());
     let cache = Arc::new(FakeCache::new().seed_local(&key, 5));
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "", model()), "tpm", 5);

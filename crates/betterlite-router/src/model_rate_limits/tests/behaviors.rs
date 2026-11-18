@@ -6,13 +6,10 @@ use crate::model_rate_limits::error::RateLimitChannel;
 use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
-    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, capture_logs, check_async, exceeded,
-    read_count, request, rpm_key, run_case_table, service, spec, tiers, tpm_cache, tpm_key,
-    with_info, with_param,
+    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, check_async, coexist_warning_lines,
+    exceeded, read_count, request, rpm_key, run_case_table, service, spec, tiers, tpm_cache,
+    tpm_key, with_info, with_param,
 };
-
-const COEXIST_WARNING: &str =
-    "deployment configures itpm/otpm alongside tpm/rpm; both limit types are enforced";
 
 pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
@@ -129,18 +126,24 @@ async fn breaker_open_falls_back_to_local() {
     let cache = Arc::new(
         FakeCache::new()
             .mode(RemoteMode::Breaker)
-            .seed_local(&tpm_key("openai/gpt-4o"), 1),
+            .seed_local(&tpm_key("openai/gpt-4o"), 1)
+            .seed_local(&rpm_key("openai/gpt-4o"), 1),
     );
     let check = service(Arc::clone(&cache), None);
-    let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    check
+    let deployment = with_param(
+        with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5),
+        "rpm",
+        1,
+    );
+    let error = check
         .async_pre_call_check(&deployment, &mut request())
         .await
-        .unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        1
-    );
+        .unwrap_err();
+    let exceeded = exceeded(error);
+    assert_eq!(exceeded.channel, RateLimitChannel::Rpm);
+    assert_eq!(exceeded.current, 2);
+    assert_eq!(cache.local_value(&rpm_key("openai/gpt-4o")), Some(2));
+    assert_eq!(read_count(&cache), 1);
 }
 
 async fn no_remote_reads_local_only() {
@@ -232,7 +235,7 @@ async fn success_event_skips_absent_fields() {
 
 async fn failure_event_refunds() {
     let io = Arc::new(FakeIo::new());
-    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
     let check = service(Arc::new(FakeCache::new()), Some(hook));
     check.async_log_failure_event(&mut request()).await;
     assert_eq!(io.calls.lock().unwrap().refunds, 1);
@@ -245,7 +248,7 @@ async fn io_reservation_before_the_checks() {
             .seed_local(&rpm_key("openai/gpt-4o"), 1)
             .seed_remote(&rpm_key("openai/gpt-4o"), 1),
     );
-    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
     let check = service(Arc::clone(&cache), Some(hook));
     let deployment = with_param(
         with_info(
@@ -279,7 +282,7 @@ async fn io_reservation_before_the_checks() {
 async fn rejection_without_io_limits_refunds_nothing() {
     let io = Arc::new(FakeIo::new());
     let cache = Arc::new(FakeCache::new().seed_local(&rpm_key("openai/gpt-4o"), 1));
-    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
     let check = service(Arc::clone(&cache), Some(hook));
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 1);
     let error = check
@@ -291,48 +294,11 @@ async fn rejection_without_io_limits_refunds_nothing() {
 }
 
 async fn coexist_warning_logs_once() {
-    let check = service(Arc::new(FakeCache::new()), None);
-    let deployment = with_param(
-        with_info(
-            spec("gpt-4o", "a", "openai/gpt-4o"),
-            "itpm",
-            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
-        ),
-        "tpm",
-        100,
-    );
-    let (logs, _guard) = capture_logs();
-    for _request in 0..2 {
-        check
-            .async_pre_call_check(&deployment, &mut request())
-            .await
-            .unwrap();
-    }
-    let text = logs.text();
-    assert_eq!(text.matches(COEXIST_WARNING).count(), 1, "{text}");
+    assert_eq!(coexist_warning_lines(true).await, 1);
 }
 
 async fn coexist_warning_without_id_logs_every_time() {
-    let check = service(Arc::new(FakeCache::new()), None);
-    let mut deployment = with_param(
-        with_info(
-            spec("gpt-4o", "a", "openai/gpt-4o"),
-            "itpm",
-            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
-        ),
-        "tpm",
-        100,
-    );
-    deployment.model_info.shift_remove("id");
-    let (logs, _guard) = capture_logs();
-    for _request in 0..2 {
-        check
-            .async_pre_call_check(&deployment, &mut request())
-            .await
-            .unwrap();
-    }
-    let text = logs.text();
-    assert_eq!(text.matches(COEXIST_WARNING).count(), 2, "{text}");
+    assert_eq!(coexist_warning_lines(false).await, 2);
 }
 
 async fn sync_facade_counts_local_only() {
@@ -359,11 +325,11 @@ async fn sync_success_event_counts_local_only() {
 
 async fn sync_failure_event_refunds() {
     let io = Arc::new(FakeIo::new());
-    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
     let check = service(Arc::new(FakeCache::new()), Some(hook));
     check.log_failure_event(&mut request());
     assert_eq!(
-        io.calls.lock().unwrap(),
+        *io.calls.lock().unwrap(),
         HookCalls {
             reserved: vec![],
             refunds: 1

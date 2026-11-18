@@ -7,6 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::io_token_reservations::clock::minute_label;
+use betterlite_router::model_rate_limits::cache::RateLimitCache;
 use betterlite_router::model_rate_limits::error::{ModelRateLimitError, RateLimitExceeded};
 use betterlite_router::model_rate_limits::keys::cache_keys;
 use betterlite_router::model_rate_limits::service::{ModelRateLimits, SuccessUsage};
@@ -146,7 +147,8 @@ async fn scenario(payload: &Payload) -> Result<Output, String> {
     let deployment = deployment_spec(payload);
     let keys = cache_keys(&deployment, &minute_label(now));
     let cache = Arc::new(FakeCache::new(payload, &keys));
-    let check = ModelRateLimits::new(Arc::clone(&cache), None, Arc::new(move || now));
+    let shared: Arc<dyn RateLimitCache> = cache.clone();
+    let check = ModelRateLimits::new(shared, None, Arc::new(move || now));
     let mut steps = Vec::with_capacity(payload.steps.len());
     for step in &payload.steps {
         steps.push(run_step(&check, &cache, &deployment, step).await?);

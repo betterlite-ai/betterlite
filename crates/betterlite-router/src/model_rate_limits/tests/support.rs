@@ -257,6 +257,39 @@ pub(super) async fn check_async(
     check.async_pre_call_check(dep, &mut request()).await
 }
 
+pub(super) const COEXIST_WARNING: &str =
+    "deployment configures itpm/otpm alongside tpm/rpm; both limit types are enforced";
+
+pub(super) fn coexist_deployment(with_id: bool) -> DeploymentSpec {
+    let mut deployment = with_param(
+        with_info(
+            spec("gpt-4o", "a", "openai/gpt-4o"),
+            "itpm",
+            Json::Number(Number::from(10_i64)),
+        ),
+        "tpm",
+        100,
+    );
+    if !with_id {
+        deployment.model_info.shift_remove("id");
+    }
+    deployment
+}
+
+// Runs the check twice under a tracing capture and answers how many coexistence warning lines it logged
+pub(super) async fn coexist_warning_lines(with_id: bool) -> usize {
+    let check = service(Arc::new(FakeCache::new()), None);
+    let deployment = coexist_deployment(with_id);
+    let (logs, _guard) = capture_logs();
+    for _request in 0..2 {
+        check
+            .async_pre_call_check(&deployment, &mut request())
+            .await
+            .unwrap();
+    }
+    logs.text().matches(COEXIST_WARNING).count()
+}
+
 pub(super) fn request() -> RequestBody {
     RequestBody::new()
 }

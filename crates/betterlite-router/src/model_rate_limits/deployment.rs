@@ -42,7 +42,10 @@ fn limit(
             Some(Json::Number(number)) => {
                 return number
                     .as_i64()
-                    .or_else(|| number.as_u64().and_then(|value| i64::try_from(value).ok()))
+                    .or_else(|| {
+                        let value = number.as_u64()?;
+                        i64::try_from(value).ok()
+                    })
                     .map(Some)
                     .ok_or(ModelRateLimitError::Limit { field });
             }

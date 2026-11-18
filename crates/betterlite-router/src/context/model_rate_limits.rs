@@ -33,9 +33,8 @@ pub(super) async fn apply(
 // pre_call_check raises a rate limit and returns the deployment for every other failure it cannot read
 fn allowed(failure: Result<(), ModelRateLimitError>) -> bool {
     match failure {
-        Ok(()) => true,
         Err(ModelRateLimitError::Exceeded(_)) => false,
         Err(ModelRateLimitError::IoToken(error)) => !matches!(error, IoPreCallError::RateLimit(_)),
-        Err(ModelRateLimitError::Limit { .. }) => true,
+        Ok(()) | Err(ModelRateLimitError::Limit { .. }) => true,
     }
 }

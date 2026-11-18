@@ -7,7 +7,7 @@ use betterlite_router::io_token_reservations::clock::IoClock;
 use betterlite_router::model_rate_limits::cache::{RateLimitCache, RemoteRead};
 use betterlite_router::model_rate_limits::service::{IoTokenReservationHook, ModelRateLimits};
 use betterlite_router::routing_state_store::RoutingStateStore;
-use betterlite_router::routing_state_store::error::{StateStoreError, StoreWarning};
+use betterlite_router::routing_state_store::error::StateStoreError;
 use betterlite_router::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
 };
@@ -47,8 +47,8 @@ struct RoutingRateLimitCache {
 #[async_trait]
 impl RateLimitCache for RoutingRateLimitCache {
     fn local(&self, key: &str) -> Option<i64> {
-        let key = RouteKey::parse(key).ok()?;
-        match self.local.get(&key).ok()? {
+        let parsed = RouteKey::parse(key).ok()?;
+        match self.local.get(&parsed).ok()? {
             StoreRead::Value(RouteValue::Counter(value)) => Some(value),
             StoreRead::Value(_) | StoreRead::Missing => None,
         }
@@ -62,18 +62,15 @@ impl RateLimitCache for RoutingRateLimitCache {
         let Some(store) = &self.remote else {
             return RemoteRead::Value(None);
         };
-        let Ok(key) = RouteKey::parse(key) else {
+        let Ok(parsed) = RouteKey::parse(key) else {
             return RemoteRead::Failed;
         };
         // RedisCache.async_get_cache swallows a connection failure and returns None, so a failed read is an absent value
-        match store.get(&key).await {
-            Ok(observed) => match (observed.value, observed.warning) {
-                (StoreRead::Missing, Some(StoreWarning::Unavailable { .. })) => {
-                    RemoteRead::Value(None)
-                }
-                (StoreRead::Value(RouteValue::Counter(value)), _) => RemoteRead::Value(Some(value)),
-                (StoreRead::Missing, _) => RemoteRead::Value(None),
-                (StoreRead::Value(_), _) => RemoteRead::Failed,
+        match store.get(&parsed).await {
+            Ok(observed) => match observed.value {
+                StoreRead::Value(RouteValue::Counter(value)) => RemoteRead::Value(Some(value)),
+                StoreRead::Value(_) => RemoteRead::Failed,
+                StoreRead::Missing => RemoteRead::Value(None),
             },
             Err(StateStoreError::CircuitOpen { .. }) => RemoteRead::BreakerOpen,
             Err(_) => RemoteRead::Failed,
@@ -81,9 +78,9 @@ impl RateLimitCache for RoutingRateLimitCache {
     }
 
     fn increment_local(&self, key: &str, by: i64, ttl_seconds: u64) -> Option<i64> {
-        let key = RouteKey::parse(key).ok()?;
+        let parsed = RouteKey::parse(key).ok()?;
         match self.local.increment(
-            &key,
+            &parsed,
             &RouteIncrement::Counter(by),
             Some(Duration::from_secs(ttl_seconds).as_secs_f64()),
         ) {
@@ -97,12 +94,12 @@ impl RateLimitCache for RoutingRateLimitCache {
         let Some(store) = &self.remote else {
             return local;
         };
-        let Ok(key) = RouteKey::parse(key) else {
+        let Ok(parsed) = RouteKey::parse(key) else {
             return local;
         };
         let counter = store
             .increment(
-                &key,
+                &parsed,
                 &RouteIncrement::Counter(by),
                 Some(Duration::from_secs(ttl_seconds).as_secs_f64()),
             )

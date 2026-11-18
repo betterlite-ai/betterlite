@@ -85,11 +85,11 @@ class FakeRedisStore:
     def _read(self) -> None:
         # RedisCache's get methods swallow a connection failure and answer None; only the breaker guard raises
         if self.mode == "breaker":
-            raise RedisCircuitBreakerOpenError()
+            raise RedisCircuitBreakerOpenError
 
     def _write(self) -> None:
         if self.mode == "breaker":
-            raise RedisCircuitBreakerOpenError()
+            raise RedisCircuitBreakerOpenError
         if self.mode == "down":
             raise RuntimeError("redis is down")
 
@@ -148,13 +148,17 @@ def deployment_dict(deployment: DeploymentInput) -> dict[str, object]:
         "model_info": model_info,
         "litellm_params": params,
     }
-    for field, value in (
-        ("tpm", deployment.tpm),
-        ("rpm", deployment.rpm),
-        ("itpm", deployment.itpm),
-    ):
-        if value is not None:
-            payload[field] = value
+    payload.update(
+        {
+            field: value
+            for field, value in (
+                ("tpm", deployment.tpm),
+                ("rpm", deployment.rpm),
+                ("itpm", deployment.itpm),
+            )
+            if value is not None
+        }
+    )
     return payload
 
 
@@ -204,13 +208,11 @@ class Scenario:
         self.check: Final[Check] = ModelRateLimitingCheck(self.cache)
 
     async def run(self) -> Output:
-        steps: list[StepOutput] = []
         with (
             patch.object(model_check, "get_utc_datetime", return_value=self.now),
             patch.object(io_check, "get_utc_datetime", return_value=self.now),
         ):
-            for step in self.spec.steps:
-                steps.append(await self.run_step(step))
+            steps = [await self.run_step(step) for step in self.spec.steps]
         return Output(steps=steps)
 
     async def run_step(self, step: Step) -> StepOutput:
