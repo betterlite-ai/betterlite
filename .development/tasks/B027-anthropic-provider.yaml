@@ -109,6 +109,11 @@ description: >-
   provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
+  - "tools/oracle"
+  - "crates/betterlite-provider/src/provider/tests.rs"
+  - "crates/betterlite-provider/src/provider.rs"
+  - "crates/betterlite-anthropic/src/request.rs"
+  - "crates/betterlite-anthropic/src/chat_call.rs"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/anthropic_dispatch.rs
   - crates/betterlite-provider/src/anthropic_dispatch/**
