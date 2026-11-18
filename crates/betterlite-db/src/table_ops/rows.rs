@@ -71,24 +71,11 @@ pub struct ConfigParamRow {
 // insert_data stores json.dumps(param), so a JSON text value becomes the value it encodes
 impl RowDecoder for ConfigParamRow {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        let stored: JsonData = serde_json::from_str(text).map_err(RowError::Model)?;
-        let JsonData::Object(mut fields) = stored else {
-            return Err(RowError::NotAnObject);
-        };
-        let Some(JsonData::String(param_name)) = fields.remove("param_name") else {
-            return Err(RowError::NotAnObject);
-        };
-        let param_value = match fields.remove("param_value") {
-            Some(JsonData::String(raw)) => {
-                decode_config_json(raw.as_bytes()).map_err(RowError::Config)?
-            }
-            Some(value) => value,
-            None => return Err(RowError::NotAnObject),
-        };
-        Ok(Self {
-            param_name,
-            param_value,
-        })
+        let mut row: Self = serde_json::from_str(text).map_err(RowError::Model)?;
+        if let JsonData::String(raw) = row.param_value {
+            row.param_value = decode_config_json(raw.as_bytes()).map_err(RowError::Config)?;
+        }
+        Ok(row)
     }
 }
 

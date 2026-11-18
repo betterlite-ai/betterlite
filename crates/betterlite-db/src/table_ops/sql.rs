@@ -149,34 +149,22 @@ pub(super) enum InsertConflict<'payload, Column> {
     Write(&'payload BTreeMap<Column, TokenValue>),
 }
 
-fn conflict_clause<ClientError, Column>(
-    key_name: &str,
-    conflict: InsertConflict<'_, Column>,
-    parameters: &mut Parameters,
-) -> Result<Option<String>, TableOpsError<ClientError>>
-where
-    ClientError: Error + Send + Sync + 'static,
-    Column: TableColumn,
-{
-    if let InsertConflict::Write(update) = conflict {
-        let mut sets: Vec<String> = bind_payload(update, parameters)?
-            .iter()
-            .map(|(name, marker)| format!("\"{name}\" = {marker}"))
-            .collect();
-        if sets.is_empty() {
-            sets.push(format!("\"{key_name}\" = EXCLUDED.\"{key_name}\""));
-        }
-        return Ok(Some(format!(
-            " ON CONFLICT (\"{key_name}\") DO UPDATE SET {}",
-            sets.join(", "),
-        )));
+// Parameter binding finishes before formatting the conflict clause.
+fn conflict_clause(key_name: &str, bound: Option<&[(&'static str, String)]>) -> String {
+    let Some(columns) = bound else {
+        return String::new();
+    };
+    let mut assignments: Vec<String> = columns
+        .iter()
+        .map(|(name, marker)| format!("\"{name}\" = {marker}"))
+        .collect();
+    if assignments.is_empty() {
+        assignments.push(format!("\"{key_name}\" = EXCLUDED.\"{key_name}\""));
     }
-    if matches!(conflict, InsertConflict::Keep) {
-        return Ok(Some(format!(
-            " ON CONFLICT (\"{key_name}\") DO UPDATE SET \"{key_name}\" = EXCLUDED.\"{key_name}\""
-        )));
-    }
-    Ok(None)
+    format!(
+        " ON CONFLICT (\"{key_name}\") DO UPDATE SET {}",
+        assignments.join(", "),
+    )
 }
 
 pub(super) fn insert<ClientError, Column>(
@@ -203,7 +191,12 @@ where
         .map(|(_, marker)| marker.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    let conflict_sql = conflict_clause(key_name, conflict, &mut parameters)?.unwrap_or_default();
+    let update = match conflict {
+        InsertConflict::Reject => None,
+        InsertConflict::Keep => Some(Vec::new()),
+        InsertConflict::Write(values) => Some(bind_payload(values, &mut parameters)?),
+    };
+    let conflict_sql = conflict_clause(key_name, update.as_deref());
     let sql = format!(
         "INSERT INTO \"{}\" AS stored ({names}) VALUES ({markers}){conflict_sql} RETURNING row_to_json(stored)::text",
         Column::TABLE,
