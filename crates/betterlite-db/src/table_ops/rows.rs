@@ -195,8 +195,9 @@ impl RowDecoder for SpendLogRow {
 pub struct UserNotificationRow {
     pub request_id: String,
     pub user_id: String,
+    // the Prisma model declares models optional, so a stored null stays None
     #[serde(default)]
-    pub models: Vec<String>,
+    pub models: Option<Vec<String>>,
     pub justification: String,
     pub status: String,
 }
