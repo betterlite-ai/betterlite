@@ -10,6 +10,7 @@ use crate::converse_call::tests::call;
 use crate::model_routes::{ParamMap, ParamValue};
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_models::controls::control_options::ControlOptions;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 
 #[rstest::rstest]
@@ -61,7 +62,7 @@ fn prepared(params: &mut ParamMap, model: &str) -> Prepared {
             api_key: None,
             environment: ConverseEnvironment::default(),
         },
-        &BetaMatrix(Default::default()),
+        &BetaMatrix(IndexMap::default()),
     )
     .unwrap()
 }
@@ -77,7 +78,11 @@ fn model_region_preserves_explicit_presence(#[case] source: &str, #[case] expect
     assert_eq!(
         params.get("aws_region_name").and_then(|value| match value {
             ParamValue::Text(text) => Some(text.as_str()),
-            _ => None,
+            ParamValue::Null
+            | ParamValue::Bool(_)
+            | ParamValue::Number(_)
+            | ParamValue::List(_)
+            | ParamValue::Mapping(_) => None,
         }),
         expected
     );
@@ -119,7 +124,7 @@ fn beta_and_signing_sources(#[case] asynchronous: bool, #[case] beta: &str, #[ca
             api_key: Some(&secret),
             environment: ConverseEnvironment::default(),
         },
-        &BetaMatrix(Default::default()),
+        &BetaMatrix(IndexMap::default()),
     )
     .unwrap();
     let transformed = transform_headers(&request, &output).unwrap();
@@ -170,7 +175,7 @@ fn control_chunk_size_is_conditional(#[case] stream: bool, #[case] expected: Opt
             api_key: None,
             environment: ConverseEnvironment::default(),
         },
-        &BetaMatrix(Default::default()),
+        &BetaMatrix(IndexMap::default()),
     )
     .unwrap();
     assert_eq!(value.stream_chunk_size, expected);

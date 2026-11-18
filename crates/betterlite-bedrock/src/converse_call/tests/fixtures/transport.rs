@@ -1,7 +1,11 @@
+use super::bedrock::agentcore_stream::adapter::header_pairs;
+use betterlite_http::error::HttpError;
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -32,16 +36,26 @@ pub(super) struct Transport {
     pub(crate) reads: Arc<AtomicUsize>,
 }
 
+impl Transport {
+    fn record(&self, url: String, body: Vec<u8>, headers: BTreeMap<String, String>) {
+        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        seen.sends = seen.sends.saturating_add(1);
+        seen.url = url;
+        seen.body = String::from_utf8(body).unwrap_or_default();
+        seen.headers = headers;
+    }
+}
+
 impl RerankTransport for Transport {
     fn post(
         &self,
         request: RerankHttpRequest,
     ) -> impl Future<Output = Result<RerankHttpReply, TransferError>> + Send {
-        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        seen.sends = seen.sends.saturating_add(1);
-        seen.url = request.url;
-        seen.body = String::from_utf8(request.body).unwrap_or_default();
-        seen.headers = request.headers.into_iter().collect();
+        self.record(
+            request.url,
+            request.body,
+            request.headers.into_iter().collect(),
+        );
         match self.input.native.failure {
             Failure::Timeout => return ready(Err(TransferError::Timeout)),
             Failure::Closed => return ready(Err(TransferError::Failed(TransportError::Closed))),
@@ -72,29 +86,16 @@ impl StreamHandler for Transport {
     async fn post(&self, request: PostRequest) -> Result<StreamHead, TransportError> {
         match self.input.native.failure {
             Failure::Timeout => {
-                return Err(TransportError::Rejected(
-                    betterlite_http::error::HttpError::Timeout,
-                ));
+                return Err(TransportError::Rejected(HttpError::Timeout));
             }
             Failure::Closed => return Err(TransportError::Closed),
             Failure::None => {}
         }
-        {
-            let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-            seen.sends = seen.sends.saturating_add(1);
-            seen.url = request.url.to_string();
-            seen.body = String::from_utf8(request.body).unwrap_or_default();
-            seen.headers = request
-                .headers
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.to_string(),
-                        value.to_str().unwrap_or_default().to_owned(),
-                    )
-                })
-                .collect();
-        }
+        self.record(
+            request.url.to_string(),
+            request.body,
+            header_pairs(&request.headers).into_iter().collect(),
+        );
         let reads = Arc::clone(&self.reads);
         let bytes: Vec<Vec<u8>> = if request.stream && self.input.status == 200 {
             self.input.frames.clone()
@@ -125,6 +126,7 @@ impl ConverseClientFactory for Transport {
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
         seen.factory = seen.factory.saturating_add(1);
         seen.factory_timeout_ms = timeout.map(|value| value.as_millis());
+        drop(seen);
         self.clone()
     }
 
@@ -132,6 +134,7 @@ impl ConverseClientFactory for Transport {
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
         seen.factory = seen.factory.saturating_add(1);
         seen.factory_timeout_ms = timeout.map(|value| value.as_millis());
+        drop(seen);
         StreamClient {
             handler: Arc::new(self.clone()),
             timeout: timeout.unwrap_or(Duration::from_secs(10)),
@@ -161,13 +164,13 @@ impl CredentialSource for Source {
 }
 
 struct ReadStream {
-    bytes: std::vec::IntoIter<Vec<u8>>,
+    bytes: IntoIter<Vec<u8>>,
     reads: Arc<AtomicUsize>,
     seen: Arc<Mutex<Observation>>,
 }
 
 impl Stream for ReadStream {
-    type Item = Result<Vec<u8>, betterlite_http::error::HttpError>;
+    type Item = Result<Vec<u8>, HttpError>;
     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.bytes.next().map(|bytes| {
             self.reads.fetch_add(1, Ordering::Relaxed);

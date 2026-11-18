@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::reply_options;
+use crate::converse_call::error::ConverseCallError;
 
 #[test]
 fn reply_json_mode_is_retained_and_wrong_types_are_named() {
@@ -10,6 +11,6 @@ fn reply_json_mode_is_retained_and_wrong_types_are_named() {
     let bad = reply_options(&serde_json::from_str(r#"{"json_mode":"true"}"#).unwrap());
     assert!(matches!(
         bad,
-        Err(crate::converse_call::error::ConverseCallError::Param { field: "json_mode" })
+        Err(ConverseCallError::Param { field: "json_mode" })
     ));
 }

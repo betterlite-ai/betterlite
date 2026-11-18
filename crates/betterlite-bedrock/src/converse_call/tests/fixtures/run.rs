@@ -8,17 +8,28 @@ use super::input::{Input, Observation};
 use super::metadata::{Offline, metadata};
 use super::setup::{Quiet, call, remote, state};
 use super::transport::{Signer, Source, Transport};
+use betterlite_context::anthropic_catalog_lookup::error::CatalogLookupError;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_http::error::HttpError;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::LoggingStateError;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
+use betterlite_models::model_metadata_resolution::names::ModelCostMapError;
+use betterlite_prompts::message_content::Message;
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use std::io;
+use std::mem::take;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
+use tokio::runtime::Builder;
+use tokio::runtime::Runtime;
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -26,23 +37,21 @@ pub(crate) enum FixtureError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Map(#[from] betterlite_models::model_metadata_resolution::names::ModelCostMapError),
+    Map(#[from] ModelCostMapError),
     #[error(transparent)]
-    Patterns(#[from] betterlite_context::anthropic_catalog_lookup::error::CatalogLookupError),
+    Patterns(#[from] CatalogLookupError),
     #[error(transparent)]
-    Log(#[from] betterlite_logging::logging_state::LoggingStateError),
+    Log(#[from] LoggingStateError),
     #[error(transparent)]
-    Redact(#[from] betterlite_redact::error::RedactionError),
+    Redact(#[from] RedactionError),
     #[error(transparent)]
-    Http(#[from] betterlite_http::error::HttpError),
+    Http(#[from] HttpError),
     #[error(transparent)]
     Runtime(#[from] io::Error),
 }
 
 pub(crate) fn run(input: &Input) -> Result<Observation, FixtureError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let runtime = Builder::new_current_thread().enable_all().build()?;
     let _entered = runtime.enter();
     execute(input, &runtime)
 }
@@ -65,11 +74,11 @@ fn session(input: &Input) -> Result<Session, FixtureError> {
     })
 }
 
-fn execute(input: &Input, runtime: &tokio::runtime::Runtime) -> Result<Observation, FixtureError> {
+fn execute(input: &Input, runtime: &Runtime) -> Result<Observation, FixtureError> {
     let session = session(input)?;
     let mut logging = state(&session.redactor)?;
     let logs = Mutex::new(Vec::new());
-    let logger = |details: &betterlite_models::decisions::Json| {
+    let logger = |details: &Json| {
         logs.lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
@@ -102,7 +111,7 @@ fn call_body(
     input: &Input,
     session: &Session,
     log: super::bedrock::image_call::plan::LogContext<'_, '_>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
 ) -> Result<Observation, FixtureError> {
     let bearer = input.bearer.clone().map(SecretString::from);
     let headers: Vec<(String, String)> = input
@@ -111,8 +120,7 @@ fn call_body(
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
     let mut request = call(input, bearer.as_ref(), &headers);
-    let messages: Vec<betterlite_prompts::message_content::Message> =
-        serde_json::from_str(r#"[{"role":"user","content":"hello"}]"#)?;
+    let messages: Vec<Message> = serde_json::from_str(r#"[{"role":"user","content":"hello"}]"#)?;
     request.messages = &messages;
     let mut observed = Observation::default();
     match send_request(&mut request, session, log, runtime)? {
@@ -127,14 +135,15 @@ fn call_body(
         .seen
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    observed.url = std::mem::take(&mut seen.url);
-    observed.body = std::mem::take(&mut seen.body);
-    observed.signed_body = std::mem::take(&mut seen.signed_body);
-    observed.headers = std::mem::take(&mut seen.headers);
+    observed.url = take(&mut seen.url);
+    observed.body = take(&mut seen.body);
+    observed.signed_body = take(&mut seen.signed_body);
+    observed.headers = take(&mut seen.headers);
     observed.drops = seen.drops;
     observed.sends = seen.sends;
     observed.factory = seen.factory;
     observed.factory_timeout_ms = seen.factory_timeout_ms;
+    drop(seen);
     observed.credentials = session.source.0.load(Ordering::Relaxed);
     observed.reads = session.transport.reads.load(Ordering::Relaxed);
     Ok(observed)
@@ -144,12 +153,12 @@ fn send_request<'run>(
     request: &mut ConverseCall<'_>,
     session: &'run Session,
     log: super::bedrock::image_call::plan::LogContext<'run, 'run>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
 ) -> Result<
     Result<ConverseOutput<'run>, super::bedrock::converse_call::error::ConverseCallError>,
     FixtureError,
 > {
-    let betas = BetaMatrix(Default::default());
+    let betas = BetaMatrix(IndexMap::default());
     let supplied_buffered = session.transport.input.native.supplied.map(|kind| {
         super::bedrock::rerank::transport::SuppliedClient {
             kind,
@@ -187,7 +196,7 @@ fn assembled<'stream>(
     request: &mut ConverseCall<'_>,
     deps: &ConverseDeps<'_, 'stream, Transport, Source>,
     mut log: super::bedrock::image_call::plan::LogContext<'_, '_>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
 ) -> Result<
     Result<ConverseOutput<'stream>, super::bedrock::converse_call::error::ConverseCallError>,
     FixtureError,
@@ -198,7 +207,7 @@ fn assembled<'stream>(
     let mut capabilities = fixture.capabilities(&resolution, &mut keys);
     let media = remote()?;
     let catalogs = fixture.catalogs();
-    let model_cost = Default::default();
+    let model_cost = IndexMap::default();
     let assembly = ConverseAssembly {
         environment: &mut capabilities,
         lookup: &Offline,
@@ -241,7 +250,7 @@ async fn collect(output: ConverseOutput<'_>, consume: bool, observed: &mut Obser
                 .response
                 .choices
                 .first()
-                .and_then(|choice| choice.message.content.clone())
+                .and_then(|choice| choice.message.content.clone());
         }
         ConverseOutput::Stream(stream) => collect_stream(*stream, consume, observed).await,
     }

@@ -14,10 +14,13 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_prompts::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS};
 use betterlite_redact::secret::Redactor;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -84,13 +87,13 @@ pub(super) fn call<'input>(
         model: &input.model,
         messages: &[],
         optional_params: input.params.clone(),
-        litellm_params: Default::default(),
+        litellm_params: IndexMap::default(),
         extra_headers: Some(headers),
         api_base: Some("https://bedrock-runtime.us-west-2.amazonaws.com"),
         api_key: bearer,
         timeout: Some(Duration::from_secs(3)),
         acompletion: input.asynchronous,
-        control: betterlite_models::controls::control_options::ControlOptions {
+        control: ControlOptions {
             stream_chunk_size: input.native.chunk_size,
         },
         skip_pre_call_logging: input.native.skip_log,
@@ -119,7 +122,7 @@ pub(super) fn call<'input>(
 }
 
 impl super::bedrock::converse_usage::transform::ReasoningTokenCounter for Quiet {
-    type Failure = std::convert::Infallible;
+    type Failure = Infallible;
     fn count_reasoning_tokens(&self, _text: &str) -> Result<i64, Self::Failure> {
         Ok(2)
     }

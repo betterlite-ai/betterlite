@@ -32,7 +32,7 @@ use crate::rerank::transport::{ClientKind, RerankHttpReply, SuppliedClient};
 
 pub mod buffered;
 pub mod error;
-mod prepare;
+pub mod prepare;
 pub mod request;
 pub mod streaming;
 pub mod target;

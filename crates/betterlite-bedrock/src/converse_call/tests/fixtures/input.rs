@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub(crate) struct Observation {
     pub(crate) factory: usize,
     pub(crate) factory_timeout_ms: Option<u128>,
     pub(crate) chunk_size: Option<u64>,
-    pub(crate) logs: Vec<betterlite_models::decisions::Json>,
+    pub(crate) logs: Vec<Json>,
     pub(crate) error: Option<String>,
     pub(crate) reasoning_tokens: Option<i64>,
 }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::{provider_error, timeout_error};
+use crate::bedrock_settings::ResponseBody;
 use crate::converse_call::error::ConverseCallError;
 use crate::rerank::transport::RerankHttpReply;
 
@@ -20,10 +21,7 @@ fn buffered_errors_preserve_status_headers_and_body(#[case] body: Vec<u8>, #[cas
     assert_eq!(status, 429);
     assert_eq!(error.error.message, message);
     assert_eq!(error.response_headers, reply.headers);
-    assert_eq!(
-        error.response_body,
-        crate::bedrock_settings::ResponseBody::Read(message.to_owned())
-    );
+    assert_eq!(error.response_body, ResponseBody::Read(message.to_owned()));
 }
 
 #[test]

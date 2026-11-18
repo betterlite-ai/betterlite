@@ -1,6 +1,11 @@
 #![cfg(test)]
 
-use secrecy::{ExposeSecret, SecretString};
+use crate::model_routes::ParamValue;
+use crate::rerank::transport::ClientKind;
+use betterlite_models::controls::control_options::ControlOptions;
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use std::time::SystemTime;
 
 use super::ConverseCall;
 use super::target::{append_endpoint, converse_model_id};
@@ -65,14 +70,14 @@ pub(super) fn call<'call>(
     ConverseCall {
         model: "bedrock/converse/anthropic.claude-v2",
         messages: &[],
-        optional_params: Default::default(),
-        litellm_params: Default::default(),
+        optional_params: IndexMap::default(),
+        litellm_params: IndexMap::default(),
         extra_headers: None,
         api_base: None,
         api_key: Some(api_key),
         timeout: None,
         acompletion: false,
-        control: Default::default(),
+        control: ControlOptions::default(),
         skip_pre_call_logging: false,
         model_response: ModelResponse {
             id: "response-id".to_owned(),
@@ -100,7 +105,7 @@ pub(super) fn call<'call>(
             session_region: None,
             runtime_endpoint: None,
         },
-        now: std::time::SystemTime::UNIX_EPOCH,
+        now: SystemTime::UNIX_EPOCH,
     }
 }
 
@@ -217,13 +222,13 @@ fn bedrock_converse_call_credential_identity_isolation() {
 #[rstest::rstest]
 #[case::default_sync(false, None, 1)]
 #[case::default_async(true, None, 1)]
-#[case::supplied_sync(false, Some(crate::rerank::transport::ClientKind::Sync), 0)]
-#[case::supplied_async(true, Some(crate::rerank::transport::ClientKind::Async), 0)]
-#[case::discard_sync(true, Some(crate::rerank::transport::ClientKind::Sync), 1)]
-#[case::discard_async(false, Some(crate::rerank::transport::ClientKind::Async), 1)]
+#[case::supplied_sync(false, Some(ClientKind::Sync), 0)]
+#[case::supplied_async(true, Some(ClientKind::Async), 0)]
+#[case::discard_sync(true, Some(ClientKind::Sync), 1)]
+#[case::discard_async(false, Some(ClientKind::Async), 1)]
 fn client_selection(
     #[case] asynchronous: bool,
-    #[case] supplied: Option<crate::rerank::transport::ClientKind>,
+    #[case] supplied: Option<ClientKind>,
     #[case] factories: usize,
 ) {
     let mut input: fixture::Input =
@@ -233,10 +238,9 @@ fn client_selection(
     let reply = fixture::run(&input).unwrap();
     assert_eq!(reply.factory, factories);
     assert_eq!(reply.content.as_deref(), Some("hello"));
-    input.params.insert(
-        "stream".to_owned(),
-        crate::model_routes::ParamValue::Bool(true),
-    );
+    input
+        .params
+        .insert("stream".to_owned(), ParamValue::Bool(true));
     let stream = fixture::run(&input).unwrap();
     assert_eq!(stream.factory, factories);
     assert!(stream.stream);
@@ -263,10 +267,9 @@ fn async_transport_failure(
     let mut input: fixture::Input =
         serde_json::from_str(include_str!("tests/fixtures/buffered-response.json")).unwrap();
     input.native.failure = failure;
-    input.params.insert(
-        "stream".to_owned(),
-        crate::model_routes::ParamValue::Bool(streaming),
-    );
+    input
+        .params
+        .insert("stream".to_owned(), ParamValue::Bool(streaming));
     let output = fixture::run(&input).unwrap();
     assert_eq!(output.status, status);
     assert!(output.error.is_some());
@@ -285,10 +288,9 @@ fn pre_call_logging_suppression(#[case] routing: (bool, bool), #[case] logs: usi
     let output = fixture::run(&input).unwrap();
     assert_eq!(output.logs.len(), logs);
     assert_eq!(output.content.as_deref(), Some("hello"));
-    input.params.insert(
-        "stream".to_owned(),
-        crate::model_routes::ParamValue::Bool(true),
-    );
+    input
+        .params
+        .insert("stream".to_owned(), ParamValue::Bool(true));
     let stream = fixture::run(&input).unwrap();
     assert_eq!(stream.logs.len(), 2);
     assert_eq!(stream.reads, 0);
