@@ -44,10 +44,14 @@ pub struct CompletionCall<'call> {
     pub prompts: &'call PromptFactory,
 }
 
-pub async fn prepare_completion<T: Sync, C: SagemakerCredentials>(
+pub async fn prepare_completion<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &CompletionCall<'_>,
-) -> Result<PreparedCall, RuntimeError> {
+) -> Result<PreparedCall, RuntimeError>
+where
+    T: Sync,
+    C: SagemakerCredentials,
+{
     let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
     let credentials = runtime.credentials_for(call.signing, &region).await?;
     let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
@@ -89,10 +93,14 @@ pub async fn prepare_completion<T: Sync, C: SagemakerCredentials>(
     })
 }
 
-pub async fn completion<T: SagemakerTransport, C: SagemakerCredentials>(
+pub async fn completion<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &CompletionCall<'_>,
-) -> Result<ChatResponse, RuntimeFailure> {
+) -> Result<ChatResponse, RuntimeFailure>
+where
+    T: SagemakerTransport,
+    C: SagemakerCredentials,
+{
     let prepared = prepare_completion(runtime, call).await?;
     let response = runtime
         .transport
@@ -117,10 +125,14 @@ pub async fn completion<T: SagemakerTransport, C: SagemakerCredentials>(
     Ok(transform_response(&input, runtime.counter)?)
 }
 
-pub async fn completion_stream<T: SagemakerTransport, C: SagemakerCredentials>(
+pub async fn completion_stream<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &CompletionCall<'_>,
-) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
+) -> Result<SagemakerEvents<ChunkStream>, SagemakerError>
+where
+    T: SagemakerTransport,
+    C: SagemakerCredentials,
+{
     let prepared = prepare_completion(runtime, call).await?;
     let (status, chunks) = runtime
         .transport

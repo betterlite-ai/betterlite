@@ -46,10 +46,14 @@ pub enum EmbeddingReply {
     Cohere(LegacyEmbeddingResponse),
 }
 
-pub async fn prepare_embedding<T: Sync, C: SagemakerCredentials>(
+pub async fn prepare_embedding<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &EmbeddingCall<'_>,
-) -> Result<PreparedEmbedding, RuntimeError> {
+) -> Result<PreparedEmbedding, RuntimeError>
+where
+    T: Sync,
+    C: SagemakerCredentials,
+{
     let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
     let credentials = runtime.credentials_for(call.signing, &region).await?;
     let body = embedding_body(call.model, call.input, call.optional_params)?;
@@ -85,10 +89,14 @@ pub async fn prepare_embedding<T: Sync, C: SagemakerCredentials>(
     })
 }
 
-pub async fn embedding<T: SagemakerTransport, C: SagemakerCredentials>(
+pub async fn embedding<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &EmbeddingCall<'_>,
-) -> Result<EmbeddingReply, RuntimeFailure> {
+) -> Result<EmbeddingReply, RuntimeFailure>
+where
+    T: SagemakerTransport,
+    C: SagemakerCredentials,
+{
     let prepared = prepare_embedding(runtime, call).await?;
     let response = runtime
         .transport

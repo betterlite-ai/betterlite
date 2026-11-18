@@ -14,8 +14,8 @@ fn reads_prompt_text_and_uses_empty_for_non_text() {
         (String::from("other"), Json::Null),
     ]);
     assert_eq!(inputs(&body), "prompt");
-    let body = IndexMap::from([(String::from("inputs"), Json::Null)]);
-    assert_eq!(inputs(&body), "");
+    let null = IndexMap::from([(String::from("inputs"), Json::Null)]);
+    assert_eq!(inputs(&null), "");
     assert_eq!(inputs(&IndexMap::new()), "");
 }
 

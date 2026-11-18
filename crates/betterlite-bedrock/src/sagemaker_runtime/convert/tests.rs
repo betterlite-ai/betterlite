@@ -26,7 +26,7 @@ fn converts_nested_completion_json_values() {
     assert_eq!(converted.get("bool"), Some(&Plain::Bool(true)));
     assert_eq!(
         converted.get("number"),
-        Some(&Plain::Number(Number::from(2)))
+        Some(&Plain::Number(Number::from(2_u8)))
     );
     assert_eq!(
         converted.get("text"),
@@ -78,7 +78,7 @@ fn converts_all_prompt_json_variants() {
     let source = IndexMap::from([
         (String::from("null"), Prompted::Null),
         (String::from("bool"), Prompted::Bool(false)),
-        (String::from("number"), Prompted::Number(Number::from(4))),
+        (String::from("number"), Prompted::Number(Number::from(4_u8))),
         (String::from("text"), Prompted::Text(String::from("prompt"))),
         (
             String::from("list"),
@@ -97,7 +97,7 @@ fn converts_all_prompt_json_variants() {
     assert_eq!(converted.get("bool"), Some(&Plain::Bool(false)));
     assert_eq!(
         converted.get("number"),
-        Some(&Plain::Number(Number::from(4)))
+        Some(&Plain::Number(Number::from(4_u8)))
     );
     assert_eq!(
         converted.get("text"),

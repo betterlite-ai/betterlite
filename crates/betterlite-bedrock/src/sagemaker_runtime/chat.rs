@@ -50,10 +50,14 @@ pub struct ChatCall<'call> {
     pub configured_bearer: Option<&'call SecretString>,
 }
 
-pub async fn prepare_chat<T: Sync, C: SagemakerCredentials>(
+pub async fn prepare_chat<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &ChatCall<'_>,
-) -> Result<PreparedCall, RuntimeError> {
+) -> Result<PreparedCall, RuntimeError>
+where
+    T: Sync,
+    C: SagemakerCredentials,
+{
     let base_url = text_field(call.optional_params, BASE_URL_FIELD)?;
     let region = resolve_region(call.signing, Some(call.model), runtime.environment.inputs())?;
     let url = endpoint::runtime_url(&EndpointRequest {
@@ -73,12 +77,16 @@ pub async fn prepare_chat<T: Sync, C: SagemakerCredentials>(
     })
 }
 
-async fn sign_chat<T: Sync, C: SagemakerCredentials>(
+async fn sign_chat<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &ChatCall<'_>,
     url: &str,
     body_json: &IndexMap<String, Plain>,
-) -> Result<AwsSignedRequest, RuntimeError> {
+) -> Result<AwsSignedRequest, RuntimeError>
+where
+    T: Sync,
+    C: SagemakerCredentials,
+{
     let headers = chat_request::validate_environment(call.headers.clone(), call.optional_params);
     let pairs: Vec<(String, Option<String>)> = headers
         .into_iter()
@@ -121,10 +129,14 @@ fn chat_body_json(call: &ChatCall<'_>) -> Result<IndexMap<String, Plain>, Runtim
     Ok(convert::prompt_body(&body))
 }
 
-pub async fn chat<T: SagemakerTransport, C: SagemakerCredentials>(
+pub async fn chat<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &ChatCall<'_>,
-) -> Result<CompatibleReply, SagemakerError> {
+) -> Result<CompatibleReply, SagemakerError>
+where
+    T: SagemakerTransport,
+    C: SagemakerCredentials,
+{
     let response = runtime
         .transport
         .send(runtime.outbound(&prepare_chat(runtime, call).await?)?)
@@ -145,10 +157,14 @@ pub async fn chat<T: SagemakerTransport, C: SagemakerCredentials>(
     })
 }
 
-pub async fn chat_stream<T: SagemakerTransport, C: SagemakerCredentials>(
+pub async fn chat_stream<T, C>(
     runtime: &SagemakerRuntime<'_, T, C>,
     call: &ChatCall<'_>,
-) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
+) -> Result<SagemakerEvents<ChunkStream>, SagemakerError>
+where
+    T: SagemakerTransport,
+    C: SagemakerCredentials,
+{
     let (status, chunks) = runtime
         .transport
         .open_stream(runtime.outbound(&prepare_chat(runtime, call).await?)?)

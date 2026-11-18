@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use serde_json::value::RawValue;
 mod integration;
 use secrecy::SecretString;
 
@@ -81,7 +82,7 @@ fn builds_runtime_endpoint(
 }
 
 #[test]
-fn signed_post_preserves_the_final_body_bytes() -> Result<(), SigningError> {
+fn signed_post_preserves_the_final_body_bytes() {
     let credentials = Credentials {
         access_key_id: SecretString::from("access".to_owned()),
         secret_access_key: SecretString::from("secret".to_owned()),
@@ -99,7 +100,8 @@ fn signed_post_preserves_the_final_body_bytes() -> Result<(), SigningError> {
         )],
         credentials: &credentials,
         now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
-    })?;
+    })
+    .expect("signed request");
 
     assert_eq!(signed.body, body.as_bytes());
     assert!(
@@ -108,7 +110,6 @@ fn signed_post_preserves_the_final_body_bytes() -> Result<(), SigningError> {
             .iter()
             .any(|(name, _)| name == "Authorization")
     );
-    Ok(())
 }
 
 #[rstest]
@@ -151,7 +152,7 @@ fn completion_region_prefers_aws_region_over_aws_region_name() {
 
 #[test]
 fn completion_region_rejects_a_non_string_region_name() {
-    let raw = serde_json::value::RawValue::from_string(String::from("5")).expect("region JSON");
+    let raw = RawValue::from_string(String::from("5")).expect("region JSON");
     let params = ParamMap::from([(String::from("aws_region_name"), raw)]);
     assert!(matches!(
         call_region(&params, RegionInputs::default()),
@@ -164,8 +165,7 @@ fn completion_region_rejects_a_non_string_region_name() {
 
 #[test]
 fn explicit_completion_region_overrides_environment() {
-    let raw = serde_json::value::RawValue::from_string(String::from("\"ap-northeast-1\""))
-        .expect("region JSON");
+    let raw = RawValue::from_string(String::from("\"ap-northeast-1\"")).expect("region JSON");
     let params = ParamMap::from([(String::from("aws_region_name"), raw)]);
     assert!(matches!(
         call_region(

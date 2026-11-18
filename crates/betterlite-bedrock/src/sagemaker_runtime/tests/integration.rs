@@ -1,6 +1,10 @@
+use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
+use betterlite_tokenizer::engine::error::EngineError;
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::{Duration, UNIX_EPOCH};
+use tokio::net::TcpListener;
 
 use aws_credential_types::provider::error::CredentialsError;
 use aws_smithy_eventstream::frame::write_message_to;
@@ -63,11 +67,8 @@ impl TextTokenCounter for Counter {
 struct Encoding;
 
 impl TextEncoding for Encoding {
-    fn count_tokens(
-        &self,
-        _text: &str,
-    ) -> Result<usize, betterlite_tokenizer::engine::error::EngineError> {
-        Err(betterlite_tokenizer::engine::error::EngineError::PoolClosed)
+    fn count_tokens(&self, _text: &str) -> Result<usize, EngineError> {
+        Err(EngineError::PoolClosed)
     }
 }
 
@@ -101,17 +102,14 @@ impl TestCredentials {
 }
 
 impl SagemakerCredentials for TestCredentials {
-    async fn resolve(
+    fn resolve(
         &self,
         _settings: AwsSettings,
         region: String,
-    ) -> Result<Credentials, CredentialError> {
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
         self.regions.lock().expect("regions lock").push(region);
         let failure = self.failure.lock().expect("failure lock").take();
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(credentials()),
-        }
+        ready(failure.map_or_else(|| Ok(credentials()), Err))
     }
 }
 
@@ -142,34 +140,49 @@ impl FakeTransport {
     }
 
     fn reply(&self, request: OutboundRequest) -> Result<(u16, Vec<Vec<u8>>), TransportError> {
-        if let Some(error) = self.failure.lock().expect("failure lock").take() {
+        let failure = self
+            .failure
+            .lock()
+            .map_err(|_| TransportError::Closed)?
+            .take();
+        if let Some(error) = failure {
             return Err(error);
         }
-        self.requests.lock().expect("request lock").push(request);
+        self.requests
+            .lock()
+            .map_err(|_| TransportError::Closed)?
+            .push(request);
         Ok((self.status, self.chunks.clone()))
     }
 }
 
 impl SagemakerTransport for FakeTransport {
-    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        let (status, _chunks) = self.reply(request)?;
-        Ok(UpstreamResponse {
-            status,
-            headers: HeaderMap::new(),
-            body: self.body.clone(),
-        })
-    }
-
-    async fn open_stream(
+    fn send(
         &self,
         request: OutboundRequest,
-    ) -> Result<(u16, ChunkStream), TransportError> {
-        let (status, chunks) = self.reply(request)?;
-        let items = chunks
-            .into_iter()
-            .map(Ok::<Vec<u8>, HttpError>)
-            .collect::<Vec<_>>();
-        Ok((status, Box::pin(stream::iter(items))))
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        ready(
+            self.reply(request)
+                .map(|(status, _chunks)| UpstreamResponse {
+                    status,
+                    headers: HeaderMap::new(),
+                    body: self.body.clone(),
+                }),
+        )
+    }
+
+    fn open_stream(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<(u16, ChunkStream), TransportError>> + Send {
+        ready(self.reply(request).map(|(status, chunks)| {
+            let items = chunks
+                .into_iter()
+                .map(Ok::<Vec<u8>, HttpError>)
+                .collect::<Vec<_>>();
+            let body: ChunkStream = Box::pin(stream::iter(items));
+            (status, body)
+        }))
     }
 }
 
@@ -177,11 +190,7 @@ fn fixed_identifier() -> Uuid {
     Uuid::from_u128(IDENTIFIER)
 }
 
-fn runtime<'counter, T, C>(
-    transport: T,
-    credentials: C,
-    counter: &'counter Counter,
-) -> SagemakerRuntime<'counter, T, C>
+fn runtime<T, C>(transport: T, credentials: C, counter: &Counter) -> SagemakerRuntime<'_, T, C>
 where
     T: SagemakerTransport,
     C: SagemakerCredentials,
@@ -194,9 +203,7 @@ where
             region: None,
             session_region: None,
         },
-        clock: aws_smithy_async::time::SharedTimeSource::new(
-            aws_smithy_async::time::StaticTimeSource::new(UNIX_EPOCH),
-        ),
+        clock: SharedTimeSource::new(StaticTimeSource::new(UNIX_EPOCH)),
         counter,
         timeout: Duration::from_secs(5),
         identifier: fixed_identifier,
@@ -323,7 +330,7 @@ fn upstream(failure: RuntimeFailure) -> SagemakerError {
 }
 
 // the class B239 gives the failure the runtime reports, read through the same RawException the dispatch takes
-fn classify(failure: &RuntimeFailure) -> &'static str {
+fn classify(failure: &RuntimeFailure) -> ErrorClass {
     let raw = RawException {
         model: String::from("sagemaker/endpoint"),
         custom_llm_provider: String::from("sagemaker"),
@@ -336,15 +343,11 @@ fn classify(failure: &RuntimeFailure) -> &'static str {
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .expect("built-in redaction patterns always compile");
-    match dispatch(&DispatchInput::Raw(Box::new(raw)), &redactor) {
-        ErrorClass::ApiConnection(_) => "api_connection",
-        ErrorClass::ServiceUnavailable(_) => "service_unavailable",
-        _other => "other",
-    }
+    dispatch(&DispatchInput::Raw(Box::new(raw)), &redactor)
 }
 
 async fn timeout_failure() -> TransportError {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+    let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("loopback listener");
     let address = listener.local_addr().expect("listener address");
@@ -393,20 +396,24 @@ async fn prepare_calls_build_sigv4_signed_completion_chat_and_embedding_requests
         TestCredentials::working(),
         &counter,
     );
-    let prepared = completion::prepare_completion(&runtime, &workspace.completion())
+    let completion_call = completion::prepare_completion(&runtime, &workspace.completion())
         .await
         .expect("completion request");
-    assert!(prepared.url.ends_with("/invocations-response-stream"));
-    assert!(signed_with_sigv4(&prepared.headers));
-    assert!(prepared.body_json.contains_key("inputs"));
+    assert!(
+        completion_call
+            .url
+            .ends_with("/invocations-response-stream")
+    );
+    assert!(signed_with_sigv4(&completion_call.headers));
+    assert!(completion_call.body_json.contains_key("inputs"));
 
-    let prepared = chat::prepare_chat(&runtime, &workspace.chat(false))
+    let chat_call = chat::prepare_chat(&runtime, &workspace.chat(false))
         .await
         .expect("chat request");
-    assert!(prepared.headers.iter().any(|(name, value)| {
+    assert!(chat_call.headers.iter().any(|(name, value)| {
         name == "X-Amzn-SageMaker-Inference-Component" && value == "component"
     }));
-    assert!(signed_with_sigv4(&prepared.headers));
+    assert!(signed_with_sigv4(&chat_call.headers));
 
     let prepared = embedding::prepare_embedding(&runtime, &workspace.embedding("voyage-3"))
         .await
@@ -444,41 +451,7 @@ async fn transmitted_sigv4_signature_covers_the_sent_request(#[case] chat: bool)
     let mut requests = runtime.transport.requests.lock().expect("request lock");
     let sent = requests.pop().expect("the runtime sent one request");
     drop(requests);
-    let RequestBody::Json(body) = &sent.body else {
-        panic!("a JSON body is expected");
-    };
-    let headers: Vec<_> = sent
-        .headers
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_owned(),
-                Some(value.to_str().expect("a text header").to_owned()),
-            )
-        })
-        .collect();
-    let credentials = credentials();
-    let signed = sign_request(&Signable {
-        method: "POST",
-        url: sent.url.as_str(),
-        headers: &without_computed(filter_for_signature(&headers), false),
-        body,
-        service: "sagemaker",
-        region: "us-west-2",
-        credentials: &credentials,
-        now: UNIX_EPOCH,
-    })
-    .expect("the transmitted request signs");
-    let computed = signed
-        .iter()
-        .find_map(|(name, value)| (name == "Authorization").then_some(value.as_str()))
-        .expect("a computed signature");
-    let transmitted = sent
-        .headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .expect("a transmitted signature");
-    assert_eq!(transmitted, computed);
+    assert_transmitted_signature(&sent);
 }
 
 #[tokio::test]
@@ -553,9 +526,9 @@ async fn sagemaker_nova_chat_drops_the_model_field() {
         .await
         .expect("chat request");
     assert!(chat_prepared.body_json.contains_key("model"));
-    let mut chat = workspace.chat(false);
-    chat.variant = ChatVariant::Nova;
-    let nova = chat::prepare_chat(&runtime, &chat)
+    let mut nova_call = workspace.chat(false);
+    nova_call.variant = ChatVariant::Nova;
+    let nova = chat::prepare_chat(&runtime, &nova_call)
         .await
         .expect("nova request");
     assert!(!nova.body_json.contains_key("model"));
@@ -697,156 +670,14 @@ async fn chat_rejects_a_redirect_without_a_location() {
 }
 
 #[tokio::test]
-async fn runtime_calls_preserve_error_status_and_stream_policies() {
-    let counter = Counter;
-    let mut workspace = Workspace::new();
-    let completion = upstream(
-        completion::completion(
-            &runtime(
-                FakeTransport::new(429, "throttled", &[]),
-                TestCredentials::working(),
-                &counter,
-            ),
-            &workspace.completion(),
-        )
-        .await
-        .expect_err("completion status"),
-    );
-    assert_eq!(
-        (completion.status_code, completion.message.as_str()),
-        (429, "throttled")
-    );
-
-    let chat = chat::chat(
-        &runtime(
-            FakeTransport::new(429, "chat throttled", &[]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.chat(false),
-    )
-    .await
-    .expect_err("chat status");
-    assert_eq!(
-        (chat.status_code, chat.message.as_str()),
-        (429, "chat throttled")
-    );
-
-    workspace.options = Options::from([(String::from("stream"), json!(true))]);
-    let completion_stream = completion::completion_stream(
-        &runtime(
-            FakeTransport::new(201, "", &[b"failed"]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.completion(),
-    )
-    .await;
-    assert!(
-        matches!(completion_stream, Err(error) if error.status_code == 201 && error.message == "failed")
-    );
-
-    let chat_stream = chat::chat_stream(
-        &runtime(
-            FakeTransport::new(201, "", &[b"failed"]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.chat(true),
-    )
-    .await;
-    assert!(
-        matches!(chat_stream, Err(error) if error.status_code == 201 && error.message == "failed")
-    );
-
-    let embedding = upstream(
-        embedding::embedding(
-            &runtime(
-                FakeTransport::new(503, "embedding failed", &[]),
-                TestCredentials::working(),
-                &counter,
-            ),
-            &workspace.embedding("voyage-3"),
-        )
-        .await
-        .expect_err("embedding status"),
-    );
-    assert_eq!(
-        (embedding.status_code, embedding.message.as_str()),
-        (503, "embedding failed")
-    );
-}
-
-#[tokio::test]
-async fn unreadable_replies_classify_as_connection_errors() {
-    let counter = Counter;
-    let workspace = Workspace::new();
-    let completion = completion::completion(
-        &runtime(
-            FakeTransport::new(200, "not-json", &[]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.completion(),
-    )
-    .await
-    .expect_err("completion reply");
-    assert_eq!(completion.status_code(), None);
-    assert_eq!(classify(&completion), "api_connection");
-    let embedding = embedding::embedding(
-        &runtime(
-            FakeTransport::new(200, "not-json", &[]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.embedding("voyage-3"),
-    )
-    .await
-    .expect_err("embedding reply");
-    assert_eq!(embedding.status_code(), None);
-    assert_eq!(classify(&embedding), "api_connection");
-    let wire = completion::completion(
-        &runtime(
-            FakeTransport::new(500, "boom", &[]),
-            TestCredentials::working(),
-            &counter,
-        ),
-        &workspace.completion(),
-    )
-    .await
-    .expect_err("wire status");
-    assert_eq!(wire.status_code(), Some(500));
-    assert_eq!(classify(&wire), "service_unavailable");
-}
-
-#[tokio::test]
 async fn completion_stream_skips_a_failed_frame_and_keeps_reading() {
     let counter = Counter;
     let mut workspace = Workspace::new();
     workspace.options = Options::from([(String::from("stream"), json!(true))]);
-    let frames = [
-        frame(
-            &[
-                (":message-type", text_header("event")),
-                (":event-type", text_header("PayloadPart")),
-            ],
-            br#"{"token": {"text": "first"}}"#,
-        ),
-        frame(
-            &[
-                (":message-type", text_header("exception")),
-                (":exception-type", text_header("ModelStreamError")),
-            ],
-            br#"{"message": "boom"}"#,
-        ),
-        frame(
-            &[
-                (":message-type", text_header("event")),
-                (":event-type", text_header("PayloadPart")),
-            ],
-            br#"{"token": {"text": "third"}}"#,
-        ),
-    ];
+    let frames = interrupted_frames(
+        br#"{"token": {"text": "first"}}"#,
+        br#"{"token": {"text": "third"}}"#,
+    );
     let chunks: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
     let runtime = runtime(
         FakeTransport::new(200, "", &chunks),
@@ -873,29 +704,10 @@ async fn completion_stream_skips_a_failed_frame_and_keeps_reading() {
 async fn chat_stream_skips_a_failed_frame_and_keeps_reading() {
     let counter = Counter;
     let workspace = Workspace::new();
-    let frames = [
-        frame(
-            &[
-                (":message-type", text_header("event")),
-                (":event-type", text_header("PayloadPart")),
-            ],
-            br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "first"}}]}"#,
-        ),
-        frame(
-            &[
-                (":message-type", text_header("exception")),
-                (":exception-type", text_header("ModelStreamError")),
-            ],
-            br#"{"message": "boom"}"#,
-        ),
-        frame(
-            &[
-                (":message-type", text_header("event")),
-                (":event-type", text_header("PayloadPart")),
-            ],
-            br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "third"}}]}"#,
-        ),
-    ];
+    let frames = interrupted_frames(
+        br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "first"}}]}"#,
+        br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "third"}}]}"#,
+    );
     let chunks: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
     let runtime = runtime(
         FakeTransport::new(200, "", &chunks),
@@ -983,4 +795,61 @@ async fn missing_credentials_become_a_400_on_completion_and_chat() {
 }
 
 mod embedding_replies;
+mod errors;
 mod timeouts;
+
+fn interrupted_frames(first: &[u8], last: &[u8]) -> [Vec<u8>; 3] {
+    let payload_headers = [
+        (":message-type", text_header("event")),
+        (":event-type", text_header("PayloadPart")),
+    ];
+    [
+        frame(&payload_headers, first),
+        frame(
+            &[
+                (":message-type", text_header("exception")),
+                (":exception-type", text_header("ModelStreamError")),
+            ],
+            br#"{"message":"boom"}"#,
+        ),
+        frame(&payload_headers, last),
+    ]
+}
+
+fn assert_transmitted_signature(sent: &OutboundRequest) {
+    let RequestBody::Json(body) = &sent.body else {
+        panic!("a JSON body is expected");
+    };
+    let headers: Vec<_> = sent
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                Some(value.to_str().expect("a text header").to_owned()),
+            )
+        })
+        .collect();
+    let credentials = credentials();
+    let signed = sign_request(&Signable {
+        method: "POST",
+        url: sent.url.as_str(),
+        headers: &without_computed(filter_for_signature(&headers), false),
+        body,
+        service: "sagemaker",
+        region: "us-west-2",
+        credentials: &credentials,
+        now: UNIX_EPOCH,
+    })
+    .expect("the transmitted request signs");
+    let computed = signed
+        .iter()
+        .find_map(|(name, value)| (name == "Authorization").then_some(value.as_str()))
+        .expect("a computed signature");
+    let transmitted = sent
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .expect("a transmitted signature");
+    assert_eq!(transmitted, computed);
+}

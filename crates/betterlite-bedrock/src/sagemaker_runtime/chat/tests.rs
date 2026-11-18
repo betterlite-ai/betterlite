@@ -4,18 +4,17 @@ use super::text_field;
 use crate::sagemaker_runtime::error::RuntimeError;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
-use serde_json::json;
 
 #[test]
 fn reads_base_url_as_optional_text() {
-    let absent = serde_json::from_value(json!({})).expect("empty body");
+    let absent = serde_json::from_str("{}").expect("empty body");
     assert_eq!(
         text_field(&absent, "sagemaker_base_url").expect("absent"),
         None
     );
-    let null = serde_json::from_value(json!({"sagemaker_base_url": null})).expect("null body");
+    let null = serde_json::from_str(r#"{"sagemaker_base_url":null}"#).expect("null body");
     assert_eq!(text_field(&null, "sagemaker_base_url").expect("null"), None);
-    let text = serde_json::from_value(json!({"sagemaker_base_url": "https://example.test"}))
+    let text = serde_json::from_str(r#"{"sagemaker_base_url":"https://example.test"}"#)
         .expect("text body");
     assert_eq!(
         text_field(&text, "sagemaker_base_url").expect("text"),

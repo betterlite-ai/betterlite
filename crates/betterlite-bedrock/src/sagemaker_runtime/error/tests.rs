@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use crate::sagemaker_embedding::hf::HfReplyError;
+use std::io;
+
 use super::{RuntimeError, RuntimeFailure, timeout_error};
 use aws_credential_types::provider::error::CredentialsError;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -30,12 +33,10 @@ fn runtime_errors_preserve_sagemaker_errors_and_map_http_failures() {
 #[test]
 fn hf_reply_error_keeps_its_wire_status() {
     let source = serde_json::from_str::<Plain>("invalid").expect_err("bad JSON");
-    let mapped = SagemakerError::from(RuntimeError::HfReply(
-        crate::sagemaker_embedding::hf::HfReplyError::Parse {
-            status_code: 422,
-            source,
-        },
-    ));
+    let mapped = SagemakerError::from(RuntimeError::HfReply(HfReplyError::Parse {
+        status_code: 422,
+        source,
+    }));
     assert_eq!(mapped.status_code, 422);
 }
 
@@ -61,7 +62,7 @@ fn missing_credentials_become_a_400_with_botocores_message(#[case] failure: Runt
 
 #[rstest]
 #[case::provider_failure(RuntimeError::Credential(CredentialError::Source(
-    SourceError::Provider(CredentialsError::unhandled(std::io::Error::other(
+    SourceError::Provider(CredentialsError::unhandled(io::Error::other(
         "the metadata endpoint answered 500"
     )))
 )))]
