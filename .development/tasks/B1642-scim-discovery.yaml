@@ -25,6 +25,11 @@ description: >-
   are chiefly static schema declarations; reserve 290 implementation/data, 150 route tests
   and 110 fixtures/corpus lines within 625. Path parsing is the existing B003 extractor,
   with additional URI path examples in the HTTP case decoder corpus rather than a new parser.
+
+  B9941 merges scim_discovery.rs's stub routes function into scim_router, so fill only scim_discovery.rs and
+  scim_discovery/** and leave scim.rs and routes.rs as they are. Both base aliases, /scim/v2 and /scim/v2/, are this
+  module's own two routes with their full paths; scim_router merges them without a prefix, so neither collapses into
+  the other. The discovery cases need no database.
 scope:
   paths:
     - crates/betterlite-server/src/scim_discovery.rs

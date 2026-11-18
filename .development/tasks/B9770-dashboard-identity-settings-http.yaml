@@ -8,7 +8,7 @@ description: >-
   B1657, B1660, B066 and B055 already own the handlers. Their future unit/route cases do not
   exercise these mounted forms' full JSON projections, and no matching case is on disk.
 
-  Use B1630 steps with B860/B5076's independently seeded admin and viewer databases. Set
+  Use B1630 steps with B860/B9942's independently seeded admin and viewer databases. Set
   general_settings.store_model_in_db=true for saved settings. Authenticate as the page does,
   with the session key as a Bearer value, except getUiSettings which sends no credential.
   Compare each step's status, content-type, stable response fields and error type/param/code;
