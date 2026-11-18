@@ -16,10 +16,12 @@ pub fn converted_stream_requested(kwargs: &IndexMap<String, Json>) -> bool {
 fn value_is_set(value: Option<&Json>) -> bool {
     match value {
         None | Some(Json::Null | Json::Bool(false)) => false,
-        Some(Json::Number(value)) => {
-            value.as_i64().is_some_and(|integer| integer != 0)
-                || value.as_u64().is_some_and(|integer| integer != 0)
-                || value.as_f64().is_some_and(|float| float != 0.0_f64)
+        Some(Json::Number(numeric_value)) => {
+            numeric_value.as_i64().is_some_and(|integer| integer != 0)
+                || numeric_value.as_u64().is_some_and(|integer| integer != 0)
+                || numeric_value
+                    .as_f64()
+                    .is_some_and(|float_value| float_value != 0.0_f64)
         }
         Some(Json::Text(text)) => !text.is_empty(),
         Some(Json::List(items)) => !items.is_empty(),
@@ -50,22 +52,27 @@ pub fn cache_request_kwargs(
 }
 
 #[derive(Clone, Copy)]
-pub struct CacheEligibility<'a> {
-    pub event_type: &'a str,
-    pub stream: Option<&'a Json>,
-    pub kwargs: &'a IndexMap<String, Json>,
+pub struct CacheEligibility<'request> {
+    pub event_type: &'request str,
+    pub stream: Option<&'request Json>,
+    pub kwargs: &'request IndexMap<String, Json>,
+    pub dependencies: CacheDependencies,
+    pub global_cache: bool,
+    pub store_allowed: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct CacheDependencies {
     pub has_typed_response: bool,
     pub has_cache_handler: bool,
-    pub has_global_cache: bool,
-    pub store_allowed: bool,
 }
 
 #[must_use]
 pub fn is_stream_cache_eligible(input: &CacheEligibility<'_>) -> bool {
     input.event_type == "response.completed"
-        && input.has_typed_response
-        && input.has_cache_handler
-        && input.has_global_cache
+        && input.dependencies.has_typed_response
+        && input.dependencies.has_cache_handler
+        && input.global_cache
         && input.store_allowed
         && (matches!(input.stream, Some(Json::Bool(true)))
             || converted_stream_requested(input.kwargs))

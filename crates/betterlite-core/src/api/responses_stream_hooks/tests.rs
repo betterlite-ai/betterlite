@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    CacheEligibility, cache_request_kwargs, converted_stream_requested, is_stream_cache_eligible,
+    CacheDependencies, CacheEligibility, cache_request_kwargs, converted_stream_requested,
+    is_stream_cache_eligible,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -51,9 +52,11 @@ fn terminal_cache_requires_completed_event_and_all_dependencies() {
         event_type: "response.completed",
         stream: Some(&Json::Bool(true)),
         kwargs: &kwargs,
-        has_typed_response: true,
-        has_cache_handler: true,
-        has_global_cache: true,
+        dependencies: CacheDependencies {
+            has_typed_response: true,
+            has_cache_handler: true,
+        },
+        global_cache: true,
         store_allowed: true,
     };
     assert!(is_stream_cache_eligible(&input));
