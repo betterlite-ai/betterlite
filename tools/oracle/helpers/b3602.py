@@ -1,4 +1,3 @@
-import json
 from typing import Literal, TypeAlias, TypedDict
 
 import litellm
@@ -8,14 +7,23 @@ from litellm.proxy.pass_through_endpoints.passthrough_endpoint_router import (
 from litellm.router import Router
 from litellm.types.passthrough_endpoints.vertex_ai import VertexPassThroughCredentials
 from litellm.types.utils import CredentialItem
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
-Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+CREDENTIALS: TypeAdapter[list[CredentialItem]] = TypeAdapter(list[CredentialItem])
+
+
+class VertexFields(TypedDict):
+    vertex_project: str | None
+    vertex_location: str | None
+    vertex_credentials: str | dict[str, JsonValue] | None
+
+
+VERTEX: TypeAdapter[VertexFields] = TypeAdapter(VertexFields)
 
 
 class CommonInput(TypedDict):
-    deployments: list[dict[str, Json]]
-    credentials: dict[str, dict[str, Json]]
+    deployments: list[dict[str, JsonValue]]
+    credentials: dict[str, dict[str, JsonValue]]
     environment: dict[str, str]
 
 
@@ -46,17 +54,6 @@ class VertexKeyInput(CommonInput):
 Input: TypeAlias = CredentialsInput | VertexDeploymentsInput | VertexKeyInput
 
 
-class VertexFields(TypedDict):
-    vertex_project: str | None
-    vertex_location: str | None
-    vertex_credentials: str | dict[str, Json] | None
-
-
-VERTEX: TypeAdapter[VertexFields] = TypeAdapter(VertexFields)
-JSON: TypeAdapter[Json] = TypeAdapter(Json)
-CREDENTIAL_ITEMS: TypeAdapter[list[CredentialItem]] = TypeAdapter(list[CredentialItem])
-
-
 class RouterGetter:
     def __init__(self, router: Router) -> None:
         self.router = router
@@ -65,51 +62,70 @@ class RouterGetter:
         return self.router
 
 
-def vertex_fields(value: VertexPassThroughCredentials | None) -> VertexFields | None:
-    if value is None:
+def vertex_fields(credentials: VertexPassThroughCredentials | None) -> JsonValue:
+    if credentials is None:
         return None
-    return VERTEX.validate_json(value.model_dump_json())
+    fields = VERTEX.validate_json(credentials.model_dump_json())
+    return {
+        "vertex_project": fields["vertex_project"],
+        "vertex_location": fields["vertex_location"],
+        "vertex_credentials": fields["vertex_credentials"],
+    }
+
+
+def install_credentials(credentials: dict[str, dict[str, JsonValue]]) -> None:
+    records: list[dict[str, JsonValue]] = [
+        {
+            "credential_name": name,
+            "credential_info": {},
+            "credential_values": values,
+        }
+        for name, values in credentials.items()
+    ]
+    litellm.credential_list = CREDENTIALS.validate_python(records)
+
+
+def vertex_deployments_value(
+    call: VertexDeploymentsInput, router: PassthroughEndpointRouter
+) -> JsonValue:
+    credentials = router.get_vertex_credentials_from_router_deployments(call["model"])
+    return {"result": vertex_fields(credentials)}
+
+
+def vertex_key_value(
+    call: VertexKeyInput, router: PassthroughEndpointRouter
+) -> JsonValue:
+    for entry in call["stored"]:
+        router.add_vertex_credentials(
+            entry["project_id"], entry["location"], entry["credentials"]
+        )
+    credentials = router.get_vertex_credentials(call["project_id"], call["location"])
+    return {"result": vertex_fields(credentials)}
+
+
+def call_router(input_value: Input, router: PassthroughEndpointRouter) -> JsonValue:
+    answer: JsonValue = None
+    match input_value["function"]:
+        case "credentials":
+            answer = {
+                "result": router.get_credentials(
+                    input_value["provider"], input_value["region"]
+                )
+            }
+        case "vertex_deployments":
+            answer = vertex_deployments_value(input_value, router)
+        case "vertex_key":
+            answer = vertex_key_value(input_value, router)
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
-    router_instance = Router(model_list=input_value["deployments"])
-    router = PassthroughEndpointRouter(llm_router_getter=RouterGetter(router_instance))
     previous_credentials = litellm.credential_list
-    credential_records: list[dict[str, Json]] = []
-    empty_info: dict[str, Json] = {}
-    for name, values in input_value["credentials"].items():
-        credential_records.append(
-            {
-                "credential_name": name,
-                "credential_info": empty_info,
-                "credential_values": values,
-            }
-        )
-    litellm.credential_list = CREDENTIAL_ITEMS.validate_json(
-        json.dumps(credential_records)
-    )
     try:
-        if input_value["function"] == "credentials":
-            result = router.get_credentials(
-                input_value["provider"], input_value["region"]
-            )
-            return JSON.validate_json('{"result":' + json.dumps(result) + "}")
-        if input_value["function"] == "vertex_deployments":
-            deployment_result = router.get_vertex_credentials_from_router_deployments(
-                input_value["model"]
-            )
-            return JSON.validate_json(
-                '{"result":' + json.dumps(vertex_fields(deployment_result)) + "}"
-            )
-        for entry in input_value["stored"]:
-            router.add_vertex_credentials(
-                entry["project_id"], entry["location"], entry["credentials"]
-            )
-        key_result = router.get_vertex_credentials(
-            input_value["project_id"], input_value["location"]
+        install_credentials(input_value["credentials"])
+        router = PassthroughEndpointRouter(
+            llm_router_getter=RouterGetter(Router(model_list=input_value["deployments"]))
         )
-        return JSON.validate_json(
-            '{"result":' + json.dumps(vertex_fields(key_result)) + "}"
-        )
+        return call_router(input_value, router)
     finally:
         litellm.credential_list = previous_credentials

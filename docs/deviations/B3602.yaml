@@ -1,6 +1,12 @@
 task: B3602
 deviations:
-  - what: Region extraction handles AssemblyAI by checking whether api_base contains "eu"; other providers return no region.
-    why: LiteLLM only implements this provider-specific rule at this task boundary.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L314-L327
-kept_bugs: []
+  - what: A credential object never equals a string containing its serialized JSON.
+    why: Structural equality preserves the task's string/object distinction and avoids treating different credential sources as unanimous.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L31-L37
+kept_bugs:
+  - what: The first deployment with a key that matches provider and region answers, even if later deployments also match.
+    why: Configurations with overlapping deployments rely on their order to pick a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L72-L95
+  - what: An unmatched model name receives the unanimous Vertex identity when all eligible deployments agree.
+    why: The pinned implementation falls back after an unsuccessful named lookup, so configurations relying on this fallback keep working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L153-L179
