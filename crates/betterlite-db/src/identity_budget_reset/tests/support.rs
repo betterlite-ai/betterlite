@@ -83,7 +83,8 @@ pub(crate) async fn schema() -> (PostgresFixture, PostgresStore, Client) {
 }
 
 pub(crate) async fn provision(statements: Vec<String>) -> (PostgresFixture, PostgresStore, Client) {
-    let fixture = PostgresFixture::provision_with_statements(configured_url().as_ref(), statements)
+    let url = configured_url();
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();

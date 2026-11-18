@@ -78,6 +78,6 @@ fn decode_due(row: &Row, id_column: &str) -> Result<DueIdentity, NativeError<Inf
         spend,
         max_budget,
         budget_duration,
-        budget_reset_at: reset_at.map(NaiveDateTime::and_utc),
+        budget_reset_at: reset_at.as_ref().map(NaiveDateTime::and_utc),
     })
 }
