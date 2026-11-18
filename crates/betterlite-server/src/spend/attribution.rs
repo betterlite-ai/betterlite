@@ -5,6 +5,8 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_provider::identity::spend_proxy::{
     DeploymentIdentity, ProxySelection, deployment_provider,
 };
+use betterlite_router::model_catalog_lookup::error::LookupError;
+use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 
 #[must_use]
 pub fn model_group_provider(
@@ -47,12 +49,12 @@ pub fn configured_model_group(
 #[derive(Debug, thiserror::Error)]
 pub enum AttributionError {
     #[error(transparent)]
-    Lookup(#[from] betterlite_router::model_catalog_lookup::error::LookupError),
+    Lookup(#[from] LookupError),
 }
 
 pub fn catalog_group_provider(
     model_group: &str,
-    catalog: Option<&betterlite_router::model_catalog_lookup::lookup::CatalogLookup<'_>>,
+    catalog: Option<&CatalogLookup<'_>>,
     settings: &SpendAttributionSettings,
     resolution: &ResolutionContext<'_>,
 ) -> Result<Option<String>, AttributionError> {

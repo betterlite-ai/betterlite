@@ -51,7 +51,10 @@ impl Fixture {
     }
 }
 
-fn deployment(model: &'static str, provider: Option<&'static str>) -> DeploymentIdentity<'static> {
+const fn deployment(
+    model: &'static str,
+    provider: Option<&'static str>,
+) -> DeploymentIdentity<'static> {
     DeploymentIdentity {
         model,
         custom_llm_provider: provider,
