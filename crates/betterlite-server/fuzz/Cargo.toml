@@ -312,3 +312,10 @@ path = "fuzz_targets/roi_settings_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "latest_release"
+path = "fuzz_targets/latest_release.rs"
+test = false
+doc = false
+bench = false
