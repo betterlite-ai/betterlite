@@ -54,27 +54,16 @@ pub fn resolve_base(
 ) -> ResolvedBase {
     let suffix = surface.suffix();
     let default_url = format!("{DEFAULT_BASE}{suffix}");
-    let base = explicit
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            globals
-                .api_base
-                .as_deref()
-                .filter(|value| !value.is_empty())
-        })
-        .or_else(|| {
-            environment
-                .get(API_BASE_VARIABLE)
-                .map(String::as_str)
-                .filter(|value| !value.is_empty())
-        })
-        .or_else(|| {
-            environment
-                .get(BASE_URL_VARIABLE)
-                .map(String::as_str)
-                .filter(|value| !value.is_empty())
-        })
-        .unwrap_or(&default_url);
+    let base = [
+        explicit,
+        globals.api_base.as_deref(),
+        environment.get(API_BASE_VARIABLE).map(String::as_str),
+        environment.get(BASE_URL_VARIABLE).map(String::as_str),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|value| !value.is_empty())
+    .unwrap_or(&default_url);
     if disable_suffix {
         return ResolvedBase {
             url: base.to_owned(),

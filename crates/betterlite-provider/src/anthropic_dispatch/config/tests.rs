@@ -32,18 +32,16 @@ fn a_url_missing_either_substring_keeps_the_chat_config() {
 
 #[test]
 fn an_unknown_provider_keeps_the_value_error() {
-    let error = select_chat_config("claude", "not-a-provider", anthropic_chat_config)
-        .expect_err("the tag is closed");
+    let error = selected_config("claude", "not-a-provider", None).expect_err("the tag is closed");
     assert_eq!(
         error.to_string(),
-        "'not-a-provider' is not a valid LlmProviders value"
+        "'not-a-provider' is not a valid LlmProviders"
     );
 }
 
 #[test]
 fn a_provider_without_a_chat_config_names_the_model_and_provider() {
-    let error = select_chat_config("claude-3", "topaz", anthropic_chat_config)
-        .expect_err("topaz has no chat config");
+    let error = selected_config("claude-3", "topaz", None).expect_err("topaz has no chat config");
     assert_eq!(
         error.to_string(),
         "Provider config not found for model: claude-3 and provider: topaz"
@@ -51,13 +49,18 @@ fn a_provider_without_a_chat_config_names_the_model_and_provider() {
 }
 
 #[test]
-fn the_two_anthropic_tags_select_their_own_configs() {
+fn the_shared_selection_is_preserved() {
+    use betterlite_context::chat_config_selection::tags::ChatConfigTag;
     assert_eq!(
-        anthropic_chat_config(ProviderId::Anthropic),
-        Some(ChatConfigKind::Anthropic)
+        selected_config("claude", "anthropic", Some(ChatConfigTag::Anthropic)),
+        Ok(ChatConfigTag::Anthropic)
     );
     assert_eq!(
-        anthropic_chat_config(ProviderId::AnthropicText),
-        Some(ChatConfigKind::AnthropicText)
+        selected_config(
+            "claude",
+            "anthropic_text",
+            Some(ChatConfigTag::AnthropicText)
+        ),
+        Ok(ChatConfigTag::AnthropicText)
     );
 }
