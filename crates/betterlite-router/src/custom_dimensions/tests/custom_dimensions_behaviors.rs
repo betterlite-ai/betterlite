@@ -4,6 +4,8 @@ use std::slice;
 use betterlite_config::sections::custom_dimensions as section;
 use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
 use rstest::rstest;
+use serde::Deserialize;
+use serde::de::value::{Error, StrDeserializer};
 
 use super::{config, dim, named, run, weights};
 use crate::complexity_scoring::classify::{PromptInput, Scorer};
@@ -29,7 +31,10 @@ fn classifier_names_parse_and_gate_dimensions(
     #[case] expected: ClassifierType,
     #[case] permitted: bool,
 ) {
-    assert_eq!(name.parse::<ClassifierType>().unwrap(), expected);
+    assert_eq!(
+        ClassifierType::deserialize(StrDeserializer::<Error>::new(name)).unwrap(),
+        expected
+    );
     assert!(validate(&[], name, &BTreeMap::new()).is_ok());
     let result = validate(&[named("domain")], name, &BTreeMap::new());
     assert_eq!(result.is_ok(), permitted);

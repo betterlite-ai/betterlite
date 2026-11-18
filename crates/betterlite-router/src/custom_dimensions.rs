@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
+
+use serde::Deserialize;
+use serde::de::value::{Error, StrDeserializer};
 
 use betterlite_config::sections::custom_dimensions as section;
 
@@ -19,7 +21,8 @@ const BUILT_IN_DIMENSIONS: [&str; 7] = [
     "questionComplexity",
 ];
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 enum ClassifierType {
     Heuristic,
     HeuristicV2,
@@ -30,27 +33,6 @@ enum ClassifierType {
     HeuristicFirst,
     Hybrid,
     Jev,
-}
-
-impl FromStr for ClassifierType {
-    type Err = DimensionsError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "heuristic" => Ok(Self::Heuristic),
-            "heuristic_v2" => Ok(Self::HeuristicV2),
-            "llm" => Ok(Self::Llm),
-            "capability" => Ok(Self::Capability),
-            "llm_v2" => Ok(Self::LlmV2),
-            "custom" => Ok(Self::Custom),
-            "heuristic_first" => Ok(Self::HeuristicFirst),
-            "hybrid" => Ok(Self::Hybrid),
-            "jev" => Ok(Self::Jev),
-            _ => Err(DimensionsError::ClassifierType {
-                value: value.to_owned(),
-            }),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -92,7 +74,10 @@ pub fn validate(
             limit: MAX_CUSTOM_DIMENSIONS,
         });
     }
-    let classifier_type = ClassifierType::from_str(classifier)?;
+    let classifier_type = ClassifierType::deserialize(StrDeserializer::<Error>::new(classifier))
+        .map_err(|_source| DimensionsError::ClassifierType {
+            value: classifier.to_owned(),
+        })?;
     if checked.is_empty() {
         return Ok(Validated::default());
     }
