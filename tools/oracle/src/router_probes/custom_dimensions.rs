@@ -43,7 +43,7 @@ enum Function {
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Fields {
     results: Option<Vec<Entry>>,
     work: Option<u64>,
@@ -68,39 +68,28 @@ struct ProbeConfig {
     dimension_weights: Option<BTreeMap<String, f64>>,
     #[serde(default)]
     custom_dimensions: Vec<section::Config>,
-    #[serde(default = "default_classifier_type")]
-    classifier_type: String,
+    #[serde(default)]
+    classifier_type: Option<String>,
 }
 
 // a payload arrives as JSON, whose numbers are finite, so the derived PartialEq is reflexive
 impl Eq for ProbeConfig {}
-
-fn default_classifier_type() -> String {
-    "heuristic".to_owned()
-}
 
 pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let mut fields = Fields {
-        results: None,
-        work: None,
-        accepted: None,
-        tier: None,
-        score: None,
-        signals: None,
-        cause: None,
-    };
+    let mut fields = Fields::default();
     match payload.function {
         Function::PatternWork => {
-            let results = payload
-                .patterns
-                .iter()
-                .map(|pattern| entry(pattern))
-                .collect();
-            fields.results = Some(results);
+            fields.results = Some(
+                payload
+                    .patterns
+                    .iter()
+                    .map(|pattern| entry(pattern))
+                    .collect(),
+            );
         }
         Function::Validate => {
             let result = resolved(payload.config.as_ref());
@@ -133,9 +122,7 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     };
     let outcome = Scorer::new(resolved)
         .and_then(|scorer| scorer.score_and_classify(&prompt))
-        .map_err(|source| OperationError::InvalidRequest {
-            message: source.to_string(),
-        })?;
+        .map_err(invalid_request)?;
     fields.tier = Some(outcome.tier.name().to_owned());
     fields.score = Some(format!("{:.6}", outcome.score));
     fields.signals = Some(outcome.signals);
@@ -143,34 +130,25 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     Ok(())
 }
 
+fn invalid_request(source: impl std::fmt::Display) -> OperationError {
+    OperationError::InvalidRequest {
+        message: source.to_string(),
+    }
+}
+
 fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationError> {
     let scoring = scoring_section::Config {
-        tier_models: None,
-        complexity_thresholds: None,
         dimension_weights: config.and_then(|settings| settings.dimension_weights.clone()),
-        tier_boundaries: None,
-        reasoning_override_min_score: None,
-        code_keywords: None,
-        reasoning_keywords: None,
-        technical_keywords: None,
-        custom_technical_keywords: None,
-        simple_keywords: None,
-        default_model: None,
+        ..scoring_section::Config::default()
     };
-    let mut resolved =
-        Config::resolve(&scoring).map_err(|source| OperationError::InvalidRequest {
-            message: source.to_string(),
-        })?;
+    let mut resolved = Config::resolve(&scoring).map_err(invalid_request)?;
     let empty = Vec::new();
     let dimensions = config.map_or(&empty, |settings| &settings.custom_dimensions);
-    let classifier = config.map_or("heuristic", |settings| settings.classifier_type.as_str());
+    let classifier = config
+        .and_then(|settings| settings.classifier_type.as_deref())
+        .unwrap_or("heuristic");
     let validated =
-        validate(dimensions, classifier, &resolved.dimension_weights).map_err(|source| {
-            OperationError::InvalidRequest {
-                message: source.to_string(),
-            }
-        })?;
-    let work = validated.work;
+        validate(dimensions, classifier, &resolved.dimension_weights).map_err(invalid_request)?;
     resolved.custom_dimensions = validated.dimensions;
-    Ok((resolved, work))
+    Ok((resolved, validated.work))
 }
