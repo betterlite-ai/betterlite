@@ -51,44 +51,29 @@ pub fn load_spend_queue_settings<L>(lookup: &L) -> Result<SpendQueueSettings, Sp
 where
     L: EnvironmentLookup,
 {
-    let capacity = decode_spend_queue_setting(
-        QUEUE_CAPACITY_ENV,
-        lookup
-            .lookup(QUEUE_CAPACITY_ENV)
-            .as_deref()
-            .unwrap_or_default(),
-    )?
-    .unwrap_or(DEFAULT_QUEUE_CAPACITY);
-    let aggregation_threshold = match decode_spend_queue_setting(
-        AGGREGATION_THRESHOLD_ENV,
-        lookup
-            .lookup(AGGREGATION_THRESHOLD_ENV)
-            .as_deref()
-            .unwrap_or_default(),
-    )? {
+    let capacity = read_setting(lookup, QUEUE_CAPACITY_ENV)?.unwrap_or(DEFAULT_QUEUE_CAPACITY);
+    let aggregation_threshold = match read_setting(lookup, AGGREGATION_THRESHOLD_ENV)? {
         Some(threshold) => threshold,
         None => scaled_threshold(capacity)?,
     };
     Ok(SpendQueueSettings {
         queue_capacity: capacity,
         aggregation_threshold,
-        flush_count: decode_spend_queue_setting(
-            FLUSH_COUNT_ENV,
-            lookup
-                .lookup(FLUSH_COUNT_ENV)
-                .as_deref()
-                .unwrap_or_default(),
-        )?
-        .unwrap_or(DEFAULT_FLUSH_COUNT),
-        default_lock_ttl_seconds: decode_spend_queue_setting(
-            DEFAULT_LOCK_TTL_ENV,
-            lookup
-                .lookup(DEFAULT_LOCK_TTL_ENV)
-                .as_deref()
-                .unwrap_or_default(),
-        )?
-        .unwrap_or(DEFAULT_LOCK_TTL_SECONDS),
+        flush_count: read_setting(lookup, FLUSH_COUNT_ENV)?.unwrap_or(DEFAULT_FLUSH_COUNT),
+        default_lock_ttl_seconds: read_setting(lookup, DEFAULT_LOCK_TTL_ENV)?
+            .unwrap_or(DEFAULT_LOCK_TTL_SECONDS),
     })
+}
+
+// An absent variable reads as the empty string, which the decoder treats as unset.
+fn read_setting<L>(lookup: &L, name: &str) -> Result<Option<i64>, SpendQueueError>
+where
+    L: EnvironmentLookup,
+{
+    match lookup.lookup(name) {
+        Some(text) => decode_spend_queue_setting(name, &text),
+        None => decode_spend_queue_setting(name, ""),
+    }
 }
 
 fn scaled_threshold(capacity: i64) -> Result<i64, SpendQueueError> {

@@ -8,7 +8,7 @@ use rstest::rstest;
 
 use super::{
     AGGREGATION_THRESHOLD_ENV, DEFAULT_FLUSH_COUNT, DEFAULT_LOCK_TTL_ENV, DEFAULT_LOCK_TTL_SECONDS,
-    DEFAULT_QUEUE_CAPACITY, FLUSH_COUNT_ENV, QUEUE_CAPACITY_ENV, SpendQueueSettings,
+    FLUSH_COUNT_ENV, QUEUE_CAPACITY_ENV, SpendQueueError, SpendQueueSettings,
     decode_spend_queue_setting, load_spend_queue_settings,
 };
 
@@ -26,10 +26,10 @@ fn load(pairs: &[(&str, &str)]) -> SpendQueueSettings {
 #[test]
 fn loads_spend_queue_settings() {
     let defaults = load(&[]);
-    assert_eq!(defaults.queue_capacity, DEFAULT_QUEUE_CAPACITY);
+    assert_eq!(defaults.queue_capacity, 1000);
     assert_eq!(defaults.aggregation_threshold, 800);
-    assert_eq!(defaults.flush_count, DEFAULT_FLUSH_COUNT);
-    assert_eq!(defaults.default_lock_ttl_seconds, DEFAULT_LOCK_TTL_SECONDS);
+    assert_eq!(defaults.flush_count, 1000);
+    assert_eq!(defaults.default_lock_ttl_seconds, 60);
 
     let overridden = load(&[
         (QUEUE_CAPACITY_ENV, "7"),
@@ -104,6 +104,19 @@ fn rejects_a_malformed_integer_setting(#[case] value: &str) {
         let error = load_spend_queue_settings(&environment(&[(name, value)])).unwrap_err();
         assert!(error.to_string().contains(name), "{error}");
     }
+}
+
+#[test]
+fn rejects_a_zero_capacity_and_keeps_a_zero_aggregation_threshold() {
+    assert!(matches!(
+        decode_spend_queue_setting(QUEUE_CAPACITY_ENV, "0"),
+        Err(SpendQueueError::NotPositive { .. })
+    ));
+    assert!(decode_spend_queue_setting(DEFAULT_LOCK_TTL_ENV, "0").is_err());
+    assert_eq!(
+        decode_spend_queue_setting(AGGREGATION_THRESHOLD_ENV, "0").unwrap(),
+        Some(0)
+    );
 }
 
 #[test]
