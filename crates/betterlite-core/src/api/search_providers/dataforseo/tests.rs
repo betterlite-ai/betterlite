@@ -598,40 +598,32 @@ fn dataforseo_request_maps_the_unified_options(
 }
 
 #[rstest]
-#[case::float_max_results(r#"{"max_results": 5.5}"#)]
-#[case::text_max_results(r#"{"max_results": "5"}"#)]
-fn dataforseo_request_rejects_a_non_integer_max_results(#[case] options: &str) {
-    let error = request_error(options);
-    assert!(matches!(
-        error,
-        DataForSeoSearchError::OptionInteger {
-            field: "max_results"
-        }
-    ));
-}
-
-#[rstest]
-#[case::numeric_country(r#"{"country": 5}"#)]
-#[case::object_country(r#"{"country": {"a": 1}}"#)]
-fn dataforseo_request_rejects_a_non_string_country(#[case] options: &str) {
-    let error = request_error(options);
-    assert!(matches!(
-        error,
-        DataForSeoSearchError::OptionText { field: "country" }
-    ));
-}
-
-#[rstest]
-#[case::text_domains(r#"{"search_domain_filter": "a.com"}"#)]
-#[case::numeric_member(r#"{"search_domain_filter": [1]}"#)]
-fn dataforseo_request_rejects_a_non_list_domain_filter(#[case] options: &str) {
-    let error = request_error(options);
-    assert!(matches!(
-        error,
-        DataForSeoSearchError::OptionList {
-            field: "search_domain_filter"
-        }
-    ));
+#[case::float_max_results(
+    r#"{"max_results": 5.5}"#,
+    "the DataForSEO search option `max_results` is not an integer"
+)]
+#[case::text_max_results(
+    r#"{"max_results": "5"}"#,
+    "the DataForSEO search option `max_results` is not an integer"
+)]
+#[case::numeric_country(
+    r#"{"country": 5}"#,
+    "the DataForSEO search option `country` is not a string"
+)]
+#[case::object_country(
+    r#"{"country": {"a": 1}}"#,
+    "the DataForSEO search option `country` is not a string"
+)]
+#[case::text_domains(
+    r#"{"search_domain_filter": "a.com"}"#,
+    "the DataForSEO search option `search_domain_filter` is not a list of strings"
+)]
+#[case::numeric_member(
+    r#"{"search_domain_filter": [1]}"#,
+    "the DataForSEO search option `search_domain_filter` is not a list of strings"
+)]
+fn dataforseo_request_rejects_a_wrong_option_type(#[case] options: &str, #[case] expected: &str) {
+    assert_eq!(request_error(options).to_string(), expected);
 }
 
 fn reply_value(payload: &str) -> IndexMap<String, Json> {
