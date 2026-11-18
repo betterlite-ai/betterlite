@@ -1,8 +1,8 @@
 pub mod access;
 pub mod columns;
-mod deletes;
+pub mod deletes;
 pub mod generic;
-mod inserts;
+pub mod inserts;
 pub mod reads;
 pub mod rows;
 mod sql;

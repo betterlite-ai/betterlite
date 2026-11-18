@@ -1,4 +1,12 @@
 #![cfg(test)]
+use crate::table_ops::generic::GenericReads as _;
+use crate::table_ops::reads::configs::ConfigReads as _;
+use crate::table_ops::reads::keys::KeyReads as _;
+use crate::table_ops::reads::notifications::NotificationReads as _;
+use crate::table_ops::reads::resets::ResetReads as _;
+use crate::table_ops::reads::spend::SpendReads as _;
+use crate::table_ops::reads::teams::TeamReads as _;
+use crate::table_ops::reads::users::UserReads as _;
 
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -814,5 +822,24 @@ async fn user_notifications_read_the_first_row_and_all_rows() {
             .expect("the unique miss runs")
             .is_none()
     );
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn generic_key_boolean_filter_binds_true_and_false() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.unwrap();
+    db.batch_execute("INSERT INTO \"LiteLLM_VerificationToken\" (token, blocked) VALUES ('blocked-key', true), ('active-key', false)").await.unwrap();
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::new();
+    let ops = ports.operations(&client);
+    for (flag, token) in [(true, "blocked-key"), (false, "active-key")] {
+        let row = ops
+            .generic_row(KeyFilter::Blocked(flag))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.token.expose_secret(), token);
+    }
     harness.close().await;
 }

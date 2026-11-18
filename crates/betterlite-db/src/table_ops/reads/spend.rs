@@ -1,15 +1,17 @@
+use crate::table_ops::access::ReadQuery;
+use crate::table_ops::access::TableAccess as _;
+use std::future::Future;
 use tokio_postgres::types::ToSql;
 
 use crate::database_replica::client::DatabaseClient;
 
 use crate::table_ops::access::{SPEND_ATTRIBUTE, TablePoolAccess};
-use crate::table_ops::rows::{RowDecoder, SpendLogRow};
+use crate::table_ops::rows::{RowDecoder as _, SpendLogRow};
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
-const UNIQUE_SQL: &str =
-    "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s WHERE s.\"{column}\" = $1 LIMIT 1";
+const UNIQUE_SQL: &str = "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s WHERE s.\"FILTER_COLUMN\" = $1 LIMIT 1";
 const MATCHING_SQL: &str =
-    "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s WHERE s.\"{column}\" = $1";
+    "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s WHERE s.\"FILTER_COLUMN\" = $1";
 const ALL_SPEND_LOGS_SQL: &str =
     "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s ORDER BY s.\"startTime\" DESC";
 
@@ -56,12 +58,34 @@ impl SpendQuery {
     };
 }
 
-impl<Client> TableOps<'_, Client>
+pub trait SpendReads<Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    pub async fn spend_rows(
+    fn spend_rows(
+        &self,
+        query: SpendQuery,
+        column: SpendFilterColumn,
+        value: &str,
+    ) -> impl Future<Output = Result<Vec<SpendLogRow>, TableOpsError<Client::Error>>> + Send;
+    fn spend_all(
+        &self,
+    ) -> impl Future<Output = Result<Vec<SpendLogRow>, TableOpsError<Client::Error>>> + Send;
+    fn find_spend_logs(
+        &self,
+        method: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> impl Future<Output = Result<Vec<SpendLogRow>, TableOpsError<Client::Error>>> + Send;
+}
+
+impl<Client> SpendReads<Client> for TableOps<'_, Client>
+where
+    Client: DatabaseClient,
+    Client::Attribute: TablePoolAccess,
+{
+    async fn spend_rows(
         &self,
         query: SpendQuery,
         column: SpendFilterColumn,
@@ -69,13 +93,13 @@ where
     ) -> Result<Vec<SpendLogRow>, TableOpsError<Client::Error>> {
         self.find_spend_logs(
             query.method,
-            &query.template.replace("{column}", column.name()),
+            &query.template.replace("FILTER_COLUMN", column.name()),
             &[&value],
         )
         .await
     }
 
-    pub async fn spend_all(&self) -> Result<Vec<SpendLogRow>, TableOpsError<Client::Error>> {
+    async fn spend_all(&self) -> Result<Vec<SpendLogRow>, TableOpsError<Client::Error>> {
         self.find_spend_logs("find_many", ALL_SPEND_LOGS_SQL, &[])
             .await
     }
@@ -87,10 +111,12 @@ where
         parameters: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<SpendLogRow>, TableOpsError<Client::Error>> {
         self.query_rows(
-            SPEND_ATTRIBUTE,
-            method,
-            sql,
-            parameters,
+            ReadQuery {
+                attribute: SPEND_ATTRIBUTE,
+                method,
+                sql,
+                parameters,
+            },
             DATA_RETRY,
             OperationCallType::GetData,
             SpendLogRow::decode_row,

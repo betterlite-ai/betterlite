@@ -1,4 +1,7 @@
+use crate::table_ops::access::ReadQuery;
+use crate::table_ops::access::TableAccess as _;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::future::Future;
 use tokio_postgres::types::ToSql;
 
 use crate::budget_permission_rows::Timestamp;
@@ -22,17 +25,7 @@ pub enum KeyFilter<'value> {
     UserId(&'value str),
     TeamId(&'value str),
     KeyAlias(&'value str),
-}
-
-impl<'value> KeyFilter<'value> {
-    fn column(self) -> (&'static str, &'value str) {
-        match self {
-            Self::Token(token) => ("token", token.expose_secret()),
-            Self::UserId(user_id) => ("user_id", user_id),
-            Self::TeamId(team_id) => ("team_id", team_id),
-            Self::KeyAlias(key_alias) => ("key_alias", key_alias),
-        }
-    }
+    Blocked(bool),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +40,7 @@ pub enum FilterValue<'value> {
     Text(&'value str),
     Timestamp(&'value Timestamp),
     Integer(i64),
+    Boolean(bool),
 }
 
 // LiteLLM picks the table and key column at runtime; each filter type names both, and its row type
@@ -74,8 +68,13 @@ impl<'value> GenericFilter<'value> for KeyFilter<'value> {
     const TABLE: &'static str = KEY_TABLE;
 
     fn parts(self) -> (&'static str, FilterValue<'value>) {
-        let (column, value) = self.column();
-        (column, FilterValue::Text(value))
+        match self {
+            Self::Token(token) => ("token", FilterValue::Text(token.expose_secret())),
+            Self::UserId(user_id) => ("user_id", FilterValue::Text(user_id)),
+            Self::TeamId(team_id) => ("team_id", FilterValue::Text(team_id)),
+            Self::KeyAlias(alias) => ("key_alias", FilterValue::Text(alias)),
+            Self::Blocked(flag) => ("blocked", FilterValue::Boolean(flag)),
+        }
     }
 }
 
@@ -93,17 +92,45 @@ impl<'value> GenericFilter<'value> for ConfigFilter<'value> {
     }
 }
 
-impl<Client> TableOps<'_, Client>
+pub trait GenericReads<Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    pub async fn generic_row<'value, Filter>(
+    fn generic_row<'value, Filter>(
+        &self,
+        filter: Filter,
+    ) -> impl Future<Output = Result<Option<Filter::Row>, TableOpsError<Client::Error>>> + Send
+    where
+        Filter: GenericFilter<'value> + Send;
+    fn generic_spend(
+        &self,
+        column: SpendFilterColumn,
+        value: &str,
+    ) -> impl Future<Output = Result<Option<SpendLogRow>, TableOpsError<Client::Error>>> + Send;
+    fn find_generic<Row, Parse>(
+        &self,
+        attribute: &str,
+        sql: &str,
+        value: &(dyn ToSql + Sync),
+        parse: Parse,
+    ) -> impl Future<Output = Result<Option<Row>, TableOpsError<Client::Error>>> + Send
+    where
+        Row: Send,
+        Parse: Fn(&str) -> Result<Row, RowError> + Send + Sync;
+}
+
+impl<Client> GenericReads<Client> for TableOps<'_, Client>
+where
+    Client: DatabaseClient,
+    Client::Attribute: TablePoolAccess,
+{
+    async fn generic_row<'value, Filter>(
         &self,
         filter: Filter,
     ) -> Result<Option<Filter::Row>, TableOpsError<Client::Error>>
     where
-        Filter: GenericFilter<'value>,
+        Filter: GenericFilter<'value> + Send,
     {
         let (column, value) = filter.parts();
         let sql = format!(
@@ -114,18 +141,17 @@ where
         let bound: &(dyn ToSql + Sync) = match &value {
             FilterValue::Text(text) => text,
             FilterValue::Integer(number) => number,
+            FilterValue::Boolean(flag) => flag,
             FilterValue::Timestamp(timestamp) => {
                 moment = timestamp.utc().naive_utc();
                 &moment
             }
         };
-        let rows = self
-            .find_generic(Filter::ATTRIBUTE, &sql, bound, Filter::Row::decode_row)
-            .await?;
-        Ok(rows.into_iter().next())
+        self.find_generic(Filter::ATTRIBUTE, &sql, bound, Filter::Row::decode_row)
+            .await
     }
 
-    pub async fn generic_spend(
+    async fn generic_spend(
         &self,
         column: SpendFilterColumn,
         value: &str,
@@ -152,10 +178,12 @@ where
     {
         let rows = self
             .query_rows(
-                attribute,
-                "find_first",
-                sql,
-                &[value],
+                ReadQuery {
+                    attribute,
+                    method: "find_first",
+                    sql,
+                    parameters: &[value],
+                },
                 GENERIC_RETRY,
                 OperationCallType::GetGenericData,
                 parse,

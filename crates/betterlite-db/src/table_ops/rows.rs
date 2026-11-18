@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 
 use rust_decimal::Decimal;
@@ -40,20 +41,18 @@ pub trait RowDecoder: Sized {
 
 impl RowDecoder for LiteLLMUserTable {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        match decode_user_record(text.as_bytes()).map_err(RowError::User)? {
-            Some(user) => Ok(user),
-            None => Err(RowError::NotAnObject),
-        }
+        decode_user_record(text.as_bytes())
+            .map_err(RowError::User)?
+            .ok_or(RowError::NotAnObject)
     }
 }
 
 impl RowDecoder for LiteLLMTeamTable {
     fn decode_row(text: &str) -> Result<Self, RowError> {
         let record = TeamRecord::parse(text.as_bytes()).map_err(RowError::Team)?;
-        match decode_team_record(record.as_ref()).map_err(RowError::Team)? {
-            Some(team) => Ok(team),
-            None => Err(RowError::NotAnObject),
-        }
+        decode_team_record(record.as_ref())
+            .map_err(RowError::Team)?
+            .ok_or(RowError::NotAnObject)
     }
 }
 
@@ -93,27 +92,29 @@ impl RowDecoder for ConfigParamRow {
     }
 }
 
-// insert_data writes a JSON text for jsonify_object's dict values, so a budget map comes back as the text it encodes
-fn expand_budget_map(text: &str) -> Result<String, RowError> {
-    let mut stored: serde_json::Value = serde_json::from_str(text).map_err(RowError::Model)?;
-    let Some(fields) = stored.as_object_mut() else {
-        return Err(RowError::NotAnObject);
-    };
-    let raw = fields
-        .get("model_max_budget")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned);
-    if let Some(raw) = raw {
-        let expanded = serde_json::from_str(&raw).map_err(RowError::Model)?;
-        fields.insert(String::from("model_max_budget"), expanded);
-    }
-    serde_json::to_string(&stored).map_err(RowError::Json)
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BudgetMap {
+    Text(String),
+    Object(BTreeMap<String, JsonData>),
+}
+
+#[derive(Deserialize)]
+struct BudgetRecord {
+    model_max_budget: Option<BudgetMap>,
+    #[serde(flatten)]
+    row: LiteLLMBudgetTableFull,
 }
 
 impl RowDecoder for LiteLLMBudgetTableFull {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        let expanded = expand_budget_map(text)?;
-        serde_json::from_str(&expanded).map_err(RowError::Model)
+        let mut stored: BudgetRecord = serde_json::from_str(text).map_err(RowError::Model)?;
+        stored.row.budget.model_max_budget = match stored.model_max_budget {
+            Some(BudgetMap::Text(raw)) => serde_json::from_str(&raw).map_err(RowError::Model)?,
+            Some(BudgetMap::Object(fields)) => Some(fields),
+            None => None,
+        };
+        Ok(stored.row)
     }
 }
 
@@ -201,9 +202,8 @@ pub struct SpendLogRow {
 
 // the stored api_key is hashed before it reaches this row, and Debug prints no part of it
 impl fmt::Debug for SpendLogRow {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SpendLogRow")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SpendLogRow")
             .field("request_id", &self.request_id)
             .field("api_key", &"[REDACTED]")
             .finish_non_exhaustive()

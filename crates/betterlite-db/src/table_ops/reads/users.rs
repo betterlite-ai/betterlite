@@ -1,11 +1,14 @@
+use crate::table_ops::access::ReadQuery;
+use crate::table_ops::access::TableAccess as _;
 use chrono::{DateTime, Utc};
+use std::future::Future;
 use tokio_postgres::types::ToSql;
 
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::user::LiteLLMUserTable;
 
 use crate::table_ops::access::{RAW_QUERY_ATTRIBUTE, TablePoolAccess, USER_ATTRIBUTE};
-use crate::table_ops::rows::{RowDecoder, UserWithAliases};
+use crate::table_ops::rows::{RowDecoder as _, UserWithAliases};
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
 const UNIQUE_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, COALESCE((SELECT json_agg(m.*) FROM \"LiteLLM_OrganizationMembership\" m WHERE m.\"user_id\" = u.\"user_id\"), '[]'::json) AS organization_memberships FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = $1) x";
@@ -21,7 +24,7 @@ pub enum UserFilter<'value> {
 }
 
 impl<'value> UserFilter<'value> {
-    pub(crate) fn column(self) -> (&'static str, &'value str) {
+    pub(crate) const fn column(self) -> (&'static str, &'value str) {
         match self {
             Self::UserId(value) => ("user_id", value),
             Self::UserEmail(value) => ("user_email", value),
@@ -30,12 +33,47 @@ impl<'value> UserFilter<'value> {
     }
 }
 
-impl<Client> TableOps<'_, Client>
+pub trait UserReads<Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    pub async fn user_unique(
+    fn user_unique(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>>> + Send;
+    fn users_matching(
+        &self,
+        filter: UserFilter<'_>,
+    ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>>> + Send;
+    fn users_due_for_reset(
+        &self,
+        reset_at: DateTime<Utc>,
+        limit: Option<i64>,
+    ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>>> + Send;
+    fn users_by_ids(
+        &self,
+        user_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>>> + Send;
+    fn users_all(
+        &self,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> impl Future<Output = Result<Vec<UserWithAliases>, TableOpsError<Client::Error>>> + Send;
+    fn find_users(
+        &self,
+        method: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>>> + Send;
+}
+
+impl<Client> UserReads<Client> for TableOps<'_, Client>
+where
+    Client: DatabaseClient,
+    Client::Attribute: TablePoolAccess,
+{
+    async fn user_unique(
         &self,
         user_id: &str,
     ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>> {
@@ -45,7 +83,7 @@ where
         Ok(rows.into_iter().next())
     }
 
-    pub async fn users_matching(
+    async fn users_matching(
         &self,
         filter: UserFilter<'_>,
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
@@ -56,17 +94,17 @@ where
         self.find_users("find_many", &sql, &[&value]).await
     }
 
-    pub async fn users_due_for_reset(
+    async fn users_due_for_reset(
         &self,
         reset_at: DateTime<Utc>,
         limit: Option<i64>,
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        let reset_at = reset_at.naive_utc();
-        self.find_users("find_many", DUE_FOR_RESET_SQL, &[&reset_at, &limit])
+        let reset_moment = reset_at.naive_utc();
+        self.find_users("find_many", DUE_FOR_RESET_SQL, &[&reset_moment, &limit])
             .await
     }
 
-    pub async fn users_by_ids(
+    async fn users_by_ids(
         &self,
         user_ids: &[String],
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
@@ -74,16 +112,18 @@ where
             .await
     }
 
-    pub async fn users_all(
+    async fn users_all(
         &self,
         limit: Option<i64>,
         offset: Option<i64>,
     ) -> Result<Vec<UserWithAliases>, TableOpsError<Client::Error>> {
         self.query_rows(
-            RAW_QUERY_ATTRIBUTE,
-            "query_raw",
-            ALL_SQL,
-            &[&limit, &offset],
+            ReadQuery {
+                attribute: RAW_QUERY_ATTRIBUTE,
+                method: "query_raw",
+                sql: ALL_SQL,
+                parameters: &[&limit, &offset],
+            },
             DATA_RETRY,
             OperationCallType::GetData,
             UserWithAliases::decode_row,
@@ -98,10 +138,12 @@ where
         parameters: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
         self.query_rows(
-            USER_ATTRIBUTE,
-            method,
-            sql,
-            parameters,
+            ReadQuery {
+                attribute: USER_ATTRIBUTE,
+                method,
+                sql,
+                parameters,
+            },
             DATA_RETRY,
             OperationCallType::GetData,
             LiteLLMUserTable::decode_row,

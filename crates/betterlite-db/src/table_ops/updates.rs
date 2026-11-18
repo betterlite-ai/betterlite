@@ -1,5 +1,5 @@
-mod batches;
-mod team;
+pub mod batches;
+pub mod team;
 
 use std::collections::BTreeMap;
 

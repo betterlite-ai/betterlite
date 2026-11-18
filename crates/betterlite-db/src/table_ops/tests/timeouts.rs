@@ -1,4 +1,7 @@
 #![cfg(test)]
+use crate::table_ops::reads::configs::ConfigReads as _;
+use crate::table_ops::reads::users::UserReads as _;
+use crate::table_ops::updates::batches::BatchUpdates as _;
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -18,7 +21,8 @@ async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
     db.batch_execute("BEGIN; LOCK TABLE \"LiteLLM_Config\" IN ACCESS EXCLUSIVE MODE")
         .await
         .expect("the other connection holds the lock");
-    let client = TableClient::new(harness.pool.clone());
+    let limited = harness.pool_with_size(1);
+    let client = TableClient::new(limited.clone());
     let ports = Ports::new();
     let ops = ports.operations_with(
         &client,
@@ -39,6 +43,20 @@ async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
             deadline,
         } if deadline == Duration::from_millis(100)
     ));
+    assert_eq!(
+        limited.status().size,
+        0,
+        "a timed-out connection is discarded"
+    );
+    let fresh = limited.get().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let pending: i64 = fresh.query_one("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", &[]).await.unwrap().get(0);
+            if pending == 0 { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("the timed-out query stops waiting before the lock is released");
+    drop(fresh);
     db.batch_execute("ROLLBACK")
         .await
         .expect("the lock is released");
@@ -49,10 +67,16 @@ async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
 async fn a_batch_statement_waiting_on_a_lock_times_out() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
+    db.batch_execute(
+        "INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias) VALUES ('tok-1', 'original')",
+    )
+    .await
+    .unwrap();
     db.batch_execute("BEGIN; LOCK TABLE \"LiteLLM_VerificationToken\" IN ACCESS EXCLUSIVE MODE")
         .await
         .expect("the other connection holds the lock");
-    let client = TableClient::new(harness.pool.clone());
+    let limited = harness.pool_with_size(1);
+    let client = TableClient::new(limited.clone());
     let ports = Ports::new();
     let ops = ports.operations_with(
         &client,
@@ -85,9 +109,35 @@ async fn a_batch_statement_waiting_on_a_lock_times_out() {
             .any(|event| event.message.contains("the statement did not finish")),
         "the failed batch reports a statement timeout: {events:?}"
     );
+    assert_eq!(
+        limited.status().size,
+        0,
+        "a timed-out connection is discarded"
+    );
+    let fresh = limited.get().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let pending: i64 = fresh.query_one("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", &[]).await.unwrap().get(0);
+            if pending == 0 { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("the timed-out query stops waiting before the lock is released");
+    drop(fresh);
     db.batch_execute("ROLLBACK")
         .await
         .expect("the lock is released");
+    let alias: String = db
+        .query_one(
+            "SELECT key_alias FROM \"LiteLLM_VerificationToken\" WHERE token = 'tok-1'",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(
+        alias, "original",
+        "a timed-out batch cannot write after the lock is released"
+    );
     harness.close().await;
 }
 

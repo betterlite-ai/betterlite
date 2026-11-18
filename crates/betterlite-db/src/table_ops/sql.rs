@@ -56,39 +56,17 @@ where
     ClientError: Error + Send + Sync + 'static,
 {
     let (bound, cast) = match kind {
-        TokenSqlType::Text => {
-            let value = match value {
-                TokenValue::Text(text) => Bound::Text(Some(text.clone())),
-                TokenValue::KeyHash(hash) => Bound::Text(Some(String::from(hash.expose_secret()))),
-                TokenValue::Null => Bound::Text(None),
-                _ => return Err(TableOpsError::WrongType { column }),
+        TokenSqlType::Text
+        | TokenSqlType::Boolean
+        | TokenSqlType::BigInt
+        | TokenSqlType::TextArray => {
+            let scalar = scalar_bound(column, value, kind)?;
+            let cast = if matches!(kind, TokenSqlType::BigInt) {
+                "::bigint"
+            } else {
+                ""
             };
-            (value, "")
-        }
-        TokenSqlType::Boolean => {
-            let value = match value {
-                TokenValue::Bool(flag) => Bound::Bool(Some(*flag)),
-                TokenValue::Null => Bound::Bool(None),
-                _ => return Err(TableOpsError::WrongType { column }),
-            };
-            (value, "")
-        }
-        TokenSqlType::BigInt => {
-            let value = match value {
-                TokenValue::Integer(number) => Bound::Integer(Some(*number)),
-                TokenValue::Null => Bound::Integer(None),
-                _ => return Err(TableOpsError::WrongType { column }),
-            };
-            // Postgres assigns a bigint parameter to the int4 columns Prisma declares, and rejects an overflow
-            (value, "::bigint")
-        }
-        TokenSqlType::TextArray => {
-            let value = match value {
-                TokenValue::TextArray(items) => Bound::Array(Some(items.clone())),
-                TokenValue::Null => Bound::Array(None),
-                _ => return Err(TableOpsError::WrongType { column }),
-            };
-            (value, "")
+            (scalar, cast)
         }
         TokenSqlType::DoublePrecision => (
             Bound::Text(encoded_text(column, value)?),
@@ -102,6 +80,50 @@ where
     };
     let index = parameters.push(bound);
     Ok(format!("${index}{cast}"))
+}
+
+fn scalar_bound<ClientError>(
+    column: &'static str,
+    value: &TokenValue,
+    kind: TokenSqlType,
+) -> Result<Bound, TableOpsError<ClientError>>
+where
+    ClientError: Error + Send + Sync + 'static,
+{
+    match value {
+        TokenValue::Text(text) if matches!(kind, TokenSqlType::Text) => {
+            Ok(Bound::Text(Some(text.clone())))
+        }
+        TokenValue::KeyHash(hash) if matches!(kind, TokenSqlType::Text) => {
+            Ok(Bound::Text(Some(String::from(hash.expose_secret()))))
+        }
+        TokenValue::Bool(flag) if matches!(kind, TokenSqlType::Boolean) => {
+            Ok(Bound::Bool(Some(*flag)))
+        }
+        TokenValue::Integer(number) if matches!(kind, TokenSqlType::BigInt) => {
+            Ok(Bound::Integer(Some(*number)))
+        }
+        TokenValue::TextArray(items) if matches!(kind, TokenSqlType::TextArray) => {
+            Ok(Bound::Array(Some(items.clone())))
+        }
+        TokenValue::Null => match kind {
+            TokenSqlType::Text => Ok(Bound::Text(None)),
+            TokenSqlType::Boolean => Ok(Bound::Bool(None)),
+            TokenSqlType::BigInt => Ok(Bound::Integer(None)),
+            TokenSqlType::TextArray => Ok(Bound::Array(None)),
+            TokenSqlType::DoublePrecision | TokenSqlType::Json | TokenSqlType::Timestamp => {
+                Err(TableOpsError::WrongType { column })
+            }
+        },
+        TokenValue::Text(_)
+        | TokenValue::KeyHash(_)
+        | TokenValue::Bool(_)
+        | TokenValue::Integer(_)
+        | TokenValue::Number(_)
+        | TokenValue::Json(_)
+        | TokenValue::Timestamp(_)
+        | TokenValue::TextArray(_) => Err(TableOpsError::WrongType { column }),
+    }
 }
 
 fn encoded_text<ClientError>(
@@ -142,7 +164,7 @@ where
 {
     let mut bound = Vec::with_capacity(payload.len());
     for (column, value) in payload {
-        let (name, kind) = column.definition();
+        let (name, kind) = column.sql_definition();
         let placeholder = bind_literal(parameters, name, value, kind)?;
         bound.push((name, placeholder));
     }
@@ -198,7 +220,7 @@ where
     ClientError: Error + Send + Sync + 'static,
     Column: TableColumn,
 {
-    let (key_name, _) = Column::KEY.definition();
+    let (key_name, _) = Column::KEY.sql_definition();
     if !create.contains_key(&Column::KEY) {
         return Err(TableOpsError::MissingField { field: key_name });
     }
@@ -214,9 +236,9 @@ where
         .map(|(_, marker)| marker.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    let conflict = conflict_clause(key_name, conflict, &mut parameters)?.unwrap_or_default();
+    let conflict_sql = conflict_clause(key_name, conflict, &mut parameters)?.unwrap_or_default();
     let sql = format!(
-        "INSERT INTO \"{}\" AS stored ({names}) VALUES ({markers}){conflict} RETURNING row_to_json(stored)::text",
+        "INSERT INTO \"{}\" AS stored ({names}) VALUES ({markers}){conflict_sql} RETURNING row_to_json(stored)::text",
         Column::TABLE,
     );
     Ok(Statement { sql, parameters })
@@ -231,7 +253,7 @@ where
     ClientError: Error + Send + Sync + 'static,
     Column: TableColumn,
 {
-    let (key_name, _) = Column::KEY.definition();
+    let (key_name, _) = Column::KEY.sql_definition();
     let mut parameters = Parameters::default();
     let key_index = parameters.push(Bound::Text(Some(key_value.to_owned())));
     let bound = bind_payload(payload, &mut parameters)?;

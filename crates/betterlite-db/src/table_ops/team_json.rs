@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::budget_permission_rows::JsonData;
 use crate::key_repository::table::TokenValue;
-use crate::key_user_writes::json_text::{FAILED_TO_SERIALIZE_JSON, JsonEncoder, SerdeJsonEncoder};
+use crate::key_user_writes::json_text::{
+    FAILED_TO_SERIALIZE_JSON, JsonEncoder as _, SerdeJsonEncoder,
+};
 
 use super::columns::{TableColumn, TeamColumn};
 
@@ -18,11 +20,10 @@ where
     payload
         .iter()
         .map(|(column, value)| {
-            let converted = match value {
-                TokenValue::Json(JsonData::Object(_)) => {
-                    TokenValue::Json(JsonData::String(dump(value)))
-                }
-                _ => value.clone(),
+            let converted = if let TokenValue::Json(JsonData::Object(_)) = value {
+                TokenValue::Json(JsonData::String(dump(value)))
+            } else {
+                value.clone()
             };
             (*column, converted)
         })

@@ -1,8 +1,5 @@
-mod budget_enduser;
-mod spend_notification;
-
-pub use budget_enduser::{BudgetColumn, EndUserColumn};
-pub use spend_notification::{NotificationColumn, SpendColumn};
+pub mod budget_enduser;
+pub mod spend_notification;
 
 use crate::key_repository::table::columns::{TokenColumn, TokenSqlType};
 use crate::key_user_writes::columns::UserColumn;
@@ -18,7 +15,7 @@ pub trait TableColumn: Copy + Ord {
     const ATTRIBUTE: &'static str;
     const KEY: Self;
     const UPDATED_AT: Option<Self> = None;
-    fn definition(self) -> (&'static str, TokenSqlType);
+    fn sql_definition(self) -> (&'static str, TokenSqlType);
 }
 
 impl TableColumn for TokenColumn {
@@ -27,7 +24,7 @@ impl TableColumn for TokenColumn {
     const KEY: Self = Self::Token;
     const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         (self.name(), self.sql_type())
     }
 }
@@ -38,8 +35,8 @@ impl TableColumn for UserColumn {
     const KEY: Self = Self::UserId;
     const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
-        let named = UserColumn::definition(self);
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
+        let named = Self::definition(self);
         (named.name, named.sql_type)
     }
 }
@@ -57,7 +54,7 @@ impl TableColumn for ConfigColumn {
     const ATTRIBUTE: &'static str = CONFIG_ATTRIBUTE;
     const KEY: Self = Self::ParamName;
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         match self {
             Self::ParamName => ("param_name", TokenSqlType::Text),
             Self::ParamValue => ("param_value", TokenSqlType::Json),
@@ -108,7 +105,7 @@ impl TableColumn for TeamColumn {
     const KEY: Self = Self::TeamId;
     const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         match self {
             Self::TeamId => ("team_id", TokenSqlType::Text),
             Self::TeamAlias => ("team_alias", TokenSqlType::Text),

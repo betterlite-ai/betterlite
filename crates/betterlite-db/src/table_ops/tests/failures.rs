@@ -1,4 +1,9 @@
 #![cfg(test)]
+use crate::table_ops::deletes::TableDeletes as _;
+use crate::table_ops::generic::GenericReads as _;
+use crate::table_ops::inserts::TableInserts as _;
+use crate::table_ops::reads::users::UserReads as _;
+use crate::table_ops::updates::team::TeamUpdates as _;
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;

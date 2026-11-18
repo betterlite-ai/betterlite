@@ -50,7 +50,7 @@ impl TableColumn for SpendColumn {
     const ATTRIBUTE: &'static str = SPEND_ATTRIBUTE;
     const KEY: Self = Self::RequestId;
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         match self {
             Self::RequestId => ("request_id", TokenSqlType::Text),
             Self::CallType => ("call_type", TokenSqlType::Text),
@@ -106,7 +106,7 @@ impl TableColumn for NotificationColumn {
     const ATTRIBUTE: &'static str = NOTIFICATION_ATTRIBUTE;
     const KEY: Self = Self::RequestId;
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         match self {
             Self::RequestId => ("request_id", TokenSqlType::Text),
             Self::UserId => ("user_id", TokenSqlType::Text),

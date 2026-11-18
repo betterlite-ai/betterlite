@@ -1,4 +1,6 @@
+use crate::table_ops::access::TableAccess as _;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::future::Future;
 use tokio_postgres::types::ToSql;
 
 use crate::database_replica::client::DatabaseClient;
@@ -13,12 +15,38 @@ const DELETE_TEAM_KEYS_SQL: &str = "DELETE FROM \"LiteLLM_VerificationToken\" WH
 const DELETE_TEAMS_SQL: &str =
     "DELETE FROM \"LiteLLM_TeamTable\" WHERE \"team_id\" = ANY($1::text[]) RETURNING \"team_id\"";
 
-impl<Client> TableOps<'_, Client>
+pub trait TableDeletes<Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    pub async fn delete_keys(
+    fn delete_keys(
+        &self,
+        tokens: &[SecretString],
+        user_id: Option<&str>,
+    ) -> impl Future<Output = Result<u64, TableOpsError<Client::Error>>> + Send;
+    fn delete_keys_for_teams(
+        &self,
+        team_ids: &[String],
+    ) -> impl Future<Output = Result<u64, TableOpsError<Client::Error>>> + Send;
+    fn delete_teams(
+        &self,
+        team_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, TableOpsError<Client::Error>>> + Send;
+    fn delete_tokens(
+        &self,
+        sql: &str,
+        attribute: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> impl Future<Output = Result<u64, TableOpsError<Client::Error>>> + Send;
+}
+
+impl<Client> TableDeletes<Client> for TableOps<'_, Client>
+where
+    Client: DatabaseClient,
+    Client::Attribute: TablePoolAccess,
+{
+    async fn delete_keys(
         &self,
         tokens: &[SecretString],
         user_id: Option<&str>,
@@ -28,9 +56,13 @@ where
             .map(|token| hash_token_if_needed(token.expose_secret()))
             .collect();
         match user_id {
-            Some(user_id) => {
-                self.delete_tokens(DELETE_OWNED_TOKENS_SQL, KEY_ATTRIBUTE, &[&hashed, &user_id])
-                    .await
+            Some(selected_user) => {
+                self.delete_tokens(
+                    DELETE_OWNED_TOKENS_SQL,
+                    KEY_ATTRIBUTE,
+                    &[&hashed, &selected_user],
+                )
+                .await
             }
             None => {
                 self.delete_tokens(DELETE_TOKENS_SQL, KEY_ATTRIBUTE, &[&hashed])
@@ -39,7 +71,7 @@ where
         }
     }
 
-    pub async fn delete_keys_for_teams(
+    async fn delete_keys_for_teams(
         &self,
         team_ids: &[String],
     ) -> Result<u64, TableOpsError<Client::Error>> {
@@ -47,7 +79,7 @@ where
             .await
     }
 
-    pub async fn delete_teams(
+    async fn delete_teams(
         &self,
         team_ids: &[String],
     ) -> Result<Vec<String>, TableOpsError<Client::Error>> {

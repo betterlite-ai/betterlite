@@ -32,7 +32,7 @@ impl TableColumn for BudgetColumn {
     const KEY: Self = Self::BudgetId;
     const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
+    fn sql_definition(self) -> (&'static str, TokenSqlType) {
         match self {
             Self::BudgetId => ("budget_id", TokenSqlType::Text),
             Self::MaxBudget => ("max_budget", TokenSqlType::DoublePrecision),
@@ -74,7 +74,7 @@ macro_rules! end_user_column_definitions {
             const ATTRIBUTE: &'static str = END_USER_ATTRIBUTE;
             const KEY: Self = Self::UserId;
 
-            fn definition(self) -> (&'static str, TokenSqlType) {
+            fn sql_definition(self) -> (&'static str, TokenSqlType) {
                 match self {
                     $(Self::$variant => ($column, TokenSqlType::$kind),)*
                 }

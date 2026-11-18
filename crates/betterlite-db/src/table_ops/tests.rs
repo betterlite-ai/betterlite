@@ -18,6 +18,7 @@ use super::{
 use support::{Ports, TableClient};
 
 mod failures;
+mod insert_team;
 mod reads;
 mod support;
 mod timeouts;
@@ -163,4 +164,58 @@ fn null_and_bool_values_bind_their_column_types() {
     let flag = sql::insert::<Infallible, TeamColumn>(&with_flag, InsertConflict::Keep)
         .expect("the flag binds as a boolean");
     assert_eq!(flag.parameters.values.len(), 2);
+}
+
+#[test]
+fn scalar_values_reject_the_wrong_column_type() {
+    let cases = [
+        (TeamColumn::Blocked, TokenValue::Text(String::from("true"))),
+        (
+            TeamColumn::Blocked,
+            TokenValue::KeyHash(KeyHash::from("hash")),
+        ),
+        (TeamColumn::TeamAlias, TokenValue::Bool(true)),
+        (TeamColumn::TeamAlias, TokenValue::Integer(5)),
+        (
+            TeamColumn::TeamAlias,
+            TokenValue::TextArray(vec![String::from("value")]),
+        ),
+    ];
+    for (column, value) in cases {
+        let payload = BTreeMap::from([
+            (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+            (column, value),
+        ]);
+        assert!(matches!(
+            sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep),
+            Err(TableOpsError::WrongType { .. })
+        ));
+    }
+}
+
+#[test]
+fn budget_maps_decode_from_objects_text_and_null() {
+    use crate::budget_permission_rows::LiteLLMBudgetTableFull;
+    use crate::table_ops::rows::RowDecoder as _;
+
+    for (field, populated) in [
+        (r#", "model_max_budget":{"gpt":1}"#, true),
+        (r#", "model_max_budget":"{\"gpt\":1}""#, true),
+        (r#", "model_max_budget":null"#, false),
+        ("", false),
+    ] {
+        let text = format!(r#"{{"budget_id":"b-1","created_at":"2024-01-01T00:00:00"{field}}}"#);
+        let row = LiteLLMBudgetTableFull::decode_row(&text).unwrap();
+        assert_eq!(row.budget.budget_id.as_deref(), Some("b-1"));
+        assert_eq!(row.budget.model_max_budget.is_some(), populated);
+        if let Some(fields) = row.budget.model_max_budget {
+            assert_eq!(serde_json::to_string(&fields).unwrap(), r#"{"gpt":1}"#);
+        }
+    }
+    assert!(
+        LiteLLMBudgetTableFull::decode_row(
+            r#"{"created_at":"2024-01-01T00:00:00","model_max_budget":"invalid"}"#
+        )
+        .is_err()
+    );
 }

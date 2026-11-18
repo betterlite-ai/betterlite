@@ -1,4 +1,10 @@
 #![cfg(test)]
+use crate::table_ops::deletes::TableDeletes as _;
+use crate::table_ops::inserts::TableInserts as _;
+use crate::table_ops::reads::resets::ResetReads as _;
+use crate::table_ops::reads::users::UserReads as _;
+use crate::table_ops::updates::batches::BatchUpdates as _;
+use crate::table_ops::updates::team::TeamUpdates as _;
 
 use std::collections::BTreeMap;
 
@@ -12,9 +18,11 @@ use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_user_writes::columns::UserColumn;
 use crate::key_user_writes::hash::hash_token;
-use crate::table_ops::columns::{
-    BudgetColumn, EndUserColumn, NotificationColumn, SpendColumn, TeamColumn,
-};
+use crate::table_ops::columns::TeamColumn;
+use crate::table_ops::columns::budget_enduser::BudgetColumn;
+use crate::table_ops::columns::budget_enduser::EndUserColumn;
+use crate::table_ops::columns::spend_notification::NotificationColumn;
+use crate::table_ops::columns::spend_notification::SpendColumn;
 use crate::table_ops::{OperationCallType, TableOpsError};
 
 const KEY_INSERT: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"spend\", \"models\") VALUES ($1, $2, $3, $4, ARRAY[]::text[])";
@@ -38,40 +46,6 @@ async fn text_column(db: &Client, sql: &str, parameter: &str) -> Option<String> 
         .await
         .expect("the column query runs")
         .map(|row| row.get(0))
-}
-
-#[tokio::test]
-async fn insert_team_creates_the_row_and_keeps_an_existing_one() {
-    let harness = Harness::start().await;
-    let db = harness.pool.get().await.expect("a fixture connection");
-    let client = TableClient::new(harness.pool.clone());
-    let ports = Ports::new();
-    let ops = ports.operations(&client);
-    let created = ops
-        .insert_team(&team_payload("team-1", "acme"))
-        .await
-        .expect("the team insert runs");
-    assert_eq!(created.fields.base.team_alias.as_deref(), Some("acme"));
-    let kept = ops
-        .insert_team(&team_payload("team-1", "other"))
-        .await
-        .expect("the conflicting insert runs");
-    assert_eq!(kept.fields.base.team_alias.as_deref(), Some("acme"));
-    let stored = text_column(
-        &db,
-        "SELECT team_alias FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
-        "team-1",
-    )
-    .await;
-    assert_eq!(stored.as_deref(), Some("acme"));
-    let count: i64 = db
-        .query_one("SELECT count(*) FROM \"LiteLLM_TeamTable\"", &[])
-        .await
-        .expect("the count runs")
-        .get(0);
-    assert_eq!(count, 1);
-    assert!(ports.sink.events().is_empty());
-    harness.close().await;
 }
 
 #[tokio::test]

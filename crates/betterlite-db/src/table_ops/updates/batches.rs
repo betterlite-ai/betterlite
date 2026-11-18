@@ -1,4 +1,7 @@
+use crate::table_ops::access::TableAccess as _;
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::future::Future;
 
 use secrecy::ExposeSecret as _;
 
@@ -10,19 +13,55 @@ use crate::key_user_writes::columns::UserColumn;
 use crate::key_user_writes::hash::hash_token_if_needed;
 
 use crate::table_ops::access::TablePoolAccess;
-use crate::table_ops::columns::{BudgetColumn, EndUserColumn, TableColumn, TeamColumn};
+use crate::table_ops::columns::budget_enduser::BudgetColumn;
+use crate::table_ops::columns::budget_enduser::EndUserColumn;
+use crate::table_ops::columns::{TableColumn, TeamColumn};
 use crate::table_ops::sql::{self, InsertConflict};
 use crate::table_ops::team_json::{jsonify_object, jsonify_team_object};
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
 use super::stamp_updated_at;
 
-impl<Client> TableOps<'_, Client>
+pub trait BatchUpdates<Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    pub async fn update_many_keys(
+    fn update_many_keys(
+        &self,
+        rows: &[BTreeMap<TokenColumn, TokenValue>],
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send;
+    fn update_many_users(
+        &self,
+        rows: &[BTreeMap<UserColumn, TokenValue>],
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send;
+    fn update_many_end_users(
+        &self,
+        rows: &[BTreeMap<EndUserColumn, TokenValue>],
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send;
+    fn update_many_budgets(
+        &self,
+        rows: &[BTreeMap<BudgetColumn, TokenValue>],
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send;
+    fn update_many_teams(
+        &self,
+        rows: &[BTreeMap<TeamColumn, TokenValue>],
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send;
+    fn update_many_object_rows<Column>(
+        &self,
+        rows: &[BTreeMap<Column, TokenValue>],
+        jsonify: fn(&BTreeMap<Column, TokenValue>) -> BTreeMap<Column, TokenValue>,
+    ) -> impl Future<Output = Result<(), TableOpsError<Client::Error>>> + Send
+    where
+        Column: TableColumn + Send + Sync;
+}
+
+impl<Client> BatchUpdates<Client> for TableOps<'_, Client>
+where
+    Client: DatabaseClient,
+    Client::Attribute: TablePoolAccess,
+{
+    async fn update_many_keys(
         &self,
         rows: &[BTreeMap<TokenColumn, TokenValue>],
     ) -> Result<(), TableOpsError<Client::Error>> {
@@ -42,7 +81,7 @@ where
         .await
     }
 
-    pub async fn update_many_users(
+    async fn update_many_users(
         &self,
         rows: &[BTreeMap<UserColumn, TokenValue>],
     ) -> Result<(), TableOpsError<Client::Error>> {
@@ -50,7 +89,7 @@ where
             .await
     }
 
-    pub async fn update_many_end_users(
+    async fn update_many_end_users(
         &self,
         rows: &[BTreeMap<EndUserColumn, TokenValue>],
     ) -> Result<(), TableOpsError<Client::Error>> {
@@ -58,7 +97,7 @@ where
             .await
     }
 
-    pub async fn update_many_budgets(
+    async fn update_many_budgets(
         &self,
         rows: &[BTreeMap<BudgetColumn, TokenValue>],
     ) -> Result<(), TableOpsError<Client::Error>> {
@@ -66,7 +105,7 @@ where
             .await
     }
 
-    pub async fn update_many_teams(
+    async fn update_many_teams(
         &self,
         rows: &[BTreeMap<TeamColumn, TokenValue>],
     ) -> Result<(), TableOpsError<Client::Error>> {
@@ -115,9 +154,9 @@ fn token_key<ClientError>(
     payload: &BTreeMap<TokenColumn, TokenValue>,
 ) -> Result<String, TableOpsError<ClientError>>
 where
-    ClientError: std::error::Error + Send + Sync + 'static,
+    ClientError: Error + Send + Sync + 'static,
 {
-    let (key_name, _) = TokenColumn::KEY.definition();
+    let (key_name, _) = TokenColumn::KEY.sql_definition();
     match payload.get(&TokenColumn::Token) {
         Some(TokenValue::Text(text)) => Ok(text.clone()),
         Some(TokenValue::KeyHash(hash)) => Ok(String::from(hash.expose_secret())),
