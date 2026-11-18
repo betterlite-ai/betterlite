@@ -303,6 +303,16 @@ fn event_budget_charges_events_and_bytes_up_to_each_limit() {
 }
 
 #[test]
+fn event_budget_allows_exactly_the_documented_byte_limit() {
+    let mut budget = EventBudget::default();
+    budget.charge(0, 268_435_456).unwrap();
+    assert!(matches!(
+        budget.charge(0, 1),
+        Err(SyntheticEventsError::EventBudgetExceeded)
+    ));
+}
+
+#[test]
 fn oversized_item_id_with_tiny_chunks_raises_the_event_budget() {
     let item_id = "i".repeat(64 * 1024);
     let text = "t".repeat(64 * 1024);
