@@ -1,0 +1,260 @@
+kind: helper
+name: native-event-dispatch
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    - 00000000-0000-4000-8000-000000000011
+    - 00000000-0000-4000-8000-000000000012
+    - 00000000-0000-4000-8000-000000000013
+    - 00000000-0000-4000-8000-000000000014
+    - 00000000-0000-4000-8000-000000000015
+    - 00000000-0000-4000-8000-000000000016
+    - 00000000-0000-4000-8000-000000000017
+    - 00000000-0000-4000-8000-000000000018
+    - 00000000-0000-4000-8000-000000000019
+    - 00000000-0000-4000-8000-000000000020
+    - 00000000-0000-4000-8000-000000000021
+    - 00000000-0000-4000-8000-000000000022
+    - 00000000-0000-4000-8000-000000000023
+    - 00000000-0000-4000-8000-000000000024
+    - 00000000-0000-4000-8000-000000000025
+    - 00000000-0000-4000-8000-000000000026
+    - 00000000-0000-4000-8000-000000000027
+    steps:
+    - method: dispatch
+      message: '{"event": {"sessionStart": {"sessionId": "s"}, "contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "hi"}, "audioOutput": {"content": "AAEC"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"audioOutput": {"content": "AAEC"}, "contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks:
+        - type: response.text.delta
+          content_index: 0
+          event_id: event_00000000-0000-4000-8000-000000000006
+          item_id: item_00000000-0000-4000-8000-000000000002
+          output_index: 0
+          response_id: resp_00000000-0000-4000-8000-000000000001
+          delta: hi
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks:
+        - content_index: 0
+          delta: hi
+          event_id: event_00000000-0000-4000-8000-000000000006
+          item_id: item_00000000-0000-4000-8000-000000000002
+          output_index: 0
+          response_id: resp_00000000-0000-4000-8000-000000000001
+          type: response.text.delta
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"sessionId": "s"}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"unknownThing": {"nested": [1, 2]}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": 3}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: &id001 []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '[]'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '['
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '[1, 2'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: 'null garbage'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '[] trailing'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: 'null'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"userSpeechStart": {}, "userSpeechEnd": {}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"usageEvent": {"totalInputTokens": 1, "totalOutputTokens": 2, "totalTokens": 3}, "toolUse": {"toolUseId": "call-0", "toolName": "ignored"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000015
+        current_response_id: resp_00000000-0000-4000-8000-000000000014
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"toolUse": {"toolUseId": "call-1", "toolName": "lookup", "input": {"city": "Paris"}}, "promptEnd": {}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000015
+        current_response_id: resp_00000000-0000-4000-8000-000000000014
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"promptEnd": {}, "completionEnd": {}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000015
+        current_response_id: resp_00000000-0000-4000-8000-000000000014
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+env: {}
+compare:
+  ignore: []

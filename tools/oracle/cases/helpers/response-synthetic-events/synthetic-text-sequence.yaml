@@ -1,0 +1,78 @@
+kind: helper
+name: response-synthetic-events-synthetic-text-sequence
+call:
+  response_synthetic_events:
+    operation: build
+    rows:
+      - response:
+          id: resp_a
+          created_at: 1700000000
+          status: completed
+          error: {code: upstream_error, message: boom}
+          usage: {input_tokens: 3, output_tokens: 2, total_tokens: 5}
+          output:
+            - type: message
+              id: msg_a
+              role: assistant
+              status: completed
+              content:
+                - type: output_text
+                  text: abcdef
+                  annotations:
+                    - type: url_citation
+                      url: https://example.test/a
+                      title: a
+                      start_index: 0
+                      end_index: 1
+                - {type: output_text, text: "", annotations: []}
+        chunk_size: 5
+        cost: null
+      - response:
+          id: resp_u
+          created_at: 2
+          status: completed
+          output:
+            - type: message
+              id: msg_u
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: "héllo", annotations: []}
+        chunk_size: 2
+        cost: null
+      - response:
+          id: resp_z
+          created_at: 3
+          status: completed
+          output:
+            - type: message
+              id: msg_z
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: abc, annotations: []}
+        chunk_size: 0
+        cost: null
+      - response:
+          id: resp_neg
+          created_at: 4
+          status: completed
+          output:
+            - type: message
+              id: msg_neg
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: abc, annotations: []}
+        chunk_size: -2
+        cost: null
+      - response:
+          id: resp_e
+          created_at: 5
+          status: completed
+          error: {code: server_error, message: down}
+          output: []
+        chunk_size: 0
+        cost: null
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B843
 milestone: M4 keys, spend and management
 title: Model deprecation dates and alert formatting
-status: todo
+status: done
 depends_on: [B003, B013, B171, B844, B856]
 file: tasks/B843-model-deprecation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/model_deprecation.py"
 parent: B060
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2400

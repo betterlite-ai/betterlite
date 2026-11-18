@@ -32,16 +32,17 @@ description: >-
   values; loads_spend_queue_settings must exercise actual loader defaults and overrides.
   Queue capacity and default TTL must be positive, while a nonpositive flush count retains
   the source's empty drain. Reject arithmetic overflow with the offending setting name.
-  Add an owned OracleRedis fixture to tools/oracle: launch the installed redis-server on
-  an isolated temporary directory/port, wait for PING, expose a URI only to fixture config,
-  and kill/wait/remove resources on drop or explicit shutdown. Never connect these tests
-  to a user's Redis. Native tests use both a recording cache and real Redis for NX/expiry,
-  JSON comparison, stale-owner release, reacquisition and cancellation. The pure pod_lock_key
+  Native tests use a recording cache for NX/expiry, JSON comparison, stale-owner release,
+  reacquisition and cancellation. The gate image has no redis-server, so this task adds no
+  real-Redis fixture and leaves the oracle's B1139 Redis fixture as it is on main. The pure pod_lock_key
   helper compares source key formatting; all lease outcomes are asserted by native tests.
   The two files contain 238 nonblank lines; fit queue/lease logic in 250, config/fixtures in
   130, behavior tests in 240 and adapters/fuzz in 180 changed lines.
 scope:
   paths:
+    - "tools/oracle/src/runner/http_scenarios/fixtures/run/tests.rs"
+    - "tools/oracle/src/runner/http_scenarios/fixtures/run.rs"
+    - "tools/oracle/src/runner/http_scenarios/fixtures/run/redis.rs"
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/queues.rs
     - crates/betterlite-db/src/queues/**
@@ -49,6 +50,11 @@ scope:
     - crates/betterlite-db/src/queues/memory/**
     - crates/betterlite-db/src/queues/pod_lock.rs
     - crates/betterlite-db/src/queues/pod_lock/**
+    - crates/betterlite-logging/src/logging_service_events.rs
+    - crates/betterlite-logging/src/logging_service_events/pipeline.rs
+    - crates/betterlite-logging/src/logging_service_events/pod_lock.rs
+    - crates/betterlite-logging/src/logging_service_events/tests.rs
+    - crates/betterlite-logging/src/logging_service_events/tests/pod_lock.rs
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/pod_owner.rs
     - crates/betterlite-db/fuzz/corpus/pod_owner/**
@@ -59,8 +65,6 @@ scope:
     - crates/betterlite-config/fuzz/corpus/spend_queue_setting/**
     - tools/oracle/Cargo.toml
     - tools/oracle/src/lib.rs
-    - tools/oracle/src/redis_fixture.rs
-    - tools/oracle/src/redis_fixture/**
     - tools/oracle/src/helpers/db/pod_lock_key.rs
     - tools/oracle/src/helpers/db/pod_lock_key/**
     - tools/oracle/helpers/pod_lock_key.py
@@ -81,7 +85,7 @@ dod:
   - text: Spend queue admission and draining retain FIFO, cap, warning and cancellation behavior without losing ownership of admitted records.
     proof: [spend-memory-tests, spend-queue-config-tests]
   - text: Lease acquisition, expiry and release agree with the source's owner encoding, reentrancy and fallback, including event emission conditions.
-    proof: [pod-lease-tests, redis-fixture-tests, oracle, pod-key-python, pod-key-corpus]
+    proof: [pod-lease-tests, oracle, pod-key-python, pod-key-corpus, pod-lock-service-events]
   - text: Queue settings and owner bytes use named production decoders with malformed-input replay and loader coverage.
     proof: [spend-queue-config-tests, queue-setting-corpus, pod-owner-corpus]
 checks:
@@ -90,12 +94,12 @@ checks:
     - id: spend-memory-tests
       why: Admission backpressure or a partial drain changes which spend updates remain owned.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^queues::memory::/)'
+    - id: pod-lock-service-events
+      why: A pod lock event never reaches the B012 sink through B191, or carries the wrong service, call type, gauge or duration.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_service_events::tests::pod_lock::/)'
     - id: pod-lease-tests
       why: Redis lease tests miss ownership, encoding, stale-owner or failure fallback behavior.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^queues::pod_lock::/) - test(replays_the_pod_owner_corpus)'
-    - id: redis-fixture-tests
-      why: The disposable Redis process is not reachable or survives fixture teardown.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^redis_fixture::/)'
     - id: spend-queue-config-tests
       why: Spend queue and default lock settings are not resolved by the real config loader.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_queue_settings) | (test(/^spend_queue::/) - test(replays_the_spend_queue_setting_corpus))'
@@ -121,11 +125,12 @@ out_of_scope:
   - Specialized queue aggregation, Redis spill buffers, spend cleanup and database writer orchestration remain B070 and its later splits; no such worker is started here.
   - B126 supplies Redis command/client behavior and B012 supplies service event records; lease policy and spend-queue settings are owned here.
 pitfalls:
+  - 'betterlite-logging depends on betterlite-db, so the db crate keeps the PodLockEventSink port and never depends on logging (decision 2026-11-18). The adapter lives in crates/betterlite-logging/src/logging_service_events/pod_lock.rs as impl PodLockEventSink for ServicePipeline: it builds a ServiceEvent with an empty call_id (the event belongs to no request), service ServiceType::PodLockManager, is_error false, the call type string, duration_seconds, gauge_labels and gauge_value in event_metadata, and start and end time from the pipeline clock, then hands it to B191 through ServicePipeline::record, which becomes pub(crate) in pipeline.rs and changes nothing else. Test it in tests/pod_lock.rs with a recording ServiceEventSink: an acquired and a released event reach the sink with those fields. Constructing PodLockManager with the pipeline at the composition root is not this task''s.'
   - 'The oracle helper for this task is pre-registered as pod_lock_key in the db group. Replace the stub Op in tools/oracle/src/helpers/db/pod_lock_key.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/pod_lock_key.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Lua compares the stored JSON string, including its quotes, rather than the unencoded UUID.
   - A reentrant acquire succeeds without extending the original TTL and is the only acquire path that emits the gauge event.
   - A Lua failure intentionally reaches GET plus DEL, so the fallback cannot be described as atomic.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1700
   max_new_expects: 0
 review_level: security

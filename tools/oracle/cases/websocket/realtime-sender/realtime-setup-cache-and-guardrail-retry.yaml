@@ -1,0 +1,165 @@
+kind: helper
+name: realtime-setup-cache-and-guardrail-retry
+call:
+  realtime_sender_websocket:
+    model: openai/gpt-4o-realtime-preview
+    force_transcription_model: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    provider:
+      requires_session_configuration: true
+      setup: []
+      content: []
+      transforms:
+        - []
+        - [{kind: text, text: '{"type": "session.update", "session": {"audio": {"input": {"turn_detection": {"type": "server_vad", "create_response": false}}}}}'}]
+        - []
+      fail_transform: false
+    guardrails:
+      - {custom: true, runs_for: [realtime_input_transcription]}
+    backend_failures: []
+    client_failures: []
+    operations:
+      - kind: disable
+      - kind: disable
+      - kind: disable
+calls:
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup:
+          - {type: setup, setup: {model: x}}
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "setup", "setup": {"model": "x"}}'}]
+          - []
+        fail_transform: false
+      guardrails:
+        - {custom: true, runs_for: [realtime_input_transcription]}
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {"model": "x"}}'
+        - kind: disable
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: cache
+          text: '{"setup": {"model": "a"}}'
+        - kind: cache
+          text: not json
+        - kind: cache
+          text: '[1, 2]'
+        - kind: cache
+          text: '{"no_setup": true}'
+        - kind: cache
+          text: '{"setup": null}'
+        - kind: send
+          text: '{"setup": {"model": "b"}}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup: []
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "session.update"}'}]
+        fail_transform: false
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: disable
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup: []
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "session.update"}'}]
+        fail_transform: false
+      guardrails:
+        - {custom: true, runs_for: [pre_call]}
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: disable
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup: []
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "session.update"}'}]
+        fail_transform: false
+      guardrails:
+        - {custom: false, runs_for: [realtime_input_transcription]}
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: disable
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup:
+          - {type: setup, setup: {model: y}}
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "setup", "setup": {"model": "y"}}'}]
+        fail_transform: false
+      guardrails:
+        - {custom: true, runs_for: [realtime_input_transcription]}
+      backend_failures: [0]
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {"model": "y"}}'
+        - kind: disable
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup:
+          - {type: setup, setup: {model: z}}
+        content: []
+        transforms:
+          - [{kind: text, text: '{"type": "setup", "setup": {"model": "z"}}'}]
+        fail_transform: false
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {"model": "z"}}'
+env: {}
+compare: {ignore: []}

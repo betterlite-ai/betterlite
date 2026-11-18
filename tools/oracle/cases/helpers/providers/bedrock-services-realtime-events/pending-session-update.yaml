@@ -1,0 +1,64 @@
+kind: helper
+name: pending-session-update
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    steps:
+    - method: pending
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: ''
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: 3
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update:
+          type: session.update
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: 1
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: 'Provider stream failed'
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: ''
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: false
+        committed_failure: 'earlier failure'
+    - method: pending
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+env: {}
+compare:
+  ignore: []

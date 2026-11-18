@@ -1,0 +1,19 @@
+kind: probe
+name: routing-state-failed-flush-warns-and-discards
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {}
+        steps:
+          - {kind: down, now_millis: 0}
+          - {kind: pre_call, now_millis: 0, deployment_id: dep-a, model: gpt-4o, repeat: 2}
+          - {kind: sync, now_millis: 0}
+          - {kind: up, now_millis: 0}
+          - {kind: sync, now_millis: 0}
+          - {kind: redis, now_millis: 0, key: dep-a:gpt-4o:rpm:00-00}
+          - {kind: pre_call, now_millis: 0, deployment_id: dep-a, model: gpt-4o}
+          - {kind: sync, now_millis: 0}
+          - {kind: redis, now_millis: 0, key: dep-a:gpt-4o:rpm:00-00}
+compare: {ignore: []}

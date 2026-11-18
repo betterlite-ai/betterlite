@@ -1,0 +1,16 @@
+kind: helper
+name: model-deprecation-negative-window
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    warn_within_days: -1
+    model_cost: {}
+    deployments:
+      - model_name: today
+        model_info: {deprecation_date: "2026-05-01"}
+      - model_name: yesterday
+        model_info: {deprecation_date: "2026-04-30"}
+      - model_name: later
+        model_info: {deprecation_date: "2026-05-06"}
+env: {}
+compare: {ignore: []}
