@@ -30,6 +30,8 @@ pub(super) fn group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
             walker.output.push('(');
             let verbose = matches!(walker.verbose.last(), Some(true));
             walker.verbose.push(verbose);
+            let multiline = matches!(walker.multiline.last(), Some(true));
+            walker.multiline.push(multiline);
             walker.at_start = false;
             Ok(())
         }
@@ -56,6 +58,8 @@ fn named_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
     let _closing_angle = walker.input.nth(name.chars().count().saturating_add(3));
     let verbose = matches!(walker.verbose.last(), Some(true));
     walker.verbose.push(verbose);
+    let multiline = matches!(walker.multiline.last(), Some(true));
+    walker.multiline.push(multiline);
     walker.at_start = false;
     Ok(())
 }
@@ -97,6 +101,9 @@ fn apply_flags(
         if let Some(base) = walker.verbose.first_mut() {
             *base = verbose;
         }
+        if let Some(base) = walker.multiline.first_mut() {
+            *base = added.contains('m') || (!removed.contains('m') && *base);
+        }
         return Ok(());
     }
     let scoped = if removed.is_empty() {
@@ -106,6 +113,9 @@ fn apply_flags(
     };
     let _ignored = write!(walker.output, "(?{scoped}:");
     walker.verbose.push(verbose);
+    let multiline = added.contains('m')
+        || (!removed.contains('m') && matches!(walker.multiline.last(), Some(true)));
+    walker.multiline.push(multiline);
     walker.at_start = false;
     Ok(())
 }

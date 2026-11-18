@@ -5,13 +5,15 @@ use super::PatternProblem;
 
 mod groups;
 
-pub(super) fn pattern(input: &str) -> Result<String, PatternProblem> {
+pub(super) fn pattern(input: &str, python_dollar: bool) -> Result<String, PatternProblem> {
     let mut walker = Walker {
         input: input.chars(),
         output: String::with_capacity(input.len()),
         class: ClassState::Outside,
         at_start: true,
         verbose: vec![false],
+        multiline: vec![false],
+        python_dollar,
     };
     loop {
         let Some(character) = walker.input.next() else {
@@ -31,6 +33,8 @@ struct Walker<'input> {
     class: ClassState,
     at_start: bool,
     verbose: Vec<bool>,
+    multiline: Vec<bool>,
+    python_dollar: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,7 +60,13 @@ impl Walker<'_> {
                 self.output.push(')');
                 if self.verbose.len() != 1 {
                     self.verbose.pop();
+                    self.multiline.pop();
                 }
+                self.at_start = false;
+                Ok(())
+            }
+            '$' if self.python_dollar && !matches!(self.multiline.last(), Some(true)) => {
+                self.output.push_str("(?:\\n?\\z)");
                 self.at_start = false;
                 Ok(())
             }
