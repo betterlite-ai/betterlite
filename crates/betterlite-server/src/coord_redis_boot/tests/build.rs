@@ -76,6 +76,14 @@ fn usage_family_keeps_a_false_json_value_plain() {
 }
 
 #[test]
+fn usage_family_keeps_an_empty_environment_string_plain() {
+    let block = params(r#"{"host": "127.0.0.1"}"#);
+    let env = environment(&[("REDIS_CLUSTER_NODES", r#""""#)]);
+    let family = usage_family(&block, &env).expect("an empty string is falsy");
+    assert_eq!(family, RedisCacheFamily::Standalone);
+}
+
+#[test]
 fn usage_family_rejects_a_malformed_environment_list() {
     let block = params(r#"{"host": "127.0.0.1"}"#);
     let env = environment(&[("REDIS_CLUSTER_NODES", "not json")]);
@@ -195,6 +203,18 @@ async fn build_usage_redis_rejects_an_unknown_option() {
         .err()
         .expect("a plain client has no such option");
     assert!(matches!(error, CoordRedisError::Build(_)));
+}
+
+#[tokio::test]
+async fn build_usage_redis_drops_null_parameters() {
+    let port = closed_port();
+    let block = params(&format!(
+        r#"{{"host": "127.0.0.1", "port": {port}, "unsupported_option": null}}"#
+    ));
+    let cache = build_usage_redis(&block, &wiring(), &no_environment())
+        .await
+        .expect("a null parameter never reaches the Redis client");
+    assert_eq!(cache.transport.settings.port, Some(i64::from(port)));
 }
 
 #[tokio::test]

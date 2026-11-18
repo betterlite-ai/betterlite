@@ -7,9 +7,12 @@ use std::future::Future;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use betterlite_auth::auth_cache::{AuthCache, gateway_cache};
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
@@ -23,8 +26,13 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_router::redis_failure_policy::Settings;
 use betterlite_router::routing_state_store::BreakerClock;
-use betterlite_secret_managers::secret_lookup::SecretValue;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
+use betterlite_secret_managers::secret_lookup::ports::{
+    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
+    OidcTokenCache,
+};
+use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
+use secrecy::SecretString;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{set_default, with_default};
 use tracing::{Event, Level, Subscriber};
@@ -139,6 +147,68 @@ pub(crate) async fn standalone_cache() -> Arc<RedisCache> {
         .await
         .expect("the cache builds against a closed port");
     Arc::new(cache)
+}
+
+fn memory() -> Arc<LocalMemoryOps> {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1_000.0_f64);
+    Arc::new(LocalMemoryOps::new(1024, clock).expect("the memory tier builds"))
+}
+
+fn dual_cache_settings() -> DualCacheSettings {
+    DualCacheSettings {
+        default_in_memory_ttl: None,
+        default_redis_ttl: None,
+        batch_cache_expiry: None,
+        max_redis_batch_cache_size: 1000,
+        redis_delete_chunk_size: 1000,
+    }
+}
+
+// The real dual cache the server hands to the spend, CLI SSO and config attachment.
+pub(crate) fn dual_cache(redis: Option<Arc<RedisCache>>) -> DualCache<LocalMemoryOps> {
+    DualCache::new(memory(), redis, dual_cache_settings())
+}
+
+// The real auth cache over two partition tiers, as the proxy builds it.
+pub(crate) fn auth_cache() -> AuthCache<DualCache<LocalMemoryOps>> {
+    gateway_cache(memory(), memory(), None, dual_cache_settings(), 45.0_f64)
+}
+
+// A secret lookup with no manager and no OIDC provider reads the environment alone.
+pub(crate) fn secret_lookup() -> SecretLookup {
+    SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(NoopOidc),
+        azure_tokens: Arc::new(NoopOidc),
+        clock: Arc::new(NoopOidc),
+        oidc_cache: OidcTokenCache::default(),
+    }
+}
+
+struct NoopOidc;
+
+impl OidcHttp for NoopOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        Err(OidcHttpError::Request {
+            message: "the coordination tests read no OIDC token".to_owned(),
+        })
+    }
+}
+
+impl AzureOidcTokens for NoopOidc {
+    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
+        Ok(None)
+    }
+}
+
+impl OidcClock for NoopOidc {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn unix_seconds(&self) -> i64 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -3,7 +3,7 @@
 use betterlite_secret_managers::secret_lookup::SecretValue;
 use secrecy::SecretString;
 
-use super::support::{FakeSecrets, environment, json};
+use super::support::{FakeSecrets, environment, json, secret_lookup};
 use crate::coord_redis_boot::env_refs::{ResolveContext, resolve_env_refs};
 use crate::coord_redis_boot::error::CoordRedisError;
 
@@ -87,6 +87,28 @@ fn resolve_env_refs_keeps_a_bool_reference_outside_a_typed_field_a_bool() {
     let resolved = resolve_env_refs(&json(r#"{"username": "os.environ/COORD_USER"}"#), &context)
         .expect("the username reference resolves");
     assert_eq!(resolved, json(r#"{"username": true}"#));
+}
+
+#[test]
+fn resolve_env_refs_reads_through_the_secret_lookup() {
+    let secrets = secret_lookup();
+    let env = environment(&[
+        ("COORD_HOST", "coordinator.internal"),
+        ("COORD_SSL", "true"),
+    ]);
+    let context = ResolveContext {
+        secrets: &secrets,
+        env: &env,
+    };
+    let resolved = resolve_env_refs(
+        &json(r#"{"host": "os.environ/COORD_HOST", "ssl": "os.environ/COORD_SSL"}"#),
+        &context,
+    )
+    .expect("the environment references resolve");
+    assert_eq!(
+        resolved,
+        json(r#"{"host": "coordinator.internal", "ssl": true}"#)
+    );
 }
 
 #[test]

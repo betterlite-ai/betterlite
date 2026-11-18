@@ -16,7 +16,7 @@ use crate::coord_redis_boot::attach::{CLI_SSO_SESSION_TTL_SECONDS, UsageAttach};
 use crate::coord_redis_boot::env_refs::ResolveContext;
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::coord_redis_boot::init::{
-    buffer_redis, init_env_fallback, init_from_config, init_from_db,
+    AdminPing, UsageRedisProbe, buffer_redis, init_env_fallback, init_from_config, init_from_db,
 };
 
 const CONFIG_INFO: &str = "coordination_redis: using a standalone Redis from general_settings for usage tracking, rate limiting, and cross-pod coordination.";
@@ -372,6 +372,13 @@ async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
     .err()
     .expect("a saved list is not a mapping");
     assert!(matches!(error, CoordRedisError::NotMapping));
+}
+
+#[tokio::test]
+async fn admin_ping_reports_a_closed_port_as_an_error() {
+    let cache = standalone_cache().await;
+    let outcome = AdminPing.ping(&cache).await;
+    assert!(outcome.is_err());
 }
 
 #[tokio::test]
