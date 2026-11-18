@@ -1,0 +1,13 @@
+id: B9984
+milestone: R2 bug fixes
+title: The logging env and the provider call futures are Send
+status: todo
+depends_on: []
+file: tasks/B9984-send-provider-futures.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
