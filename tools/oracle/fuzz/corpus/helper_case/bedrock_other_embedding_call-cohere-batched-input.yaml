@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-cohere-batched-input-seed
+call:
+  bedrock_other_embedding_call:
+    function: cohere_batched_input
+    model: cohere.embed-english-v3
+    input: [first]
+    now: 1700000000
+env: {}
+compare: {ignore: []}

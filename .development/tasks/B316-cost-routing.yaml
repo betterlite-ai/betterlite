@@ -17,6 +17,7 @@ description: 'Add the cost selector using B013 model prices and token counting w
   B016 registers Strategy::CostBasedRouting as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/cost_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/router_core/tests.rs"
   - crates/betterlite-router/src/cost_routing.rs
   - crates/betterlite-router/src/cost_routing/**
   - crates/betterlite-router/src/strategy/cost_routing.rs

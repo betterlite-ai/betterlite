@@ -2,7 +2,7 @@ id: B152
 milestone: M11 distribution
 title: Helm charts
 status: todo
-depends_on: [B8130, B8131, B8132, B8133, B8134, B8135, B5071]
+depends_on: [B8130, B8131, B8132, B8133, B8135]
 file: tasks/B152-helm-charts.yaml
 covers:
   - "helm/**"

@@ -1,0 +1,27 @@
+kind: helper
+name: dual-cache-batch-reads-sync-read-errors
+call:
+  b4294:
+    sync_read_errors:
+      clock: 1000.0
+      default_in_memory_ttl: null
+      memory:
+        - key: a
+          value: memory-a
+      keys: []
+      read_keys: [a, b]
+      ttl_keys: []
+      due_keys: [b]
+      write_keys: [w1]
+      duplicate_keys: []
+      merge_keys: []
+      replies:
+        - [redis-w1]
+      own_replies: []
+      caches: []
+      breaker_caches: []
+      prepare_caches: []
+      apply_caches: []
+env: {}
+compare:
+  ignore: []

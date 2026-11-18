@@ -70,7 +70,7 @@ description: >-
   B1657 and the other settings routes. `gateway_requests:
   Arc<GatewayRequestAccumulator>` (B3102, betterlite-db): the one accumulator B8680's billable sink records into, the
   B8372's periodic flush job drains and B8613's stop drains last. `vantage_loggers: Arc<VantageLoggers>` (B3067): the one live store of concrete Vantage exporters that B8613 made. B8372 populates and schedules from it, B3077's delete route edits it and B073's export routes read it. B8749's no-op BaseLogger named vantage cannot serve as the exporter. `prometheus_registry: Arc<CollectorRegistry>` (B3875,
-  betterlite-logging, which this task adds to betterlite-server's dependencies): the one registry B8613 made at startup; B8655 registers its collectors into it and B3886's
+  betterlite-prometheus collector_registry; this task adds betterlite-prometheus to betterlite-server's dependencies): the one registry B8613 made at startup; B8655 registers its collectors into it and B3886's
   metrics_router renders it. `spend_producer: Arc<std::sync::OnceLock<P>>`, where P is the drainable producer
   value B069's `spend::startup::start` returns (read its merged signature): B8613 makes the slot empty and keeps a
   clone, B8662 sets it from what start returns in app::spend::start, and B8613's stop drains it at L1625. It stays
@@ -82,7 +82,8 @@ description: >-
   and budget, which application() derives; agents arrives as the bare AgentRegistry) plus `shutdown:
   Arc<ShutdownState>` and `in_flight` (B022's in-flight source that ShutdownState reads), and `ServerInputs { config, chat, host, port, startup: StartupOutputs }`. `server::run(inputs:
   ServerInputs)` replaces the four-argument run. `application(config, chat, startup)` builds Shared once, puts it into
-  ServerState as B1100 does, keeps the RootPaths wrap and returns the router and the Arc<ServerState>. run then awaits `app::start(&state)` once, before it binds the listener,
+  ServerState as B1100 does, keeps the RootPaths wrap (and B100's native_compaction::install after it as the last call, when
+  B100 has landed) and returns the router and the Arc<ServerState>. run then awaits `app::start(&state)` once, before it binds the listener,
   so no request arrives before every area finished its startup work. In crates/betterlite/src/lifespan.rs, run_proxy
   turns B8613's `Started` into StartupOutputs (cloning the Arcs, so stop still holds its own) and calls the new run. If
   main.rs still calls server::run itself, change that call too. B4471's gateway and backend binaries call server::run
@@ -118,8 +119,10 @@ description: >-
 
   routes.rs router() changes in three places. It calls app::mount after it merges chat, embeddings and B1100's route
   modules and before the two auth layers, so area routes pass the same auth stages as every other route. After the auth
-  layers it merges app::mount_public, so public routes skip them. Then it calls app::wrap last, so edge's outer layers
-  (CORS preflight, the outer 500 handler of B789 and B8591) sit outside everything. Fallback: axum keeps one fallback,
+  layers it merges app::mount_public, so public routes skip them. Then it calls app::wrap as the last step of router(), so
+  edge's outer layers (CORS preflight, the outer 500 handler of B789 and B8591) sit outside every route and auth layer.
+  application() still wraps router() in request_stack, admission and RootPaths, and B100's native_compaction::install is
+  the last call of application(), outside all of them. Fallback: axum keeps one fallback,
   and Router::merge panics when both routers carry one. routes.rs keeps setting its Not Found fallback before app::mount,
   the pass-through area's mount replaces it with B8643's configured_fallback (same 404 body when nothing matches), and
   nothing after app::mount sets a fallback: mount_public and wrap must merge only routers without one.

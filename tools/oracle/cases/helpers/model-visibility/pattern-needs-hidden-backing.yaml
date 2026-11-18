@@ -1,0 +1,23 @@
+kind: helper
+name: model-visibility-pattern-needs-hidden-backing
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: open/*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w1
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [open/x, hidden]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}

@@ -2,7 +2,7 @@ id: B104
 milestone: M6 guardrails
 title: Guardrail framework, registry and guardrail API
 status: todo
-depends_on: [B8990, B8994, B8666, B8613, B8633, B8667, B8668, B1137, B3731, B3788, B3771]
+depends_on: [B8990, B8994, B8666, B8613, B8667, B8668, B1137, B3731, B3788, B3771]
 file: tasks/B104-guardrail-framework-http.yaml
 covers:
   - "litellm/proxy/guardrails/usage_endpoints.py"

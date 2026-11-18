@@ -33,7 +33,8 @@ use uuid::Uuid;
 use super::VectorStoreEmbeddingCall;
 use super::error::SdkHttpError;
 use super::native::openai_defaults;
-use super::result::{EmbeddingOutcomes, SdkResult};
+use super::result::EmbeddingOutcomes;
+use super::result::kinds::SdkResult;
 
 const TIMEOUT_SECONDS: u64 = 30;
 

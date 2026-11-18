@@ -110,6 +110,7 @@ pub mod prometheus_label_schema;
 pub mod prometheus_latency;
 pub mod prometheus_query;
 pub mod prometheus_rate_limits;
+pub mod prometheus_services;
 pub mod prometheus_usage;
 pub mod python_json;
 pub mod registry;
