@@ -106,13 +106,15 @@ impl BedrockBidirectionalStream for Transport {
         &self,
     ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = io::Error>>), StreamError<io::Error>>
     {
-        match &self.stream_error {
-            Some(message) => Err(StreamError {
-                message: message.clone(),
-                source: None,
-            }),
-            None => Ok((Json::Null, Box::new(EmptyOutput))),
-        }
+        self.stream_error.as_ref().map_or_else(
+            || Ok((Json::Null, Box::new(EmptyOutput))),
+            |message| {
+                Err(StreamError {
+                    message: message.clone(),
+                    source: None,
+                })
+            },
+        )
     }
 }
 
