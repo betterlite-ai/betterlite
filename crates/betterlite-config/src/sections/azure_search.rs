@@ -29,10 +29,17 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            project_endpoint: lookup.lookup(PROJECT_ENDPOINT_ENV),
-            model: lookup.lookup(MODEL_ENV),
-            connection_id: lookup.lookup(CONNECTION_ID_ENV),
-            token: lookup.lookup(TOKEN_ENV).map(SecretString::from),
+            project_endpoint: lookup
+                .lookup(PROJECT_ENDPOINT_ENV)
+                .filter(|value| !value.is_empty()),
+            model: lookup.lookup(MODEL_ENV).filter(|value| !value.is_empty()),
+            connection_id: lookup
+                .lookup(CONNECTION_ID_ENV)
+                .filter(|value| !value.is_empty()),
+            token: lookup
+                .lookup(TOKEN_ENV)
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from),
         })
     }
 }

@@ -98,7 +98,7 @@ fn azure_search_config_cases(#[case] scenario: Scenario) {
     assert_eq!(read(&settings(&[]), case.field).as_deref(), None);
     assert_eq!(
         read(&settings(&[(case.name, "")]), case.field).as_deref(),
-        Some("")
+        None
     );
     assert_eq!(
         read(&settings(&[("UNRELATED", case.value)]), case.field).as_deref(),
