@@ -103,7 +103,7 @@ fn post_call_filters_and_deduplicates_tags_and_groups() {
         json_string(""),
         json_string("alpha"),
         json_string("beta"),
-        JsonData::Number(serde_json::Number::from(7)),
+        JsonData::Number(serde_json::Number::from(7_i64)),
         JsonData::Bool(true),
         JsonData::Null,
     ];
@@ -112,7 +112,7 @@ fn post_call_filters_and_deduplicates_tags_and_groups() {
         json_string("group-a"),
         json_string(""),
         json_string("group-b"),
-        JsonData::Number(serde_json::Number::from(3)),
+        JsonData::Number(serde_json::Number::from(3_i64)),
     ];
     let counters = PostCallCounterKeys {
         entity: entity(None, None, None, Some("proj-1")),
