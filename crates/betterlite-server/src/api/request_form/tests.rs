@@ -586,3 +586,11 @@ fn empty_multipart_body_has_no_fields() {
             .is_empty()
     );
 }
+
+#[test]
+fn an_unterminated_payload_boundary_is_content() {
+    let body = b"--b\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n--b--";
+    let mut items = super::multipart::raw_split::split_items(body, "b");
+    assert_eq!(items.next().unwrap().unwrap().data, b"--b--");
+    assert!(items.next().is_none());
+}
