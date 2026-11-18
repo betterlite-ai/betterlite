@@ -8,12 +8,14 @@ from litellm.proxy.pass_through_endpoints.passthrough_endpoint_router import (
 from litellm.router import Router
 from litellm.types.passthrough_endpoints.vertex_ai import VertexPassThroughCredentials
 from litellm.types.utils import CredentialItem
-from pydantic import JsonValue, TypeAdapter
+from pydantic import TypeAdapter
+
+Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
 class CommonInput(TypedDict):
-    deployments: list[dict[str, JsonValue]]
-    credentials: dict[str, dict[str, JsonValue]]
+    deployments: list[dict[str, Json]]
+    credentials: dict[str, dict[str, Json]]
     environment: dict[str, str]
 
 
@@ -47,11 +49,11 @@ Input: TypeAlias = CredentialsInput | VertexDeploymentsInput | VertexKeyInput
 class VertexFields(TypedDict):
     vertex_project: str | None
     vertex_location: str | None
-    vertex_credentials: str | dict[str, JsonValue] | None
+    vertex_credentials: str | dict[str, Json] | None
 
 
 VERTEX: TypeAdapter[VertexFields] = TypeAdapter(VertexFields)
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+JSON: TypeAdapter[Json] = TypeAdapter(Json)
 CREDENTIAL_ITEMS: TypeAdapter[list[CredentialItem]] = TypeAdapter(list[CredentialItem])
 
 
@@ -73,17 +75,18 @@ def run(input_value: Input) -> JsonValue:
     router_instance = Router(model_list=input_value["deployments"])
     router = PassthroughEndpointRouter(llm_router_getter=RouterGetter(router_instance))
     previous_credentials = litellm.credential_list
-    litellm.credential_list = CREDENTIAL_ITEMS.validate_json(
-        json.dumps(
-            [
-                {
-                    "credential_name": name,
-                    "credential_info": {},
-                    "credential_values": values,
-                }
-                for name, values in input_value["credentials"].items()
-            ]
+    credential_records: list[dict[str, Json]] = []
+    empty_info: dict[str, Json] = {}
+    for name, values in input_value["credentials"].items():
+        credential_records.append(
+            {
+                "credential_name": name,
+                "credential_info": empty_info,
+                "credential_values": values,
+            }
         )
+    litellm.credential_list = CREDENTIAL_ITEMS.validate_json(
+        json.dumps(credential_records)
     )
     try:
         if input_value["function"] == "credentials":
