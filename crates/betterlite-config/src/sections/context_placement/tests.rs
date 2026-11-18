@@ -230,7 +230,7 @@ fn a_numeric_flag_is_rejected() {
 }
 
 #[test]
-fn a_sibling_keys_do_not_become_unsupported() {
+fn the_router_sibling_keys_do_not_become_unsupported() {
     let source = router(
         "        enable_context_window_escalation: true\n        default_model: openai/gpt-4o\n",
     );
@@ -239,8 +239,14 @@ fn a_sibling_keys_do_not_become_unsupported() {
 }
 
 #[test]
-fn an_unclaimed_nested_key_is_still_unsupported() {
+fn an_extra_router_config_key_is_allowed() {
+    // ComplexityRouterConfig is extra="allow", and the forecast view claims these siblings
     let source = router("        escalation_mystery: true\n");
-    let error = settings(&source, &[]).unwrap_err();
-    assert!(error.contains("escalation_mystery"), "{error}");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(
+        resolved,
+        Settings {
+            deployments: vec![Some(Config::default())],
+        }
+    );
 }
