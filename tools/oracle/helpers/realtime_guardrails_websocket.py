@@ -11,6 +11,7 @@ from litellm.litellm_core_utils.realtime_streaming import RealTimeStreaming
 from litellm.litellm_core_utils.realtime_streaming import (
     _ASGIScope as ASGIScope,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L62-L66
 )
+from litellm.llms.base_llm.realtime.transformation import RealtimeBackend
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -18,8 +19,7 @@ from typing_extensions import override
 
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 REWRITE_TEXT = "the guardrail rewrite"
-MAX_GUARDRAILS = 32
-MAX_RUNS = 32
+MAX_ITEMS = 32
 MAX_TEXT_BYTES = 16 * 1024
 MAX_CAPTURE_BYTES = 1024 * 1024
 DEADLINE_SECONDS = 120.0
@@ -87,7 +87,7 @@ def recorded(text: str) -> JsonValue:
     return {"wire": "text", "payload": payload}
 
 
-class ScriptedSocket:
+class ScriptedSocket(RealtimeBackend):
     def __init__(self, input_value: Input, timeline: list[JsonValue], name: str) -> None:
         self.timeline = timeline
         self.failures = input_value["backend_failures"]
@@ -108,9 +108,9 @@ class ScriptedSocket:
 
     async def __aexit__(
         self,
-        _exc_type: type[BaseException] | None,
-        _exc_value: BaseException | None,
-        _traceback: TracebackType | None,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None: ...
 
     async def send(self, message: str | bytes) -> None:
@@ -290,7 +290,7 @@ def run(input_value: Input) -> JsonValue:
     callbacks = len(input_value["callbacks"])
     counts = (len(input_value["runs"]), len(input_value["backend_failures"]),
               len(input_value["client_failures"]))
-    if max(guardrails, callbacks) > MAX_GUARDRAILS or max(counts) > MAX_RUNS:
+    if max(guardrails, callbacks) > MAX_ITEMS or max(counts) > MAX_ITEMS:
         raise ValueError("the scripted guardrails input is past its limits")
     if any(index >= guardrails for index in input_value["callbacks"]):
         raise ValueError("a callback index is past the guardrails")
