@@ -6,9 +6,9 @@ use crate::replicate::poll::completion::{Replicate, ReplicateCall};
 use crate::replicate::poll::{OutputPolicy, ReplicatePolling};
 use crate::replicate::request::ReplicateDefaults;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use futures_util::future::LocalBoxFuture;
 use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Arc;
 pub type Completion = ReplicateCompletion;
 fn module<'deps, 'call>(
@@ -35,13 +35,12 @@ where
         },
     }
 }
-// the logging env is not Sync, so the call future stays on the caller's task
 pub fn complete<'call>(
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<Completion, HubDispatchError>> {
-    Box::pin(async move {
+) -> impl Future<Output = Result<Completion, HubDispatchError>> + Send + 'call {
+    async move {
         let sources = Sources {
             call: call.api_key.map(ExposeSecret::expose_secret),
             globals: deps.globals,
@@ -73,5 +72,5 @@ pub fn complete<'call>(
             log_opened_stream(log, call.messages, None)?;
         }
         Ok(completion)
-    })
+    }
 }

@@ -26,7 +26,8 @@ use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::error::CountError;
 use chrono::{DateTime, Utc};
-use futures_util::future::LocalBoxFuture;
+use futures_util::FutureExt as _;
+use futures_util::future::BoxFuture;
 use http::HeaderMap;
 
 use super::super::credentials::Globals;
@@ -393,9 +394,9 @@ impl Services {
 
 type Deps<'call> = &'call DispatchDeps<'call>;
 type Log<'call, 'state, 'env> = &'call mut CallLogging<'state, 'env>;
-type Ran<'call, T> = LocalBoxFuture<'call, Result<T, HubDispatchError>>;
+type Ran<'call, T> = BoxFuture<'call, Result<T, HubDispatchError>>;
 
-// one entry point of the module under test; the logging env is not Sync, so its future stays local
+// one entry point of the module under test
 pub(super) trait Arm {
     type Output;
 
@@ -411,7 +412,7 @@ impl Arm for &EmbeddingCall<'_> {
     where
         Self: 'call,
     {
-        embed(self, deps, log)
+        embed(self, deps, log).boxed()
     }
 }
 
@@ -427,7 +428,7 @@ impl Arm for (ChatConfigTag, &mut ChatContext<'_>) {
             tag,
             construction: ConfigConstruction::Shared,
         };
-        dispatch(&selection, call, deps, log)
+        dispatch(&selection, call, deps, log).boxed()
     }
 }
 
@@ -436,7 +437,7 @@ pub(super) fn run_with<'run, A>(
     globals: &'run Globals<'_>,
     env: &'run Env,
     arm: A,
-) -> LocalBoxFuture<'run, Outcome<A::Output>>
+) -> BoxFuture<'run, Outcome<A::Output>>
 where
     A: Arm + 'run,
     A::Output: 'run,

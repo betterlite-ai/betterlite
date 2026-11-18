@@ -28,7 +28,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use futures_util::future::LocalBoxFuture;
+use std::future::Future;
 use tokio::time::timeout;
 
 type Handler<'deps> =
@@ -38,8 +38,8 @@ type Capabilities<'deps> = CapabilityEnvironment<'deps, NoDynamicMetadata, NoHfC
 pub(super) fn invoke<'call>(
     fixture: &'call Fixture,
     invocation: Invocation<'call>,
-) -> LocalBoxFuture<'call, Observed> {
-    Box::pin(async move {
+) -> impl Future<Output = Observed> + Send + 'call {
+    async move {
         let resolution = ResolutionContext {
             catalog: &fixture.catalog,
             known_model_names: &fixture.names,
@@ -70,7 +70,7 @@ pub(super) fn invoke<'call>(
         };
         let mut handler = Handler::from((fixture, capabilities));
         invocation.dispatch(&mut handler, &fixture.services).await
-    })
+    }
 }
 
 impl<'deps> From<(&'deps Fixture, Capabilities<'deps>)> for Handler<'deps> {
@@ -126,11 +126,11 @@ impl<'deps> Invocation<'deps> {
         self,
         handler: &'call mut Handler<'_>,
         services: &'call Services,
-    ) -> LocalBoxFuture<'call, Observed>
+    ) -> impl Future<Output = Observed> + Send + 'call
     where
         'deps: 'call,
     {
-        Box::pin(async move {
+        async move {
             let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
             let (mut state, env) = logging(&redactor).unwrap();
             let mut log = CallLogging {
@@ -161,6 +161,6 @@ impl<'deps> Invocation<'deps> {
                 _ => String::new(),
             };
             observed
-        })
+        }
     }
 }

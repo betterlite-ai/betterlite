@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -15,7 +16,6 @@ use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
 use betterlite_openai::huggingface_embedding::{PrepareRequest, PreparedRequest, prepare};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
@@ -142,13 +142,12 @@ fn received(
     Ok(embedding)
 }
 
-// the logging env is not Sync, so the call future stays on the caller's task
 pub fn embed<'call>(
     call: &'call EmbeddingCall<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<EmbeddingResponse, HubDispatchError>> {
-    Box::pin(async move {
+) -> impl Future<Output = Result<EmbeddingResponse, HubDispatchError>> + Send + 'call {
+    async move {
         let prepared = prepare_call(call, deps).await?;
         let sent = PreCall {
             input: prepared.input.clone(),
@@ -172,7 +171,7 @@ pub fn embed<'call>(
         };
         let response = deps.post.post(&request).await?;
         received(call, deps.encoder, log, prepared, &response)
-    })
+    }
 }
 
 pub struct NoTag;

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod send;
+
 use super::fixtures::{Case, execute};
 use rstest::rstest;
 use serde::Deserialize;

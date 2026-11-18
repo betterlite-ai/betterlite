@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::str::from_utf8;
 
 use betterlite_http::proxy::{StreamResponse, UpstreamResponse};
@@ -8,7 +9,6 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
@@ -159,13 +159,12 @@ fn log_pre_call(
     Ok(())
 }
 
-// the logging env is not Sync, so the call future stays on the caller's task
 pub fn complete<'call>(
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<Completion, HubDispatchError>> {
-    Box::pin(async move {
+) -> impl Future<Output = Result<Completion, HubDispatchError>> + Send + 'call {
+    async move {
         let endpoint = endpoint(call, deps)?;
         let data = request_body(call, deps, &endpoint.options).await?;
         log_pre_call(call, log, &endpoint, &data)?;
@@ -191,7 +190,7 @@ pub fn complete<'call>(
             log_opened_stream(log, call.messages, Some(RawBody::Text(encoded)))?;
         }
         Ok(Completion::Stream(Box::new(response)))
-    })
+    }
 }
 
 // call_error raises before LiteLLM logs the post_call, which carries the request body

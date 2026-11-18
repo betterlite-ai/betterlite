@@ -4,15 +4,15 @@ use crate::anthropic_dispatch::native::{Failure, Reply, legacy::Reply as LegacyR
 use crate::anthropic_dispatch::operations::Outcome;
 use betterlite_anthropic::anthropic_http_stream::error::StreamFailure;
 use betterlite_anthropic::chat_call::ChatOutcome;
-use futures_util::future::LocalBoxFuture;
 use std::convert::Infallible;
+use std::future::Future;
 use tokio::time::timeout;
 
 type NativeOutcome =
     Result<Outcome<Reply<StreamFailure>>, DispatchError<Failure<StreamFailure, Infallible>>>;
 
-pub(super) fn observe(outcome: NativeOutcome) -> LocalBoxFuture<'static, Observed> {
-    Box::pin(async move {
+pub(super) fn observe(outcome: NativeOutcome) -> impl Future<Output = Observed> + Send + 'static {
+    async move {
         let mut observed = Observed::default();
         match outcome {
             Ok(Outcome::Completion(Reply::Messages(ChatOutcome::Reply(reply)))) => {
@@ -38,7 +38,7 @@ pub(super) fn observe(outcome: NativeOutcome) -> LocalBoxFuture<'static, Observe
             _ => panic!("unexpected native outcome"),
         }
         observed
-    })
+    }
 }
 
 async fn legacy(reply: LegacyReply) -> Observed {
