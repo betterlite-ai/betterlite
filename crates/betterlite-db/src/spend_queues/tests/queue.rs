@@ -30,6 +30,16 @@ async fn adds_keep_fifo_order_and_a_drain_takes_at_most_the_flush_count() {
 }
 
 #[tokio::test]
+async fn an_add_to_a_queue_with_room_returns_without_waiting() {
+    let queue = BoundedUpdateQueue::new(1, 100, 10).unwrap();
+    let observer = NoEnqueueObserver;
+    timeout(Duration::from_millis(50), queue.add("first", &observer))
+        .await
+        .unwrap();
+    assert_eq!(queue.drain(), vec!["first"]);
+}
+
+#[tokio::test]
 async fn a_nonpositive_flush_count_drains_nothing() {
     let zero = BoundedUpdateQueue::new(8, 100, 0).unwrap();
     let observer = NoEnqueueObserver;
@@ -123,20 +133,22 @@ async fn a_cancelled_producer_leaves_the_queue_unchanged() {
     assert_eq!(queue.drain(), vec!["second"]);
 }
 
+async fn add_and_compact_twenty_five(queue: Arc<BoundedUpdateQueue<i64>>) {
+    let observer = NoEnqueueObserver;
+    for _record in 0..25 {
+        queue.add(1_i64, &observer).await;
+        queue.compact_when_full(sum_all).unwrap();
+    }
+}
+
 #[tokio::test]
 async fn concurrent_producers_lose_no_cost_when_compaction_runs() {
     let queue = Arc::new(BoundedUpdateQueue::new(256, 2, 1000).unwrap());
     let mut tasks = JoinSet::new();
-    for _producer in 0..4 {
-        let producing = Arc::clone(&queue);
-        tasks.spawn(async move {
-            let observer = NoEnqueueObserver;
-            for _record in 0..25 {
-                producing.add(1_i64, &observer).await;
-                producing.compact_when_full(sum_all).unwrap();
-            }
-        });
-    }
+    tasks.spawn(add_and_compact_twenty_five(Arc::clone(&queue)));
+    tasks.spawn(add_and_compact_twenty_five(Arc::clone(&queue)));
+    tasks.spawn(add_and_compact_twenty_five(Arc::clone(&queue)));
+    tasks.spawn(add_and_compact_twenty_five(Arc::clone(&queue)));
     while let Some(joined) = tasks.join_next().await {
         joined.unwrap();
     }

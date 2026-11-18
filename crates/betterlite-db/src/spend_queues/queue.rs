@@ -55,19 +55,19 @@ impl<T: Send> BoundedUpdateQueue<T> {
             let space = self.space.notified();
             tokio::pin!(space);
             space.as_mut().enable();
-            {
-                let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-                if items.len() < self.capacity {
-                    items.push_back(update);
-                    let queue_size = items.len();
-                    drop(items);
-                    observer.item_added(queue_size);
-                    return;
-                }
+            let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
+            if items.len() >= self.capacity {
+                drop(items);
+                // notify_one keeps a permit, so a flush that has not started waiting yet still sees the pressure.
+                self.pressure.notify_one();
+                space.await;
+                continue;
             }
-            // notify_one keeps a permit, so a flush that has not started waiting yet still sees the pressure.
-            self.pressure.notify_one();
-            space.await;
+            items.push_back(update);
+            let queue_size = items.len();
+            drop(items);
+            observer.item_added(queue_size);
+            return;
         }
     }
 
@@ -81,10 +81,10 @@ impl<T: Send> BoundedUpdateQueue<T> {
     }
 
     // aggregate_queue_updates: one pass over the records queued right now, with the aggregated records put back in their place.
-    pub(super) fn compact_when_full(
-        &self,
-        aggregate: fn(&[T]) -> Result<Vec<T>, SpendQueueError>,
-    ) -> Result<(), SpendQueueError> {
+    pub(super) fn compact_when_full<F>(&self, aggregate: F) -> Result<(), SpendQueueError>
+    where
+        F: FnOnce(&[T]) -> Result<Vec<T>, SpendQueueError>,
+    {
         let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
         // The source compacts once qsize() reaches MAX_SIZE_IN_MEMORY_QUEUE, so a threshold of zero compacts even an empty queue.
         if i64::try_from(items.len()).unwrap_or(i64::MAX) < self.aggregation_threshold {
@@ -104,6 +104,7 @@ impl<T: Send> BoundedUpdateQueue<T> {
             // The source raises after its drain and loses the drained records; betterlite puts them back before reporting the failure.
             Err(error) => {
                 items.extend(drained);
+                drop(items);
                 Err(error)
             }
         }
