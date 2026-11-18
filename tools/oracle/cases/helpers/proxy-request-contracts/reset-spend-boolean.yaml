@@ -1,0 +1,15 @@
+kind: helper
+name: reset_spend_boolean
+call:
+  b8411:
+    calls:
+      - {function: reset_spend, body: {reset_to: true}}
+      - {function: reset_spend, body: {reset_to: false}}
+      - {function: reset_spend, body: {reset_to: 2}}
+      - {function: reset_spend, body: {reset_to: 12.5}}
+      - {function: reset_spend, body: {reset_to: 0}}
+      - {function: reset_spend, body: {reset_to: -3.25}}
+      - {function: reset_spend, body: {}}
+      - {function: reset_spend, body: {reset_to: null}}
+env: {}
+compare: {ignore: []}

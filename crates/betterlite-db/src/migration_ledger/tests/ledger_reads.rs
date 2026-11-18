@@ -33,7 +33,7 @@ async fn ledger_unavailable_none() {
 
 #[tokio::test]
 async fn ledger_absent_tuple() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let url = configured_url(&database);
         assert!(matches!(
@@ -46,7 +46,7 @@ async fn ledger_absent_tuple() {
 
 #[tokio::test]
 async fn failed_logs_null_empty() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         insert_reading_rows(&database.pool).await;
         let url = configured_url(&database);
@@ -70,7 +70,7 @@ async fn failed_logs_null_empty() {
 
 #[tokio::test]
 async fn recovered_identity_match() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let name = "20250110000000_identity";
         insert_read(&database.pool, "row-unfinished", name, Some("boom"), false).await;

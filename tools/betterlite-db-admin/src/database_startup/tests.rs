@@ -56,7 +56,6 @@ struct Postgres {
     fixture: PostgresFixture,
     client: Client,
     tasks: JoinSet<Result<(), tokio_postgres::Error>>,
-    schema: String,
 }
 
 impl Postgres {
@@ -64,26 +63,20 @@ impl Postgres {
         let url = TestEnvironment::parse_from(["database-startup-admin-tests"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), Vec::new())
             .resolve()
             .await
-            .expect("a test schema");
+            .expect("a test database");
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        let schema: String = client
-            .query_one("SELECT current_schema()", &[])
-            .await
-            .expect("current_schema reads")
-            .get(0);
         Self {
             fixture,
             client,
             tasks,
-            schema,
         }
     }
 
@@ -91,7 +84,7 @@ impl Postgres {
         self.fixture
             .close_async()
             .await
-            .expect("the schema is dropped");
+            .expect("the database is dropped");
         drop(self.client);
         drop(self.tasks);
     }
@@ -100,12 +93,8 @@ impl Postgres {
 #[tokio::test]
 async fn dispatches_native_operation() {
     let database = Postgres::new().await;
-    let url = format!(
-        "{}&schema={}",
-        database.fixture.options.url.expose_secret(),
-        database.schema
-    );
-    let (status, lines) = run_migrate(&url).await;
+    let url = database.fixture.options.url.expose_secret();
+    let (status, lines) = run_migrate(url).await;
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(
         lines,
@@ -126,7 +115,7 @@ async fn dispatches_native_operation() {
     );
 
     // a repeated command finds the schema current and leaves the ledger alone
-    let (second_status, second_lines) = run_migrate(&url).await;
+    let (second_status, second_lines) = run_migrate(url).await;
     assert_eq!(second_status, ExitStatus::Success);
     assert_eq!(second_lines, lines);
     assert_eq!(
@@ -222,14 +211,10 @@ async fn migrate_reports_an_unrecoverable_failure() {
         .batch_execute("CREATE TABLE _prisma_migrations (bogus text)")
         .await
         .expect("a broken ledger");
-    let url = format!(
-        "{}&schema={}",
-        database.fixture.options.url.expose_secret(),
-        database.schema
-    );
+    let url = database.fixture.options.url.expose_secret();
     let (status, lines) = timeout(
         TEST_TIMEOUT,
-        run_command(&["migrate"], &url, &crate::backend()),
+        run_command(&["migrate"], url, &crate::backend()),
     )
     .await
     .expect("the migrate command finishes");

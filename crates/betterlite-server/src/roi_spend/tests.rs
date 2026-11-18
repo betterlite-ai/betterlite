@@ -3,6 +3,7 @@
 use super::{PostgresSpendReader, SpendReader as _};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::READ_SPEND_TABLES;
 use chrono::NaiveDate;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
@@ -20,17 +21,16 @@ async fn database() -> (PostgresFixture, Pool, Client) {
     let url = Environment::parse_from(["roi-spend-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        vec![READ_SPEND_TABLES.to_owned()],
+    )
+    .resolve()
+    .await
+    .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     let client = pool.get().await.unwrap();
-    client
-        .batch_execute(include_str!("schema.sql"))
-        .await
-        .unwrap();
     (fixture, pool, client)
 }
 

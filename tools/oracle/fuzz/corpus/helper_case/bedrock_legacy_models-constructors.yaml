@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-legacy-models-constructors-seed
+call:
+  bedrock_legacy_models:
+    constructors:
+      default_max_tokens: 4096
+      cases:
+        - family: anthropic
+          calls:
+            - {max_tokens_to_sample: 7, temperature: 0.5}
+            - {}
+env: {}
+compare: {ignore: []}

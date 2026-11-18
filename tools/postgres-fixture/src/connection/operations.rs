@@ -43,7 +43,7 @@ pub(super) async fn create_resource(
     resource: Resource,
     statement: &str,
 ) -> Result<PostgresFixture, FixtureError> {
-    let options = resource.connection(admin)?;
+    let options = admin.with_database(&resource.0)?;
     let mut drivers = JoinSet::new();
     let client = connect(admin, &mut drivers).await?;
     let created = timed("create resource", client.batch_execute(statement))

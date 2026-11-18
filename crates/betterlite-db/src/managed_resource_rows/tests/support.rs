@@ -11,6 +11,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::budget_permission_rows::JsonData;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::stored_cipher::DbCipher;
 
 use super::super::*;
@@ -307,17 +308,19 @@ fn postgres_test_url() -> Option<SecretString> {
 }
 
 pub(crate) async fn provision() -> (PostgresFixture, tokio_postgres::Client, ConnectionTasks) {
-    let fixture = PostgresFixture::provision_schema(postgres_test_url().as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        postgres_test_url().as_ref(),
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap();
     let (client, connection) =
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
             .await
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client.batch_execute(fixtures::SCHEMA).await.unwrap();
     client.batch_execute(SEED).await.unwrap();
     (fixture, client, tasks)
 }
