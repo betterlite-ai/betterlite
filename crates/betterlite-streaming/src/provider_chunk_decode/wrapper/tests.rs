@@ -55,7 +55,7 @@ fn closing_finish_reason() {
         .push(&chunk(CONTENT))
         .expect("the content chunk shapes")
         .expect("the content chunk goes out");
-    assert!(content.hidden_params.get("usage").is_none());
+    assert!(!content.hidden_params.contains_key("usage"));
     let closing = closing_chunk(&mut wrapper);
     let finish_reason = closing
         .choices
@@ -91,7 +91,7 @@ fn usage_chunk_when_asked() {
     );
     let closing = closing_chunk(&mut wrapper);
     assert!(closing.usage.is_none());
-    assert!(closing.hidden_params.get("usage").is_none());
+    assert!(!closing.hidden_params.contains_key("usage"));
     let usage = wrapper
         .finish()
         .expect("the wrapper sends the usage chunk after the closing chunk")
@@ -106,7 +106,7 @@ fn usage_chunk_when_asked() {
         .push(&chunk(COUNTED_CONTENT))
         .expect("the late chunk shapes")
         .expect("the late chunk goes out");
-    assert!(late.hidden_params.get("usage").is_none());
+    assert!(!late.hidden_params.contains_key("usage"));
 }
 
 fn silent_usage_chunk_dropped() {
