@@ -1,7 +1,7 @@
 kind: helper
 name: policy-response-retrieval-helper-corpus-seed
 call:
-  b3269:
+  "b3269":
     function: submit_model_hidden_by
     response_id: null
     router: false

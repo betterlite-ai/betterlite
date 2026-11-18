@@ -4,6 +4,7 @@ import litellm
 from litellm.responses.utils import ResponsesAPIRequestUtils
 from litellm.router_utils.common_utils import resolve_model_group_alias
 
+
 class Auth(TypedDict):
     team_alias: str | None
     key_alias: str | None
@@ -25,7 +26,7 @@ class Input(TypedDict):
     auth: Auth
     tags: list[str]
     pipelines: list[Pipeline]
-    already_attached: list[str]
+    already_attached: list[Pipeline]
 
 
 class Output(TypedDict):
@@ -88,21 +89,23 @@ def retrieval_context(input_value: Input) -> Output:
         "team_alias": auth.get("team_alias"),
         "key_alias": auth.get("key_alias"),
         "model": input_value["model_group"],
-        "tags": None if len(tags) == 0 else tags,
+        "tags": None if not tags else tags,
     }
 
 
 def pipeline_filtering(input_value: Input) -> Output:
     attached = input_value["already_attached"]
+    attached_names = {pipeline["policy_name"] for pipeline in attached}
     selected = [
         pipeline
         for pipeline in input_value["pipelines"]
-        if pipeline["mode"] == "post_call" and pipeline["policy_name"] not in attached
+        if pipeline["mode"] == "post_call"
+        and pipeline["policy_name"] not in attached_names
     ]
     managed = sorted(
         {
             guardrail
-            for pipeline in selected
+            for pipeline in [*attached, *selected]
             for guardrail in pipeline["guardrails"]
         }
     )

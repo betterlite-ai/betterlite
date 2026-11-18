@@ -13,6 +13,7 @@ call:
     pipelines:
       - {policy_name: existing, mode: post_call, guardrails: [g0]}
       - {policy_name: new, mode: post_call, guardrails: [g1]}
-    already_attached: [existing]
+    already_attached:
+      - {policy_name: existing, mode: post_call, guardrails: [g0]}
 env: {}
 compare: {ignore: []}
