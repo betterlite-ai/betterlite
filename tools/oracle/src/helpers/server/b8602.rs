@@ -181,7 +181,7 @@ fn frame_payload(frame: &str) -> Json {
     let body = frame
         .strip_prefix("data: ")
         .and_then(|rest| rest.strip_suffix("\n\n"));
-    let parsed = body.and_then(|body| serde_json::from_str::<Json>(body).ok());
+    let parsed = body.and_then(|text| serde_json::from_str::<Json>(text).ok());
     parsed.unwrap_or(Json::Null)
 }
 
