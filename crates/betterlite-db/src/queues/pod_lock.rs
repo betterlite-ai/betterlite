@@ -120,11 +120,11 @@ enum Acquisition {
 
 pub struct PodLockManager<C: LockCache> {
     pub pod_id: String,
-    cache: Option<Arc<C>>,
-    default_ttl_seconds: i64,
-    event_duration_seconds: f64,
-    events: Arc<dyn PodLockEventSink>,
-    script: Mutex<Option<Arc<dyn LockScript>>>,
+    pub cache: Option<Arc<C>>,
+    pub default_ttl_seconds: i64,
+    pub event_duration_seconds: f64,
+    pub events: Arc<dyn PodLockEventSink>,
+    pub script: Mutex<Option<Arc<dyn LockScript>>>,
 }
 
 impl<C: LockCache> PodLockManager<C> {

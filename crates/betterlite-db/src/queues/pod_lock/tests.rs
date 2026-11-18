@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use rstest::rstest;
+use uuid::Uuid;
 
 use super::owner::{PodLockKey, decode_pod_owner};
 use super::{
@@ -231,9 +232,15 @@ async fn a_truthy_lease_ttl_is_used_and_zero_falls_back() {
     let cache = Arc::new(FakeCache::default());
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
-    assert_eq!(manager.acquire_lock("job", Some(120), true).await, Some(true));
+    assert_eq!(
+        manager.acquire_lock("job", Some(120), true).await,
+        Some(true)
+    );
     assert_eq!(manager.acquire_lock("job", Some(0), true).await, Some(true));
-    assert_eq!(manager.acquire_lock("job", Some(-5), true).await, Some(true));
+    assert_eq!(
+        manager.acquire_lock("job", Some(-5), true).await,
+        Some(true)
+    );
     assert_eq!(cache.set_ttls(), vec![120, 60, -5]);
 }
 
@@ -412,6 +419,27 @@ async fn release_errors_are_logged_and_swallowed() {
     manager.release_lock("job").await;
     assert!(logs.text().contains("Error releasing Redis lock"));
     assert!(events.events().is_empty());
+}
+
+#[test]
+fn each_manager_owns_one_uuid_v4_id() {
+    let manager = PodLockManager::<FakeCache>::new(None, 60, Arc::new(NoPodLockEventSink));
+    assert_eq!(
+        Uuid::parse_str(&manager.pod_id).unwrap().get_version_num(),
+        4
+    );
+}
+
+#[test]
+fn call_types_carry_the_service_logger_names() {
+    assert_eq!(
+        PodLockCallType::Acquired.as_str(),
+        "_emit_acquired_lock_event"
+    );
+    assert_eq!(
+        PodLockCallType::Released.as_str(),
+        "_emit_released_lock_event"
+    );
 }
 
 #[test]
