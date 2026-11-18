@@ -1,14 +1,20 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::iter::once;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use betterlite_core::api::realtime_contracts::config::BaseRealtimeConfig as _;
+use betterlite_core::api::realtime_contracts::error::WebSocketError;
 use betterlite_oracle_runner::case::helper::HelperCase;
 use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::driver::drive;
-use super::input::{Input, MAX_CAPTURE_BYTES, MAX_OPERATIONS, MAX_TEXT_BYTES, Operation};
+use super::input::{
+    Input, MAX_CAPTURE_BYTES, MAX_OPERATIONS, MAX_TEXT_BYTES, Operation, ProviderDocument,
+};
+use super::provider::{ScriptError, ScriptedProvider};
 use super::transport::capture;
 
 const EMPTY_INPUT: &str = r#"{
@@ -142,4 +148,39 @@ fn aggregate_transform_capture_is_bounded() {
     assert_eq!(actual["results"][22], json!({"error":"transform"}));
     assert_eq!(actual["timeline"].as_array().unwrap().len(), 21);
     assert_eq!(actual["upstream"], json!([]));
+}
+
+#[rstest]
+#[case::injected(0, None)]
+#[case::capture(MAX_CAPTURE_BYTES, Some("the scripted capture is past its byte limit"))]
+fn provider_failure_preserves_its_source(
+    #[case] used: usize,
+    #[case] expected_source: Option<&str>,
+) {
+    let provider = ScriptedProvider::new(
+        &ProviderDocument {
+            requires_session_configuration: false,
+            setup: Vec::new(),
+            content: Vec::new(),
+            transforms: Vec::new(),
+            fail_transform: true,
+        },
+        Arc::new(Mutex::new(Vec::new())),
+        Arc::new(Mutex::new(used)),
+    );
+    let error = provider
+        .transform_realtime_request("{}", "model", None)
+        .unwrap_err();
+    assert_eq!(
+        matches!(&error, ScriptError::Capture { .. }),
+        expected_source.is_some()
+    );
+    assert_eq!(
+        error.source().map(|source| source
+            .downcast_ref::<WebSocketError>()
+            .unwrap()
+            .message
+            .as_str()),
+        expected_source
+    );
 }

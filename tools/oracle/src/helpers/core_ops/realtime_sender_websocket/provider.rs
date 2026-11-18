@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
-use betterlite_core::api::realtime_contracts::error::HeaderMap;
+use betterlite_core::api::realtime_contracts::error::{HeaderMap, WebSocketError};
 use betterlite_core::api::realtime_contracts::events::{
     AudioTranscriptionUsage, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
@@ -23,8 +23,15 @@ use super::input::{Frame, GuardrailDocument, ProviderDocument};
 use super::transport::{Locked as _, Timeline, WireBackend, capture};
 
 #[derive(Debug, Error)]
-#[error("the scripted provider transformation failed")]
-pub(crate) struct ScriptError;
+pub(crate) enum ScriptError {
+    #[error("the scripted provider transformation failed")]
+    Injected,
+    #[error("the scripted provider capture failed")]
+    Capture {
+        #[source]
+        source: WebSocketError,
+    },
+}
 
 pub(crate) struct ScriptedProvider {
     requires_session_configuration: bool,
@@ -80,7 +87,7 @@ impl BaseRealtimeConfig for ScriptedProvider {
                 session_configuration_request.map_or(0, str::len),
             ],
         )
-        .map_err(|_error| ScriptError)?;
+        .map_err(|source| ScriptError::Capture { source })?;
         let decoded = serde_json::from_str::<Json>(message)
             .unwrap_or_else(|_error| Json::Text(message.to_owned()));
         self.timeline.locked().push(json!({
@@ -91,7 +98,7 @@ impl BaseRealtimeConfig for ScriptedProvider {
             }
         }));
         if self.fail_transform {
-            return Err(ScriptError);
+            return Err(ScriptError::Injected);
         }
         let frames = self.transforms.locked().pop_front().unwrap_or_default();
         Ok(frames.into_iter().map(Frame::message).collect())
