@@ -61,6 +61,10 @@ description: >-
   budget allows.
 scope:
   paths:
+  - "crates/betterlite-bedrock/src/embedding_call.rs"
+  - "crates/betterlite-bedrock/src/embedding_call/execute.rs"
+  - "crates/betterlite-bedrock/src/embedding_call/execute/bridge.rs"
+  - "crates/betterlite-bedrock/src/embedding_call/**"
   - "crates/betterlite-prompts/src/media_fetch/fetcher.rs"
   - crates/betterlite-logging/src/logging_pre_post/env.rs
   - crates/betterlite-logging/src/logging_pre_post/hooks.rs
