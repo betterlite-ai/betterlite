@@ -172,6 +172,32 @@ async fn content_text_marks_content_sent() {
 }
 
 #[tokio::test]
+async fn content_after_content_is_still_sent() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    {
+        let mut script = fixture.script();
+        script.content.push(parsed(CONTENT_FRAME));
+        script
+            .transforms
+            .push_back(vec![RealtimeMessage::Text(CONTENT_FRAME.to_owned())]);
+        script
+            .transforms
+            .push_back(vec![RealtimeMessage::Text(CONTENT_FRAME.to_owned())]);
+    };
+    let callbacks = no_guardrails();
+    let mut sender = RealtimeSender {
+        state: &mut state,
+        provider: Some(&fixture.provider),
+        guardrails: &callbacks,
+    };
+    assert!(sender.send_to_backend("client-frame").await.unwrap());
+    assert!(state.setup.content_sent_after_setup.0);
+    assert!(sender.send_to_backend("client-frame").await.unwrap());
+    assert_eq!(fixture.backend_log.sent().len(), 2);
+}
+
+#[tokio::test]
 async fn malformed_transformed_json_is_sent_as_text() {
     let fixture = Fixture::new();
     let mut state = fixture.state();
