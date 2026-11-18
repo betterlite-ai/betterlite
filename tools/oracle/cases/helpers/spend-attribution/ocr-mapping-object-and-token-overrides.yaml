@@ -1,0 +1,43 @@
+kind: helper
+name: spend-attribution-ocr-mapping-object-and-token-overrides
+call:
+  spend_attribution:
+    function: ocr_usage
+    usage_info:
+      prompt_tokens: 7
+      completion_tokens: 3
+      total_tokens: 10
+      pages_processed: 2
+    attribute_present: true
+    attribute_usage_info:
+      pages_processed: 9
+calls:
+  - spend_attribution:
+      function: ocr_usage
+      usage_info: {}
+      attribute_present: true
+      attribute_usage_info:
+        pages_processed: 9
+  - spend_attribution:
+      function: ocr_usage
+      usage_info: {}
+      attribute_present: false
+      attribute_usage_info: null
+  - spend_attribution:
+      function: ocr_usage
+      usage_info: null
+      attribute_present: false
+      attribute_usage_info: null
+  - spend_attribution:
+      function: ocr_usage
+      usage_info:
+        pages_processed: null
+      attribute_present: false
+      attribute_usage_info: null
+  - spend_attribution:
+      function: ocr_usage
+      usage_info: "pages"
+      attribute_present: true
+      attribute_usage_info: null
+env: {}
+compare: {ignore: []}

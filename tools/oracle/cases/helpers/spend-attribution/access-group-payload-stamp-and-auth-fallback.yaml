@@ -1,0 +1,57 @@
+kind: helper
+name: spend-attribution-access-group-payload-stamp-and-auth-fallback
+call:
+  spend_attribution:
+    function: access_groups
+    standard_logging_object:
+      request_model_access_groups: [payload, payload, "", 7]
+    metadata:
+      user_api_key_matched_model_access_groups: [stamp]
+    litellm_metadata: null
+    auth_groups: [attribute]
+calls:
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object:
+        request_model_access_groups: []
+      metadata:
+        user_api_key_matched_model_access_groups: [stamp]
+      litellm_metadata: null
+      auth_groups: null
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object: null
+      metadata: {}
+      litellm_metadata: null
+      auth_groups: [attribute]
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object: null
+      metadata:
+        user_api_key_auth:
+          matched_model_access_groups: [auth, auth]
+      litellm_metadata: null
+      auth_groups: [attribute]
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object: null
+      metadata: {}
+      litellm_metadata:
+        user_api_key_matched_model_access_groups: [litellm]
+      auth_groups: null
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object:
+        request_model_access_groups: ["", 5, null]
+      metadata:
+        user_api_key_matched_model_access_groups: [stamp]
+      litellm_metadata: null
+      auth_groups: null
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object: null
+      metadata: {user_api_key_auth: null}
+      litellm_metadata: null
+      auth_groups: [detached]
+env: {}
+compare: {ignore: []}
