@@ -86,7 +86,10 @@ impl Scenario {
         let start_millis = step.start_millis;
         let end_millis = added_millis(start_millis, step.elapsed_millis)?;
         let completion_start_time = match step.first_token_millis {
-            Some(first_token) => Some(millis_seconds(added_millis(start_millis, first_token)?)?),
+            Some(first_token) => {
+                let completed = added_millis(start_millis, first_token)?;
+                Some(millis_seconds(completed)?)
+            }
             None => None,
         };
         let event = SuccessEvent {

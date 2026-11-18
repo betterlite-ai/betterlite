@@ -94,8 +94,8 @@ impl LatencyObservations {
     // the success callback's locked read, update and write of the model group's map
     fn store_success(&self, sample: &SuccessSample<'_>, limit: i64) -> Result<(), LatencyError> {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut samples = read(&mut cache, &sample.key)?;
-        let deployment = samples
+        let mut stored = read(&mut cache, &sample.key)?;
+        let deployment = stored
             .deployments
             .entry(sample.deployment_id.to_owned())
             .or_default();
@@ -113,7 +113,7 @@ impl LatencyObservations {
             .checked_add(sample.total_tokens)
             .ok_or(LatencyError::Overflow)?;
         usage.rpm = usage.rpm.checked_add(1).ok_or(LatencyError::Overflow)?;
-        write(&mut cache, &sample.key, &samples, self.settings.ttl_seconds)
+        write(&mut cache, &sample.key, &stored, self.settings.ttl_seconds)
     }
 
     // async_log_failure_event: a timeout appends the 1000-second penalty, every other failure is ignored

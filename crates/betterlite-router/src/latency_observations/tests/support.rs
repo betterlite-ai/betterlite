@@ -58,21 +58,23 @@ pub(crate) struct Success<'event> {
     pub(crate) usage: Option<TokenUsage>,
 }
 
+pub(crate) const DEFAULT_SUCCESS: Success<'static> = Success {
+    call_type: None,
+    channels: RequestChannels {
+        litellm_metadata: Channel::Absent,
+        metadata: Channel::Present(Some(GROUP)),
+    },
+    deployment_id: Some(DEPLOYMENT),
+    stream: false,
+    start_millis: 0,
+    elapsed_millis: 1_000,
+    completion_start_millis: None,
+    usage: None,
+};
+
 impl Default for Success<'_> {
     fn default() -> Self {
-        Self {
-            call_type: None,
-            channels: RequestChannels {
-                litellm_metadata: Channel::Absent,
-                metadata: Channel::Present(Some(GROUP)),
-            },
-            deployment_id: Some(DEPLOYMENT),
-            stream: false,
-            start_millis: 0,
-            elapsed_millis: 1_000,
-            completion_start_millis: None,
-            usage: None,
-        }
+        DEFAULT_SUCCESS
     }
 }
 
@@ -149,10 +151,11 @@ pub(crate) fn record_elapsed(service: &LatencyObservations, values: &[u64]) {
 }
 
 pub(crate) fn success_plan(elapsed_millis: u64, usage: Option<TokenUsage>) -> Success<'static> {
-    let mut plan = Success::default();
-    plan.elapsed_millis = elapsed_millis;
-    plan.usage = usage;
-    plan
+    Success {
+        elapsed_millis,
+        usage,
+        ..DEFAULT_SUCCESS
+    }
 }
 
 pub(crate) fn record_failure(service: &LatencyObservations, plan: &Failure<'_>) {
