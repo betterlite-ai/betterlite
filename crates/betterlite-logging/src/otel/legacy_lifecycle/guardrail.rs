@@ -1,6 +1,6 @@
 use opentelemetry::Context;
 use opentelemetry::KeyValue;
-use opentelemetry::trace::{Span as _, TraceContextExt as _, Tracer as _};
+use opentelemetry::trace::{Span, Tracer as _};
 use opentelemetry_sdk::trace::SdkTracer;
 
 use crate::otel::integrations::arize_attributes::truthy::is_truthy;
@@ -9,125 +9,22 @@ use crate::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::span_attributes::SafeSetAttribute as _;
-use crate::otel::v2_callback::live_span::LiveSpan;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
+use super::context::standard_logging_object;
 use super::error::LegacyLifecycleError;
-use super::lifecycle::{self, LegacyLifecycle, standard_logging_object};
+use super::lifecycle::LegacyLifecycle;
 use super::state::{request_key, scope_value};
+use super::{context, recording, tracer};
 
 pub const GUARDRAIL_SPAN_NAME: &str = "guardrail";
 
 // LiteLLM's safe_set_attribute turns a missing value into "", never into an absent attribute
 const MISSING_ATTRIBUTE_VALUE: OtelModelValue = OtelModelValue::Null(());
 
-impl LegacyLifecycle {
-    pub fn create_guardrail_span(
-        &self,
-        kwargs: &MetadataMap,
-        context: &Context,
-    ) -> Result<(), LegacyLifecycleError> {
-        let Some(payload) = standard_logging_object(kwargs) else {
-            return Ok(());
-        };
-        let Some(information) = payload
-            .get("guardrail_information")
-            .and_then(OtelModelValue::as_array)
-        else {
-            return Ok(());
-        };
-        if !information.iter().any(|entry| entry.as_object().is_some()) {
-            return Ok(());
-        }
-        let tracer = self.tracer_for_request(kwargs)?;
-        for entry in information.iter().filter_map(OtelModelValue::as_object) {
-            self.emit_guardrail_entry(&tracer, kwargs, context, entry)?;
-        }
-        Ok(())
-    }
-
-    fn emit_guardrail_entry(
-        &self,
-        tracer: &SdkTracer,
-        kwargs: &MetadataMap,
-        context: &Context,
-        entry: &MetadataMap,
-    ) -> Result<(), LegacyLifecycleError> {
-        let start_value = entry.get("start_time");
-        // every lifecycle point re-reads the same entry list, so the invocation's identity dedupes
-        let scope = [
-            ScopeValue::Text(GUARDRAIL_SPAN_NAME.to_owned()),
-            scope_value(entry.get("guardrail_name")),
-            scope_value(start_value),
-            scope_value(entry.get("guardrail_mode")),
-        ];
-        if !self
-            .dedupe
-            .emit_once(request_key(kwargs).as_deref(), &scope)
-        {
-            return Ok(());
-        }
-        let start = guardrail_time(start_value, "guardrail_information.start_time")?;
-        let end = guardrail_time(entry.get("end_time"), "guardrail_information.end_time")?;
-        let builder = tracer
-            .span_builder(GUARDRAIL_SPAN_NAME)
-            .with_start_time(lifecycle::instant_from_ns(to_ns(start, self.now_ns())));
-        let mut span = tracer.build_with_context(builder, context);
-        write_guardrail_identity(&mut span, entry);
-        write_guardrail_payload(&mut span, entry)?;
-        self.write_team_attributes_from_log(&mut span, kwargs);
-        span.end_with_timestamp(lifecycle::instant_from_ns(to_ns(end, self.now_ns())));
-        Ok(())
-    }
-
-    pub fn emit_request_guardrails(
-        &self,
-        request_data: &MetadataMap,
-        parent: Option<&LiveSpan>,
-    ) -> Result<(), LegacyLifecycleError> {
-        let bucket = if request_data.contains_key("litellm_metadata") {
-            "litellm_metadata"
-        } else {
-            "metadata"
-        };
-        let metadata = request_data
-            .get(bucket)
-            .and_then(OtelModelValue::as_object)
-            .cloned()
-            .unwrap_or_default();
-        let Some(information) = metadata.get("standard_logging_guardrail_information") else {
-            return Ok(());
-        };
-        // the same bucket reaches the failure handler, so the entry markers share the request key
-        let standard_logging_object = MetadataMap::from([
-            ("guardrail_information".to_owned(), information.clone()),
-            (
-                "metadata".to_owned(),
-                OtelModelValue::Object(metadata.clone()),
-            ),
-        ]);
-        let litellm_params =
-            MetadataMap::from([("metadata".to_owned(), OtelModelValue::Object(metadata))]);
-        let kwargs = MetadataMap::from([
-            (
-                "litellm_params".to_owned(),
-                OtelModelValue::Object(litellm_params),
-            ),
-            (
-                "standard_logging_object".to_owned(),
-                OtelModelValue::Object(standard_logging_object),
-            ),
-        ]);
-        let context = parent.map_or_else(Context::new, |span| {
-            Context::new().with_remote_span_context(span.context.clone())
-        });
-        self.create_guardrail_span(&kwargs, &context)
-    }
-}
-
 fn write_guardrail_identity<S>(span: &mut S, entry: &MetadataMap)
 where
-    S: opentelemetry::trace::Span,
+    S: Span,
 {
     let kind = OtelModelValue::String("GUARDRAIL".to_owned());
     span.safe_set_attribute("openinference.span.kind", &kind);
@@ -144,7 +41,7 @@ where
 
 fn write_guardrail_payload<S>(span: &mut S, entry: &MetadataMap) -> Result<(), LegacyLifecycleError>
 where
-    S: opentelemetry::trace::Span,
+    S: Span,
 {
     for attribute in [
         "masked_entity_count",
@@ -182,7 +79,7 @@ fn write_dumped<S>(
     value: &OtelModelValue,
 ) -> Result<(), LegacyLifecycleError>
 where
-    S: opentelemetry::trace::Span,
+    S: Span,
 {
     let text = safe_dumps(value, DEFAULT_MAX_RECURSE_DEPTH, None)
         .map_err(|source| LegacyLifecycleError::GuardrailJson { attribute, source })?;
@@ -212,4 +109,62 @@ fn guardrail_time(
             expected: "epoch seconds",
         }),
     }
+}
+
+pub(super) fn create_guardrail_span(
+    lifecycle: &LegacyLifecycle,
+    kwargs: &MetadataMap,
+    context: &Context,
+) -> Result<(), LegacyLifecycleError> {
+    let Some(payload) = standard_logging_object(kwargs) else {
+        return Ok(());
+    };
+    let Some(information) = payload
+        .get("guardrail_information")
+        .and_then(OtelModelValue::as_array)
+    else {
+        return Ok(());
+    };
+    if !information.iter().any(|entry| entry.as_object().is_some()) {
+        return Ok(());
+    }
+    let tracer = tracer::tracer_for_request(lifecycle, kwargs)?;
+    for entry in information.iter().filter_map(OtelModelValue::as_object) {
+        emit_guardrail_entry(lifecycle, &tracer, kwargs, context, entry)?;
+    }
+    Ok(())
+}
+
+pub(super) fn emit_guardrail_entry(
+    lifecycle: &LegacyLifecycle,
+    tracer: &SdkTracer,
+    kwargs: &MetadataMap,
+    context: &Context,
+    entry: &MetadataMap,
+) -> Result<(), LegacyLifecycleError> {
+    let start_value = entry.get("start_time");
+    // every lifecycle point re-reads the same entry list, so the invocation's identity dedupes
+    let scope = [
+        ScopeValue::Text(GUARDRAIL_SPAN_NAME.to_owned()),
+        scope_value(entry.get("guardrail_name")),
+        scope_value(start_value),
+        scope_value(entry.get("guardrail_mode")),
+    ];
+    if !lifecycle
+        .dedupe
+        .emit_once(request_key(kwargs).as_deref(), &scope)
+    {
+        return Ok(());
+    }
+    let start = guardrail_time(start_value, "guardrail_information.start_time")?;
+    let end = guardrail_time(entry.get("end_time"), "guardrail_information.end_time")?;
+    let builder = tracer
+        .span_builder(GUARDRAIL_SPAN_NAME)
+        .with_start_time(context::instant_from_ns(to_ns(start, lifecycle.now_ns())));
+    let mut span = tracer.build_with_context(builder, context);
+    write_guardrail_identity(&mut span, entry);
+    write_guardrail_payload(&mut span, entry)?;
+    recording::write_team_attributes_from_log(&mut span, kwargs);
+    span.end_with_timestamp(context::instant_from_ns(to_ns(end, lifecycle.now_ns())));
+    Ok(())
 }

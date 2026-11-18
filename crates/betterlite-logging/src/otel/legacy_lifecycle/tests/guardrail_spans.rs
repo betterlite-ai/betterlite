@@ -1,8 +1,11 @@
+use crate::support::instant;
 use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 use serde_json::{Value, json};
+use std::time::Duration;
 
 use crate::support::{Rig, attribute, call, simple_kwargs, text_attribute, with_team};
 
@@ -107,21 +110,19 @@ fn guardrail_spans_record_the_execution_window() {
     let span = &guardrails(&rig)[0];
     assert_eq!(
         span.start_time,
-        crate::support::instant(1704067200.5),
+        instant(1704067200.5),
         "start comes from the entry, not the request"
     );
     assert_eq!(
         span.end_time,
-        crate::support::instant(1704067200.75),
+        instant(1704067200.75),
         "end comes from the entry, not the request"
     );
     assert_eq!(
         span.end_time
             .duration_since(span.start_time)
             .expect("ordered"),
-        std::time::Duration::from_nanos(
-            u64::try_from(to_ns(SpanTime::Seconds(0.25), 0)).expect("positive")
-        )
+        Duration::from_nanos(u64::try_from(to_ns(SpanTime::Seconds(0.25), 0)).expect("positive"))
     );
 }
 
@@ -275,10 +276,7 @@ fn guardrail_spans_on_failure_are_children_of_the_error_span() {
         .expect("failure lifecycle");
 
     let primary = rig.span("litellm_request");
-    assert!(matches!(
-        primary.status,
-        opentelemetry::trace::Status::Error { .. }
-    ));
+    assert!(matches!(primary.status, Status::Error { .. }));
     let spans = guardrails(&rig);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].parent_span_id, primary.span_context.span_id());

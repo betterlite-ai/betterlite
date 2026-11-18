@@ -1,4 +1,8 @@
+use crate::support::carry_in;
+use crate::support::text_attribute;
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LegacyLifecycleOptions;
 use opentelemetry::Context;
+use opentelemetry::trace::SpanId;
 use opentelemetry::trace::{Span as _, Status};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -52,10 +56,7 @@ fn legacy_lifecycle_success_without_a_parent_creates_the_primary_and_raw_spans()
     assert_eq!(rig.names(), vec!["litellm_request", "raw_gen_ai_request"]);
     let primary = rig.span("litellm_request");
     assert_eq!(primary.status, Status::Ok);
-    assert_eq!(
-        crate::support::text_attribute(&primary, "gen_ai.request.model"),
-        "gpt-4o"
-    );
+    assert_eq!(text_attribute(&primary, "gen_ai.request.model"), "gpt-4o");
     assert_eq!(primary.start_time, instant(START));
     assert_eq!(primary.end_time, instant(END));
     let raw = rig.span("raw_gen_ai_request");
@@ -70,21 +71,15 @@ fn legacy_lifecycle_raw_request_uses_the_generation_name() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-generation-name");
-    let Some(betterlite_logging::otel::model::utils::coercion::OtelModelValue::Object(params)) =
-        kwargs.get_mut("litellm_params")
-    else {
+    let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
         panic!("litellm_params must be an object");
     };
-    let Some(betterlite_logging::otel::model::utils::coercion::OtelModelValue::Object(metadata)) =
-        params.get_mut("metadata")
-    else {
+    let Some(OtelModelValue::Object(metadata)) = params.get_mut("metadata") else {
         panic!("metadata must be an object");
     };
     metadata.insert(
         "generation_name".to_owned(),
-        betterlite_logging::otel::model::utils::coercion::OtelModelValue::String(
-            "generation-name".to_owned(),
-        ),
+        OtelModelValue::String("generation-name".to_owned()),
     );
 
     lifecycle
@@ -325,12 +320,10 @@ fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
     let lifecycle = rig.with_services(
         in_memory_config(),
         None,
-        None,
-        false,
-        Box::new(FixedClock(clock_time)),
-        None,
-        None,
-        Vec::new(),
+        LegacyLifecycleOptions {
+            clock: Box::new(FixedClock(clock_time)),
+            ..LegacyLifecycleOptions::default()
+        },
     );
     let kwargs = simple_kwargs("call-missing-times");
     let mut lifecycle_call = call(&kwargs);
@@ -355,12 +348,11 @@ fn legacy_lifecycle_reports_attribute_failures_to_callback_counter() {
     let lifecycle = rig.with_services(
         in_memory_config(),
         None,
-        None,
-        false,
-        Box::new(FixedClock(instant(START))),
-        None,
-        None,
-        vec![counter.clone()],
+        LegacyLifecycleOptions {
+            clock: Box::new(FixedClock(instant(START))),
+            failure_counters: vec![counter.clone()],
+            ..LegacyLifecycleOptions::default()
+        },
     );
     let mut kwargs = simple_kwargs("call-missing-standard-log");
     kwargs.remove("standard_logging_object");
@@ -391,12 +383,11 @@ fn legacy_lifecycle_records_metrics_for_success() {
     let lifecycle = rig.with_services(
         config,
         None,
-        None,
-        false,
-        Box::new(FixedClock(instant(START))),
-        Some(recorder),
-        None,
-        Vec::new(),
+        LegacyLifecycleOptions {
+            clock: Box::new(FixedClock(instant(START))),
+            metrics: Some(recorder),
+            ..LegacyLifecycleOptions::default()
+        },
     );
     let kwargs = simple_kwargs("call-metrics");
 
@@ -433,12 +424,11 @@ fn legacy_lifecycle_emits_semantic_logs_on_success() {
     let lifecycle = rig.with_services(
         in_memory_config(),
         None,
-        None,
-        false,
-        Box::new(FixedClock(instant(START))),
-        None,
-        Some(events),
-        Vec::new(),
+        LegacyLifecycleOptions {
+            clock: Box::new(FixedClock(instant(START))),
+            events: Some(events),
+            ..LegacyLifecycleOptions::default()
+        },
     );
     let kwargs = simple_kwargs("call-events");
 
@@ -465,7 +455,7 @@ fn legacy_lifecycle_ignores_parent_when_configured(#[case] failure: bool) {
     let lifecycle = rig.with_options(config, None, None, false);
     let parent = rig.parent(&lifecycle, "upstream");
     let mut kwargs = simple_kwargs("ignored-parent");
-    crate::support::carry_in(&mut kwargs, "metadata", &parent);
+    carry_in(&mut kwargs, "metadata", &parent);
     let context = attach(&parent.context);
     let guard = Context::attach(&context);
 
@@ -481,10 +471,7 @@ fn legacy_lifecycle_ignores_parent_when_configured(#[case] failure: bool) {
     drop(guard);
 
     let primary = rig.span("litellm_request");
-    assert_eq!(
-        primary.parent_span_id,
-        opentelemetry::trace::SpanId::INVALID
-    );
+    assert_eq!(primary.parent_span_id, SpanId::INVALID);
     assert_ne!(primary.span_context.trace_id(), parent.context.trace_id());
     assert!(parent.lock().is_recording());
 }

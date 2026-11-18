@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use indexmap::IndexMap;
 
@@ -35,12 +35,9 @@ impl RequestDedupe {
         let Some(key) = request_key else {
             return true;
         };
-        let mut requests = self
-            .requests
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
         if !requests.contains_key(key) && requests.len() >= MAX_TRACKED_REQUESTS {
-            _ = requests.shift_remove_index(0);
+            drop(requests.shift_remove_index(0));
         }
         requests
             .entry(key.to_owned())
@@ -80,10 +77,10 @@ pub fn request_key(kwargs: &MetadataMap) -> Option<String> {
 
 #[must_use]
 pub fn scope_value(value: Option<&OtelModelValue>) -> ScopeValue {
-    let Some(value) = value else {
+    let Some(present) = value else {
         return ScopeValue::Null;
     };
-    match value {
+    match present {
         OtelModelValue::Null(()) => ScopeValue::Null,
         OtelModelValue::Bool(flag) => ScopeValue::Bool(*flag),
         // Python's key equality reads 1 and 1.0 as one value, so every number freezes as a float

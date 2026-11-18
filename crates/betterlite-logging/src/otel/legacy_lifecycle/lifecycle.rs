@@ -1,31 +1,31 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use opentelemetry::Context;
-use opentelemetry::trace::{SpanKind, TraceContextExt as _, Tracer as _};
+use opentelemetry::trace::{Span as _, TraceContextExt as _};
 use opentelemetry_sdk::trace::SdkTracer;
 
-use crate::exporter_options::failure_counter::{CallbackFailureCounter, handle_callback_failure};
+use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::otel::legacy_exporters::tracer_cache::DynamicTracerCache;
 use crate::otel::legacy_metrics::events::SemanticEventEmitter;
 use crate::otel::legacy_metrics::recorder::LegacyMetricRecorder;
 use crate::otel::legacy_policy::capture::{CapturePolicy, LoggingFlags};
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
+use crate::otel::legacy_policy::dedupe::ScopeValue;
 use crate::otel::legacy_policy::error_recording::RecordedException;
-use crate::otel::legacy_policy::semconv_attrs::{
-    gen_ai_operation_name, semconv_latest_experimental,
-};
-use crate::otel::legacy_policy::span_time::{SpanTime, span_name, to_ns};
+use crate::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
-use crate::otel::plumbing::context::parent_span::ParentSpan;
 use crate::otel::plumbing::events::{Clock, SystemClock};
 use crate::otel::v2_callback::live_span::{LiveSpan, RootSpans};
 use crate::otel_provider_assembly::legacy_otel_init::LegacyOtel;
 
+use super::context::resolve_guardrail_context;
 use super::error::LegacyLifecycleError;
-use super::state::RequestDedupe;
+use super::state::{RequestDedupe, request_key};
 use super::tracer::{BaseDynamicOtel, DynamicOtel, TracerChoice};
+use super::{context, failure, guardrail, proxy, success};
+use crate::otel::vocabulary::span_names::PROXY_REQUEST_SPAN_NAME;
 
 pub const DEFAULT_CALLBACK_NAME: &str = "opentelemetry";
 pub const DEFAULT_HANDLER_CLASS_NAME: &str = "OpenTelemetry";
@@ -90,6 +90,86 @@ pub struct LegacyLifecycle {
 }
 
 impl LegacyLifecycle {
+    pub fn handle_failure(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
+        // unlike the success path there is no proxy side effect to preserve on the skip path
+        if !self.dedupe.emit_once(
+            request_key(call.kwargs).as_deref(),
+            &[ScopeValue::Text("failure".to_owned())],
+        ) {
+            return Ok(());
+        }
+        let parent = context::parent(self, call.kwargs)?;
+        let live_parent = parent
+            .span
+            .as_ref()
+            .and_then(|context| self.live.get(context.span_id()));
+        let capture_mode = self.capture_policy.resolve(call.flags);
+        let parent_context = parent.context.clone().unwrap_or_default();
+        let primary = failure::failure_primary(self, call, &parent, &parent_context, capture_mode)?;
+        let guardrail_context = resolve_guardrail_context(
+            primary.as_ref(),
+            live_parent.as_ref(),
+            parent.context.as_ref(),
+        );
+        guardrail::create_guardrail_span(self, call.kwargs, &guardrail_context)?;
+        // only the active span is parent_otel_span here; a metadata carrier answers None upstream
+        if let Some(span) = &live_parent
+            && context::name_of(span).as_deref() == Some(PROXY_REQUEST_SPAN_NAME)
+        {
+            // no is_recording guard here: the failure hook ends the already ended span again
+            span.lock()
+                .end_with_timestamp(context::instant_from_ns(to_ns(
+                    call.end_time,
+                    self.now_ns(),
+                )));
+        }
+        Ok(())
+    }
+
+    pub fn emit_request_guardrails(
+        &self,
+        request_data: &MetadataMap,
+        parent: Option<&LiveSpan>,
+    ) -> Result<(), LegacyLifecycleError> {
+        let bucket = if request_data.contains_key("litellm_metadata") {
+            "litellm_metadata"
+        } else {
+            "metadata"
+        };
+        let metadata = request_data
+            .get(bucket)
+            .and_then(OtelModelValue::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let Some(information) = metadata.get("standard_logging_guardrail_information") else {
+            return Ok(());
+        };
+        // the same bucket reaches the failure handler, so the entry markers share the request key
+        let standard_logging_object = MetadataMap::from([
+            ("guardrail_information".to_owned(), information.clone()),
+            (
+                "metadata".to_owned(),
+                OtelModelValue::Object(metadata.clone()),
+            ),
+        ]);
+        let litellm_params =
+            MetadataMap::from([("metadata".to_owned(), OtelModelValue::Object(metadata))]);
+        let kwargs = MetadataMap::from([
+            (
+                "litellm_params".to_owned(),
+                OtelModelValue::Object(litellm_params),
+            ),
+            (
+                "standard_logging_object".to_owned(),
+                OtelModelValue::Object(standard_logging_object),
+            ),
+        ]);
+        let context = parent.map_or_else(Context::new, |span| {
+            Context::new().with_remote_span_context(span.context.clone())
+        });
+        guardrail::create_guardrail_span(self, &kwargs, &context)
+    }
+
     #[must_use]
     pub fn from_otel(otel: LegacyOtel, options: LegacyLifecycleOptions) -> Self {
         Self {
@@ -121,96 +201,39 @@ impl LegacyLifecycle {
         )
     }
 
-    pub(super) fn count_failure(&self) {
-        let mut counters: Vec<&dyn CallbackFailureCounter> =
-            Vec::with_capacity(self.failure_counters.len());
-        for counter in &self.failure_counters {
-            counters.push(counter.as_ref());
-        }
-        handle_callback_failure(
-            self.callback_name
-                .as_deref()
-                .unwrap_or(DEFAULT_CALLBACK_NAME),
-            &counters,
-        );
-    }
-
     #[must_use]
     pub fn now_ns(&self) -> i64 {
-        match self.clock.now().duration_since(UNIX_EPOCH) {
-            Ok(duration) => i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX),
-            Err(_) => 0,
+        self.clock
+            .now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| {
+                i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX)
+            })
+    }
+
+    pub fn handle_success(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
+        // the sync and async callbacks both fire for a stream, and the skip path still closes the proxy span
+        if !self.dedupe.emit_once(
+            request_key(call.kwargs).as_deref(),
+            &[ScopeValue::Text("success".to_owned())],
+        ) {
+            proxy::end_proxy_from_kwargs(self, call);
+            return Ok(());
         }
+        let parent = context::parent(self, call.kwargs)?;
+        let live_parent = parent
+            .span
+            .as_ref()
+            .and_then(|context| self.live.get(context.span_id()));
+        let capture_mode = self.capture_policy.resolve(call.flags);
+        let parent_context = parent.context.clone().unwrap_or_default();
+        let primary = success::success_primary(self, call, &parent, &parent_context, capture_mode)?;
+        success::finish_success(
+            self,
+            call,
+            primary.as_ref(),
+            live_parent.as_ref(),
+            parent.context.as_ref(),
+        )
     }
-
-    pub(super) fn parent(&self, kwargs: &MetadataMap) -> Result<ParentSpan, LegacyLifecycleError> {
-        if self.config.ignore_context_propagation {
-            return Ok(ParentSpan::default());
-        }
-        Ok(super::parent::from_kwargs(kwargs)?)
-    }
-
-    pub(super) fn start_primary_span(
-        &self,
-        tracer: &SdkTracer,
-        call: &LifecycleCall<'_>,
-        context: &Context,
-    ) -> LiveSpan {
-        let params = litellm_params(call.kwargs).cloned().unwrap_or_default();
-        let semconv = semconv_latest_experimental(&self.config);
-        let operation = gen_ai_operation_name(
-            call.kwargs
-                .get("call_type")
-                .and_then(OtelModelValue::as_str),
-        );
-        let model = call.kwargs.get("model").and_then(OtelModelValue::as_str);
-        let name = span_name(&params, operation, model, semconv);
-        let mut builder = tracer
-            .span_builder(name)
-            .with_start_time(instant_from_ns(to_ns(call.start_time, self.now_ns())));
-        if semconv {
-            builder = builder.with_kind(SpanKind::Client);
-        }
-        LiveSpan::from(tracer.build_with_context(builder, context))
-    }
-}
-
-// an ended SDK span reports no data, so only a recording span answers with its name
-#[must_use]
-pub fn name_of(span: &LiveSpan) -> Option<String> {
-    if let Some(data) = span.lock().exported_data() {
-        return Some(data.name.to_string());
-    }
-    None
-}
-
-// the clock source is whole nanoseconds, and a pre-epoch value still maps to a SystemTime
-#[must_use]
-pub fn instant_from_ns(nanoseconds: i64) -> SystemTime {
-    let magnitude = Duration::from_nanos(nanoseconds.unsigned_abs());
-    if nanoseconds.is_negative() {
-        UNIX_EPOCH.checked_sub(magnitude).unwrap_or(UNIX_EPOCH)
-    } else {
-        UNIX_EPOCH.checked_add(magnitude).unwrap_or(UNIX_EPOCH)
-    }
-}
-
-// a guardrail is parented to the span the request landed on, never to an orphaned root
-#[must_use]
-pub fn resolve_guardrail_context(
-    primary: Option<&LiveSpan>,
-    parent_span: Option<&LiveSpan>,
-    fallback: Option<&Context>,
-) -> Context {
-    if let Some(span) = primary.or(parent_span) {
-        return Context::new().with_remote_span_context(span.context.clone());
-    }
-    fallback.cloned().unwrap_or_default()
-}
-
-#[must_use]
-pub fn standard_logging_object(kwargs: &MetadataMap) -> Option<&MetadataMap> {
-    kwargs
-        .get("standard_logging_object")
-        .and_then(OtelModelValue::as_object)
 }

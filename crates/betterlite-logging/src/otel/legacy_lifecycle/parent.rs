@@ -16,10 +16,7 @@ pub fn from_kwargs(kwargs: &MetadataMap) -> Result<ParentSpan, MetadataError> {
 
 // _end_proxy_span_from_kwargs reads the provider-safe bucket first and the proxy bucket second
 #[must_use]
-pub fn proxy_carrier<'kwargs>(
-    kwargs: &'kwargs MetadataMap,
-    with_litellm_metadata: bool,
-) -> Option<&'kwargs OtelModelValue> {
+pub fn proxy_carrier(kwargs: &MetadataMap, with_litellm_metadata: bool) -> Option<&OtelModelValue> {
     let params = kwargs
         .get("litellm_params")
         .and_then(OtelModelValue::as_object);
@@ -31,8 +28,8 @@ pub fn proxy_carrier<'kwargs>(
     if direct.is_some() || !with_litellm_metadata {
         return direct;
     }
-    params
-        .and_then(|fields| fields.get("litellm_metadata"))
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get(PARENT_SPAN_KEY))
+    params?
+        .get("litellm_metadata")?
+        .as_object()?
+        .get(PARENT_SPAN_KEY)
 }

@@ -1,6 +1,13 @@
+use betterlite_logging::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
+use betterlite_logging::otel::legacy_lifecycle::context::instant_from_ns;
+use betterlite_logging::otel::legacy_policy::config::Exporter;
+use betterlite_logging::otel::legacy_policy::config::Signals;
+use betterlite_logging::otel::legacy_policy::span_time::to_ns;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
 
 use opentelemetry::Context;
 use opentelemetry::propagation::TextMapPropagator as _;
@@ -14,14 +21,11 @@ use betterlite_logging::otel::legacy_lifecycle::lifecycle::{
     LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
 };
 use betterlite_logging::otel::legacy_lifecycle::tracer::DynamicOtel;
-use betterlite_logging::otel::legacy_metrics::events::SemanticEventEmitter;
-use betterlite_logging::otel::legacy_metrics::recorder::LegacyMetricRecorder;
 use betterlite_logging::otel::legacy_policy::capture::LoggingFlags;
 use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
-use betterlite_logging::otel::plumbing::events::{Clock, SystemClock};
 use betterlite_logging::otel::plumbing::exporters::HttpClients;
 use betterlite_logging::otel::v2_callback::live_span::{LiveSpan, RootSpans};
 use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
@@ -58,7 +62,7 @@ pub(super) struct Rig {
     globals: GlobalProviders,
     proxy: ProxyRegistry,
     exporter: InMemorySpanExporter,
-    pub(super) roots: Arc<RootSpans>,
+    roots: Arc<RootSpans>,
 }
 
 impl Rig {
@@ -86,12 +90,11 @@ impl Rig {
         self.with_services(
             config,
             callback_name,
-            dynamic,
-            use_request_span,
-            Box::new(SystemClock),
-            None,
-            None,
-            Vec::new(),
+            LegacyLifecycleOptions {
+                dynamic: dynamic.unwrap_or_else(|| Arc::new(BaseDynamic)),
+                use_request_span,
+                ..LegacyLifecycleOptions::default()
+            },
         )
     }
 
@@ -99,19 +102,14 @@ impl Rig {
         &self,
         config: OpenTelemetryConfig,
         callback_name: Option<&str>,
-        dynamic: Option<Arc<dyn DynamicOtel>>,
-        use_request_span: bool,
-        clock: Box<dyn Clock>,
-        metrics: Option<LegacyMetricRecorder>,
-        events: Option<SemanticEventEmitter>,
-        failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
+        mut options: LegacyLifecycleOptions,
     ) -> LegacyLifecycle {
         let init = LegacyOtelInit {
             config: Some(config),
             callback_name: callback_name.map(str::to_owned),
             overrides: Default::default(),
             injected: Default::default(),
-            max_dynamic_tracer_providers: betterlite_logging::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS,
+            max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
         };
         let otel = init_legacy_otel(
             init,
@@ -124,19 +122,8 @@ impl Rig {
             },
         )
         .expect("legacy otel init");
-        LegacyLifecycle::from_otel(
-            otel,
-            LegacyLifecycleOptions {
-                dynamic: dynamic.unwrap_or_else(|| Arc::new(BaseDynamic)),
-                metrics,
-                events,
-                failure_counters,
-                live: Arc::clone(&self.roots),
-                use_request_span,
-                clock,
-                handler_class_name: "OpenTelemetry".to_owned(),
-            },
-        )
+        options.live = Arc::clone(&self.roots);
+        LegacyLifecycle::from_otel(otel, options)
     }
 
     pub(super) fn spans(&self) -> Vec<SpanData> {
@@ -176,7 +163,7 @@ pub(super) struct CountingFailureCounter(pub AtomicUsize);
 
 impl CallbackFailureCounter for CountingFailureCounter {
     fn increment_callback_logging_failure(&self, _callback_name: &str) {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -229,10 +216,10 @@ impl DynamicOtel for BaseDynamic {
 
 pub(super) fn in_memory_config() -> OpenTelemetryConfig {
     OpenTelemetryConfig {
-        exporter: betterlite_logging::otel::legacy_policy::config::Exporter::InMemory,
+        exporter: Exporter::InMemory,
         endpoint: None,
         headers: None,
-        signals: betterlite_logging::otel::legacy_policy::config::Signals {
+        signals: Signals {
             enable_metrics: false,
             enable_events: false,
         },
@@ -249,10 +236,8 @@ pub(super) fn in_memory_config() -> OpenTelemetryConfig {
     }
 }
 
-pub(super) fn instant(seconds: f64) -> std::time::SystemTime {
-    betterlite_logging::otel::legacy_lifecycle::lifecycle::instant_from_ns(
-        betterlite_logging::otel::legacy_policy::span_time::to_ns(SpanTime::Seconds(seconds), 0),
-    )
+pub(super) fn instant(seconds: f64) -> SystemTime {
+    instant_from_ns(to_ns(SpanTime::Seconds(seconds), 0))
 }
 
 pub(super) fn kwargs(json: &str) -> MetadataMap {

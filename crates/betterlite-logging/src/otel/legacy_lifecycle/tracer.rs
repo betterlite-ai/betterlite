@@ -46,7 +46,7 @@ impl DynamicOtel for BaseDynamicOtel {
 
 #[derive(Clone, Debug)]
 pub enum TracerChoice {
-    DynamicConfig(OpenTelemetryConfig),
+    DynamicConfig(Box<OpenTelemetryConfig>),
     DynamicHeaders(BTreeMap<String, String>),
     EnvHeaders(BTreeMap<String, String>),
     Global,
@@ -65,7 +65,6 @@ impl TracerChoice {
 }
 
 // LiteLLM tests the dynamic params for truthiness; an absent or empty bucket is unset, any other shape is an error
-#[must_use]
 pub fn dynamic_params(kwargs: &MetadataMap) -> Result<Option<&MetadataMap>, LegacyLifecycleError> {
     match kwargs.get("standard_callback_dynamic_params") {
         None | Some(OtelModelValue::Null(())) => Ok(None),
@@ -83,7 +82,7 @@ pub fn tracer_choice(
 ) -> Result<TracerChoice, LegacyLifecycleError> {
     if let Some(params) = dynamic_params(kwargs)? {
         if let Some(dynamic_config) = dynamic.construct_dynamic_otel_config(params) {
-            return Ok(TracerChoice::DynamicConfig(dynamic_config));
+            return Ok(TracerChoice::DynamicConfig(Box::new(dynamic_config)));
         }
         if let Some(headers) = dynamic
             .construct_dynamic_otel_headers(params)
@@ -93,7 +92,12 @@ pub fn tracer_choice(
         }
     }
     if callback_name == Some(LANGFUSE_OTEL) {
-        let env_var_headers = headers_dictionary(headers_input(config.headers.as_deref()))?;
+        let env_var_headers = headers_dictionary(
+            config
+                .headers
+                .as_deref()
+                .map_or(HeadersInput::None, HeadersInput::Text),
+        )?;
         if !env_var_headers.is_empty() {
             return Ok(TracerChoice::EnvHeaders(env_var_headers));
         }
@@ -101,26 +105,17 @@ pub fn tracer_choice(
     Ok(TracerChoice::Global)
 }
 
-fn headers_input(headers: Option<&str>) -> HeadersInput<'_> {
-    match headers {
-        Some(text) => HeadersInput::Text(text),
-        None => HeadersInput::None,
-    }
-}
-
-impl LegacyLifecycle {
-    pub fn tracer_for_request(
-        &self,
-        kwargs: &MetadataMap,
-    ) -> Result<SdkTracer, LegacyLifecycleError> {
-        match self.tracer_choice(kwargs)? {
-            TracerChoice::DynamicConfig(config) => {
-                Ok(self.tracer_cache.tracer_for_config(&config)?)
-            }
-            TracerChoice::DynamicHeaders(headers) | TracerChoice::EnvHeaders(headers) => {
-                Ok(self.tracer_cache.tracer_for_headers(&headers)?)
-            }
-            TracerChoice::Global => Ok(self.tracer.clone()),
+pub(super) fn tracer_for_request(
+    lifecycle: &LegacyLifecycle,
+    kwargs: &MetadataMap,
+) -> Result<SdkTracer, LegacyLifecycleError> {
+    match lifecycle.tracer_choice(kwargs)? {
+        TracerChoice::DynamicConfig(config) => {
+            Ok(lifecycle.tracer_cache.tracer_for_config(&config)?)
         }
+        TracerChoice::DynamicHeaders(headers) | TracerChoice::EnvHeaders(headers) => {
+            Ok(lifecycle.tracer_cache.tracer_for_headers(&headers)?)
+        }
+        TracerChoice::Global => Ok(lifecycle.tracer.clone()),
     }
 }

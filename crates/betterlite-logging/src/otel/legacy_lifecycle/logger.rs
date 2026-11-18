@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -66,8 +65,16 @@ impl LegacyOtelLogger {
         let call = LifecycleCall {
             kwargs: &kwargs,
             response: response.as_ref(),
-            start_time: span_time(event.payload.start_time),
-            end_time: span_time(event.payload.end_time),
+            start_time: event
+                .payload
+                .start_time
+                .to_f64()
+                .map_or(SpanTime::Missing, SpanTime::Seconds),
+            end_time: event
+                .payload
+                .end_time
+                .to_f64()
+                .map_or(SpanTime::Missing, SpanTime::Seconds),
             exception: None,
             flags: LoggingFlags {
                 turn_off_message_logging: dynamic_turn_off(event),
@@ -150,13 +157,6 @@ fn dynamic_turn_off(event: &LoggerEvent) -> bool {
             fields.get("turn_off_message_logging"),
             Some(Json::Bool(true))
         ),
-        _ => false,
-    }
-}
-
-fn span_time(seconds: Decimal) -> SpanTime {
-    match seconds.to_f64() {
-        Some(value) => SpanTime::Seconds(value),
-        None => SpanTime::Missing,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,
     }
 }

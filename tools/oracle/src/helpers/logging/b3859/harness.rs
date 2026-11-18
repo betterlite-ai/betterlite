@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_logging::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
-use betterlite_logging::otel::legacy_lifecycle::lifecycle::instant_from_ns;
+use betterlite_logging::otel::legacy_lifecycle::context::instant_from_ns;
 use betterlite_logging::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::plumbing::exporters::HttpClients;

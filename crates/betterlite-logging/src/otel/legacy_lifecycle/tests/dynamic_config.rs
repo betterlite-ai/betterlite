@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_logging::otel::legacy_lifecycle::tracer::{
     DynamicOtel, TracerChoice, dynamic_params,
@@ -35,7 +36,7 @@ fn dynamic_config_is_built_from_the_dynamic_params_bucket() {
     let lifecycle = rig.with_options(
         in_memory_config(),
         None,
-        Some(std::sync::Arc::new(ConfigFromParams)),
+        Some(Arc::new(ConfigFromParams)),
         false,
     );
     let kwargs = with_dynamic(
@@ -56,7 +57,7 @@ fn dynamic_config_is_absent_without_dynamic_params() {
     let lifecycle = rig.with_options(
         in_memory_config(),
         None,
-        Some(std::sync::Arc::new(ConfigFromParams)),
+        Some(Arc::new(ConfigFromParams)),
         false,
     );
     assert!(matches!(
@@ -73,7 +74,7 @@ fn dynamic_config_treats_an_empty_bucket_as_unset() {
     let lifecycle = rig.with_options(
         in_memory_config(),
         None,
-        Some(std::sync::Arc::new(ConfigFromParams)),
+        Some(Arc::new(ConfigFromParams)),
         false,
     );
     let kwargs = with_dynamic(simple_kwargs("call-3"), serde_json::json!({}));
@@ -99,7 +100,7 @@ fn dynamic_config_rejects_a_non_object_bucket() {
     let lifecycle = rig.with_options(
         in_memory_config(),
         None,
-        Some(std::sync::Arc::new(ConfigFromParams)),
+        Some(Arc::new(ConfigFromParams)),
         false,
     );
     let mut kwargs = simple_kwargs("call-5");

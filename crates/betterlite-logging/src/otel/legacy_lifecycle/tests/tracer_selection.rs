@@ -1,3 +1,4 @@
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LegacyLifecycle;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -9,10 +10,7 @@ use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 
 use crate::support::{ProbeDynamic, Rig, in_memory_config, simple_kwargs, with_dynamic};
 
-fn choose(
-    lifecycle: &betterlite_logging::otel::legacy_lifecycle::lifecycle::LegacyLifecycle,
-    kwargs: &MetadataMap,
-) -> TracerChoice {
+fn choose(lifecycle: &LegacyLifecycle, kwargs: &MetadataMap) -> TracerChoice {
     lifecycle.tracer_choice(kwargs).expect("tracer choice")
 }
 
@@ -118,7 +116,7 @@ fn dynamic_base_hooks_return_no_override() {
 fn tracer_selection_branch_names_match_the_choice() {
     let headers = BTreeMap::from([("x-key".to_owned(), "pk".to_owned())]);
     assert_eq!(
-        TracerChoice::DynamicConfig(in_memory_config()).branch(),
+        TracerChoice::DynamicConfig(Box::new(in_memory_config())).branch(),
         "dynamic_config"
     );
     assert_eq!(
