@@ -53,17 +53,18 @@ use crate::invoke_stream::{
     custom_stream_wrapper, stream_transport,
 };
 
-const INIT: &str = r#"{"model":"bedrock/amazon.titan","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
+// The litellm params CustomStreamWrapper folds into its hidden params: the model's id and a provider api_base.
+const INIT: &str = r#"{"model":"bedrock/amazon.titan","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1","litellm_params":{"model_info":{"id":"model-1"},"api_base":"https://bedrock.example.com"}}"#;
 const NOW: &str = "2026-01-01T00:00:00+00:00";
 const SECONDS: u64 = 1_767_225_600;
 const TIMEOUT: Duration = Duration::from_secs(600);
 const START: StreamInstant = StreamInstant {
-    seconds: 0,
-    timestamp: 0.0,
+    seconds: 2,
+    timestamp: 2.0,
 };
-const ONE_SECOND_LATER: StreamInstant = StreamInstant {
-    seconds: 1,
-    timestamp: 1.0,
+const LATER: StreamInstant = StreamInstant {
+    seconds: 5,
+    timestamp: 5.0,
 };
 
 pub(super) const BASE: &str = "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1%3A0/invoke";
@@ -251,6 +252,7 @@ pub(super) fn run(
     supplied: Option<Arc<Fixture>>,
     default: Arc<Fixture>,
     sync: bool,
+    stream_options: Option<Json>,
 ) -> Opened {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let deps = deps(supplied.as_ref().map(shared), shared(&default), &redactor);
@@ -259,6 +261,7 @@ pub(super) fn run(
     let logger = |details: &Json| logs.record(details);
     let env = pre_post_env(&redactor, &sink, &logger);
     let mut state = logging_state(&redactor);
+    state.stream_options = stream_options;
     let fakes = Fakes::default();
     let mut correlation = CorrelationContext::default();
     let transport = stream_transport(call, sync);
@@ -360,7 +363,7 @@ pub(super) struct TimingRecord {
     pub(super) end_time: f64,
 }
 
-// time.time() at the wrapper call's entry, then one second later for everything after it.
+// time.time() reads two seconds at the wrapper call's entry and five after it, so a duration must subtract.
 #[derive(Default)]
 pub(super) struct FakeClock(AtomicUsize);
 
@@ -369,7 +372,7 @@ impl StreamClock for FakeClock {
         if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
             START
         } else {
-            ONE_SECOND_LATER
+            LATER
         }
     }
 }

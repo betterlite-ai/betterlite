@@ -97,6 +97,7 @@ fn reaches_b691() {
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
+        None,
     );
     let posts = fixture.recorded();
     assert_eq!(posts.len(), 1);
@@ -125,6 +126,7 @@ fn fake_stream_reaches_b691() {
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
+        None,
     );
     assert_eq!(opened.failure, None);
     assert_eq!(
@@ -163,5 +165,6 @@ fn sized_run(size: Option<u64>, messages: &Json, data: &IndexMap<String, Json>) 
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
+        None,
     )
 }

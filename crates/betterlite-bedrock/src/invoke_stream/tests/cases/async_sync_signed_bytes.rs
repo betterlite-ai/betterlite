@@ -79,6 +79,7 @@ fn posted(signed_json_body: Option<&[u8]>, supplied: Option<HandlerKind>, sync: 
         supplied_fixture.clone(),
         Arc::clone(&default_fixture),
         sync,
+        None,
     );
     let supplied_posts = match supplied_fixture {
         Some(fixture) => fixture.recorded(),
