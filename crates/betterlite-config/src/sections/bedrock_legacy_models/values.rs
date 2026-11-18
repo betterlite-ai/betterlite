@@ -88,10 +88,11 @@ fn merge_request_values(merged: &mut ModelValues, deployment: &ModelValues) {
     );
 }
 
+// boxed so the loaded Config stays small enough for futures that hold it across an await
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
-    pub(super) deployments: Vec<ModelValues>,
-    pub(super) litellm_settings: ModelValues,
+    pub(super) deployments: Box<[ModelValues]>,
+    pub(super) litellm_settings: Box<ModelValues>,
 }
 
 impl Settings {
@@ -138,7 +139,7 @@ impl Settings {
 
     fn values_for(&self, index: usize) -> ModelValues {
         self.deployments.get(index).map_or_else(
-            || self.litellm_settings.clone(),
+            || self.litellm_settings.as_ref().clone(),
             |deployment| self.litellm_settings.merged_with(deployment),
         )
     }
