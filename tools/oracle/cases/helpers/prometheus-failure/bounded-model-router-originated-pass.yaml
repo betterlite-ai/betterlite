@@ -1,0 +1,26 @@
+kind: helper
+name: prometheus-failure-bounded-model-router-originated-pass
+call:
+  b3880:
+    function: bounded_requested_model_label
+    requested_model: "gpt-4o"
+    router_originated: true
+    catalog: null
+calls:
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: "gpt-4o"
+      router_originated: false
+      catalog: null
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: ""
+      router_originated: false
+      catalog: null
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: null
+      router_originated: false
+      catalog: null
+env: {}
+compare: {ignore: []}

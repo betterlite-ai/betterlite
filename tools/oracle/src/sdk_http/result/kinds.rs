@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AgenticContinuationRun, BetaConfigRun, ChatCompletion, ChatResponseStreamRuns, ChatStreamRun,
-    EmbeddingOutcomes, Failure, FileStorageRun, HeaderStreamRun, QueryVectors, SyncRun,
+    EmbeddingOutcomes, Failure, FileStorageRun, HeaderStreamRun, QueryVectors, StreamFactoryRun,
+    SyncRun,
 };
 use crate::sdk_http::messages_stream_logging::outcome::StreamLoggingRun;
 use crate::sdk_http::messages_stream_logging::relay::call::StepOutcome;
@@ -45,6 +46,9 @@ pub enum SdkResult {
     },
     MessagesHeaderStream {
         value: HeaderStreamRun,
+    },
+    MessagesStreamFactory {
+        value: StreamFactoryRun,
     },
     MessagesStreamLogging {
         value: StreamLoggingRun,
