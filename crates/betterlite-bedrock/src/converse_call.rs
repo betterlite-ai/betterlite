@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -7,7 +6,6 @@ use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_http::user_url::validate::Resolve;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::ModelCatalog;
@@ -26,12 +24,11 @@ use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::{ConverseMedia, ConverseSettings};
 use crate::converse_response::wire::ModelResponse;
-use crate::converse_usage::transform::ReasoningTokenCounter;
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::model_routes::ParamMap;
 use crate::rerank::plan::CredentialSource;
-use crate::rerank::transport::{ClientKind, SuppliedClient};
+use crate::rerank::transport::{ClientKind, RerankHttpReply, SuppliedClient};
 
 pub mod buffered;
 pub mod error;
@@ -43,10 +40,10 @@ pub mod transport;
 
 mod tests;
 
-use self::buffered::{BufferedReply, dispatch_buffered};
+use self::buffered::{BufferedParts, BufferedReply, BufferedTail, finish_buffered, send_buffered};
 use self::error::ConverseCallError;
 use self::prepare::{CallPlan, ExtractInput};
-use self::streaming::{StreamParts, WrappedStream, open_stream};
+use self::streaming::{PendingStream, StreamParts, WrappedStream, finish_stream, open_stream};
 use self::transport::{ConverseClientFactory, ConverseSigner, SuppliedStream};
 
 #[derive(Clone, Copy, Default)]
@@ -79,15 +76,14 @@ pub struct ConverseCall<'text> {
 
 // The auth parameters and the api key are credentials, so Debug names neither their keys nor values.
 impl Debug for ConverseCall<'_> {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let header_names: Vec<&str> = self
             .extra_headers
             .unwrap_or_default()
             .iter()
             .map(|(name, _value)| name.as_str())
             .collect();
-        formatter
-            .debug_struct("ConverseCall")
+        f.debug_struct("ConverseCall")
             .field("model", &self.model)
             .field("acompletion", &self.acompletion)
             .field("timeout", &self.timeout)
@@ -103,7 +99,7 @@ impl Debug for ConverseCall<'_> {
     }
 }
 
-// Everything a call reaches outside itself: the credential source, the signer, the clients, the beta matrix, the clock the conversion reads and the logging hooks.
+// Send-safe dependencies shared by request preparation and transport. Logging hooks stay in the synchronous stages.
 pub struct ConverseDeps<'deps, 'stream, Factory, Cred>
 where
     Factory: ConverseClientFactory,
@@ -118,9 +114,6 @@ where
     pub redactor: &'stream Redactor,
     pub betas: &'deps BetaMatrix,
     pub now: SystemTime,
-    pub reasoning_counter: &'deps dyn ReasoningTokenCounter<Failure = Infallible>,
-    pub state: &'deps mut LoggingState,
-    pub env: &'deps PrePostEnv<'deps>,
 }
 
 // The body and capability inputs a request transform reads; the credential source stays in deps.
@@ -134,15 +127,16 @@ pub struct ConverseAssembly<'assembly, 'environment, Source, Transport, Lookup, 
 }
 
 pub enum ConverseOutput<'deps> {
-    Reply(BufferedReply),
+    Reply(Box<BufferedReply>),
     Stream(Box<WrappedStream<'deps>>),
 }
 
-pub async fn converse_call<'stream, Cred, Source, Transport, Factory, Lookup, R, Ids>(
+// Prepare once, then log_pre_call, await dispatch, and finish with the caller's logging hooks.
+pub async fn converse_call<Cred, Source, Transport, Factory, Lookup, R, Ids>(
     call: &mut ConverseCall<'_>,
-    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
+    deps: &ConverseDeps<'_, '_, Factory, Cred>,
     assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
-) -> Result<ConverseOutput<'stream>, ConverseCallError>
+) -> Result<CallPlan, ConverseCallError>
 where
     Cred: CredentialSource + Sync,
     Source: DynamicMetadataSource,
@@ -153,7 +147,7 @@ where
     Ids: Fn() -> String + Sync,
 {
     let prepared = prepare::extract(
-        ExtractInput {
+        &mut ExtractInput {
             params: &mut call.optional_params,
             model: call.model,
             extra_headers: call.extra_headers,
@@ -163,31 +157,30 @@ where
         },
         deps.betas,
     )?;
-    let plan = prepare::prepare(call, prepared, deps.signer, deps.credentials, assembly).await?;
-    dispatch(call, plan, deps).await
+    prepare::prepare(call, prepared, deps.signer, deps.credentials, assembly).await
 }
 
-// async_completion alone honours skip_pre_call_logging; the streaming and sync routes always log.
-async fn dispatch<'stream, Factory, Cred>(
+pub enum PendingCall<'stream> {
+    Reply(RerankHttpReply),
+    Stream(Box<PendingStream<'stream>>),
+}
+
+// Only transport state crosses the await; logging hooks are invoked before and after it.
+pub async fn dispatch<'stream, Factory, Cred>(
     call: &ConverseCall<'_>,
-    plan: CallPlan,
-    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
-) -> Result<ConverseOutput<'stream>, ConverseCallError>
+    plan: &CallPlan,
+    deps: &ConverseDeps<'_, 'stream, Factory, Cred>,
+    state: &LoggingState,
+) -> Result<PendingCall<'stream>, ConverseCallError>
 where
     Factory: ConverseClientFactory,
+    Cred: Sync,
 {
     let route = if call.acompletion {
         ClientKind::Async
     } else {
         ClientKind::Sync
     };
-    let mut log = LogContext {
-        state: &mut *deps.state,
-        env: deps.env,
-    };
-    if !(call.acompletion && plan.stream != Some(true) && call.skip_pre_call_logging) {
-        log_pre_call(&plan, &mut log)?;
-    }
     if plan.stream == Some(true) {
         let parts = StreamParts {
             route,
@@ -198,14 +191,47 @@ where
             redactor: deps.redactor,
             now: deps.now,
         };
-        let stream = open_stream(call, &plan, &parts, deps.factory, &mut log).await?;
-        return Ok(ConverseOutput::Stream(Box::new(stream)));
+        let pending = open_stream(call, plan, &parts, deps.factory).await?;
+        return Ok(PendingCall::Stream(Box::new(pending)));
     }
-    dispatch_buffered(call, &plan, deps, route).await
+    let parts = BufferedParts {
+        route,
+        timeout: call.timeout,
+        supplied: deps.supplied_buffered.as_ref(),
+    };
+    Ok(PendingCall::Reply(
+        send_buffered(deps.factory, &parts, plan, state).await?,
+    ))
+}
+
+pub fn finish<'stream>(
+    call: &ConverseCall<'_>,
+    plan: &CallPlan,
+    pending: PendingCall<'stream>,
+    mut tail: BufferedTail<'_, '_>,
+) -> Result<ConverseOutput<'stream>, ConverseCallError> {
+    match pending {
+        PendingCall::Reply(reply) => Ok(ConverseOutput::Reply(Box::new(finish_buffered(
+            call, plan, &reply, tail,
+        )?))),
+        PendingCall::Stream(stream) => Ok(ConverseOutput::Stream(Box::new(finish_stream(
+            call,
+            plan,
+            *stream,
+            &mut tail.log,
+        )?))),
+    }
 }
 
 // pre_call gets api_key="" and the signed headers, body and api_base the provider receives.
-fn log_pre_call(plan: &CallPlan, log: &mut LogContext<'_, '_>) -> Result<(), ConverseCallError> {
+pub fn log_pre_call(
+    call: &ConverseCall<'_>,
+    plan: &CallPlan,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(), ConverseCallError> {
+    if call.acompletion && plan.stream != Some(true) && call.skip_pre_call_logging {
+        return Ok(());
+    }
     let headers: IndexMap<String, Json> = plan
         .signed
         .headers

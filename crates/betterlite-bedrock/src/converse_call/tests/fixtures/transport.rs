@@ -17,9 +17,7 @@ use super::bedrock::agentcore_stream::transport::{
     HandlerKind, PostRequest, StreamHandler, StreamHead,
 };
 use super::bedrock::aws_settings::sources::Credentials;
-use super::bedrock::converse_call::transport::{
-    ConverseClientFactory, ConverseSigner as _, StreamClient,
-};
+use super::bedrock::converse_call::transport::{ConverseClientFactory, StreamClient};
 use super::bedrock::credentials::error::CredentialError;
 use super::bedrock::rerank::plan::CredentialSource;
 use super::bedrock::rerank::transport::{
@@ -61,7 +59,7 @@ impl RerankTransport for Transport {
         request: RerankHttpRequest,
         _logging: &LoggingState,
     ) -> impl Future<Output = Result<RerankHttpReply, TransferError>> + Send {
-        self.post(request)
+        RerankTransport::post(self, request)
     }
 }
 
@@ -170,7 +168,7 @@ struct ReadStream {
 
 impl Stream for ReadStream {
     type Item = Result<Vec<u8>, betterlite_http::error::HttpError>;
-    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.bytes.next().map(|bytes| {
             self.reads.fetch_add(1, Ordering::Relaxed);
             Ok(bytes)

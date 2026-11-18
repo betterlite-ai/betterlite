@@ -53,7 +53,7 @@ pub(super) struct Prepared {
     pub(super) stream_chunk_size: Option<u64>,
 }
 
-pub(super) struct CallPlan {
+pub struct CallPlan {
     pub(super) url: String,
     pub(super) signed: AwsSignedRequest,
     pub(super) data: String,
@@ -67,7 +67,7 @@ pub(super) struct CallPlan {
 }
 
 pub(super) fn extract(
-    input: ExtractInput<'_>,
+    input: &mut ExtractInput<'_>,
     betas: &BetaMatrix,
 ) -> Result<Prepared, ConverseCallError> {
     let stream = pop_bool(input.params, "stream")?;
@@ -131,11 +131,11 @@ where
     .await?;
     let headers = transform_headers(call, &prepared);
     let body = build_body(call, headers.as_ref(), assembly).await?;
-    let signed = sign_payload(call, &prepared, &target, &body.data, signer)?;
+    let authenticated = sign_payload(call, &prepared, &target, &body.data, signer)?;
     let json_mode = body.optional.json_mode;
     Ok(CallPlan {
         url: target.url,
-        signed,
+        signed: authenticated,
         data: body.data,
         messages: serde_json::from_value(serde_json::to_value(call.messages)?)?,
         json_mode,

@@ -8,7 +8,7 @@ use crate::signing::error::SigningError;
 use crate::signing::request::AwsSignedRequest;
 
 // B595's get_request_headers behind a seam, so a call can be asked what it would sign.
-pub trait ConverseSigner {
+pub trait ConverseSigner: Sync {
     fn sign(&self, request: RequestHeaders<'_>) -> Result<AwsSignedRequest, SigningError>;
 }
 
@@ -33,7 +33,7 @@ pub struct SuppliedStream {
 }
 
 // B173 owns client construction; a call asks for the sync or async default it should use.
-pub trait ConverseClientFactory {
+pub trait ConverseClientFactory: Sync {
     type Buffered: RerankTransport;
 
     fn buffered(&self, kind: ClientKind, timeout: Option<Duration>) -> Self::Buffered;

@@ -10,8 +10,8 @@ use indexmap::IndexMap;
 use crate::agentcore_stream::IdSource;
 use crate::agentcore_stream::adapter::header_pairs;
 use crate::bedrock_http_stream::converse::{ConverseCall as WireCall, make_sync_call, open_call};
-use crate::bedrock_http_stream::stream::{ChunkStream, OpenedStream};
-use crate::bedrock_http_stream::{StreamDeps, invoke};
+use crate::bedrock_http_stream::stream::ChunkStream;
+use crate::bedrock_http_stream::{PendingOpen, StreamDeps, invoke};
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::rerank::transport::ClientKind;
@@ -40,13 +40,18 @@ pub struct WrappedStream<'deps> {
     pub stream_chunk_size: Option<u64>,
 }
 
-pub(crate) async fn open_stream<'parts, Factory>(
+pub struct PendingStream<'deps> {
+    deps: StreamDeps<'deps>,
+    pending: PendingOpen,
+    route: ClientKind,
+}
+
+pub(super) async fn open_stream<'parts, Factory>(
     call: &ConverseCall<'_>,
     plan: &CallPlan,
     parts: &StreamParts<'parts, '_>,
     factory: &Factory,
-    log: &mut LogContext<'_, '_>,
-) -> Result<WrappedStream<'parts>, ConverseCallError>
+) -> Result<PendingStream<'parts>, ConverseCallError>
 where
     Factory: ConverseClientFactory,
 {
@@ -60,20 +65,30 @@ where
         timeout: client.timeout,
         now: parts.now,
     };
-    let wire = WireCall {
-        model: call.model,
-        api_base: &plan.url,
-        headers: header_map(&plan.signed.headers)?,
-        data: &plan.data,
-        messages: &plan.messages,
-        json_mode: plan.json_mode,
-        fake_stream: plan.fake_stream,
-    };
-    let opened = if parts.route == ClientKind::Async {
-        open_async(&wire, &deps, log).await?
+    let wire = wire_call(call, plan)?;
+    let pending = if parts.route == ClientKind::Async {
+        invoke::open_call(&invoke_call(&wire), &deps).await?
     } else {
-        let pending = open_call(&wire, &deps).await?;
-        make_sync_call(&wire, &deps, pending, log)?
+        open_call(&wire, &deps).await?
+    };
+    Ok(PendingStream {
+        deps,
+        pending,
+        route: parts.route,
+    })
+}
+
+pub(super) fn finish_stream<'deps>(
+    call: &ConverseCall<'_>,
+    plan: &CallPlan,
+    pending: PendingStream<'deps>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<WrappedStream<'deps>, ConverseCallError> {
+    let wire = wire_call(call, plan)?;
+    let opened = if pending.route == ClientKind::Async {
+        invoke::make_call(&invoke_call(&wire), &pending.deps, pending.pending, log)?
+    } else {
+        make_sync_call(&wire, &pending.deps, pending.pending, log)?
     };
     Ok(WrappedStream {
         response_headers: header_pairs(&opened.headers).into_iter().collect(),
@@ -120,12 +135,23 @@ fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, ConverseCallError
     Ok(map)
 }
 
-async fn open_async<'deps>(
-    wire: &WireCall<'_>,
-    deps: &StreamDeps<'deps>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<OpenedStream<'deps>, ConverseCallError> {
-    let call = invoke::InvokeCall {
+fn wire_call<'call>(
+    call: &'call ConverseCall<'_>,
+    plan: &'call CallPlan,
+) -> Result<WireCall<'call>, ConverseCallError> {
+    Ok(WireCall {
+        model: call.model,
+        api_base: &plan.url,
+        headers: header_map(&plan.signed.headers)?,
+        data: &plan.data,
+        messages: &plan.messages,
+        json_mode: plan.json_mode,
+        fake_stream: plan.fake_stream,
+    })
+}
+
+fn invoke_call<'call>(wire: &WireCall<'call>) -> invoke::InvokeCall<'call> {
+    invoke::InvokeCall {
         model: wire.model,
         api_base: wire.api_base,
         headers: wire.headers.clone(),
@@ -136,9 +162,7 @@ async fn open_async<'deps>(
         json_mode: wire.json_mode,
         provider: None,
         sync: false,
-    };
-    let pending = invoke::open_call(&call, deps).await?;
-    Ok(invoke::make_call(&call, deps, pending, log)?)
+    }
 }
 
 #[path = "tests/streaming.rs"]

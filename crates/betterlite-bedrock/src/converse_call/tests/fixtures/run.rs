@@ -1,5 +1,6 @@
 use super::bedrock::converse_call::{
-    ConverseAssembly, ConverseCall, ConverseDeps, ConverseOutput, converse_call,
+    ConverseAssembly, ConverseCall, ConverseDeps, ConverseOutput, converse_call, dispatch, finish,
+    log_pre_call,
 };
 use super::bedrock::converse_request::ConverseMedia;
 use super::bedrock::invoke_events::DecoderClock;
@@ -42,7 +43,8 @@ pub(crate) fn run(input: &Input) -> Result<Observation, FixtureError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(execute(input))
+    let _entered = runtime.enter();
+    execute(input, &runtime)
 }
 
 struct Session {
@@ -63,7 +65,7 @@ fn session(input: &Input) -> Result<Session, FixtureError> {
     })
 }
 
-async fn execute(input: &Input) -> Result<Observation, FixtureError> {
+fn execute(input: &Input, runtime: &tokio::runtime::Runtime) -> Result<Observation, FixtureError> {
     let session = session(input)?;
     let mut logging = state(&session.redactor)?;
     let logs = Mutex::new(Vec::new());
@@ -91,15 +93,16 @@ async fn execute(input: &Input) -> Result<Observation, FixtureError> {
         state: &mut logging,
         env: &env,
     };
-    let mut observed = call_body(input, &session, log).await?;
+    let mut observed = call_body(input, &session, log, runtime)?;
     observed.logs = logs.into_inner().unwrap_or_else(PoisonError::into_inner);
     Ok(observed)
 }
 
-async fn call_body(
+fn call_body(
     input: &Input,
     session: &Session,
     log: super::bedrock::image_call::plan::LogContext<'_, '_>,
+    runtime: &tokio::runtime::Runtime,
 ) -> Result<Observation, FixtureError> {
     let bearer = input.bearer.clone().map(SecretString::from);
     let headers: Vec<(String, String)> = input
@@ -112,8 +115,8 @@ async fn call_body(
         serde_json::from_str(r#"[{"role":"user","content":"hello"}]"#)?;
     request.messages = &messages;
     let mut observed = Observation::default();
-    match send_request(&mut request, session, log).await? {
-        Ok(output) => collect(output, input.consume, &mut observed).await,
+    match send_request(&mut request, session, log, runtime)? {
+        Ok(output) => runtime.block_on(collect(output, input.consume, &mut observed)),
         Err(error) => {
             observed.status = error.status();
             observed.error = Some(format!("{error:?}: {error}"));
@@ -137,10 +140,11 @@ async fn call_body(
     Ok(observed)
 }
 
-async fn send_request<'run>(
+fn send_request<'run>(
     request: &mut ConverseCall<'_>,
     session: &'run Session,
     log: super::bedrock::image_call::plan::LogContext<'run, 'run>,
+    runtime: &tokio::runtime::Runtime,
 ) -> Result<
     Result<ConverseOutput<'run>, super::bedrock::converse_call::error::ConverseCallError>,
     FixtureError,
@@ -175,16 +179,15 @@ async fn send_request<'run>(
         redactor: &session.redactor,
         betas: &betas,
         now: SystemTime::UNIX_EPOCH,
-        reasoning_counter: &Quiet,
-        state: log.state,
-        env: log.env,
     };
-    assembled(request, deps).await
+    assembled(request, &deps, log, runtime)
 }
 
-async fn assembled<'stream>(
+fn assembled<'stream>(
     request: &mut ConverseCall<'_>,
-    deps: ConverseDeps<'_, 'stream, Transport, Source>,
+    deps: &ConverseDeps<'_, 'stream, Transport, Source>,
+    mut log: super::bedrock::image_call::plan::LogContext<'_, '_>,
+    runtime: &tokio::runtime::Runtime,
 ) -> Result<
     Result<ConverseOutput<'stream>, super::bedrock::converse_call::error::ConverseCallError>,
     FixtureError,
@@ -207,7 +210,22 @@ async fn assembled<'stream>(
         catalogs: &catalogs,
         packaged: &fixture.packaged,
     };
-    Ok(converse_call(request, deps, assembly).await)
+    let prepared = runtime.block_on(converse_call(request, deps, assembly));
+    Ok(prepared.and_then(|plan| {
+        log_pre_call(request, &plan, &mut log)?;
+        let pending = runtime.block_on(dispatch(request, &plan, deps, log.state))?;
+        finish(
+            request,
+            &plan,
+            pending,
+            super::bedrock::converse_call::buffered::BufferedTail {
+                now: deps.now,
+                ids: deps.ids.as_ref(),
+                counter: &Quiet,
+                log,
+            },
+        )
+    }))
 }
 
 async fn collect(output: ConverseOutput<'_>, consume: bool, observed: &mut Observation) {
@@ -225,22 +243,29 @@ async fn collect(output: ConverseOutput<'_>, consume: bool, observed: &mut Obser
                 .first()
                 .and_then(|choice| choice.message.content.clone())
         }
-        ConverseOutput::Stream(mut stream) => {
-            observed.stream = true;
-            observed.wrapper_model = Some(stream.model.clone());
-            observed.provider = Some(stream.custom_llm_provider.to_owned());
-            observed.response_headers = stream.response_headers.clone().into_iter().collect();
-            observed.chunk_size = stream.stream_chunk_size;
-            if consume {
-                while let Some(chunk) = stream.completion_stream.next().await {
-                    match chunk {
-                        Ok(_) => observed.chunks = observed.chunks.saturating_add(1),
-                        Err(error) => {
-                            observed.status = error.status();
-                            observed.error = Some(format!("{error:?}: {error}"));
-                        }
-                    }
-                }
+        ConverseOutput::Stream(stream) => collect_stream(*stream, consume, observed).await,
+    }
+}
+
+async fn collect_stream(
+    mut stream: super::bedrock::converse_call::streaming::WrappedStream<'_>,
+    consume: bool,
+    observed: &mut Observation,
+) {
+    observed.stream = true;
+    observed.wrapper_model = Some(stream.model.clone());
+    observed.provider = Some(stream.custom_llm_provider.to_owned());
+    observed.response_headers = stream.response_headers.clone().into_iter().collect();
+    observed.chunk_size = stream.stream_chunk_size;
+    if !consume {
+        return;
+    }
+    while let Some(chunk) = stream.completion_stream.next().await {
+        match chunk {
+            Ok(_) => observed.chunks = observed.chunks.saturating_add(1),
+            Err(error) => {
+                observed.status = error.status();
+                observed.error = Some(format!("{error:?}: {error}"));
             }
         }
     }

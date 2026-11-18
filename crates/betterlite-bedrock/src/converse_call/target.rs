@@ -49,7 +49,7 @@ pub(crate) fn converse_model_id(model: &str, explicit: Option<&str>) -> Converse
     {
         region = Some(candidate.to_owned());
         stripped = rest;
-        model_for_id = rest.to_owned();
+        rest.clone_into(&mut model_for_id);
     }
     for prefix in NOVA_PREFIXES {
         if stripped.starts_with(prefix) {

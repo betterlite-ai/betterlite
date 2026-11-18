@@ -7,7 +7,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::call_helpers::headers::{
     AdditionalHeaders, ProviderHeaderProjection, set_provider_response_headers,
 };
-use betterlite_models::decisions::Json;
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use indexmap::IndexMap;
 
@@ -25,10 +24,10 @@ use crate::rerank::transport::{
     TransferError,
 };
 
+use super::ConverseCall;
 use super::error::ConverseCallError;
 use super::prepare::CallPlan;
 use super::transport::ConverseClientFactory;
-use super::{ConverseCall, ConverseDeps, ConverseOutput};
 
 pub struct BufferedParts<'parts, 'deps, Client> {
     pub route: ClientKind,
@@ -48,25 +47,17 @@ pub struct BufferedReply {
     pub provider_headers: ProviderHeaderProjection,
 }
 
-// The POST, the raise_for_status gate and the buffered conversion LiteLLM runs before returning.
-pub(crate) async fn send_buffered<Factory>(
+// Conversion and logging happen after the Send transport stage has completed.
+pub(super) fn finish_buffered(
     call: &ConverseCall<'_>,
     plan: &CallPlan,
-    parts: &BufferedParts<'_, '_, Factory::Buffered>,
-    factory: &Factory,
+    reply: &RerankHttpReply,
     mut tail: BufferedTail<'_, '_>,
-) -> Result<BufferedReply, ConverseCallError>
-where
-    Factory: ConverseClientFactory,
-{
-    let reply = post(factory, parts, plan, &*tail.log.state).await?;
-    if !(200..=299).contains(&reply.status) {
-        return Err(provider_error(&plan.url, &reply)?);
-    }
+) -> Result<BufferedReply, ConverseCallError> {
     let raw_headers: IndexMap<String, String> = reply.headers.iter().cloned().collect();
     let provider_headers =
         set_provider_response_headers(&AdditionalHeaders::default(), &raw_headers);
-    let response = transform_reply(call, plan, &reply, &mut tail)?;
+    let response = transform_reply(call, plan, reply, &mut tail)?;
     Ok(BufferedReply {
         response,
         provider_headers,
@@ -74,7 +65,7 @@ where
 }
 
 // A matching supplied client keeps its own timeout; the factory's client gets the call's, and the async route asks it for the logging transport while the sync route posts without one.
-async fn post<Factory>(
+pub(super) async fn send_buffered<Factory>(
     factory: &Factory,
     parts: &BufferedParts<'_, '_, Factory::Buffered>,
     plan: &CallPlan,
@@ -98,15 +89,19 @@ where
         body: plan.signed.body.clone(),
         timeout: None,
     };
-    let reply = match parts.route {
+    let outcome = match parts.route {
         ClientKind::Async => transport.post_with_logging(http, state).await,
         ClientKind::Sync => transport.post(http).await,
     };
-    match reply {
-        Ok(reply) => Ok(reply),
-        Err(TransferError::Timeout) => Err(timeout_error()?),
-        Err(error) => Err(ConverseCallError::Transport(error)),
+    let reply = match outcome {
+        Ok(response) => response,
+        Err(TransferError::Timeout) => return Err(timeout_error()?),
+        Err(error) => return Err(ConverseCallError::Transport(error)),
+    };
+    if !(200..=299).contains(&reply.status) {
+        return Err(provider_error(&plan.url, &reply)?);
     }
+    Ok(reply)
 }
 
 // The reply conversion reads api_key as the empty string and takes stream only from the bool the caller passed, which the handler already turned into false unless it was a literal bool.
@@ -204,39 +199,6 @@ impl ReasoningTokenCounter for ReasoningCounter<'_> {
     fn count_reasoning_tokens(&self, text: &str) -> Result<i64, Self::Failure> {
         self.0.count_reasoning_tokens(text)
     }
-}
-
-pub(super) async fn dispatch_buffered<'stream, Factory, Cred>(
-    call: &ConverseCall<'_>,
-    plan: &CallPlan,
-    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
-    route: ClientKind,
-) -> Result<ConverseOutput<'stream>, ConverseCallError>
-where
-    Factory: ConverseClientFactory,
-{
-    let parts = BufferedParts {
-        route,
-        timeout: call.timeout,
-        supplied: deps.supplied_buffered.as_ref(),
-    };
-    let reply = send_buffered(
-        call,
-        plan,
-        &parts,
-        deps.factory,
-        BufferedTail {
-            now: deps.now,
-            ids: deps.ids.as_ref(),
-            counter: deps.reasoning_counter,
-            log: LogContext {
-                state: deps.state,
-                env: deps.env,
-            },
-        },
-    )
-    .await?;
-    Ok(ConverseOutput::Reply(reply))
 }
 
 #[path = "tests/buffered.rs"]

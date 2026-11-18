@@ -47,10 +47,10 @@ pub enum ConverseCallError {
 
 impl ConverseCallError {
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
+    pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::Provider { status, .. } => Some(*status),
-            Self::Stream(HttpStreamError::Provider { status, .. }) => Some(*status),
+            Self::Provider { status, .. }
+            | Self::Stream(HttpStreamError::Provider { status, .. }) => Some(*status),
             Self::Request(error) => error.status_code(),
             Self::Transform(error) => error.status(),
             Self::Param { .. }

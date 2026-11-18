@@ -53,7 +53,7 @@ fn invalid_options_name_the_field_without_its_secret_value() {
 
 fn prepared(params: &mut ParamMap, model: &str) -> Prepared {
     extract(
-        ExtractInput {
+        &mut ExtractInput {
             params,
             model,
             extra_headers: None,
@@ -111,7 +111,7 @@ fn beta_and_signing_sources(#[case] asynchronous: bool, #[case] beta: &str, #[ca
     ];
     request.extra_headers = Some(&extras);
     let output = extract(
-        ExtractInput {
+        &mut ExtractInput {
             params: &mut ParamMap::new(),
             model: "model",
             extra_headers: Some(&extras),
@@ -162,7 +162,7 @@ fn async_signing_region(#[case] source: &str, #[case] expected: &str) {
 fn control_chunk_size_is_conditional(#[case] stream: bool, #[case] expected: Option<u64>) {
     let mut params = ParamMap::from([("stream".to_owned(), ParamValue::Bool(stream))]);
     let value = extract(
-        ExtractInput {
+        &mut ExtractInput {
             params: &mut params,
             model: "model",
             extra_headers: None,

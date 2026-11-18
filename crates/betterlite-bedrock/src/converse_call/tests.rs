@@ -348,7 +348,7 @@ fn unconsumed_stream_drops_without_reading() {
 fn buffered_uses_injected_tokenizer_and_keeps_response_headers() {
     let mut input: fixture::Input =
         serde_json::from_str(include_str!("tests/fixtures/buffered-response.json")).unwrap();
-    input.body = r#"{"output":{"message":{"role":"assistant","content":[{"text":"hello"},{"reasoningContent":{"reasoningText":{"text":"thinking","signature":"sig"}}}]}},"stopReason":"end_turn","usage":{"inputTokens":10,"outputTokens":5,"totalTokens":15}}"#.to_owned();
+    r#"{"output":{"message":{"role":"assistant","content":[{"text":"hello"},{"reasoningContent":{"reasoningText":{"text":"thinking","signature":"sig"}}}]}},"stopReason":"end_turn","usage":{"inputTokens":10,"outputTokens":5,"totalTokens":15}}"#.clone_into(&mut input.body);
     let output = fixture::run(&input).unwrap();
     assert_eq!(output.reasoning_tokens, Some(2));
     assert_eq!(
@@ -383,4 +383,24 @@ fn client_beta_body_uses_route_specific_headers(#[case] asynchronous: bool) {
     assert_eq!(output.body.contains("unknown-beta"), !asynchronous);
     assert!(!output.headers.contains_key("anthropic-beta"));
     assert_eq!(output.signed_body, output.body.as_bytes());
+}
+
+#[rstest::rstest]
+#[case::sync(false, None)]
+#[case::asynchronous(true, Some(500))]
+fn fake_stream_conversion_failure_uses_route_error_policy(
+    #[case] asynchronous: bool,
+    #[case] status: Option<u16>,
+) {
+    let mut input: fixture::Input =
+        serde_json::from_str(include_str!("tests/fixtures/converse-stream-path.json")).unwrap();
+    input.asynchronous = asynchronous;
+    r#"{"output":{"message":{"role":"assistant","content":[{"text":"hello"}]}},"stopReason":"end_turn"}"#.clone_into(&mut input.body);
+    let observed = fixture::run(&input).unwrap();
+    assert_eq!(observed.status, status, "{observed:?}");
+    assert!(observed.error.is_some());
+    assert!(!observed.stream);
+    assert_eq!(observed.sends, 1);
+    assert_eq!(observed.reads, 1);
+    assert_eq!(observed.drops, 1);
 }
