@@ -20,6 +20,14 @@ pub struct Settings {
     pub ttl_seconds: f64,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            ttl_seconds: DEFAULT_TTL_SECONDS,
+        }
+    }
+}
+
 impl Section for Raw {
     type Settings = Settings;
 
