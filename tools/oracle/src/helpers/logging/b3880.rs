@@ -12,7 +12,8 @@ mod provider_from_exception;
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_logging::prometheus::failure::deployment_labels::{
-    DeploymentFailureLabels, DeploymentFailureSources, PayloadMetadata, deployment_failure_labels,
+    DeploymentFailureLabels, DeploymentFailureSources, PayloadMetadata, UserApiKeyFacts,
+    deployment_failure_labels,
 };
 use betterlite_logging::prometheus::failure::exception_name::exception_class_name;
 use betterlite_logging::prometheus::failure::invalid_key::{
@@ -109,10 +110,14 @@ fn invalid_key_answer(case: &inputs::InvalidKeyInput) -> HelperResult {
 }
 
 fn deployment_answer(case: &inputs::DeploymentLabelsInput) -> DeploymentFailureLabels {
-    let facts = case
-        .user_api_key_auth
-        .as_ref()
-        .map(inputs::AuthInput::facts);
+    let facts = case.user_api_key_auth.as_ref().map(|auth| UserApiKeyFacts {
+        key_alias: auth.key_alias.clone(),
+        user_email: auth.user_email.clone(),
+        team_id: auth.team_id.clone(),
+        team_alias: auth.team_alias.clone(),
+        hashed_key: auth.api_key.clone(),
+        key_hash: None,
+    });
     let sources = DeploymentFailureSources {
         payload_metadata: case.payload_metadata.as_ref().map(PayloadMetadata::Mapping),
         litellm_params_metadata: case.litellm_params_metadata.as_ref(),

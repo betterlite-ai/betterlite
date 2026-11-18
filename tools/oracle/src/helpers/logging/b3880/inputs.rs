@@ -1,4 +1,3 @@
-use betterlite_logging::prometheus::failure::deployment_labels::UserApiKeyFacts;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -42,19 +41,6 @@ pub(crate) struct AuthInput {
     pub(crate) key_alias: Option<String>,
     pub(crate) team_id: Option<String>,
     pub(crate) team_alias: Option<String>,
-}
-
-impl AuthInput {
-    pub(crate) fn facts(&self) -> UserApiKeyFacts {
-        UserApiKeyFacts {
-            key_alias: self.key_alias.clone(),
-            user_email: self.user_email.clone(),
-            team_id: self.team_id.clone(),
-            team_alias: self.team_alias.clone(),
-            hashed_key: self.api_key.clone(),
-            key_hash: None,
-        }
-    }
 }
 
 #[derive(Deserialize)]
