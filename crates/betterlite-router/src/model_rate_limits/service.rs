@@ -40,6 +40,21 @@ pub struct SuccessUsage<'usage> {
     pub total_tokens: i64,
 }
 
+impl<'usage> SuccessUsage<'usage> {
+    #[must_use]
+    pub const fn new(
+        model_id: Option<&'usage str>,
+        model: Option<&'usage str>,
+        total_tokens: i64,
+    ) -> Self {
+        Self {
+            model_id,
+            model,
+            total_tokens,
+        }
+    }
+}
+
 // The answer a tpm read gives the check: a current count, or the observation is unusable and the request goes through
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CurrentTpm {
@@ -173,23 +188,21 @@ impl ModelRateLimits {
 
     // async_log_success_event: a response that reported both a model name and tokens counts its tpm usage
     pub async fn async_log_success_event(&self, usage: &SuccessUsage<'_>) {
-        let Some(key) = self.success_key(usage) else {
-            return;
-        };
-        let _counted = self
-            .cache
-            .increment(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS)
-            .await;
+        if let Some(key) = self.success_key(usage) {
+            let _counted = self
+                .cache
+                .increment(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS)
+                .await;
+        }
     }
 
     // log_success_event: the blocking twin counts the in-memory tier only
     pub fn log_success_event(&self, usage: &SuccessUsage<'_>) {
-        let Some(key) = self.success_key(usage) else {
-            return;
-        };
-        let _counted = self
-            .cache
-            .increment_local(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS);
+        if let Some(key) = self.success_key(usage) {
+            let _counted =
+                self.cache
+                    .increment_local(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS);
+        }
     }
 
     // async_log_failure_event: never fail the primary logging pipeline over an io-token refund error

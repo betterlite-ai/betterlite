@@ -6,8 +6,9 @@ use crate::model_rate_limits::error::RateLimitChannel;
 use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
-    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, exceeded, request, rpm_key,
-    run_case_table, service, spec, tpm_key, with_info, with_param,
+    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, check_async, exceeded, read_count,
+    request, rpm_key, run_case_table, service, spec, tiers, tpm_cache, tpm_key, with_info,
+    with_param,
 };
 
 pub(super) fn run(name: &str) {
@@ -94,64 +95,31 @@ async fn limits_disabled_allows() {
 
 async fn tpm_below_limit_allows() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key("openai/gpt-4o"), 4));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        1
-    );
+    check_async(&cache, &deployment).await.unwrap();
+    assert_eq!(read_count(&cache), 1);
 }
 
 async fn tpm_at_limit_rejects() {
-    let cache = Arc::new(
-        FakeCache::new()
-            .seed_local(&tpm_key("openai/gpt-4o"), 5)
-            .seed_remote(&tpm_key("openai/gpt-4o"), 100),
-    );
-    let check = service(Arc::clone(&cache), None);
+    let cache = Arc::new(tpm_cache(5, 100));
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).channel, RateLimitChannel::Tpm);
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        0
-    );
+    assert_eq!(read_count(&cache), 0);
 }
 
 async fn tpm_remote_higher_value_rejects() {
-    let cache = Arc::new(
-        FakeCache::new()
-            .seed_local(&tpm_key("openai/gpt-4o"), 1)
-            .seed_remote(&tpm_key("openai/gpt-4o"), 5),
-    );
-    let check = service(Arc::clone(&cache), None);
+    let cache = Arc::new(tpm_cache(1, 5));
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).current, 5);
 }
 
 async fn tpm_local_at_limit_skips_remote() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key("openai/gpt-4o"), 5));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        0
-    );
+    check_async(&cache, &deployment).await.unwrap_err();
+    assert_eq!(read_count(&cache), 0);
 }
 
 async fn breaker_open_falls_back_to_local() {
@@ -174,16 +142,9 @@ async fn breaker_open_falls_back_to_local() {
 
 async fn no_remote_reads_local_only() {
     let cache = Arc::new(FakeCache::without_remote().seed_local(&tpm_key("openai/gpt-4o"), 4));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        0
-    );
+    check_async(&cache, &deployment).await.unwrap();
+    assert_eq!(read_count(&cache), 0);
 }
 
 async fn remote_failure_allows_without_rpm() {
@@ -227,15 +188,9 @@ async fn rpm_increments_first_and_rejects_over_limit() {
 async fn success_event_counts_tpm_usage() {
     let cache = Arc::new(FakeCache::new());
     let check = service(Arc::clone(&cache), None);
-    check
-        .async_log_success_event(&SuccessUsage {
-            model_id: Some("a"),
-            model: Some("openai/gpt-4o"),
-            total_tokens: 120,
-        })
-        .await;
-    assert_eq!(cache.local_value(&tpm_key("openai/gpt-4o")), Some(120));
-    assert_eq!(cache.remote_value(&tpm_key("openai/gpt-4o")), Some(120));
+    let usage = SuccessUsage::new(Some("a"), Some("openai/gpt-4o"), 120);
+    check.async_log_success_event(&usage).await;
+    assert_eq!(tiers(&cache), [Some(120), Some(120)]);
 }
 
 async fn success_event_skips_absent_fields() {
@@ -270,9 +225,8 @@ async fn success_event_skips_absent_fields() {
 
 async fn failure_event_refunds() {
     let io = Arc::new(FakeIo::new());
-    let cache = Arc::new(FakeCache::new());
     let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
-    let check = service(Arc::clone(&cache), Some(hook));
+    let check = service(Arc::new(FakeCache::new()), Some(hook));
     check.async_log_failure_event(&mut request()).await;
     assert_eq!(io.calls.lock().unwrap().refunds, 1);
 }
@@ -373,14 +327,9 @@ async fn sync_facade_counts_local_only() {
 
 async fn sync_success_event_counts_local_only() {
     let cache = Arc::new(FakeCache::new());
-    let check = service(Arc::clone(&cache), None);
-    check.log_success_event(&SuccessUsage {
-        model_id: Some("a"),
-        model: Some("openai/gpt-4o"),
-        total_tokens: 7,
-    });
-    assert_eq!(cache.local_value(&tpm_key("openai/gpt-4o")), Some(7));
-    assert_eq!(cache.remote_value(&tpm_key("openai/gpt-4o")), None);
+    let usage = SuccessUsage::new(Some("a"), Some("openai/gpt-4o"), 7);
+    service(Arc::clone(&cache), None).log_success_event(&usage);
+    assert_eq!(tiers(&cache), [Some(7), None]);
 }
 
 async fn sync_failure_event_refunds() {

@@ -204,33 +204,54 @@ pub(super) fn spec(group: &str, id: &str, model: &str) -> DeploymentSpec {
     }
 }
 
-pub(super) fn with_param(
-    mut deployment: DeploymentSpec,
-    field: &str,
-    value: i64,
-) -> DeploymentSpec {
-    deployment
-        .litellm_params
-        .insert(field.to_owned(), Json::Number(Number::from(value)));
-    deployment
+pub(super) fn number(value: i64) -> Json {
+    Json::Number(Number::from(value))
 }
 
-pub(super) fn with_info(
-    mut deployment: DeploymentSpec,
-    field: &str,
-    value: Json,
-) -> DeploymentSpec {
-    deployment.model_info.insert(field.to_owned(), value);
-    deployment
+pub(super) fn with_param(mut dep: DeploymentSpec, field: &str, value: i64) -> DeploymentSpec {
+    dep.litellm_params.insert(field.to_owned(), number(value));
+    dep
 }
 
-pub(super) fn with_extra(
-    mut deployment: DeploymentSpec,
-    field: &str,
-    value: Json,
-) -> DeploymentSpec {
-    deployment.extra.insert(field.to_owned(), value);
-    deployment
+pub(super) fn with_info(mut dep: DeploymentSpec, field: &str, value: Json) -> DeploymentSpec {
+    dep.model_info.insert(field.to_owned(), value);
+    dep
+}
+
+pub(super) fn with_extra(mut dep: DeploymentSpec, field: &str, value: Json) -> DeploymentSpec {
+    dep.extra.insert(field.to_owned(), value);
+    dep
+}
+
+pub(super) fn tpm_cache(local: i64, remote: i64) -> FakeCache {
+    let key = tpm_key("openai/gpt-4o");
+    FakeCache::new()
+        .seed_local(&key, local)
+        .seed_remote(&key, remote)
+}
+
+pub(super) fn rpm_cache(local: i64, remote: i64) -> FakeCache {
+    let key = rpm_key("openai/gpt-4o");
+    FakeCache::new()
+        .seed_local(&key, local)
+        .seed_remote(&key, remote)
+}
+
+pub(super) fn read_count(cache: &FakeCache) -> usize {
+    cache.remote_reads.load(Ordering::SeqCst)
+}
+
+pub(super) fn tiers(cache: &FakeCache) -> [Option<i64>; 2] {
+    let key = tpm_key("openai/gpt-4o");
+    [cache.local_value(&key), cache.remote_value(&key)]
+}
+
+pub(super) async fn check_async(
+    cache: &Arc<FakeCache>,
+    dep: &DeploymentSpec,
+) -> Result<(), ModelRateLimitError> {
+    let check = service(Arc::clone(cache), None);
+    check.async_pre_call_check(dep, &mut request()).await
 }
 
 pub(super) fn request() -> RequestBody {

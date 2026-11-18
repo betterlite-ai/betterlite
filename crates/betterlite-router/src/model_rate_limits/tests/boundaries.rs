@@ -7,8 +7,8 @@ use crate::model_rate_limits::error::{ModelRateLimitError, RateLimitChannel, Rat
 use crate::model_rate_limits::service::ModelRateLimits;
 
 use super::support::{
-    FakeCache, MINUTE, RemoteMode, exceeded, request, rpm_key, run_case_table, service, spec,
-    tpm_key, with_extra, with_info, with_param,
+    FakeCache, MINUTE, RemoteMode, check_async, exceeded, number, read_count, request, rpm_cache,
+    rpm_key, run_case_table, service, spec, tpm_cache, tpm_key, with_extra, with_info, with_param,
 };
 
 pub(super) fn run(name: &str) {
@@ -76,76 +76,44 @@ fn model() -> &'static str {
 
 async fn tpm_one_below_limit_allows() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 4));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap();
+    check_async(&cache, &deployment).await.unwrap();
 }
 
 async fn tpm_over_limit_by_one_rejects() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 6));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).current, 6);
 }
 
 async fn rpm_at_limit_allows() {
-    let cache = Arc::new(
-        FakeCache::new()
-            .seed_local(&rpm_key(model()), 1)
-            .seed_remote(&rpm_key(model()), 1),
-    );
-    let check = service(Arc::clone(&cache), None);
+    let cache = Arc::new(rpm_cache(1, 1));
     let deployment = with_param(spec("gpt-4o", "a", model()), "rpm", 2);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap();
+    check_async(&cache, &deployment).await.unwrap();
     assert_eq!(cache.local_value(&rpm_key(model())), Some(2));
     assert_eq!(cache.remote_value(&rpm_key(model())), Some(2));
 }
 
 async fn rpm_over_limit_by_one_rejects() {
-    let cache = Arc::new(
-        FakeCache::new()
-            .seed_local(&rpm_key(model()), 2)
-            .seed_remote(&rpm_key(model()), 2),
-    );
-    let check = service(Arc::clone(&cache), None);
+    let cache = Arc::new(rpm_cache(2, 2));
     let deployment = with_param(spec("gpt-4o", "a", model()), "rpm", 2);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).current, 3);
     assert_eq!(cache.local_value(&rpm_key(model())), Some(3));
 }
 
 async fn zero_tpm_limit_rejects_zero_usage() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 0));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 0);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).limit, 0);
 }
 
 async fn negative_tpm_limit_rejects_zero_usage() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 0));
-    let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", -1);
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).limit, -1);
 }
 
@@ -201,31 +169,16 @@ async fn top_level_limit_wins() {
 
 async fn params_limit_beats_model_info() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 2));
-    let check = service(Arc::clone(&cache), None);
-    let deployment = with_info(
-        with_param(spec("gpt-4o", "a", model()), "tpm", 2),
-        "tpm",
-        Json::Number(Number::from(9_i64)),
-    );
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let param = with_param(spec("gpt-4o", "a", model()), "tpm", 2);
+    let deployment = with_info(param, "tpm", number(9));
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).limit, 2);
 }
 
 async fn model_info_limit_used_last() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 3));
-    let check = service(Arc::clone(&cache), None);
-    let deployment = with_info(
-        spec("gpt-4o", "a", model()),
-        "tpm",
-        Json::Number(Number::from(3_i64)),
-    );
-    let error = check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap_err();
+    let deployment = with_info(spec("gpt-4o", "a", model()), "tpm", number(3));
+    let error = check_async(&cache, &deployment).await.unwrap_err();
     assert_eq!(exceeded(error).limit, 3);
 }
 
@@ -255,22 +208,10 @@ async fn empty_model_id_builds_keys() {
 }
 
 async fn breaker_open_keeps_local_below_limit() {
-    let cache = Arc::new(
-        FakeCache::new()
-            .mode(RemoteMode::Breaker)
-            .seed_local(&tpm_key(model()), 4)
-            .seed_remote(&tpm_key(model()), 100),
-    );
-    let check = service(Arc::clone(&cache), None);
+    let cache = Arc::new(tpm_cache(4, 100).mode(RemoteMode::Breaker));
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);
-    check
-        .async_pre_call_check(&deployment, &mut request())
-        .await
-        .unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        1
-    );
+    check_async(&cache, &deployment).await.unwrap();
+    assert_eq!(read_count(&cache), 1);
 }
 
 async fn sync_facade_ignores_remote() {

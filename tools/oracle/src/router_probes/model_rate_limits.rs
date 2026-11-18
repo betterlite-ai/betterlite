@@ -180,7 +180,11 @@ async fn check_step(
     deployment: &DeploymentSpec,
 ) -> Result<StepOutput, String> {
     let mut request = RequestBody::new();
-    match check.async_pre_call_check(deployment, &mut request).await {
+    checked_step(check.async_pre_call_check(deployment, &mut request).await)
+}
+
+fn checked_step(result: Result<(), ModelRateLimitError>) -> Result<StepOutput, String> {
+    match result {
         Ok(()) => Ok(StepOutput {
             kind: StepKind::Check,
             allowed: Some(true),
