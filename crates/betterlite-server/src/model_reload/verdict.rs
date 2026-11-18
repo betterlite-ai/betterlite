@@ -44,10 +44,9 @@ pub fn reload_serving_verdict(
     state: &ReloadState<'_>,
     obligation: ServeObligation,
 ) -> ModelReloadVerdict {
-    let now = match state.live_after {
-        Some(ids) => ids.clone(),
-        None => live_model_ids_snapshot(state.catalog),
-    };
+    let now = state
+        .live_after
+        .map_or_else(|| live_model_ids_snapshot(state.catalog), Clone::clone);
     let mut missing = Vec::new();
     for written in state.written {
         if violates(state, obligation, written, &now) {
@@ -110,10 +109,7 @@ fn violates(
 }
 
 fn still_desired_includes(still_desired: Option<&BTreeSet<String>>, id: &str) -> bool {
-    match still_desired {
-        Some(desired) => desired.contains(id),
-        None => true,
-    }
+    still_desired.map_or(true, |desired| desired.contains(id))
 }
 
 fn degraded_message(verdict: &ModelReloadVerdict, action: &str) -> String {

@@ -23,8 +23,7 @@ fn parsed_mapping(text: &str) -> Option<JsonObject> {
 // _expects_liveness_on_this_pod: a model_info the environment rule refuses still expects to serve, so its drop is reported.
 #[must_use]
 pub fn expects_liveness_on_this_pod(model_info: &Json, environment: Option<&str>) -> bool {
-    match model_info_as_mapping(model_info) {
-        Some(mapping) => active_in_environment(&mapping, environment).unwrap_or(true),
-        None => true,
-    }
+    model_info_as_mapping(model_info).map_or(true, |mapping| {
+        active_in_environment(&mapping, environment).unwrap_or(true)
+    })
 }
