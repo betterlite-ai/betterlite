@@ -1,12 +1,13 @@
 use crate::deployment_catalog::types::AliasStep;
 use crate::deployment_clients::clients::CachedClient;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::least_busy::guard::InFlightCall;
 use crate::strategy::Strategy;
 use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::types::RequestBindings;
 
 // The deployment one route settled on, with the parts of the attempt the caller dispatches and stamps.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct AttemptResult {
     pub group: String,
     pub deployment: DeploymentSpec,
@@ -18,4 +19,6 @@ pub struct AttemptResult {
     pub override_pre_call: Option<SelectorId>,
     // The selector callbacks the routing resolution bound to this request
     pub bindings: RequestBindings,
+    // The least-busy count this attempt started, absent on a router that keeps no counters; the caller releases it once
+    pub least_busy: Option<InFlightCall>,
 }
