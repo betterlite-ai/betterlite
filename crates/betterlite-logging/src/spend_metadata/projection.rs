@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use serde::Deserialize;
 
 use super::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
 use super::redaction::{is_non_secret_key_value, redact_logged_api_key};
@@ -37,7 +38,7 @@ const STAMPED_FIELDS: [&str; 6] = [
 ];
 
 // The explicit arguments _get_spend_logs_metadata takes besides the metadata mapping.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct SpendMetadataArguments {
     pub applied_guardrails: Option<Vec<String>>,
     pub batch_models: Option<Vec<String>>,
@@ -54,7 +55,7 @@ pub struct SpendMetadataArguments {
     pub litellm_call_id: Option<String>,
     pub autorouter_savings: Option<f64>,
     pub autorouter_savings_estimate: Option<JsonObject>,
-    pub autorouter_baseline_observation: Option<String>,
+    pub baseline_observation: Option<String>,
     pub router_metadata: Option<SpendLogsRouterMetadata>,
     pub azure_spillover: Option<JsonObject>,
     pub used_client_oauth_token: Option<bool>,
@@ -84,7 +85,7 @@ pub fn project_spend_logs_metadata(
     record.agent_execution_mode = Some(record.agent_execution_mode.flatten());
     record.verified_human_user_id = Some(record.verified_human_user_id.flatten());
     record.routing_decision = Some(record.routing_decision.flatten());
-    record.user_api_key = redact_logged_api_key(
+    record.hashed_user_api_key = redact_logged_api_key(
         nonempty_text(raw_key.as_ref()),
         trusted_redaction(metadata, raw_key.as_ref()),
         metadata_text(metadata, "user_api_key_alias"),
@@ -114,7 +115,7 @@ pub fn project_spend_logs_metadata(
     record.litellm_call_id = arguments.litellm_call_id;
     record.autorouter_savings = arguments.autorouter_savings;
     record.autorouter_savings_estimate = arguments.autorouter_savings_estimate.map(Json::Object);
-    record.autorouter_baseline_observation = arguments.autorouter_baseline_observation;
+    record.baseline_observation = arguments.baseline_observation;
     record.router_metadata = arguments.router_metadata;
     record.azure_spillover = arguments.azure_spillover.map(Json::Object);
     record.used_client_oauth_token = arguments.used_client_oauth_token;
@@ -129,7 +130,7 @@ fn absent_metadata(arguments: SpendMetadataArguments) -> SpendLogsMetadata {
     record.litellm_call_id = arguments.litellm_call_id;
     record.autorouter_savings = arguments.autorouter_savings;
     record.autorouter_savings_estimate = arguments.autorouter_savings_estimate.map(Json::Object);
-    record.autorouter_baseline_observation = arguments.autorouter_baseline_observation;
+    record.baseline_observation = arguments.baseline_observation;
     record.router_metadata = arguments.router_metadata;
     record.azure_spillover = arguments.azure_spillover.map(Json::Object);
     record.used_client_oauth_token = arguments.used_client_oauth_token;

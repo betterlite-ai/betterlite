@@ -20,7 +20,7 @@ fn groups(text: &str) -> Vec<String> {
             .get("standard_logging_object")
             .and_then(as_object_ref),
         litellm_params: fixture.get("litellm_params").and_then(as_object_ref),
-        auth_matched_model_access_groups: fixture.get("auth_matched_model_access_groups"),
+        auth_groups: fixture.get("auth_matched_model_access_groups"),
     };
     request_model_access_groups(&sources)
 }

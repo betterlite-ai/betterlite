@@ -8,10 +8,23 @@ pub fn extract_usage_for_ocr_call(
     usage_info: Option<&Json>,
     attribute_usage_info: Option<&Json>,
 ) -> JsonObject {
-    let resolved = if python_truthy(usage_info) {
-        usage_info
-    } else {
-        attribute_usage_info.or(usage_info)
+    let resolved = match usage_info {
+        Some(Json::Bool(true)) => usage_info,
+        Some(Json::Number(number)) if number.as_f64().is_none_or(|value| value != 0.0_f64) => {
+            usage_info
+        }
+        Some(Json::Text(text)) if !text.is_empty() => usage_info,
+        Some(Json::List(items)) if !items.is_empty() => usage_info,
+        Some(Json::Object(entries)) if !entries.is_empty() => usage_info,
+        Some(
+            Json::Null
+            | Json::Bool(false)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
+        | None => attribute_usage_info.or(usage_info),
     };
     match resolved {
         None | Some(Json::Null) => JsonObject::new(),
@@ -42,18 +55,6 @@ fn zeroed_token_usage() -> JsonObject {
         usage.insert(counter.to_owned(), Json::Number(Number::from(0_u64)));
     }
     usage
-}
-
-// Python truthiness for the fallback test: only an empty text, list or mapping, zero or null is falsy.
-fn python_truthy(value: Option<&Json>) -> bool {
-    match value {
-        None | Some(Json::Null) => false,
-        Some(Json::Bool(flag)) => *flag,
-        Some(Json::Number(number)) => number.as_f64().is_none_or(|number| number != 0.0),
-        Some(Json::Text(text)) => !text.is_empty(),
-        Some(Json::List(items)) => !items.is_empty(),
-        Some(Json::Object(entries)) => !entries.is_empty(),
-    }
 }
 
 #[path = "ocr/tests.rs"]

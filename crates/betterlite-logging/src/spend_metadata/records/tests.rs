@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use serde_json::Map;
 use serde_json::Value;
 
@@ -14,20 +15,17 @@ fn serialized(record: &SpendLogsMetadata) -> Map<String, Value> {
         .expect("the record serializes as an object")
 }
 
-#[test]
-fn the_absent_constructor_omits_the_agent_fields_and_routing_decision() {
+#[rstest]
+#[case::actor_agent_id("actor_agent_id")]
+#[case::target_agent_id("target_agent_id")]
+#[case::billing_agent_id("billing_agent_id")]
+#[case::agent_execution_mode("agent_execution_mode")]
+#[case::verified_human_user_id("verified_human_user_id")]
+#[case::routing_decision("routing_decision")]
+fn the_absent_constructor_omits_the_agent_fields_and_routing_decision(#[case] absent: &str) {
     let fields = serialized(&SpendLogsMetadata::default());
     assert_eq!(fields.len(), 42);
-    for absent in [
-        "actor_agent_id",
-        "target_agent_id",
-        "billing_agent_id",
-        "agent_execution_mode",
-        "verified_human_user_id",
-        "routing_decision",
-    ] {
-        assert!(!fields.contains_key(absent), "{absent} is absent");
-    }
+    assert!(!fields.contains_key(absent), "{absent} is absent");
     assert_eq!(fields.get("user_api_key"), Some(&Value::Null));
     assert_eq!(fields.get("status"), Some(&Value::Null));
 }
@@ -52,22 +50,19 @@ fn routing_decision_serializes_its_payload() {
     );
 }
 
-#[test]
-fn the_router_metadata_serializes_every_field_as_null() {
+#[rstest]
+#[case::requested_model("requested_model")]
+#[case::selected_model("selected_model")]
+#[case::selected_provider("selected_provider")]
+#[case::router_correlation_id("router_correlation_id")]
+fn the_router_metadata_serializes_every_field_as_null(#[case] name: &str) {
     let fields = serde_json::to_value(SpendLogsRouterMetadata::default())
         .expect("the router metadata serializes")
         .as_object()
         .cloned()
         .expect("the router metadata serializes as an object");
     assert_eq!(fields.len(), 4);
-    for name in [
-        "requested_model",
-        "selected_model",
-        "selected_provider",
-        "router_correlation_id",
-    ] {
-        assert_eq!(fields.get(name), Some(&Value::Null), "{name} is null");
-    }
+    assert_eq!(fields.get(name), Some(&Value::Null), "{name} is null");
 }
 
 #[test]

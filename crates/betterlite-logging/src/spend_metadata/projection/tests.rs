@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use serde_json::Value;
 
 use super::{SpendMetadataArguments, project_spend_logs_metadata};
@@ -46,7 +47,7 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     arguments.litellm_call_id = Some("call".to_owned());
     arguments.autorouter_savings = Some(1.5);
     arguments.autorouter_savings_estimate = Some(object(r#"{"saved":1}"#));
-    arguments.autorouter_baseline_observation = Some("baseline".to_owned());
+    arguments.baseline_observation = Some("baseline".to_owned());
     arguments.router_metadata = Some(SpendLogsRouterMetadata {
         requested_model: Some("requested".to_owned()),
         selected_model: None,
@@ -75,8 +76,16 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     assert!(!fields.contains_key("routing_decision"));
 }
 
-#[test]
-fn an_empty_mapping_has_every_field() {
+#[rstest]
+#[case::actor_agent_id("actor_agent_id")]
+#[case::target_agent_id("target_agent_id")]
+#[case::billing_agent_id("billing_agent_id")]
+#[case::agent_execution_mode("agent_execution_mode")]
+#[case::verified_human_user_id("verified_human_user_id")]
+#[case::routing_decision("routing_decision")]
+#[case::user_api_key("user_api_key")]
+#[case::status("status")]
+fn an_empty_mapping_has_every_field(#[case] name: &str) {
     let metadata = object("{}");
     let value = serialized(&project(
         Some(&metadata),
@@ -85,22 +94,17 @@ fn an_empty_mapping_has_every_field() {
     ));
     let fields = value.as_object().expect("the record is an object");
     assert_eq!(fields.len(), 48);
-    for name in [
-        "actor_agent_id",
-        "target_agent_id",
-        "billing_agent_id",
-        "agent_execution_mode",
-        "verified_human_user_id",
-        "routing_decision",
-        "user_api_key",
-        "status",
-    ] {
-        assert_eq!(value[name], Value::Null, "{name} is null");
-    }
+    assert_eq!(value[name], Value::Null, "{name} is null");
 }
 
-#[test]
-fn forged_stamped_values_never_win() {
+#[rstest]
+#[case::router_metadata("router_metadata")]
+#[case::azure_spillover("azure_spillover")]
+#[case::autorouter_savings("autorouter_savings")]
+#[case::autorouter_savings_estimate("autorouter_savings_estimate")]
+#[case::autorouter_baseline_observation("autorouter_baseline_observation")]
+#[case::used_client_oauth_token("used_client_oauth_token")]
+fn forged_stamped_values_never_win(#[case] name: &str) {
     let metadata = object(
         r#"{
             "router_metadata": {"requested_model": "forged"},
@@ -116,20 +120,24 @@ fn forged_stamped_values_never_win() {
         SpendMetadataArguments::default(),
         true,
     ));
-    for name in [
-        "router_metadata",
-        "azure_spillover",
-        "autorouter_savings",
-        "autorouter_savings_estimate",
-        "autorouter_baseline_observation",
-        "used_client_oauth_token",
-    ] {
-        assert_eq!(value[name], Value::Null, "{name} is null");
-    }
+    assert_eq!(value[name], Value::Null, "{name} is null");
 }
 
-#[test]
-fn forged_overridden_values_are_replaced_by_the_arguments() {
+#[rstest]
+#[case::applied_guardrails("applied_guardrails")]
+#[case::batch_models("batch_models")]
+#[case::batch_successful_requests("batch_successful_requests")]
+#[case::batch_failed_requests("batch_failed_requests")]
+#[case::mcp_tool_call_metadata("mcp_tool_call_metadata")]
+#[case::vector_store_request_metadata("vector_store_request_metadata")]
+#[case::guardrail_information("guardrail_information")]
+#[case::usage_object("usage_object")]
+#[case::model_map_information("model_map_information")]
+#[case::cold_storage_object_key("cold_storage_object_key")]
+#[case::litellm_overhead_time_ms("litellm_overhead_time_ms")]
+#[case::cost_breakdown("cost_breakdown")]
+#[case::litellm_call_id("litellm_call_id")]
+fn forged_overridden_values_are_replaced_by_the_arguments(#[case] name: &str) {
     let metadata = object(
         r#"{
             "applied_guardrails": ["forged"],
@@ -152,23 +160,7 @@ fn forged_overridden_values_are_replaced_by_the_arguments() {
         SpendMetadataArguments::default(),
         true,
     ));
-    for name in [
-        "applied_guardrails",
-        "batch_models",
-        "batch_successful_requests",
-        "batch_failed_requests",
-        "mcp_tool_call_metadata",
-        "vector_store_request_metadata",
-        "guardrail_information",
-        "usage_object",
-        "model_map_information",
-        "cold_storage_object_key",
-        "litellm_overhead_time_ms",
-        "cost_breakdown",
-        "litellm_call_id",
-    ] {
-        assert_eq!(value[name], Value::Null, "{name} is null");
-    }
+    assert_eq!(value[name], Value::Null, "{name} is null");
 }
 
 #[test]
@@ -189,7 +181,7 @@ fn the_arguments_are_projected_into_the_record() {
     arguments.litellm_call_id = Some("call".to_owned());
     arguments.autorouter_savings = Some(0.75);
     arguments.autorouter_savings_estimate = Some(object(r#"{"saved":2}"#));
-    arguments.autorouter_baseline_observation = Some("baseline".to_owned());
+    arguments.baseline_observation = Some("baseline".to_owned());
     arguments.router_metadata = Some(SpendLogsRouterMetadata::default());
     arguments.azure_spillover = Some(object(r#"{"region":"west"}"#));
     arguments.used_client_oauth_token = Some(false);
@@ -351,21 +343,18 @@ fn the_alias_allows_a_cli_session_key() {
     assert_eq!(value["user_api_key_alias"], "cli-session-abc");
 }
 
-#[test]
-fn non_text_and_empty_keys_become_null() {
-    for fixture in [
-        r#"{"user_api_key": 5}"#,
-        r#"{"user_api_key": ""}"#,
-        r#"{"user_api_key": "Bearer "}"#,
-    ] {
-        let metadata = object(fixture);
-        let value = serialized(&project(
-            Some(&metadata),
-            SpendMetadataArguments::default(),
-            true,
-        ));
-        assert_eq!(value["user_api_key"], Value::Null, "{fixture}");
-    }
+#[rstest]
+#[case::number(r#"{"user_api_key": 5}"#)]
+#[case::empty(r#"{"user_api_key": ""}"#)]
+#[case::bare_bearer(r#"{"user_api_key": "Bearer "}"#)]
+fn non_text_and_empty_keys_become_null(#[case] fixture: &str) {
+    let metadata = object(fixture);
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], Value::Null, "{fixture}");
 }
 
 #[test]

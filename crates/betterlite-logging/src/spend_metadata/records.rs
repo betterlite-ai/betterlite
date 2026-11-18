@@ -27,9 +27,11 @@ pub struct SpendLogsMetadata {
     pub agent_execution_mode: Option<Option<String>>,
     #[serde(with = "nullable", skip_serializing_if = "Option::is_none")]
     pub verified_human_user_id: Option<Option<String>>,
-    pub autorouter_baseline_observation: Option<String>,
+    #[serde(rename = "autorouter_baseline_observation")]
+    pub baseline_observation: Option<String>,
     pub additional_usage_values: Option<Json>,
-    pub user_api_key: Option<String>,
+    #[serde(rename = "user_api_key")]
+    pub hashed_user_api_key: Option<String>,
     pub user_api_key_alias: Option<String>,
     pub user_api_key_team_id: Option<String>,
     pub user_api_key_project_id: Option<String>,

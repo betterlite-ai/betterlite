@@ -9,7 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 pub const BATCH_COST_REQUEST_ID_SUFFIX: &str = "_batch_cost";
-pub const MAX_SPEND_LOG_MODEL_NAME_LENGTH: usize = 256;
+pub const MAX_MODEL_NAME_LENGTH: usize = 256;
 pub const MCP_SPEND_LOG_MODEL_PREFIX: &str = "MCP: ";
 
 #[derive(Debug, thiserror::Error)]
@@ -49,12 +49,19 @@ pub(crate) fn as_text(value: &Json) -> Option<&str> {
 }
 
 pub(crate) fn nonempty_text(value: Option<&Json>) -> Option<&str> {
-    let value = value?;
-    as_text(value).filter(|text| !text.is_empty())
+    if let Some(Json::Text(text)) = value
+        && !text.is_empty()
+    {
+        return Some(text);
+    }
+    None
 }
 
 pub(crate) fn metadata_text<'a>(metadata: &'a JsonObject, name: &str) -> Option<&'a str> {
-    metadata.get(name).and_then(as_text)
+    let Some(value) = metadata.get(name) else {
+        return None;
+    };
+    as_text(value)
 }
 
 // get_spend_logs_id: the first nonempty string among the response id, the standard payload id and the call id.
@@ -102,12 +109,10 @@ pub fn looks_like_model_name(model: &str) -> bool {
     let candidate = model
         .strip_prefix(MCP_SPEND_LOG_MODEL_PREFIX)
         .unwrap_or(model);
-    candidate.chars().count() <= MAX_SPEND_LOG_MODEL_NAME_LENGTH
-        && !candidate.chars().any(python_space)
-}
-
-fn python_space(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+    let has_space = candidate
+        .chars()
+        .any(|character| character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}'));
+    candidate.chars().count() <= MAX_MODEL_NAME_LENGTH && !has_space
 }
 
 mod tests;
