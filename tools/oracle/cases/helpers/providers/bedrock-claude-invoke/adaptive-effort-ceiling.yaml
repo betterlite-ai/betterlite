@@ -1,0 +1,28 @@
+kind: helper
+name: bedrock-claude-invoke-adaptive-effort-ceiling
+call:
+  bedrock_claude_invoke:
+    function: map_params
+    model_cost:
+      bedrock/claude-test: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: max}
+      bedrock/claude-low: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: high}
+      bedrock/claude-free: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    calls:
+      - model: claude-test
+        non_default_params: {reasoning_effort: xhigh}
+        optional_params: {}
+        drop_params: false
+      - model: claude-low
+        non_default_params: {reasoning_effort: xhigh}
+        optional_params: {}
+        drop_params: false
+      - model: claude-test
+        non_default_params: {reasoning_effort: low}
+        optional_params: {}
+        drop_params: false
+      - model: claude-free
+        non_default_params: {reasoning_effort: xhigh}
+        optional_params: {}
+        drop_params: false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

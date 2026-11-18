@@ -1,0 +1,4 @@
+litellm_settings:
+  logged_real_time_event_types:
+    - session.created
+    - response.done
