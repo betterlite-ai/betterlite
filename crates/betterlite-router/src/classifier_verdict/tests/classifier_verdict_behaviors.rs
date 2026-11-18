@@ -441,10 +441,13 @@ fn session_kwargs_keep_only_the_parent_identity() {
         partial.get("litellm_trace_id"),
         Some(&Json::Text(String::new()))
     );
-    let non_text = parent_session_kwargs(Some(&kwargs(
+    let scalars = parent_session_kwargs(Some(&kwargs(
         r#"{"litellm_session_id": 0, "litellm_trace_id": false}"#,
     )));
-    assert!(non_text.is_empty());
+    assert_eq!(
+        serde_json::to_string(&scalars).unwrap(),
+        r#"{"litellm_session_id":0,"litellm_trace_id":false}"#
+    );
 }
 
 #[rstest]

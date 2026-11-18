@@ -16,7 +16,7 @@ pub fn parent_session_kwargs(request_kwargs: Option<&RequestKwargs>) -> RequestK
         return session;
     };
     for key in ["litellm_session_id", "litellm_trace_id"] {
-        if let Some(value @ Json::Text(_)) = kwargs.get(key) {
+        if let Some(value) = kwargs.get(key).filter(|value| !matches!(value, Json::Null)) {
             session.insert(key.to_owned(), value.clone());
         }
     }
