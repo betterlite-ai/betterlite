@@ -1,6 +1,6 @@
 from collections.abc import Callable
-from datetime import datetime
-from typing import Final, Literal, NotRequired, TypedDict, cast
+from datetime import UTC, datetime
+from typing import Literal, NotRequired, TypedDict, cast
 
 import httpx
 import litellm
@@ -18,8 +18,10 @@ from litellm.types.llms.openai import (
     ResponsesAPIStreamingResponse,
 )
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 litellm.suppress_debug_info = True
+
 
 class ModelInfo(TypedDict):
     id: str
@@ -87,11 +89,14 @@ class CacheHandler:
     def _should_store_result_in_cache(
         self, original_function: str | None, kwargs: dict[str, JsonValue]
     ) -> bool:
+        del original_function, kwargs
         return True
 
 
 class FailingCache(Cache):
+    @override
     def add_cache(self, result: str, **kwargs: JsonValue) -> None:
+        del result, kwargs
         raise RuntimeError("cache write failed")
 
 
@@ -105,7 +110,7 @@ class StubLogging:
         self.records = records
         self.cost = cost
         self.model_call_details: dict[str, JsonValue] = {}
-        self.start_time = datetime(2026, 1, 1)
+        self.start_time = datetime(2026, 1, 1, tzinfo=UTC)
         self.completion_start_time: datetime | None = None
         self._llm_caching_handler = cache_handler
 
@@ -120,6 +125,7 @@ class StubLogging:
         end_time: datetime,
         cache_hit: bool | None,
     ) -> None:
+        del result, start_time, end_time, cache_hit
         self.records.append("success_async")
 
     def success_handler(
@@ -130,6 +136,7 @@ class StubLogging:
         start_time: datetime,
         end_time: datetime,
     ) -> None:
+        del result, cache_hit, start_time, end_time
         self.records.append("success_sync")
 
     async def async_failure_handler(
@@ -139,6 +146,7 @@ class StubLogging:
         start_time: datetime,
         end_time: datetime,
     ) -> None:
+        del exception, traceback_exception, start_time, end_time
         self.records.append("failure_async")
 
     def failure_handler(
@@ -148,6 +156,7 @@ class StubLogging:
         start_time: datetime,
         end_time: datetime,
     ) -> None:
+        del exception, traceback_exception, start_time, end_time
         self.records.append("failure_sync")
 
     def _response_cost_calculator(self, *, result: ResponsesAPIResponse) -> float | None:
@@ -226,7 +235,7 @@ def run(input_value: Input) -> JsonValue:
     original_executor = streaming_iterator.executor
     original_cache = litellm.cache
     streaming_iterator._estimate_usage_safely = estimate  # type: ignore[assignment]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1564-L1580
-    streaming_iterator.executor = InlineExecutor()  # type: ignore[assignment, misc]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L551-L560
+    streaming_iterator.executor = InlineExecutor()  # type: ignore[assignment, misc]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L569-L575
     if input_value["cache"] == "failing":
         litellm.cache = FailingCache()
     try:
@@ -234,8 +243,8 @@ def run(input_value: Input) -> JsonValue:
         error: str | None = None
         for payload in input_value["payloads"]:
             try:
-                event = iterator._process_chunk(payload)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L363-L529
-            except Exception as failure:  # noqa: BLE001 - the raised message is the compared outcome
+                event = iterator._process_chunk(payload)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L363-L532
+            except Exception as failure:  # noqa: BLE001 - its message is compared
                 error = str(failure)
                 break
             events.append(None if event is None else event_json(event))
