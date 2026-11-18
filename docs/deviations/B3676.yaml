@@ -24,6 +24,9 @@ deviations:
   - what: The usage-only fallback returns None when the builder fails or finds no usage, instead of catching AttributeError, TypeError and ValueError.
     why: The builder's failure is one typed error, and a missing usage record is a None, so the same fallback needs no exception matching.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L319-L325
+  - what: A rewritten line comes out with its object keys in sorted order and each number in the spelling it had on the wire, because serde_json's map sorts and arbitrary precision keeps the literal; Python's json.dumps keeps insertion order and re-renders floats from their parsed value.
+    why: JSON object order carries no meaning, the event is compared and consumed as data, and arbitrary precision is on for the whole workspace.
+    link: https://docs.python.org/3/library/json.html#json.dumps
 kept_bugs:
   - what: A data line indented before `data:` still counts as a text_delta for the undeliverable check, and is never rewritten because the line writer requires the line to start with `data:` untrimmed.
     why: A working setup only ships unindented SSE frames, and the project keeps the two readers' disagreement exactly as LiteLLM has it.
