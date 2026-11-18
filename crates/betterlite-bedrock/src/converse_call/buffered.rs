@@ -52,12 +52,33 @@ pub(super) fn finish_buffered(
     call: &ConverseCall<'_>,
     plan: &CallPlan,
     reply: &RerankHttpReply,
-    mut tail: BufferedTail<'_, '_>,
+    tail: BufferedTail<'_, '_>,
 ) -> Result<BufferedReply, ConverseCallError> {
     let raw_headers: IndexMap<String, String> = reply.headers.iter().cloned().collect();
     let provider_headers =
         set_provider_response_headers(&AdditionalHeaders::default(), &raw_headers);
-    let response = transform_reply(call, plan, reply, &mut tail)?;
+    let raw = RawReply {
+        headers: &reply.headers,
+        body: &reply.body,
+    };
+    let response = transform_response(
+        TransformCall {
+            request: ReplyRequest {
+                model: call.model,
+                messages: &plan.messages,
+                data: RawBody::Text(plan.data.clone()),
+                json_mode: None,
+                optional: &plan.optional,
+                tool_name_mappings: &plan.tool_name_mappings,
+            },
+            log: tail.log,
+            now: tail.now,
+        },
+        &raw,
+        call.model_response.clone(),
+        tail.ids,
+        &ReasoningCounter(tail.counter),
+    )?;
     Ok(BufferedReply {
         response,
         provider_headers,
@@ -102,41 +123,6 @@ where
         return Err(provider_error(&plan.url, &reply)?);
     }
     Ok(reply)
-}
-
-// The reply conversion reads api_key as the empty string and takes stream only from the bool the caller passed, which the handler already turned into false unless it was a literal bool.
-fn transform_reply(
-    call: &ConverseCall<'_>,
-    plan: &CallPlan,
-    reply: &RerankHttpReply,
-    tail: &mut BufferedTail<'_, '_>,
-) -> Result<ModelResponse, ConverseCallError> {
-    let log = LogContext {
-        state: &mut *tail.log.state,
-        env: tail.log.env,
-    };
-    let raw = RawReply {
-        headers: &reply.headers,
-        body: &reply.body,
-    };
-    Ok(transform_response(
-        TransformCall {
-            request: ReplyRequest {
-                model: call.model,
-                messages: &plan.messages,
-                data: RawBody::Text(plan.data.clone()),
-                json_mode: None,
-                optional: &plan.optional,
-                tool_name_mappings: &plan.tool_name_mappings,
-            },
-            log,
-            now: tail.now,
-        },
-        &raw,
-        call.model_response.clone(),
-        tail.ids,
-        &ReasoningCounter(tail.counter),
-    )?)
 }
 
 fn timeout_error() -> Result<ConverseCallError, HeaderError> {
