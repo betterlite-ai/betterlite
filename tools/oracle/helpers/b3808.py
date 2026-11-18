@@ -1,4 +1,6 @@
+import io
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
@@ -53,7 +55,8 @@ def template_names() -> list[JsonValue]:
 
 
 def build_routes(case: BuildRoutes) -> JsonValue:
-    with tempfile.TemporaryDirectory() as directory:
+    # build_routes logs at INFO to sys.stdout, which carries the oracle's JSON line
+    with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
         routes = SemanticGuardRouteLoader.build_routes(
             route_templates=case.get("route_templates"),
             custom_routes_file=routes_path(case, Path(directory)),
