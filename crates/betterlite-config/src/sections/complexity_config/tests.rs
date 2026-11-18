@@ -67,7 +67,7 @@ fn every_key_resolves_from_its_written_shape() {
         Some(vec!["Write the title".to_owned()])
     );
     assert_eq!(config.heuristic_first_max_tier.as_deref(), Some("MEDIUM"));
-    assert_eq!(config.hybrid_boundary_margin, Some(0.25));
+    assert_eq!(config.hybrid_boundary_margin, Some(0.25_f64));
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn a_reference_in_a_scalar_key_resolves() {
     .unwrap();
     assert_eq!(config.plan_mode_min_tier.as_deref(), Some("COMPLEX"));
     assert_eq!(config.heuristic_first_max_tier.as_deref(), Some("MEDIUM"));
-    assert_eq!(config.hybrid_boundary_margin, Some(0.5));
+    assert_eq!(config.hybrid_boundary_margin, Some(0.5_f64));
 }
 
 #[test]

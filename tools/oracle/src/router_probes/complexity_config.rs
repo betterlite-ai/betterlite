@@ -7,6 +7,7 @@ use betterlite_router::complexity_config::checks::{Checks, Declared, Feature, St
 use betterlite_router::complexity_config::{Resolved, resolve};
 use betterlite_router::tier_definitions::checks::{ClassifierFallback, ClassifierKind};
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -105,7 +106,7 @@ struct Fields {
     plan_mode_patterns: Option<Vec<String>>,
     housekeeping_patterns: Option<Vec<String>>,
     heuristic_first_max_tier: Option<String>,
-    hybrid_boundary_margin: Option<f64>,
+    hybrid_boundary_margin: Option<Number>,
     classification_prompt: Option<String>,
     classification_examples: Option<String>,
 }
@@ -168,7 +169,8 @@ fn fields(resolved: &Resolved) -> Fields {
         plan_mode_patterns: resolved.plan_mode_patterns.clone(),
         housekeeping_patterns: resolved.housekeeping_patterns.clone(),
         heuristic_first_max_tier: resolved.heuristic_first_max_tier.clone(),
-        hybrid_boundary_margin: resolved.hybrid_boundary_margin,
+        // the resolver rejects a non-finite margin, so the finite conversion never drops one
+        hybrid_boundary_margin: resolved.hybrid_boundary_margin.and_then(Number::from_f64),
         classification_prompt: resolved.classification_prompt.clone(),
         classification_examples: resolved.classification_examples.clone(),
     }

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::complexity_config as section;
 use betterlite_config::sections::tier_definitions as tier_section;
+use betterlite_config::sections::tier_definitions::TierPool;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
@@ -9,7 +10,6 @@ use crate::complexity_config::checks::{Checks, Feature, StallWindow};
 use crate::complexity_config::error::ComplexityConfigError;
 use crate::complexity_config::normalize::{MAX_EXAMPLES_CHARS, MAX_PROMPT_CHARS};
 use crate::tier_definitions::checks::ClassifierKind;
-use crate::tier_definitions::model::TierPool;
 
 use crate::complexity_config::tests::{
     base_checks, blank, checked, custom, entry, error, llm, resolve_with, single, strings,
@@ -32,16 +32,16 @@ fn with_margin(margin: f64) -> Result<(), ComplexityConfigError> {
 }
 
 #[rstest]
-#[case::zero(0.0)]
-#[case::one(1.0)]
-#[case::half(0.5)]
+#[case::zero(0.0_f64)]
+#[case::one(1.0_f64)]
+#[case::half(0.5_f64)]
 fn a_margin_at_an_endpoint_is_accepted(#[case] margin: f64) {
     assert!(with_margin(margin).is_ok());
 }
 
 #[rstest]
-#[case::below_zero(-0.000_001)]
-#[case::above_one(1.000_001)]
+#[case::below_zero(-0.000_001_f64)]
+#[case::above_one(1.000_001_f64)]
 #[case::not_a_number(f64::NAN)]
 fn a_margin_outside_the_endpoints_is_rejected(#[case] margin: f64) {
     let Err(ComplexityConfigError::HybridMarginOutOfRange { value }) = with_margin(margin) else {
@@ -220,7 +220,7 @@ fn a_heuristic_first_threshold_must_name_a_configured_tier() {
 #[test]
 fn a_margin_with_another_classifier_is_rejected() {
     let settings = section::Config {
-        hybrid_boundary_margin: Some(0.5),
+        hybrid_boundary_margin: Some(0.5_f64),
         ..blank()
     };
     let rejected = error(settings, tiers(), &classifier(ClassifierKind::Llm));

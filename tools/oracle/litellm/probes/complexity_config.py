@@ -124,7 +124,7 @@ def _knob_values(values: dict[str, object], knobs: Knobs, tiers: TiersInput) -> 
     values["classifier_fallback"] = knobs.classifier_fallback
     values["stall_escalation_window"] = knobs.stall_escalation.window
     values["stall_escalation_repeat_threshold"] = knobs.stall_escalation.repeat_threshold
-    _scalar_values(values, knobs)
+    values.update(_scalar_values(knobs))
     if knobs.keyword_rule_tiers:
         values["keyword_tier_rules"] = [
             {"keywords": [_PROBE_KEYWORD], "tier": tier} for tier in knobs.keyword_rule_tiers
@@ -135,15 +135,14 @@ def _knob_values(values: dict[str, object], knobs: Knobs, tiers: TiersInput) -> 
     values.update(_feature_values(knobs.features))
 
 
-def _scalar_values(values: dict[str, object], knobs: Knobs) -> None:
-    for name, value in (
+def _scalar_values(knobs: Knobs) -> dict[str, str]:
+    pairs = (
         ("fallback_tier", knobs.fallback_tier),
         ("classification_prompt", knobs.classification_prompt),
         ("classification_examples", knobs.classification_examples),
         ("embedding_model", knobs.embedding_model),
-    ):
-        if value is not None:
-            values[name] = value
+    )
+    return {name: value for name, value in pairs if value is not None}
 
 
 def _llm_config_values(values: dict[str, object], knobs: Knobs) -> None:

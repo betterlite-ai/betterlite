@@ -10,7 +10,6 @@ use crate::complexity_config::error::ComplexityConfigError;
 use crate::complexity_config::resolve;
 use crate::tier_definitions::checks::ClassifierKind;
 use crate::tier_definitions::error::{DefinitionConflict, TierDefinitionsError};
-use crate::tier_definitions::model::TierPool;
 
 use crate::complexity_config::tests::{
     base_checks, blank, checked, custom, error, llm, single, strings, tier_pools, tiers,
@@ -175,7 +174,10 @@ fn adaptive_rejects_an_explicitly_empty_pool() {
         ..base_checks()
     };
     let tier_set = tier_section::Config {
-        tier_models: Some(tier_pools(&[("SIMPLE", TierPool::Pool(Vec::new()))])),
+        tier_models: Some(tier_pools(&[(
+            "SIMPLE",
+            tier_section::TierPool::Pool(Vec::new()),
+        )])),
         ..tiers()
     };
     let rejected = error(blank(), tier_set, &checks);
@@ -220,11 +222,11 @@ fn hybrid_accepts_a_boundary_margin() {
         ..base_checks()
     };
     let settings = section::Config {
-        hybrid_boundary_margin: Some(0.5),
+        hybrid_boundary_margin: Some(0.5_f64),
         ..blank()
     };
     let resolved = checked(settings, tiers(), &checks);
-    assert_eq!(resolved.hybrid_boundary_margin, Some(0.5));
+    assert_eq!(resolved.hybrid_boundary_margin, Some(0.5_f64));
 }
 
 #[test]
@@ -284,7 +286,7 @@ fn every_order_dependent_feature_conflicts_with_a_custom_tier_set(
 fn dimensions_are_validated_and_carried_through() {
     let dimensions = [dimensions_section::Config {
         name: "domain".to_owned(),
-        weight: 0.5,
+        weight: 0.5_f64,
         keywords: strings(&["kubernetes"]),
         patterns: Vec::new(),
         scoring_mode: "binary".to_owned(),
@@ -306,7 +308,7 @@ fn dimensions_are_validated_and_carried_through() {
 fn a_dimension_problem_surfaces_as_a_dimensions_error() {
     let dimensions = [dimensions_section::Config {
         name: String::new(),
-        weight: 0.5,
+        weight: 0.5_f64,
         keywords: strings(&["kubernetes"]),
         patterns: Vec::new(),
         scoring_mode: "binary".to_owned(),
