@@ -2,6 +2,7 @@ import asyncio
 import sys
 from types import ModuleType
 
+from litellm.llms.bedrock.realtime.handler import BedrockPayloadPart
 from pydantic import JsonValue
 
 from .models import Chunk, CloseView, JsonAdapter, Run
@@ -40,12 +41,16 @@ class Counter:
 
 
 class FakePart:
+    bytes_: bytes | None
+
     def __init__(self, bytes_: bytes | None) -> None:
         self.bytes_ = bytes_
 
 
 class FakeChunk:
-    def __init__(self, value: FakePart | None) -> None:
+    value: BedrockPayloadPart | None
+
+    def __init__(self, value: BedrockPayloadPart | None) -> None:
         self.value = value
 
 
@@ -79,17 +84,19 @@ class FakeInput:
 
 
 def output_chunk(chunk: Chunk) -> FakeChunk | None:
-    if chunk["kind"] == "end":
-        return None
-    if chunk["kind"] == "missing_value":
-        return FakeChunk(None)
-    if chunk["kind"] == "missing_bytes":
-        return FakeChunk(FakePart(None))
-    if chunk["kind"] == "empty":
-        return FakeChunk(FakePart(b""))
-    if chunk["kind"] == "invalid_utf8":
-        return FakeChunk(FakePart(b"\xff"))
-    return FakeChunk(FakePart(chunk["text"].encode("utf-8")))
+    match chunk["kind"]:
+        case "end":
+            return None
+        case "missing_value":
+            return FakeChunk(None)
+        case "missing_bytes":
+            return FakeChunk(FakePart(None))
+        case "empty":
+            return FakeChunk(FakePart(b""))
+        case "invalid_utf8":
+            return FakeChunk(FakePart(b"\xff"))
+        case "bytes":
+            return FakeChunk(FakePart(chunk["text"].encode("utf-8")))
 
 
 class FakeOutput:

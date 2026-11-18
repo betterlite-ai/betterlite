@@ -1,5 +1,6 @@
 from typing import Literal, TypeAlias, TypedDict
 
+from litellm.types.realtime import RealtimeResponseTransformInput
 from pydantic import JsonValue, TypeAdapter
 
 JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -7,18 +8,14 @@ PENDING_ADAPTER: TypeAdapter[str | None] = TypeAdapter(str | None)
 
 Outcome: TypeAlias = Literal["ended", "cancelled", "error"]
 ErrorKind: TypeAlias = Literal["input", "ack", "stream", "encode", "utf8", "transform"]
+ChunkKind: TypeAlias = Literal[
+    "bytes", "invalid_utf8", "missing_value", "missing_bytes", "empty", "end"
+]
 
 
-class ChunkBytes(TypedDict):
-    kind: Literal["bytes"]
+class Chunk(TypedDict):
+    kind: ChunkKind
     text: str
-
-
-class ChunkMark(TypedDict):
-    kind: Literal["invalid_utf8", "missing_value", "missing_bytes", "empty", "end"]
-
-
-Chunk: TypeAlias = ChunkBytes | ChunkMark
 
 
 class Run(TypedDict):
@@ -61,5 +58,5 @@ class RunResult(TypedDict):
     closed_input: bool
     closed_client: CloseView | None
     scope: ScopeView | None
-    state: JsonValue | None
+    state: RealtimeResponseTransformInput | None
     logged: list[JsonValue]

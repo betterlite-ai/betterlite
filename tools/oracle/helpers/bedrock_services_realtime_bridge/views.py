@@ -1,5 +1,7 @@
 from litellm.constants import (
     BEDROCK_REALTIME_PENDING_SESSION_UPDATE_SCOPE_KEY as PENDING_KEY,
+)
+from litellm.constants import (
     BEDROCK_REALTIME_SESSION_COMMITTED_SCOPE_KEY as COMMITTED_KEY,
 )
 from litellm.types.realtime import RealtimeResponseTransformInput
