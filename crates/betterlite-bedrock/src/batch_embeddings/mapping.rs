@@ -62,13 +62,13 @@ pub enum EmbeddingType {
 // The body minus model and input, as the V2 config reads it; a null value stays a null entry
 fn non_default_params(request: &EmbeddingRequest) -> Object {
     let mut params = Object::new();
-    if let Setting::Null = request.dimensions {
+    if request.dimensions == Setting::Null {
         params.insert(String::from("dimensions"), Json::Null);
     }
     if let Setting::Value(size) = request.dimensions {
         params.insert(String::from("dimensions"), Json::Number(Number::from(size)));
     }
-    if let Setting::Null = &request.encoding_format {
+    if matches!(&request.encoding_format, Setting::Null) {
         params.insert(String::from("encoding_format"), Json::Null);
     }
     if let Setting::Value(format) = &request.encoding_format {

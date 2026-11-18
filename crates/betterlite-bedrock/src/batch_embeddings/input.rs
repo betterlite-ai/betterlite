@@ -26,22 +26,7 @@ pub fn coerce_input_to_string(
             model: model.to_owned(),
         });
     };
-    let candidate = match raw {
-        EmbeddingInput::List(items) => {
-            let [single] = items.as_slice() else {
-                return Err(BatchEmbeddingError::MultipleInputs {
-                    items: items.len(),
-                    model: model.to_owned(),
-                });
-            };
-            single
-        }
-        EmbeddingInput::Text(_)
-        | EmbeddingInput::Number(_)
-        | EmbeddingInput::Bool(_)
-        | EmbeddingInput::Null
-        | EmbeddingInput::Object(_) => raw,
-    };
+    let candidate = sole_item(raw, model)?;
     // each refusal names the Python type it read, and an int is a token list, True included
     match candidate {
         EmbeddingInput::Text(text) => Ok(text.clone()),
@@ -65,4 +50,21 @@ pub fn coerce_input_to_string(
             })
         }
     }
+}
+
+// A list unwraps once, so a single-element list still reads as the one value it holds
+fn sole_item<'query>(
+    raw: &'query EmbeddingInput,
+    model: &str,
+) -> Result<&'query EmbeddingInput, BatchEmbeddingError> {
+    let EmbeddingInput::List(items) = raw else {
+        return Ok(raw);
+    };
+    let [single] = items.as_slice() else {
+        return Err(BatchEmbeddingError::MultipleInputs {
+            items: items.len(),
+            model: model.to_owned(),
+        });
+    };
+    Ok(single)
 }
