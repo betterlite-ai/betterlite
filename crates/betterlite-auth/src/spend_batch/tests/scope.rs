@@ -1,11 +1,13 @@
+use std::future::pending;
 use std::sync::Arc;
 
 use betterlite_redis::request_batch::lock;
+use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use crate::spend_batch::batch::{SpendCounterBatch, SpendCounterValue};
-use crate::spend_batch::keys::admission_counter_keys;
 use crate::spend_batch::scope::SpendBatchContext;
+use crate::spend_counter_batch::keys::admission_counter_keys;
 
 use super::support::{FakeRedis, Reply, allow_cache, decimal, keys, user_auth};
 
@@ -127,13 +129,13 @@ async fn the_scope_restores_the_context_after_cancellation() {
     let server = FakeRedis::start().await;
     let cache = allow_cache(&server).await;
     let context = Arc::new(SpendBatchContext::default());
-    let (started, arrived) = tokio::sync::oneshot::channel();
+    let (started, arrived) = oneshot::channel();
     let mut tasks = JoinSet::new();
-    let scoped = Arc::clone(&context);
+    let task_context = Arc::clone(&context);
     tasks.spawn(async move {
-        let _scope = scoped.enter(Some(&cache), &keys(&["spend:key:a"]));
+        let _scope = task_context.enter(Some(&cache), &keys(&["spend:key:a"]));
         let _sent = started.send(());
-        std::future::pending::<()>().await;
+        pending::<()>().await;
     });
     arrived.await.expect("the scoped task starts");
     assert!(active(&context).is_some());

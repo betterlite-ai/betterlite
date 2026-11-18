@@ -14,6 +14,20 @@ async fn read(batch: &Arc<SpendCounterBatch>, counter_key: &str) -> Option<Spend
     batch.read(counter_key).await.expect("the read succeeds")
 }
 
+async fn assert_amount(batch: &Arc<SpendCounterBatch>, counter_key: &str, amount: &str) {
+    assert_eq!(
+        read(batch, counter_key).await,
+        Some(SpendCounterValue::Amount(decimal(amount)))
+    );
+}
+
+async fn assert_missing(batch: &Arc<SpendCounterBatch>, counter_key: &str) {
+    assert_eq!(
+        read(batch, counter_key).await,
+        Some(SpendCounterValue::Missing)
+    );
+}
+
 #[tokio::test]
 async fn decodes_every_counter_shape_from_one_mget() {
     let server = FakeRedis::start().await;
@@ -36,34 +50,13 @@ async fn decodes_every_counter_shape_from_one_mget() {
         Reply::Bulk("\"1.25\"".to_owned()),
         Reply::Bulk("true".to_owned()),
     ]));
-    assert_eq!(
-        read(&batch, "spend:key:false").await,
-        Some(SpendCounterValue::Amount(decimal("0")))
-    );
-    assert_eq!(
-        read(&batch, "spend:key:null").await,
-        Some(SpendCounterValue::Missing)
-    );
-    assert_eq!(
-        read(&batch, "spend:key:number").await,
-        Some(SpendCounterValue::Amount(decimal("2.5")))
-    );
-    assert_eq!(
-        read(&batch, "spend:key:precision").await,
-        Some(SpendCounterValue::Amount(decimal("9.99")))
-    );
-    assert_eq!(
-        read(&batch, "spend:key:scientific").await,
-        Some(SpendCounterValue::Amount(decimal("150")))
-    );
-    assert_eq!(
-        read(&batch, "spend:key:text").await,
-        Some(SpendCounterValue::Amount(decimal("1.25")))
-    );
-    assert_eq!(
-        read(&batch, "spend:key:true").await,
-        Some(SpendCounterValue::Amount(decimal("1")))
-    );
+    assert_amount(&batch, "spend:key:false", "0").await;
+    assert_missing(&batch, "spend:key:null").await;
+    assert_amount(&batch, "spend:key:number", "2.5").await;
+    assert_amount(&batch, "spend:key:precision", "9.99").await;
+    assert_amount(&batch, "spend:key:scientific", "150").await;
+    assert_amount(&batch, "spend:key:text", "1.25").await;
+    assert_amount(&batch, "spend:key:true", "1").await;
     assert_eq!(server.mget_keys().len(), 1);
 }
 

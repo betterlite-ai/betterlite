@@ -1,4 +1,5 @@
-// B2316 builds this state machine in spend_counter_batch; this module reuses it whole
-pub use crate::spend_counter_batch::batch::{
-    CounterValue as SpendCounterValue, SpendCounterBatch, SpendCounterBatchError,
-};
+use crate::spend_counter_batch::batch as shared;
+
+pub type SpendCounterBatch = shared::SpendCounterBatch;
+pub type SpendCounterBatchError = shared::SpendCounterBatchError;
+pub type SpendCounterValue = shared::CounterValue;

@@ -1,1 +1,3 @@
-pub use crate::spend_counter_batch::scope::SpendCounterScope as SpendBatchContext;
+use crate::spend_counter_batch::scope as shared;
+
+pub type SpendBatchContext = shared::SpendCounterScope;

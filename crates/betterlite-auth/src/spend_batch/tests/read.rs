@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::task::JoinSet;
+use tokio::task::yield_now;
 use tokio::time::timeout;
 
 use crate::spend_batch::batch::{SpendCounterBatch, SpendCounterBatchError, SpendCounterValue};
@@ -18,17 +19,25 @@ async fn join_read(
     let joined = timeout(Duration::from_secs(10), tasks.join_next())
         .await
         .expect("the reader finishes before the deadline");
-    match joined {
-        Some(Ok(Ok(value))) => value,
-        _ => panic!("the reader task reports a value"),
-    }
+    let Some(Ok(Ok(value))) = joined else {
+        panic!("the reader task reports a value");
+    };
+    value
 }
 
 async fn read_once(batch: &Arc<SpendCounterBatch>, counter_key: &str) -> Option<SpendCounterValue> {
     let reading = Arc::clone(batch);
+    let owned_key = counter_key.to_owned();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move { reading.read(counter_key).await });
+    tasks.spawn(async move { reading.read(&owned_key).await });
     join_read(&mut tasks).await
+}
+
+async fn read_amount(
+    batch: &Arc<SpendCounterBatch>,
+    counter_key: &str,
+) -> Option<SpendCounterValue> {
+    batch.read(counter_key).await.expect("the read succeeds")
 }
 
 #[tokio::test]
@@ -41,7 +50,7 @@ async fn first_read_fetches_every_bound_key_sorted() {
         Reply::Bulk("2".to_owned()),
     ]));
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Amount(decimal("1")))
     );
     assert_eq!(
@@ -49,7 +58,7 @@ async fn first_read_fetches_every_bound_key_sorted() {
         [vec!["spend:key:a".to_owned(), "spend:key:b".to_owned()]]
     );
     assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:b").await,
         Some(SpendCounterValue::Amount(decimal("2")))
     );
     assert_eq!(server.mget_keys().len(), 1);
@@ -60,13 +69,7 @@ async fn unbound_key_is_not_read() {
     let server = FakeRedis::start().await;
     let batch = open_batch(&server).await;
     batch.bind(&keys(&["spend:key:a"]));
-    assert_eq!(
-        batch
-            .read("spend:key:other")
-            .await
-            .expect("the read succeeds"),
-        None
-    );
+    assert_eq!(read_amount(&batch, "spend:key:other").await, None);
     assert!(server.commands_named("MGET").is_empty());
 }
 
@@ -77,11 +80,11 @@ async fn present_null_is_an_authoritative_miss() {
     batch.bind(&keys(&["spend:key:a"]));
     server.script_mget(Reply::Array(vec![Reply::Nil]));
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Missing)
     );
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Missing)
     );
     assert_eq!(server.mget_keys().len(), 1);
@@ -94,17 +97,11 @@ async fn absent_key_falls_back_without_a_second_mget() {
     batch.bind(&keys(&["spend:key:a", "spend:key:b"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("3".to_owned())]));
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Amount(decimal("3")))
     );
-    assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
-        None
-    );
-    assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
-        None
-    );
+    assert_eq!(read_amount(&batch, "spend:key:b").await, None);
+    assert_eq!(read_amount(&batch, "spend:key:b").await, None);
     assert_eq!(server.mget_keys().len(), 1);
 }
 
@@ -118,14 +115,8 @@ async fn malformed_value_drops_the_whole_result() {
         Reply::Bulk("2".to_owned()),
         Reply::Bulk("[1]".to_owned()),
     ]));
-    assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
-        None
-    );
-    assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
-        None
-    );
+    assert_eq!(read_amount(&batch, "spend:key:a").await, None);
+    assert_eq!(read_amount(&batch, "spend:key:b").await, None);
     assert_eq!(server.mget_keys().len(), 1);
     assert!(events.count() >= 1);
 }
@@ -136,16 +127,10 @@ async fn refused_fetch_is_logged_and_not_retried() {
     let events = DebugEvents::capture();
     let batch = SpendCounterBatch::new(refusing_cache(&server).await);
     batch.bind(&keys(&["spend:key:a"]));
-    assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
-        None
-    );
+    assert_eq!(read_amount(&batch, "spend:key:a").await, None);
     let after_first = events.count();
     assert!(after_first >= 1);
-    assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
-        None
-    );
+    assert_eq!(read_amount(&batch, "spend:key:a").await, None);
     assert_eq!(events.count(), after_first);
     assert!(server.commands_named("MGET").is_empty());
 }
@@ -158,12 +143,12 @@ async fn read_of_a_recorded_key_still_fetches_the_other_bound_keys() {
     batch.record("spend:key:a", decimal("1"));
     server.script_mget(Reply::Array(vec![Reply::Bulk("2".to_owned())]));
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Amount(decimal("1")))
     );
     assert_eq!(server.mget_keys(), [vec!["spend:key:b".to_owned()]]);
     assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:b").await,
         Some(SpendCounterValue::Amount(decimal("2")))
     );
 }
@@ -175,13 +160,13 @@ async fn a_late_bind_enters_the_next_mget() {
     batch.bind(&keys(&["spend:key:a"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("1".to_owned())]));
     assert_eq!(
-        batch.read("spend:key:a").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:a").await,
         Some(SpendCounterValue::Amount(decimal("1")))
     );
     batch.bind(&keys(&["spend:key:b"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("2".to_owned())]));
     assert_eq!(
-        batch.read("spend:key:b").await.expect("the read succeeds"),
+        read_amount(&batch, "spend:key:b").await,
         Some(SpendCounterValue::Amount(decimal("2")))
     );
     assert_eq!(
@@ -244,25 +229,64 @@ async fn a_write_during_the_mget_wins_over_the_fetched_value() {
 }
 
 #[tokio::test]
+async fn a_completed_fetch_stays_published_through_the_next_one() {
+    let server = FakeRedis::start().await;
+    let batch = open_batch(&server).await;
+    batch.bind(&keys(&["spend:key:a"]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk("5".to_owned())]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk("6".to_owned())]));
+    let mut held = server.hold_next_mget();
+    let mut readers = JoinSet::new();
+    let first = Arc::clone(&batch);
+    readers.spawn(async move { first.read("spend:key:a").await });
+    held.wait_arrived().await;
+    batch.bind(&keys(&["spend:key:b"]));
+    let mut waiters = JoinSet::new();
+    let second = Arc::clone(&batch);
+    waiters.spawn(async move { second.read("spend:key:a").await });
+    yield_now().await;
+    held.release();
+    assert_eq!(
+        join_read(&mut readers).await,
+        Some(SpendCounterValue::Amount(decimal("5")))
+    );
+    assert_eq!(
+        join_read(&mut waiters).await,
+        Some(SpendCounterValue::Amount(decimal("5")))
+    );
+    assert_eq!(
+        read_amount(&batch, "spend:key:b").await,
+        Some(SpendCounterValue::Amount(decimal("6")))
+    );
+    assert_eq!(
+        server.mget_keys(),
+        [
+            vec!["spend:key:a".to_owned()],
+            vec!["spend:key:b".to_owned()]
+        ]
+    );
+}
+
+#[tokio::test]
 async fn a_cancelled_fetcher_releases_its_waiters() {
     let server = FakeRedis::start().await;
     let batch = open_batch(&server).await;
     batch.bind(&keys(&["spend:key:a"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("7".to_owned())]));
     let mut held = server.hold_next_mget();
-    let mut fetchers = JoinSet::new();
-    let fetching = Arc::clone(&batch);
-    let fetcher = fetchers.spawn(async move { fetching.read("spend:key:a").await });
+    let mut readers = JoinSet::new();
+    let reader_batch = Arc::clone(&batch);
+    let abort_handle = readers.spawn(async move { reader_batch.read("spend:key:a").await });
     held.wait_arrived().await;
-    let mut waiters = JoinSet::new();
-    let waiting = Arc::clone(&batch);
-    waiters.spawn(async move { waiting.read("spend:key:a").await });
-    tokio::task::yield_now().await;
-    let _aborted = fetcher.abort();
-    let cancelled = fetchers.join_next().await.expect("the fetcher runs");
+    let mut waiting_reads = JoinSet::new();
+    let waiting_batch = Arc::clone(&batch);
+    waiting_reads.spawn(async move { waiting_batch.read("spend:key:a").await });
+    yield_now().await;
+    abort_handle.abort();
+    let cancelled = readers.join_next().await.expect("the fetcher runs");
     assert!(cancelled.is_err(), "the first reader is aborted");
     held.release();
-    assert_eq!(join_read(&mut waiters).await, None);
+    assert_eq!(join_read(&mut waiting_reads).await, None);
     assert_eq!(server.mget_keys().len(), 1);
 }
 
@@ -274,39 +298,33 @@ async fn overlapping_fetches_never_strand_a_late_reader() {
     server.script_mget(Reply::Array(vec![Reply::Bulk("2".to_owned())]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("2".to_owned())]));
     let mut held = server.hold_next_mget();
-    let mut fetchers = JoinSet::new();
-    let fetching = Arc::clone(&batch);
-    let fetcher = fetchers.spawn(async move { fetching.read("spend:key:a").await });
+    let mut readers = JoinSet::new();
+    let reader_batch = Arc::clone(&batch);
+    let abort_handle = readers.spawn(async move { reader_batch.read("spend:key:a").await });
     held.wait_arrived().await;
     batch.bind(&keys(&["spend:key:b"]));
-    let mut waiters = JoinSet::new();
-    let waiting = Arc::clone(&batch);
-    waiters.spawn(async move { waiting.read("spend:key:a").await });
-    tokio::task::yield_now().await;
-    let _aborted = fetcher.abort();
+    let mut waiting_reads = JoinSet::new();
+    let waiting_batch = Arc::clone(&batch);
+    waiting_reads.spawn(async move { waiting_batch.read("spend:key:a").await });
+    yield_now().await;
+    abort_handle.abort();
     assert!(
-        fetchers
+        readers
             .join_next()
             .await
             .expect("the fetcher runs")
             .is_err()
     );
     held.release();
-    assert_eq!(join_read(&mut waiters).await, None);
+    assert_eq!(join_read(&mut waiting_reads).await, None);
     assert_eq!(
-        batch
-            .read("spend:key:b")
-            .await
-            .expect("the late read succeeds"),
+        read_amount(&batch, "spend:key:b").await,
         Some(SpendCounterValue::Amount(decimal("2")))
     );
     batch.bind(&keys(&["spend:key:c"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk("3".to_owned())]));
     assert_eq!(
-        batch
-            .read("spend:key:c")
-            .await
-            .expect("the later fetch succeeds"),
+        read_amount(&batch, "spend:key:c").await,
         Some(SpendCounterValue::Amount(decimal("3")))
     );
     assert_eq!(server.mget_keys().len(), 3);
