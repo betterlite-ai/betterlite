@@ -157,12 +157,20 @@ async fn the_sdk_request_is_signed_once() {
         "a disabled retry config makes exactly one exchange"
     );
     let (uri, headers) = &calls[0];
+    assert_request_target(uri);
+    assert_signed_headers(headers);
+}
+
+fn assert_request_target(uri: &str) {
     assert!(
         uri.starts_with("https://bedrock-runtime.eu-west-1.amazonaws.com/model/"),
         "{uri}"
     );
     assert!(uri.contains("eu.amazon.nova-sonic-v1"), "{uri}");
     assert!(uri.ends_with("/invoke-with-bidirectional-stream"), "{uri}");
+}
+
+fn assert_signed_headers(headers: &[(String, String)]) {
     let authorization = header_value(headers, "authorization").expect("the request is signed");
     assert!(
         authorization.contains("Credential=AKIDSIGNEDFIXTURE/"),

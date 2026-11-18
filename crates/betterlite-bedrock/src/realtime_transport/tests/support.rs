@@ -84,6 +84,13 @@ pub(super) fn stream_error(message: &str, source: FakeError) -> StreamError<Fake
     }
 }
 
+fn close_error() -> StreamError<FakeError> {
+    stream_error(
+        "the SDK close failed",
+        FakeError::new("CloseError", "the SDK close failed"),
+    )
+}
+
 pub(super) struct CountingIds {
     next: Mutex<u128>,
 }
@@ -128,9 +135,6 @@ pub(super) fn auth(access: &str, secret: &str, token: Option<&str>) -> AuthParam
 
 pub(super) fn full_auth() -> AuthParams {
     AuthParams {
-        aws_access_key_id: Some(SecretString::from(ACCESS.to_owned())),
-        aws_secret_access_key: Some(SecretString::from(SECRET.to_owned())),
-        aws_session_token: Some(SecretString::from(TOKEN.to_owned())),
         aws_session_name: Some("fixture-session".to_owned()),
         aws_profile_name: Some("fixture-profile".to_owned()),
         aws_role_name: Some("fixture-role".to_owned()),
@@ -138,6 +142,7 @@ pub(super) fn full_auth() -> AuthParams {
         aws_sts_endpoint: Some("https://sts.fixture.example".to_owned()),
         aws_external_id: Some("fixture-external".to_owned()),
         aws_session_tags: Some(full_session_tags()),
+        ..auth(ACCESS, SECRET, Some(TOKEN))
     }
 }
 
@@ -159,22 +164,6 @@ pub(super) struct RecordedConfig {
     pub(super) access_key_id: String,
     pub(super) secret_access_key: String,
     pub(super) session_token: Option<String>,
-}
-
-impl RecordedConfig {
-    fn new(config: &RuntimeConfig) -> Self {
-        Self {
-            endpoint_uri: config.endpoint_uri.clone(),
-            region: config.region.clone(),
-            access_key_id: config.credentials.access_key_id.expose_secret().to_owned(),
-            secret_access_key: config
-                .credentials
-                .secret_access_key
-                .expose_secret()
-                .to_owned(),
-            session_token: secret_text(config.credentials.session_token.as_ref()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,6 +212,13 @@ enum ResolveMode {
     Echo,
 }
 
+impl Default for ResolveMode {
+    fn default() -> Self {
+        Self::Fixed(Ok(None))
+    }
+}
+
+#[derive(Default)]
 struct ResolveState {
     mode: Mutex<ResolveMode>,
     calls: Mutex<Vec<RecordedResolve>>,
@@ -246,20 +242,20 @@ impl FakeCredentials {
     }
 
     pub(super) fn echoing() -> Self {
-        Self {
-            state: Arc::new(ResolveState {
-                mode: Mutex::new(ResolveMode::Echo),
-                calls: Mutex::new(Vec::new()),
-            }),
-        }
+        Self::with_mode(ResolveMode::Echo)
     }
 
     fn fixed(outcome: Result<Option<Credentials>, CredentialError>) -> Self {
+        Self::with_mode(ResolveMode::Fixed(outcome))
+    }
+
+    fn with_mode(mode: ResolveMode) -> Self {
+        let state = ResolveState {
+            mode: Mutex::new(mode),
+            ..ResolveState::default()
+        };
         Self {
-            state: Arc::new(ResolveState {
-                mode: Mutex::new(ResolveMode::Fixed(outcome)),
-                calls: Mutex::new(Vec::new()),
-            }),
+            state: Arc::new(state),
         }
     }
 
@@ -292,15 +288,14 @@ impl RealtimeCredentials for FakeCredentials {
             ResolveMode::Fixed(outcome) => {
                 std::mem::replace(outcome, Err(CredentialError::MissingCredentials))
             }
-            ResolveMode::Echo => {
-                let access = secret_text(settings.access_key_id.as_ref());
-                let secret = secret_text(settings.secret_access_key.as_ref());
-                let (Some(access), Some(secret)) = (access, secret) else {
-                    return Ok(None);
-                };
-                let token = secret_text(settings.session_token.as_ref());
-                Ok(Some(credentials(&access, &secret, token.as_deref())))
-            }
+            ResolveMode::Echo => match (&settings.access_key_id, &settings.secret_access_key) {
+                (Some(access), Some(secret)) => Ok(Some(Credentials {
+                    access_key_id: access.clone(),
+                    secret_access_key: secret.clone(),
+                    session_token: settings.session_token.clone(),
+                })),
+                _ => Ok(None),
+            },
         }
     }
 }
@@ -311,7 +306,7 @@ pub(super) enum Chunk {
     End,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct StreamPlan {
     chunks: Vec<Chunk>,
     receive_failure: Option<usize>,
@@ -323,9 +318,7 @@ impl StreamPlan {
     pub(super) fn new(chunks: Vec<Chunk>) -> Self {
         Self {
             chunks,
-            receive_failure: None,
-            block_receive: false,
-            send_failures: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -364,6 +357,7 @@ impl StreamProfile {
     }
 }
 
+#[derive(Default)]
 struct RuntimeState {
     configs: Mutex<Vec<RecordedConfig>>,
     invocations: Mutex<Vec<String>>,
@@ -375,26 +369,12 @@ struct RuntimeState {
     close_failure: AtomicBool,
 }
 
+#[derive(Default)]
 pub(super) struct FakeRuntime {
     state: Arc<RuntimeState>,
 }
 
 impl FakeRuntime {
-    pub(super) fn new() -> Self {
-        Self {
-            state: Arc::new(RuntimeState {
-                configs: Mutex::new(Vec::new()),
-                invocations: Mutex::new(Vec::new()),
-                plan: Mutex::new(StreamPlan::new(Vec::new())),
-                connect_failure: Mutex::new(None),
-                invoke_failure: Mutex::new(None),
-                stream: Mutex::new(None),
-                closes: AtomicUsize::new(0),
-                close_failure: AtomicBool::new(false),
-            }),
-        }
-    }
-
     pub(super) fn with_plan(mut self, plan: StreamPlan) -> Self {
         self.state_mut().plan = Mutex::new(plan);
         self
@@ -440,12 +420,13 @@ impl FakeRuntime {
     }
 
     pub(super) fn stream(&self) -> StreamProfile {
-        self.state
+        let stream = self
+            .state
             .stream
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .expect("the runtime opened a stream")
+            .clone();
+        stream.expect("the runtime opened a stream")
     }
 }
 
@@ -456,11 +437,22 @@ impl RealtimeRuntime for FakeRuntime {
         &self,
         config: RuntimeConfig,
     ) -> Result<Box<dyn RealtimeClient<Error = FakeError>>, StreamError<FakeError>> {
+        let recorded = RecordedConfig {
+            endpoint_uri: config.endpoint_uri.clone(),
+            region: config.region.clone(),
+            access_key_id: config.credentials.access_key_id.expose_secret().to_owned(),
+            secret_access_key: config
+                .credentials
+                .secret_access_key
+                .expose_secret()
+                .to_owned(),
+            session_token: secret_text(config.credentials.session_token.as_ref()),
+        };
         self.state
             .configs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedConfig::new(&config));
+            .push(recorded);
         let failure = self
             .state
             .connect_failure
@@ -485,12 +477,9 @@ impl ClosableBedrockRuntimeClient for FakeRuntimeClient {
     type Error = FakeError;
 
     async fn close(&self) -> Result<(), StreamError<FakeError>> {
-        self.state.closes.fetch_add(1, Ordering::SeqCst);
+        let _previous = self.state.closes.fetch_add(1, Ordering::SeqCst);
         if self.state.close_failure.load(Ordering::SeqCst) {
-            return Err(stream_error(
-                "the SDK close failed",
-                FakeError::new("CloseError", "the SDK close failed"),
-            ));
+            return Err(close_error());
         }
         Ok(())
     }
@@ -690,6 +679,7 @@ pub(super) enum ReceiveStep {
     Pending,
 }
 
+#[derive(Default)]
 struct ClientState {
     receives: Mutex<VecDeque<ReceiveStep>>,
     sent: Mutex<Vec<String>>,
@@ -697,20 +687,20 @@ struct ClientState {
     closes: Mutex<Vec<(u16, Option<String>)>>,
 }
 
+#[derive(Default)]
 pub(super) struct ScriptedClient {
     state: Arc<ClientState>,
 }
 
 impl ScriptedClient {
     pub(super) fn scripted(steps: Vec<ReceiveStep>) -> Self {
-        Self {
-            state: Arc::new(ClientState {
-                receives: Mutex::new(steps.into_iter().collect()),
-                sent: Mutex::new(Vec::new()),
-                send_failure: None,
-                closes: Mutex::new(Vec::new()),
-            }),
-        }
+        let client = Self::default();
+        *client
+            .state
+            .receives
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = steps.into_iter().collect();
+        client
     }
 
     pub(super) fn failing_send(mut self, index: usize) -> Self {
@@ -829,6 +819,14 @@ pub(super) struct RunResult {
     pub(super) scope: EventScope,
 }
 
+fn resolved_credentials() -> FakeCredentials {
+    FakeCredentials::returning(credentials(
+        RESOLVED_ACCESS,
+        RESOLVED_SECRET,
+        Some(RESOLVED_TOKEN),
+    ))
+}
+
 pub(super) struct Fixture {
     pub(super) ids: CountingIds,
     pub(super) redactor: Redactor,
@@ -841,16 +839,17 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
+        let ids = CountingIds::new();
+        let redactor = redactor();
+        let client = ScriptedClient::scripted(Vec::new());
+        let runtime = FakeRuntime::default();
+        let credentials = resolved_credentials();
         Self {
-            ids: CountingIds::new(),
-            redactor: redactor(),
-            client: ScriptedClient::scripted(Vec::new()),
-            runtime: FakeRuntime::new(),
-            credentials: FakeCredentials::returning(credentials(
-                RESOLVED_ACCESS,
-                RESOLVED_SECRET,
-                Some(RESOLVED_TOKEN),
-            )),
+            ids,
+            redactor,
+            client,
+            runtime,
+            credentials,
             logging: FakeLogging::default(),
             queue: FakeQueue::new(true),
         }

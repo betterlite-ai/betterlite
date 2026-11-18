@@ -19,13 +19,17 @@ use crate::signing::target::RegionInputs;
 
 pub(super) async fn bidirectional_runtime_target() {
     committed_scope_rejects_before_preparation().await;
+    region_selection().await;
+    endpoint_precedence().await;
+    model_id_is_passed_through().await;
+}
+
+async fn region_selection() {
     explicit_region_is_retained().await;
     an_empty_explicit_region_is_retained().await;
     region_falls_back_through_the_environment().await;
     an_invalid_environment_region_is_rejected().await;
     region_falls_back_through_the_model_arn().await;
-    endpoint_precedence().await;
-    model_id_is_passed_through().await;
 }
 
 async fn config_for(fixture: &mut Fixture, options: Options<'_>) -> RecordedConfig {
@@ -250,8 +254,7 @@ pub(super) async fn initial_session_configuration() {
     pending_update_suppresses_the_created_event().await;
     empty_pending_still_suppresses_the_created_event().await;
     fresh_transformation_state().await;
-    open_failure_escapes_and_closes().await;
-    created_failure_escapes_and_closes().await;
+    initial_failures_escape_and_close().await;
 }
 
 async fn created_event_when_nothing_is_pending() {
@@ -342,15 +345,17 @@ async fn fresh_transformation_state() {
     assert!(state.current_delta_type.is_none());
 }
 
-async fn open_failure_escapes_and_closes() {
+async fn initial_failures_escape_and_close() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().failing_invoke(stream_error(
+    fixture.runtime = FakeRuntime::default().failing_invoke(stream_error(
         "the invoke failed",
         FakeError::new("AccessDeniedException", "the fixture denied the invoke"),
     ));
     let result = fixture.run(Options::default()).await;
     let error = result.outcome.unwrap_err();
-    assert!(matches!(error, RealtimeTransportError::Stream(_)));
+    assert!(
+        matches!(&error, RealtimeTransportError::Stream(inner) if inner.message == "the invoke failed")
+    );
     assert_eq!(error.status_code(), None);
     assert!(
         fixture.client.sends().is_empty(),
@@ -358,17 +363,17 @@ async fn open_failure_escapes_and_closes() {
     );
     assert_eq!(fixture.runtime.closes(), 1);
     assert_eq!(fixture.runtime.invocations(), vec![MODEL.to_owned()]);
-}
 
-async fn created_failure_escapes_and_closes() {
-    let mut fixture = Fixture::new();
-    fixture.client = ScriptedClient::scripted(Vec::new()).failing_send(0);
-    let result = fixture.run(Options::default()).await;
-    let error = result.outcome.unwrap_err();
-    assert!(matches!(error, RealtimeTransportError::Client(_)));
-    assert_eq!(fixture.client.sends().len(), 1);
-    assert_eq!(fixture.runtime.closes(), 1);
-    assert!(fixture.runtime.stream().sent().is_empty());
+    let mut created = Fixture::new();
+    created.client = ScriptedClient::scripted(Vec::new()).failing_send(0);
+    let result = created.run(Options::default()).await;
+    assert!(matches!(
+        result.outcome.unwrap_err(),
+        RealtimeTransportError::Client(_)
+    ));
+    assert_eq!(created.client.sends().len(), 1);
+    assert_eq!(created.runtime.closes(), 1);
+    assert!(created.runtime.stream().sent().is_empty());
 }
 
 pub(super) async fn credential_failure() {
@@ -480,7 +485,7 @@ fn usage_plan() -> StreamPlan {
 
 async fn leftover_usage_is_logged() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().with_plan(usage_plan());
+    fixture.runtime = FakeRuntime::default().with_plan(usage_plan());
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let dispatched = fixture.logging.dispatched();
@@ -508,7 +513,7 @@ async fn leftover_usage_is_logged() {
 
 async fn rejected_enqueue_leaves_the_flag_unset() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().with_plan(usage_plan());
+    fixture.runtime = FakeRuntime::default().with_plan(usage_plan());
     fixture.queue = FakeQueue::new(false);
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -536,7 +541,7 @@ async fn provider_failure_is_raised_after_logging() {
         ReceiveStep::Frame(SESSION_UPDATE),
         ReceiveStep::Pending,
     ]);
-    fixture.runtime = FakeRuntime::new().with_plan(
+    fixture.runtime = FakeRuntime::default().with_plan(
         StreamPlan::new(vec![
             Chunk::Text(CONTENT_START),
             Chunk::Text(TEXT_OUTPUT),
@@ -570,7 +575,8 @@ async fn provider_failure_is_raised_after_logging() {
 
 async fn a_failure_after_the_client_left_is_logged() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
+    fixture.runtime =
+        FakeRuntime::default().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
     let (captured, _guard) = capture();
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -591,14 +597,13 @@ pub(super) async fn session_close_sequence() {
     close_after_created_failure().await;
     close_after_provider_failure().await;
     close_failure_is_suppressed().await;
-    provider_failure_never_closes_the_client().await;
     a_normal_provider_end_closes_the_client().await;
     a_cancelled_client_pump_half_closes_the_input().await;
 }
 
 async fn a_connect_failure_has_nothing_to_close() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().failing_connect(stream_error(
+    fixture.runtime = FakeRuntime::default().failing_connect(stream_error(
         "the connection failed",
         FakeError::new("ConnectorError", "the fixture refused the connection"),
     ));
@@ -623,12 +628,19 @@ async fn close_after_success() {
 
 async fn close_after_open_failure() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().failing_invoke(stream_error(
+    fixture.runtime = FakeRuntime::default().failing_invoke(stream_error(
         "the invoke failed",
         FakeError::new("ValidationException", "the fixture refused the model"),
     ));
     let result = fixture.run(Options::default()).await;
-    assert!(result.outcome.is_err());
+    assert!(
+        matches!(
+            result.outcome.unwrap_err(),
+            RealtimeTransportError::Stream(_)
+        ),
+        "the failed open stays the stream error"
+    );
+    assert_eq!(fixture.runtime.invocations(), vec![MODEL.to_owned()]);
     assert_eq!(fixture.runtime.closes(), 1);
     assert!(fixture.client.closes().is_empty());
 }
@@ -644,16 +656,24 @@ async fn close_after_created_failure() {
 async fn close_after_provider_failure() {
     let mut fixture = Fixture::new();
     fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Pending]);
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
+    fixture.runtime =
+        FakeRuntime::default().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
     let result = fixture.run(Options::default()).await;
-    assert!(result.outcome.is_err());
+    assert!(matches!(
+        result.outcome.unwrap_err(),
+        RealtimeTransportError::Provider(_)
+    ));
     assert_eq!(fixture.runtime.closes(), 1);
     assert!(fixture.runtime.stream().closed());
+    assert!(
+        fixture.client.closes().is_empty(),
+        "a provider failure never forces the client closed"
+    );
 }
 
 async fn close_failure_is_suppressed() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().failing_close();
+    fixture.runtime = FakeRuntime::default().failing_close();
     let result = fixture.run(Options::default()).await;
     assert!(
         result.outcome.is_ok(),
@@ -662,7 +682,7 @@ async fn close_failure_is_suppressed() {
     assert_eq!(fixture.runtime.closes(), 1);
 
     let mut failed = Fixture::new();
-    failed.runtime = FakeRuntime::new()
+    failed.runtime = FakeRuntime::default()
         .failing_close()
         .failing_invoke(stream_error(
             "the invoke failed",
@@ -673,19 +693,10 @@ async fn close_failure_is_suppressed() {
     assert!(matches!(error, RealtimeTransportError::Stream(_)));
 }
 
-async fn provider_failure_never_closes_the_client() {
-    let mut fixture = Fixture::new();
-    fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Pending]);
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
-    let result = fixture.run(Options::default()).await;
-    assert!(result.outcome.is_err());
-    assert!(fixture.client.closes().is_empty());
-}
-
 async fn a_normal_provider_end_closes_the_client() {
     let mut fixture = Fixture::new();
     fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Pending]);
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(vec![Chunk::End]));
+    fixture.runtime = FakeRuntime::default().with_plan(StreamPlan::new(vec![Chunk::End]));
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert_eq!(fixture.client.closes(), vec![(1000, None)]);
@@ -697,7 +708,7 @@ async fn a_cancelled_client_pump_half_closes_the_input() {
         ReceiveStep::Frame(SESSION_UPDATE),
         ReceiveStep::Pending,
     ]);
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(vec![Chunk::End]));
+    fixture.runtime = FakeRuntime::default().with_plan(StreamPlan::new(vec![Chunk::End]));
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert!(fixture.runtime.stream().closed());
@@ -724,7 +735,7 @@ pub(super) async fn bridge_completion_race() {
 async fn the_client_failure_wins() {
     let mut fixture = Fixture::new();
     fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Frame(SESSION_UPDATE)]);
-    fixture.runtime = FakeRuntime::new().with_plan(
+    fixture.runtime = FakeRuntime::default().with_plan(
         StreamPlan::new(Vec::new())
             .failing_send(0)
             .failing_receive(0),
@@ -744,7 +755,8 @@ async fn the_client_failure_wins() {
 async fn a_provider_failure_maps_to_bedrock() {
     let mut fixture = Fixture::new();
     fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Pending]);
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
+    fixture.runtime =
+        FakeRuntime::default().with_plan(StreamPlan::new(Vec::new()).failing_receive(0));
     let result = fixture.run(Options::default()).await;
     let error = result.outcome.unwrap_err();
     assert_eq!(error.status_code(), Some(424));
@@ -755,7 +767,7 @@ async fn a_provider_failure_maps_to_bedrock() {
 
 async fn cancellation_is_not_a_failure() {
     let mut fixture = Fixture::new();
-    fixture.runtime = FakeRuntime::new().with_plan(StreamPlan::new(Vec::new()).blocking());
+    fixture.runtime = FakeRuntime::default().with_plan(StreamPlan::new(Vec::new()).blocking());
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert!(fixture.runtime.stream().closed());
@@ -769,7 +781,7 @@ async fn cancellation_is_not_a_failure() {
 async fn events_collected_before_the_failure_are_kept() {
     let mut fixture = Fixture::new();
     fixture.client = ScriptedClient::scripted(vec![ReceiveStep::Pending]);
-    fixture.runtime = FakeRuntime::new().with_plan(
+    fixture.runtime = FakeRuntime::default().with_plan(
         StreamPlan::new(vec![
             Chunk::Text(CONTENT_START),
             Chunk::Text(TEXT_OUTPUT),

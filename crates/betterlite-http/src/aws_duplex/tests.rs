@@ -97,7 +97,13 @@ async fn next_chunk(body: &mut SdkBody) -> Bytes {
     next_frame(body).await.unwrap().into_data().unwrap()
 }
 
-async fn serve_interleaved(listener: TcpListener, report: mpsc::Sender<String>) {
+#[derive(Clone, Copy)]
+enum Peer {
+    Interleaved,
+    Cancel,
+}
+
+async fn serve(listener: TcpListener, report: mpsc::Sender<String>, mode: Peer) {
     let (socket, _) = listener.accept().await.unwrap();
     let mut connection = handshake(socket).await.unwrap();
     let mut streams = JoinSet::new();
@@ -106,7 +112,7 @@ async fn serve_interleaved(listener: TcpListener, report: mpsc::Sender<String>) 
             break;
         };
         let report = report.clone();
-        streams.spawn(async move { relay(request, respond, report).await });
+        streams.spawn(async move { relay(request, respond, report, mode).await });
     }
     while let Some(_joined) = streams.join_next().await {}
 }
@@ -115,6 +121,7 @@ async fn relay(
     request: http::Request<h2::RecvStream>,
     mut respond: h2::server::SendResponse<Bytes>,
     report: mpsc::Sender<String>,
+    mode: Peer,
 ) {
     let mut recv = request.into_body();
     let first = recv.data().await.unwrap().unwrap();
@@ -124,45 +131,25 @@ async fn relay(
         .insert("x-first", HeaderValue::from_static("yes"));
     let mut send = respond.send_response(head, false).unwrap();
     send.send_data(Bytes::from_static(b"one"), false).unwrap();
-    let second = recv.data().await.unwrap().unwrap();
-    send.send_data(Bytes::from_static(b"two"), true).unwrap();
-    let text = format!(
-        "{}|{}",
-        String::from_utf8(first.to_vec()).unwrap(),
-        String::from_utf8(second.to_vec()).unwrap()
-    );
-    let _sent = report.send(text).await;
-}
-
-async fn serve_cancel(listener: TcpListener, report: mpsc::Sender<String>) {
-    let (socket, _) = listener.accept().await.unwrap();
-    let mut connection = handshake(socket).await.unwrap();
-    let mut streams = JoinSet::new();
-    while let Some(result) = connection.accept().await {
-        let Ok((request, respond)) = result else {
-            break;
-        };
-        let report = report.clone();
-        streams.spawn(async move { relay_cancel(request, respond, report).await });
-    }
-    while let Some(_joined) = streams.join_next().await {}
-}
-
-async fn relay_cancel(
-    request: http::Request<h2::RecvStream>,
-    mut respond: h2::server::SendResponse<Bytes>,
-    report: mpsc::Sender<String>,
-) {
-    let mut recv = request.into_body();
-    let first = recv.data().await.unwrap().unwrap();
-    let mut send = respond.send_response(HeadResponse::new(()), false).unwrap();
-    send.send_data(Bytes::from_static(b"one"), false).unwrap();
-    let closed = match recv.data().await {
-        Some(Ok(_)) => "data",
-        Some(Err(_)) => "reset",
-        None => "end",
+    let text = match mode {
+        Peer::Interleaved => {
+            let second = recv.data().await.unwrap().unwrap();
+            send.send_data(Bytes::from_static(b"two"), true).unwrap();
+            format!(
+                "{}|{}",
+                String::from_utf8(first.to_vec()).unwrap(),
+                String::from_utf8(second.to_vec()).unwrap()
+            )
+        }
+        Peer::Cancel => {
+            let closed = match recv.data().await {
+                Some(Ok(_)) => "data",
+                Some(Err(_)) => "reset",
+                None => "end",
+            };
+            format!("{}|{closed}", String::from_utf8(first.to_vec()).unwrap())
+        }
     };
-    let text = format!("{}|{closed}", String::from_utf8(first.to_vec()).unwrap());
     let _sent = report.send(text).await;
 }
 
@@ -171,7 +158,7 @@ async fn aws_duplex_interleaved_events() {
     let (listener, url) = listen().await;
     let (report, mut reports) = mpsc::channel(1);
     let mut server = JoinSet::new();
-    server.spawn(serve_interleaved(listener, report));
+    server.spawn(serve(listener, report, Peer::Interleaved));
     let proxied = client();
     let connector = AwsDuplexClient::from_proxied(&proxied).connector();
     let (sender, body) = channel_body(4);
@@ -201,7 +188,7 @@ async fn aws_duplex_cancel_reaps_io() {
     let (listener, url) = listen().await;
     let (report, mut reports) = mpsc::channel(1);
     let mut server = JoinSet::new();
-    server.spawn(serve_cancel(listener, report));
+    server.spawn(serve(listener, report, Peer::Cancel));
     let proxied = client();
     let connector = AwsDuplexClient::from_proxied(&proxied).connector();
     let (sender, body) = channel_body(4);

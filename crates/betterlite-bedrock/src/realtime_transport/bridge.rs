@@ -1,4 +1,6 @@
 use std::error::Error as StdError;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -48,92 +50,113 @@ where
     pub client_disconnected: bool,
 }
 
-impl<C, S> Bridge<'_, C, S>
+impl<'run, C, S> Bridge<'run, C, S>
 where
     C: StdError + Send + Sync + 'static,
     S: StdError + Send + Sync + 'static,
 {
     // Both directions run in this future; whichever finishes first cancels the other and then both are joined
     pub async fn run(self) -> BridgeRuns<S> {
-        let Bridge {
-            client,
-            stream,
-            shared,
-            scope,
-            state,
-            model,
-            trace_id,
-            ids,
-            redactor,
-            logged_types,
-            initial,
-        } = self;
         let cancel = CancellationToken::new();
         let mut logged = RecordedEvents::default();
-        let mut client_pump = ClientForward {
-            client,
-            stream,
-            shared,
-            scope,
-            model,
-            trace_id: Some(trace_id),
-            ids,
-            redactor,
-            initial,
-            cancel: &cancel,
-        };
-        let mut provider_pump = ProviderForward {
-            stream,
-            client,
-            shared,
-            state,
-            logged: &mut logged,
-            logged_types,
-            ids,
-            redactor,
-            cancel: &cancel,
-        };
+        let (mut client_pump, mut provider_pump) = self.pumps(&cancel, &mut logged);
         let mut client_future = Box::pin(client_pump.forward_client_to_bedrock());
         let mut provider_future = Box::pin(provider_pump.forward_bedrock_to_client());
         let mut client_outcome = None;
         let mut provider_outcome = None;
-        match select(client_future.as_mut(), provider_future.as_mut()).await {
-            Either::Left((outcome, _pending)) => client_outcome = Some(outcome),
-            Either::Right((outcome, _pending)) => provider_outcome = Some(outcome),
-        }
-        // The source's wait also collects a task that finished in the same loop iteration; one poll reads it before the cancel
-        if client_outcome.is_none() {
-            if let Either::Left((outcome, _ready)) =
-                select(client_future.as_mut(), std::future::ready(())).await
-            {
-                client_outcome = Some(outcome);
-            }
-        }
-        if provider_outcome.is_none() {
-            if let Either::Left((outcome, _ready)) =
-                select(provider_future.as_mut(), std::future::ready(())).await
-            {
-                provider_outcome = Some(outcome);
-            }
-        }
+        settle(
+            Pin::as_mut(&mut client_future),
+            Pin::as_mut(&mut provider_future),
+            &mut client_outcome,
+            &mut provider_outcome,
+        )
+        .await;
         let client_disconnected = matches!(client_outcome, Some(Ok(ForwardEnd::Ended)));
         cancel.cancel();
-        if client_outcome.is_none() {
-            client_outcome = Some(client_future.await);
-        }
-        if provider_outcome.is_none() {
-            provider_outcome = Some(provider_future.await);
-        }
-        drop(client_future);
-        drop(provider_future);
+        let client = finish(client_future, client_outcome).await;
+        let provider = finish(provider_future, provider_outcome).await;
         drop(client_pump);
         drop(provider_pump);
         BridgeRuns {
             logged_events: logged.events,
-            client: client_outcome.unwrap_or(Ok(ForwardEnd::Cancelled)),
-            provider: provider_outcome.unwrap_or(Ok(ForwardEnd::Cancelled)),
+            client,
+            provider,
             client_disconnected,
         }
+    }
+
+    fn pumps<'cancel>(
+        self,
+        cancel: &'cancel CancellationToken,
+        logged: &'cancel mut RecordedEvents,
+    ) -> (ClientForward<'cancel, C, S>, ProviderForward<'cancel, C, S>)
+    where
+        'run: 'cancel,
+    {
+        let client = ClientForward {
+            client: self.client,
+            stream: self.stream,
+            shared: self.shared,
+            scope: self.scope,
+            model: self.model,
+            trace_id: Some(self.trace_id),
+            ids: self.ids,
+            redactor: self.redactor,
+            initial: self.initial,
+            cancel,
+        };
+        let provider = ProviderForward {
+            stream: self.stream,
+            client: self.client,
+            shared: self.shared,
+            state: self.state,
+            logged,
+            logged_types: self.logged_types,
+            ids: self.ids,
+            redactor: self.redactor,
+            cancel,
+        };
+        (client, provider)
+    }
+}
+
+// The source's wait also collects a task that finished in the same loop iteration; one poll reads it before the cancel
+async fn settle<A, B, T, U>(
+    mut client: Pin<&mut A>,
+    mut provider: Pin<&mut B>,
+    client_outcome: &mut Option<T>,
+    provider_outcome: &mut Option<U>,
+) where
+    A: Future<Output = T>,
+    B: Future<Output = U>,
+{
+    match select(client.as_mut(), provider.as_mut()).await {
+        Either::Left((outcome, _pending)) => *client_outcome = Some(outcome),
+        Either::Right((outcome, _pending)) => *provider_outcome = Some(outcome),
+    }
+    if client_outcome.is_none() {
+        if let Either::Left((outcome, _ready)) =
+            select(client.as_mut(), std::future::ready(())).await
+        {
+            *client_outcome = Some(outcome);
+        }
+    }
+    if provider_outcome.is_none() {
+        if let Either::Left((outcome, _ready)) =
+            select(provider.as_mut(), std::future::ready(())).await
+        {
+            *provider_outcome = Some(outcome);
+        }
+    }
+}
+
+async fn finish<F>(future: F, settled: Option<F::Output>) -> F::Output
+where
+    F: Future,
+{
+    match settled {
+        Some(outcome) => outcome,
+        None => future.await,
     }
 }
 

@@ -4,9 +4,13 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use aws_sdk_bedrockruntime::Client;
+// ast-grep-ignore: no-long-names
 use aws_sdk_bedrockruntime::types::error::InvokeModelWithBidirectionalStreamInputError as InputError;
 use aws_sdk_bedrockruntime::types::{
-    BidirectionalInputPayloadPart, InvokeModelWithBidirectionalStreamInput as InputEvent,
+    BidirectionalInputPayloadPart,
+    // ast-grep-ignore: no-long-names
+    InvokeModelWithBidirectionalStreamInput as InputEvent,
+    // ast-grep-ignore: no-long-names
     InvokeModelWithBidirectionalStreamOutput as OutputEvent,
 };
 use aws_smithy_http::event_stream::EventStreamSender;
