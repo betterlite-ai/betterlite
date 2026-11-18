@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str;
 
 use rstest::rstest;
 
@@ -141,7 +142,7 @@ fn replays_the_spend_queue_setting_corpus(
     #[files("fuzz/corpus/spend_queue_setting/*")] path: PathBuf,
 ) {
     let bytes = fs::read(path).unwrap();
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+    let Ok(text) = str::from_utf8(&bytes) else {
         return;
     };
     for name in [
