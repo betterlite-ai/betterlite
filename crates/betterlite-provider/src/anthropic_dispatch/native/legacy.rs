@@ -1,6 +1,8 @@
 use betterlite_anthropic::completion::stream::chunk_parser;
+use futures_util::{FutureExt as _, TryFutureExt as _};
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::future::ready;
 
 use betterlite_anthropic::completion::{
     error::CompletionError,
@@ -102,14 +104,9 @@ where
                     status_code: response.status,
                     body: &response.body,
                 };
+                let envelope = ChatResponse::try_from(call)?;
                 Ok(Reply::Buffered(Box::new(
-                    transform_response(
-                        &source,
-                        &input,
-                        ChatResponse::try_from(call)?,
-                        &call.encoding,
-                    )
-                    .await?,
+                    transform_response(&source, &input, envelope, &call.encoding).await?,
                 )))
             }
         }
@@ -126,20 +123,22 @@ where
     ClientFailure: StdError + Send + Sync + 'static,
     FileFailure: StdError + Send + Sync + 'static,
 {
-    Box::pin(async move {
-        let mut optional = call.optional_params.clone();
-        let extra_body = match optional.shift_remove("extra_body") {
-            None | Some(Json::Null) => IndexMap::new(),
-            Some(Json::Object(fields)) => fields,
-            Some(_) => return Err(Failure::ExtraBody),
-        };
-        let mut body = transform_request(source, &call.model, messages, optional, defaults).await?;
-        body.extend(extra_body);
-        if call.stream {
-            body.insert("stream".to_owned(), Json::Bool(true));
-        }
-        Ok(body)
-    })
+    let mut optional = call.optional_params.clone();
+    let extra_body = match optional.shift_remove("extra_body") {
+        None | Some(Json::Null) => IndexMap::new(),
+        Some(Json::Object(fields)) => fields,
+        Some(_) => return ready(Err(Failure::ExtraBody)).boxed_local(),
+    };
+    transform_request(source, &call.model, messages, optional, defaults)
+        .map_err(Failure::Legacy)
+        .map_ok(move |mut body| {
+            body.extend(extra_body);
+            if call.stream {
+                body.insert("stream".to_owned(), Json::Bool(true));
+            }
+            body
+        })
+        .boxed_local()
 }
 
 fn prepare<Client, ClientFailure, FileFailure>(

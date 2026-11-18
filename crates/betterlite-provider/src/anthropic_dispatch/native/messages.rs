@@ -12,6 +12,7 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_tokenizer::engine::Engine;
+use futures_util::{FutureExt as _, TryFutureExt as _};
 use secrecy::ExposeSecret as _;
 use std::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
@@ -75,29 +76,27 @@ where
     Client: ChatTransport,
     FileFailure: StdError + Send + Sync + 'static,
 {
-    Box::pin(async move {
-        let clients = ChatClients {
-            pooled: runtime.pooled,
-            supplied: call.client.as_ref().map(|client| SuppliedChatClient {
-                kind: client.kind,
-                transport: &client.transport,
-            }),
-        };
-        let deps = ChatDeps {
-            config,
-            clients,
-            state: log.state,
-            env: log.env,
-            stream_logger: runtime.stream_logger,
-            counter: Counter(call.encoding.clone()),
-            ids: runtime.ids,
-            max_event_bytes: runtime.max_event_bytes,
-            max_error_body_bytes: runtime.max_error_body_bytes,
-        };
-        chat_call(request, deps)
-            .await
-            .map_err(|source| Failure::Chat(Box::new(source)))
-    })
+    let clients = ChatClients {
+        pooled: runtime.pooled,
+        supplied: call.client.as_ref().map(|client| SuppliedChatClient {
+            kind: client.kind,
+            transport: &client.transport,
+        }),
+    };
+    let deps = ChatDeps {
+        config,
+        clients,
+        state: log.state,
+        env: log.env,
+        stream_logger: runtime.stream_logger,
+        counter: Counter(call.encoding.clone()),
+        ids: runtime.ids,
+        max_event_bytes: runtime.max_event_bytes,
+        max_error_body_bytes: runtime.max_error_body_bytes,
+    };
+    chat_call(request, deps)
+        .map_err(|source| Failure::Chat(Box::new(source)))
+        .boxed_local()
 }
 
 pub(super) fn complete<'call, Client, Source, Metadata, Fetcher, Blocks, Ids>(

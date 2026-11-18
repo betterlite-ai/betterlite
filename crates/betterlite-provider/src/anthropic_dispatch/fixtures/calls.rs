@@ -41,7 +41,7 @@ pub(super) fn run(input: &Input) -> HandlerFuture<'_, Observation, FixtureError>
             environment: &input.environment,
             custom_prompt_dict: &input.global_prompt_dict,
             disable_suffix: input.settings.disable_suffix,
-            selection: selection(input),
+            selection: selection(&input.provider, input.settings.config_present),
         };
         let mut handler = Recorder(input);
         let mut deps = DispatchDeps {
@@ -56,19 +56,16 @@ pub(super) fn run(input: &Input) -> HandlerFuture<'_, Observation, FixtureError>
     })
 }
 
-fn selection(input: &Input) -> Option<ChatConfigTag> {
-    input
-        .provider
-        .parse::<ProviderId>()
-        .ok()
-        .and_then(|provider| {
-            PROVIDER_CONFIG_ROWS
-                .direct
-                .iter()
-                .find(|(id, _tag)| *id == provider)
-                .map(|(_id, tag)| *tag)
-        })
-        .filter(|_tag| input.settings.config_present)
+fn selection(provider: &str, config_present: bool) -> Option<ChatConfigTag> {
+    if !config_present {
+        return None;
+    }
+    let id = provider.parse::<ProviderId>().ok()?;
+    PROVIDER_CONFIG_ROWS
+        .direct
+        .iter()
+        .find(|(candidate, _tag)| *candidate == id)
+        .map(|(_id, tag)| *tag)
 }
 
 fn invoke<'call>(
