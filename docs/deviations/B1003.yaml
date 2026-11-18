@@ -24,6 +24,14 @@ deviations:
       names the field rather than a pydantic ValidationError from another layer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L166-L169
   - what: >-
+      A speech bridge's headers map does not become request headers on the chat provider call; betterlite's chat call
+      sends only authorization, accept and organization.
+    why: >-
+      LiteLLM's bridge passes the headers into completion() (transformation.py:101), and completion() merges them into
+      the provider request. betterlite's chat executor builds its own header set, which this bridge cannot reach, so
+      the headers are dropped rather than applied, as docs/deviations/B203.yaml records for the text bridge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L695-L696
+  - what: >-
       A response audio data string that is not valid base64 fails with a typed SpeechAudioError whose message is
       CPython binascii's exact text; LiteLLM lets base64.b64decode raise binascii.Error.
     why: >-
