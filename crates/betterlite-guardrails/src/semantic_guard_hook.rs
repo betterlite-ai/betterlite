@@ -111,10 +111,7 @@ where
         if text.is_empty() {
             return Ok(());
         }
-        if let Some(failure) = self.check(&text, data).await? {
-            return Err(SemanticGuardHookError::Blocked(failure));
-        }
-        Ok(())
+        self.check(&text, data).await
     }
 
     pub async fn async_post_call_success_hook(
@@ -122,13 +119,11 @@ where
         data: &BTreeMap<String, GuardrailValue>,
         response: GuardrailValue,
     ) -> Result<GuardrailValue, SemanticGuardHookError<R::Error>> {
-        let text = text::response_text(&response);
-        if text.is_empty() {
+        let extracted = text::response_text(&response);
+        if extracted.is_empty() {
             return Ok(response);
         }
-        if let Some(failure) = self.check(&text, data).await? {
-            return Err(SemanticGuardHookError::Blocked(failure));
-        }
+        self.check(&extracted, data).await?;
         Ok(response)
     }
 
@@ -152,19 +147,19 @@ where
         &self,
         text: &str,
         data: &BTreeMap<String, GuardrailValue>,
-    ) -> Result<Option<GuardrailFailure>, SemanticGuardHookError<R::Error>> {
+    ) -> Result<(), SemanticGuardHookError<R::Error>> {
         let choices = self
             .router
             .score(text)
             .await
             .map_err(|source| SemanticGuardHookError::<R::Error>::Scoring { source })?;
         let Some(choice) = choices.first() else {
-            return Ok(None);
+            return Ok(());
         };
         let Some(route) = choice.name.as_deref().filter(|name| !name.is_empty()) else {
-            return Ok(None);
+            return Ok(());
         };
-        Ok(Some(self.match_failure(
+        Err(SemanticGuardHookError::Blocked(self.match_failure(
             route,
             choice.similarity_score,
             data,

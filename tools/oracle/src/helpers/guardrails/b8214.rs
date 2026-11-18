@@ -1,16 +1,11 @@
 use std::collections::BTreeMap;
-use std::convert::Infallible;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::local_ttl_cache::Settings as CacheSettings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::semantic_guard::semantic_guard_route_loading::builder::SemanticRouterBuilder;
-use betterlite_guardrails::semantic_guard::semantic_guard_route_loading::route::Route;
 use betterlite_guardrails::semantic_guard_hook::init::SemanticGuardArgs;
-use betterlite_guardrails::semantic_guard_hook::scoring::{RouteChoice, SemanticRouteScorer};
 use betterlite_guardrails::semantic_guard_hook::{
     GUARDRAIL_PROVIDER, SemanticGuardrail, load_routes,
 };
@@ -18,10 +13,13 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
+use scripted::{ScriptedBuilder, ScriptedRouter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::sync::Mutex;
+
+mod scripted;
 
 pub(crate) struct Op;
 
@@ -50,59 +48,6 @@ struct Call {
     call_type: String,
     matches: bool,
     response: Option<GuardrailValue>,
-}
-
-// the embedding service is the only step a case cannot run, so the case scripts which route the router answers
-struct ScriptedRouter {
-    route_name: Option<String>,
-    matches: Arc<Mutex<bool>>,
-    scored: Arc<Mutex<Vec<String>>>,
-}
-
-#[async_trait]
-impl SemanticRouteScorer for ScriptedRouter {
-    type Error = Infallible;
-
-    async fn score(&self, text: &str) -> Result<Vec<RouteChoice>, Self::Error> {
-        self.scored.lock().await.push(text.to_owned());
-        let matched = *self.matches.lock().await;
-        let choice = if matched {
-            RouteChoice {
-                name: self.route_name.clone(),
-                similarity_score: Some(1.0_f64),
-            }
-        } else {
-            RouteChoice {
-                name: None,
-                similarity_score: None,
-            }
-        };
-        Ok(vec![choice])
-    }
-}
-
-struct ScriptedBuilder {
-    matches: Arc<Mutex<bool>>,
-    scored: Arc<Mutex<Vec<String>>>,
-}
-
-#[async_trait]
-impl SemanticRouterBuilder for ScriptedBuilder {
-    type Router = ScriptedRouter;
-
-    type Error = Infallible;
-
-    async fn build(
-        &self,
-        routes: Vec<Route>,
-        _global_threshold: f64,
-    ) -> Result<Self::Router, Self::Error> {
-        Ok(ScriptedRouter {
-            route_name: routes.first().map(|route| route.name.clone()),
-            matches: Arc::clone(&self.matches),
-            scored: Arc::clone(&self.scored),
-        })
-    }
 }
 
 impl Helper for Op {

@@ -68,9 +68,11 @@ where
     fn from(error: SemanticGuardHookError<E>) -> Self {
         match error {
             SemanticGuardHookError::Blocked(failure) => failure,
-            other => Self::Http {
+            error @ (SemanticGuardHookError::Messages { .. }
+            | SemanticGuardHookError::Text { .. }
+            | SemanticGuardHookError::Scoring { .. }) => Self::Http {
                 status: INTERNAL_STATUS,
-                detail: other.to_string(),
+                detail: error.to_string(),
             },
         }
     }
