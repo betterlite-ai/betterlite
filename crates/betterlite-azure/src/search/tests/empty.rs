@@ -1,0 +1,161 @@
+use betterlite_openai::search::records::SearchResponse;
+use serde_json::json;
+
+use crate::search::{AzureSearchConfig, DOCS_URL, UPSTREAM_ERROR_STATUS};
+
+use super::support::{model_settings, transform};
+
+pub(super) fn empty_search_response() {
+    empty_outputs_succeed();
+    failed_status_always_raises();
+    incomplete_without_results_raises();
+    incomplete_with_results_succeeds();
+    the_envelope_requires_output();
+}
+
+fn empty_outputs_succeed() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let empty = transform(&config, r#"{"output": []}"#, 200, &[]).unwrap();
+    assert!(empty.results.is_empty());
+    assert_eq!(empty.object.0, "search");
+    let completed = json!({
+        "output": [],
+        "status": "completed",
+        "id": "resp-1",
+        "error": null,
+        "incomplete_details": null,
+        "metadata": {"a": 1}
+    })
+    .to_string();
+    let response: SearchResponse = transform(&config, &completed, 200, &[]).unwrap();
+    assert!(response.results.is_empty());
+}
+
+fn failed_status_always_raises() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let with_message = json!({
+        "output": [],
+        "status": "failed",
+        "error": {"message": "bing connection is down."}
+    })
+    .to_string();
+    let error = transform(&config, &with_message, 200, &[]).unwrap_err();
+    assert_eq!(error.status_code(), Some(UPSTREAM_ERROR_STATUS));
+    assert_eq!(
+        error.to_string(),
+        format!("Grounding with Bing Search: bing connection is down. See {DOCS_URL} for details.")
+    );
+    let without_message = json!({
+        "output": [{
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "ignored",
+                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
+            }]
+        }],
+        "status": "failed"
+    })
+    .to_string();
+    let error = transform(&config, &without_message, 200, &[]).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Grounding with Bing Search: the grounded search failed. See {DOCS_URL} for details."
+        )
+    );
+}
+
+fn incomplete_without_results_raises() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let reasoned = json!({
+        "output": [],
+        "status": "incomplete",
+        "incomplete_details": {"reason": "max_output_tokens"}
+    })
+    .to_string();
+    assert_incomplete(&config, &reasoned, "max_output_tokens");
+    assert_incomplete(
+        &config,
+        r#"{"output": [], "status": "incomplete"}"#,
+        "unknown reason",
+    );
+    let empty_reason = json!({
+        "output": [],
+        "status": "incomplete",
+        "incomplete_details": {"reason": ""}
+    })
+    .to_string();
+    assert_incomplete(&config, &empty_reason, "unknown reason");
+}
+
+fn assert_incomplete(config: &AzureSearchConfig<'_>, body: &str, reason: &str) {
+    let error = transform(config, body, 200, &[]).unwrap_err();
+    assert_eq!(error.status_code(), Some(UPSTREAM_ERROR_STATUS));
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Grounding with Bing Search: the grounded search was incomplete: {reason}. See {DOCS_URL} for details."
+        )
+    );
+}
+
+fn incomplete_with_results_succeeds() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let body = json!({
+        "output": [{
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "kept",
+                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
+            }]
+        }],
+        "status": "incomplete",
+        "incomplete_details": {"reason": "max_output_tokens"}
+    })
+    .to_string();
+    let response = transform(&config, &body, 200, &[]).unwrap();
+    assert_eq!(response.results.len(), 1_usize);
+}
+
+fn the_envelope_requires_output() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    assert_schema_failure(&config, r#"{"status": "completed"}"#, 200);
+    assert_schema_failure(&config, "{}", 200);
+    assert_schema_failure(&config, r#"{"output": null}"#, 200);
+    assert_schema_failure(&config, "[]", 200);
+    assert_schema_failure(&config, "not-json", 200);
+    assert_schema_failure(&config, "{}", 500);
+    assert_schema_failure(&config, "not-json", 429);
+}
+
+fn assert_schema_failure(config: &AzureSearchConfig<'_>, body: &str, status: u16) {
+    let error = transform(config, body, status, &[]).unwrap_err();
+    assert_eq!(error.status_code(), Some(status));
+    assert!(
+        error
+            .to_string()
+            .contains("response does not match the Foundry Responses API schema")
+    );
+}
