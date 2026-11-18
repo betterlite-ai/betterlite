@@ -23,10 +23,7 @@ pub(super) async fn bill_partial(
     let Some(details) = logging.call_details(request_data) else {
         return false;
     };
-    if matches!(
-        details.get("has_dispatched_final_stream_success"),
-        Some(Json::Bool(true))
-    ) {
+    if details.get("has_dispatched_final_stream_success") == Some(&Json::Bool(true)) {
         return true;
     }
     let Some(response) = response else {
