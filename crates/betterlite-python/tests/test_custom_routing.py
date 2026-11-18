@@ -13,66 +13,57 @@ from betterlite._custom_routing import CustomRoutingStrategyBase
 MODEL: Final = "gpt-4o"
 RENAMED: Final = {"input": "input_value"}
 KEYWORD_ONLY: Final = frozenset({"specific_deployment", "request_kwargs"})
-ROW: Final = TypeAdapter(list[tuple[str, str, str]])
-# LiteLLM types input and request_kwargs as bare list and dict, which strict mypy reads as Any,
-# so the probe reads its signature in a subprocess and this file only sees JSON rows
-LITELLM_PROBE: Final = """
+RAW: Final = TypeAdapter(dict[str, list[tuple[str, str, str]]])
+# strict mypy reads LiteLLM's bare list and dict annotations as Any; the probe runs in a subprocess
+PROBE: Final = """
 import inspect
 import json
 import sys
 
-from litellm.types.router import CustomRoutingStrategyBase
+from betterlite._custom_routing import CustomRoutingStrategyBase as Ours
+from litellm.types.router import CustomRoutingStrategyBase as Theirs
 
-method = getattr(CustomRoutingStrategyBase, sys.argv[1])
-rows: list[list[str]] = []
-for parameter in inspect.signature(method).parameters.values():
-    text = str(parameter)
-    default = text.partition(" = " if " = " in text else "=")[2]
-    rows.append([parameter.name, parameter.kind.name, default])
-print(json.dumps(rows))
+
+def rows(cls):
+    method = getattr(cls, sys.argv[1])
+    return [
+        [p.name, p.kind.name, str(p)]
+        for p in inspect.signature(method).parameters.values()
+    ]
+
+
+print(json.dumps({"ours": rows(Ours), "theirs": rows(Theirs)}))
 """
 
 
-def parameters(signature: inspect.Signature) -> list[tuple[str, str, str]]:
-    found: list[tuple[str, str, str]] = []
-    for parameter in signature.parameters.values():
-        # str(Parameter) spells the default after " = ", or after "=" when it has no annotation
-        text = str(parameter)
-        default = text.partition(" = " if " = " in text else "=")[2]
-        found.append((parameter.name, parameter.kind.name, default))
-    return found
-
-
-def normalized(raw: Iterable[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    found: list[tuple[str, str, str]] = []
-    for name, kind, default in raw:
-        renamed = RENAMED[name] if name in RENAMED else name
-        found.append((renamed, "KEYWORD_ONLY" if renamed in KEYWORD_ONLY else kind, default))
-    return found
-
-
-def litellm_rows(method: str) -> list[tuple[str, str, str]]:
+def probe(method: str) -> dict[str, list[tuple[str, str, str]]]:
     done = subprocess.run(
-        [sys.executable, "-c", LITELLM_PROBE, method],
+        [sys.executable, "-c", PROBE, method],
         capture_output=True,
         text=True,
         check=False,
     )
     assert done.returncode == 0, done.stderr
-    return ROW.validate_json(done.stdout)
+    return RAW.validate_json(done.stdout)
+
+
+def normalized(raw: Iterable[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    for name, kind, text in raw:
+        renamed = RENAMED.get(name, name)
+        default = text.partition(" = " if " = " in text else "=")[2]
+        found.append((renamed, "KEYWORD_ONLY" if renamed in KEYWORD_ONLY else kind, default))
+    return found
 
 
 def test_async_signature_matches() -> None:
-    signature = inspect.signature(CustomRoutingStrategyBase.async_get_available_deployment)
-    assert normalized(parameters(signature)) == normalized(
-        litellm_rows("async_get_available_deployment")
-    )
+    read = probe("async_get_available_deployment")
+    assert normalized(read["ours"]) == normalized(read["theirs"])
 
 
 def test_sync_signature_matches() -> None:
-    signature = inspect.signature(CustomRoutingStrategyBase.get_available_deployment)
-    theirs = normalized(litellm_rows("get_available_deployment"))
-    assert normalized(parameters(signature)) == theirs
+    read = probe("get_available_deployment")
+    assert normalized(read["ours"]) == normalized(read["theirs"])
 
 
 def test_keyword_only_arguments() -> None:
