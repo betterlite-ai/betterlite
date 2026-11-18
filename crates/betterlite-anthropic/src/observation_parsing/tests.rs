@@ -275,6 +275,7 @@ fn parse_observed_cache_rejects_unsupported_bodies(#[case] body: &str) {
 #[case::five_minute_prefix_with_one_hour_split(BODY, 0, 100, Some((0, 100)))]
 #[case::one_hour_prefix_with_five_minute_split(ONE_HOUR_BODY, 0, 100, Some((100, 0)))]
 #[case::negative_one_hour_split(BODY, 0, 100, Some((101, -1)))]
+#[case::negative_five_minute_split(ONE_HOUR_BODY, 0, 499, Some((-1, 500)))]
 fn parse_observed_cache_rejects_inconsistent_cache_counts(
     #[case] body: &str,
     #[case] cached: i64,
