@@ -177,6 +177,22 @@ fn grayswan_constructor_normalizes_the_flagged_action(
 }
 
 #[test]
+fn grayswan_constructor_does_not_warn_for_the_monitor_action() {
+    let captured = Captured::default();
+    let mut guardrail_args = args();
+    guardrail_args.on_flagged_action = Some("monitor".to_owned());
+    let instance = with_default(subscriber(captured.clone(), tracing::Level::WARN), || {
+        build(guardrail_args, &empty_env())
+    });
+    assert_eq!(
+        instance.settings.on_flagged_action,
+        OnFlaggedAction::Monitor
+    );
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(!output.contains("unsupported on_flagged_action"));
+}
+
+#[test]
 fn grayswan_constructor_rejects_a_negative_timeout() {
     let mut guardrail_args = args();
     guardrail_args.guardrail_timeout = Some(-1.0);
