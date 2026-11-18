@@ -1,4 +1,6 @@
-use serde::Deserialize;
+use std::collections::BTreeSet;
+
+use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
@@ -30,31 +32,24 @@ struct RawDeployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
-    #[serde(default)]
     complexity_router_config: Option<RawRouterConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RawRouterConfig {
-    #[serde(default)]
     custom_dimensions: Option<Vec<RawDimension>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawDimension {
-    #[serde(default)]
     name: Option<String>,
-    #[serde(default)]
     weight: Option<RawNumber>,
-    #[serde(default)]
     keywords: Option<Vec<String>>,
-    #[serde(default)]
     patterns: Option<Vec<String>>,
-    #[serde(default)]
     scoring_mode: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -80,7 +75,8 @@ pub struct Checked {
     pub name: String,
     pub weight: f64,
     pub keywords: Vec<String>,
-    pub patterns: Vec<String>,
+    // one matcher per distinct source, each as the matcher engine reads it
+    pub matcher_patterns: Vec<String>,
     pub scoring_mode: ScoringMode,
     pub work: u64,
 }
@@ -152,22 +148,29 @@ pub fn validate_dimension(config: &Config) -> Result<Checked, DimensionProblem> 
         return Err(DimensionProblem::MatcherLimits);
     }
     let mut work = 0_u64;
+    let mut sources = BTreeSet::new();
+    let mut carried = BTreeSet::new();
+    let mut matcher_patterns = Vec::new();
     for pattern in &config.patterns {
-        match pattern_work(pattern) {
-            Ok(steps) => work = work.saturating_add(steps),
-            Err(problem) => {
-                return Err(DimensionProblem::Pattern {
-                    pattern: pattern.clone(),
-                    problem,
-                });
+        let (mut matcher, steps) =
+            pattern_work(pattern).map_err(|problem| DimensionProblem::Pattern {
+                pattern: pattern.clone(),
+                problem,
+            })?;
+        work = work.saturating_add(steps);
+        // the reference counts each source once and each distinct spelling of it separately
+        if sources.insert(pattern.as_str()) {
+            while !carried.insert(matcher.clone()) {
+                matcher = format!("(?:{matcher})");
             }
+            matcher_patterns.push(matcher);
         }
     }
     Ok(Checked {
         name: config.name.clone(),
         weight: config.weight,
         keywords: config.keywords.clone(),
-        patterns: config.patterns.clone(),
+        matcher_patterns,
         scoring_mode,
         work,
     })
@@ -211,16 +214,18 @@ impl Section for Raw {
                             .unwrap_or(0.0)
                     }
                 };
-                let mut keywords = Vec::with_capacity(raw.keywords.len());
-                for (matcher, keyword) in raw.keywords.into_iter().enumerate() {
+                let declared_keywords = raw.keywords.unwrap_or_default();
+                let mut keywords = Vec::with_capacity(declared_keywords.len());
+                for (matcher, keyword) in declared_keywords.into_iter().enumerate() {
                     keywords.push(resolve_string(
                         keyword,
                         &format!("{path}.keywords.{matcher}"),
                         lookup,
                     )?);
                 }
-                let mut patterns = Vec::with_capacity(raw.patterns.len());
-                for (matcher, pattern) in raw.patterns.into_iter().enumerate() {
+                let declared_patterns = raw.patterns.unwrap_or_default();
+                let mut patterns = Vec::with_capacity(declared_patterns.len());
+                for (matcher, pattern) in declared_patterns.into_iter().enumerate() {
                     patterns.push(resolve_string(
                         pattern,
                         &format!("{path}.patterns.{matcher}"),

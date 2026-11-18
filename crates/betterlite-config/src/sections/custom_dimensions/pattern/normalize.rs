@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -93,6 +94,18 @@ impl Walker<'_> {
         match character {
             'Z' => self.output.push_str("\\z"),
             'b' if class => self.output.push_str("\\x08"),
+            // Python reads up to three octal digits; the matcher engine reads a codepoint escape
+            '0'..='7' => {
+                let mut value = u32::from(character) - u32::from('0');
+                for _ in 0..2 {
+                    let Some(digit) = self.input.peek().and_then(|next| next.to_digit(8)) else {
+                        break;
+                    };
+                    value = value.saturating_mul(8).saturating_add(digit);
+                    let _ = self.input.next();
+                }
+                let _ignored = write!(self.output, "\\x{{{value:x}}}");
+            }
             'z' | 'p' | 'P' => return Err(PatternProblem::Syntax),
             'x' | 'u' | 'U' if self.input.peek() == Some(&'{') => {
                 return Err(PatternProblem::Syntax);
@@ -160,9 +173,9 @@ impl Walker<'_> {
         let mut content = String::new();
         let closed = loop {
             match probe.next() {
+                Some(character @ ('0'..='9' | ',')) => content.push(character),
                 Some('}') => break true,
-                Some(character) => content.push(character),
-                None => break false,
+                _ => break false,
             }
         };
         if !closed || !repetition_content(&content) {
@@ -173,8 +186,10 @@ impl Walker<'_> {
             let _ = self.input.next();
         }
         self.output.push('{');
-        self.output
-            .push_str(if content == "," { "0," } else { &content });
+        if content.starts_with(',') {
+            self.output.push('0');
+        }
+        self.output.push_str(&content);
         self.output.push('}');
         Ok(())
     }

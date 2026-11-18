@@ -109,23 +109,22 @@ fn custom_dimensions_behaviors(
     assert_eq!(run(&declared, classifier, &dimension_weights), expected);
 }
 
-#[test]
-fn every_classifier_type_parses_to_its_name() {
-    let classified = [
-        ("heuristic", ClassifierType::Heuristic),
-        ("heuristic_v2", ClassifierType::HeuristicV2),
-        ("llm", ClassifierType::Llm),
-        ("capability", ClassifierType::Capability),
-        ("llm_v2", ClassifierType::LlmV2),
-        ("custom", ClassifierType::Custom),
-        ("heuristic_first", ClassifierType::HeuristicFirst),
-        ("hybrid", ClassifierType::Hybrid),
-        ("jev", ClassifierType::Jev),
-    ];
-    for (name, expected) in classified {
-        assert_eq!(ClassifierType::parse(name), Some(expected), "{name}");
-    }
-    assert_eq!(ClassifierType::parse("bogus"), None);
+#[rstest]
+#[case::heuristic("heuristic", Some(ClassifierType::Heuristic))]
+#[case::heuristic_v2("heuristic_v2", Some(ClassifierType::HeuristicV2))]
+#[case::llm("llm", Some(ClassifierType::Llm))]
+#[case::capability("capability", Some(ClassifierType::Capability))]
+#[case::llm_v2("llm_v2", Some(ClassifierType::LlmV2))]
+#[case::custom("custom", Some(ClassifierType::Custom))]
+#[case::heuristic_first("heuristic_first", Some(ClassifierType::HeuristicFirst))]
+#[case::hybrid("hybrid", Some(ClassifierType::Hybrid))]
+#[case::jev("jev", Some(ClassifierType::Jev))]
+#[case::unknown("bogus", None)]
+fn every_classifier_type_parses_to_its_name(
+    #[case] name: &str,
+    #[case] expected: Option<ClassifierType>,
+) {
+    assert_eq!(ClassifierType::parse(name), expected, "{name}");
 }
 
 #[test]
@@ -145,15 +144,8 @@ fn a_validated_dimension_keeps_its_fields_and_mode() {
     );
 }
 
-fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
-    let declared = [config(
-        "domain",
-        0.8,
-        &["alpha", "beta"],
-        &["gamma", "[0-9]{2}"],
-        mode,
-    )];
-    let validated = validate(&declared, "heuristic", &BTreeMap::new()).unwrap();
+fn scored_with(declared: &[section::Config], prompt: &str) -> Vec<(String, f64)> {
+    let validated = validate(declared, "heuristic", &BTreeMap::new()).unwrap();
     let matcher = CustomDimensionMatcher::compile(&validated.dimensions[0])
         .expect("the test matcher compiles");
     score_custom_dimensions(
@@ -164,6 +156,45 @@ fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
     .into_iter()
     .map(|(score, _weight)| (score.dimension.name().to_owned(), score.score))
     .collect()
+}
+
+fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
+    let declared = [config(
+        "domain",
+        0.8,
+        &["alpha", "beta"],
+        &["gamma", "[0-9]{2}"],
+        mode,
+    )];
+    scored_with(&declared, prompt)
+}
+
+#[rstest]
+#[case::end_anchor("a\\Z", "a")]
+#[case::class_ampersand("[a&&b]", "&")]
+#[case::octal_three_digits("\\111", "I")]
+#[case::implicit_minimum("a{,3}", "aa")]
+#[case::scoped_dot_all("(?s)a.b", "a\nb")]
+#[case::scoped_multiline("(?m)^b", "a\nb")]
+fn accepted_patterns_keep_their_python_meaning(#[case] pattern: &str, #[case] prompt: &str) {
+    let declared = [config("domain", 0.8, &[], &[pattern], "binary")];
+    assert_eq!(scored_with(&declared, prompt), [("domain".to_owned(), 1.0)]);
+}
+
+#[rstest]
+#[case::spellings_that_normalize_alike(&["(?x)a b", "(?x)ab"], "xxxxab", 1.0)]
+#[case::one_source_written_twice(&["ab", "ab"], "xxxxab", 0.5)]
+#[case::spellings_the_matcher_reads_apart(&["\\111", "\\x49"], "xxxxI", 1.0)]
+fn pattern_hits_count_distinct_sources(
+    #[case] patterns: &[&str],
+    #[case] prompt: &str,
+    #[case] expected: f64,
+) {
+    let declared = [config("domain", 0.8, &[], patterns, "match_count")];
+    assert_eq!(
+        scored_with(&declared, prompt),
+        [("domain".to_owned(), expected)]
+    );
 }
 
 #[test]

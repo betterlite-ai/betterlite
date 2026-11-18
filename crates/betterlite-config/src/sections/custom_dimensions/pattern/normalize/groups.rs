@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use super::super::PatternProblem;
 use super::Walker;
 
@@ -10,7 +12,7 @@ impl Walker<'_> {
         match probe.next() {
             Some('#') => self.comment_group(),
             Some('<') => Err(PatternProblem::Syntax),
-            Some('P') => self.python_group(),
+            Some('P') => self.named_group(),
             Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-') => self.flags_group(),
             _ => self.open_group(),
         }
@@ -24,7 +26,7 @@ impl Walker<'_> {
         Ok(())
     }
 
-    fn python_group(&mut self) -> Result<(), PatternProblem> {
+    fn named_group(&mut self) -> Result<(), PatternProblem> {
         let mut probe = self.input.clone();
         probe.next();
         probe.next();
@@ -45,7 +47,7 @@ impl Walker<'_> {
         self.output.push_str("(?P<");
         self.output.push_str(&name);
         self.output.push('>');
-        for _ in 0..name.chars().count() + 4 {
+        for _ in 0..name.chars().count().saturating_add(4) {
             let _ = self.input.next();
         }
         let verbose = matches!(self.verbose.last(), Some(true));
@@ -67,14 +69,14 @@ impl Walker<'_> {
                 _ => return self.open_group(),
             }
         };
-        let (added_x, removed_x) = flag_spec(&spec)?;
-        for _ in 0..spec.chars().count() + 2 {
+        let (added, removed) = kept_flags(&spec)?;
+        for _ in 0..spec.chars().count().saturating_add(2) {
             let _ = self.input.next();
         }
         let inherited = matches!(self.verbose.last(), Some(true));
-        let verbose = if added_x {
+        let verbose = if added.contains('x') {
             true
-        } else if removed_x {
+        } else if removed.contains('x') {
             false
         } else {
             inherited
@@ -84,22 +86,20 @@ impl Walker<'_> {
             if !self.at_start || spec.contains('-') {
                 return Err(PatternProblem::Syntax);
             }
-            if verbose && !inherited {
-                self.output.push_str("(?x)");
+            if !added.is_empty() {
+                let _ignored = write!(self.output, "(?{added})");
             }
             if let Some(base) = self.verbose.first_mut() {
                 *base = verbose;
             }
             return Ok(());
         }
-        if verbose {
-            self.output.push_str("(?x:");
-        } else if inherited {
-            self.output.push_str("(?-x:");
+        let scoped = if removed.is_empty() {
+            added
         } else {
-            // a flag group is a subpattern in the reference even when it changes no flag the cost reads
-            self.output.push_str("(?u:");
-        }
+            format!("{added}-{removed}")
+        };
+        let _ignored = write!(self.output, "(?{scoped}:");
         self.verbose.push(verbose);
         self.at_start = false;
         Ok(())
@@ -134,7 +134,8 @@ fn identifier(name: &str) -> bool {
     characters.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
 }
 
-fn flag_spec(spec: &str) -> Result<(bool, bool), PatternProblem> {
+// the flags the matcher engine carries, deduped
+fn kept_flags(spec: &str) -> Result<(String, String), PatternProblem> {
     let (added, removed) = spec.split_once('-').unwrap_or((spec, ""));
     if removed.contains('-') || (spec.contains('-') && removed.is_empty()) {
         return Err(PatternProblem::Syntax);
@@ -142,15 +143,26 @@ fn flag_spec(spec: &str) -> Result<(bool, bool), PatternProblem> {
     if added.contains('a') && added.contains('u') {
         return Err(PatternProblem::Syntax);
     }
+    if added.contains('a') {
+        return Err(PatternProblem::Unsupported);
+    }
+    let mut kept = String::new();
     for letter in added.chars() {
-        if !matches!(letter, 'a' | 'i' | 'm' | 's' | 'u' | 'x') {
+        if !matches!(letter, 'i' | 'm' | 's' | 'u' | 'x') {
             return Err(PatternProblem::Syntax);
         }
+        if !kept.contains(letter) {
+            kept.push(letter);
+        }
     }
+    let mut cleared = String::new();
     for letter in removed.chars() {
         if !matches!(letter, 'i' | 'm' | 's' | 'x') || added.contains(letter) {
             return Err(PatternProblem::Syntax);
         }
+        if !cleared.contains(letter) {
+            cleared.push(letter);
+        }
     }
-    Ok((added.contains('x'), removed.contains('x')))
+    Ok((kept, cleared))
 }

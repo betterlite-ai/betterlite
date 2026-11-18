@@ -8,7 +8,8 @@ use rstest::{files, rstest};
 
 use crate::loader::ConfigLoader;
 use crate::sections::custom_dimensions::{
-    Config, PatternProblem, ScoringMode, Settings, pattern_work, validate_dimension,
+    Config, DimensionProblem, PatternProblem, ScoringMode, Settings, pattern_work,
+    validate_dimension,
 };
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
@@ -182,7 +183,8 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::empty_capture_branches("(|)", 6)]
 #[case::empty_group_branches("(?:|)", 5)]
 #[case::optional_alternation("a?|a?", 13)]
-#[case::shared_prefix_alternation("abc|abd|abe", 7)]
+#[case::shared_prefix_alternation("abc|abx|abe", 7)]
+#[case::assertion_alternation("^|$", 7)]
 #[case::verbose_space("(?x)a b", 3)]
 #[case::verbose_class("(?x)[a b]", 5)]
 #[case::verbose_hash_class("(?x)[a#b]", 5)]
@@ -190,13 +192,11 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::verbose_brace_padding("(?x)a{ 2 }", 5)]
 #[case::local_flag_only("(?x:a)", 3)]
 #[case::local_flag_removal("(?-x:a)", 3)]
-#[case::local_ascii_flag("(?a:a)", 3)]
 #[case::local_unicode_flag("(?u:a)", 3)]
 #[case::local_flag_pair("(?i-m:a)", 3)]
 #[case::repeated_local_flag("(?ii:a)", 3)]
 #[case::removed_local_flag("(?-i:a)", 3)]
 #[case::paired_local_flags("(?x-i:a)", 3)]
-#[case::ascii_removal_pair("(?a-i:a)", 3)]
 #[case::stacked_global_flags("(?i)(?m)a", 2)]
 #[case::flag_after_verbose_space("(?x) (?i)a", 2)]
 #[case::comment_group("(?#c)a", 2)]
@@ -252,17 +252,11 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::category_alternation("\\d|a", 4)]
 #[case::class_alternation("[ab]|[cd]", 6)]
 #[case::literal_class_alternation("a|[bc]", 5)]
-#[case::global_ascii_flag("(?a)", 1)]
 #[case::global_unicode_flag("(?u)", 1)]
 #[case::stacked_verbose_flag("(?i)(?x)a", 2)]
 #[case::verbose_then_flag("(?x)(?i)a", 2)]
 #[case::flagged_comment("(?#c)(?x)a", 2)]
-#[case::global_then_local("(?a)(?a:a)", 3)]
-#[case::ascii_and_multiline_flags("(?am:a)", 3)]
-#[case::ascii_and_ignore_case_flags("(?ai:a)", 3)]
 #[case::ignore_case_and_unicode_flags("(?iu:a)", 3)]
-#[case::duplicate_ascii_flag("(?aa:a)", 3)]
-#[case::two_local_flag_groups("(?a:a)(?u:b)", 5)]
 #[case::dot(".", 2)]
 #[case::literal_hash("a#b", 4)]
 #[case::verbose_alternation("(?x)a|bc", 8)]
@@ -275,7 +269,10 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::invalid_brace_content("a{2x}", 6)]
 #[case::invalid_bounded_content("a{2,3,4}", 9)]
 fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] expected: u64) {
-    assert_eq!(pattern_work(pattern), Ok(expected));
+    assert_eq!(
+        pattern_work(pattern).map(|(_matcher, steps)| steps),
+        Ok(expected)
+    );
 }
 
 #[rstest]
@@ -307,6 +304,14 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::empty_flag_spec("(?-)", PatternProblem::Syntax)]
 #[case::global_removal("(?-i)", PatternProblem::Syntax)]
 #[case::ascii_unicode_flags("(?au:a)", PatternProblem::Syntax)]
+#[case::local_ascii_flag("(?a:a)", PatternProblem::Unsupported)]
+#[case::ascii_removal_pair("(?a-i:a)", PatternProblem::Unsupported)]
+#[case::global_ascii_flag("(?a)", PatternProblem::Unsupported)]
+#[case::global_then_local("(?a)(?a:a)", PatternProblem::Unsupported)]
+#[case::ascii_and_multiline_flags("(?am:a)", PatternProblem::Unsupported)]
+#[case::ascii_and_ignore_case_flags("(?ai:a)", PatternProblem::Unsupported)]
+#[case::duplicate_ascii_flag("(?aa:a)", PatternProblem::Unsupported)]
+#[case::two_local_flag_groups("(?a:a)(?u:b)", PatternProblem::Unsupported)]
 #[case::lowercase_end_text("\\z", PatternProblem::Syntax)]
 #[case::braced_hex("\\x{41}", PatternProblem::Syntax)]
 #[case::braced_unicode("\\u{41}", PatternProblem::Syntax)]
@@ -364,11 +369,15 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::repeated_assertion("^*", PatternProblem::Syntax)]
 #[case::flag_after_escape("\\d(?i)a", PatternProblem::Syntax)]
 #[case::trailing_flag_dash("(?i-:a)", PatternProblem::Syntax)]
+#[case::assertion_alternation_over_budget("a{0,3}b{0,63}(?:^|$)", PatternProblem::Work)]
 fn rejected_patterns_report_the_pinned_problem(
     #[case] pattern: &str,
     #[case] expected: PatternProblem,
 ) {
-    assert_eq!(pattern_work(pattern), Err(expected));
+    assert_eq!(
+        pattern_work(pattern).map(|(_matcher, steps)| steps),
+        Err(expected)
+    );
 }
 
 #[rstest]
@@ -380,6 +389,9 @@ fn rejected_patterns_report_the_pinned_problem(
 #[case::large_class_octal("[\\400]", Ok(2))]
 #[case::large_octal_777("\\777", Ok(2))]
 #[case::large_class_octal_777("[\\777]", Ok(2))]
+#[case::octal_three_digits("\\111", Ok(2))]
+#[case::class_octal_three_digits("[\\111]", Ok(2))]
+#[case::octal_nul("\\0", Ok(2))]
 #[case::group_reference_before_group("\\1(a)", Ok(4))]
 #[case::group_reference_after_group("(a)\\1", Ok(4))]
 #[case::intersection_class("[a&&b]", Ok(5))]
@@ -406,7 +418,10 @@ fn declared_grammar_deviations_keep_their_measured_values(
     #[case] pattern: &str,
     #[case] expected: Result<u64, PatternProblem>,
 ) {
-    assert_eq!(pattern_work(pattern), expected);
+    assert_eq!(
+        pattern_work(pattern).map(|(_matcher, steps)| steps),
+        expected
+    );
 }
 
 #[test]
@@ -432,25 +447,54 @@ fn pattern_problems_carry_the_pinned_messages() {
 
 #[test]
 fn the_repeat_limit_is_inclusive() {
-    assert_eq!(pattern_work("a{64}"), Ok(67));
-    assert_eq!(pattern_work("a{3,64}"), Ok(128));
-    assert_eq!(pattern_work("a{65}"), Err(PatternProblem::Repeat));
+    assert_eq!(pattern_work("a{64}").map(|(_matcher, steps)| steps), Ok(67));
+    assert_eq!(
+        pattern_work("a{3,64}").map(|(_matcher, steps)| steps),
+        Ok(128)
+    );
+    assert_eq!(
+        pattern_work("a{65}").map(|(_matcher, steps)| steps),
+        Err(PatternProblem::Repeat)
+    );
 }
 
 #[test]
 fn the_work_limit_is_inclusive() {
     let allowed = "a".repeat(2047);
     let refused = "a".repeat(2048);
-    assert_eq!(pattern_work(&allowed), Ok(2048));
-    assert_eq!(pattern_work(&refused), Err(PatternProblem::Work));
+    assert_eq!(
+        pattern_work(&allowed).map(|(_matcher, steps)| steps),
+        Ok(2048)
+    );
+    assert_eq!(
+        pattern_work(&refused).map(|(_matcher, steps)| steps),
+        Err(PatternProblem::Work)
+    );
 }
 
 #[test]
 fn the_depth_limit_is_inclusive() {
     let allowed = format!("{}a{}", "(".repeat(16), ")".repeat(16));
     let refused = format!("{}a{}", "(".repeat(17), ")".repeat(17));
-    assert_eq!(pattern_work(&allowed), Ok(18));
-    assert_eq!(pattern_work(&refused), Err(PatternProblem::Depth));
+    assert_eq!(
+        pattern_work(&allowed).map(|(_matcher, steps)| steps),
+        Ok(18)
+    );
+    assert_eq!(
+        pattern_work(&refused).map(|(_matcher, steps)| steps),
+        Err(PatternProblem::Depth)
+    );
+}
+
+#[test]
+fn the_pattern_input_limit_is_inclusive() {
+    let allowed = format!("(?x){}a", " ".repeat(4091));
+    let refused = format!("(?x){}a", " ".repeat(4092));
+    assert_eq!(pattern_work(&allowed).map(|(_matcher, steps)| steps), Ok(2));
+    assert_eq!(
+        pattern_work(&refused).map(|(_matcher, steps)| steps),
+        Err(PatternProblem::Syntax)
+    );
 }
 
 #[rstest]
@@ -470,6 +514,31 @@ fn dimension_validation_checks_the_matchers(
 }
 
 #[test]
+fn a_source_written_twice_keeps_one_matcher() {
+    let config = dimension("domain", &[], &["ab", "ab"], "match_count");
+    let checked = validate_dimension(&config).unwrap();
+    assert_eq!(checked.matcher_patterns, strings(&["ab"]));
+}
+
+#[test]
+fn sources_that_normalize_alike_keep_a_matcher_each() {
+    let config = dimension("domain", &[], &["(?x)a b", "(?x)ab"], "match_count");
+    let checked = validate_dimension(&config).unwrap();
+    assert_eq!(checked.matcher_patterns, strings(&["(?x)ab", "(?:(?x)ab)"]));
+}
+
+#[rstest]
+#[case::repeated_added("(?ii:a)", "(?i:a)")]
+#[case::repeated_removed("(?i-mm:a)", "(?i-m:a)")]
+#[case::repeated_verbose("(?xx:a)", "(?x:a)")]
+fn a_repeated_flag_is_carried_once(#[case] pattern: &str, #[case] expected: &str) {
+    assert_eq!(
+        pattern_work(pattern).map(|(matcher, _steps)| matcher),
+        Ok(expected.to_owned())
+    );
+}
+
+#[test]
 fn thirty_two_matchers_are_allowed_and_thirty_three_are_not() {
     let mut allowed = dimension("domain", &[], &[], "binary");
     allowed.keywords = (0..32).map(|index| format!("k{index}")).collect();
@@ -483,8 +552,11 @@ fn four_thousand_ninety_six_matcher_characters_are_allowed_and_one_more_is_not()
     let mut allowed = dimension("domain", &[], &[], "binary");
     allowed.patterns = (0..16).map(|index| format!("{index:0<256}")).collect();
     assert_eq!(valid(&allowed), Ok(()));
-    allowed.patterns[0].push('a');
-    assert_eq!(valid(&allowed), Err(()));
+    allowed.patterns.push("k".to_owned());
+    assert_eq!(
+        validate_dimension(&allowed).map(|_checked| ()),
+        Err(DimensionProblem::MatcherLimits)
+    );
 }
 
 #[rstest]
