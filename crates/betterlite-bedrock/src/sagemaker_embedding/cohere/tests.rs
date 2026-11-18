@@ -8,7 +8,7 @@ use betterlite_tokenizer::engine::error::EngineError;
 use rstest::rstest;
 
 use crate::sagemaker_embedding::cohere::{
-    CohereRequestError, map_openai_params, transform_request, transform_response,
+    CohereReplyError, CohereRequestError, map_openai_params, transform_request, transform_response,
 };
 
 struct Words;
@@ -259,7 +259,10 @@ fn a_token_logged_input_is_refused(#[case] value: &str) {
     )
     .unwrap_err();
 
-    assert!(matches!(error, CohereLegacyEmbeddingError::Usage(_)));
+    assert!(matches!(
+        error,
+        CohereReplyError::Legacy(CohereLegacyEmbeddingError::Usage(_))
+    ));
 }
 
 #[test]
@@ -273,7 +276,7 @@ fn a_body_that_is_not_json_is_refused() {
     )
     .unwrap_err();
 
-    assert!(matches!(error, CohereLegacyEmbeddingError::Json(_)));
+    assert!(matches!(error, CohereReplyError::Body { .. }));
 }
 
 #[test]
@@ -287,5 +290,43 @@ fn a_body_without_embeddings_is_refused() {
     )
     .unwrap_err();
 
-    assert!(matches!(error, CohereLegacyEmbeddingError::Embeddings));
+    assert!(matches!(
+        error,
+        CohereReplyError::Legacy(CohereLegacyEmbeddingError::Embeddings)
+    ));
+}
+
+#[test]
+fn a_body_that_is_not_an_object_is_refused_as_embeddingless() {
+    let error = transform_response(
+        b"[]",
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CohereReplyError::Legacy(CohereLegacyEmbeddingError::Embeddings)
+    ));
+}
+
+// the request value becomes an embedding input only once chosen, and its serde error stays as the cause
+#[test]
+fn a_body_texts_value_that_is_not_an_input_keeps_the_serde_error() {
+    let error = transform_response(
+        br#"{"embeddings": [[0.5]]}"#,
+        "cohere.embed-english-v3",
+        None,
+        &object(r#"{"texts": [true]}"#),
+        &Words,
+    )
+    .unwrap_err();
+
+    let CohereReplyError::Request { source } = error else {
+        panic!("expected a request error");
+    };
+    assert!(source.is_data(), "{source}");
 }

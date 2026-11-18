@@ -4,7 +4,9 @@ use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::cohere_legacy_embedding::decode::populate_embedding_response;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
+use indexmap::IndexMap;
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::titan_embeddings::cohere as bedrock_cohere;
@@ -15,6 +17,95 @@ pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &["encoding_format", "dimensions", 
 pub enum CohereRequestError {
     #[error("Input must be a list of strings")]
     InputNotText,
+}
+
+#[derive(Debug, Error)]
+pub enum CohereReplyError {
+    #[error("the Cohere reply body is not JSON")]
+    Body {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the Cohere request data is not an embedding input")]
+    Request {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error(transparent)]
+    Legacy(#[from] CohereLegacyEmbeddingError),
+}
+
+// B1418's populate reads the reply, so this checks the body's shape and hands its values back unchanged
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CohereReplyBody {
+    Envelope(CohereReplyEnvelope),
+    Other(Json),
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereReplyEnvelope {
+    embeddings: Option<ReplyEmbeddings>, // its rows are copied verbatim into the records
+    response_type: Option<Json>,         // populate compares only the embeddings_by_type marker
+    meta: Option<Json>,                  // calculate_usage reads billed_units from it
+    #[serde(flatten)]
+    rest: Object,   // every other key is populate's to ignore
+}
+
+// the two row shapes populate reads; any other value reaches it untouched and it answers Embeddings
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ReplyEmbeddings {
+    Rows(Vec<Json>),
+    Groups(IndexMap<String, Vec<Json>>),
+    Other(Json),
+}
+
+// the request fields the reply input falls back to, checked as an embedding input only once chosen
+#[derive(Debug, Deserialize)]
+struct CohereRequestBody {
+    texts: Option<Json>,
+    images: Option<Json>,
+}
+
+impl CohereReplyBody {
+    fn into_json(self) -> Json {
+        match self {
+            Self::Envelope(envelope) => envelope.into_json(),
+            Self::Other(value) => value,
+        }
+    }
+}
+
+impl CohereReplyEnvelope {
+    fn into_json(self) -> Json {
+        let mut fields = self.rest;
+        if let Some(embeddings) = self.embeddings {
+            fields.insert(String::from("embeddings"), embeddings.into_json());
+        }
+        if let Some(kind) = self.response_type {
+            fields.insert(String::from("response_type"), kind);
+        }
+        if let Some(meta) = self.meta {
+            fields.insert(String::from("meta"), meta);
+        }
+        Json::Object(fields)
+    }
+}
+
+impl ReplyEmbeddings {
+    fn into_json(self) -> Json {
+        match self {
+            Self::Rows(rows) => Json::List(rows),
+            Self::Groups(groups) => Json::Object(
+                groups
+                    .into_iter()
+                    .map(|(name, rows)| (name, Json::List(rows)))
+                    .collect(),
+            ),
+            Self::Other(value) => value,
+        }
+    }
 }
 
 // map_openai_params: the Bedrock mapper runs first, then input_type is copied over unchanged
@@ -54,29 +145,33 @@ pub fn transform_response(
     logged_input: Option<&EmbeddingInput>,
     request_data: &Object,
     encoding: &dyn TextEncoding,
-) -> Result<LegacyEmbeddingResponse, CohereLegacyEmbeddingError> {
-    let decoded = serde_json::from_slice(body)?;
+) -> Result<LegacyEmbeddingResponse, CohereReplyError> {
+    let reply: CohereReplyBody =
+        serde_json::from_slice(body).map_err(|source| CohereReplyError::Body { source })?;
     let input = reply_input(logged_input, request_data)?;
-    populate_embedding_response(&decoded, model, &input, encoding)
+    populate_embedding_response(&reply.into_json(), model, &input, encoding)
+        .map_err(CohereReplyError::Legacy)
 }
 
 fn reply_input(
     logged_input: Option<&EmbeddingInput>,
     request_data: &Object,
-) -> Result<Vec<String>, CohereLegacyEmbeddingError> {
+) -> Result<Vec<String>, CohereReplyError> {
     let mut chosen = logged_input.filter(|input| has_value(input)).cloned();
     if chosen.is_none() {
-        for key in ["texts", "images"] {
-            let Some(value) = request_data.get(key).filter(|value| value.is_truthy()) else {
+        let value = serde_json::to_value(request_data)
+            .map_err(|source| CohereReplyError::Request { source })?;
+        let body: CohereRequestBody =
+            serde_json::from_value(value).map_err(|source| CohereReplyError::Request { source })?;
+        for candidate in [body.texts, body.images].into_iter().flatten() {
+            if !candidate.is_truthy() {
                 continue;
-            };
-            let value = serde_json::to_value(value).map_err(|_error| {
-                CohereLegacyEmbeddingError::Usage(CohereEmbeddingError::InputNotText)
-            })?;
+            }
+            let encoded = serde_json::to_value(candidate)
+                .map_err(|source| CohereReplyError::Request { source })?;
             chosen = Some(
-                serde_json::from_value::<EmbeddingInput>(value).map_err(|_source| {
-                    CohereLegacyEmbeddingError::Usage(CohereEmbeddingError::InputNotText)
-                })?,
+                serde_json::from_value(encoded)
+                    .map_err(|source| CohereReplyError::Request { source })?,
             );
             break;
         }
@@ -85,9 +180,11 @@ fn reply_input(
         None => Ok(Vec::new()),
         Some(EmbeddingInput::Text(text)) => Ok(vec![text]),
         Some(EmbeddingInput::Texts(texts)) => Ok(texts),
-        Some(EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_)) => Err(
-            CohereLegacyEmbeddingError::Usage(CohereEmbeddingError::InputNotText),
-        ),
+        Some(EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_)) => {
+            Err(CohereReplyError::Legacy(CohereLegacyEmbeddingError::Usage(
+                CohereEmbeddingError::InputNotText,
+            )))
+        }
     }
 }
 
