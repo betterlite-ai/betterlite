@@ -175,6 +175,20 @@ fn two_successes_accumulate_in_one_window() {
     assert_eq!(windows.window(&requests_key), Some(counts(&[("dep-a", 2)])));
 }
 
+// a stored count at the signed maximum saturates, so the addition cannot wrap to a count below zero
+#[test]
+fn a_count_at_the_signed_maximum_stays_there() {
+    let windows = LocalWindows::default();
+    let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
+    windows.seed(&tokens_key, &[("dep-a", i64::MAX)]);
+    record(&windows, Targets::First, None, Some(10));
+    assert_eq!(
+        windows.window(&tokens_key),
+        Some(counts(&[("dep-a", i64::MAX)]))
+    );
+    assert_eq!(windows.window(&requests_key), Some(counts(&[("dep-a", 1)])));
+}
+
 #[rstest]
 #[case::configured(45)]
 #[case::zero(0)]
