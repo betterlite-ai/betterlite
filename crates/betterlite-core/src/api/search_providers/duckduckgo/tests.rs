@@ -643,6 +643,10 @@ fn a_reply_at_the_size_limit_is_read() {
 #[rstest]
 #[case(r#"{"AbstractURL":5,"AbstractText":"text"}"#, "AbstractURL")]
 #[case(r#"{"AbstractURL":"https://a.test","AbstractText":5}"#, "AbstractText")]
+#[case(
+    r#"{"AbstractURL":"https://a.test","AbstractText":"text","Heading":5}"#,
+    "Heading"
+)]
 fn a_wrong_typed_abstract_fails(#[case] body: &str, #[case] field: &str) {
     let error = decode(body, None).unwrap_err();
 
@@ -678,16 +682,18 @@ fn a_null_topic_field_fails(#[case] topic: &str, #[case] field: &str) {
     }
 }
 
-#[test]
-fn a_wrong_typed_topic_text_fails() {
-    let body = r#"{"RelatedTopics":[{"Text":5,"FirstURL":"https://a.test"}]}"#;
+#[rstest]
+#[case(r#"{"Text":5,"FirstURL":"https://a.test"}"#, "Text")]
+#[case(r#"{"Text":"A - one","FirstURL":5}"#, "FirstURL")]
+fn a_wrong_typed_topic_field_fails(#[case] topic: &str, #[case] field: &str) {
+    let body = format!(r#"{{"RelatedTopics":[{topic}]}}"#);
 
-    let error = decode(body, None).unwrap_err();
+    let error = decode(&body, None).unwrap_err();
 
-    assert!(matches!(
-        error,
-        DuckDuckGoSearchError::ReplyText { field: "Text", .. }
-    ));
+    match error {
+        DuckDuckGoSearchError::ReplyText { field: named, .. } => assert_eq!(named, field),
+        other => panic!("unexpected error {other:?}"),
+    }
 }
 
 #[test]
