@@ -80,6 +80,13 @@ class MemorySeed(Protocol):
     def set_cache(self, key: str, value: object, **kwargs: object) -> None: ...
 
 
+def seed_counters(memory: MemorySeed, keys: tuple[str, str], local: Counters) -> None:
+    if local.tpm is not None:
+        memory.set_cache(key=keys[0], value=local.tpm, ttl=ROUTING_ARGS_TTL)
+    if local.rpm is not None:
+        memory.set_cache(key=keys[1], value=local.rpm, ttl=ROUTING_ARGS_TTL)
+
+
 @final
 class FakeRedisStore:
     def __init__(self, values: dict[str, int], mode: Literal["up", "breaker", "down"]) -> None:
@@ -192,11 +199,7 @@ class Scenario:
         self.deployment = deployment_dict(spec.deployment)
         keys = cache_keys(spec.deployment, self.now.strftime("%H-%M"))
         memory: Final = InMemoryCache()
-        seed: Final[MemorySeed] = memory
-        if spec.local.tpm is not None:
-            seed.set_cache(key=keys[0], value=spec.local.tpm, ttl=ROUTING_ARGS_TTL)
-        if spec.local.rpm is not None:
-            seed.set_cache(key=keys[1], value=spec.local.rpm, ttl=ROUTING_ARGS_TTL)
+        seed_counters(memory, keys, spec.local)
         self.store: FakeRedisStore | None = None
         if spec.redis == "none":
             self.cache = DualCache(in_memory_cache=memory)
