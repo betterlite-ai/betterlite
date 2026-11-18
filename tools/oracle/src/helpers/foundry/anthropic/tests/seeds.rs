@@ -22,16 +22,11 @@ fn helper_seeds_select_foundry_anthropic() {
         })
         .collect();
     assert!(!seeds.is_empty());
-    for path in seeds {
-        let source = fs::read_to_string(&path).unwrap();
-        let case = parse_helper_case(&path, &source).unwrap();
-        assert_eq!(
-            case.call.operation,
-            "foundry_anthropic",
-            "{}",
-            path.display()
-        );
-    }
+    assert!(seeds.iter().all(|path| {
+        let source = fs::read_to_string(path).unwrap();
+        let case = parse_helper_case(path, &source).unwrap();
+        case.call.operation == "foundry_anthropic"
+    }));
     assert_stream_events();
 }
 

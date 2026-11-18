@@ -345,42 +345,6 @@ fn promoted_option_reaches_the_reply() {
     assert!(!run.responses[0].optional_params.contains_key("extra_body"));
 }
 
-fn message(role: &str, content: Json) -> Json {
-    Json::Object(IndexMap::from([
-        ("role".to_owned(), text(role)),
-        ("content".to_owned(), content),
-    ]))
-}
-
-fn text_block(content: &str, cache_control: Option<Json>) -> Json {
-    let mut fields = IndexMap::from([
-        ("type".to_owned(), text("text")),
-        ("text".to_owned(), text(content)),
-    ]);
-    if let Some(cache) = cache_control {
-        fields.insert("cache_control".to_owned(), cache);
-    }
-    Json::Object(fields)
-}
-
-fn billing_messages() -> Vec<Json> {
-    let cached_text = text_block(
-        "hi",
-        Some(Json::Object(IndexMap::from([(
-            "type".to_owned(),
-            text("ephemeral"),
-        )]))),
-    );
-    let file_block = Json::Object(IndexMap::from([
-        ("type".to_owned(), text("file")),
-        (
-            "file".to_owned(),
-            Json::Object(IndexMap::from([("file_id".to_owned(), text("file-1"))])),
-        ),
-    ]));
-    vec![message("user", Json::List(vec![cached_text, file_block]))]
-}
-
 fn probe_options() -> IndexMap<String, Json> {
     IndexMap::from([
         (
@@ -410,28 +374,12 @@ fn billing_metadata_stripped() {
     invalid_probe_types();
 }
 
-fn system_messages() -> Vec<Json> {
-    vec![
-        message(
-            "system",
-            text("x-anthropic-billing-header: cc_version=2.0.0; cc_entrypoint=cli"),
-        ),
-        message("system", text("answer in one line")),
-        message(
-            "system",
-            Json::List(vec![text_block(
-                "x-anthropic-billing-header: block metadata",
-                None,
-            )]),
-        ),
-        message("user", text("hi")),
-    ]
-}
-
 // Foundry tells the inherited mapper it is azure_ai and strips billing metadata; the sent prompt shows the effect
 fn stripped_system_prompt() {
     let run = execute(&Setup {
-        messages: Some(system_messages()),
+        messages: Some(
+            serde_json::from_str(include_str!("fixtures/billing-messages.json")).unwrap(),
+        ),
         ..Setup::chat()
     });
     let recorded = &run.transforms[0];
@@ -513,7 +461,9 @@ fn assert_unposted(run: &Run) {
 
 fn derived_betas() {
     let run = execute(&Setup {
-        messages: Some(billing_messages()),
+        messages: Some(
+            serde_json::from_str(include_str!("fixtures/feature-messages.json")).unwrap(),
+        ),
         optional_params: probe_options(),
         ..Setup::chat()
     });
@@ -534,7 +484,9 @@ fn caller_beta_wins() {
             "anthropic-beta".to_owned(),
             "keep,caller-beta".to_owned(),
         )]),
-        messages: Some(billing_messages()),
+        messages: Some(
+            serde_json::from_str(include_str!("fixtures/feature-messages.json")).unwrap(),
+        ),
         optional_params: probe_options(),
         ..Setup::chat()
     });
