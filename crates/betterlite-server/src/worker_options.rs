@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 pub mod callback_settings;
 pub mod dev_reload;
@@ -265,4 +265,21 @@ pub fn prometheus_directory(
         })?;
     }
     Ok(Some(preparation))
+}
+
+// joins the base and collapses . and .. the way os.path.abspath does, without touching the filesystem
+fn lexical_absolute(base: &Path, candidate: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in base.join(candidate).components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(name) => normalized.push(name),
+        }
+    }
+    normalized
 }

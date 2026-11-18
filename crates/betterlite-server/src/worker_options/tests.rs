@@ -413,6 +413,25 @@ fn reload_options_keep_the_configured_name_of_a_symlinked_config() {
     );
 }
 
+#[test]
+fn reload_options_collapse_a_config_path_that_returns_to_the_watched_directory() {
+    let (_directory, root) = temporary_directory();
+    let app = root.join("app");
+    fs::create_dir_all(&app).expect("app directory");
+    fs::write(app.join("proxy.yaml"), "{}").expect("config file");
+    let options =
+        resolve_reload_options(&app, Some(Path::new("../app/proxy.yaml"))).expect("reload options");
+    assert_eq!(options.reload_dirs, vec![app]);
+    assert_eq!(
+        options.reload_includes,
+        vec![
+            "*.py".to_owned(),
+            ".env".to_owned(),
+            "proxy.yaml".to_owned()
+        ]
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn reload_options_surface_a_watch_directory_that_cannot_be_resolved() {

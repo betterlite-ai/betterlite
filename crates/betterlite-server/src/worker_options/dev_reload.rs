@@ -38,8 +38,8 @@ pub fn resolve_reload_options(
     let mut reload_dirs = vec![watch_root.clone()];
     let mut reload_includes = vec![PYTHON_GLOB.to_owned(), ENV_FILE.to_owned()];
     if let Some(path) = config {
-        // abspath joins the resolved current directory and keeps a symlink in the config path as it is
-        let config_abs = watch_root.join(path);
+        // abspath joins the resolved current directory, collapses . and .., and keeps a config symlink as it is
+        let config_abs = super::lexical_absolute(&watch_root, path);
         if let Some(parent) = config_abs.parent()
             && parent != watch_root.as_path()
         {
