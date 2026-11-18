@@ -241,36 +241,52 @@ pub fn prepare_chat(
     transport: &dyn EnterpriseTransport,
     clock: &dyn SapClock,
 ) -> Result<SapChatCall, EnterpriseError> {
-    match session(request, transport, clock, DeploymentMode::Chat) {
-        Ok((token, resource_group, deployment_url)) => Ok(SapChatConfig {
-            token,
-            resource_group,
-            deployment_url,
+    let prepared = session(request, transport, clock, DeploymentMode::Chat).map_err(|error| {
+        match error {
+            // LiteLLM wraps the credentials ValueError as a 400 and lets every other setup failure through
+            EnterpriseError::SapAuth(error) => {
+                EnterpriseError::SapChat(SapChatError::credentials(error))
+            }
+            other => other,
         }
-        .prepare()?),
-        // LiteLLM wraps the credentials ValueError as a 400 and lets every other setup failure through
-        Err(EnterpriseError::SapAuth(error)) => {
-            Err(EnterpriseError::SapChat(SapChatError::credentials(error)))
+    })?;
+    let (token, resource_group, deployment_url) = prepared;
+    Ok(SapChatConfig {
+        token,
+        resource_group,
+        deployment_url,
+    }
+    .prepare()?)
+}
+
+// the credentials failure the embedding arm reports as its own, and every other setup failure unchanged
+fn embedding_deployment_error(error: EnterpriseError) -> EnterpriseError {
+    match error {
+        EnterpriseError::SapAuth(error) => {
+            EnterpriseError::SapEmbedding(SapEmbeddingError::Auth(error))
         }
-        Err(error) => Err(error),
+        other => other,
     }
 }
 
 pub fn prepare_embedding(
-    request: SapRequest<'_>,
+    env: EnvironmentSource<'_>,
+    sap_service_key: Option<&SecretString>,
     transport: &dyn EnterpriseTransport,
     clock: &dyn SapClock,
 ) -> Result<SapEmbeddingCall, EnterpriseError> {
-    match session(request, transport, clock, DeploymentMode::Embedding) {
-        Ok((token, resource_group, deployment_url)) => Ok(SapEmbeddingConfig {
-            token,
-            resource_group,
-            deployment_url,
-        }
-        .prepare()?),
-        Err(EnterpriseError::SapAuth(error)) => Err(EnterpriseError::SapEmbedding(
-            SapEmbeddingError::Auth(error),
-        )),
-        Err(error) => Err(error),
-    }
+    let request = SapRequest {
+        // _embedding's sap arm ignores the request key: the token creator reads litellm.sap_service_key and the env
+        api_key: None,
+        sap_service_key,
+        env,
+    };
+    let resolved = session(request, transport, clock, DeploymentMode::Embedding)
+        .map_err(embedding_deployment_error)?;
+    let config = SapEmbeddingConfig {
+        token: resolved.0,
+        resource_group: resolved.1,
+        deployment_url: resolved.2,
+    };
+    config.prepare().map_err(EnterpriseError::from)
 }

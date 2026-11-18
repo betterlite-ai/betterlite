@@ -45,14 +45,12 @@ pub fn handler_call(context: &DispatchContext<'_>, replaced: ReplacedCall<'_>) -
 // the context fields an arm passes unchanged
 #[must_use]
 pub fn passthrough(context: &DispatchContext<'_>, provider: &str) -> CompletionCall {
-    handler_call(
-        context,
-        ReplacedCall {
-            optional_params: context.optional_params.clone(),
-            api_key: context.api_key.cloned(),
-            api_base: context.api_base.map(str::to_owned),
-            provider,
-            headers: context.headers.cloned(),
-        },
-    )
+    let replaced = ReplacedCall {
+        optional_params: context.optional_params.clone(),
+        api_key: context.api_key.cloned(),
+        api_base: context.api_base.map(str::to_owned),
+        provider,
+        headers: context.headers.cloned(),
+    };
+    handler_call(context, replaced)
 }

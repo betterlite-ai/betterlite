@@ -89,7 +89,6 @@ pub fn complete(
     deps: &SagemakerDeps<'_>,
     call: &SagemakerCompletion<'_>,
 ) -> Result<SagemakerReply, EnterpriseError> {
-    let runtime = deps.runtime();
     let inner = CompletionCall {
         model: call.model,
         messages: call.messages,
@@ -101,17 +100,17 @@ pub fn complete(
         prompts: deps.prompts,
     };
     if call.stream {
-        return Ok(SagemakerReply::Stream(tokio::task::block_in_place(|| {
+        let events = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()
-                .block_on(completion_call::completion_stream(&runtime, &inner))
-        })?));
+                .block_on(completion_call::completion_stream(&deps.runtime(), &inner))
+        })?;
+        return Ok(SagemakerReply::Stream(events));
     }
-    Ok(SagemakerReply::Completion(tokio::task::block_in_place(
-        || {
-            tokio::runtime::Handle::current()
-                .block_on(completion_call::completion(&runtime, &inner))
-        },
-    )?))
+    let reply = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(completion_call::completion(&deps.runtime(), &inner))
+    })?;
+    Ok(SagemakerReply::Completion(reply))
 }
 
 // the sagemaker embedding arm, whose reply B5961 shapes per model
@@ -119,7 +118,6 @@ pub fn embedding(
     deps: &SagemakerDeps<'_>,
     call: &SagemakerEmbedding<'_>,
 ) -> Result<SagemakerEmbeddingReply, EnterpriseError> {
-    let runtime = deps.runtime();
     let inner = EmbeddingCall {
         model: call.model,
         input: call.input,
@@ -127,9 +125,11 @@ pub fn embedding(
         signing: call.signing,
         encoding: deps.encoding,
     };
-    Ok(tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(embedding_call::embedding(&runtime, &inner))
-    })?)
+    let reply = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(embedding_call::embedding(&deps.runtime(), &inner))
+    })?;
+    Ok(reply)
 }
 
 // B196's tokenizer engine plugged into B5960's TextTokenCounter and the cohere embedding TextEncoding

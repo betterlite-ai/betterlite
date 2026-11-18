@@ -37,9 +37,9 @@ pub fn dispatch<R>(
 ) -> Option<Result<Completion<R>, EnterpriseError>> {
     match tag {
         ChatConfigTag::GenAiHubOrchestration => Some(sap_chat(context, handler)),
-        ChatConfigTag::IbmWatsonXChat => Some(watsonx_chat(context, handler)),
-        ChatConfigTag::IbmWatsonXAi => Some(watsonx_text(context, handler)),
-        ChatConfigTag::SagemakerChat | ChatConfigTag::SagemakerNova => Some(sagemaker_chat(context, handler)),
+        ChatConfigTag::IbmWatsonXChat => Some(handler.complete(&passthrough(&context.base, "watsonx")).map(Completion::Handler).map_err(EnterpriseError::from)),
+        ChatConfigTag::IbmWatsonXAi => Some(watsonx::text_call(context).and_then(|call| handler.complete(&call).map(Completion::Handler).map_err(EnterpriseError::from))),
+        ChatConfigTag::SagemakerChat | ChatConfigTag::SagemakerNova => Some(handler.complete(&passthrough(&context.base, context.base.custom_llm_provider)).map(Completion::Handler).map_err(EnterpriseError::from)),
         ChatConfigTag::Sagemaker => Some(sagemaker_completion(context, deps).map(Completion::Sagemaker)),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
@@ -94,37 +94,6 @@ fn sap_chat<R>(
         },
     );
     Ok(Completion::Handler(handler.complete(&call)?))
-}
-
-// _complete_watsonx hands every context field to the chat handler under the literal provider name
-fn watsonx_chat<R>(
-    context: &ChatContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<Completion<R>, EnterpriseError> {
-    Ok(Completion::Handler(
-        handler.complete(&passthrough(&context.base, "watsonx"))?,
-    ))
-}
-
-// _complete_watsonx_text resolves the credentials first, then hands the call over under watsonx_text
-fn watsonx_text<R>(
-    context: &ChatContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<Completion<R>, EnterpriseError> {
-    Ok(Completion::Handler(
-        handler.complete(&watsonx::text_call(context)?)?,
-    ))
-}
-
-// _complete_sagemaker_chat: the context provider keeps sagemaker_chat and sagemaker_nova apart
-fn sagemaker_chat<R>(
-    context: &ChatContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<Completion<R>, EnterpriseError> {
-    Ok(Completion::Handler(handler.complete(&passthrough(
-        &context.base,
-        context.base.custom_llm_provider,
-    ))?))
 }
 
 // _complete_sagemaker: no key and no base, as the AWS values travel in optional params

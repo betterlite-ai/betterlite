@@ -25,7 +25,7 @@ use crate::watsonx_embed::reply::decode_watsonx_embedding_reply;
 use super::call::{convert, signing_params};
 use super::error::EnterpriseError;
 use super::sagemaker::{self, SagemakerDeps, SagemakerEmbedding};
-use super::sap::{self, SapRequest};
+use super::sap;
 use super::select::EmbeddingConfig;
 use super::transport::{EnterpriseTransport, SharedTransport, request};
 use super::watsonx;
@@ -56,7 +56,20 @@ pub async fn dispatch(
         EmbeddingConfig::Watsonx => Ok(EmbeddingReply::Watsonx(Box::new(
             watsonx_embedding(call, &context.env, context.transport).await?,
         ))),
-        EmbeddingConfig::Sagemaker => sagemaker(call, context),
+        EmbeddingConfig::Sagemaker => {
+            let input: EmbeddingInput = convert(&call.input)?;
+            let signing = signing_params(&call.optional_params)?;
+            let reply = sagemaker::embedding(
+                &context.sagemaker,
+                &SagemakerEmbedding {
+                    model: &call.model,
+                    input: &input,
+                    optional_params: &call.optional_params,
+                    signing: &signing,
+                },
+            )?;
+            Ok(EmbeddingReply::Sagemaker(Box::new(reply)))
+        }
     }
 }
 
@@ -66,28 +79,23 @@ async fn sap(
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingReply, EnterpriseError> {
     let prepared = sap::prepare_embedding(
-        SapRequest {
-            // _embedding's sap arm ignores the request key: the token creator reads litellm.sap_service_key and the env
-            api_key: None,
-            sap_service_key: context.sap_service_key,
-            env: context.env,
-        },
+        context.env,
+        context.sap_service_key,
         context.transport,
         context.clock,
     )?;
-    let input: EmbeddingInput = convert(&call.input)?;
-    let body = transform_embedding_request(&call.model, &input, &call.optional_params)?;
+    let body =
+        transform_embedding_request(&call.model, &convert(&call.input)?, &call.optional_params)?;
     let bytes = serde_json::to_vec(&body).map_err(|source| EnterpriseError::Encode { source })?;
-    let outbound = request(
-        Method::POST,
-        &prepared.url,
-        &prepared.headers,
-        bytes,
-        call.timeout,
-    )?;
     let response = context
         .transport
-        .send(outbound)
+        .send(request(
+            Method::POST,
+            &prepared.url,
+            &prepared.headers,
+            bytes,
+            call.timeout,
+        )?)
         .await
         .map_err(|source| EnterpriseError::Transport { source })?;
     sap_reply(&response)
@@ -107,25 +115,6 @@ fn sap_reply(response: &UpstreamResponse) -> Result<EmbeddingReply, EnterpriseEr
         std::str::from_utf8(&response.body).map_err(|source| EnterpriseError::Utf8 { source })?;
     Ok(EmbeddingReply::Sap(Box::new(transform_embedding_response(
         text,
-    )?)))
-}
-
-// the sagemaker arm: no key and no base, as the AWS values travel in optional params
-fn sagemaker(
-    call: &EmbeddingCall,
-    context: &EmbeddingContext<'_>,
-) -> Result<EmbeddingReply, EnterpriseError> {
-    let input: EmbeddingInput = convert(&call.input)?;
-    let signing = signing_params(&call.optional_params)?;
-    let prepared = SagemakerEmbedding {
-        model: &call.model,
-        input: &input,
-        optional_params: &call.optional_params,
-        signing: &signing,
-    };
-    Ok(EmbeddingReply::Sagemaker(Box::new(sagemaker::embedding(
-        &context.sagemaker,
-        &prepared,
     )?)))
 }
 

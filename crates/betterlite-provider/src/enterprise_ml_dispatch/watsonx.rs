@@ -37,42 +37,32 @@ pub fn environment(source: &EnvironmentSource<'_>) -> Result<WatsonxEnvironment,
     })
 }
 
-// the popped text: an absent or null key takes the next default, and an explicit text is used as given, empty included
-fn pop_text(params: &mut Object, field: &'static str) -> Result<Option<String>, EnterpriseError> {
-    match params.shift_remove(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(EnterpriseError::FieldType { field })
-        }
+// an absent or null value takes the next default, and an explicit text is used as given, empty included
+fn field_text(
+    value: Option<&Json>,
+    field: &'static str,
+) -> Result<Option<String>, EnterpriseError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if let Json::Text(text) = value {
+        return Ok(Some(text.clone()));
     }
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    Err(EnterpriseError::FieldType { field })
 }
 
 // an absent or null credentials key takes the other name, and a present object is read as the overrides
-fn take_object(
-    params: &mut Object,
+fn field_object(
+    value: Option<&Json>,
     field: &'static str,
 ) -> Result<Option<Object>, EnterpriseError> {
-    match params.shift_remove(field) {
+    match value {
+        Some(Json::Object(fields)) => Ok(Some(fields.clone())),
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(EnterpriseError::FieldType { field })
-        }
-    }
-}
-
-// the credentials field: absent or null takes the fallback, and an explicit text is used as given, empty included
-fn credential_text(
-    fields: &Object,
-    field: &'static str,
-) -> Result<Option<String>, EnterpriseError> {
-    match fields.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(EnterpriseError::FieldType { field })
-        }
+        Some(_) => Err(EnterpriseError::FieldType { field }),
     }
 }
 
@@ -84,7 +74,7 @@ fn text_api_key(
     if let Some(stored) = base.api_key {
         return Ok(Some(SecretString::from(stored.expose_secret().to_owned())));
     }
-    if let Some(value) = pop_text(params, "apikey")? {
+    if let Some(value) = field_text(params.shift_remove("apikey").as_ref(), "apikey")? {
         return Ok(Some(SecretString::from(value)));
     }
     for name in ["WATSONX_APIKEY", "WATSONX_API_KEY", "WX_API_KEY"] {
@@ -104,9 +94,9 @@ fn text_api_base(
         return Ok(Some(value.to_owned()));
     }
     // the inner pop runs first, so all three leave the params even when url wins
-    let base_url = pop_text(params, "base_url")?;
-    let api_base = pop_text(params, "api_base")?;
-    let url = pop_text(params, "url")?;
+    let base_url = field_text(params.shift_remove("base_url").as_ref(), "base_url")?;
+    let api_base = field_text(params.shift_remove("api_base").as_ref(), "api_base")?;
+    let url = field_text(params.shift_remove("url").as_ref(), "url")?;
     if let Some(value) = url.or(api_base).or(base_url) {
         return Ok(Some(value));
     }
@@ -124,24 +114,30 @@ fn text_credentials(
     api_key: &mut Option<SecretString>,
     api_base: &mut Option<String>,
 ) -> Result<(), EnterpriseError> {
-    let nested = take_object(params, "watsonx_credentials")?;
-    let wx = take_object(params, "wx_credentials")?;
+    let nested = field_object(
+        params.shift_remove("watsonx_credentials").as_ref(),
+        "watsonx_credentials",
+    )?;
+    let wx = field_object(
+        params.shift_remove("wx_credentials").as_ref(),
+        "wx_credentials",
+    )?;
     let Some(fields) = wx.or(nested) else {
         return Ok(());
     };
-    if let Some(value) = credential_text(&fields, "url")? {
+    if let Some(value) = field_text(fields.get("url"), "url")? {
         *api_base = Some(value);
     }
-    let key = match credential_text(&fields, "apikey")? {
+    let key = match field_text(fields.get("apikey"), "apikey")? {
         Some(value) => Some(value),
-        None => credential_text(&fields, "api_key")?,
+        None => field_text(fields.get("api_key"), "api_key")?,
     };
     if let Some(value) = key {
         *api_key = Some(SecretString::from(value));
     }
-    let token = match credential_text(&fields, "token")? {
+    let token = match field_text(fields.get("token"), "token")? {
         Some(value) => Some(value),
-        None => credential_text(&fields, "watsonx_token")?,
+        None => field_text(fields.get("watsonx_token"), "watsonx_token")?,
     };
     if let Some(token) = token {
         params.insert(String::from("token"), Json::Text(token));
