@@ -86,6 +86,59 @@ fn keyword_ties_take_quality_then_order_then_price_then_name() {
 }
 
 #[test]
+fn an_unset_order_and_cost_sort_after_declared_ones() {
+    let request = messages(r#"[{"role":"user","content":"k"}]"#);
+    let by_order = router(
+        &["bare", "ordered"],
+        &[
+            keyword(deployment("bare", 2), "k"),
+            keyword(ordered(deployment("ordered", 2), 9), "k"),
+        ],
+    );
+    assert_eq!(pick(&by_order, &request).as_deref(), Some("ordered"));
+    let by_cost = router(
+        &["bare", "priced"],
+        &[
+            keyword(deployment("bare", 2), "k"),
+            keyword(priced(deployment("priced", 2), 5, 1), "k"),
+        ],
+    );
+    assert_eq!(pick(&by_cost, &request).as_deref(), Some("priced"));
+}
+
+#[test]
+fn a_tier_tie_takes_order_then_price_then_name() {
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    let by_order = router_with(
+        &["late", "early"],
+        Some(table(&[("SIMPLE", 2)])),
+        None,
+        &[
+            ordered(deployment("late", 2), 3),
+            ordered(deployment("early", 2), 1),
+        ],
+    );
+    assert_eq!(pick(&by_order, &request).as_deref(), Some("early"));
+    let by_price = router_with(
+        &["pricey", "cheap"],
+        Some(table(&[("SIMPLE", 2)])),
+        None,
+        &[
+            priced(deployment("pricey", 2), 5, 1),
+            priced(deployment("cheap", 2), 1, 1),
+        ],
+    );
+    assert_eq!(pick(&by_price, &request).as_deref(), Some("cheap"));
+    let by_name = router_with(
+        &["bbb", "aaa"],
+        Some(table(&[("SIMPLE", 2)])),
+        None,
+        &[deployment("bbb", 2), deployment("aaa", 2)],
+    );
+    assert_eq!(pick(&by_name, &request).as_deref(), Some("aaa"));
+}
+
+#[test]
 fn an_exact_quality_tier_wins_before_rounding() {
     let router = router_with(
         &["one", "two", "three"],
