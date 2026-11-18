@@ -28,7 +28,7 @@ pub(super) fn observe(outcome: NativeOutcome) -> LocalBoxFuture<'static, Observe
             }
             Ok(Outcome::Completion(Reply::Legacy(reply))) => return legacy(reply).await,
             Err(DispatchError::Completion(Failure::Chat(error))) => {
-                observed.status = error.status_code()
+                observed.status = error.status_code();
             }
             Err(DispatchError::Completion(Failure::Prepare(error))) => {
                 observed.status = error.status_code();

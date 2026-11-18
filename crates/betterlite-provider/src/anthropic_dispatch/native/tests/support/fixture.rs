@@ -28,6 +28,7 @@ use betterlite_tokenizer::engine::{
     assets::bundled,
     tiktoken::{Encoding, TiktokenEngine},
 };
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,6 +39,7 @@ const COSTS: &[u8] = br#"{"claude-3-haiku-20240307":{"litellm_provider":"anthrop
 
 pub(super) struct Fixture {
     pub(super) client: ProxiedClient,
+    pub(super) now: DateTime<Utc>,
     pub(super) services: Services,
     pub(super) globals: Globals,
     pub(super) credentials: Environment,
@@ -59,14 +61,17 @@ pub(super) struct Fixture {
     pub(super) new_id: fn() -> String,
     pub(super) engine: Engine,
 }
-impl From<ProxiedClient> for Fixture {
-    fn from(client: ProxiedClient) -> Self {
+impl Default for Fixture {
+    fn default() -> Self {
+        let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+        let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
         let encoding = Encoding::Cl100kBase;
         let engine = TiktokenEngine::from_bpe_file(encoding, &bundled(encoding).unwrap()).unwrap();
         let settings = AnthropicSettings::default();
         let services = Services::from((&client, &settings));
         Self {
             client,
+            now: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
             services,
             globals: Globals::default(),
             credentials: Environment::default(),
@@ -94,13 +99,6 @@ impl From<ProxiedClient> for Fixture {
             new_id: || Uuid::new_v4().to_string(),
             engine: Engine::Tiktoken(Arc::new(engine)),
         }
-    }
-}
-impl Default for Fixture {
-    fn default() -> Self {
-        let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
-        let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
-        Self::from(client)
     }
 }
 impl<'deps> From<(&'deps Fixture, ChatConfigTag)> for CompletionSettings<'deps> {

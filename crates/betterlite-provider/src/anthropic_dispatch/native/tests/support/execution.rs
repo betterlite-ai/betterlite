@@ -28,7 +28,6 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
 use futures_util::future::LocalBoxFuture;
 use tokio::time::timeout;
 
@@ -36,44 +35,42 @@ type Handler<'deps> =
     Native<'deps, ProxiedClient, NoDynamicMetadata, NoHfConfig, Media, Media, fn() -> String>;
 type Capabilities<'deps> = CapabilityEnvironment<'deps, NoDynamicMetadata, NoHfConfig>;
 
-impl Fixture {
-    pub(super) fn invoke<'call>(
-        &'call self,
-        invocation: Invocation<'call>,
-    ) -> LocalBoxFuture<'call, Observed> {
-        Box::pin(async move {
-            let resolution = ResolutionContext {
-                catalog: &self.catalog,
-                known_model_names: &self.names,
-                custom_providers: &self.names,
-                environment: &self.environment,
-                registry: JSONProviderRegistry::load(),
-                policies: ProviderPolicies::default(),
-                globals: GlobalCredentials::default(),
-            };
-            let mut keys = ModelCostKeys::default();
-            let capabilities = CapabilityEnvironment {
-                metadata: MetadataEnvironment {
-                    model_cost: &self.map.entries,
-                    vertex: &self.map.vertex,
-                    generalizations: &self.generalizations,
-                    resolution: &resolution,
-                    normalizers: NameNormalizers {
-                        bedrock_base_model: get_bedrock_base_model,
-                        bedrock_routing_prefix: strip_bedrock_routing_prefix,
-                        mantle_region_split: split_region_prefix,
-                    },
+pub(super) fn invoke<'call>(
+    fixture: &'call Fixture,
+    invocation: Invocation<'call>,
+) -> LocalBoxFuture<'call, Observed> {
+    Box::pin(async move {
+        let resolution = ResolutionContext {
+            catalog: &fixture.catalog,
+            known_model_names: &fixture.names,
+            custom_providers: &fixture.names,
+            environment: &fixture.environment,
+            registry: JSONProviderRegistry::load(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
+        let mut keys = ModelCostKeys::default();
+        let capabilities = CapabilityEnvironment {
+            metadata: MetadataEnvironment {
+                model_cost: &fixture.map.entries,
+                vertex: &fixture.map.vertex,
+                generalizations: &fixture.generalizations,
+                resolution: &resolution,
+                normalizers: NameNormalizers {
+                    bedrock_base_model: get_bedrock_base_model,
+                    bedrock_routing_prefix: strip_bedrock_routing_prefix,
+                    mantle_region_split: split_region_prefix,
                 },
-                keys: &mut keys,
-                dynamic: &NoDynamicMetadata,
-                hf: &self.hf,
-                provider_catalog: &self.provider_catalog,
-                provider_generation: 0,
-            };
-            let mut handler = Handler::from((self, capabilities));
-            invocation.dispatch(&mut handler, &self.services).await
-        })
-    }
+            },
+            keys: &mut keys,
+            dynamic: &NoDynamicMetadata,
+            hf: &fixture.hf,
+            provider_catalog: &fixture.provider_catalog,
+            provider_generation: 0,
+        };
+        let mut handler = Handler::from((fixture, capabilities));
+        invocation.dispatch(&mut handler, &fixture.services).await
+    })
 }
 
 impl<'deps> From<(&'deps Fixture, Capabilities<'deps>)> for Handler<'deps> {
@@ -85,7 +82,7 @@ impl<'deps> From<(&'deps Fixture, Capabilities<'deps>)> for Handler<'deps> {
                 matrix: &fixture.matrix,
                 stream_logger: &Log,
                 ids: &UuidV4,
-                now: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                now: fixture.now,
                 max_event_bytes: 0x0001_0000,
                 max_error_body_bytes: 0x0001_0000,
                 disable_add_prefix_to_prompt: false,

@@ -80,7 +80,7 @@ pub(super) fn run(
             call,
             completion: CompletionSettings::from((&fixture, tag)),
         };
-        let mut observed = fixture.invoke(invocation).await;
+        let mut observed = execution::invoke(&fixture, invocation).await;
         if observed.posts == 1 {
             let (body, credential) = timeout(TIMEOUT, tasks.join_next())
                 .await
