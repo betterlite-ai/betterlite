@@ -1,0 +1,3 @@
+general_settings:
+  spend_capture_rate_check:
+    threshold: 1.5
