@@ -345,6 +345,21 @@ async fn prompt_token_count() {
     };
     assert_eq!(completion.usage.prompt_tokens, 9);
     assert_eq!(completion.usage.total_tokens, 9);
+    assert_eq!(
+        PromptTokens::count(&tokens, "gpt-3.5-turbo", &[])
+            .await
+            .unwrap(),
+        3
+    );
+    assert!(matches!(
+        PromptTokens::count(
+            &tokens,
+            "gpt-3.5-turbo",
+            &[json!({"content": "missing role"})]
+        )
+        .await,
+        Err(PromptCountError::Messages { .. })
+    ));
 }
 
 fn malformed_nested_error_failure() {

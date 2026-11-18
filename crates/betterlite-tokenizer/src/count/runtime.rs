@@ -89,3 +89,5 @@ impl BlockingCounter for InlineCounter {
         job()
     }
 }
+
+mod tests;

@@ -34,7 +34,8 @@ impl PromptTokens for Counter {
             custom_tokenizer: None,
             text: None,
             messages: Some(&parsed),
-            count_response_tokens: None,
+            // LiteLLM omits this argument, whose False default includes the assistant reply priming.
+            count_response_tokens: Some(false),
             tools: None,
             tool_choice: None,
         };
