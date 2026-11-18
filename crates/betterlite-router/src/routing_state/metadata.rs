@@ -48,7 +48,7 @@ impl MetadataBucket {
     pub fn counted_tokens(&self) -> Option<i64> {
         match self.fields.get(COUNTED_TOKENS_KEY) {
             Some(MetadataField::Counted(value)) => Some(*value),
-            Some(MetadataField::Other(_ignored)) | None => None,
+            Some(MetadataField::Other(_)) | None => None,
         }
     }
 }

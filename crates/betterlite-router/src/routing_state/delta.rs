@@ -9,14 +9,13 @@ use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tokio::sync::Notify;
 
-use crate::router_observations::counter::CounterError;
 use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
 };
 
 use self::store::{merge, send, snapshot};
 use super::error::RoutingStateError;
-use super::{FLUSH_DEADLINE, MAX_OVERFLOW_DELTAS, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
+use super::{FLUSH_DEADLINE, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
 
 // one RedisPipelineIncrementOperation: the window delta, its key and the ttl the first write of it carries
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,13 +29,6 @@ pub struct Delta {
 pub trait DeltaStore: Send + Sync {
     async fn increment_pipeline(&self, deltas: &[Delta])
     -> Result<Vec<Decimal>, RoutingStateError>;
-}
-
-// the queue a full caller flushed into, and the buffer a callback's delta waits in when it could not flush
-#[derive(Default)]
-pub(super) struct Batches {
-    pub(super) pending: Vec<Delta>,
-    pub(super) overflow: Vec<Delta>,
 }
 
 // the owner of the store push: a flag plus a waker, so no lock is held across a storage await
@@ -87,16 +79,9 @@ impl Drop for FlushGuard<'_> {
 pub(super) struct SyncState<S: DeltaStore> {
     pub(super) local: Arc<RoutingValueStore>,
     pub(super) store: Option<Arc<S>>,
-    pub(super) batches: Mutex<Batches>,
+    pub(super) pending: Mutex<Vec<Delta>>,
     pub(super) tracked: Mutex<BTreeSet<RouteKey>>,
     pub(super) gate: FlushGate,
-    pub(super) flushing_usage: AtomicBool,
-}
-
-// what became of the delta an increment queued
-pub(super) enum Recorded {
-    Queued,
-    Saturated(Delta),
 }
 
 impl<S: DeltaStore> SyncState<S> {
@@ -104,10 +89,9 @@ impl<S: DeltaStore> SyncState<S> {
         Self {
             local,
             store,
-            batches: Mutex::new(Batches::default()),
+            pending: Mutex::new(Vec::new()),
             tracked: Mutex::new(BTreeSet::new()),
             gate: FlushGate::new(),
-            flushing_usage: AtomicBool::new(false),
         }
     }
 
@@ -137,82 +121,41 @@ impl<S: DeltaStore> SyncState<S> {
     }
 
     // the local value and its queue entry move under one lock, so a sync cannot split an increment in two
-    pub(super) fn record(
+    pub(super) fn record_delta(
         &self,
         key: &RouteKey,
-        value: Decimal,
+        increment: RouteIncrement,
         ttl: Duration,
-    ) -> Result<(RouteValue, Recorded), StoreError> {
-        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
-        let updated =
-            self.local
-                .increment(key, &RouteIncrement::Spend(value), Some(ttl.as_secs_f64()))?;
+    ) -> Result<(RouteValue, Option<Delta>), StoreError> {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        let updated = self
+            .local
+            .increment(key, &increment, Some(ttl.as_secs_f64()))?;
         if self.store.is_none() {
-            return Ok((updated, Recorded::Queued));
+            return Ok((updated, None));
         }
+        let value = match increment {
+            RouteIncrement::Spend(value) => value,
+            RouteIncrement::Counter(value) => Decimal::from(value),
+        };
         let delta = Delta {
             key: key.clone(),
             value,
             ttl,
         };
-        if batches.pending.len() < MAX_PENDING_DELTAS {
-            batches.pending.push(delta);
-            return Ok((updated, Recorded::Queued));
+        if pending.len() < MAX_PENDING_DELTAS {
+            pending.push(delta);
+            return Ok((updated, None));
         }
-        Ok((updated, Recorded::Saturated(delta)))
-    }
-
-    // the usage increment lands locally first; a full queue hands its delta back to the caller
-    pub(super) fn enqueue_usage(
-        &self,
-        key: &RouteKey,
-        value: i64,
-        ttl: Duration,
-    ) -> Result<Recorded, CounterError> {
-        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
-        self.local
-            .increment(
-                key,
-                &RouteIncrement::Counter(value),
-                Some(ttl.as_secs_f64()),
-            )
-            .map_err(|_source| CounterError::Rejected {
-                key: key.as_ref().to_owned(),
-            })?;
-        if self.store.is_none() {
-            return Ok(Recorded::Queued);
-        }
-        let delta = Delta {
-            key: key.clone(),
-            value: Decimal::from(value),
-            ttl,
-        };
-        if batches.pending.len() < MAX_PENDING_DELTAS {
-            batches.pending.push(delta);
-            return Ok(Recorded::Queued);
-        }
-        Ok(Recorded::Saturated(delta))
-    }
-
-    // the synchronous sink cannot await, so its delta waits in the overflow for the one background flush
-    pub(super) fn queue_overflow(&self, delta: Delta) {
-        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
-        if batches.overflow.len() >= MAX_OVERFLOW_DELTAS {
-            tracing::warn!(
-                key = delta.key.as_ref(),
-                "the usage overflow buffer is full; the delta is not queued"
-            );
-            return;
-        }
-        batches.overflow.push(delta);
+        Ok((updated, Some(delta)))
     }
 
     pub(super) fn queue(&self, delta: Delta) -> bool {
-        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
-        if batches.pending.len() >= MAX_PENDING_DELTAS {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        if pending.len() >= MAX_PENDING_DELTAS {
             return false;
         }
-        batches.pending.push(delta);
+        pending.push(delta);
         true
     }
 }
@@ -250,36 +193,4 @@ pub(super) async fn push_pending<S: DeltaStore>(state: &SyncState<S>) -> bool {
         return false;
     };
     send(state, &batch).await.is_some()
-}
-
-// the usage sink cannot await, so a full queue arms one background flush and this drains what it can
-pub(super) async fn flush_usage_overflow<S: DeltaStore + 'static>(state: Arc<SyncState<S>>) {
-    let _done = UsageFlushDone {
-        state: Arc::clone(&state),
-    };
-    let flushed = tokio::time::timeout(FLUSH_DEADLINE, drain_to_store(state.as_ref())).await;
-    if flushed.is_err() {
-        tracing::warn!("the routing usage flush did not finish inside its deadline");
-    }
-}
-
-// the flag clears even when cleanup aborts the task that holds it
-struct UsageFlushDone<S: DeltaStore> {
-    state: Arc<SyncState<S>>,
-}
-
-impl<S: DeltaStore> Drop for UsageFlushDone<S> {
-    fn drop(&mut self) {
-        self.state.flushing_usage.store(false, Ordering::Release);
-    }
-}
-
-// drain until a push leaves nothing behind; a failed or busy push leaves its batch to the next sync
-async fn drain_to_store<S: DeltaStore>(state: &SyncState<S>) {
-    loop {
-        if let SyncOutcome::Pushed = sync_state(state).await {
-            continue;
-        }
-        return;
-    }
 }

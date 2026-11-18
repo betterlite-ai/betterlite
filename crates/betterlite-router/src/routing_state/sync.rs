@@ -1,12 +1,8 @@
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, PoisonError};
-
-use crate::router_observations::counter::{CounterError, Increment};
-use crate::routing_value_store::RouteKey;
+use tokio::runtime::{Handle, RuntimeFlavor};
 
 use super::FLUSH_DEADLINE;
 use super::counter::RouterCounters;
-use super::delta::{self, Delta, DeltaStore, Recorded, SyncOutcome};
+use super::delta::{self, Delta, DeltaStore, SyncOutcome};
 
 impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy._sync_in_memory_spend_with_redis
@@ -24,7 +20,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             tokio::time::timeout(FLUSH_DEADLINE, delta::sync_state(self.state.as_ref())).await;
         let queued = match outcome {
             Ok(SyncOutcome::Pushed | SyncOutcome::Empty) => self.state.queue(delta),
-            Ok(SyncOutcome::Failed | SyncOutcome::Busy) | Err(_elapsed) => false,
+            Ok(SyncOutcome::Failed | SyncOutcome::Busy) | Err(_) => false,
         };
         if queued {
             return;
@@ -35,44 +31,23 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         );
     }
 
-    // both usage paths parse the key and track it so a sync reads its store total back
-    pub(super) fn usage_key(&self, increment: &Increment) -> Result<RouteKey, CounterError> {
-        let route_key =
-            RouteKey::parse(&increment.key).map_err(|_source| CounterError::Rejected {
-                key: increment.key.clone(),
-            })?;
-        if self.state.store.is_some() {
-            self.state.track(&route_key);
-        }
-        Ok(route_key)
-    }
-
-    // B397's synchronous CounterSink cannot await redis, so the delta joins the batch or waits in the overflow
-    pub(super) fn queue_usage(&self, increment: &Increment) -> Result<(), CounterError> {
-        let route_key = self.usage_key(increment)?;
-        if let Recorded::Saturated(delta) =
-            self.state
-                .enqueue_usage(&route_key, increment.value, increment.ttl)?
-        {
-            self.state.queue_overflow(delta);
-            self.schedule_usage_flush();
-        }
-        Ok(())
-    }
-
-    // one flush task at a time drains the overflow; the flag and its guard keep a stuck store from piling up tasks
-    fn schedule_usage_flush(&self) {
-        if self.state.flushing_usage.swap(true, Ordering::AcqRel) {
+    // B397's sink cannot await, so a saturated queue flushes the same way on the calling worker thread
+    pub(super) fn flush_saturated(&self, delta: Delta) {
+        let Some(handle) = worker_handle() else {
+            tracing::warn!(
+                key = delta.key.as_ref(),
+                "the usage delta needs a multi-threaded runtime to flush; it is dropped"
+            );
             return;
-        }
-        if tokio::runtime::Handle::try_current().is_err() {
-            self.state.flushing_usage.store(false, Ordering::Release);
-            tracing::warn!("no runtime is running; the usage overflow waits for the next sync");
-            return;
-        }
-        let state = Arc::clone(&self.state);
-        let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
-        while tasks.try_join_next().is_some() {}
-        tasks.spawn(delta::flush_usage_overflow(state));
+        };
+        tokio::task::block_in_place(|| handle.block_on(self.flush_or_drop(delta)));
+    }
+}
+
+// block_in_place only takes a worker's thread on the multi-threaded runtime, and the push needs one to run
+fn worker_handle() -> Option<Handle> {
+    match Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => Some(handle),
+        Ok(_) | Err(_) => None,
     }
 }

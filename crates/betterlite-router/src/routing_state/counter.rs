@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use tokio::task::JoinSet;
 
 use crate::router_observations::counter::{CounterError, Increment};
@@ -13,7 +14,7 @@ use crate::routing_value_store::{
 };
 
 use super::Settings;
-use super::delta::{DeltaStore, Recorded, SyncState};
+use super::delta::{Delta, DeltaStore, SyncState};
 use super::error::RoutingStateError;
 
 pub struct RouterCounters<S: DeltaStore + 'static> {
@@ -41,11 +42,13 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     ) -> Result<Decimal, RoutingStateError> {
         let route_key = RouteKey::parse(key)?;
         self.state.track(&route_key);
-        let (updated, recorded) = self.state.record(&route_key, value, ttl)?;
-        if let Recorded::Saturated(delta) = recorded {
+        let (updated, saturated) =
+            self.state
+                .record_delta(&route_key, RouteIncrement::Spend(value), ttl)?;
+        if let Some(delta) = saturated {
             self.flush_or_drop(delta).await;
         }
-        spend_value(&route_key, &updated)
+        Ok(spend_value(&route_key, &updated))
     }
 
     // BaseRoutingStrategy._increment_value_list_in_current_window
@@ -61,18 +64,26 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         Ok(results)
     }
 
-    // the awaited callback path: a full queue flushes inside the caller's deadline before its delta is queued
-    pub async fn increment_usage(&self, increments: &[Increment]) -> Result<(), CounterError> {
-        for increment in increments {
-            let route_key = self.usage_key(increment)?;
-            if let Recorded::Saturated(delta) =
-                self.state
-                    .enqueue_usage(&route_key, increment.value, increment.ttl)?
-            {
-                self.flush_or_drop(delta).await;
-            }
+    // B397's sink cannot await the store; a delta a full queue refused comes back for the caller to flush
+    pub(super) fn stage_usage(&self, increment: &Increment) -> Result<Option<Delta>, CounterError> {
+        let route_key =
+            RouteKey::parse(&increment.key).map_err(|_source| CounterError::Rejected {
+                key: increment.key.clone(),
+            })?;
+        if self.state.store.is_some() {
+            self.state.track(&route_key);
         }
-        Ok(())
+        let recorded = self.state.record_delta(
+            &route_key,
+            RouteIncrement::Counter(increment.value),
+            increment.ttl,
+        );
+        match recorded {
+            Ok((_updated, saturated)) => Ok(saturated),
+            Err(_source) => Err(CounterError::Rejected {
+                key: increment.key.clone(),
+            }),
+        }
     }
 
     // BaseRoutingStrategy.add_to_in_memory_keys_to_update

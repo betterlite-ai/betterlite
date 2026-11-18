@@ -68,13 +68,12 @@ pub(super) fn snapshot<S: DeltaStore>(
     state: &SyncState<S>,
     keys: &[RouteKey],
 ) -> Option<(Vec<Decimal>, Vec<Delta>)> {
-    let mut batches = state.batches.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
     let before = keys
         .iter()
         .map(|key| local_amount(&state.local, key))
         .collect();
-    let mut batch = mem::take(&mut batches.pending);
-    batch.append(&mut batches.overflow);
+    let batch = mem::take(&mut *pending);
     if batch.is_empty() {
         return None;
     }
@@ -88,7 +87,7 @@ pub(super) fn merge<S: DeltaStore>(
     before: &[Decimal],
     values: &BTreeMap<String, Decimal>,
 ) {
-    let _batches = state.batches.lock().unwrap_or_else(PoisonError::into_inner);
+    let _pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
     for (key, before) in keys.iter().zip(before) {
         let after = local_amount(&state.local, key);
         let redis_value = values.get(key.as_ref()).copied().unwrap_or_default();

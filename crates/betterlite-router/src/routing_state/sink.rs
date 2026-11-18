@@ -12,11 +12,15 @@ impl<S: DeltaStore + 'static> CounterSink for RouterCounters<S> {
         increment_local_counter(self.state.as_ref(), key, value, ttl)
     }
 
-    // cache.async_increment_cache_pipeline: the local value and its queued delta move together
+    // cache.async_increment_cache_pipeline: a full queue flushes inline, as LiteLLM's await does
     fn increment_pipeline(&self, increments: &[Increment]) -> Result<(), CounterError> {
         for increment in increments {
-            if let Err(error) = self.queue_usage(increment) {
-                tracing::warn!(%error, "a usage counter could not be incremented in memory");
+            match self.stage_usage(increment) {
+                Ok(Some(delta)) => self.flush_saturated(delta),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "a usage counter could not be incremented in memory");
+                }
             }
         }
         Ok(())

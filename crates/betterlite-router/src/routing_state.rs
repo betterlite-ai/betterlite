@@ -11,8 +11,6 @@ use std::time::Duration;
 
 // one owner's batch: LiteLLM drained the whole queue, and the bound keeps a stuck store's backlog finite
 pub const MAX_PENDING_DELTAS: usize = 1024;
-// a callback delta whose queue is full waits here while one background flush runs, bounded like the queue
-pub const MAX_OVERFLOW_DELTAS: usize = 1024;
 // the keys a sync reads back from the store; LiteLLM's set was unbounded and grew one key per window
 pub const MAX_TRACKED_KEYS: usize = 1024;
 // how long a full queue's caller waits for the flush it triggers before the new observation is dropped
