@@ -29,13 +29,21 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L867-L872
   - what: >-
       The factory decides the callback class and forwards config, callback_name, injected tracer, meter
-      and logger providers and the content assembler to an injected V2LoggerConstructor, which returns
-      the callback and its provider. LiteLLM calls _logger_class(config)(...) to instantiate the class.
+      and logger providers and the content assembler to an injected V2LoggerConstructor. The runtime's
+      production implementation, CallbackConstructor, assembles one OpenTelemetryV2 through a new
+      V2Callback::assemble and gives it to B3853's V2Callback for the generic class or to B8250's
+      LangfuseOtel or LangfuseContentOtel for the Langfuse classes; the mapper chain comes from the
+      resolved config's mapper_names, and its remaining inputs are the proxy pieces B3868 passes in
+      (B3842's raw config, callback settings and utc offset, B3847's root span source, the configured
+      provider URL allowlist and error redaction). LiteLLM calls _logger_class(config)(...) to
+      instantiate the class.
     why: >-
-      B3853 owns V2Callback construction and B8250 owns the Langfuse wrappers, both outside this task's
-      scope, and OpenTelemetryV2 exposes no tracer provider for publication; the port lets the factory
-      dispatch to those classes without rebuilding a callback catalog, while the class decision stays
-      testable and oracle-checked.
+      V2Callback::new registers the callback in B3853's proxy slot, which a logger built for the catalog
+      must not claim, so the assembly step was split out and constructor registration stays B3853's.
+      OpenTelemetryV2 exposes no tracer provider for publication, and a Langfuse wrapper owns the logger
+      that V2Callback::new would move into its Arc, so the shared assembly is the only way both B3853 and
+      B8250 can build around the same provider and tracer. The port keeps the runtime independent of the
+      proxy's config resolution, which has no production caller yet (B110/B3868).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1026
   - what: >-
       The top-level callback_settings.otel.excluded_services override is injected as Option<Vec<String>>,
