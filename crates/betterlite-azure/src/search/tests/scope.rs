@@ -18,6 +18,7 @@ pub(super) fn scope_token_header() {
     mint_failure_gives_advice();
     missing_minter_is_a_value_error();
     trusted_base_allows_the_env_token();
+    trusted_base_reaches_the_minter();
 }
 
 fn api_key_becomes_api_key() {
@@ -27,7 +28,11 @@ fn api_key_becomes_api_key() {
         minter: None,
     };
     let key = SecretString::from("azure-api-key");
-    let existing = headers(&[("Authorization", "Bearer caller"), ("x-existing", "kept")]);
+    let existing = headers(&[
+        ("Authorization", "Bearer caller"),
+        ("Content-Type", "text/plain"),
+        ("x-existing", "kept"),
+    ]);
     let merged = config
         .validate_environment(existing, Some(&key), None)
         .unwrap();
@@ -172,4 +177,22 @@ fn trusted_base_allows_the_env_token() {
         empty_base.get("Authorization").map(String::as_str),
         Some("Bearer env-bearer-token")
     );
+}
+
+fn trusted_base_reaches_the_minter() {
+    let endpoint = "https://project.services.ai.azure.com/api/projects/example";
+    let settings = endpoint_settings(endpoint);
+    let fixture = minter(Ok("minted-bearer-token"));
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: Some(&fixture),
+    };
+    let merged = config
+        .validate_environment(Headers::new(), None, Some(endpoint))
+        .unwrap();
+    assert_eq!(
+        merged.get("Authorization").map(String::as_str),
+        Some("Bearer minted-bearer-token")
+    );
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
 }
