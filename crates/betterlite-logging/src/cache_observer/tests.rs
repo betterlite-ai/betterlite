@@ -231,16 +231,16 @@ fn cache_observation_rejects_a_fingerprint_one_character_too_long() {
 }
 
 #[rstest]
-#[case::empty_fingerprint("", 100, 0.0, 300.0)]
-#[case::short_fingerprint("abc", 100, 0.0, 300.0)]
-#[case::uppercase_fingerprint(UPPERCASE_FINGERPRINT, 100, 0.0, 300.0)]
-#[case::non_hex_fingerprint(NON_HEX_FINGERPRINT, 100, 0.0, 300.0)]
-#[case::zero_cached(FINGERPRINT, 0, 0.0, 300.0)]
-#[case::negative_cached(FINGERPRINT, -1, 0.0, 300.0)]
-#[case::negative_observed_at(FINGERPRINT, 100, -1.0, 300.0)]
-#[case::negative_expires_at(FINGERPRINT, 100, 0.0, -1.0)]
-#[case::nan_observed_at(FINGERPRINT, 100, f64::NAN, 300.0)]
-#[case::infinite_expires_at(FINGERPRINT, 100, 0.0, f64::INFINITY)]
+#[case::empty_fingerprint("", 100, 0.0_f64, 300.0_f64)]
+#[case::short_fingerprint("abc", 100, 0.0_f64, 300.0_f64)]
+#[case::uppercase_fingerprint(UPPERCASE_FINGERPRINT, 100, 0.0_f64, 300.0_f64)]
+#[case::non_hex_fingerprint(NON_HEX_FINGERPRINT, 100, 0.0_f64, 300.0_f64)]
+#[case::zero_cached(FINGERPRINT, 0, 0.0_f64, 300.0_f64)]
+#[case::negative_cached(FINGERPRINT, -1, 0.0_f64, 300.0_f64)]
+#[case::negative_observed_at(FINGERPRINT, 100, -1.0_f64, 300.0_f64)]
+#[case::negative_expires_at(FINGERPRINT, 100, 0.0_f64, -1.0_f64)]
+#[case::nan_observed_at(FINGERPRINT, 100, f64::NAN, 300.0_f64)]
+#[case::infinite_expires_at(FINGERPRINT, 100, 0.0_f64, f64::INFINITY)]
 fn cache_observation_rejects_invalid_entries(
     #[case] fingerprint: &str,
     #[case] cached: i64,
@@ -261,7 +261,8 @@ fn cache_observation_rejects_unknown_fields() {
     let text = format!(
         r#"{{"fingerprint":"{FINGERPRINT}","cached_tokens":100,"observed_at":0.0,"expires_at":300.0,"scope":"extra"}}"#
     );
-    assert!(serde_json::from_str::<CacheObservation>(&text).is_err());
+    let error = serde_json::from_str::<CacheObservation>(&text).unwrap_err();
+    assert!(error.is_data());
 }
 
 #[test]
@@ -511,7 +512,7 @@ fn observer_init_keeps_the_injected_cache_and_parser() {
 fn observer_init_defaults_the_clock_to_unix_time() {
     let fake = Arc::new(FakeCache::new(false));
     let observer = PromptCacheObserver::new(fake, Arc::new(FakeParser::default()));
-    assert!((observer.clock)() > 1_700_000_000.0);
+    assert!((observer.clock)() > 1_700_000_000.0_f64);
 }
 
 #[tokio::test]
@@ -796,6 +797,7 @@ async fn storage_writes_the_observation_with_the_retention_ttl() {
     assert_eq!(writes[0].ttl.to_bits(), 86_400.0_f64.to_bits());
     assert!(!writes[0].local_only);
     let stored = decode(&writes[0].value);
+    drop(writes);
     assert_eq!(stored.fingerprint, FINGERPRINT);
     assert_eq!(stored.cached_tokens, 500);
     assert_eq!(stored.observed_at.to_bits(), NOW.to_bits());
@@ -803,8 +805,8 @@ async fn storage_writes_the_observation_with_the_retention_ttl() {
 }
 
 #[rstest]
-#[case::five_minutes(300, 1_300.0)]
-#[case::one_hour(3_600, 4_600.0)]
+#[case::five_minutes(300, 1_300.0_f64)]
+#[case::one_hour(3_600, 4_600.0_f64)]
 #[tokio::test]
 async fn storage_expires_at_the_request_start_plus_the_ttl(
     #[case] ttl_seconds: u32,
@@ -822,6 +824,7 @@ async fn storage_expires_at_the_request_start_plus_the_ttl(
     observer.async_log_success_event(&success).await;
     let writes = fake.writes.lock().unwrap();
     let stored = decode(&writes[0].value);
+    drop(writes);
     assert_eq!(stored.expires_at.to_bits(), expires_at.to_bits());
 }
 

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use betterlite_logging::cache_observer::{ObservationParser, WireRequest};
+use betterlite_logging::cache_observer::{ObservationParser as _, WireRequest};
 use betterlite_models::decisions::Json;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
