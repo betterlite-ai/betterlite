@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio_util::task::TaskTracker;
 
 use crate::auth_reconnect::request::ReconnectRequest;
@@ -23,7 +23,7 @@ use crate::key_user_writes::retry::WriteClock;
 use crate::migration_ledger::lock::JitterSource;
 use crate::tool_spend::RetryPause;
 
-use crate::combined_key_read::error::{KeyReadError, ReconnectFailure};
+use crate::combined_key_read::error::{DatabaseFailure, KeyReadError, ReconnectFailure};
 use crate::combined_key_read::grace::{DeprecatedKeyCache, DeprecatedToken};
 use crate::combined_key_read::ports::{
     DeprecatedFuture, Diagnostic, FailureHook, HookFuture, KeyFailureHook, KeyReadDatabase,
@@ -188,6 +188,7 @@ pub(crate) struct RecordedHook {
     pub(crate) message: String,
     pub(crate) traceback: String,
     pub(crate) duration: Duration,
+    pub(crate) failure: KeyReadError,
 }
 
 pub(crate) struct RecordingHook {
@@ -212,13 +213,15 @@ impl RecordingHook {
 
 impl KeyFailureHook for RecordingHook {
     fn schedule(&self, hook: FailureHook) -> HookFuture {
+        let class = hook.failure.class();
         lock(&self.timeline).push(String::from("hook"));
         lock(&self.hooks).push(RecordedHook {
             call_type: hook.call_type,
-            class: hook.class,
+            class,
             message: hook.message,
             traceback: hook.traceback,
             duration: hook.duration,
+            failure: hook.failure,
         });
         Box::pin(async {})
     }
@@ -274,8 +277,8 @@ pub(crate) struct RecordedGraceCall {
 
 #[derive(Default)]
 pub(crate) struct ScriptedDatabase {
-    pub(crate) rows: Mutex<VecDeque<Result<Option<JsonData>, DbError>>>,
-    pub(crate) deprecated: Mutex<VecDeque<Result<Option<DeprecatedToken>, DbError>>>,
+    pub(crate) rows: Mutex<VecDeque<Result<Option<JsonData>, DatabaseFailure>>>,
+    pub(crate) deprecated: Mutex<VecDeque<Result<Option<DeprecatedToken>, DatabaseFailure>>>,
     pub(crate) row_calls: Mutex<Vec<RecordedRowCall>>,
     pub(crate) grace_calls: Mutex<Vec<RecordedGraceCall>>,
     pub(crate) timeline: Timeline,
@@ -299,11 +302,11 @@ impl ScriptedDatabase {
     }
 
     pub(crate) fn push_row(&self, row: Result<Option<JsonData>, DbError>) {
-        lock(&self.rows).push_back(row);
+        lock(&self.rows).push_back(row.map_err(DatabaseFailure::from));
     }
 
     pub(crate) fn push_grace(&self, row: Result<Option<DeprecatedToken>, DbError>) {
-        lock(&self.deprecated).push_back(row);
+        lock(&self.deprecated).push_back(row.map_err(DatabaseFailure::from));
     }
 }
 
@@ -324,18 +327,21 @@ impl KeyReadDatabase for ScriptedDatabase {
         };
         lock(&self.row_calls).push(recorded);
         lock(&self.timeline).push(String::from("read"));
-        let next = pop_step(&self.rows).unwrap_or(Ok::<Option<JsonData>, DbError>(None));
+        let next = pop_step(&self.rows).unwrap_or(Ok(None));
         Box::pin(async move { next })
     }
 
     fn deprecated_row<'lookup>(
         &'lookup self,
         hash: &'lookup KeyHash,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
         use_writer: bool,
     ) -> DeprecatedFuture<'lookup> {
-        let next =
-            pop_step(&self.deprecated).unwrap_or(Ok::<Option<DeprecatedToken>, DbError>(None));
+        let next = pop_step(&self.deprecated).unwrap_or(Ok(None));
+        let next = match next {
+            Ok(Some(row)) if row.revoke_at <= now => Ok(None),
+            other => other,
+        };
         let recorded = RecordedGraceCall {
             hash: hash.expose_secret().to_owned(),
             use_writer,
@@ -457,7 +463,7 @@ impl Harness {
 
     pub(crate) async fn read(
         &self,
-        request: &CombinedKeyRequest<'_>,
+        request: &CombinedKeyRequest,
     ) -> Result<Option<CombinedKeyView>, KeyReadError> {
         let reader = KeyReader {
             database: &self.database,
@@ -538,7 +544,7 @@ pub(crate) fn view_row(token: &str) -> Option<JsonData> {
 
 pub(crate) fn grace_hit(active: &str, revoke_at: DateTime<Utc>) -> DeprecatedToken {
     DeprecatedToken {
-        active_token_id: active.to_owned(),
+        active_token_id: SecretString::from(active.to_owned()),
         revoke_at,
     }
 }

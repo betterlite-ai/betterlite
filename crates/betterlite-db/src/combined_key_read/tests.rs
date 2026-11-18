@@ -1,11 +1,12 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::budget_permission_rows::JsonData;
 use crate::database_failures::metrics::{ProxySpanResolver, WallClock};
@@ -15,7 +16,9 @@ use crate::key_hash::KeyHash;
 use crate::key_user_writes::hash::hash_token;
 use crate::team_rows::member::MemberRole;
 
-use super::error::{KeyReadError, MISSING_TOKEN_DETAIL, MISSING_TOKEN_STATUS, ReconnectFailure};
+use super::error::{
+    DatabaseFailure, KeyReadError, MISSING_TOKEN_DETAIL, MISSING_TOKEN_STATUS, ReconnectFailure,
+};
 use super::grace::{
     DEPRECATED_CACHE_CAPACITY, DEPRECATED_CACHE_TTL_SECONDS, DeprecatedKeyCache, DeprecatedToken,
 };
@@ -37,25 +40,37 @@ async fn token_hash_once_and_missing400() {
     let harness = Harness::new(Duration::ZERO);
     let plaintext = "sk-plaintext";
     harness.database.push_row(Ok(view_row(plaintext)));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some(plaintext)))
-        .await
-        .unwrap();
+    let hashed_request = CombinedKeyRequest {
+        token: Some(SecretString::from(plaintext)),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&hashed_request).await.unwrap();
     assert!(found.is_some());
     let stored = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
     harness.database.push_row(Ok(view_row(stored)));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some(stored)))
-        .await
-        .unwrap();
+    let stored_request = CombinedKeyRequest {
+        token: Some(SecretString::from(stored)),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&stored_request).await.unwrap();
     assert!(found.is_some());
     let calls = harness.database.row_calls();
     assert_eq!(calls[0].hash, hash_token(plaintext));
     assert_eq!(calls[1].hash, stored);
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(None))
-        .await
-        .unwrap_err();
+    let absent_request = CombinedKeyRequest {
+        token: None,
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&absent_request).await.unwrap_err();
     assert_eq!(error.status_code(), Some(MISSING_TOKEN_STATUS));
     assert_eq!(error.detail(), Some(MISSING_TOKEN_DETAIL));
     assert!(matches!(error, KeyReadError::MissingToken));
@@ -66,8 +81,11 @@ async fn token_hash_once_and_missing400() {
 async fn non_unique_returns_none() {
     let harness = Harness::new(Duration::ZERO);
     let listed = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-listed")),
         query_type: KeyQueryType::FindAll,
-        ..CombinedKeyRequest::find_unique(Some("sk-listed"))
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
     };
     assert!(harness.read(&listed).await.unwrap().is_none());
     assert!(harness.database.row_calls().is_empty());
@@ -80,8 +98,11 @@ async fn non_unique_returns_none() {
         .count();
     assert_eq!(hashed, 1);
     let absent = CombinedKeyRequest {
+        token: None,
         query_type: KeyQueryType::FindAll,
-        ..CombinedKeyRequest::find_unique(None)
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
     };
     assert!(harness.read(&absent).await.unwrap().is_none());
     assert!(harness.database.row_calls().is_empty());
@@ -113,8 +134,11 @@ async fn writer_bypasses_plan_repair() {
     let harness = Harness::new(Duration::ZERO);
     harness.database.push_row(Ok(view_row("sk-writer")));
     let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-writer")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
         use_writer: true,
-        ..CombinedKeyRequest::find_unique(Some("sk-writer"))
+        parent_otel_span: None,
     };
     assert!(harness.read(&request).await.unwrap().is_some());
     assert!(harness.reconnect.requests().is_empty());
@@ -135,8 +159,11 @@ async fn writer_plan_error_is_not_repaired() {
     harness.database.push_row(Err(cached_plan_fault()));
     harness.database.push_row(Err(cached_plan_fault()));
     let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-writer")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
         use_writer: true,
-        ..CombinedKeyRequest::find_unique(Some("sk-writer"))
+        parent_otel_span: None,
     };
     let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(error, KeyReadError::Database(_)));
@@ -152,10 +179,14 @@ async fn reader_generation_before_query() {
     harness.database.push_row(Err(cached_plan_fault()));
     harness.database.push_row(Ok(view_row("sk-plan")));
     harness.reconnect.push_result(Ok(true));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-plan")))
-        .await
-        .unwrap();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-plan")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&request).await.unwrap();
     assert!(found.is_some());
     let timeline = events(&harness.timeline);
     let observed = position(&timeline, "observe");
@@ -175,10 +206,14 @@ async fn plan_error_exact_substring() {
     )));
     harness.database.push_row(Ok(view_row("sk-plan")));
     harness.reconnect.push_result(Ok(true));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-plan")))
-        .await
-        .unwrap();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-plan")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&request).await.unwrap();
     assert!(found.is_some());
     assert!(harness.diagnostics.seen().iter().any(|diagnostic| {
         matches!(diagnostic, ObservedDiagnostic::CachedPlan(message) if message.as_str() == CACHED_PLAN_WARNING)
@@ -201,10 +236,14 @@ async fn plan_error_case_variation_is_not_repaired() {
         ErrorType::RawQuery,
         "ERROR: Cached plan must not change result type",
     )));
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-plan")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-plan")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(error, KeyReadError::Database(_)));
     assert!(harness.reconnect.requests().is_empty());
     assert_eq!(harness.database.row_calls().len(), 3);
@@ -216,10 +255,14 @@ async fn same_sql_retry_after_false() {
     harness.database.push_row(Err(cached_plan_fault()));
     harness.database.push_row(Ok(view_row("sk-retry")));
     harness.reconnect.push_result(Ok(false));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-retry")))
-        .await
-        .unwrap();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-retry")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&request).await.unwrap();
     assert!(found.is_some());
     let calls = harness.database.row_calls();
     assert_eq!(calls.len(), 2);
@@ -242,13 +285,19 @@ async fn reconnect_throw_and_second_query_error() {
 #[tokio::test]
 async fn ordinary_error_no_plan_retry() {
     let harness = failing_harness(Duration::ZERO, 3, "connection reset");
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-broken")))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, KeyReadError::Database(ref fault) if fault.message == "connection reset")
-    );
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-broken")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&request).await.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyReadError::Database(DatabaseFailure::Reported(ref fault))
+            if fault.message == "connection reset"
+    ));
     assert!(harness.reconnect.requests().is_empty());
     assert_eq!(harness.database.row_calls().len(), 3);
     assert_eq!(harness.pauses().len(), 2);
@@ -264,10 +313,14 @@ async fn outer_three_attempts_ten_seconds_and_cancel() {
 #[tokio::test]
 async fn metrics_and_failure_hook_before_backoff() {
     let harness = failing_harness(Duration::from_millis(10), 3, "lookup failed");
-    harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-metric")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-metric")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    harness.read(&request).await.unwrap_err();
     let timeline = events(&harness.timeline);
     assert!(position(&timeline, "failure") < position(&timeline, "traceback"));
     assert!(position(&timeline, "traceback") < position(&timeline, "hook"));
@@ -284,6 +337,56 @@ async fn metrics_and_failure_hook_before_backoff() {
     assert_eq!(failures[0].0, "get_data");
 }
 
+#[tokio::test]
+async fn failure_hook_carries_the_original_failure() {
+    let harness = failing_harness(Duration::ZERO, 3, "the database is down");
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-typed")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let returned = harness.read(&request).await.unwrap_err();
+    let hooks = harness.hook.hooks();
+    assert_eq!(hooks.len(), 3);
+    assert_eq!(hooks[0].failure.class(), "database");
+    assert_eq!(hooks[0].failure.status_code(), None);
+    assert_eq!(hooks[0].failure.to_string(), returned.to_string());
+    match &hooks[0].failure {
+        KeyReadError::Database(DatabaseFailure::Reported(fault)) => {
+            assert_eq!(fault.error_type, ErrorType::RawQuery);
+            assert_eq!(fault.message, "the database is down");
+            assert!(fault.code.is_none());
+        }
+        other => panic!("expected the reported database failure, got {other:?}"),
+    }
+    let malformed = Harness::new(Duration::ZERO);
+    for _ in 0..3 {
+        malformed
+            .database
+            .push_row(Ok(Some(JsonData::Object(view_fields(vec![(
+                "end_user_id",
+                JsonData::Number(serde_json::Number::from_f64(1.5).unwrap()),
+            )])))));
+    }
+    let malformed_request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-typed")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    malformed.read(&malformed_request).await.unwrap_err();
+    let hooks = malformed.hook.hooks();
+    assert_eq!(hooks[0].failure.class(), "view");
+    assert!(matches!(
+        &hooks[0].failure,
+        KeyReadError::View(ViewError::Json(_))
+    ));
+    assert!(hooks[0].failure.source().is_some());
+}
+
 #[test]
 fn deprecated_ttl60_revoke_equality_and_capacity1000() {
     let now = fixed_now();
@@ -294,13 +397,14 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
         &grace_hit("active", now + TimeDelta::hours(1)),
         now,
     );
-    assert_eq!(cache.lookup(&hash, now), Some(String::from("active")));
+    let cached = cache.lookup(&hash, now).unwrap();
+    assert_eq!(cached.expose_secret(), "active");
     let ttl = TimeDelta::seconds(DEPRECATED_CACHE_TTL_SECONDS);
-    assert_eq!(
-        cache.lookup(&hash, now + ttl - TimeDelta::nanoseconds(1)),
-        Some(String::from("active"))
-    );
-    assert_eq!(cache.lookup(&hash, now + ttl), None);
+    let almost = cache
+        .lookup(&hash, now + ttl - TimeDelta::nanoseconds(1))
+        .unwrap();
+    assert_eq!(almost.expose_secret(), "active");
+    assert!(cache.lookup(&hash, now + ttl).is_none());
     assert!(cache.entries.is_empty());
     let revoked = KeyHash::from("revoked");
     cache.remember(
@@ -308,13 +412,18 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
         &grace_hit("active", now + TimeDelta::seconds(30)),
         now,
     );
-    assert_eq!(cache.lookup(&revoked, now + TimeDelta::seconds(30)), None);
+    assert!(
+        cache
+            .lookup(&revoked, now + TimeDelta::seconds(30))
+            .is_none()
+    );
     let mut full = DeprecatedKeyCache::default();
     fill_cache(&mut full, DEPRECATED_CACHE_CAPACITY, now);
     assert_eq!(full.entries.len(), DEPRECATED_CACHE_CAPACITY);
-    assert_eq!(full.lookup(&KeyHash::from("cache-key-0"), now), None);
+    assert!(full.lookup(&KeyHash::from("cache-key-0"), now).is_none());
     let newest = KeyHash::from(format!("cache-key-{DEPRECATED_CACHE_CAPACITY}"));
-    assert_eq!(full.lookup(&newest, now), Some(String::from("active")));
+    let stored = full.lookup(&newest, now).unwrap();
+    assert_eq!(stored.expose_secret(), "active");
     refresh_at_capacity(&mut full, now);
 }
 
@@ -327,32 +436,45 @@ async fn writer_bypasses_but_populates_grace_cache() {
         .database
         .push_grace(Ok(Some(grace_hit("sk-active", revoked))));
     harness.database.push_row(Ok(view_row("sk-active")));
-    let request = CombinedKeyRequest {
+    let writer_request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-old")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
         use_writer: true,
-        ..CombinedKeyRequest::find_unique(Some("sk-old"))
+        parent_otel_span: None,
     };
-    assert!(harness.read(&request).await.unwrap().is_some());
+    let reader_request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-old")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    assert!(harness.read(&writer_request).await.unwrap().is_some());
     assert_eq!(harness.database.grace_calls().len(), 1);
     assert!(harness.database.grace_calls()[0].use_writer);
     assert_eq!(lock(&harness.cache).entries.len(), 1);
     harness.database.push_row(Ok(None));
     harness.database.push_row(Ok(view_row("sk-active")));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-old")))
-        .await
-        .unwrap();
+    let found = harness.read(&reader_request).await.unwrap();
     assert!(found.is_some());
     assert_eq!(harness.database.grace_calls().len(), 1);
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(None));
-    assert!(harness.read(&request).await.unwrap().is_none());
+    assert!(harness.read(&writer_request).await.unwrap().is_none());
     assert_eq!(harness.database.grace_calls().len(), 2);
 }
 
 #[tokio::test]
 async fn negative_grace_not_cached() {
     let harness = Harness::new(Duration::ZERO);
-    let request = CombinedKeyRequest::find_unique(Some("sk-miss"));
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-miss")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(None));
     assert!(harness.read(&request).await.unwrap().is_none());
@@ -376,10 +498,14 @@ async fn grace_error_debug_drop() {
     harness
         .database
         .push_grace(Err(fault(ErrorType::Other, "deprecated table missing")));
-    let found = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-err")))
-        .await
-        .unwrap();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-err")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let found = harness.read(&request).await.unwrap();
     assert!(found.is_none());
     let expected = String::from("Deprecated key lookup skipped: deprecated table missing");
     assert!(
@@ -445,10 +571,14 @@ fn normalized_team_fields_and_expiry() {
 async fn native_database_diagnostics_hide_token_and_hash() {
     let harness = failing_harness(Duration::ZERO, 3, "the database is down");
     let token = "sk-super-secret-token";
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(Some(token)))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from(token)),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(error, KeyReadError::Database(_)));
     let hash = hash_token(token);
     let messages: Vec<String> = harness
@@ -458,7 +588,11 @@ async fn native_database_diagnostics_hide_token_and_hash() {
         .filter_map(|diagnostic| match diagnostic {
             ObservedDiagnostic::AttemptFailure(message)
             | ObservedDiagnostic::FailureTraceback(message) => Some(message),
-            _ => None,
+            ObservedDiagnostic::TokenHash
+            | ObservedDiagnostic::CachedPlan(_)
+            | ObservedDiagnostic::Backoff(_)
+            | ObservedDiagnostic::DeprecatedUsed
+            | ObservedDiagnostic::DeprecatedLookupFailed(_) => None,
         })
         .collect();
     assert_eq!(messages.len(), 6);
@@ -479,6 +613,7 @@ async fn native_database_diagnostics_hide_token_and_hash() {
     ));
     assert!(hooks[0].message.ends_with("the database is down"));
     assert_eq!(hooks[0].traceback, hooks[0].message);
+    assert!(!format!("{:?}", hooks[0].failure).contains(token));
 }
 
 fn position(timeline: &[String], label: &str) -> usize {
@@ -512,10 +647,14 @@ async fn reconnect_failure_stops_the_query() {
     harness.reconnect.push_result(Err(ReconnectFailure {
         message: String::from("reconnect exploded"),
     }));
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-throw")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-throw")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(error, KeyReadError::Reconnect(_)));
     assert_eq!(harness.database.row_calls().len(), 3);
     assert_eq!(harness.reconnect.requests().len(), 3);
@@ -538,22 +677,32 @@ async fn second_query_failure_is_returned() {
     harness.reconnect.push_result(Ok(true));
     harness.reconnect.push_result(Ok(true));
     harness.reconnect.push_result(Ok(true));
-    let error = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-second")))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, KeyReadError::Database(ref fault) if fault.message == "second query failed")
-    );
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-second")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let error = harness.read(&request).await.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyReadError::Database(DatabaseFailure::Reported(ref fault))
+            if fault.message == "second query failed"
+    ));
     assert_eq!(harness.database.row_calls().len(), 6);
 }
 
 async fn three_attempts_with_two_waits() {
     let harness = failing_harness(Duration::ZERO, 3, "lookup failed");
-    harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-outer")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-outer")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    harness.read(&request).await.unwrap_err();
     assert_eq!(harness.database.row_calls().len(), 3);
     assert_eq!(
         harness.pauses(),
@@ -570,20 +719,28 @@ async fn three_attempts_with_two_waits() {
 
 async fn ten_seconds_stop_before_three_tries() {
     let harness = failing_harness(Duration::from_secs(3), 3, "lookup failed");
-    harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-outer")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-outer")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    harness.read(&request).await.unwrap_err();
     assert_eq!(harness.database.row_calls().len(), 2);
     assert_eq!(harness.pauses().len(), 1);
 }
 
 async fn wait_is_capped_by_remaining_time() {
     let harness = failing_harness(Duration::from_millis(2250), 3, "lookup failed");
-    harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-outer")))
-        .await
-        .unwrap_err();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-outer")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    harness.read(&request).await.unwrap_err();
     assert_eq!(harness.database.row_calls().len(), 3);
     assert_eq!(
         harness.pauses(),
@@ -609,8 +766,9 @@ fn refresh_at_capacity(cache: &mut DeprecatedKeyCache, now: DateTime<Utc>) {
         cache.entries.len(),
         DEPRECATED_CACHE_CAPACITY.saturating_sub(1)
     );
-    assert_eq!(cache.lookup(&KeyHash::from("cache-key-1"), now), None);
-    assert_eq!(cache.lookup(&newest, now), Some(String::from("active")));
+    assert!(cache.lookup(&KeyHash::from("cache-key-1"), now).is_none());
+    let stored = cache.lookup(&newest, now).unwrap();
+    assert_eq!(stored.expose_secret(), "active");
 }
 
 async fn grace_returns_the_active_view() {
@@ -621,11 +779,14 @@ async fn grace_returns_the_active_view() {
         fixed_now() + TimeDelta::hours(1),
     ))));
     harness.database.push_row(Ok(view_row("sk-active")));
-    let view = harness
-        .read(&CombinedKeyRequest::find_unique(Some("sk-old")))
-        .await
-        .unwrap()
-        .unwrap();
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-old")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let view = harness.read(&request).await.unwrap().unwrap();
     assert_eq!(view.token.token.unwrap().expose_secret(), "sk-active");
     assert!(
         harness
@@ -644,13 +805,14 @@ async fn grace_never_chains() {
         fixed_now() + TimeDelta::hours(1),
     ))));
     harness.database.push_row(Ok(None));
-    assert!(
-        harness
-            .read(&CombinedKeyRequest::find_unique(Some("sk-old")))
-            .await
-            .unwrap()
-            .is_none()
-    );
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-old")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    assert!(harness.read(&request).await.unwrap().is_none());
     assert_eq!(harness.database.grace_calls().len(), 1);
     assert!(
         !harness
@@ -777,7 +939,7 @@ fn deprecated_token_columns_require_id_and_revoke_at() {
     let revoke_at = fixed_now().naive_utc();
     let token =
         DeprecatedToken::from_columns(Some(String::from("active-id")), Some(revoke_at)).unwrap();
-    assert_eq!(token.active_token_id, "active-id");
+    assert_eq!(token.active_token_id.expose_secret(), "active-id");
     assert_eq!(token.revoke_at, fixed_now());
     assert_eq!(
         DeprecatedToken::from_columns(None, Some(revoke_at))
@@ -807,6 +969,20 @@ fn metric_clock_reads_the_key_read_clock() {
 #[test]
 fn no_span_resolver_never_invents_a_parent_span() {
     assert!(NoSpanResolver.parent_span(&IndexMap::new()).is_none());
+}
+
+#[tokio::test]
+async fn native_driver_error_message_is_classified() {
+    let fixture = postgres::Fixture::start().await;
+    postgres::native_driver_error_message_is_classified(&fixture).await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn ordinary_driver_error_is_not_a_cached_plan() {
+    let fixture = postgres::Fixture::start().await;
+    postgres::ordinary_driver_error_is_not_a_cached_plan(&fixture).await;
+    fixture.close().await;
 }
 
 #[tokio::test]

@@ -23,17 +23,18 @@ use crate::identity_rows::key::Expiry;
 use crate::key_user_writes::hash::hash_token;
 use crate::team_rows::member::MemberRole;
 
-use crate::combined_key_read::error::{KeyReadError, ReconnectFailure};
+use crate::combined_key_read::error::{DatabaseFailure, KeyReadError, ReconnectFailure};
 use crate::combined_key_read::grace::DeprecatedKeyCache;
 use crate::combined_key_read::ports::{NoSpanResolver, PlanReconnect, ReconnectFuture};
 use crate::combined_key_read::postgres::PostgresKeyDatabase;
 use crate::combined_key_read::reader::{KeyReader, ReadServices};
-use crate::combined_key_read::request::CombinedKeyRequest;
+use crate::combined_key_read::request::{CombinedKeyRequest, KeyQueryType};
+use crate::combined_key_read::rows::{CACHED_PLAN_WARNING, RECONNECT_REASON};
 use crate::combined_key_read::view::CombinedKeyView;
 
 use super::harness::{
-    FullJitter, RecordingDiagnostics, RecordingHook, RecordingPause, RecordingSink, Timeline,
-    number, text,
+    FullJitter, ObservedDiagnostic, RecordingDiagnostics, RecordingHook, RecordingPause,
+    RecordingSink, Timeline, number, text,
 };
 
 const SCHEMA: &str = r#"
@@ -102,6 +103,26 @@ const INSERT_LIVE_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerif
 const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerificationToken"
     (id, token, active_token_id, revoke_at)
     VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
+
+// a statement trigger raises the server error tokio_postgres reports as a Db error, message included
+const RAISE_CACHED_PLAN: &str = r#"
+CREATE FUNCTION raise_select_error() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'cached plan must not change result type';
+    RETURN NULL;
+END
+$$"#;
+const RAISE_ORDINARY_ERROR: &str = r#"
+CREATE OR REPLACE FUNCTION raise_select_error() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'relation disappeared';
+    RETURN NULL;
+END
+$$"#;
+const SELECT_GUARD: &str = r#"
+CREATE TRIGGER key_read_guard BEFORE SELECT ON "LiteLLM_VerificationToken"
+    FOR EACH STATEMENT EXECUTE FUNCTION raise_select_error()
+"#;
 
 #[derive(clap::Parser)]
 struct Environment {
@@ -196,6 +217,35 @@ impl PlanReconnect for NoReconnect {
     }
 }
 
+#[derive(Default)]
+struct ObservedReconnects {
+    attempts: Mutex<Vec<(String, bool)>>,
+}
+
+impl PlanReconnect for ObservedReconnects {
+    type Handle = ();
+
+    fn read_target(&self) -> crate::database_refresh::generation::Observation<()> {
+        crate::database_refresh::generation::Observation {
+            generation: 0,
+            handle: None,
+            connected: true,
+        }
+    }
+
+    fn attempt<'reconnect>(
+        &'reconnect self,
+        request: &'reconnect ReconnectRequest<'_>,
+        _stale: Option<&'reconnect StaleReadEngine<Self::Handle>>,
+    ) -> ReconnectFuture<'reconnect> {
+        self.attempts
+            .lock()
+            .unwrap()
+            .push((request.reason.to_owned(), request.force_recreate));
+        Box::pin(async { Ok(true) })
+    }
+}
+
 pub(crate) struct Fixture {
     fixture: PostgresFixture,
     pool: Pool,
@@ -261,10 +311,58 @@ impl Fixture {
             },
             cache: Arc::new(Mutex::new(DeprecatedKeyCache::default())),
         };
-        reader
-            .read(&CombinedKeyRequest::find_unique(Some(token)))
-            .await
+        let request = CombinedKeyRequest {
+            token: Some(SecretString::from(token)),
+            query_type: KeyQueryType::FindUnique,
+            check_deprecated: true,
+            use_writer: false,
+            parent_otel_span: None,
+        };
+        reader.read(&request).await
     }
+}
+
+async fn read_native(
+    fixture: &Fixture,
+    reconnect: &ObservedReconnects,
+    token: &str,
+) -> (
+    Result<Option<CombinedKeyView>, KeyReadError>,
+    Vec<ObservedDiagnostic>,
+) {
+    let timeline = Timeline::default();
+    let diagnostics = RecordingDiagnostics::shared(&timeline);
+    let hook = RecordingHook::shared(&timeline);
+    let pause = RecordingPause::shared(&timeline);
+    let sink = Arc::new(RecordingSink::shared(&timeline));
+    let tasks = TaskTracker::new();
+    let database = PostgresKeyDatabase {
+        database: Some(WriterPinnedClient::Writer(&fixture.client)),
+    };
+    let reader = KeyReader {
+        database: &database,
+        reconnect,
+        sink,
+        services: ReadServices {
+            clock: &crate::key_user_writes::retry::SystemWriteClock,
+            jitter: &FullJitter,
+            pause: &pause,
+            diagnostics: &diagnostics,
+            hook: &hook,
+            resolver: &NoSpanResolver,
+            tasks: &tasks,
+        },
+        cache: Arc::new(Mutex::new(DeprecatedKeyCache::default())),
+    };
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from(token)),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: false,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let outcome = reader.read(&request).await;
+    (outcome, diagnostics.seen())
 }
 
 pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
@@ -390,6 +488,45 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
         Some(rust_decimal::Decimal::from(22))
     );
     assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
+}
+
+pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture) {
+    fixture.execute(RAISE_CACHED_PLAN, &[]).await;
+    fixture.execute(SELECT_GUARD, &[]).await;
+    let reconnect = ObservedReconnects::default();
+    let (outcome, diagnostics) = read_native(fixture, &reconnect, "sk-native-plan").await;
+    let error = outcome.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyReadError::Database(DatabaseFailure::Reported(_))
+    ));
+    assert!(
+        diagnostics.contains(&ObservedDiagnostic::CachedPlan(String::from(
+            CACHED_PLAN_WARNING
+        )))
+    );
+    let attempts = reconnect.attempts.lock().unwrap();
+    assert_eq!(attempts.len(), 3);
+    assert!(
+        attempts
+            .iter()
+            .all(|(reason, force_recreate)| reason == RECONNECT_REASON && *force_recreate)
+    );
+}
+
+pub(crate) async fn ordinary_driver_error_is_not_a_cached_plan(fixture: &Fixture) {
+    fixture.execute(RAISE_CACHED_PLAN, &[]).await;
+    fixture.execute(SELECT_GUARD, &[]).await;
+    fixture.execute(RAISE_ORDINARY_ERROR, &[]).await;
+    let reconnect = ObservedReconnects::default();
+    let (outcome, diagnostics) = read_native(fixture, &reconnect, "sk-native-plain").await;
+    assert!(matches!(outcome.unwrap_err(), KeyReadError::Database(_)));
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| matches!(diagnostic, ObservedDiagnostic::CachedPlan(_)))
+    );
+    assert!(reconnect.attempts.lock().unwrap().is_empty());
 }
 
 pub(crate) async fn deprecated_rotation_reads_the_active_key(fixture: &Fixture) {
