@@ -49,22 +49,28 @@ fn stream_suppresses_inline_usage() {
 
 #[test]
 fn stream_parses_reasoning_delta_fields() {
-    let input = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"}]}}]}"#;
+    let input = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"},{"type":"redacted_thinking","data":"cipher"}]}}]}"#;
     let chunk = Chunk::parse(input, "group", false).unwrap().unwrap();
     let delta = &chunk.choices.first().expect("the chunk has a choice").delta;
     assert_eq!(delta.reasoning_content.as_deref(), Some("thinking"));
-    let block = delta
+    let blocks = delta
         .thinking_blocks
         .as_ref()
-        .and_then(|blocks| blocks.first())
-        .expect("the thinking block is kept");
-    assert_eq!(block.kind, ThinkingKind::Thinking);
-    assert_eq!(block.thinking.as_deref(), Some("step"));
-    assert_eq!(block.signature.as_deref(), Some("sig"));
-    assert!(block.data.is_none());
+        .expect("the thinking blocks are kept");
+    assert_eq!(blocks.len(), 2);
+    let thinking = blocks.first().expect("the thinking block");
+    assert_eq!(thinking.kind, ThinkingKind::Thinking);
+    assert_eq!(thinking.thinking.as_deref(), Some("step"));
+    assert_eq!(thinking.signature.as_deref(), Some("sig"));
+    assert!(thinking.data.is_none());
+    let redacted = blocks.get(1).expect("the redacted block");
+    assert_eq!(redacted.kind, ThinkingKind::RedactedThinking);
+    assert_eq!(redacted.data.as_deref(), Some("cipher"));
+    assert!(redacted.thinking.is_none());
+    assert!(redacted.signature.is_none());
     assert_eq!(
         serde_json::to_string(&chunk).unwrap(),
-        r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"}]}}]}"#
+        r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"},{"type":"redacted_thinking","data":"cipher"}]}}]}"#
     );
 }
 
