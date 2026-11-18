@@ -12,7 +12,7 @@ use crate::otel::plumbing::exporters::ExporterFactories;
 use crate::otel::v2_callback::registry::V2Registry;
 
 use self::hooks::RuntimeHooks;
-use self::types::{LoggerRuntimeParts, V2Logger, V2LoggerConstructor};
+use self::types::{V2Logger, V2LoggerConstructor};
 
 pub mod error;
 pub mod factory;
@@ -25,49 +25,24 @@ pub mod types;
 
 // litellm.integrations.otel.logger's module state, shared with the auth adapter
 pub struct LoggerRuntime {
-    registered: Arc<V2Registry>,
-    loggers: Mutex<Vec<Arc<V2Logger>>>,
-    fan_out: Arc<Mutex<TenantFanOutRegistry>>,
-    constructor: Arc<dyn V2LoggerConstructor>,
-    base: Settings,
-    environment: Arc<dyn EnvironmentLookup + Send + Sync>,
-    trace: Arc<dyn RequestTraceSource>,
-    factories: Arc<ExporterFactories>,
-    scope: Arc<dyn RequestScopeSource>,
-    assembler: Arc<dyn StreamOutputAssembler>,
-    hooks: Option<Arc<dyn RuntimeHooks>>,
-    configured_exclusions: Option<Vec<String>>,
-    v2_enabled: bool,
-    sdk_provider: SdkTracerProvider,
-    generic: Mutex<Option<Arc<V2Logger>>>,
-    published: Mutex<Option<SdkTracerProvider>>,
+    pub registered: Arc<V2Registry>,
+    pub loggers: Mutex<Vec<Arc<V2Logger>>>,
+    pub fan_out: Arc<Mutex<TenantFanOutRegistry>>,
+    pub constructor: Arc<dyn V2LoggerConstructor>,
+    pub base: Settings,
+    pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
+    pub trace: Arc<dyn RequestTraceSource>,
+    pub factories: Arc<ExporterFactories>,
+    pub scope: Arc<dyn RequestScopeSource>,
+    pub assembler: Arc<dyn StreamOutputAssembler>,
+    pub hooks: Option<Arc<dyn RuntimeHooks>>,
+    pub configured_exclusions: Option<Vec<String>>,
+    pub v2_enabled: bool,
+    pub sdk_provider: SdkTracerProvider,
+    pub generic: Mutex<Option<Arc<V2Logger>>>,
+    pub published: Mutex<Option<SdkTracerProvider>>,
 }
 
-impl LoggerRuntime {
-    #[must_use]
-    pub fn new(parts: LoggerRuntimeParts) -> Self {
-        Self {
-            registered: parts.registered,
-            loggers: Mutex::new(Vec::new()),
-            fan_out: Arc::new(Mutex::new(TenantFanOutRegistry::default())),
-            constructor: parts.constructor,
-            base: parts.base,
-            environment: parts.environment,
-            trace: parts.trace,
-            factories: parts.factories,
-            scope: parts.scope,
-            assembler: parts.assembler,
-            hooks: parts.hooks,
-            configured_exclusions: parts.configured_exclusions,
-            v2_enabled: parts.v2_enabled,
-            sdk_provider: parts.sdk_provider,
-            generic: Mutex::new(None),
-            published: Mutex::new(None),
-        }
-    }
-}
-
-// the runtime's one inherent impl holds the constructor; each area's logic is a free function in its module
 fn loggers(runtime: &LoggerRuntime) -> MutexGuard<'_, Vec<Arc<V2Logger>>> {
     match runtime.loggers.lock() {
         Ok(guard) => guard,

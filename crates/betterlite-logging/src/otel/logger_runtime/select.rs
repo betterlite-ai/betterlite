@@ -9,7 +9,7 @@ use crate::otel::vocabulary::resolvers::db_system;
 
 use super::error::LoggerRuntimeError;
 use super::factory::build_otel_v2_logger;
-use super::types::{InjectedProviders, V2Logger};
+use super::types::{ConstructorSettings, InjectedProviders, V2Logger};
 use super::{LoggerRuntime, generic, loggers};
 
 // litellm.integrations.otel.logger.select_global_otel_v2_logger
@@ -86,6 +86,7 @@ fn generic_logger(runtime: &LoggerRuntime) -> Result<Arc<V2Logger>, LoggerRuntim
         runtime.base.clone(),
         None,
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )?;
     *generic(runtime) = Some(Arc::clone(&logger));
     Ok(logger)

@@ -13,7 +13,7 @@ use super::LoggerRuntime;
 use super::error::LoggerRuntimeError;
 use super::factory::build_otel_v2_logger;
 use super::select::v2_logger_for;
-use super::types::{InjectedProviders, V2Logger};
+use super::types::{ConstructorSettings, InjectedProviders, V2Logger};
 
 // litellm.litellm_core_utils.litellm_logging._maybe_construct_otel_v2
 pub fn maybe_construct_otel_v2(
@@ -44,6 +44,7 @@ pub fn maybe_construct_otel_v2(
         config,
         Some(callback_name),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )?;
     in_memory.push(Arc::clone(&logger.callback));
     Ok(Some(logger))

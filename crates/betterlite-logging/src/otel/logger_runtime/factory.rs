@@ -3,7 +3,9 @@ use std::sync::Arc;
 use crate::otel::config::Settings;
 
 use super::error::LoggerRuntimeError;
-use super::types::{InjectedProviders, LoggerBuildRequest, LoggerClass, V2Logger};
+use super::types::{
+    ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass, V2Logger,
+};
 use super::{LoggerRuntime, loggers};
 
 // litellm.integrations.otel.logger.build_otel_v2_logger: class choice, then the constructor port
@@ -12,6 +14,7 @@ pub fn build_otel_v2_logger(
     config: Settings,
     callback_name: Option<&str>,
     providers: InjectedProviders<'_>,
+    settings: ConstructorSettings,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let class = logger_class(&config);
     let assembler = matches!(class, LoggerClass::LangfuseContent).then_some(&runtime.assembler);
@@ -21,6 +24,7 @@ pub fn build_otel_v2_logger(
         callback_name,
         providers,
         assembler,
+        settings,
     };
     let built = runtime.constructor.build(&request)?;
     let logger = Arc::new(V2Logger {

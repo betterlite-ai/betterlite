@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use betterlite_config::loader::EnvironmentLookup;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -9,14 +8,9 @@ use crate::callback_logger::CallbackLogger;
 use crate::otel::config::Settings;
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
-use crate::otel::fan_out::scope::RequestScopeSource;
-use crate::otel::logger::v2::RequestTraceSource;
-use crate::otel::plumbing::exporters::ExporterFactories;
 use crate::otel::v2_callback::callback::V2Callback;
-use crate::otel::v2_callback::registry::V2Registry;
 
 use super::error::LoggerRuntimeError;
-use super::hooks::RuntimeHooks;
 
 // litellm.integrations.otel.logger._logger_class's three callback forms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +28,22 @@ pub struct InjectedProviders<'a> {
     pub meter_provider: Option<&'a SdkMeterProvider>,
 }
 
+// CustomLogger.__init__'s turn_off_message_logging=False and deprecated message_logging=True
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConstructorSettings {
+    pub turn_off_message_logging: bool,
+    pub message_logging: bool,
+}
+
+impl Default for ConstructorSettings {
+    fn default() -> Self {
+        Self {
+            turn_off_message_logging: false,
+            message_logging: true,
+        }
+    }
+}
+
 // what the injected constructor needs; it owns the V2Callback/Langfuse assembly the proxy wires elsewhere
 pub struct LoggerBuildRequest<'a> {
     pub class: LoggerClass,
@@ -41,6 +51,7 @@ pub struct LoggerBuildRequest<'a> {
     pub callback_name: Option<&'a str>,
     pub providers: InjectedProviders<'a>,
     pub assembler: Option<&'a Arc<dyn StreamOutputAssembler>>,
+    pub settings: ConstructorSettings,
 }
 
 pub struct BuiltLogger {
@@ -87,19 +98,4 @@ impl FanOutProvider {
             Err(poisoned) => poisoned.into_inner(),
         }
     }
-}
-
-pub struct LoggerRuntimeParts {
-    pub registered: Arc<V2Registry>,
-    pub constructor: Arc<dyn V2LoggerConstructor>,
-    pub factories: Arc<ExporterFactories>,
-    pub scope: Arc<dyn RequestScopeSource>,
-    pub trace: Arc<dyn RequestTraceSource>,
-    pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
-    pub assembler: Arc<dyn StreamOutputAssembler>,
-    pub base: Settings,
-    pub v2_enabled: bool,
-    pub configured_exclusions: Option<Vec<String>>,
-    pub sdk_provider: SdkTracerProvider,
-    pub hooks: Option<Arc<dyn RuntimeHooks>>,
 }

@@ -15,7 +15,9 @@ use crate::otel::logger_runtime::preset::{
     exports_nowhere, has_operator_exporter, is_credential_gated, is_gated, maybe_construct_otel_v2,
     only_the_gated_exporter,
 };
-use crate::otel::logger_runtime::types::{InjectedProviders, LoggerClass};
+use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders, LoggerClass};
+use crate::otel::mappers::registry::MapperError;
+use crate::otel::v2_callback::error::CallbackError;
 
 use super::support::{
     Fixture, destination, fixture, fixture_disabled, fixture_with_base, gated, operator_exporter,
@@ -28,6 +30,7 @@ fn build(fixture: &Fixture, config: Settings, name: &str) {
         config,
         Some(name),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
 }
@@ -38,6 +41,7 @@ fn add_carrier(fixture: &Fixture, in_memory: &mut Vec<Arc<dyn CallbackLogger>>, 
         settings(vec![]),
         Some("carrier"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("carrier");
     in_memory.push(Arc::clone(&carrier.callback));
@@ -60,6 +64,7 @@ fn factory_provider_passthrough() {
             logger_provider: Some(&logs),
             meter_provider: Some(&meter),
         },
+        ConstructorSettings::default(),
     )
     .expect("built");
     let records = fixture.constructor.records();
@@ -101,6 +106,68 @@ fn factory_chooses_langfuse_content_class() {
     assert_eq!(records[0].class, LoggerClass::LangfuseContent);
     let assembler = records[0].assembler.as_ref().expect("the assembler");
     assert!(Arc::ptr_eq(assembler, &fixture.assembler));
+}
+
+#[test]
+fn factory_forwards_constructor_settings() {
+    let fixture = fixture();
+    let constructor_settings = ConstructorSettings {
+        turn_off_message_logging: true,
+        message_logging: false,
+    };
+    build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("otel"),
+        InjectedProviders::default(),
+        constructor_settings,
+    )
+    .expect("generic");
+    let mut langfuse = settings(vec![]);
+    langfuse.mapper_names = vec!["langfuse".to_owned()];
+    build_otel_v2_logger(
+        &fixture.runtime,
+        langfuse.clone(),
+        Some("langfuse_otel"),
+        InjectedProviders::default(),
+        constructor_settings,
+    )
+    .expect("langfuse");
+    langfuse.capture_message_content = CaptureMessageContent::SpanAndEvent;
+    build_otel_v2_logger(
+        &fixture.runtime,
+        langfuse,
+        Some("langfuse_otel"),
+        InjectedProviders::default(),
+        constructor_settings,
+    )
+    .expect("langfuse content");
+    let records = fixture.constructor.records();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        vec![
+            LoggerClass::Generic,
+            LoggerClass::Langfuse,
+            LoggerClass::LangfuseContent
+        ]
+    );
+    for record in records.iter() {
+        assert_eq!(record.settings, constructor_settings);
+    }
+}
+
+#[test]
+fn constructor_settings_default_to_message_logging_on() {
+    assert_eq!(
+        ConstructorSettings::default(),
+        ConstructorSettings {
+            turn_off_message_logging: false,
+            message_logging: true,
+        }
+    );
 }
 
 #[test]
@@ -209,12 +276,22 @@ fn constructor_failure_propagates() {
     fixture
         .environment
         .set("NEW_RELIC_LICENSE_KEY", "license-key");
-    fixture.constructor.fail_with("boom");
+    fixture
+        .constructor
+        .fail_with(CallbackError::Mapper(MapperError::Unknown {
+            name: "boom".to_owned(),
+            known: String::new(),
+        }));
     let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
     let error = maybe_construct_otel_v2(&fixture.runtime, "newrelic", &mut in_memory)
         .err()
         .expect("the constructor failure surfaces");
-    assert!(matches!(error, LoggerRuntimeError::Constructor { ref message } if message == "boom"));
+    assert!(matches!(
+        error,
+        LoggerRuntimeError::Constructor {
+            source: CallbackError::Mapper(MapperError::Unknown { ref name, .. })
+        } if name == "boom"
+    ));
 }
 
 #[test]
@@ -327,6 +404,7 @@ fn reuses_a_same_name_logger_that_exports() {
         settings(vec![operator_exporter()]),
         Some("newrelic"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("existing");
     let mut in_memory = vec![Arc::clone(&existing.callback)];
@@ -346,6 +424,7 @@ fn reuses_a_same_name_logger_that_serves_a_destination() {
         settings(vec![]),
         Some("newrelic"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("existing");
     fixture
@@ -367,6 +446,7 @@ fn skips_a_same_name_logger_that_exports_nowhere() {
         settings(vec![]),
         Some("newrelic"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("existing");
     let mut in_memory = vec![Arc::clone(&existing.callback)];

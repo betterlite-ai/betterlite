@@ -11,7 +11,7 @@ use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_v2_p
 use crate::otel::logger_runtime::select::{
     excluded_db_systems, select_global_otel_v2_logger, v2_configs,
 };
-use crate::otel::logger_runtime::types::InjectedProviders;
+use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders};
 
 use super::support::{
     FakeLogger, finished, fixture, fixture_excluding, lock, operator_exporter, placeholder, probe,
@@ -28,6 +28,7 @@ fn registered_first() {
         settings(vec![]),
         Some("other"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let in_memory = vec![Arc::clone(&other.callback)];
@@ -47,6 +48,7 @@ fn first_v2_fallback() {
         settings(vec![]),
         Some("first"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let second = build_otel_v2_logger(
@@ -54,6 +56,7 @@ fn first_v2_fallback() {
         settings(vec![]),
         Some("second"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let in_memory = vec![
@@ -89,6 +92,7 @@ fn legacy_slot_with_v2_catalog() {
         settings(vec![]),
         Some("v2"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let in_memory = vec![legacy, Arc::clone(&v2.callback)];
@@ -108,6 +112,7 @@ fn distinct_equal_configs() {
         config.clone(),
         Some("first"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let second = build_otel_v2_logger(
@@ -115,6 +120,7 @@ fn distinct_equal_configs() {
         config.clone(),
         Some("second"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let in_memory = vec![Arc::clone(&first.callback), Arc::clone(&second.callback)];
@@ -183,6 +189,7 @@ fn attach_before_publish() {
         settings(vec![]),
         Some("published"),
         InjectedProviders::default(),
+        ConstructorSettings::default(),
     )
     .expect("built");
     let in_memory = vec![Arc::clone(&logger.callback)];
@@ -198,23 +205,27 @@ fn attach_before_publish() {
 #[test]
 fn remembered_provider_beats_global() {
     let fixture = fixture();
-    let registered_sink = InMemorySpanExporter::default();
-    register_callback(
-        &fixture.registered,
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
         settings(vec![]),
-        "registered",
-        &registered_sink,
-    );
-    let published =
-        publish_global_v2_provider(&fixture.runtime, &[], &|_provider: &SdkTracerProvider| {})
-            .expect("published");
+        Some("catalog"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let published = publish_global_v2_provider(
+        &fixture.runtime,
+        &in_memory,
+        &|_provider: &SdkTracerProvider| {},
+    )
+    .expect("published");
     let provider = fan_out_provider(&fixture.runtime);
     assert!(provider.registry().fan_out.is_some());
+    assert_eq!(fixture.constructor.sink_index(&provider.provider), Some(0));
     probe(&provider.provider);
-    assert_eq!(finished(&registered_sink), 1);
     assert_eq!(finished(&fixture.sdk_sink), 0);
-    probe(&published.provider);
-    assert_eq!(finished(&registered_sink), 2);
+    assert_eq!(fixture.constructor.sink_index(&published.provider), Some(0));
 }
 
 #[test]

@@ -21,6 +21,7 @@ use crate::otel::config::destination::{DestinationFields, OtelDestination, SpanS
 use crate::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::emitter::span_emission::MapperKind;
+use crate::otel::fan_out::attach::TenantFanOutRegistry;
 use crate::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
 use crate::otel::logger::v2::RequestTraceSource;
@@ -28,7 +29,7 @@ use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::error::LoggerRuntimeError;
 use crate::otel::logger_runtime::hooks::RuntimeHooks;
 use crate::otel::logger_runtime::types::{
-    BuiltLogger, InjectedProviders, LoggerBuildRequest, LoggerClass, LoggerRuntimeParts,
+    BuiltLogger, ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass,
     V2LoggerConstructor,
 };
 use crate::otel::mappers::genai::GenAIMapper;
@@ -41,6 +42,7 @@ use crate::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
 use crate::otel::v2_callback::callback::{
     CallbackParts, EmitterParts, MetricSettings, ProviderBuild, ProviderSources, V2Callback,
 };
+use crate::otel::v2_callback::error::CallbackError;
 use crate::otel::v2_callback::registry::V2Registry;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 
@@ -144,13 +146,14 @@ pub(crate) struct BuildRecord {
     pub(crate) providers: Vec<&'static str>,
     pub(crate) assembler: Option<Arc<dyn StreamOutputAssembler>>,
     pub(crate) config: Settings,
+    pub(crate) settings: ConstructorSettings,
 }
 
 #[derive(Default)]
 pub(crate) struct RecordingConstructor {
     records: Mutex<Vec<BuildRecord>>,
     sinks: Mutex<Vec<InMemorySpanExporter>>,
-    failure: Mutex<Option<String>>,
+    failure: Mutex<Option<CallbackError>>,
 }
 
 impl RecordingConstructor {
@@ -158,8 +161,8 @@ impl RecordingConstructor {
         lock(&self.records)
     }
 
-    pub(crate) fn fail_with(&self, message: &str) {
-        *lock(&self.failure) = Some(message.to_owned());
+    pub(crate) fn fail_with(&self, error: CallbackError) {
+        *lock(&self.failure) = Some(error);
     }
 
     // which build's exporter a provider writes to, so a test can tell two providers apart
@@ -189,10 +192,11 @@ impl V2LoggerConstructor for RecordingConstructor {
             providers: injected_providers(request.providers),
             assembler: request.assembler.cloned(),
             config: request.config.clone(),
+            settings: request.settings,
         });
-        let failure = lock(&self.failure).clone();
-        if let Some(message) = failure {
-            return Err(LoggerRuntimeError::Constructor { message });
+        let failure = lock(&self.failure).take();
+        if let Some(source) = failure {
+            return Err(LoggerRuntimeError::Constructor { source });
         }
         let sink = InMemorySpanExporter::default();
         let provider = provider_exporting(&sink);
@@ -277,20 +281,24 @@ fn build_fixture_on(
     let constructor_port: Arc<dyn V2LoggerConstructor> = Arc::clone(&constructor);
     let trace_source: Arc<dyn RequestTraceSource> = Arc::clone(&trace);
     let environment_lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::clone(&environment);
-    let runtime = LoggerRuntime::new(LoggerRuntimeParts {
+    let runtime = LoggerRuntime {
         registered: Arc::clone(&registered),
+        loggers: Mutex::new(Vec::new()),
+        fan_out: Arc::new(Mutex::new(TenantFanOutRegistry::default())),
         constructor: constructor_port,
+        base,
+        environment: environment_lookup,
+        trace: trace_source,
         factories: factories(),
         scope: Arc::new(FixedScope),
-        trace: trace_source,
-        environment: environment_lookup,
         assembler: Arc::clone(&assembler),
-        base,
-        v2_enabled,
-        configured_exclusions,
-        sdk_provider,
         hooks,
-    });
+        configured_exclusions,
+        v2_enabled,
+        sdk_provider,
+        generic: Mutex::new(None),
+        published: Mutex::new(None),
+    };
     Fixture {
         runtime,
         constructor,
