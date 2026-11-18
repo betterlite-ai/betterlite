@@ -11,7 +11,7 @@ use tracing::subscriber::set_default;
 use super::postgres::{row_count, service, user_alias, user_column_text};
 use super::support::{
     BrokenSink, Harness, Ports, SinkBehaviour, alias_update, capture_logs, failing_key_write,
-    fixed_now, key_column, key_write, user_alias_update, user_write,
+    fixed_now, key_column, key_write, user_alias_update, user_column, user_write,
 };
 use crate::budget_permission_rows::Timestamp;
 use crate::key_repository::table::TokenValue;
@@ -390,5 +390,33 @@ async fn insert_payload_token_is_redacted() {
     let captured = logs.contents();
     assert!(!captured.contains("sk-raw-field"), "{captured}");
     assert!(captured.contains(&hash_token("sk-secret")), "{captured}");
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn insert_payload_password_is_redacted() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    writes
+        .insert_user(&user_column(
+            "user-secret",
+            UserColumn::Password,
+            TokenValue::Text(String::from("hunter2")),
+        ))
+        .await
+        .unwrap();
+    drop(guard);
+    let captured = logs.contents();
+    assert!(!captured.contains("hunter2"), "{captured}");
+    assert_eq!(
+        user_column_text(&client, "password", "user-secret")
+            .await
+            .as_deref(),
+        Some("hunter2")
+    );
     harness.close().await;
 }
