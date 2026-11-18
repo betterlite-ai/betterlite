@@ -7,60 +7,58 @@ call:
     - 00000000-0000-4000-8000-000000000002
     - 00000000-0000-4000-8000-000000000003
     - 00000000-0000-4000-8000-000000000004
-    - 00000000-0000-4000-8000-000000000005
-    - 00000000-0000-4000-8000-000000000006
-    - 00000000-0000-4000-8000-000000000007
-    - 00000000-0000-4000-8000-000000000008
-    - 00000000-0000-4000-8000-000000000009
-    - 00000000-0000-4000-8000-000000000010
-    - 00000000-0000-4000-8000-000000000011
-    - 00000000-0000-4000-8000-000000000012
-    - 00000000-0000-4000-8000-000000000013
-    - 00000000-0000-4000-8000-000000000014
-    - 00000000-0000-4000-8000-000000000015
-    - 00000000-0000-4000-8000-000000000016
-    - 00000000-0000-4000-8000-000000000017
     steps:
-    - method: dispatch
-      message: '{"event": {"sessionStart": {"sessionId": "s"}}}'
-      state:
-        session_configuration_request: null
-        current_output_item_id: null
-        current_response_id: null
-        current_delta_chunks: []
-        current_item_chunks: []
-        current_conversation_id: null
-        current_delta_type: null
-    - method: session_updated
-      trace_id: trace-1
-      modalities: null
-    - method: session_updated
-      trace_id: trace-2
-      modalities: []
-    - method: session_updated
-      trace_id: trace-3
-      modalities:
-      - text
-    - method: dispatch
-      message: '{"event": {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
-      state:
-        session_configuration_request: '{"configured": true}'
-        current_output_item_id: null
-        current_response_id: null
-        current_delta_chunks: []
-        current_item_chunks: []
-        current_conversation_id: null
-        current_delta_type: null
-    - method: dispatch
-      message: '{"event": {"textOutput": {"content": "replayed"}}}'
-      state:
-        session_configuration_request: '{"configured": true}'
-        current_output_item_id: item_00000000-0000-4000-8000-000000000005
-        current_response_id: resp_00000000-0000-4000-8000-000000000004
-        current_delta_chunks: []
-        current_item_chunks: []
-        current_conversation_id: conv_00000000-0000-4000-8000-000000000006
-        current_delta_type: text
+    - method: pending
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: ''
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: 3
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update:
+          type: session.update
+        session_committed: null
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: 1
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: null
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: 'Provider stream failed'
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: true
+        committed_failure: ''
+    - method: pending
+      scope:
+        pending_session_update: replay
+        session_committed: false
+        committed_failure: 'earlier failure'
+    - method: pending
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
 env: {}
 compare:
   ignore: []

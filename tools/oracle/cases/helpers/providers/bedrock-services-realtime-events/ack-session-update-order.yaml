@@ -9,38 +9,98 @@ call:
     - 00000000-0000-4000-8000-000000000004
     - 00000000-0000-4000-8000-000000000005
     - 00000000-0000-4000-8000-000000000006
-    - 00000000-0000-4000-8000-000000000007
-    - 00000000-0000-4000-8000-000000000008
-    - 00000000-0000-4000-8000-000000000009
-    - 00000000-0000-4000-8000-000000000010
-    - 00000000-0000-4000-8000-000000000011
-    - 00000000-0000-4000-8000-000000000012
     steps:
-    - method: session_updated
-      trace_id: trace-1
-      modalities: null
-    - method: session_updated
-      trace_id: trace-2
-      modalities: []
-    - method: session_updated
-      trace_id: trace-3
-      modalities:
-      - text
-      - audio
-    - method: dispatch
-      message: '{"event": {"sessionStart": {"sessionId": "s"}}}'
-      state:
-        session_configuration_request: null
-        current_output_item_id: null
-        current_response_id: null
-        current_delta_chunks: []
-        current_item_chunks: []
-        current_conversation_id: null
-        current_delta_type: null
-    - method: session_updated
-      trace_id: trace-4
-      modalities:
-      - audio
+    - method: ack
+      trace_id: null
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-default
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-text
+      client_message:
+        session:
+          modalities:
+          - text
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-empty
+      client_message:
+        session:
+          modalities: []
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-stream
+      client_message: {}
+      stream_error: bedrock stream closed
+      send_error: null
+      scope:
+        pending_session_update: replay
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-send
+      client_message: {}
+      stream_error: null
+      send_error: client gone
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-modalities
+      client_message:
+        session:
+          modalities: audio
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-modalities-item
+      client_message:
+        session:
+          modalities:
+          - 3
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: null
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
 env: {}
 compare:
   ignore: []

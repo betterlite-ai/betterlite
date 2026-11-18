@@ -156,6 +156,56 @@ call:
         current_conversation_id: conv_00000000-0000-4000-8000-000000000003
         current_delta_type: null
     - method: dispatch
+      message: '['
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '[1, 2'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: 'null garbage'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '[] trailing'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: 'null'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: *id001
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
       message: '{"event": {"userSpeechStart": {}, "userSpeechEnd": {}}}'
       state:
         session_configuration_request: '{"configured": true}'
