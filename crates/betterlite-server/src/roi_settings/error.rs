@@ -144,16 +144,20 @@ fn internal_response(error: &InternalError) -> Response {
         ),
         InternalError::Config(source) if is_database_outage(source) => database_unavailable(),
         InternalError::Config(_) | InternalError::Encode(_) | InternalError::Encryption(_) => {
-            tracing::error!(error = ?error, "the ROI settings request failed");
-            let body = InternalBody {
-                error: InternalMessage {
-                    message: "Internal server error",
-                    error_type: "internal_server_error",
-                },
-            };
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+            unhandled_error(error)
         }
     }
+}
+
+fn unhandled_error(error: &InternalError) -> Response {
+    tracing::error!(error = ?error, "the ROI settings request failed");
+    let body = InternalBody {
+        error: InternalMessage {
+            message: "Internal server error",
+            error_type: "internal_server_error",
+        },
+    };
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
 }
 
 fn detail_response(status: StatusCode, detail: String) -> Response {
