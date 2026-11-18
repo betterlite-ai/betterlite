@@ -3,13 +3,16 @@ from typing import Final, TypedDict
 
 from litellm.router import Router
 from litellm.router_strategy.quality_router.quality_router import QualityRouter as LiteLLMQualityRouter
-from litellm.router_utils.add_retry_fallback_headers import apply_quality_router_decision_headers
+from litellm.router_utils.add_retry_fallback_headers import (
+    apply_quality_router_decision_headers,
+    ensure_response_additional_headers,
+)
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnusedCallResult=false
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 _HEADERS: Final = TypeAdapter(dict[str, str])
 
@@ -76,13 +79,22 @@ def model_list(entries: list[DeploymentInput], chosen: DeploymentInput) -> list[
 
 
 class QualityRouter(Operation):
-    config: Document
+    config: Document | None = None
+    # the document's JSON text, so a number literal reaches each runtime spelled as the case writes it
+    config_text: str | None = None
     messages: list[dict[str, JsonValue]] | None = None
     default_model: str | None = None
 
+    def document(self) -> Document:
+        if self.config_text is not None:
+            return Document.model_validate_json(self.config_text)
+        if self.config is None:
+            raise ProbeError("invalid_request", "no config document declared")
+        return self.config
+
     @override
     def run(self) -> Output:
-        entries = self.config.model_list
+        entries = self.document().model_list
         chosen = router_entry(entries)
         router = Router(model_list=model_list(entries, chosen))
         configured = chosen.litellm_params.quality_router_config
@@ -106,7 +118,8 @@ class QualityRouter(Operation):
         except ValueError as error:
             raise ProbeError("invalid_request", str(error)) from error
         metadata = request_kwargs.get("metadata")
-        additional: dict[str, object] = {}
+        carrier: dict[str, JsonValue] = {}
+        additional = ensure_response_additional_headers(carrier)
         apply_quality_router_decision_headers(additional, {"metadata": metadata})
         headers = _HEADERS.validate_python(additional)
         if response is None:

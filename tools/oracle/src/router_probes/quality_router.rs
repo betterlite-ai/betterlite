@@ -22,7 +22,11 @@ pub struct Input(Box<Payload>);
 #[serde(deny_unknown_fields)]
 struct Payload {
     // the model_list document a config file holds, read through the section a deployment reads
-    config: Json,
+    #[serde(default)]
+    config: Option<Json>,
+    // the same document as its JSON text, for a case whose number literals must reach the parser as written
+    #[serde(default)]
+    config_text: Option<String>,
     #[serde(default)]
     messages: Option<Vec<Message>>,
     // litellm_params.quality_router_default_model, which init_quality_router_deployment resolves
@@ -48,7 +52,7 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let settings = read_settings(&payload.config)?;
+    let settings = read_settings(payload)?;
     let service = service(&settings, payload.default_model.as_deref())?;
     let mut metadata = None;
     let routed = service
@@ -106,11 +110,20 @@ fn routed_fields(
 }
 
 // the section's typed view reads the document the same way a config file is read, environment and all
-fn read_settings(document: &Json) -> Result<section::Settings, OperationError> {
-    let source =
-        serde_json::to_string(document).map_err(|source| OperationError::InvalidRequest {
-            message: source.to_string(),
-        })?;
+fn read_settings(payload: &Payload) -> Result<section::Settings, OperationError> {
+    let source = match (&payload.config, &payload.config_text) {
+        (_, Some(text)) => text.clone(),
+        (Some(document), None) => {
+            serde_json::to_string(document).map_err(|source| OperationError::InvalidRequest {
+                message: source.to_string(),
+            })?
+        }
+        (None, None) => {
+            return Err(OperationError::InvalidRequest {
+                message: "the input declares no config document".to_owned(),
+            });
+        }
+    };
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
