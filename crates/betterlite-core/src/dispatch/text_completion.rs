@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use betterlite_context::call_context::CallContext;
+use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_request::CompletionRequest;
 
 use super::Dispatch;
@@ -8,7 +10,8 @@ use super::error::DispatchError;
 use super::log::CallOutcome;
 use crate::operation::Entry;
 use crate::operation::text_completion::{
-    TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest, TextCompletionResult,
+    ChatCallAnswer, ChatCallMode, TextCompletionCallInput, TextCompletionFailure,
+    TextCompletionRequest, TextCompletionResult,
 };
 
 pub async fn execute<Metadata, Client>(
@@ -47,18 +50,31 @@ where
         .as_deref()
         .unwrap_or(&request.model_id);
     dispatch.evaluate_rules(rules_input(&request.request).as_deref(), model)?;
-    request
-        .calls
-        .complete(TextCompletionCallInput {
-            deployment,
-            request: &request.request,
-        })
-        .await
-        .map_err(rejected)
+    endpoint_call(request, deployment).await
+}
+
+async fn endpoint_call(
+    request: &TextCompletionRequest,
+    deployment: ChatDeployment,
+) -> Result<TextCompletionResult, DispatchError> {
+    let endpoint = request.calls.endpoint(&deployment).await;
+    let call = TextCompletionCallInput {
+        deployment,
+        request: &request.request,
+    };
+    match endpoint {
+        CompletionEndpoint::Text => request.calls.complete(call).await.map_err(rejected),
+        CompletionEndpoint::Chat => request
+            .calls
+            .chat(call, ChatCallMode::Buffered)
+            .await
+            .and_then(ChatCallAnswer::buffered)
+            .map_err(rejected),
+    }
 }
 
 // LiteLLM's function_setup builds the pre-call text from the messages it made out of the prompt
-fn rules_input(request: &CompletionRequest) -> Option<String> {
+pub(super) fn rules_input(request: &CompletionRequest) -> Option<String> {
     let messages = request.prompt.messages()?;
     let mut buffer = String::new();
     for message in &messages {
@@ -70,7 +86,7 @@ fn rules_input(request: &CompletionRequest) -> Option<String> {
 }
 
 // the shared Rejected variant types error_type as text, so a null type travels to the route as an empty string
-fn rejected(failure: TextCompletionFailure) -> DispatchError {
+pub(super) fn rejected(failure: TextCompletionFailure) -> DispatchError {
     DispatchError::Rejected {
         status: failure.status,
         error_type: failure.error_type.unwrap_or_default(),
