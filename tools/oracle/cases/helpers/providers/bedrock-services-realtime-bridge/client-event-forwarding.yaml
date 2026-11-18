@@ -7,6 +7,9 @@ call:
     - 00000000-0000-4000-8000-000000000001
     - 00000000-0000-4000-8000-000000000002
     - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
     event_ids:
     - 00000000-0000-4000-8000-000000000001
     - 00000000-0000-4000-8000-000000000002
@@ -26,6 +29,21 @@ call:
       bedrock_send_failures: []
       receive_failures: []
       client_send_failures: []
+      bedrock_close_error: false
+    - kind: client
+      trace_id: trace-bridge-1
+      initial: '{"type": "session.update", "session": {}}'
+      frames:
+      - '{"type":"input_audio_buffer.append","audio":"AAAA"}'
+      - null
+      chunks: []
+      await_error: null
+      block: false
+      cancel: false
+      bedrock_send_failures: []
+      receive_failures: []
+      client_send_failures:
+      - 0
       bedrock_close_error: false
 env: {}
 compare:

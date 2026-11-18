@@ -9,6 +9,11 @@ const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
 
 pub(super) async fn client_event_forwarding() {
+    forwards_every_client_frame();
+    ack_failure_stops_forwarding();
+}
+
+async fn forwards_every_client_frame() {
     let client = ScriptedClient::new(vec![
         Some(AUDIO_APPEND.to_owned()),
         Some(AUDIO_COMMIT.to_owned()),
@@ -79,6 +84,33 @@ pub(super) async fn client_event_forwarding() {
     assert_eq!(sent[0], expected);
 
     // The ack clears the replay marker only after every transformed frame reached the stream
+    assert_eq!(fixture.scope.pending_session_update, Json::Null);
+    assert_eq!(fixture.scope.session_committed, Json::Bool(true));
+    assert!(fixture.client.closes().is_empty());
+    assert!(fixture.stream.closed());
+}
+
+async fn ack_failure_stops_forwarding() {
+    let client = ScriptedClient::new(vec![Some(AUDIO_APPEND.to_owned()), None]).failing_send(0);
+    let mut fixture = ClientFixture::new(Some(SESSION_UPDATE.to_owned()), client);
+    let outcome = fixture.run().await;
+
+    assert_eq!(
+        outcome.expect("a gone client ends the pump without an error"),
+        ForwardEnd::Ended
+    );
+    let frames = fixture.stream.sent();
+    let keys: Vec<Option<&str>> = frames.iter().map(event_key).collect();
+    assert_eq!(
+        keys,
+        [
+            Some("sessionStart"),
+            Some("promptStart"),
+            Some("promptEnd"),
+            Some("sessionEnd"),
+        ]
+    );
+    // The ack clears the replay marker before its own send fails, so the pump stops with nothing left to replay
     assert_eq!(fixture.scope.pending_session_update, Json::Null);
     assert_eq!(fixture.scope.session_committed, Json::Bool(true));
     assert!(fixture.client.closes().is_empty());
