@@ -292,13 +292,13 @@ fn a_file_case_variant_null_stays_text() {
 #[test]
 fn a_file_merge_key_keeps_merged_route_fields() {
     let (_folder, path) = routes_file(
-        "- <<: {description: merged description, similarity_threshold: 0.8}\n  route_name: merged_route\n  utterances: [merged utterance]\n",
+        "- <<: {description: merged description, similarity_threshold: 0.8}\n  route_name: NuLL\n  utterances: [merged utterance]\n",
     );
     let sources = sources(&[], Some(&path), vec![], 0.5);
     assert_eq!(
         build_routes(&sources).unwrap(),
         vec![route(
-            "merged_route",
+            "NuLL",
             Some("merged description"),
             &["merged utterance"],
             0.8
@@ -309,13 +309,13 @@ fn a_file_merge_key_keeps_merged_route_fields() {
 #[test]
 fn a_file_merge_alias_keeps_merged_route_fields() {
     let (_folder, path) = routes_file(
-        "- &defaults {route_name: base_route, utterances: [base utterance], description: merged description, similarity_threshold: 0.8}\n- <<: *defaults\n  route_name: alias_route\n  utterances: [alias utterance]\n",
+        "- &defaults {route_name: base_route, utterances: [base utterance], description: merged description, similarity_threshold: 0.8}\n- <<: *defaults\n  route_name: NuLL\n  utterances: [alias utterance]\n",
     );
     let sources = sources(&[], Some(&path), vec![], 0.5);
     assert_eq!(
         build_routes(&sources).unwrap()[1],
         route(
-            "alias_route",
+            "NuLL",
             Some("merged description"),
             &["alias utterance"],
             0.8
