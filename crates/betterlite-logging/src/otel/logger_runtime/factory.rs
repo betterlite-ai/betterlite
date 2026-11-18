@@ -17,11 +17,27 @@ use super::types::{
 use super::{LoggerRuntime, locked};
 
 struct BuildInputs<'inputs> {
-    class: LoggerClass,
-    callback_name: Option<&'inputs str>,
-    providers: InjectedProviders<'inputs>,
-    assembler: Option<&'inputs Arc<dyn StreamOutputAssembler>>,
-    settings: ConstructorSettings,
+    kind: LoggerClass,
+    name: Option<&'inputs str>,
+    injected: InjectedProviders<'inputs>,
+    content: Option<&'inputs Arc<dyn StreamOutputAssembler>>,
+    logging: ConstructorSettings,
+}
+
+impl<'inputs> BuildInputs<'inputs> {
+    fn generic(provider: &'inputs SdkTracerProvider) -> Self {
+        Self {
+            kind: LoggerClass::Generic,
+            name: None,
+            injected: InjectedProviders {
+                tracer_provider: Some(provider),
+                logger_provider: None,
+                meter_provider: None,
+            },
+            content: None,
+            logging: ConstructorSettings::default(),
+        }
+    }
 }
 // litellm.integrations.otel.logger.build_otel_v2_logger: class choice, then the constructor port
 pub fn build_otel_v2_logger(
@@ -39,14 +55,14 @@ pub fn build_otel_v2_logger(
         .then(|| fan_out_provider_for(runtime, &config))
         .transpose()?;
     let inputs = BuildInputs {
-        class,
-        callback_name,
-        providers: InjectedProviders {
+        kind: class,
+        name: callback_name,
+        injected: InjectedProviders {
             tracer_provider: providers.tracer_provider.or(built_provider.as_ref()),
             ..providers
         },
-        assembler,
-        settings,
+        content: assembler,
+        logging: settings,
     };
     build_logger(runtime, config, inputs)
 }
@@ -57,18 +73,7 @@ pub(super) fn build_generic_otel_v2_logger(
     config: Settings,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let provider = fan_out_provider_for(runtime, &config)?;
-    let inputs = BuildInputs {
-        class: LoggerClass::Generic,
-        callback_name: None,
-        providers: InjectedProviders {
-            tracer_provider: Some(&provider),
-            logger_provider: None,
-            meter_provider: None,
-        },
-        assembler: None,
-        settings: ConstructorSettings::default(),
-    };
-    build_logger(runtime, config, inputs)
+    build_logger(runtime, config, BuildInputs::generic(&provider))
 }
 
 fn build_logger(
@@ -77,12 +82,12 @@ fn build_logger(
     inputs: BuildInputs<'_>,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let request = LoggerBuildRequest {
-        class: inputs.class,
+        class: inputs.kind,
         config: &config,
-        callback_name: inputs.callback_name,
-        providers: inputs.providers,
-        assembler: inputs.assembler,
-        settings: inputs.settings,
+        callback_name: inputs.name,
+        providers: inputs.injected,
+        assembler: inputs.content,
+        settings: inputs.logging,
         factories: Arc::clone(&runtime.factories),
         scope_source: Arc::clone(&runtime.scope),
         trace: Arc::clone(&runtime.trace),

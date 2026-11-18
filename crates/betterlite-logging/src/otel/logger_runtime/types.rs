@@ -49,7 +49,6 @@ impl Default for ConstructorSettings {
     }
 }
 
-// what the injected constructor needs; it owns the V2Callback/Langfuse assembly the proxy wires elsewhere
 pub struct LoggerBuildRequest<'request> {
     pub class: LoggerClass,
     pub config: &'request Settings,
@@ -63,7 +62,6 @@ pub struct LoggerBuildRequest<'request> {
     pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
-// what the CallbackLogger trait erases: pre-call hooks, recorders and the Langfuse content hooks
 #[derive(Clone)]
 pub enum CallbackHooks {
     Generic(Arc<V2Callback>),
@@ -78,7 +76,6 @@ pub struct BuiltLogger {
     pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
 }
 
-// litellm.integrations.otel.logger._logger_class(...)(config=..., callback_name=..., **providers, **settings)
 pub trait V2LoggerConstructor: Send + Sync {
     fn build(&self, request: &LoggerBuildRequest<'_>) -> Result<BuiltLogger, LoggerRuntimeError>;
 }
@@ -86,7 +83,6 @@ pub trait V2LoggerConstructor: Send + Sync {
 // litellm.integrations.otel.logger.OpenTelemetryV2 as the selection and publication code sees it
 pub struct V2Logger {
     pub callback: Arc<dyn CallbackLogger>,
-    // the factory's result keeps callable pre-call and Langfuse content hooks beside the trait object
     pub hooks: Option<CallbackHooks>,
     pub provider: SdkTracerProvider,
     pub config: Settings,
@@ -110,7 +106,6 @@ impl V2Logger {
     }
 }
 
-// the provider fan_out_provider hands out together with the registry it already attached
 pub struct FanOutProvider {
     pub provider: SdkTracerProvider,
     pub fan_out: Arc<Mutex<TenantFanOutRegistry>>,
