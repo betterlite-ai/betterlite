@@ -2,7 +2,7 @@ id: B6033
 milestone: M12 python
 title: Python CustomPromptManagement, CustomSecretManager and BaseSecretManager
 status: todo
-depends_on: [B6030, B157]
+depends_on: [B6030]
 file: tasks/B6033-python-prompt-secret-bases.yaml
 covers:
   - "litellm/integrations/custom_prompt_management.py"

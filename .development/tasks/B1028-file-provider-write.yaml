@@ -9,7 +9,10 @@ description: >-
   and B2464 file config/timeout selection.
   Sync compatibility is a mode of the native async service, not another transport implementation.
 
-  Register B2401 SDK HTTP operation file_provider_write. Its Python adapter invokes the SDK
+  SdkHttpCall::FileProviderWrite is on main as a placeholder, so fill
+  tools/oracle/src/sdk_http/file_provider_write.rs (its Call implements call_kind::CallKind, its Outcome is
+  carried by SdkResult::FileProviderWrite) and FileProviderWriteRequest in
+  tools/oracle/sdk_http/file_provider_write.py; the shared sdk_http files stay as they are. The Python adapter invokes the SDK
   against the mock; compare actual requests, objects and exception class/status/type/message/param/code.
   Upload bytes come from B900 fixtures, never an arbitrary request-selected local path. No new
   parser or helper adapter belongs here. Tests are in api::file_provider_write::tests. The four
@@ -20,9 +23,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_provider_write.rs
   - crates/betterlite-core/src/api/file_provider_write/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_provider_write.rs
+  - tools/oracle/src/sdk_http/file_provider_write/**
   - tools/oracle/sdk_http/file_provider_write.py
   - tools/oracle/cases/sdk-http/file-provider-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*
@@ -100,7 +102,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::/) - test(/replays_/)'
   - id: sdk-python
     why: independent file-write adapter is absent or untyped
-    run: test -f tools/oracle/sdk_http/file_provider_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/file_provider_write.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-seeds
     why: upload/delete operation seeds were not added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

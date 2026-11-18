@@ -1,14 +1,12 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{Read as _, Write as _};
-use std::net::TcpListener;
 use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http_fixture::server::serve;
 use bytes::Bytes;
 use futures_util::FutureExt as _;
 use opentelemetry_http::{HttpClient as _, Request};
@@ -45,8 +43,13 @@ fn applies_proxy_policy(
     #[case] request_line: &str,
     #[case] authorization: Option<&str>,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap().to_string();
+    let serving = serve(
+        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\nx-collector: yes\r\n\r\nOK"
+            .to_vec(),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let address = serving.address.to_string();
     let configured: Vec<(&str, String)> = variables
         .iter()
         .map(|(name, value)| (*name, value.replace("LISTENER", &address)))
@@ -60,21 +63,15 @@ fn applies_proxy_policy(
     let request = Request::post(endpoint.replace("LISTENER", &address))
         .body(Bytes::new())
         .unwrap();
-    let sender = thread::Builder::new()
-        .spawn(move || client.send_bytes(request).now_or_never().unwrap().unwrap())
-        .unwrap();
-    let text = serve(
-        &listener,
-        &sender,
-        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\nx-collector: yes\r\n\r\nOK",
-    );
-    let response = sender.join().unwrap();
+    let response = client.send_bytes(request).now_or_never().unwrap().unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["x-collector"], "yes");
     assert_eq!(response.body(), "OK");
-    assert!(text.starts_with(request_line), "{text}");
+    let text = serving.finish().unwrap();
+    assert!(text.line.starts_with(request_line), "{}", text.line);
     assert_eq!(
-        text.lines()
+        text.head
+            .lines()
             .find_map(|line| line.strip_prefix("proxy-authorization: ")),
         authorization
     );
@@ -102,48 +99,22 @@ fn rejects_invalid_proxy_routes(#[case] proxy: &str, #[case] message: &str) {
 
 #[test]
 fn rejects_oversized_response_before_buffering() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
+    let serving = serve(
+        b"HTTP/1.1 200 OK\r\ncontent-length: 4194305\r\nconnection: close\r\n\r\n".to_vec(),
+        Duration::ZERO,
+    )
+    .unwrap();
     let client = client(&[]);
-    let request = Request::post(format!("http://{address}/v1/metrics"))
+    let request = Request::post(format!("http://{}/v1/metrics", serving.address))
         .body(Bytes::new())
         .unwrap();
-    let sender = thread::Builder::new()
-        .spawn(move || client.send_bytes(request).now_or_never().unwrap())
-        .unwrap();
-    serve(
-        &listener,
-        &sender,
-        b"HTTP/1.1 200 OK\r\ncontent-length: 4194305\r\nconnection: close\r\n\r\n",
-    );
-    let error = sender.join().unwrap().unwrap_err();
+    let error = client
+        .send_bytes(request)
+        .now_or_never()
+        .unwrap()
+        .unwrap_err();
     assert!(error.to_string().contains("4 MiB"), "{error}");
-}
-
-fn serve<T>(listener: &TcpListener, sender: &thread::JoinHandle<T>, reply: &[u8]) -> String {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    let mut stream = loop {
-        if let Ok((stream, _peer)) = listener.accept() {
-            break stream;
-        }
-        assert!(
-            !sender.is_finished() && started.elapsed() < Duration::from_secs(3),
-            "client did not reach its configured destination"
-        );
-        thread::park_timeout(Duration::from_millis(10));
-    };
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte).unwrap();
-        received.extend_from_slice(&byte);
-    }
-    stream.write_all(reply).unwrap();
-    String::from_utf8(received).unwrap()
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -151,22 +122,18 @@ fn serve<T>(listener: &TcpListener, sender: &thread::JoinHandle<T>, reply: &[u8]
 #[case::over_limit(0x0040_0001, "", false)]
 #[case::declared_at_limit(0x0040_0000, "content-length: 4194304\r\n", true)]
 fn bounds_collector_responses(#[case] length: usize, #[case] header: &str, #[case] accepted: bool) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
+    let mut answer = format!("HTTP/1.1 200 OK\r\n{header}connection: close\r\n\r\n").into_bytes();
+    answer.extend(vec![b'x'; length]);
+    let serving = serve(answer, Duration::ZERO).unwrap();
     let client = client(&[]);
-    let request = Request::post(format!("http://{address}/v1/metrics"))
+    let request = Request::post(format!("http://{}/v1/metrics", serving.address))
         .body(Bytes::new())
         .unwrap();
-    let sender = thread::Builder::new()
-        .spawn(move || client.send_bytes(request).now_or_never().unwrap())
-        .unwrap();
-    let mut reply = format!("HTTP/1.1 200 OK\r\n{header}connection: close\r\n\r\n").into_bytes();
-    reply.extend(vec![b'x'; length]);
-    serve(&listener, &sender, &reply);
-    let result = sender.join().unwrap();
+    let result = client.send_bytes(request).now_or_never().unwrap();
     if accepted {
         assert_eq!(result.unwrap().body().len(), length);
     } else {
         assert!(result.unwrap_err().to_string().contains("4 MiB"));
     }
+    serving.finish().unwrap();
 }

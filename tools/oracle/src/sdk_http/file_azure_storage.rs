@@ -21,7 +21,8 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use super::error::SdkHttpError;
-use super::result::{FileStorageFailure, FileStorageRun, SdkResult};
+use super::result::kinds::SdkResult;
+use super::result::{FileStorageFailure, FileStorageRun};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
