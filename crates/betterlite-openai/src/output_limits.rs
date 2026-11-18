@@ -2,6 +2,8 @@ pub mod build;
 pub mod raw_send;
 pub mod tokens;
 
+use std::str;
+
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -23,7 +25,7 @@ impl ErrorBody<'_> {
     pub fn reaches_output_limit(&self) -> bool {
         let text = match self {
             Self::Sdk(value) => value.as_str().unwrap_or_default(),
-            Self::Http(bytes) => std::str::from_utf8(bytes).unwrap_or_default(),
+            Self::Http(bytes) => str::from_utf8(bytes).unwrap_or_default(),
         };
         text.to_lowercase().contains(OUTPUT_TOKEN_LIMIT_MARKER)
     }
@@ -54,10 +56,9 @@ pub fn decode_rejected_fields(body: ErrorBody<'_>) -> Result<Vec<Value>, Rejecte
             let Value::Object(response) = &parsed else {
                 return Err(RejectedFieldsError::ResponseNotObject);
             };
-            match response.get("error") {
-                Some(error) => decode_body(error),
-                None => Ok(Vec::new()),
-            }
+            response
+                .get("error")
+                .map_or_else(|| Ok(Vec::new()), decode_body)
         }
     }
 }
@@ -85,7 +86,9 @@ fn decode_body(error_body: &Value) -> Result<Vec<Value>, RejectedFieldsError> {
 fn decoded_message(message: &Value) -> Option<Value> {
     match message {
         Value::String(text) => serde_json::from_str::<Value>(text).ok(),
-        other => Some(other.clone()),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            Some(message.clone())
+        }
     }
 }
 
@@ -130,7 +133,7 @@ fn present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        Value::Number(number) => number.as_f64().is_none_or(|value| value != 0.0_f64),
         Value::String(text) => !text.is_empty(),
         Value::Array(items) => !items.is_empty(),
         Value::Object(fields) => !fields.is_empty(),

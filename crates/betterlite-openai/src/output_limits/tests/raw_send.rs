@@ -28,6 +28,13 @@ impl From<Result<RawChatResponse, RawChatError>> for ScriptedTransport {
 }
 
 impl ScriptedTransport {
+    #[cfg_attr(
+        test,
+        expect(
+            clippy::unwrap_in_result,
+            reason = "a poisoned fixture or exhausted script is a test failure, not a provider error"
+        )
+    )]
     fn recorded(
         &self,
         data: &Map<String, Value>,
@@ -85,7 +92,7 @@ pub(super) async fn azure_raw_send_headers() {
     assert_eq!(sent.body, body);
     assert_eq!(
         sync.calls.lock().expect("calls").clone(),
-        vec![(data.clone(), 2.5)]
+        vec![(data.clone(), 2.5_f64)]
     );
     let background = ScriptedTransport::from(Ok(RawChatResponse {
         headers: header_map(&[("x-ms-request-id", "a1")]),
@@ -98,7 +105,7 @@ pub(super) async fn azure_raw_send_headers() {
     assert_eq!(sent.body, body);
     assert_eq!(
         background.calls.lock().expect("calls").clone(),
-        vec![(data, 1.5)]
+        vec![(data, 1.5_f64)]
     );
 }
 
@@ -128,7 +135,7 @@ pub(super) async fn azure_output_limit_recovery() {
     );
     assert_eq!(
         recovered.body.pointer("/usage/prompt_tokens"),
-        Some(&json!(3))
+        Some(&json!(3_i32))
     );
     let background =
         ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(error.clone()))));
@@ -154,36 +161,38 @@ pub(super) async fn azure_output_limit_recovery() {
         recovered.body.get("object"),
         Some(&json!("chat.completion.chunk"))
     );
+    unrelated_failures_propagate(&data, &recorder).await;
+}
+
+async fn unrelated_failures_propagate(data: &Map<String, Value>, recorder: &Recorder) {
     let unrelated = BadRequestReply {
         message: String::from("invalid temperature"),
         headers: header_map(&[("x-ms-request-id", "e2")]),
         body: json!({"error": {"message": "invalid temperature"}}),
     };
     let sync = ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(unrelated.clone()))));
-    let failure = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
+    let failure = send_raw_chat_sync(&sync, data, 2.5, &recovery(recorder))
         .await
         .expect_err("an unrelated bad request travels on");
-    match &failure {
-        RawChatError::BadRequest(rejected) => {
-            assert_eq!(rejected.message, "invalid temperature");
-            assert_eq!(rejected.headers, header_map(&[("x-ms-request-id", "e2")]));
-            assert_eq!(
-                rejected.body,
-                json!({"error": {"message": "invalid temperature"}})
-            );
-        }
-        other => panic!("{other:?}"),
-    }
+    let RawChatError::BadRequest(rejected) = &failure else {
+        panic!("an unrelated bad request must propagate: {failure:?}");
+    };
+    assert_eq!(rejected.message, "invalid temperature");
+    assert_eq!(rejected.headers, header_map(&[("x-ms-request-id", "e2")]));
+    assert_eq!(
+        rejected.body,
+        json!({"error": {"message": "invalid temperature"}})
+    );
     let background = ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(unrelated))));
     assert!(matches!(
-        send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder)).await,
+        send_raw_chat_async(&background, data, 2.5, fixed_now, &recovery(recorder)).await,
         Err(RawChatError::BadRequest(_))
     ));
     let other = ScriptedTransport::from(Err(RawChatError::Other {
         message: String::from("boom"),
     }));
     assert!(matches!(
-        send_raw_chat_sync(&other, &data, 2.5, &recovery(&recorder)).await,
+        send_raw_chat_sync(&other, data, 2.5, &recovery(recorder)).await,
         Err(RawChatError::Other { message }) if message == "boom"
     ));
 }
@@ -261,7 +270,7 @@ pub(super) async fn unrelated_error() {
     }
     assert_eq!(
         *transport.calls.lock().expect("calls"),
-        vec![(data.clone(), 2.5), (data, 2.5)]
+        vec![(data.clone(), 2.5_f64), (data, 2.5_f64)]
     );
     assert!(recorder.calls().is_empty());
 }

@@ -2,13 +2,14 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::disallowed_methods,
         clippy::shadow_unrelated,
-        clippy::too_many_lines,
-        reason = "each case carries several provider replies in one function and rebinds the reply names as it goes"
+        reason = "json! expands Into for object keys; cases group provider replies and reuse names"
     )
 )]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -97,25 +98,25 @@ fn recovery(tokens: &dyn PromptTokens) -> Recovery<'_> {
 fn two_element_loc() {
     let body = json!({"message": "{\"detail\": [{\"loc\": [\"body\", \"temperature\"]}, {\"loc\": [\"body\", \"top_p\"]}, {\"loc\": [\"body\"]}, {\"loc\": []}, {\"loc\": [\"body\", \"seed\", \"extra\"]}, {\"loc\": \"body\"}, {\"loc\": null}, {}]}"});
     let data = fields(&[
-        ("temperature", json!(1)),
-        ("top_p", json!(2)),
-        ("seed", json!(3)),
+        ("temperature", json!(1_i32)),
+        ("top_p", json!(2_i32)),
+        ("seed", json!(3_i32)),
     ]);
     let dropped = without_rejected_fields(ErrorBody::Sdk(&body), &data).expect("sdk body");
-    assert_eq!(dropped, fields(&[("seed", json!(3))]));
+    assert_eq!(dropped, fields(&[("seed", json!(3_i32))]));
     assert_eq!(data.len(), 3, "the caller's map is untouched");
     let http = json!({"error": {"message": "{\"detail\": [{\"loc\": [\"body\", \"seed\"]}]}"}});
     let text = serde_json::to_vec(&http).expect("http body");
     let dropped = without_rejected_fields(ErrorBody::Http(&text), &data).expect("http");
     assert_eq!(
         dropped,
-        fields(&[("temperature", json!(1)), ("top_p", json!(2))])
+        fields(&[("temperature", json!(1_i32)), ("top_p", json!(2_i32))])
     );
     let direct = json!({"message": {"detail": [{"loc": ["body", "top_p"]}]}});
     let dropped = without_rejected_fields(ErrorBody::Sdk(&direct), &data).expect("direct");
     assert_eq!(
         dropped,
-        fields(&[("temperature", json!(1)), ("seed", json!(3))])
+        fields(&[("temperature", json!(1_i32)), ("seed", json!(3_i32))])
     );
     let unparsable = json!({"message": "not json at all"});
     let dropped =
@@ -124,12 +125,12 @@ fn two_element_loc() {
 }
 
 fn malformed_detail_keeps_fields() {
-    let data = fields(&[("temperature", json!(1)), ("seed", json!(3))]);
+    let data = fields(&[("temperature", json!(1_i32)), ("seed", json!(3_i32))]);
     let kept = [
         json!(null),
         json!("a string body"),
         json!({"message": ""}),
-        json!({"message": 0}),
+        json!({"message": 0_i32}),
         json!({"message": []}),
         json!({"message": {}}),
         json!({"message": "{}"}),
@@ -150,16 +151,16 @@ fn malformed_detail_keeps_fields() {
 fn present_matches_python_truthiness() {
     assert!(!super::present(&json!(null)));
     assert!(!super::present(&json!(false)));
-    assert!(!super::present(&json!(0)));
+    assert!(!super::present(&json!(0_i32)));
     assert!(!super::present(&json!("")));
     assert!(!super::present(&json!([])));
     assert!(!super::present(&json!({})));
     assert!(super::present(&json!(true)));
-    assert!(super::present(&json!(1)));
-    assert!(super::present(&json!(-1)));
+    assert!(super::present(&json!(1_i32)));
+    assert!(super::present(&json!(-1_i32)));
     assert!(super::present(&json!("x")));
-    assert!(super::present(&json!([0])));
-    assert!(super::present(&json!({"a": 1})));
+    assert!(super::present(&json!([0_i32])));
+    assert!(super::present(&json!({"a": 1_i32})));
 }
 
 fn output_limit_case_insensitive() {
@@ -206,10 +207,10 @@ async fn empty_length_completion() {
         json!({
             "id": "chatcmpl-00000000-0000-0000-0000-000000000007",
             "object": "chat.completion",
-            "created": 1_700_000_000,
+            "created": 1_700_000_000_i32,
             "model": "gpt-3.5-turbo",
             "choices": [{
-                "index": 0,
+                "index": 0_i32,
                 "finish_reason": "length",
                 "provider_specific_fields": {},
                 "message": {
@@ -218,7 +219,7 @@ async fn empty_length_completion() {
                     "provider_specific_fields": {"refusal": null},
                 },
             }],
-            "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
+            "usage": {"prompt_tokens": 7_i32, "completion_tokens": 0_i32, "total_tokens": 7_i32},
         })
     );
     assert_eq!(
@@ -254,10 +255,10 @@ async fn single_length_stream_chunk() {
         json!({
             "id": "chatcmpl-00000000-0000-0000-0000-000000000007",
             "object": "chat.completion.chunk",
-            "created": 1_700_000_000,
+            "created": 1_700_000_000_i32,
             "model": "gpt-3.5-turbo",
             "choices": [{
-                "index": 0,
+                "index": 0_i32,
                 "finish_reason": "length",
                 "delta": {"role": "assistant", "content": ""},
             }],
@@ -315,6 +316,10 @@ async fn prompt_token_count() {
         assert_eq!(completion.usage.total_tokens, 0);
     }
     assert!(uncounted.calls().is_empty());
+    Box::pin(count_with_runtime_tokenizer()).await;
+}
+
+async fn count_with_runtime_tokenizer() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -374,9 +379,9 @@ fn malformed_nested_error_failure() {
         Err(RejectedFieldsError::DetailEntryNotObject { index: 1 })
     ));
     let listed = json!({"error": {"message": "[1]"}});
-    let listed = serde_json::to_vec(&listed).expect("http body");
+    let encoded_list = serde_json::to_vec(&listed).expect("http body");
     assert!(matches!(
-        decode_rejected_fields(ErrorBody::Http(&listed)),
+        decode_rejected_fields(ErrorBody::Http(&encoded_list)),
         Err(RejectedFieldsError::MessageNotObject)
     ));
     assert!(matches!(
@@ -436,7 +441,7 @@ async fn output_limits_cases(#[case] scenario: Scenario) {
 }
 
 fn replays(path: &Path) -> bool {
-    let bytes = std::fs::read(path).expect("corpus seed");
+    let bytes = fs::read(path).expect("corpus seed");
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -453,7 +458,7 @@ fn replays(path: &Path) -> bool {
 #[test]
 fn replays_the_openai_output_limits_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_output_limits");
-    let seeds: Vec<PathBuf> = std::fs::read_dir(corpus)
+    let seeds: Vec<PathBuf> = fs::read_dir(corpus)
         .expect("corpus directory")
         .map(|entry| entry.expect("seed").path())
         .filter(|path| path.is_file())

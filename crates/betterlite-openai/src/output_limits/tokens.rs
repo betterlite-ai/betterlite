@@ -39,6 +39,6 @@ impl PromptTokens for Counter {
             tools: None,
             tool_choice: None,
         };
-        Ok(Counter::count(self, &request).await?)
+        Ok(Self::count(self, &request).await?)
     }
 }

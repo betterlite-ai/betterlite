@@ -109,8 +109,8 @@ fn projected_choices(value: &Value, body_key: &str) -> Value {
             fields.insert(
                 body_key.to_owned(),
                 json!({
-                    "role": body.and_then(|body| body.get("role")),
-                    "content": body.and_then(|body| body.get("content")),
+                    "role": body.and_then(|message| message.get("role")),
+                    "content": body.and_then(|message| message.get("content")),
                 }),
             );
             projected.push(Value::Object(fields));

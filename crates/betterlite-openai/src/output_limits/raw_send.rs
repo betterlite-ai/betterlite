@@ -46,7 +46,7 @@ pub enum RawChatError {
     },
 }
 
-pub trait SyncRawChatTransport {
+pub trait SyncRawChatTransport: Send + Sync {
     fn create(
         &self,
         data: &Map<String, Value>,
@@ -55,7 +55,7 @@ pub trait SyncRawChatTransport {
 }
 
 #[async_trait]
-pub trait AsyncRawChatTransport {
+pub trait AsyncRawChatTransport: Send + Sync {
     async fn create(
         &self,
         data: &Map<String, Value>,
