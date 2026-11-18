@@ -45,6 +45,15 @@ impl CallbackLogger for LangfuseOtel {
         self.inner.callback_name()
     }
 
+    // CustomLogger stores both flags on itself; the assembled logger carries what the factory passed
+    fn turn_off_message_logging(&self) -> bool {
+        self.inner.settings.turn_off_message_logging
+    }
+
+    fn message_logging(&self) -> bool {
+        self.inner.settings.message_logging
+    }
+
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.inner.async_log_success_event(event).await
     }
@@ -86,6 +95,14 @@ pub struct LangfuseContentOtel {
 impl CallbackLogger for LangfuseContentOtel {
     fn callback_name(&self) -> &str {
         self.inner.callback_name()
+    }
+
+    fn turn_off_message_logging(&self) -> bool {
+        self.inner.turn_off_message_logging()
+    }
+
+    fn message_logging(&self) -> bool {
+        self.inner.message_logging()
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
