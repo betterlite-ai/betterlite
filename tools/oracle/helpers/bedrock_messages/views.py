@@ -1,6 +1,7 @@
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import httpx
+from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation import (
     AmazonAnthropicClaudeMessagesConfig as MessagesConfig,
 )
@@ -153,15 +154,12 @@ class MessagesView(Protocol):
     ) -> StreamView: ...
 
 
-@runtime_checkable
-class MessagesFactory(Protocol):
-    def __call__(self, **kwargs: JsonValue) -> MessagesView: ...
-
-
 VIEW: Final[TypeAdapter[MessagesView]] = TypeAdapter(MessagesView, config=ARBITRARY)
-FACTORY: Final[TypeAdapter[MessagesFactory]] = TypeAdapter(MessagesFactory, config=ARBITRARY)
 
 
-def new_view() -> MessagesView:
-    factory = FACTORY.validate_python(MessagesConfig)
-    return factory()
+class Probe(MessagesConfig):
+    def __init__(self) -> None:
+        BaseAWSLLM.__init__(self)
+
+    def view(self) -> MessagesView:
+        return VIEW.validate_python(self)

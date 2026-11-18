@@ -5,23 +5,24 @@ from contextlib import aclosing, contextmanager
 import httpx
 import litellm
 from litellm.llms.bedrock.common_utils import BedrockError
+from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation import (
+    AmazonAnthropicClaudeMessagesConfig as MessagesConfig,
+)
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 from typing_extensions import override
 
 from .views import (
-    FACTORY,
     REQUEST_BODY,
     WARNING_PREFIXES,
     Constructor,
     ErrorClass,
     EventStream,
     LoggingStub,
-    MessagesConfig,
     Object,
+    Probe,
     Transform,
     TransformCall,
-    new_view,
 )
 
 
@@ -66,7 +67,7 @@ def transform_call(entry: TransformCall) -> JsonValue:
     optional = entry.get("optional_params")
     headers = entry.get("headers")
     with watching() as watch:
-        body = new_view().transform_anthropic_messages_request(
+        body = Probe().view().transform_anthropic_messages_request(
             entry["model"],
             [] if messages is None else messages,
             {} if optional is None else optional,
@@ -91,15 +92,14 @@ async def drain(call: EventStream) -> JsonValue:
     response = httpx.Response(
         200, headers={} if headers is None else headers, stream=Frames(parts)
     )
-    iterator = new_view().get_async_streaming_response_iterator(
+    iterator = Probe().view().get_async_streaming_response_iterator(
         "fixture-plain", response, REQUEST_BODY, LoggingStub()
     )
     pieces: list[JsonValue] = []
     failure: JsonValue = None
     try:
         async with aclosing(iterator):
-            async for piece in iterator:
-                pieces.append(piece.hex())
+            pieces.extend([piece.hex() async for piece in iterator])
     except BedrockError as error:
         failure = {
             "class": type(error).__name__,
@@ -111,7 +111,7 @@ async def drain(call: EventStream) -> JsonValue:
 
 def error_class(call: ErrorClass) -> JsonValue:
     headers = call.get("headers")
-    error = new_view().get_error_class(
+    error = Probe().view().get_error_class(
         call["message"], call["status_code"], {} if headers is None else headers
     )
     projected: Object = {}
@@ -122,5 +122,5 @@ def error_class(call: ErrorClass) -> JsonValue:
 
 def constructor(call: Constructor) -> JsonValue:
     kwargs = call.get("kwargs")
-    FACTORY.validate_python(MessagesConfig)(**{} if kwargs is None else kwargs)
+    MessagesConfig(**{} if kwargs is None else kwargs)  # type: ignore[no-untyped-call]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L99-L101
     return {"created": True}
