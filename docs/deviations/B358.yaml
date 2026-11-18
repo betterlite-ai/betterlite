@@ -1,0 +1,55 @@
+task: B358
+deviations:
+  - what: >-
+      The tier_data parser refuses artifact bytes over 1048576 before decoding them, where
+      LiteLLM reads and parses an artifact file of any size.
+    why: >-
+      The source has no byte bound at this parser boundary, and bounded-inputs requires a finite
+      limit before allocation. The bound applies to the packaged artifact, to an inline artifact
+      serialized by the oracle, and to any future caller of the parser; the packaged artifact is
+      99418 bytes, well inside it. Existing structural field limits are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L82-L89
+  - what: >-
+      An `os.environ/` reference in a numeric field of an inline `heuristic_v2_artifact`
+      (successes, observations, prior masses, routing_threshold, rows, tier, schema_version) fails
+      the config load, where the proxy resolves the reference to the environment's text and
+      pydantic then parses that text as a number.
+    why: >-
+      The proxy replaces every `os.environ/` string anywhere in the config before the config model
+      validates it, so a numeric artifact statistic can be supplied from the environment today.
+      betterlite's config section reads an inline artifact through the artifact's typed wire
+      format, where a number is a number, and resolving a text reference into each numeric field
+      would make every statistic field a text-or-number union. Text fields of the inline artifact
+      (success_definition, split_method, dataset name, url, license and success_definition, domain
+      request_type, cohort) do resolve from the environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5748-L5786
+  - what: >-
+      A statistic, prior mass or threshold that is not finite is refused with an error naming the
+      field, where LiteLLM's pydantic constraints accept positive infinity for successes,
+      observations and prior masses whenever the value stays within its bounds.
+    why: >-
+      The task requires rejecting non-finite statistical input. A positive-infinity prior mass
+      makes every posterior mean NaN, every threshold comparison false, and the forecast's
+      probabilities NaN, which standard JSON cannot carry, so a setup that configured it could
+      only produce records a consumer cannot read. A YAML config can spell `.inf`, so the check
+      guards both the config and the parsed artifact bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L18
+  - what: >-
+      The built-in `ultrafeedback` artifact is compiled into the binary, so editing the installed
+      package's artifacts/ultrafeedback_tiers.json changes nothing, where LiteLLM re-reads that
+      file from disk for every router it builds.
+    why: >-
+      The task pins the packaged artifact and forbids a changing download from replacing it. The
+      compiled artifact is byte-for-byte the pinned file; a setup that needs different statistics
+      passes them inline through `heuristic_v2_artifact`, which both implementations read from the
+      config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L82-L89
+  - what: >-
+      A dataset `rows` value above u32::MAX is refused when the artifact is parsed, where LiteLLM
+      declares an unbounded int.
+    why: >-
+      betterlite keeps the attribution counts in u32, the width the packaged artifact and every
+      dataset it describes fit in. rows only feeds attribution and never routing, so a value past
+      four billion loses nothing a request can observe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L35-L41
+kept_bugs: []
