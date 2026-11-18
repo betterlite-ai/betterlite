@@ -9,7 +9,7 @@ use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use thiserror::Error;
 
 use crate::model_budget_values::amount_text::amount_from_text;
@@ -55,7 +55,7 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         let Some(redis) = redis_of(self) else {
             return Ok(None);
         };
-        let amount = cache_float(value)?;
+        let amount = value.to_f64().ok_or(ReseedCacheError::OutOfRange(value))?;
         Ok(redis
             .values
             .async_set_cache(Some(counter_key), &amount, None, true)
@@ -71,7 +71,7 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
     }
 
     async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), ReseedCacheError> {
-        let amount = cache_float(value)?;
+        let amount = value.to_f64().ok_or(ReseedCacheError::OutOfRange(value))?;
         Ok(self
             .in_memory_cache
             .set_cache(counter_key, CacheValue::Float(amount), None)?)
@@ -82,7 +82,9 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         counter_key: &str,
         increment: Decimal,
     ) -> Result<Option<Decimal>, ReseedCacheError> {
-        let amount = cache_float(increment)?;
+        let amount = increment
+            .to_f64()
+            .ok_or(ReseedCacheError::OutOfRange(increment))?;
         let options = CacheOptions {
             ttl: None,
             local_only: true,
@@ -103,10 +105,6 @@ where
         Ok(guard) => guard.clone(),
         Err(poisoned) => poisoned.into_inner().clone(),
     }
-}
-
-fn cache_float(value: Decimal) -> Result<f64, ReseedCacheError> {
-    value.to_f64().ok_or(ReseedCacheError::OutOfRange(value))
 }
 
 pub(crate) enum StoredValue {
