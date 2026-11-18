@@ -536,10 +536,19 @@ fn raw_limit_flush() {
 
 #[tokio::test(start_paused = true)]
 async fn keepalive_ping() {
-    let generator = test_generator(Some(crate::keepalive_interval::PingSetting::Seconds(1.0)));
+    let mut generator = test_generator(None);
+    generator.router = Some(Arc::new(KeepaliveFixture));
+    let mut active = model_chunk("active");
+    if let StreamItem::Chunk(chunk) = &mut active {
+        chunk
+            .hidden
+            .insert("model_id".to_owned(), Json::Text("active".to_owned()));
+    }
     let source = StreamSource {
-        items: stream::pending().boxed(),
-        hidden: JsonObject::new(),
+        items: stream::iter([Ok(active)]).chain(stream::pending()).boxed(),
+        hidden: [("model_id".to_owned(), Json::Text("idle".to_owned()))]
+            .into_iter()
+            .collect(),
         snapshot: None,
     };
     let mut body = generator.generate(GeneratorInput {
@@ -549,8 +558,37 @@ async fn keepalive_ping() {
         request: None,
         responses_stream_errors: false,
     });
+    let data = body.next().await.expect("data").expect("body frame");
+    assert!(
+        String::from_utf8(data.to_vec())
+            .expect("utf8")
+            .starts_with("data: ")
+    );
     let ping = body.next().await.expect("ping").expect("body frame");
     assert_eq!(ping, bytes::Bytes::from_static(b": ping\n\n"));
+}
+
+struct KeepaliveFixture;
+
+impl crate::stream_keepalive::KeepaliveRouter for KeepaliveFixture {
+    fn deployment_params(&self, model_id: &str) -> Option<JsonObject> {
+        let seconds = if model_id == "active" { 1 } else { 0 };
+        Some(
+            [(
+                "keepalive_seconds".to_owned(),
+                betterlite_config::sections::settings::JsonValue::Number(seconds.into()),
+            )]
+            .into_iter()
+            .collect(),
+        )
+    }
+
+    fn group_deployments(
+        &self,
+        _: Option<&str>,
+    ) -> Vec<betterlite_config::sections::settings::JsonValue> {
+        Vec::new()
+    }
 }
 
 #[test]
