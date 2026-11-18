@@ -82,8 +82,7 @@ fn required_tier<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Result<
 where
     L: EnvironmentLookup,
 {
-    let tier = tier_value(value, path, lookup)?;
-    if let Some(tier) = tier {
+    if let Some(tier) = tier_value(value, path, lookup)? {
         return Ok(tier);
     }
     Err(invalid_scalar(path))
@@ -114,11 +113,11 @@ fn tier_value<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(value) = value else {
+    let Some(declared) = value else {
         return Ok(None);
     };
-    reject_quoted_number(&value, path)?;
-    resolve_number(Some(value), path, lookup, parse_tier)
+    reject_quoted_number(&declared, path)?;
+    resolve_number(Some(declared), path, lookup, parse_tier)
 }
 
 fn parse_tier(text: &str, path: &str) -> Result<i64, ConfigError> {
