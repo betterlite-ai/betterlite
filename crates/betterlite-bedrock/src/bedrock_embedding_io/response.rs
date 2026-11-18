@@ -68,16 +68,16 @@ fn async_response(
     model: &str,
     provider: BedrockEmbeddingProvider,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    match provider {
-        BedrockEmbeddingProvider::Twelvelabs => {
-            let response = marengo::transform_async_response(&parse_one::<Params>(reply)?, model);
-            provider_embedding_reply(ProviderResponse::Marengo(response))
-        }
-        BedrockEmbeddingProvider::Nova => {
-            let response = nova::transform_invoke_response(&parse_one::<Params>(reply)?, model);
-            provider_embedding_reply(ProviderResponse::Nova(response))
-        }
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => Ok(EmbeddingReply {
+    if let BedrockEmbeddingProvider::Twelvelabs = provider {
+        let input = parse_one::<Params>(reply)?;
+        let response = marengo::transform_async_response(&input, model);
+        provider_embedding_reply(ProviderResponse::Marengo(response))
+    } else if let BedrockEmbeddingProvider::Nova = provider {
+        let input = parse_one::<Params>(reply)?;
+        let response = nova::transform_invoke_response(&input, model);
+        provider_embedding_reply(ProviderResponse::Nova(response))
+    } else {
+        Ok(EmbeddingReply {
             object: RESPONSE_OBJECT,
             data: vec![EmbeddingRecord {
                 object: EMBEDDING_OBJECT.to_owned(),
@@ -92,7 +92,7 @@ fn async_response(
                 prompt_tokens_details: None,
             },
             invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-        }),
+        })
     }
 }
 
