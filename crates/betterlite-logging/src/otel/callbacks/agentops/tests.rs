@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -20,7 +20,7 @@ use url::Url;
 
 use super::transport::{AuthFailure, AuthPost, AuthResponse, AuthTransport, PooledAuthTransport};
 use super::{
-    AUTH_ENDPOINT, AgentOpsCallback, AgentOpsConfig, DEFAULT_DEPLOYMENT_ENVIRONMENT,
+    AUTH_ENDPOINT, AUTH_TIMEOUT, AgentOpsCallback, AgentOpsConfig, DEFAULT_DEPLOYMENT_ENVIRONMENT,
     DEFAULT_SERVICE_NAME, ENDPOINT, RESOURCE_DEPLOYMENT_ENVIRONMENT, RESOURCE_SERVICE_NAME,
     SDK_NAME,
 };
@@ -139,6 +139,58 @@ impl AuthTransport for TokenTransport {
     }
 }
 
+#[derive(Default)]
+struct CaptureTransport {
+    requests: Mutex<Vec<AuthPost>>,
+}
+
+#[async_trait]
+impl AuthTransport for CaptureTransport {
+    async fn post(&self, request: AuthPost) -> Result<AuthResponse, AuthFailure> {
+        self.requests
+            .lock()
+            .expect("the captured requests lock")
+            .push(request);
+        Ok(AuthResponse {
+            status: 200,
+            body: br#"{"token": "jwt-1", "project_id": "project-1"}"#.to_vec(),
+        })
+    }
+}
+
+#[tokio::test]
+async fn agentops_callback_fetches_the_token_with_the_documented_request_shape() {
+    let transport = CaptureTransport::default();
+    let callback =
+        AgentOpsCallback::connect(config(AUTH_ENDPOINT, Some("agentops-key")), &transport).await;
+    let requests = transport
+        .requests
+        .lock()
+        .expect("the captured requests lock");
+    let request = requests.first().expect("one token request");
+    assert_eq!(request.url, AUTH_ENDPOINT);
+    assert_eq!(
+        request
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+    assert_eq!(
+        request
+            .headers
+            .get("connection")
+            .and_then(|value| value.to_str().ok()),
+        Some("keep-alive")
+    );
+    assert_eq!(request.timeout, AUTH_TIMEOUT);
+    assert_eq!(
+        serde_json::from_slice::<Json>(&request.body).expect("the body is JSON"),
+        json(r#"{"api_key": "agentops-key"}"#)
+    );
+    assert!(callback.auth.is_some());
+}
+
 #[tokio::test]
 async fn agentops_callback_posts_the_api_key_and_keeps_the_token() {
     let (endpoint, served) =
@@ -151,7 +203,6 @@ async fn agentops_callback_posts_the_api_key_and_keeps_the_token() {
     assert_eq!(received.method, "POST");
     assert_eq!(received.path, "/v3/auth/token");
     assert_eq!(header(&received, "content-type"), "application/json");
-    assert_eq!(header(&received, "connection"), "keep-alive");
     assert_eq!(
         serde_json::from_slice::<Json>(&received.body).expect("the body is JSON"),
         json(r#"{"api_key": "agentops-key"}"#)
