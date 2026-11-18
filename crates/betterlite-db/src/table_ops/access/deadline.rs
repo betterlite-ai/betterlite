@@ -44,7 +44,9 @@ where
 {
     let transaction = statement("begin", deadline, client.transaction()).await?;
     // PostgreSQL treats zero as unlimited, so sub-millisecond deadlines round up.
-    let milliseconds = deadline.as_millis().clamp(1, u128::from(i32::MAX));
+    let milliseconds = deadline
+        .as_millis()
+        .clamp(1, u128::from(i32::MAX.unsigned_abs()));
     let setting = format!("{milliseconds}ms");
     statement(
         "deadline",
