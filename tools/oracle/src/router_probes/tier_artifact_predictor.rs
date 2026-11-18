@@ -8,6 +8,9 @@ use betterlite_router::tier_artifact_predictor::predictor::{
     TierArtifactPredictor, TierSuccessPredictor,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
+
+mod tests;
 
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -65,22 +68,19 @@ enum Bytes {
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Fields {
     cohort: Option<String>,
     status: Option<String>,
     tier: Option<String>,
-    score: Option<f64>,
+    score: Option<Number>,
     signals: Option<Vec<String>>,
     cause: Option<RoutingDecisionCause>,
-    probabilities: Option<Vec<f64>>,
-    threshold: Option<f64>,
+    probabilities: Option<Vec<Number>>,
+    threshold: Option<Number>,
     predicted_tier: Option<String>,
     request_type: Option<String>,
 }
-
-// a validated diagnostic is finite, so equality over these doubles is total
-impl Eq for Fields {}
 
 pub(crate) fn run(
     input: &Input,
@@ -156,8 +156,14 @@ fn cohort_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operation
 fn predict_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
     let predictor = predictor(payload)?;
     let prediction = predictor.predict(&payload.prompt, request_type(payload)?);
-    fields.probabilities = Some(prediction.probabilities.to_vec());
-    fields.threshold = Some(predictor.threshold);
+    fields.probabilities = Some(
+        prediction
+            .probabilities
+            .into_iter()
+            .map(number)
+            .collect::<Result<_, _>>()?,
+    );
+    fields.threshold = Some(number(predictor.threshold)?);
     fields.predicted_tier = Some(prediction.required_tier.built_in().name().to_owned());
     Ok(())
 }
@@ -167,11 +173,18 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
         .map_err(|source| invalid(&source.to_string()))?;
     let outcome = predictor.classify(&payload.prompt);
     fields.tier = Some(outcome.tier.name().to_owned());
-    fields.score = outcome.score;
+    fields.score = outcome.score.map(number).transpose()?;
     fields.signals = Some(outcome.signals);
     fields.cause = Some(outcome.cause);
-    fields.probabilities = Some(outcome.forecast.probabilities.to_vec());
-    fields.threshold = Some(outcome.forecast.threshold);
+    fields.probabilities = Some(
+        outcome
+            .forecast
+            .probabilities
+            .into_iter()
+            .map(number)
+            .collect::<Result<_, _>>()?,
+    );
+    fields.threshold = Some(number(outcome.forecast.threshold)?);
     fields.predicted_tier = Some(outcome.forecast.predicted_tier.name().to_owned());
     fields.request_type = Some(outcome.forecast.request_type.to_string());
     Ok(())
@@ -197,7 +210,10 @@ fn startup_accepted(config: &section::Config) -> bool {
 fn parse_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
     let artifact = parse_artifact(&artifact_bytes(payload)?);
     fields.status = Some(status_text(artifact.is_ok()).to_owned());
-    fields.threshold = artifact.ok().map(|artifact| artifact.routing_threshold);
+    fields.threshold = artifact
+        .ok()
+        .map(|artifact| number(artifact.routing_threshold))
+        .transpose()?;
     Ok(())
 }
 
@@ -237,4 +253,10 @@ fn expanded(content: &str, pad: &str, pad_len: u64) -> Result<Vec<u8>, Operation
         builder.push_str(&pad.repeat(repetitions));
     }
     Ok(builder.into_bytes())
+}
+
+fn number(value: f64) -> Result<Number, OperationError> {
+    Number::from_f64(value).ok_or_else(|| OperationError::InvalidRequest {
+        message: "the forecast contains a non-finite number".to_owned(),
+    })
 }

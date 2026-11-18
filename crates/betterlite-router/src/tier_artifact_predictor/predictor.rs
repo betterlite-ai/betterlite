@@ -32,8 +32,8 @@ pub struct ClassifierOutcome {
 
 pub struct TierSuccessPredictor {
     pub threshold: f64,
-    artifact: ValidatedArtifact,
-    matcher: CohortMatcher,
+    pub artifact: ValidatedArtifact,
+    pub matcher: CohortMatcher,
 }
 
 impl TierSuccessPredictor {

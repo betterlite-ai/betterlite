@@ -8,7 +8,7 @@ use crate::complexity_scoring::tier::ComplexityTier;
 use crate::tier_artifact_predictor::error::PredictorError;
 use crate::tier_artifact_predictor::validation;
 
-pub const MAX_ARTIFACT_BYTES: usize = 1_048_576;
+pub const MAX_ARTIFACT_BYTES: usize = 0x0010_0000;
 
 pub type TierStatistics = BTreeMap<TierNumber, TierStatistic>;
 

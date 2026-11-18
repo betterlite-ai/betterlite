@@ -1,16 +1,7 @@
 import asyncio
 from typing import Final, Literal, NotRequired
 
-from litellm.router import Router
-from litellm.router_strategy.complexity_router.complexity_router import ComplexityRouter
-from litellm.router_strategy.complexity_router.config import TIER_SEVERITY_ORDER, ComplexityTier
-from litellm.router_strategy.complexity_router.tier_predictor import (
-    TierSuccessPredictor,
-    TrainedTierArtifact,
-    resolve_tier_artifact,
-    similarity_cohort,
-)
-from litellm.types.router import RequestType
+from litellm import Router, router_strategy, types
 from pydantic import TypeAdapter, ValidationError
 from typing_extensions import TypedDict, override
 
@@ -18,9 +9,13 @@ from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
-_ARTIFACT: Final = TypeAdapter(TrainedTierArtifact)
-_TIER: Final = TypeAdapter(ComplexityTier)
-_REQUEST_TYPE: Final = TypeAdapter(RequestType)
+# Router loads this public package while importing its context-compaction integration.
+complexity = router_strategy.complexity_router
+predictor_api = complexity.tier_predictor
+
+_ARTIFACT: Final = TypeAdapter(predictor_api.TrainedTierArtifact)
+_TIER: Final = TypeAdapter(complexity.ComplexityTier)
+_REQUEST_TYPE: Final = TypeAdapter(types.router.RequestType)
 _TIERS: Final = (1, 2, 3, 4)
 _MAX_EXPANDED_BYTES: Final = 2_097_152
 
@@ -107,15 +102,17 @@ class TierArtifactPredictor(Operation):
             return Output(status=self._startup())
         return self._parse()
 
-    def _resolved_artifact(self) -> TrainedTierArtifact:
+    def _resolved_artifact(self) -> router_strategy.complexity_router.tier_predictor.TrainedTierArtifact:
         if self.artifact is not None:
             return _ARTIFACT.validate_python(self.artifact)
-        return resolve_tier_artifact(self.artifact_name if self.artifact_name is not None else "ultrafeedback")
+        return predictor_api.resolve_tier_artifact(
+            self.artifact_name if self.artifact_name is not None else "ultrafeedback"
+        )
 
     def _threshold(self) -> float | None:
         return None if self.threshold is None else float(self.threshold)
 
-    def _request_type(self) -> RequestType:
+    def _request_type(self) -> types.router.RequestType:
         if self.request_type is None:
             raise ProbeError("invalid_request", "request_type is required for this function")
         return _REQUEST_TYPE.validate_python(self.request_type)
@@ -131,19 +128,19 @@ class TierArtifactPredictor(Operation):
         }
 
     def _cohort(self) -> Output:
-        return Output(cohort=similarity_cohort(self.prompt, self._request_type()))
+        return Output(cohort=predictor_api.similarity_cohort(self.prompt, self._request_type()))
 
     def _predict(self) -> Output:
-        predictor = TierSuccessPredictor(self._resolved_artifact(), routing_threshold=self._threshold())
+        predictor = predictor_api.TierSuccessPredictor(self._resolved_artifact(), routing_threshold=self._threshold())
         prediction = predictor.predict(self.prompt, self._request_type())
         return Output(
             probabilities=[prediction.probabilities[tier] for tier in _TIERS],
             threshold=predictor.routing_threshold,
-            predicted_tier=TIER_SEVERITY_ORDER[prediction.required_tier - 1].value,
+            predicted_tier=complexity.config.TIER_SEVERITY_ORDER[prediction.required_tier - 1].value,
         )
 
     def _classify(self) -> Output:
-        router = ComplexityRouter(
+        router = complexity.ComplexityRouter(
             model_name="probe",
             litellm_router_instance=Router(),
             complexity_router_config=self._router_config(),
@@ -157,7 +154,7 @@ class TierArtifactPredictor(Operation):
             score=outcome.score,
             signals=list(outcome.signals),
             cause=outcome.cause,
-            probabilities=[forecast["probabilities"][tier.value] for tier in TIER_SEVERITY_ORDER],
+            probabilities=[forecast["probabilities"][tier.value] for tier in complexity.config.TIER_SEVERITY_ORDER],
             threshold=forecast["threshold"],
             predicted_tier=forecast["predicted_tier"],
             request_type=forecast["request_type"],
@@ -165,7 +162,7 @@ class TierArtifactPredictor(Operation):
 
     def _startup(self) -> str:
         try:
-            _ = ComplexityRouter(
+            _ = complexity.ComplexityRouter(
                 model_name="probe",
                 litellm_router_instance=Router(),
                 complexity_router_config=self._router_config(),
@@ -176,7 +173,7 @@ class TierArtifactPredictor(Operation):
 
     def _parse(self) -> Output:
         try:
-            artifact = TrainedTierArtifact.model_validate_json(self._bytes())
+            artifact = predictor_api.TrainedTierArtifact.model_validate_json(self._bytes())
         except ValidationError:
             return Output(status="rejected")
         return Output(status="accepted", threshold=artifact.routing_threshold)

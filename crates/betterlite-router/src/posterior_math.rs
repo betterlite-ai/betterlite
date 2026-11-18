@@ -21,7 +21,9 @@ pub fn smoothed_mean(successes: f64, observations: f64) -> f64 {
 // _posterior_mean: an observation shifts the prior mean in proportion to its mass
 #[must_use]
 pub fn posterior_mean(successes: f64, observations: f64, prior_mass: f64, prior_mean: f64) -> f64 {
-    let observed_successes = successes + prior_mass * prior_mean;
+    // Keep separate rounding steps to preserve threshold selection at adjacent f64 values.
+    let prior_successes = prior_mass * prior_mean;
+    let observed_successes = successes + prior_successes;
     let observed_mass = observations + prior_mass;
     observed_successes / observed_mass
 }

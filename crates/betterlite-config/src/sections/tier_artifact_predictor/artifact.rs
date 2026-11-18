@@ -1,6 +1,7 @@
 use std::mem::take;
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -20,11 +21,20 @@ pub struct Artifact {
     pub domain_statistics: Vec<DomainStatistic>,
     #[serde(default)]
     pub cohort_statistics: Vec<CohortStatistic>,
-    #[serde(default = "default_domain_prior_mass")]
+    #[serde(
+        default = "default_domain_prior_mass",
+        deserialize_with = "statistic_number"
+    )]
     pub domain_prior_mass: f64,
-    #[serde(default = "default_cohort_prior_mass")]
+    #[serde(
+        default = "default_cohort_prior_mass",
+        deserialize_with = "statistic_number"
+    )]
     pub cohort_prior_mass: f64,
-    #[serde(default = "default_routing_threshold")]
+    #[serde(
+        default = "default_routing_threshold",
+        deserialize_with = "statistic_number"
+    )]
     pub routing_threshold: f64,
     #[serde(default)]
     pub datasets: Vec<Dataset>,
@@ -37,14 +47,18 @@ pub struct Artifact {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GlobalStatistic {
     pub tier: u32,
+    #[serde(deserialize_with = "statistic_number")]
     pub successes: f64,
+    #[serde(deserialize_with = "statistic_number")]
     pub observations: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomainStatistic {
     pub tier: u32,
+    #[serde(deserialize_with = "statistic_number")]
     pub successes: f64,
+    #[serde(deserialize_with = "statistic_number")]
     pub observations: f64,
     pub request_type: String,
 }
@@ -52,7 +66,9 @@ pub struct DomainStatistic {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CohortStatistic {
     pub tier: u32,
+    #[serde(deserialize_with = "statistic_number")]
     pub successes: f64,
+    #[serde(deserialize_with = "statistic_number")]
     pub observations: f64,
     pub cohort: String,
 }
@@ -135,4 +151,14 @@ fn default_split_method() -> String {
 
 fn default_success_definition() -> String {
     DEFAULT_SUCCESS_DEFINITION.to_owned()
+}
+
+// Number handles serde_json arbitrary_precision floats buffered inside a tagged probe or untagged config.
+fn statistic_number<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    serde_json::Number::deserialize(deserializer)?
+        .as_f64()
+        .ok_or_else(|| D::Error::custom("the statistic must be a finite number"))
 }

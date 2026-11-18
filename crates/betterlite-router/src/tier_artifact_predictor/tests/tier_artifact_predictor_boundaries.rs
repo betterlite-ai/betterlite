@@ -77,8 +77,8 @@ enum Boundary {
 #[case::non_finite_observations(Boundary::NonFiniteObservations)]
 #[case::non_finite_prior_mass(Boundary::NonFinitePriorMass)]
 #[case::zero_prior_mass(Boundary::ZeroPriorMass)]
-#[case::threshold_above_one(Boundary::ThresholdOutside { threshold: 1.5 })]
-#[case::threshold_below_zero(Boundary::ThresholdOutside { threshold: -0.01 })]
+#[case::threshold_above_one(Boundary::ThresholdOutside { threshold: 1.5_f64 })]
+#[case::threshold_below_zero(Boundary::ThresholdOutside { threshold: -0.01_f64 })]
 #[case::threshold_nan(Boundary::ThresholdOutside {
     threshold: f64::NAN
 })]
@@ -116,19 +116,19 @@ enum Boundary {
 })]
 // one unit in the last place above 0.75 no tier reaches; one below keeps the first tier
 #[case::threshold_one_ulp_above(Boundary::ThresholdSelection {
-    threshold: Some(0.7500000000000001),
+    threshold: Some(0.750_000_000_000_000_1_f64),
     expected: TierNumber::Four,
 })]
 #[case::threshold_one_ulp_below(Boundary::ThresholdSelection {
-    threshold: Some(0.7499999999999999),
+    threshold: Some(0.749_999_999_999_999_9_f64),
     expected: TierNumber::One,
 })]
 #[case::threshold_zero(Boundary::ThresholdSelection {
-    threshold: Some(0.0),
+    threshold: Some(0.0_f64),
     expected: TierNumber::One,
 })]
 #[case::threshold_one(Boundary::ThresholdSelection {
-    threshold: Some(1.0),
+    threshold: Some(1.0_f64),
     expected: TierNumber::Four,
 })]
 #[case::completes_without_awaiting(Boundary::CompletesWithoutAwaiting)]
@@ -174,20 +174,20 @@ async fn tier_artifact_predictor_boundaries(#[case] boundary: Boundary) {
         Boundary::CancelledForecastLeavesNoState => cancelled_forecast_leaves_no_state(),
         // near f64::MAX a huge prior overflows the posterior sums into inf/inf, which is NaN
         Boundary::DomainPosteriorOverflow => {
-            let mut artifact = draft([1e308; 4], [1e308; 4], 0.75);
-            artifact.domain_prior_mass = 1.7e308;
+            let mut artifact = draft([1e308_f64; 4], [1e308_f64; 4], 0.75);
+            artifact.domain_prior_mass = 1.7e308_f64;
             artifact.domain_statistics = vec![DomainStatistic {
                 tier: 1,
                 successes: 1e308,
                 observations: 1e308,
                 request_type: "general".to_owned(),
             }];
-            let statistic = non_finite_posterior(artifact);
+            let statistic = non_finite_posterior(&artifact);
             assert_eq!(statistic, "the domain statistic for general at tier SIMPLE");
         }
         Boundary::CohortPosteriorOverflow => {
-            let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
-            artifact.cohort_prior_mass = 1.7e308;
+            let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], 0.75);
+            artifact.cohort_prior_mass = 1.7e308_f64;
             artifact.domain_statistics = vec![DomainStatistic {
                 tier: 1,
                 successes: 1.0,
@@ -200,7 +200,7 @@ async fn tier_artifact_predictor_boundaries(#[case] boundary: Boundary) {
                 observations: 1e308,
                 cohort: "general|short|code=0|math=0|mc=0|intl=0".to_owned(),
             }];
-            let statistic = non_finite_posterior(artifact);
+            let statistic = non_finite_posterior(&artifact);
             assert_eq!(
                 statistic,
                 "the cohort statistic general|short|code=0|math=0|mc=0|intl=0 at tier SIMPLE"
@@ -285,25 +285,37 @@ fn parse_error(global: &str, fields: &str) -> PredictorError {
 }
 
 fn schema_version() {
-    let global = super::global_json([(1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)]);
+    let global = super::global_json([
+        (1.0_f64, 2.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ]);
     let fields = ", \"schema_version\": 2";
-    match parse_error(&global, fields) {
-        PredictorError::SchemaVersion { version } => assert_eq!(version, 2),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&global, fields);
+    let PredictorError::SchemaVersion { version } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(version, 2);
 }
 
 fn tier_out_of_range(tier: u32) {
     let statistic = format!("{{\"tier\": {tier}, \"successes\": 0.0, \"observations\": 1.0}}");
-    match parse_error(&statistic, "") {
-        PredictorError::TierRange { tier: declared } => assert_eq!(declared, tier),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&statistic, "");
+    let PredictorError::TierRange { tier: declared } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(declared, tier);
 }
 
 fn successes_equal_observations() {
     let artifact = parsed(
-        &super::global_json([(1.0, 1.0), (2.0, 2.0), (1.0, 1.0), (0.0, 1.0)]),
+        &super::global_json([
+            (1.0_f64, 1.0_f64),
+            (2.0_f64, 2.0_f64),
+            (1.0_f64, 1.0_f64),
+            (0.0_f64, 1.0_f64),
+        ]),
         "",
     );
     assert_eq!(artifact.global.one.successes.to_bits(), 1.0_f64.to_bits());
@@ -315,44 +327,42 @@ fn successes_equal_observations() {
 
 fn successes_exceed_observations() {
     let statistic = "{\"tier\": 1, \"successes\": 2.0, \"observations\": 1.0}";
-    match parse_error(statistic, "") {
-        PredictorError::SuccessesExceedObservations {
-            field,
-            successes,
-            observations,
-        } => {
-            assert_eq!(field, "global_statistics[0]");
-            assert_eq!(successes.to_bits(), 2.0_f64.to_bits());
-            assert_eq!(observations.to_bits(), 1.0_f64.to_bits());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(statistic, "");
+    let PredictorError::SuccessesExceedObservations {
+        field,
+        successes,
+        observations,
+    } = error
+    else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "global_statistics[0]");
+    assert_eq!(successes.to_bits(), 2.0_f64.to_bits());
+    assert_eq!(observations.to_bits(), 1.0_f64.to_bits());
 }
 
 fn zero_observations() {
     let statistic = "{\"tier\": 1, \"successes\": 0.0, \"observations\": 0.0}";
-    match parse_error(statistic, "") {
-        PredictorError::NonPositiveObservations { field, value } => {
-            assert_eq!(field, "global_statistics[0].observations");
-            assert_eq!(value.to_bits(), 0.0_f64.to_bits());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(statistic, "");
+    let PredictorError::NonPositiveObservations { field, value } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "global_statistics[0].observations");
+    assert_eq!(value.to_bits(), 0.0_f64.to_bits());
 }
 
 fn negative_successes() {
     let statistic = "{\"tier\": 1, \"successes\": -0.5, \"observations\": 1.0}";
-    match parse_error(statistic, "") {
-        PredictorError::NegativeSuccesses { field, value } => {
-            assert_eq!(field, "global_statistics[0].successes");
-            assert_eq!(value.to_bits(), (-0.5_f64).to_bits());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(statistic, "");
+    let PredictorError::NegativeSuccesses { field, value } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "global_statistics[0].successes");
+    assert_eq!(value.to_bits(), (-0.5_f64).to_bits());
 }
 
 fn non_finite_successes() {
-    let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
+    let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], 0.75);
     artifact.global_statistics[0].successes = f64::NAN;
     assert_eq!(rejected_field(&artifact), "global_statistics[0].successes");
     artifact.global_statistics[0].successes = f64::INFINITY;
@@ -360,7 +370,7 @@ fn non_finite_successes() {
 }
 
 fn non_finite_observations() {
-    let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
+    let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], 0.75);
     artifact.global_statistics[3].observations = f64::INFINITY;
     assert_eq!(
         rejected_field(&artifact),
@@ -381,13 +391,13 @@ fn rejected_field(artifact: &Artifact) -> String {
 }
 
 fn non_finite_prior_mass() {
-    let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
+    let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], 0.75);
     artifact.domain_prior_mass = f64::INFINITY;
     match validation::validate(&artifact) {
         Err(PredictorError::NonFinite { field }) => assert_eq!(field, "domain_prior_mass"),
         other => panic!("unexpected outcome: {other:?}"),
     }
-    artifact.domain_prior_mass = 200.0;
+    artifact.domain_prior_mass = 200.0_f64;
     artifact.cohort_prior_mass = f64::NAN;
     match validation::validate(&artifact) {
         Err(PredictorError::NonFinite { field }) => assert_eq!(field, "cohort_prior_mass"),
@@ -396,8 +406,8 @@ fn non_finite_prior_mass() {
 }
 
 fn zero_prior_mass() {
-    let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
-    artifact.domain_prior_mass = 0.0;
+    let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], 0.75);
+    artifact.domain_prior_mass = 0.0_f64;
     match validation::validate(&artifact) {
         Err(PredictorError::PriorMass { field, mass }) => {
             assert_eq!(field, "domain_prior_mass");
@@ -405,8 +415,8 @@ fn zero_prior_mass() {
         }
         other => panic!("unexpected outcome: {other:?}"),
     }
-    artifact.domain_prior_mass = 200.0;
-    artifact.cohort_prior_mass = -1.0;
+    artifact.domain_prior_mass = 200.0_f64;
+    artifact.cohort_prior_mass = -1.0_f64;
     assert!(matches!(
         validation::validate(&artifact),
         Err(PredictorError::PriorMass { .. })
@@ -414,17 +424,17 @@ fn zero_prior_mass() {
 }
 
 fn threshold_outside(threshold: f64) {
-    let mut artifact = draft([1.0; 4], [2.0; 4], threshold);
+    let mut artifact = draft([1.0_f64; 4], [2.0_f64; 4], threshold);
     match validation::validate(&artifact) {
         Err(PredictorError::ThresholdRange { threshold: got }) => {
             assert_eq!(got.to_bits(), threshold.to_bits());
         }
         other => panic!("unexpected outcome: {other:?}"),
     }
-    artifact.routing_threshold = 0.0;
-    assert!(validation::validate(&artifact).is_ok());
-    artifact.routing_threshold = 1.0;
-    assert!(validation::validate(&artifact).is_ok());
+    artifact.routing_threshold = 0.0_f64;
+    validation::validate(&artifact).unwrap();
+    artifact.routing_threshold = 1.0_f64;
+    validation::validate(&artifact).unwrap();
 }
 
 fn duplicate_global_statistic() {
@@ -435,13 +445,11 @@ fn duplicate_global_statistic() {
         error.to_string(),
         "the tier artifact declares statistic global_statistics[1] twice for tier SIMPLE"
     );
-    match error {
-        PredictorError::DuplicateStatistic { field, tier } => {
-            assert_eq!(field, "global_statistics[1]");
-            assert_eq!(tier, "SIMPLE");
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let PredictorError::DuplicateStatistic { field, tier } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "global_statistics[1]");
+    assert_eq!(tier, "SIMPLE");
 }
 
 fn missing_global_statistic() {
@@ -462,13 +470,12 @@ fn four_global() -> String {
 
 fn duplicate_domain_statistic() {
     let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::DuplicateStatistic { field, tier } => {
-            assert_eq!(field, "domain_statistics[1]");
-            assert_eq!(tier, "MEDIUM");
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), fields);
+    let PredictorError::DuplicateStatistic { field, tier } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "domain_statistics[1]");
+    assert_eq!(tier, "MEDIUM");
 }
 
 fn duplicate_cohort_statistic() {
@@ -483,55 +490,65 @@ fn duplicate_cohort_statistic() {
 
 fn unknown_request_type() {
     let fields = ", \"domain_statistics\": [{\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"billing\"}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::UnknownRequestType { request_type } => assert_eq!(request_type, "billing"),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), fields);
+    let PredictorError::UnknownRequestType { request_type } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(request_type, "billing");
 }
 
 fn empty_cohort() {
     let fields = ", \"cohort_statistics\": [{\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0, \"cohort\": \"\"}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::EmptyField { field } => assert_eq!(field, "cohort_statistics[0].cohort"),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), fields);
+    let PredictorError::EmptyField { field } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, "cohort_statistics[0].cohort");
 }
 
 fn empty_field(fields: &str, expected: &str) {
-    match parse_error(&four_global(), &format!(", {fields}")) {
-        PredictorError::EmptyField { field } => assert_eq!(field, expected),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), &format!(", {fields}"));
+    let PredictorError::EmptyField { field } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(field, expected);
 }
 
 fn empty_artifact_field(field: &str) {
     let fields = format!(", \"{field}\": \"\"");
-    match parse_error(&four_global(), &fields) {
-        PredictorError::EmptyField { field: got } => assert_eq!(got, field),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), &fields);
+    let PredictorError::EmptyField { field: got } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(got, field);
 }
 
 fn empty_dataset_rows() {
     let fields =
         ", \"datasets\": [{\"name\": \"n\", \"url\": \"u\", \"license\": \"MIT\", \"rows\": 0}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::EmptyDatasetRows { index } => assert_eq!(index, 0),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), fields);
+    let PredictorError::EmptyDatasetRows { index } = error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(index, 0);
 }
 
 // rows stay a u32, the width the packaged attribution fits, where the reference declares an int
 fn dataset_rows_above_u32() {
     let fields = ", \"datasets\": [{\"name\": \"n\", \"url\": \"u\", \"license\": \"MIT\", \"rows\": 4294967296}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::ArtifactJson { .. } => {}
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let error = parse_error(&four_global(), fields);
+    let PredictorError::ArtifactJson { .. } = error else {
+        panic!("unexpected error: {error:?}");
+    };
 }
 
 fn threshold_selection(threshold: Option<f64>, expected: TierNumber) {
-    let artifact = super::artifact_with(statistics((2.0, 2.0), (0.0, 8.0), (0.0, 8.0), (0.0, 8.0)));
+    let artifact = super::artifact_with(statistics(
+        (2.0_f64, 2.0_f64),
+        (0.0_f64, 8.0_f64),
+        (0.0_f64, 8.0_f64),
+        (0.0_f64, 8.0_f64),
+    ));
     let predictor =
         TierSuccessPredictor::new(artifact, threshold).expect("the pinned patterns compile");
     let prediction = predictor.predict("Hello.", RequestType::General);
@@ -544,7 +561,12 @@ fn threshold_selection(threshold: Option<f64>, expected: TierNumber) {
 
 // the predictor is synchronous and pure, so a prediction finishes without yielding to the runtime
 async fn completes_without_awaiting() {
-    let predictor = predictor(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)));
+    let predictor = predictor(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ));
     let completed = timeout(Duration::from_millis(100), async move {
         predictor.predict("Hello.", RequestType::General)
     })
@@ -562,15 +584,19 @@ async fn completes_without_awaiting() {
 }
 
 fn cancelled_forecast_leaves_no_state() {
-    let predictor = predictor(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)));
-    let cancelled = predictor.predict("Hello.", RequestType::General);
-    drop(cancelled);
+    let predictor = predictor(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ));
+    let _cancelled = predictor.predict("Hello.", RequestType::General);
     let prediction = predictor.predict("Hello.", RequestType::General);
     assert_eq!(prediction.required_tier, TierNumber::Four);
 }
 
-fn non_finite_posterior(artifact: Artifact) -> String {
-    match validation::validate(&artifact) {
+fn non_finite_posterior(artifact: &Artifact) -> String {
+    match validation::validate(artifact) {
         Err(PredictorError::NonFinitePosterior { statistic }) => statistic,
         other => panic!("unexpected outcome: {other:?}"),
     }

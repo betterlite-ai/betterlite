@@ -34,6 +34,10 @@ pub(crate) fn finite_posteriors(artifact: &ValidatedArtifact) -> Result<(), Pred
             )?;
         }
     }
+    finite_cohorts(artifact)
+}
+
+fn finite_cohorts(artifact: &ValidatedArtifact) -> Result<(), PredictorError> {
     for (cohort, tiers) in &artifact.cohort {
         let request_type = cohort
             .split_once('|')
@@ -42,7 +46,7 @@ pub(crate) fn finite_posteriors(artifact: &ValidatedArtifact) -> Result<(), Pred
             let global = artifact.global.for_tier(*tier);
             let global_mean = posterior_math::smoothed_mean(global.successes, global.observations);
             let domain_mean = request_type
-                .and_then(|request_type| artifact.domain.get(&request_type))
+                .and_then(|domain_type| artifact.domain.get(&domain_type))
                 .and_then(|domain_tiers| domain_tiers.get(tier))
                 .map_or(global_mean, |domain| {
                     posterior_math::posterior_mean(

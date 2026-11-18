@@ -45,4 +45,24 @@ probes:
           routing_threshold: 0.6
         prompt: 'Hello.'
         request_type: code_generation
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0.5, observations: 2.5}
+            - {tier: 2, successes: 1.25, observations: 3.25}
+            - {tier: 3, successes: 2.75, observations: 4.75}
+            - {tier: 4, successes: 4.5, observations: 5.5}
+          domain_statistics:
+            - {tier: 1, successes: 1.25, observations: 3.25, request_type: general}
+          cohort_statistics:
+            - {tier: 2, successes: 2.75, observations: 4.75, cohort: 'general|short|code=0|math=0|mc=0|intl=0'}
+          domain_prior_mass: 4.5
+          cohort_prior_mass: 2.5
+          routing_threshold: 0.6
+        prompt: 'Hello.'
+        request_type: general
 compare: {ignore: []}

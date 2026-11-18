@@ -416,7 +416,7 @@ fn config_validation_accepts_the_declared_thresholds(#[case] threshold: Option<f
         artifact: ArtifactSource::default(),
         success_threshold: threshold,
     };
-    assert!(config.validate("heuristic_v2_success_threshold").is_ok());
+    config.validate("heuristic_v2_success_threshold").unwrap();
 }
 
 #[test]
@@ -443,4 +443,40 @@ fn the_shipped_invalid_seed_is_refused() {
         include_str!("../../../fuzz/corpus/config_yaml/tier-artifact-predictor-invalid.yaml");
     let error = settings(source, &[]).unwrap_err();
     assert!(!error.is_empty());
+}
+
+#[test]
+fn fractional_statistics_survive_buffered_json() {
+    let source = r#"{"global_statistics":[{"tier":1,"successes":0.5,"observations":2.5}],"domain_statistics":[{"tier":2,"successes":1.25,"observations":3.25,"request_type":"general"}],"cohort_statistics":[{"tier":3,"successes":2.75,"observations":4.75,"cohort":"general"}],"domain_prior_mass":4.5,"cohort_prior_mass":2.5,"routing_threshold":0.6}"#;
+    let decoded: super::RawArtifactValue = serde_json::from_str(source).unwrap();
+    let super::RawArtifactValue::Inline(artifact) = decoded else {
+        panic!("the artifact object must stay inline");
+    };
+    assert_eq!(
+        artifact.global_statistics[0].successes.to_bits(),
+        0.5_f64.to_bits()
+    );
+    assert_eq!(
+        artifact.global_statistics[0].observations.to_bits(),
+        2.5_f64.to_bits()
+    );
+    assert_eq!(
+        artifact.domain_statistics[0].successes.to_bits(),
+        1.25_f64.to_bits()
+    );
+    assert_eq!(
+        artifact.domain_statistics[0].observations.to_bits(),
+        3.25_f64.to_bits()
+    );
+    assert_eq!(
+        artifact.cohort_statistics[0].successes.to_bits(),
+        2.75_f64.to_bits()
+    );
+    assert_eq!(
+        artifact.cohort_statistics[0].observations.to_bits(),
+        4.75_f64.to_bits()
+    );
+    assert_eq!(artifact.domain_prior_mass.to_bits(), 4.5_f64.to_bits());
+    assert_eq!(artifact.cohort_prior_mass.to_bits(), 2.5_f64.to_bits());
+    assert_eq!(artifact.routing_threshold.to_bits(), 0.6_f64.to_bits());
 }

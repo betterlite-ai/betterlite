@@ -60,10 +60,13 @@ declared_statistic!(GlobalStatistic);
 declared_statistic!(DomainStatistic);
 declared_statistic!(CohortStatistic);
 
-fn parse_statistic<S: DeclaredStatistic>(
+fn parse_statistic<S>(
     statistic: &S,
     field: &str,
-) -> Result<(TierNumber, TierStatistic), PredictorError> {
+) -> Result<(TierNumber, TierStatistic), PredictorError>
+where
+    S: DeclaredStatistic,
+{
     let (tier, successes, observations) = statistic.declared();
     Ok((
         TierNumber::declared(tier)?,
@@ -74,7 +77,7 @@ fn parse_statistic<S: DeclaredStatistic>(
 fn statistics_by_key<S, K, F>(
     statistics: &[S],
     list: &str,
-    mut key: F,
+    mut statistic_key: F,
 ) -> Result<BTreeMap<K, TierStatistics>, PredictorError>
 where
     S: DeclaredStatistic,
@@ -84,7 +87,7 @@ where
     let mut by_key: BTreeMap<K, TierStatistics> = BTreeMap::new();
     for (index, statistic) in statistics.iter().enumerate() {
         let field = format!("{list}[{index}]");
-        let key = key(statistic, &field)?;
+        let key = statistic_key(statistic, &field)?;
         let (tier, value) = parse_statistic(statistic, &field)?;
         if by_key.entry(key).or_default().insert(tier, value).is_some() {
             return Err(PredictorError::DuplicateStatistic {
@@ -222,7 +225,7 @@ fn threshold(value: f64) -> Result<f64, PredictorError> {
     Ok(value)
 }
 
-fn require_text<'a>(value: &'a str, field: &str) -> Result<&'a str, PredictorError> {
+fn require_text<'text>(value: &'text str, field: &str) -> Result<&'text str, PredictorError> {
     if value.is_empty() {
         return Err(PredictorError::EmptyField {
             field: field.to_owned(),

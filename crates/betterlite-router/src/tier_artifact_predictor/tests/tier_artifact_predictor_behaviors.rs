@@ -78,18 +78,18 @@ enum Behavior {
     expected: "general|short|code=0|math=0|mc=1|intl=0",
 })]
 #[case::unicode_flag(Behavior::CohortFlags {
-    prompt: "Привет, как дела? Расскажи о себе.",
+    prompt: "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}, \u{43a}\u{430}\u{43a} \u{434}\u{435}\u{43b}\u{430}? \u{420}\u{430}\u{441}\u{441}\u{43a}\u{430}\u{436}\u{438} \u{43e} \u{441}\u{435}\u{431}\u{435}.",
     request_type: RequestType::General,
     expected: "general|short|code=0|math=0|mc=0|intl=1",
 })]
 // one code point in ten is exactly the 0.1 the reference requires to exceed
 #[case::ratio_at_threshold(Behavior::CohortFlags {
-    prompt: "éabcdefghi",
+    prompt: "\u{e9}abcdefghi",
     request_type: RequestType::General,
     expected: "general|short|code=0|math=0|mc=0|intl=0",
 })]
 #[case::ratio_above_threshold(Behavior::CohortFlags {
-    prompt: "ééabcdefgh",
+    prompt: "\u{e9}\u{e9}abcdefgh",
     request_type: RequestType::General,
     expected: "general|short|code=0|math=0|mc=0|intl=1",
 })]
@@ -195,8 +195,13 @@ fn tier_artifact_predictor_behaviors(#[case] behavior: Behavior) {
                 cohort("", RequestType::General),
                 "general|short|code=0|math=0|mc=0|intl=0"
             );
-            let outcome =
-                classifier(statistics((1.0, 2.0), (1.0, 2.0), (1.0, 2.0), (1.0, 2.0))).classify("");
+            let outcome = classifier(statistics(
+                (1.0_f64, 2.0_f64),
+                (1.0_f64, 2.0_f64),
+                (1.0_f64, 2.0_f64),
+                (1.0_f64, 2.0_f64),
+            ))
+            .classify("");
             assert_eq!(outcome.forecast.request_type, RequestType::General);
         }
     }
@@ -215,8 +220,13 @@ fn classifier(global: GlobalStatistics) -> TierArtifactPredictor {
 }
 
 fn global_only() {
-    let prediction = predictor(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)))
-        .predict("Hello.", RequestType::General);
+    let prediction = predictor(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ))
+    .predict("Hello.", RequestType::General);
     assert_eq!(
         prediction.probabilities.map(f64::to_bits),
         [
@@ -232,7 +242,12 @@ fn global_only() {
 fn domain_posterior() {
     let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 2.0, \"observations\": 6.0, \"request_type\": \"general\"}]";
     let artifact = parsed(
-        &global_json([(0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)]),
+        &global_json([
+            (0.0_f64, 6.0_f64),
+            (0.0_f64, 2.0_f64),
+            (1.0_f64, 2.0_f64),
+            (4.0_f64, 6.0_f64),
+        ]),
         fields,
     );
     let predictor = TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
@@ -241,7 +256,7 @@ fn domain_posterior() {
     // (successes + prior_mass * global_mean) / (observations + prior_mass) is 52/206, written as its exact double
     assert_eq!(
         prediction.probabilities[1].to_bits(),
-        0.2524271844660194_f64.to_bits()
+        0.252_427_184_466_019_4_f64.to_bits()
     );
     assert_eq!(prediction.probabilities[2].to_bits(), 0.5_f64.to_bits());
     assert_eq!(prediction.probabilities[3].to_bits(), 0.625_f64.to_bits());
@@ -253,7 +268,12 @@ fn domain_posterior() {
 fn cohort_posterior() {
     let fields = ", \"cohort_statistics\": [{\"tier\": 3, \"successes\": 3.0, \"observations\": 4.0, \"cohort\": \"general|short|code=0|math=0|mc=0|intl=0\"}]";
     let artifact = parsed(
-        &global_json([(0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)]),
+        &global_json([
+            (0.0_f64, 6.0_f64),
+            (0.0_f64, 2.0_f64),
+            (1.0_f64, 2.0_f64),
+            (4.0_f64, 6.0_f64),
+        ]),
         fields,
     );
     let predictor = TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
@@ -261,7 +281,7 @@ fn cohort_posterior() {
     // (successes + cohort_prior_mass * domain_mean) / (observations + cohort_prior_mass) is 13/24
     assert_eq!(
         prediction.probabilities[2].to_bits(),
-        0.5416666666666666_f64.to_bits()
+        0.541_666_666_666_666_6_f64.to_bits()
     );
     // a prompt whose four flags differ builds another cohort and keeps the global mean
     let missed = predictor.predict("Describe this code.", RequestType::General);
@@ -270,8 +290,13 @@ fn cohort_posterior() {
 
 fn monotone() {
     // the raw posterior means are 0.1875, 0.0625, 0.75 and 0.125 in tier order
-    let prediction = predictor(statistics((2.0, 14.0), (0.0, 14.0), (2.0, 2.0), (0.0, 6.0)))
-        .predict("Hello.", RequestType::General);
+    let prediction = predictor(statistics(
+        (2.0_f64, 14.0_f64),
+        (0.0_f64, 14.0_f64),
+        (2.0_f64, 2.0_f64),
+        (0.0_f64, 6.0_f64),
+    ))
+    .predict("Hello.", RequestType::General);
     assert_eq!(
         prediction.probabilities.map(f64::to_bits),
         [
@@ -285,14 +310,24 @@ fn monotone() {
 }
 
 fn threshold_default() {
-    let predictor = predictor(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)));
+    let predictor = predictor(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ));
     assert_eq!(predictor.threshold.to_bits(), 0.75_f64.to_bits());
 }
 
 fn threshold_override() {
-    let artifact = artifact_with(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)));
+    let artifact = artifact_with(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ));
     let predictor =
-        TierSuccessPredictor::new(artifact, Some(0.5)).expect("the pinned patterns compile");
+        TierSuccessPredictor::new(artifact, Some(0.5_f64)).expect("the pinned patterns compile");
     assert_eq!(predictor.threshold.to_bits(), 0.5_f64.to_bits());
     assert_eq!(
         predictor
@@ -303,9 +338,14 @@ fn threshold_override() {
 }
 
 fn first_tier_at_threshold() {
-    let artifact = artifact_with(statistics((1.0, 2.0), (1.0, 2.0), (1.0, 2.0), (1.0, 2.0)));
+    let artifact = artifact_with(statistics(
+        (1.0_f64, 2.0_f64),
+        (1.0_f64, 2.0_f64),
+        (1.0_f64, 2.0_f64),
+        (1.0_f64, 2.0_f64),
+    ));
     let predictor =
-        TierSuccessPredictor::new(artifact, Some(0.5)).expect("the pinned patterns compile");
+        TierSuccessPredictor::new(artifact, Some(0.5_f64)).expect("the pinned patterns compile");
     let prediction = predictor.predict("Hello.", RequestType::General);
     assert_eq!(
         prediction.probabilities.map(f64::to_bits),
@@ -315,9 +355,14 @@ fn first_tier_at_threshold() {
 }
 
 fn last_tier_fallback() {
-    let artifact = artifact_with(statistics((0.0, 8.0), (0.0, 8.0), (0.0, 8.0), (0.0, 8.0)));
+    let artifact = artifact_with(statistics(
+        (0.0_f64, 8.0_f64),
+        (0.0_f64, 8.0_f64),
+        (0.0_f64, 8.0_f64),
+        (0.0_f64, 8.0_f64),
+    ));
     let predictor =
-        TierSuccessPredictor::new(artifact, Some(0.5)).expect("the pinned patterns compile");
+        TierSuccessPredictor::new(artifact, Some(0.5_f64)).expect("the pinned patterns compile");
     assert_eq!(
         predictor
             .predict("Hello.", RequestType::General)
@@ -327,8 +372,13 @@ fn last_tier_fallback() {
 }
 
 fn signals() {
-    let outcome =
-        classifier(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0))).classify("Hello.");
+    let outcome = classifier(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ))
+    .classify("Hello.");
     assert_eq!(
         outcome.signals,
         [
@@ -339,22 +389,37 @@ fn signals() {
             "tier-probability:reasoning=0.625000",
         ]
     );
-    let code = classifier(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)))
-        .classify("Write a Python function that adds two numbers.");
+    let code = classifier(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ))
+    .classify("Write a Python function that adds two numbers.");
     assert_eq!(code.signals[0], "request-type:code_generation");
 }
 
 fn classified_tier() {
-    let outcome =
-        classifier(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0))).classify("Hello.");
+    let outcome = classifier(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ))
+    .classify("Hello.");
     assert_eq!(outcome.tier, Tier::BuiltIn(ComplexityTier::Reasoning));
     assert_eq!(outcome.score, None);
     assert_eq!(outcome.cause, RoutingDecisionCause::HeuristicV2);
 }
 
 fn forecast() {
-    let outcome =
-        classifier(statistics((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0))).classify("Hello.");
+    let outcome = classifier(statistics(
+        (0.0_f64, 6.0_f64),
+        (2.0_f64, 6.0_f64),
+        (1.0_f64, 2.0_f64),
+        (4.0_f64, 6.0_f64),
+    ))
+    .classify("Hello.");
     assert_eq!(
         outcome.forecast.probabilities.map(f64::to_bits),
         [
@@ -384,10 +449,10 @@ fn forecast_precision() {
     assert_eq!(
         outcome.forecast.probabilities.map(f64::to_bits),
         [
-            0.7926039425750072_f64.to_bits(),
-            0.8701522651000183_f64.to_bits(),
-            0.9020887951011245_f64.to_bits(),
-            0.9844772976161567_f64.to_bits(),
+            0.792_603_942_575_007_2_f64.to_bits(),
+            0.870_152_265_100_018_3_f64.to_bits(),
+            0.902_088_795_101_124_5_f64.to_bits(),
+            0.984_477_297_616_156_7_f64.to_bits(),
         ]
     );
     assert_eq!(outcome.forecast.threshold.to_bits(), 0.75_f64.to_bits());
@@ -454,7 +519,12 @@ fn builtin_artifact() {
 fn attribution() {
     let fields = ", \"datasets\": [{\"name\": \"openbmb/UltraFeedback\", \"url\": \"https://huggingface.co/datasets/openbmb/UltraFeedback\", \"license\": \"MIT\", \"rows\": 255864, \"success_definition\": \"score >= 4\"}], \"success_definition\": \"score >= 4\", \"split_method\": \"hash split\"";
     let artifact = parsed(
-        &global_json([(0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)]),
+        &global_json([
+            (0.0_f64, 6.0_f64),
+            (2.0_f64, 6.0_f64),
+            (1.0_f64, 2.0_f64),
+            (4.0_f64, 6.0_f64),
+        ]),
         fields,
     );
     assert_eq!(artifact.datasets.len(), 1);
