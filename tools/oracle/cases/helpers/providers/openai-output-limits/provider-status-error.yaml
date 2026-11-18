@@ -1,0 +1,36 @@
+kind: helper
+name: output-limits-azure-provider-status-error
+call:
+  openai_output_limits:
+    azure:
+      asynchronous: false
+      data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}]}
+      timeout: 2.5
+      outcome:
+        kind: status
+        status: 429
+        headers: {"x-ms-request-id": "azure-req-4", "retry-after": "5"}
+        body:
+          error:
+            message: "Rate limit reached for requests"
+            type: rate_limit_error
+            param: null
+            code: rate_limit_exceeded
+calls:
+  - openai_output_limits:
+      azure:
+        asynchronous: true
+        data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}]}
+        timeout: 2.5
+        outcome:
+          kind: status
+          status: 503
+          headers: {"x-ms-request-id": "azure-req-5"}
+          body:
+            error:
+              message: "The server is overloaded"
+              type: server_error
+              param: null
+              code: server_overloaded
+env: {}
+compare: {ignore: []}
