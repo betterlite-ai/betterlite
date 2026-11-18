@@ -390,6 +390,33 @@ async fn proxy_success_zero_duration() {
 }
 
 #[tokio::test]
+async fn success_duration_matches_event_window() {
+    let tasks = TaskTracker::new();
+    let sink = Arc::new(RecordingSink::default());
+    let resolver = RecordingResolver::default();
+    let call = metric_call("query_raw");
+    let operation = async {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        Ok::<_, DbLookupError>(1)
+    };
+    run_metric(operation, &call, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
+    drain(&tasks).await;
+    let recorded = successes(&sink);
+    let window = recorded[0]
+        .end_time
+        .signed_duration_since(recorded[0].start_time)
+        .to_std()
+        .expect("the event window is positive");
+    assert!(window > Duration::ZERO);
+    assert_eq!(
+        recorded[0].duration_seconds.to_bits(),
+        window.as_secs_f64().to_bits()
+    );
+}
+
+#[tokio::test]
 async fn proxy_missing_span_drops_success() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());

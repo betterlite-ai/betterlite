@@ -1,13 +1,16 @@
 #![cfg(test)]
 
 use std::future::Future;
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 use tokio_util::task::TaskTracker;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use crate::database_failures::deadline::{DbLookupError, LookupRequest};
 use crate::database_failures::gate::{DbLookupStallTracker, SystemClock};
@@ -143,6 +146,55 @@ pub(super) const fn metric_call(function_name: &str) -> DbMetricCall<'_> {
         table_name: None,
         second_positional: None,
     }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl LogBuffer {
+    pub(super) fn text(&self) -> String {
+        String::from_utf8(
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
+        .expect("the captured logs are utf-8")
+    }
+}
+
+impl io::Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_logs() -> (LogBuffer, DefaultGuard) {
+    let buffer = LogBuffer::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    (buffer, set_default(subscriber))
 }
 
 pub(super) async fn run_metric<Operation, Output>(

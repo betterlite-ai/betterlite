@@ -19,13 +19,14 @@ use tokio_util::task::TaskTracker;
 use crate::database_faults::ErrorType;
 
 use super::deadline::{
-    DbLookupDeadlineExceeded, DbLookupError, LookupRequest, bounded_db_lookup, deadline_text,
+    DbLookupDeadlineExceeded, DbLookupError, LookupRequest, bounded_db_lookup,
+    consume_abandoned_lookup, deadline_text,
 };
-use super::gate::{DbLookupStallTracker, LookupClock, LoopBoundSemaphore};
+use super::gate::{DbLookupStallTracker, LookupClock, LoopBoundSemaphore, SystemClock};
 
 use self::support::{
-    RecordingResolver, RecordingSink, assert_deadline, database_error, drain, metric_call, request,
-    run_metric, stall_tracker, successes,
+    RecordingResolver, RecordingSink, assert_deadline, capture_logs, database_error, drain,
+    metric_call, request, run_metric, stall_tracker, successes,
 };
 
 mod metrics;
@@ -135,6 +136,13 @@ async fn bounded_lookup_does_not_acquire_gate() {
         .expect("the lookup never takes the gate");
     assert_eq!(output, 7);
     assert_eq!(semaphore.available_permits(), 0);
+}
+
+#[tokio::test]
+async fn system_clock_advances() {
+    let first = SystemClock.now();
+    tokio::time::sleep(Duration::from_millis(1)).await;
+    assert!(SystemClock.now() > first);
 }
 
 #[test]
@@ -361,6 +369,29 @@ async fn cancelled_child_not_queried_for_exception() {
     drain(&tasks).await;
     assert!(!completed.load(Ordering::SeqCst));
     assert!(!matches!(error, DbLookupError::Task(_)));
+}
+
+#[tokio::test]
+async fn abandoned_panic_logged() {
+    let (logs, _guard) = capture_logs();
+    let tasks = TaskTracker::new();
+    let handle: tokio::task::JoinHandle<Result<(), DbLookupError>> =
+        tasks.spawn(async { panic!("the abandoned lookup panicked") });
+    consume_abandoned_lookup(handle).await;
+    drain(&tasks).await;
+    assert!(logs.text().contains("an abandoned database lookup failed"));
+}
+
+#[tokio::test]
+async fn abandoned_cancellation_silent() {
+    let (logs, _guard) = capture_logs();
+    let tasks = TaskTracker::new();
+    let handle: tokio::task::JoinHandle<Result<(), DbLookupError>> =
+        tasks.spawn(std::future::pending());
+    handle.abort();
+    consume_abandoned_lookup(handle).await;
+    drain(&tasks).await;
+    assert!(!logs.text().contains("an abandoned database lookup failed"));
 }
 
 #[tokio::test]

@@ -98,8 +98,9 @@ where
     }
 }
 
-async fn consume_abandoned_lookup<Output>(handle: JoinHandle<Result<Output, DbLookupError>>)
-where
+pub(super) async fn consume_abandoned_lookup<Output>(
+    handle: JoinHandle<Result<Output, DbLookupError>>,
+) where
     Output: Send,
 {
     if let Err(join_error) = handle.await
@@ -207,7 +208,7 @@ fn scientific_notation(digits: &str, exponent: i32) -> String {
     } else {
         format!("{first}.{rest}")
     };
-    let sign = if exponent < 0 { '-' } else { '+' };
+    let sign = if exponent.is_negative() { '-' } else { '+' };
     let magnitude = exponent.unsigned_abs();
     format!("{mantissa}e{sign}{magnitude:02}")
 }
