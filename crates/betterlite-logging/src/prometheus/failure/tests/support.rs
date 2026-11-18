@@ -1,14 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_error::normalize::class::Class;
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -17,25 +12,6 @@ use tracing_subscriber::fmt::MakeWriter;
 use crate::prometheus::failure::RequestedModelCatalog;
 use crate::prometheus::failure::deployment_labels::{PayloadMetadataRecord, UserApiKeyFacts};
 use crate::prometheus::failure::exception::LabelException;
-
-const CATALOG: &str = r#"{
-    "gpt-4o": {"litellm_provider": "openai"},
-    "claude-sonnet-4-5": {"litellm_provider": "anthropic"}
-}"#;
-
-pub(super) fn label_exception() -> LabelException {
-    LabelException {
-        class_name: String::new(),
-        class: Class::Other,
-        message: None,
-        status_code: None,
-        code: None,
-        llm_provider: None,
-        category: None,
-        rate_limit_type: None,
-        legacy_class_name: None,
-    }
-}
 
 pub(super) fn with_message(mut exception: LabelException, message: &str) -> LabelException {
     exception.message = Some(message.to_owned());
@@ -74,19 +50,12 @@ pub(super) fn with_legacy(mut exception: LabelException, name: &str) -> LabelExc
 
 pub(super) fn with_rate_limit(
     mut exception: LabelException,
-    category: Option<&str>,
-    rate_limit_type: Option<&str>,
+    category: &str,
+    rate_limit_type: &str,
 ) -> LabelException {
-    exception.category = category.map(str::to_owned);
-    exception.rate_limit_type = rate_limit_type.map(str::to_owned);
+    exception.category = Some(category.to_owned());
+    exception.rate_limit_type = Some(rate_limit_type.to_owned());
     exception
-}
-
-pub(super) fn metadata(pairs: &[(&str, &str)]) -> IndexMap<String, Json> {
-    pairs
-        .iter()
-        .map(|(key, value)| (String::from(*key), Json::Text(String::from(*value))))
-        .collect()
 }
 
 pub(super) fn metadata_record() -> PayloadMetadataRecord {
@@ -112,6 +81,13 @@ pub(super) fn api_key_facts() -> UserApiKeyFacts {
     }
 }
 
+pub(super) fn metadata(pairs: &[(&str, &str)]) -> IndexMap<String, Json> {
+    pairs
+        .iter()
+        .map(|(key, value)| (String::from(*key), Json::Text(String::from(*value))))
+        .collect()
+}
+
 #[derive(Clone, Default)]
 pub(super) struct StubCatalog {
     pub(super) recognized: BTreeSet<String>,
@@ -130,37 +106,6 @@ impl RequestedModelCatalog for StubCatalog {
 
     fn matches_pattern_route(&self, model: &str) -> bool {
         self.patterns.contains(model)
-    }
-}
-
-pub(super) struct ProviderFixture {
-    pub(super) catalog: ModelCatalog,
-    pub(super) known: BTreeSet<String>,
-    pub(super) custom: BTreeSet<String>,
-    pub(super) environment: BTreeMap<String, String>,
-}
-
-impl ProviderFixture {
-    pub(super) fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
-                .expect("the test catalog parses"),
-            known: BTreeSet::new(),
-            custom: BTreeSet::new(),
-            environment: BTreeMap::new(),
-        }
-    }
-
-    pub(super) fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.known,
-            custom_providers: &self.custom,
-            environment: &self.environment,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
     }
 }
 

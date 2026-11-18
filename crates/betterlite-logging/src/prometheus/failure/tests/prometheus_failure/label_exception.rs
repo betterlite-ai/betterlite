@@ -2,6 +2,7 @@ use betterlite_error::normalize::class::Class;
 
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::prometheus::failure::exception::LabelException;
+use crate::prometheus::failure::provider::api_provider_from_exception;
 
 // The facts get_error_information reads off a rate-limit exception.
 const FACTS: &str = r#"{
@@ -42,4 +43,18 @@ fn from_proxy_rate_limit_pins_the_legacy_class_name() {
         Some("HTTPException")
     );
     assert_eq!(exception.llm_provider.as_deref(), Some("openai"));
+}
+
+#[test]
+fn a_proxy_rate_limit_keeps_its_provider() {
+    let facts: ExceptionFacts = serde_json::from_str(
+        r#"{"class_name": "ProxyRateLimitError", "class": null, "llm_provider": "openai"}"#,
+    )
+    .expect("the facts parse");
+    let exception = LabelException::from_proxy_rate_limit(&facts);
+    assert!(matches!(exception.class, Class::RateLimitError));
+    assert_eq!(
+        api_provider_from_exception(&exception).as_deref(),
+        Some("openai")
+    );
 }

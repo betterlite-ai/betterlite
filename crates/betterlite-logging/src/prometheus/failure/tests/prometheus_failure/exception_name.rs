@@ -1,15 +1,18 @@
 use betterlite_error::normalize::class::Class;
 
+use crate::prometheus::failure::exception::LabelException;
 use crate::prometheus::failure::exception_name::exception_class_name;
-use crate::prometheus::failure::tests::support::{
-    label_exception, with_class, with_legacy, with_provider,
-};
+use crate::prometheus::failure::tests::support::{with_class, with_legacy, with_provider};
 
 #[test]
 fn the_legacy_marker_is_honored() {
     let exception = with_legacy(
         with_provider(
-            with_class(label_exception(), Class::RateLimitError, "RateLimitError"),
+            with_class(
+                LabelException::default(),
+                Class::RateLimitError,
+                "RateLimitError",
+            ),
             "openai",
         ),
         "HTTPException",
@@ -21,7 +24,7 @@ fn the_legacy_marker_is_honored() {
 fn a_budget_error_stays_unprefixed() {
     let exception = with_provider(
         with_class(
-            label_exception(),
+            LabelException::default(),
             Class::BudgetExceededError,
             "BudgetExceededError",
         ),
@@ -33,7 +36,11 @@ fn a_budget_error_stays_unprefixed() {
 #[test]
 fn the_provider_prefixes_the_class_name() {
     let exception = with_provider(
-        with_class(label_exception(), Class::RateLimitError, "RateLimitError"),
+        with_class(
+            LabelException::default(),
+            Class::RateLimitError,
+            "RateLimitError",
+        ),
         "openai",
     );
     assert_eq!(exception_class_name(&exception), "Openai.RateLimitError");
@@ -43,7 +50,7 @@ fn the_provider_prefixes_the_class_name() {
 fn only_the_first_provider_character_is_uppercased() {
     let exception = with_provider(
         with_class(
-            label_exception(),
+            LabelException::default(),
             Class::AuthenticationError,
             "AuthenticationError",
         ),
@@ -57,19 +64,25 @@ fn only_the_first_provider_character_is_uppercased() {
 
 #[test]
 fn a_single_character_provider_keeps_the_dot() {
-    let exception = with_provider(with_class(label_exception(), Class::Other, "APIError"), "x");
+    let exception = with_provider(
+        with_class(LabelException::default(), Class::Other, "APIError"),
+        "x",
+    );
     assert_eq!(exception_class_name(&exception), "X.APIError");
 }
 
 #[test]
 fn a_missing_provider_leaves_the_class_name_alone() {
-    let exception = with_class(label_exception(), Class::Other, "APIError");
+    let exception = with_class(LabelException::default(), Class::Other, "APIError");
     assert_eq!(exception_class_name(&exception), "APIError");
 }
 
 #[test]
 fn an_empty_provider_leaves_the_class_name_alone() {
-    let exception = with_provider(with_class(label_exception(), Class::Other, "APIError"), "");
+    let exception = with_provider(
+        with_class(LabelException::default(), Class::Other, "APIError"),
+        "",
+    );
     assert_eq!(exception_class_name(&exception), "APIError");
 }
 
@@ -77,7 +90,11 @@ fn an_empty_provider_leaves_the_class_name_alone() {
 fn an_empty_legacy_marker_is_ignored() {
     let exception = with_legacy(
         with_provider(
-            with_class(label_exception(), Class::RateLimitError, "RateLimitError"),
+            with_class(
+                LabelException::default(),
+                Class::RateLimitError,
+                "RateLimitError",
+            ),
             "openai",
         ),
         "",

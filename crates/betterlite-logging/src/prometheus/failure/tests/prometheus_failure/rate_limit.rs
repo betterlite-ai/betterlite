@@ -1,5 +1,6 @@
+use crate::prometheus::failure::exception::LabelException;
 use crate::prometheus::failure::rate_limit::extract_rate_limit_labels;
-use crate::prometheus::failure::tests::support::{label_exception, with_rate_limit};
+use crate::prometheus::failure::tests::support::with_rate_limit;
 
 #[test]
 fn no_exception_is_no_labels() {
@@ -8,11 +9,7 @@ fn no_exception_is_no_labels() {
 
 #[test]
 fn a_known_category_and_type_pass_validation() {
-    let exception = with_rate_limit(
-        label_exception(),
-        Some("vendor_rate_limit"),
-        Some("requests"),
-    );
+    let exception = with_rate_limit(LabelException::default(), "vendor_rate_limit", "requests");
     assert_eq!(
         extract_rate_limit_labels(Some(&exception)),
         (
@@ -24,17 +21,13 @@ fn a_known_category_and_type_pass_validation() {
 
 #[test]
 fn an_unknown_category_and_type_are_dropped_together() {
-    let exception = with_rate_limit(label_exception(), Some("nonsense"), Some("widgets"));
+    let exception = with_rate_limit(LabelException::default(), "nonsense", "widgets");
     assert_eq!(extract_rate_limit_labels(Some(&exception)), (None, None));
 }
 
 #[test]
 fn an_unknown_type_is_dropped_on_its_own() {
-    let exception = with_rate_limit(
-        label_exception(),
-        Some("litellm_rate_limit"),
-        Some("widgets"),
-    );
+    let exception = with_rate_limit(LabelException::default(), "litellm_rate_limit", "widgets");
     assert_eq!(
         extract_rate_limit_labels(Some(&exception)),
         (Some(String::from("litellm_rate_limit")), None)
@@ -43,7 +36,7 @@ fn an_unknown_type_is_dropped_on_its_own() {
 
 #[test]
 fn an_unknown_category_is_dropped_on_its_own() {
-    let exception = with_rate_limit(label_exception(), Some("nonsense"), Some("budget"));
+    let exception = with_rate_limit(LabelException::default(), "nonsense", "budget");
     assert_eq!(
         extract_rate_limit_labels(Some(&exception)),
         (None, Some(String::from("budget")))
@@ -52,12 +45,12 @@ fn an_unknown_category_is_dropped_on_its_own() {
 
 #[test]
 fn absent_fields_are_no_labels() {
-    let exception = label_exception();
+    let exception = LabelException::default();
     assert_eq!(extract_rate_limit_labels(Some(&exception)), (None, None));
 }
 
 #[test]
 fn empty_fields_are_no_labels() {
-    let exception = with_rate_limit(label_exception(), Some(""), Some(""));
+    let exception = with_rate_limit(LabelException::default(), "", "");
     assert_eq!(extract_rate_limit_labels(Some(&exception)), (None, None));
 }

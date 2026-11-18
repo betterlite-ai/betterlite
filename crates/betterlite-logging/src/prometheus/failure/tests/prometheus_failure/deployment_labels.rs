@@ -1,6 +1,6 @@
 use crate::prometheus::failure::deployment_labels::{
     DeploymentFailureLabels, DeploymentFailureSources, PayloadMetadata, PayloadMetadataRecord,
-    UserApiKeyFacts, extract_deployment_failure_label_values,
+    UserApiKeyFacts, deployment_failure_labels,
 };
 use crate::prometheus::failure::tests::support::{api_key_facts, metadata, metadata_record};
 
@@ -20,7 +20,7 @@ fn the_payload_metadata_names_every_label() {
         litellm_params_metadata: None,
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     let expected = DeploymentFailureLabels {
         api_key_alias: Some(String::from("alias")),
         user_email: Some(String::from("user@example.com")),
@@ -50,7 +50,7 @@ fn the_litellm_params_metadata_names_every_label() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     let expected = DeploymentFailureLabels {
         api_key_alias: Some(String::from("alias")),
         user_email: Some(String::from("user@example.com")),
@@ -80,7 +80,7 @@ fn the_auth_object_names_every_label_it_holds() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     let expected = DeploymentFailureLabels {
         api_key_alias: Some(String::from("auth-alias")),
         user_email: Some(String::from("auth@example.com")),
@@ -106,7 +106,7 @@ fn the_payload_wins_over_the_params_and_the_auth() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.api_key_alias.as_deref(), Some("payload-alias"));
 }
 
@@ -123,7 +123,7 @@ fn the_params_win_over_the_auth() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.api_key_alias.as_deref(), Some("params-alias"));
 }
 
@@ -136,7 +136,7 @@ fn an_empty_payload_value_stops_the_cascade() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.api_key_alias.as_deref(), Some(""));
 }
 
@@ -149,7 +149,7 @@ fn an_empty_payload_client_ip_falls_to_the_params() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.client_ip.as_deref(), Some("198.51.100.9"));
 }
 
@@ -162,7 +162,7 @@ fn an_empty_payload_user_agent_falls_to_the_params() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.user_agent.as_deref(), Some("litellm/1.0"));
 }
 
@@ -175,7 +175,7 @@ fn no_source_anywhere_is_no_label() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels, DeploymentFailureLabels::default());
 }
 
@@ -191,7 +191,7 @@ fn an_empty_auth_hashed_key_falls_to_the_key_hash() {
         litellm_params_metadata: None,
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.hashed_api_key.as_deref(), Some("hash-2"));
 }
 
@@ -206,7 +206,7 @@ fn an_absent_auth_hashed_key_falls_to_the_key_hash() {
         litellm_params_metadata: None,
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.hashed_api_key.as_deref(), Some("hash-2"));
 }
 
@@ -222,7 +222,7 @@ fn the_auth_hashed_key_wins_over_the_key_hash() {
         litellm_params_metadata: None,
         user_api_key_auth: Some(&auth),
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.hashed_api_key.as_deref(), Some("hash-1"));
 }
 
@@ -242,7 +242,7 @@ fn a_metadata_record_names_every_label() {
         litellm_params_metadata: None,
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     let expected = DeploymentFailureLabels {
         api_key_alias: Some(String::from("alias")),
         user_email: Some(String::from("user@example.com")),
@@ -264,6 +264,6 @@ fn a_missing_record_attribute_falls_to_the_params() {
         litellm_params_metadata: Some(&params),
         user_api_key_auth: None,
     };
-    let labels = extract_deployment_failure_label_values(&sources);
+    let labels = deployment_failure_labels(&sources);
     assert_eq!(labels.api_key_alias.as_deref(), Some("params-alias"));
 }
