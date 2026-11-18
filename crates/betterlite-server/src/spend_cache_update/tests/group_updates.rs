@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_auth::auth_cache::payload;
+use betterlite_auth::resolved_key::auth::ParentOtelSpan;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
 use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
@@ -358,5 +359,39 @@ async fn a_user_arithmetic_failure_warns_and_the_other_groups_still_run() {
             .entries
             .iter()
             .all(|(key, _value)| key == "tag:qa")
+    );
+}
+
+#[tokio::test]
+async fn a_parent_otel_span_does_not_change_the_spend_update() {
+    let cache = FakeCache::new(all_groups_state());
+    let tasks = TaskTracker::new();
+    let (_alerts, deps) = run_deps(&cache, &tasks);
+    let mut input = all_groups_input();
+    input.span = Some(ParentOtelSpan::Opaque);
+    update_spend_cache(&input, &deps)
+        .await
+        .expect("the update runs");
+    tasks.close();
+    tasks.wait().await;
+    let state = cache.state();
+    assert_eq!(state.writes.len(), 2);
+    let objects = state
+        .writes
+        .iter()
+        .find(|write| write.local_only)
+        .expect("the object write is local only");
+    let global = state
+        .writes
+        .iter()
+        .find(|write| !write.local_only)
+        .expect("the global write reaches redis");
+    let user = payload::decode::<LiteLLMUserTable>(entry(objects, "user-1"))
+        .expect("the user decodes")
+        .expect("the user is present");
+    assert_eq!(user.spend, Decimal::from(6));
+    assert_eq!(
+        entry(global, GLOBAL_PROXY_SPEND_CACHE_KEY),
+        &json_from("15")
     );
 }

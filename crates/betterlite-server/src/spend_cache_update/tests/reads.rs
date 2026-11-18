@@ -300,6 +300,19 @@ async fn the_real_cache_reads_the_cached_values_without_an_armed_read() {
 }
 
 #[tokio::test]
+async fn a_real_cache_whose_batch_read_fails_logs_the_warning_and_returns_no_values() {
+    let cache = unreachable_cache().await;
+    let keys = vec!["user-1".to_owned()];
+    let (log, _guard) = capture_logs(Level::WARN);
+    let values = read_cache_values(&keys, None, &cache).await;
+    assert!(values.is_empty());
+    let text = written(&log);
+    assert!(text.contains(
+        "Spend tracking - failed to read cached spend objects. Budget enforcement may use stale spend values."
+    ));
+}
+
+#[tokio::test]
 async fn the_real_armed_read_resolves_the_cached_values() {
     let cache = unreachable_cache().await;
     let keys = vec!["user-1".to_owned()];
