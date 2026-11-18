@@ -53,7 +53,7 @@ pub fn should_use_litellm_proxy_by_default(
     selection.environment || deployment_use_litellm_proxy || selection.global
 }
 
-// _deployment_provider: the proxy flag first, then the declared authenticating provider, then resolution.
+// _deployment_provider: the proxy flag first, then B209's declared provider resolution, then fallback inference.
 #[must_use]
 pub fn deployment_provider(
     deployment: &DeploymentIdentity<'_>,
