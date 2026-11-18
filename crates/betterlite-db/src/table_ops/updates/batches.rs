@@ -25,7 +25,7 @@ where
         self.attempt_with(DATA_RETRY, OperationCallType::UpdateData, || async {
             let mut statements = Vec::new();
             for row in rows {
-                statements.push(sql::update_by_key(&hash_key_row(row))?);
+                statements.push(sql::update_by_key(&hash_key_row(&jsonify_object(row)))?);
             }
             self.execute_batch(TokenColumn::ATTRIBUTE, statements).await
         })
