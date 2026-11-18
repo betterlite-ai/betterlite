@@ -1,9 +1,9 @@
 use betterlite_models::metadata::levels::ReasoningEffort;
 use betterlite_models::model_metadata_resolution::names::ModelCostMap;
-use betterlite_router::routing_groups::effort::declared::{
+use betterlite_openai::reasoning_effort_capability::declared::{
     declared_efforts_for_model, effort_from_wire, effort_wire_name,
 };
-use betterlite_router::routing_groups::effort::{
+use betterlite_openai::reasoning_effort_capability::{
     deployment_is_catalog_mapped, intersect_supported_efforts, nearest_declared_effort,
     resolve_supported_efforts,
 };

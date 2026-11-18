@@ -1,8 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::metadata::levels::ReasoningEffort;
 use betterlite_models::model_metadata_resolution::names::ModelCostMap;
-
-use crate::router_predicates::JsonMap;
+use indexmap::IndexMap;
 
 // REASONING_EFFORT_ADVERTISEMENT_ORDER: presentation order, not a strength scale.
 pub const ADVERTISEMENT_ORDER: [ReasoningEffort; 7] = [
@@ -74,35 +73,42 @@ impl EffortFlags {
 
 // _bare_model_entry: the unprefixed twin of a provider-prefixed cost-map key.
 #[must_use]
-pub fn bare_model_entry(model_info: &JsonMap, model_cost: &ModelCostMap) -> JsonMap {
+pub fn bare_model_entry(
+    model_info: &IndexMap<String, Json>,
+    model_cost: &ModelCostMap,
+) -> IndexMap<String, Json> {
     let Some(key) = text(model_info, "key") else {
-        return JsonMap::new();
+        return IndexMap::new();
     };
     let Some(provider) = text(model_info, "litellm_provider") else {
-        return JsonMap::new();
+        return IndexMap::new();
     };
     let Some(stripped) = key.strip_prefix(&format!("{provider}/")) else {
-        return JsonMap::new();
+        return IndexMap::new();
     };
     model_cost_entry(model_cost, stripped).unwrap_or_default()
 }
 
+// The entry's own value wins; the bare twin's answers only when the entry has none.
+fn own_then_bare<'map>(
+    model_info: &'map IndexMap<String, Json>,
+    bare: &'map IndexMap<String, Json>,
+    key: &str,
+) -> Option<&'map Json> {
+    model_info
+        .get(key)
+        .filter(|value| !matches!(value, Json::Null))
+        .or_else(|| bare.get(key).filter(|value| !matches!(value, Json::Null)))
+}
+
 // _declared_effort_flags: the entry's own flag, then the bare twin's, then nothing.
 #[must_use]
-pub fn declared_effort_flags(model_info: &JsonMap, model_cost: &ModelCostMap) -> EffortFlags {
+pub fn declared_effort_flags(
+    model_info: &IndexMap<String, Json>,
+    model_cost: &ModelCostMap,
+) -> EffortFlags {
     let bare = bare_model_entry(model_info, model_cost);
-    let read = |flag: &str| {
-        let own = EffortFlag::read(
-            model_info
-                .get(flag)
-                .filter(|value| !matches!(value, Json::Null)),
-        );
-        if matches!(own, EffortFlag::Absent) {
-            EffortFlag::read(bare.get(flag).filter(|value| !matches!(value, Json::Null)))
-        } else {
-            own
-        }
-    };
+    let read = |flag: &str| EffortFlag::read(own_then_bare(model_info, &bare, flag));
     EffortFlags {
         none: read("supports_none_reasoning_effort"),
         minimal: read("supports_minimal_reasoning_effort"),
@@ -115,21 +121,11 @@ pub fn declared_effort_flags(model_info: &JsonMap, model_cost: &ModelCostMap) ->
 // declared_reasoning_efforts: a present list is the whole answer, ordered for advertisement.
 #[must_use]
 pub fn declared_reasoning_efforts(
-    model_info: &JsonMap,
+    model_info: &IndexMap<String, Json>,
     model_cost: &ModelCostMap,
 ) -> Option<Vec<ReasoningEffort>> {
     let bare = bare_model_entry(model_info, model_cost);
-    let raw = model_info
-        .get(DECLARED_EFFORTS_KEY)
-        .filter(|value| !matches!(value, Json::Null))
-        .map_or_else(
-            || {
-                bare.get(DECLARED_EFFORTS_KEY)
-                    .filter(|value| !matches!(value, Json::Null))
-            },
-            Some,
-        );
-    let Some(Json::List(entries)) = raw else {
+    let Some(Json::List(entries)) = own_then_bare(model_info, &bare, DECLARED_EFFORTS_KEY) else {
         return None;
     };
     let declared: Vec<ReasoningEffort> = entries
@@ -161,7 +157,7 @@ pub fn declared_efforts_for_model(
         };
         let prefixed = match value {
             Json::Object(prefixed) => prefixed,
-            Json::Null => JsonMap::new(),
+            Json::Null => IndexMap::new(),
             Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => return None,
         };
         if !prefixed.is_empty() {
@@ -172,7 +168,7 @@ pub fn declared_efforts_for_model(
     declared_reasoning_efforts(&entry, model_cost)
 }
 
-pub(super) fn text<'map>(map: &'map JsonMap, key: &str) -> Option<&'map str> {
+pub(super) fn text<'map>(map: &'map IndexMap<String, Json>, key: &str) -> Option<&'map str> {
     match map.get(key).filter(|value| !matches!(value, Json::Null)) {
         Some(Json::Text(value)) => Some(value),
         None
@@ -182,7 +178,7 @@ pub(super) fn text<'map>(map: &'map JsonMap, key: &str) -> Option<&'map str> {
     }
 }
 
-fn model_cost_entry(model_cost: &ModelCostMap, key: &str) -> Option<JsonMap> {
+fn model_cost_entry(model_cost: &ModelCostMap, key: &str) -> Option<IndexMap<String, Json>> {
     let raw = model_cost.entries.get(key)?;
     match serde_json::from_str::<Json>(raw.get()).ok()? {
         Json::Object(entry) => Some(entry),
