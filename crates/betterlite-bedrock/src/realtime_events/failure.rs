@@ -40,8 +40,9 @@ pub enum ProviderStreamError<E> {
         #[source]
         failure: ProviderFailure<E>,
     },
-    #[error("{0}")]
-    Unchanged(ProviderFailure<E>),
+    // Boxed because thiserror repeats one bound when a transparent field shares its type with a source field
+    #[error(transparent)]
+    Unchanged(Box<ProviderFailure<E>>),
 }
 
 #[must_use]
@@ -59,7 +60,7 @@ where
             status_code,
             failure,
         },
-        None => ProviderStreamError::Unchanged(failure),
+        None => ProviderStreamError::Unchanged(Box::new(failure)),
     }
 }
 

@@ -16,6 +16,7 @@ pub(super) fn provider_failure_event() {
     mapped_classes();
     unknown_class();
     native_cause();
+    unchanged_native_cause();
     redaction();
 }
 
@@ -84,6 +85,20 @@ fn native_cause() {
         cause.source().expect("the native cause").to_string(),
         "connection reset"
     );
+}
+
+// An unmapped failure goes up as it arrived, so its native cause stays reachable through the error chain
+fn unchanged_native_cause() {
+    let failure = Failure {
+        class_name: "Throttling".to_owned(),
+        message: "slow down".to_owned(),
+        source: Some(io::Error::other("connection reset")),
+    };
+    let error = as_bedrock_error(failure);
+    assert!(matches!(error, ProviderStreamError::Unchanged(_)));
+    let cause = Error::source(&error).expect("the native cause");
+    assert_eq!(cause.to_string(), "connection reset");
+    assert!(cause.source().is_none());
 }
 
 fn redaction() {
