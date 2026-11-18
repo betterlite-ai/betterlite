@@ -9,7 +9,7 @@ use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::index::deployment_ids;
 use crate::model_catalog_lookup::listing::{
-    get_all_deployments, is_team_specific_model, pattern_pool,
+    PatternScope, get_all_deployments, is_team_specific_model, pattern_pool, team_specific_model,
 };
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::priority::prioritized;
@@ -23,90 +23,68 @@ pub struct CatalogLookup<'catalog> {
     pub inferred_provider: &'catalog dyn Fn(&str) -> Option<String>,
 }
 
+// The row an index names, or the typed failure when that index points past the model list.
+fn row_at(catalog: &DeploymentCatalog, index: usize) -> Result<&DeploymentSpec, LookupError> {
+    catalog
+        .models
+        .get(index)
+        .ok_or(LookupError::InvalidRow { index })
+}
+
+// The id filter both id listings share: a row that lost its id field and, when asked, a team row are left out.
+fn listed_id(row: &DeploymentSpec, exclude_team_models: bool) -> bool {
+    row.model_info.contains_key("id")
+        && !(exclude_team_models && is_team_specific_model(&row.model_info))
+}
+
 impl CatalogLookup<'_> {
     // Router.get_deployment: the id map only, which answers none for a miss.
     pub fn get_deployment(&self, model_id: &str) -> Result<Option<&DeploymentSpec>, LookupError> {
-        let Some(index) = self.catalog.id_index.get(model_id) else {
-            return Ok(None);
-        };
-        let deployment = self
-            .catalog
-            .models
-            .get(*index)
-            .ok_or(LookupError::InvalidRow { index: *index })?;
-        Ok(Some(deployment))
-    }
-
-    // Router.get_deployment_by_model_group_name: the first sibling the name index lists, or none for a missing or empty index.
-    pub fn get_deployment_by_model_group_name(
-        &self,
-        model_group_name: &str,
-    ) -> Result<Option<&DeploymentSpec>, LookupError> {
-        let Some(first) = self
-            .catalog
-            .name_index
-            .get(model_group_name)
-            .and_then(|indices| indices.first())
-        else {
-            return Ok(None);
-        };
-        let deployment = self
-            .catalog
-            .models
-            .get(*first)
-            .ok_or(LookupError::InvalidRow { index: *first })?;
-        Ok(Some(deployment))
-    }
-
-    // Router.has_model_id: literal membership in the id map.
-    #[must_use]
-    pub fn has_model_id(&self, candidate_id: &str) -> bool {
-        self.catalog.id_index.contains_key(candidate_id)
-    }
-
-    // Router.get_model_ids: the named index when a name is given, else the id map's insertion order.
-    #[must_use]
-    pub fn get_model_ids(&self, model_name: Option<&str>, exclude_team_models: bool) -> Vec<Json> {
-        match model_name {
-            Some(name) => self.named_model_ids(name, exclude_team_models),
-            None => self.all_model_ids(exclude_team_models),
+        match self.catalog.id_index.get(model_id) {
+            Some(index) => row_at(self.catalog, *index).map(Some),
+            None => Ok(None),
         }
     }
 
-    fn named_model_ids(&self, name: &str, exclude_team_models: bool) -> Vec<Json> {
+    // Router.get_deployment_by_model_group_name: the first sibling the name index lists, or none for a missing or empty index.
+    pub fn deployment_by_group_name(
+        &self,
+        model_group_name: &str,
+    ) -> Result<Option<&DeploymentSpec>, LookupError> {
+        self.catalog
+            .name_index
+            .get(model_group_name)
+            .and_then(|indices| indices.first())
+            .map(|index| row_at(self.catalog, *index))
+            .transpose()
+    }
+
+    // Router.get_model_ids: the named index's rows with their own ids, or the id map's keys in its own order, where an entry that lost its row drops out like a stale one does.
+    #[must_use]
+    pub fn get_model_ids(&self, model_name: Option<&str>, exclude_team_models: bool) -> Vec<Json> {
+        let Some(name) = model_name else {
+            return self
+                .catalog
+                .id_index
+                .iter()
+                .filter_map(|(id, index)| Some((id, self.catalog.models.get(*index)?)))
+                .filter(|(_, row)| listed_id(row, exclude_team_models))
+                .map(|(id, _)| Json::Text(id.clone()))
+                .collect();
+        };
         let Some(indices) = self.catalog.name_index.get(name) else {
             return Vec::new();
         };
         indices
             .iter()
             .filter_map(|index| self.catalog.models.get(*index))
-            .filter(|row| !(exclude_team_models && is_team_specific_model(&row.model_info)))
+            .filter(|row| listed_id(row, exclude_team_models))
             .filter_map(|row| row.model_info.get("id").cloned())
             .collect()
     }
 
-    // The id map's insertion order: a duplicate id keeps its first position and points at its last row.
-    fn all_model_ids(&self, exclude_team_models: bool) -> Vec<Json> {
-        let mut order: Vec<(String, bool)> = Vec::new();
-        for row in &self.catalog.models {
-            let Some(id) = row.id() else {
-                continue;
-            };
-            let team = is_team_specific_model(&row.model_info);
-            match order.iter_mut().find(|(key, _)| key == id) {
-                Some(entry) => entry.1 = team,
-                None => order.push((id.to_owned(), team)),
-            }
-        }
-        order
-            .into_iter()
-            .filter(|(_, team)| !(exclude_team_models && *team))
-            .map(|(id, _)| Json::Text(id))
-            .collect()
-    }
-
     // Router.get_candidate_model_ids_for_route: the alias, then a routing group even when it is empty, then the first early route, then the name and team indices.
-    pub fn get_candidate_model_ids_for_route(
+    pub fn candidate_model_ids(
         &self,
         model: &str,
         team_id: Option<&str>,
@@ -165,20 +143,27 @@ impl CatalogLookup<'_> {
         let mut pool = pattern_pool(
             self.catalog,
             &self.catalog.pattern_router,
+            PatternScope::Global,
             model,
             provider.as_deref(),
         )?;
         if pool.is_empty()
-            && let Some(patterns) =
-                team_id.and_then(|team| self.catalog.team_pattern_routers.get(team))
+            && let Some(team) = team_id
+            && let Some(patterns) = self.catalog.team_pattern_routers.get(team)
         {
-            pool = pattern_pool(self.catalog, &patterns.router, model, provider.as_deref())?;
+            pool = pattern_pool(
+                self.catalog,
+                &patterns.router,
+                PatternScope::Team(team),
+                model,
+                provider.as_deref(),
+            )?;
         }
         Ok(Some(pool).filter(|found| !found.is_empty()))
     }
 
     // Router.resolve_model_name_from_model_id: the public name, then the id, then a provider model that ends in the id.
-    pub fn resolve_model_name_from_model_id(
+    pub fn resolve_model_name(
         &self,
         model_id: Option<&str>,
     ) -> Result<Option<String>, LookupError> {
@@ -188,7 +173,7 @@ impl CatalogLookup<'_> {
         if self.catalog.model_names.contains(model_id) {
             return Ok(Some(model_id.to_owned()));
         }
-        if self.has_model_id(model_id) {
+        if self.catalog.id_index.contains_key(model_id) {
             let named = self
                 .get_deployment(model_id)?
                 .map(|deployment| deployment.model_name.as_str())
@@ -204,9 +189,120 @@ impl CatalogLookup<'_> {
         }
         Ok(None)
     }
+
+    // Router.get_model_names: team public names for a matching caller, and the internal name of every global row.
+    pub fn get_model_names(&self, team_id: Option<&str>) -> Result<Vec<String>, LookupError> {
+        let mut names = Vec::new();
+        for deployment in self.get_model_list(None, None)? {
+            if is_team_specific_model(&deployment.model_info) {
+                if let Some(name) = team_specific_model(&deployment.model_info, team_id)
+                    .filter(|name| !name.is_empty())
+                {
+                    names.push(name.to_owned());
+                }
+            } else {
+                names.push(deployment.model_name.clone());
+            }
+        }
+        Ok(names)
+    }
+
+    // Router.get_model_list_from_model_alias: one alias for a named lookup, every alias in insertion order otherwise.
+    pub fn list_from_alias(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupError> {
+        let targets: Vec<(&String, &AliasTarget)> = match model_name {
+            Some(name) => self
+                .model_group_alias
+                .get_key_value(name)
+                .into_iter()
+                .collect(),
+            None => self.model_group_alias.iter().collect(),
+        };
+        let mut returned = Vec::new();
+        for (alias, target) in targets {
+            let Some(model) = target.listed_model(alias, model_name.is_none())? else {
+                continue;
+            };
+            if self.routing_groups.callable_group(model).is_some() {
+                for mut row in self.routing_groups.rows(Some(model), &|member| {
+                    get_all_deployments(self.catalog, member, None, None)
+                }) {
+                    alias.clone_into(&mut row.model_name);
+                    returned.push(row);
+                }
+            } else {
+                returned.extend(get_all_deployments(
+                    self.catalog,
+                    model,
+                    Some(alias.as_str()),
+                    None,
+                ));
+            }
+        }
+        Ok(returned)
+    }
+
+    // get_model_list's wildcard channel, which runs only when no other channel found the requested name.
+    fn pattern_rows(
+        &self,
+        model_name: Option<&str>,
+        team_id: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupError> {
+        let Some(name) = model_name else {
+            return Ok(Vec::new());
+        };
+        let provider = (self.inferred_provider)(name);
+        let mut found = pattern_pool(
+            self.catalog,
+            &self.catalog.pattern_router,
+            PatternScope::Global,
+            name,
+            provider.as_deref(),
+        )?;
+        if let Some(team) = team_id
+            && let Some(patterns) = self.catalog.team_pattern_routers.get(team)
+        {
+            found.extend(pattern_pool(
+                self.catalog,
+                &patterns.router,
+                PatternScope::Team(team),
+                name,
+                provider.as_deref(),
+            )?);
+        }
+        for row in &mut found {
+            name.clone_into(&mut row.model_name);
+        }
+        Ok(found)
+    }
+
+    // Router.get_model_list: the exact and team rows, the alias rows, the routing-group rows, then the wildcard rows.
+    pub fn get_model_list(
+        &self,
+        model_name: Option<&str>,
+        team_id: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupError> {
+        let mut returned = Vec::new();
+        if let Some(name) = model_name {
+            returned.extend(get_all_deployments(self.catalog, name, None, team_id));
+        }
+        returned.extend(self.list_from_alias(model_name)?);
+        returned.extend(self.routing_groups.rows(model_name, &|member| {
+            get_all_deployments(self.catalog, member, None, None)
+        }));
+        if returned.is_empty() {
+            returned.extend(self.pattern_rows(model_name, team_id)?);
+        }
+        if model_name.is_none() {
+            returned.extend(self.catalog.models.iter().cloned());
+        }
+        Ok(returned)
+    }
 }
 
-// The provider-model arm of resolve_model_name_from_model_id: the exact value, a '/id' or a ':id' suffix, case kept.
+// The provider-model arm of resolve_model_name: the exact value, a '/id' or a ':id' suffix, case kept.
 fn provider_model_matches(actual: &str, model_id: &str) -> bool {
     actual == model_id
         || actual.ends_with(&format!("/{model_id}"))

@@ -49,13 +49,17 @@ pub struct CacheSlot<T>(Mutex<Option<T>>);
 impl<T: Clone> CacheSlot<T> {
     #[must_use]
     pub fn read(&self) -> Option<T> {
-        let slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        slot.clone()
+        match self.0.lock() {
+            Ok(slot) => slot.clone(),
+            Err(poison) => poison.into_inner().clone(),
+        }
     }
 
     pub fn store(&self, value: T) {
-        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        *slot = Some(value);
+        match self.0.lock() {
+            Ok(mut slot) => *slot = Some(value),
+            Err(poison) => *poison.into_inner() = Some(value),
+        }
     }
 }
 

@@ -1,5 +1,5 @@
-// The ways a catalog lookup fails where LiteLLM raises: a stale index, a non-text id, an unindexed wildcard candidate or a malformed alias entry.
 #[derive(Debug, thiserror::Error)]
+// The ways a catalog lookup fails where LiteLLM raises: a stale index, a non-text id, an unindexed wildcard candidate or a malformed alias entry.
 pub enum LookupError {
     #[error("the catalog index points at row {index}, which is not in the model list")]
     InvalidRow { index: usize },

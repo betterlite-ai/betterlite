@@ -6,5 +6,4 @@ pub mod index;
 pub mod listing;
 pub mod lookup;
 
-#[cfg(test)]
 mod tests;
