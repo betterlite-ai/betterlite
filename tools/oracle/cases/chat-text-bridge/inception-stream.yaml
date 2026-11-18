@@ -1,0 +1,31 @@
+name: chat-text-bridge-inception-stream
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: "text-completion-inception/oracle-text", api_base: "{{upstream}}/fim", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: text-model
+    messages: [{role: user, content: Say hello.}]
+    stream: true
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream, x-request-id: provider-stream}
+    events:
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"oracle-text","choices":[{"text":" Hel","index":0,"logprobs":null,"finish_reason":null}]}'
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"oracle-text","choices":[{"text":"lo","index":0,"logprobs":null,"finish_reason":null}]}'
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"oracle-text","choices":[{"text":"","index":0,"logprobs":null,"finish_reason":"stop"}]}'
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"oracle-text","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+      - '[DONE]'
+compare:
+  headers: [content-type, llm_provider-x-request-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /0/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /1/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /2/created, why: LiteLLM timestamps every stream chunk}

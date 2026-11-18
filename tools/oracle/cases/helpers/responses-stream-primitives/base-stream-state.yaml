@@ -1,0 +1,80 @@
+kind: helper
+name: base-stream-state
+call:
+  responses_stream_primitives:
+    operation: base_stream_state
+    rows:
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: {model_info: {id: model-123}, request_id: req-1}
+        request_data: {input: hi}
+        call_type: responses
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 0.0
+        litellm_params: {}
+        headers: {content-type: application/json, x-ratelimit-remaining-requests: "9"}
+      - model: openai/gpt-4o-mini
+        provider: openai
+        litellm_metadata: null
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 1234.5
+        litellm_params: {}
+        headers: {}
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: null
+        request_data: {}
+        call_type: null
+        start_time: "2025-06-01T12:30:00+02:00"
+        created: 1.0
+        litellm_params: {api_base: "https://proxy.example/v1"}
+        headers: {}
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: null
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 2.0
+        litellm_params: {base_url: "https://alias.example/v1"}
+        headers: {}
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: {model_info: {id: 7}}
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 3.0
+        litellm_params: {}
+        headers: {}
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: {model_info: {id: ""}}
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 4.0
+        litellm_params: {}
+        headers: {}
+      - model: openai/gpt-4o
+        provider: openai
+        litellm_metadata: {request_id: req-2}
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 5.0
+        litellm_params: {}
+        headers: {}
+      - model: gemini/gemini-1.5-pro
+        provider: gemini
+        litellm_metadata: null
+        request_data: null
+        call_type: null
+        start_time: "2026-01-01T00:00:00+00:00"
+        created: 6.0
+        litellm_params: {stream: true}
+        headers: {x-request-id: req-3}
+env: {}
+compare: {ignore: []}

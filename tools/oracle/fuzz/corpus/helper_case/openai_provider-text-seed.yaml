@@ -1,0 +1,44 @@
+kind: helper
+name: openai-provider-text-seed
+call:
+  openai_provider:
+    case: text
+    model: gpt-3.5-turbo-instruct
+    api_base: https://fixture.test/v1
+    api_key: sk-fixture
+    organization: null
+    headers: null
+    extra_headers: null
+    metadata: null
+    environment: {}
+    globals:
+      api_base: null
+      api_key: null
+      openai_key: null
+      organization: null
+    preview: false
+    chat_defaults: null
+    text_defaults:
+      temperature: 0
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    status: 200
+    reply:
+      id: cmpl-seed
+      object: text_completion
+      created: 1700000000
+      model: gpt-3.5-turbo-instruct
+      choices:
+        - index: 0
+          text: hello
+          finish_reason: stop
+          logprobs: null
+      usage:
+        prompt_tokens: 1
+        completion_tokens: 1
+        total_tokens: 2
+    text_completion: false
+env: {}
+compare: {ignore: []}

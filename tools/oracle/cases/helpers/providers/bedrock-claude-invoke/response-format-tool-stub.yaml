@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-claude-invoke-response-format-tool-stub
+call:
+  bedrock_claude_invoke:
+    function: map_params
+    model_cost:
+      bedrock/claude-test: {litellm_provider: bedrock, supports_native_structured_output: false}
+      bedrock/claude-native: {litellm_provider: bedrock, supports_native_structured_output: true}
+    calls:
+      - model: claude-test
+        non_default_params:
+          response_format:
+            type: json_schema
+            json_schema:
+              name: answer
+              schema: {type: object, properties: {a: {type: string}}, required: [a]}
+        optional_params: {}
+        drop_params: false
+      - model: claude-native
+        non_default_params:
+          response_format:
+            type: json_schema
+            json_schema:
+              name: answer
+              schema: {type: object, properties: {a: {type: string}}, required: [a]}
+        optional_params: {}
+        drop_params: false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

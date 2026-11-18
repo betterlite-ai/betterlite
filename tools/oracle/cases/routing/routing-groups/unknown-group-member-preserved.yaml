@@ -1,0 +1,14 @@
+kind: probe
+name: unknown-group-member-preserved
+probes:
+  - clock: {unix_millis: 1700000002000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        groups:
+          - {group_name: mixed, models: [probe-known, probe-ghost], routing_strategy: simple-shuffle}
+        deployments:
+          - {model_name: probe-known, identifier: k1, model: "openai/probe-known"}
+          - {model_name: probe-known, identifier: k2, model: "openai/probe-known"}
+        names: [mixed, probe-ghost]
+compare: {ignore: []}

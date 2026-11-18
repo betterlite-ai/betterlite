@@ -1,0 +1,142 @@
+kind: helper
+name: response-chat-result-incomplete-response-choices
+call:
+  response_chat_result:
+    model: caller-model
+    response:
+      id: resp_a
+      created_at: 1700000000
+      status: incomplete
+      output:
+        - type: reasoning
+          id: rs_1
+          summary:
+            - {type: summary_text, text: why}
+    caller_extra: {}
+    caller_hidden_params: {}
+    raw_hidden_params: {}
+    recorded: null
+calls:
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        incomplete_details: {reason: max_output_tokens}
+        output:
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+              - {type: output_text, text: b, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: incomplete
+        incomplete_details: {reason: content_filter}
+        output:
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+              - {type: output_text, text: b, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        incomplete_details: {reason: null}
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: failed
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: incomplete
+        output:
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: f
+            arguments: "{}"
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: incomplete
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        incomplete_details: {reason: max_output_tokens}
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: incomplete
+        output:
+          - type: reasoning
+            summary:
+              - {text: known}
+            encrypted_content: enc-raw
+          - type: reasoning
+            id: rs_2
+            encrypted_content: enc-typed
+            summary:
+              - {type: summary_text, text: typed}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+env: {}
+compare:
+  ignore: []

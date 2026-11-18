@@ -32,8 +32,29 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cli_claim_map"
+path = "fuzz_targets/cli_claim_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "jwt_claims"
 path = "fuzz_targets/jwt_claims.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oidc_token_response"
+path = "fuzz_targets/oidc_token_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oauth_provider_document"
+path = "fuzz_targets/oauth_provider_document.rs"
 test = false
 doc = false
 bench = false

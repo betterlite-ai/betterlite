@@ -1,0 +1,39 @@
+kind: probe
+name: shared-health-snapshot
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        steps:
+          - kind: set_health
+            now_millis: 0
+            states:
+              a: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+          - {kind: health, now_millis: 1000}
+          - kind: set_health
+            now_millis: 1000
+            states:
+              b: {is_healthy: false, timestamp: 1.0, reason: probe failure}
+          - {kind: health, now_millis: 16000}
+          - kind: set_health
+            now_millis: 16000
+            states:
+              c: {is_healthy: false, timestamp: 16.0, reason: probe failure}
+          - {kind: health, now_millis: 16000}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_health:
+          a: {is_healthy: false, timestamp: 20.0, reason: probe failure}
+        steps:
+          - {kind: health, now_millis: 20000}
+          - kind: set_health
+            now_millis: 21000
+            states:
+              b: {is_healthy: false, timestamp: 21.0, reason: probe failure}
+          - {kind: health, now_millis: 21000}
+compare: {ignore: []}

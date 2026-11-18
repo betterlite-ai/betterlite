@@ -1,6 +1,5 @@
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::error::FixtureError;
-use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use futures_util::future::join_all;
 use rust_decimal::Decimal;
@@ -33,7 +32,6 @@ fn postgres_test_url() -> Option<SecretString> {
 
 type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
 
-const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -52,12 +50,7 @@ enum HarnessError {
 
 async fn provision() -> Result<PostgresFixture, HarnessError> {
     let url = postgres_test_url();
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
+    let mut task = PostgresFixture::provision_with_statements(url.as_ref(), Vec::new());
     let result = timeout(SETUP_TIMEOUT, task.resolve())
         .await
         .map_err(HarnessError::Timeout)
@@ -117,8 +110,13 @@ async fn initialize_all(
 ) -> Result<Vec<Client>, HarnessError> {
     let mut clients = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
-        let (client, tasks) =
-            initialize_schema(fixture, RESET_PUBLIC_SCHEMA_SQL, SETUP_TIMEOUT).await?;
+        let (client, connection) = timeout(
+            SETUP_TIMEOUT,
+            tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
+        )
+        .await??;
+        let mut tasks = JoinSet::new();
+        tasks.spawn(connection);
         clients.push(client);
         connections.push(tasks);
     }
