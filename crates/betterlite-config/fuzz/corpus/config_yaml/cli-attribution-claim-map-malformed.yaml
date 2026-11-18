@@ -1,0 +1,3 @@
+environment_variables:
+  CLI_SSO_CLAIM_MAP: 'no-arrow,label->,->name, ,a->b->c,org_info\.department->flat_department,'
+  LITELLM_CLI_SSO_CLAIM_MAP: '   '

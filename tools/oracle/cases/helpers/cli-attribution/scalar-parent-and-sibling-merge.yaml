@@ -1,0 +1,35 @@
+kind: helper
+name: scalar-parent-and-sibling-merge
+call:
+  cli_attribution:
+    function: build
+    claim_map: label->profile,region->profile.region
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: https://img.example/p.png
+      provider: generic
+      team_ids: []
+      user_role: null
+      extra_fields:
+        label: acme
+        region: eu
+calls:
+- cli_attribution:
+    function: merge
+    existing_metadata:
+      scim_active: false
+      profile:
+        region: us
+        tier: 2
+    attribution_metadata:
+      profile:
+        region: eu
+      employment_type: full_time
+env:
+  CLI_SSO_CLAIM_MAP: label->profile,region->profile.region
+compare:
+  ignore: []

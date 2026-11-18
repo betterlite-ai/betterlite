@@ -1,0 +1,10 @@
+{
+  "host": "redis",
+  "port": 6379,
+  "password": "hunter2",
+  "sentinel_nodes": [["sentinel", 26379]],
+  "startup_nodes": [{"host": "node", "port": 6379}],
+  "aws_iam_auth": true,
+  "cluster_mode": true,
+  "nested": {"a": [1]}
+}

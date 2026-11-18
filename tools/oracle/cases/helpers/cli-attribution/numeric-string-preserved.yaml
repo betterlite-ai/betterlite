@@ -1,0 +1,40 @@
+kind: helper
+name: numeric-string-preserved
+call:
+  cli_attribution:
+    function: build
+    claim_map: count->profile.count,numeric_text->profile.numeric_text,ratio->profile.ratio,enabled->profile.enabled
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: https://img.example/p.png
+      provider: generic
+      team_ids: []
+      user_role: null
+      extra_fields:
+        count: 42
+        numeric_text: '42'
+        ratio: 1.5
+        enabled: true
+calls:
+- cli_attribution:
+    function: merge
+    existing_metadata:
+      count: 7
+      note: keep
+      profile:
+        tier: 2
+        region: null
+    attribution_metadata:
+      count: '42'
+      profile:
+        count: '42'
+        region: eu
+      empty: null
+env:
+  CLI_SSO_CLAIM_MAP: count->profile.count,numeric_text->profile.numeric_text,ratio->profile.ratio,enabled->profile.enabled
+compare:
+  ignore: []
