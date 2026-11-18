@@ -215,7 +215,7 @@ impl Fixture {
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
-            now: self.clock.clone(),
+            now: self.clock,
         };
         transform_reply(
             &RawResponse {

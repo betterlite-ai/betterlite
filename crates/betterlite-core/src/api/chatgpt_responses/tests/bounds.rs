@@ -1,12 +1,10 @@
 #![cfg(test)]
 
-use std::str::from_utf8;
-
 use betterlite_openai::error::OpenAiError;
 
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::chatgpt_responses::ChatGptResponsesError;
-use crate::api::responses_sse_recovery::ResponsesSseRecoveryError;
+use crate::api::responses_sse_recovery::{ResponsesSseRecoveryError, decode_recovery_line};
 
 use super::{Fixture, JSON_TYPE, SSE_TYPE, done, expect_error, headers, item, text, typed};
 
@@ -98,11 +96,9 @@ fn a_body_exactly_at_the_total_boundary_is_accepted() {
 
 #[test]
 fn recovery_errors_without_a_status_stay_statusless() {
-    let raw = [0xff_u8];
-    let bytes = from_utf8(&raw).expect_err("the bytes are not UTF-8");
-    let utf8_error = ChatGptResponsesError::Recovery {
-        source: ResponsesSseRecoveryError::Utf8(bytes),
-    };
+    let source = decode_recovery_line(&[0xff_u8], &ApiLimits::default())
+        .expect_err("the bytes are not UTF-8");
+    let utf8_error = ChatGptResponsesError::Recovery { source };
     assert_eq!(utf8_error.http_status(), None);
     let encode = ChatGptResponsesError::Encode {
         source: serde_json::from_str::<i32>("x").expect_err("the value is not an integer"),

@@ -45,7 +45,7 @@ enum Step {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Input {
+pub(crate) struct CaseInput {
     step: Step,
     environment: BTreeMap<String, String>,
     model: String,
@@ -141,7 +141,7 @@ fn pre_post_env<'env>(
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = Input;
+    type Input = CaseInput;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.step {
@@ -151,7 +151,7 @@ impl Helper for Op {
     }
 }
 
-fn request_value(input: &Input) -> Result<Value, Box<HelperError>> {
+fn request_value(input: &CaseInput) -> Result<Value, Box<HelperError>> {
     let settings = ConfigLoader {
         lookup: input.environment.clone(),
     }
@@ -174,11 +174,11 @@ fn request_value(input: &Input) -> Result<Value, Box<HelperError>> {
             &input.options,
             None,
         )
-        .map_err(responses_error)?;
+        .map_err(|error| responses_error(&error))?;
     serde_json::to_value(request).map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
-fn response_value(input: &Input) -> HelperResult {
+fn response_value(input: &CaseInput) -> HelperResult {
     let Fixture {
         redactor,
         sink,
@@ -196,7 +196,7 @@ fn response_value(input: &Input) -> HelperResult {
         &env,
         &ApiLimits::default(),
     )
-    .map_err(responses_error)?;
+    .map_err(|error| responses_error(&error))?;
     let ReplyBody::Typed(response) = &reply.response else {
         return Err(helper_error(
             "ValueError",
@@ -245,7 +245,7 @@ fn post_call(state: &LoggingState) -> Value {
     })
 }
 
-fn responses_error(error: ChatGptResponsesError) -> Box<HelperError> {
+fn responses_error(error: &ChatGptResponsesError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("OpenAIError"),
         status: error.http_status(),
