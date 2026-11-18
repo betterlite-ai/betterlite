@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-headers
+call:
+  b5961: {"function": "headers", "kind": "cohere", "headers": {"X-Test": "1"}}
+env: {}
+compare: {ignore: []}
