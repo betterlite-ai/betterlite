@@ -112,7 +112,7 @@ fn assert_first_identity_resolves_again(
     );
     assert_eq!(again_region, first_region);
     assert_eq!(
-        signed(&again, &again_region),
+        &signed(&again, &again_region),
         first_headers,
         "a later identity resolves no cached material of its own"
     );

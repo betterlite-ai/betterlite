@@ -8,9 +8,9 @@ pub(super) fn parse_one<T>(object: &Object) -> Result<T, EmbeddingIoError>
 where
     T: DeserializeOwned,
 {
-    let text =
-        serde_json::to_string(object).map_err(|source| EmbeddingIoError::Encode { source })?;
-    serde_json::from_str(&text).map_err(|source| EmbeddingIoError::Params { source })
+    let value =
+        serde_json::to_value(object).map_err(|source| EmbeddingIoError::Encode { source })?;
+    serde_json::from_value(value).map_err(|source| EmbeddingIoError::Params { source })
 }
 
 pub(super) fn parse_list<T>(objects: &[Object]) -> Result<Vec<T>, EmbeddingIoError>

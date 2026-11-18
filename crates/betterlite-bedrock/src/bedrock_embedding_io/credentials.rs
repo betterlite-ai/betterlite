@@ -75,10 +75,10 @@ impl ManagedRegionWorker {
 impl Drop for ManagedRegionWorker {
     fn drop(&mut self) {
         drop(self.sender.take());
-        if let Some(worker_thread) = self.worker_thread.take() {
-            if let Err(_panic) = worker_thread.join() {
-                // A failed secret reader must not unwind a service destructor.
-            }
+        if let Some(worker_thread) = self.worker_thread.take()
+            && let Err(_panic) = worker_thread.join()
+        {
+            // A failed secret reader must not unwind a service destructor.
         }
     }
 }

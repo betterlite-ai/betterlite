@@ -16,6 +16,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
     OidcTokenCache,
 };
 use secrecy::{ExposeSecret, SecretString};
+use serde::Serialize;
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
@@ -100,76 +101,56 @@ fn credentials_object(credentials: &Credentials) -> Result<Object, Failure> {
     Ok(object)
 }
 
-fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
-    let mut object = Object::new();
-    object.insert(
-        "aws_access_key_id".to_owned(),
-        serde_json::from_value(json!(
-            settings
-                .access_key_id
-                .as_ref()
-                .map(ExposeSecret::expose_secret)
-        ))?,
-    );
-    object.insert(
-        "aws_secret_access_key".to_owned(),
-        serde_json::from_value(json!(
-            settings
-                .secret_access_key
-                .as_ref()
-                .map(ExposeSecret::expose_secret)
-        ))?,
-    );
-    object.insert(
-        "aws_session_token".to_owned(),
-        serde_json::from_value(json!(
-            settings
-                .session_token
-                .as_ref()
-                .map(ExposeSecret::expose_secret)
-        ))?,
-    );
-    object.insert(
-        "aws_session_name".to_owned(),
-        serde_json::from_value(json!(settings.session_name.as_deref()))?,
-    );
-    object.insert(
-        "aws_profile_name".to_owned(),
-        serde_json::from_value(json!(settings.profile_name.as_deref()))?,
-    );
-    object.insert(
-        "aws_role_name".to_owned(),
-        serde_json::from_value(json!(settings.role_name.as_deref()))?,
-    );
-    object.insert(
-        "aws_web_identity_token".to_owned(),
-        serde_json::from_value(json!(
-            settings
-                .web_identity_token
-                .as_ref()
-                .map(ExposeSecret::expose_secret)
-        ))?,
-    );
-    object.insert(
-        "aws_sts_endpoint".to_owned(),
-        serde_json::from_value(json!(settings.sts_endpoint.as_deref()))?,
-    );
-    object.insert(
-        "aws_external_id".to_owned(),
-        serde_json::from_value(json!(settings.external_id.as_deref()))?,
-    );
-    object.insert(
-        "aws_session_tags".to_owned(),
-        tags_value(settings.session_tags.as_ref())?,
-    );
-    Ok(object)
+#[derive(Serialize)]
+struct AuthFields<'settings> {
+    #[serde(rename = "aws_access_key_id")]
+    access_key_id: Option<&'settings str>,
+    #[serde(rename = "aws_secret_access_key")]
+    secret_access_key: Option<&'settings str>,
+    #[serde(rename = "aws_session_token")]
+    session_token: Option<&'settings str>,
+    #[serde(rename = "aws_session_name")]
+    session_name: Option<&'settings str>,
+    #[serde(rename = "aws_profile_name")]
+    profile_name: Option<&'settings str>,
+    #[serde(rename = "aws_role_name")]
+    role_name: Option<&'settings str>,
+    #[serde(rename = "aws_web_identity_token")]
+    web_identity_token: Option<&'settings str>,
+    #[serde(rename = "aws_sts_endpoint")]
+    sts_endpoint: Option<&'settings str>,
+    #[serde(rename = "aws_external_id")]
+    external_id: Option<&'settings str>,
+    #[serde(rename = "aws_session_tags")]
+    session_tags: Option<&'settings SessionTagValue>,
 }
 
-fn tags_value(tags: Option<&SessionTagValue>) -> Result<Json, Failure> {
-    match tags {
-        Some(tags) => Ok(serde_json::from_value(serde_json::to_value(tags)?)?),
-        None => Ok(Json::Null),
-    }
+fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
+    let fields = AuthFields {
+        access_key_id: settings
+            .access_key_id
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        secret_access_key: settings
+            .secret_access_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        session_token: settings
+            .session_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        session_name: settings.session_name.as_deref(),
+        profile_name: settings.profile_name.as_deref(),
+        role_name: settings.role_name.as_deref(),
+        web_identity_token: settings
+            .web_identity_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        sts_endpoint: settings.sts_endpoint.as_deref(),
+        external_id: settings.external_id.as_deref(),
+        session_tags: settings.session_tags.as_ref(),
+    };
+    Ok(serde_json::from_value(serde_json::to_value(fields)?)?)
 }
 
 struct Source {

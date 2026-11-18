@@ -1,3 +1,5 @@
+use std::io;
+
 use thiserror::Error;
 
 use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
@@ -13,7 +15,7 @@ pub(crate) enum Failure {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
     #[error("the fixture clock is out of range")]
     Clock,
 }
@@ -31,7 +33,7 @@ impl From<Failure> for Box<HelperError> {
     }
 }
 
-fn failure_status(failure: &Failure) -> Option<u16> {
+const fn failure_status(failure: &Failure) -> Option<u16> {
     match failure {
         Failure::Embedding(error) => error.status(),
         Failure::Signing(_) | Failure::Json(_) | Failure::Runtime(_) | Failure::Clock => None,

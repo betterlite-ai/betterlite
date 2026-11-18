@@ -43,6 +43,7 @@ impl SyncSecretReader for PendingReader {
         while !*gate_state {
             gate_state = gate_condition.wait(gate_state).unwrap();
         }
+        drop(gate_state);
         (secret_name == "AWS_REGION_NAME").then(|| SecretString::from("eu-north-1"))
     }
 }
@@ -112,7 +113,7 @@ fn timeout_while_managed_read_waits(
     started: &Notify,
     region_worker: Arc<ManagedRegionWorker>,
 ) -> (
-    tokio::runtime::Runtime,
+    Runtime,
     JoinSet<Result<LoadedCredentials, EmbeddingIoError>>,
 ) {
     let runtime = single_worker_runtime();
@@ -121,11 +122,9 @@ fn timeout_while_managed_read_waits(
         timeout(Duration::from_secs(1), started.notified())
             .await
             .expect("the managed reader starts");
-        assert!(
-            timeout(Duration::from_millis(50), tasks.join_next())
-                .await
-                .is_err()
-        );
+        timeout(Duration::from_millis(50), tasks.join_next())
+            .await
+            .expect_err("the lookup waits for the managed reader");
         tasks
     });
     (runtime, tasks)
@@ -203,24 +202,20 @@ fn bedrock_embedding_io_managed_worker_drains_before_drop() {
             .await
             .expect("the managed reader starts");
         lookups.abort_all();
-        assert!(
-            lookups
-                .join_next()
-                .await
-                .expect("the task is collected")
-                .is_err()
-        );
+        lookups
+            .join_next()
+            .await
+            .expect("the task is collected")
+            .expect_err("the aborted lookup ends cancelled");
     });
-    let worker =
+    let owned_worker =
         Arc::try_unwrap(worker).unwrap_or_else(|_| panic!("the lookup released its worker"));
     runtime.block_on(async {
         let mut owners = JoinSet::new();
-        owners.spawn_blocking(move || drop(worker));
-        assert!(
-            timeout(Duration::from_millis(50), owners.join_next())
-                .await
-                .is_err()
-        );
+        owners.spawn_blocking(move || drop(owned_worker));
+        timeout(Duration::from_millis(50), owners.join_next())
+            .await
+            .expect_err("dropping the worker waits for the managed reader");
         gate_release.open();
         assert!(matches!(
             timeout(Duration::from_secs(1), owners.join_next()).await,
