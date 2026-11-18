@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use serde::Deserialize;
+use serde::Deserializer;
 
 // One helper_case call: the router snapshot, the caller and the function the case reads.
 #[derive(Debug, Deserialize)]
@@ -39,13 +40,34 @@ pub(crate) struct Arguments {
     pub(crate) user_role: Option<String>,
     pub(crate) team_id: Option<String>,
     pub(crate) healthy_only: Option<bool>,
-    pub(crate) model_list_healthy_only: Option<bool>,
-    pub(crate) with_router: Option<bool>,
+    #[serde(deserialize_with = "null_as_false")]
+    pub(crate) model_list_healthy_only: bool,
+    #[serde(default = "with_router_default", deserialize_with = "null_as_true")]
+    pub(crate) with_router: bool,
     pub(crate) health: Health,
     pub(crate) broken_pattern: bool,
 }
 
-// B307's answer, injected: the names it reports unhealthy and whether the cache refuses to answer.
+// A null bool takes the value the source's signature gives an absent one.
+fn null_as_false<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn null_as_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(true))
+}
+
+const fn with_router_default() -> bool {
+    true
+}
+
+// B307's answer, injected so a case can make the cache refuse the read.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Health {
@@ -53,7 +75,6 @@ pub(crate) struct Health {
     pub(crate) fails: bool,
 }
 
-// The owned entry points, by the name the case calls.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Function {

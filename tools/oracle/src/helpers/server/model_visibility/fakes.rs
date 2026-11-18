@@ -12,10 +12,12 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
+use super::error::HealthError;
+
 // The debug note the healthy filter writes when the router reports no unhealthy state.
 const DEBUG_PREFIX: &str = "healthy-only model listing is enabled";
 
-// B307's answer, injected: the names the cache reports, whether it refuses to answer, and how often it was read.
+// B307's answer, injected so a case can make the cache refuse the read.
 pub(crate) struct HealthReport {
     pub(crate) names: BTreeSet<String>,
     pub(crate) fails: bool,
@@ -24,12 +26,12 @@ pub(crate) struct HealthReport {
 
 #[async_trait]
 impl RouterHealth for HealthReport {
-    type Error = String;
+    type Error = HealthError;
 
-    async fn fully_unhealthy_model_names(&self) -> Result<BTreeSet<String>, String> {
+    async fn fully_unhealthy_model_names(&self) -> Result<BTreeSet<String>, HealthError> {
         self.reads.fetch_add(1, Ordering::Relaxed);
         if self.fails {
-            return Err("the health cache is unreachable".to_owned());
+            return Err(HealthError::Unreachable);
         }
         Ok(self.names.clone())
     }

@@ -16,7 +16,6 @@ use super::fakes::{HealthReport, captured, user};
 use super::input::{Function, Input};
 use super::snapshot::{Snapshot, spec};
 
-// The answer the case asked for: the owned entry point, projected to the typed values both sides compare.
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     match input.function {
         Function::UndiscoverableModelNames => undiscoverable(input),
@@ -33,11 +32,7 @@ fn undiscoverable(input: &Input) -> Result<Value, Failure> {
         routing_groups: &snapshot.groups,
         inferred_provider: &*snapshot.provider,
     };
-    let router = input
-        .arguments
-        .with_router
-        .unwrap_or(true)
-        .then_some(&lookup);
+    let router = input.arguments.with_router.then_some(&lookup);
     let hidden = undiscoverable_model_names(
         &input.arguments.model_names,
         router,
@@ -67,9 +62,9 @@ fn healthy(input: &Input) -> Result<Value, Failure> {
         reads: Arc::clone(&reads),
     };
     let settings = Settings {
-        model_list_healthy_only: arguments.model_list_healthy_only.unwrap_or(false),
+        model_list_healthy_only: arguments.model_list_healthy_only,
     };
-    let router = arguments.with_router.unwrap_or(true).then_some(&report);
+    let router = arguments.with_router.then_some(&report);
     let (result, debug) = captured(&|| {
         runtime.block_on(hidden_unhealthy_model_names(
             arguments.healthy_only,
@@ -77,7 +72,7 @@ fn healthy(input: &Input) -> Result<Value, Failure> {
             router,
         ))
     });
-    let hidden = result.map_err(Failure::Health)?;
+    let hidden = result?;
     Ok(json!({
         "hidden": hidden,
         "health_reads": reads.load(Ordering::Relaxed),
