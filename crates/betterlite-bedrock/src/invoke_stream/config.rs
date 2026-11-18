@@ -7,8 +7,6 @@ use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue,
 use betterlite_streaming::stream_chunk_shaping::tokens::check_send_stream_usage;
 use http::HeaderMap;
 use indexmap::IndexMap;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 use crate::agentcore_stream::adapter::header_pairs;
 use crate::invoke_stream::{CUSTOM_LLM_PROVIDER, StreamGlobals, StreamTransport};
@@ -33,7 +31,8 @@ pub(super) fn of(
                 .get("merge_reasoning_content_in_choices"),
             Some(Json::Bool(true))
         ),
-        optional_params: convert(&state.optional_params),
+        optional_params: serde_json::to_value(&state.optional_params)
+            .map_or_else(|_| None, |plain| serde_json::from_value(plain).ok()),
         hidden_params: hidden_params(state, headers),
         mcp_metadata: None,
         max_streaming_duration: globals.max_streaming_duration,
@@ -76,14 +75,21 @@ fn model_id(state: &LoggingState) -> JsonValue {
     };
     params
         .get("id")
-        .and_then(convert)
+        .and_then(|value| {
+            serde_json::to_value(value)
+                .ok()
+                .and_then(|plain| serde_json::from_value(plain).ok())
+        })
         .unwrap_or(JsonValue::Null)
 }
 
 // get_api_base: litellm_params.api_base when it names one, else the provider default, which bedrock has none of.
 fn api_base(state: &LoggingState) -> JsonValue {
     match state.litellm_params.get("api_base") {
-        Some(value @ Json::Text(_)) => convert(value).unwrap_or(JsonValue::Null),
+        Some(value @ Json::Text(_)) => serde_json::to_value(value)
+            .ok()
+            .and_then(|plain| serde_json::from_value(plain).ok())
+            .unwrap_or(JsonValue::Null),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => JsonValue::Null,
     }
@@ -93,14 +99,8 @@ fn api_base(state: &LoggingState) -> JsonValue {
 fn additional_headers(headers: &HeaderMap) -> JsonValue {
     let upstream: IndexMap<String, String> = header_pairs(headers).into_iter().collect();
     let projected = process_response_headers(HeaderSource::Upstream(&upstream));
-    convert(&projected).unwrap_or(JsonValue::Null)
-}
-
-fn convert<T, U>(value: &T) -> Option<U>
-where
-    T: Serialize,
-    U: DeserializeOwned,
-{
-    let plain = serde_json::to_value(value).ok()?;
-    serde_json::from_value(plain).ok()
+    serde_json::to_value(&projected)
+        .ok()
+        .and_then(|plain| serde_json::from_value(plain).ok())
+        .unwrap_or(JsonValue::Null)
 }
