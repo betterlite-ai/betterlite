@@ -55,7 +55,7 @@ fn client() -> ProxiedClient {
 }
 
 fn exposed(token: Option<&SecretString>) -> Option<&str> {
-    token.map(|secret| secret.expose_secret())
+    token.map(SecretString::expose_secret)
 }
 
 struct Received {
