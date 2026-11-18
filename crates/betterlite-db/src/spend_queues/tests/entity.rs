@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -9,9 +10,9 @@ use super::support::{RecordingSink, amount, capture_logs, item};
 use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::entity::{
     EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
-    aggregate_db_spend_update_transactions, aggregate_spend_update_queue_items,
+    aggregate_db_transactions, aggregate_queue_items,
 };
-use crate::spend_queues::events::{NoSpendQueueEventSink, SpendQueueService};
+use crate::spend_queues::events::{NoSpendQueueEventSink, SpendQueueEventSink, SpendQueueService};
 
 fn huge(kind: EntityType, entity_id: &str) -> SpendUpdateQueueItem {
     SpendUpdateQueueItem {
@@ -31,7 +32,7 @@ fn one(kind: EntityType, entity_id: &str) -> SpendUpdateQueueItem {
 
 #[test]
 fn compaction_groups_by_kind_and_id_in_first_seen_order_and_adds_costs() {
-    let aggregated = aggregate_spend_update_queue_items(&[
+    let aggregated = aggregate_queue_items(&[
         item(Some(EntityType::User), Some("1"), Some("10.5")),
         item(Some(EntityType::Key), Some("k"), Some("1.0")),
         item(Some(EntityType::User), Some("1"), Some("2.5")),
@@ -50,7 +51,7 @@ fn compaction_groups_by_kind_and_id_in_first_seen_order_and_adds_costs() {
 
 #[test]
 fn a_first_record_without_a_cost_gains_zero_and_a_singleton_keeps_its_absence() {
-    let aggregated = aggregate_spend_update_queue_items(&[
+    let aggregated = aggregate_queue_items(&[
         item(Some(EntityType::User), Some("1"), None),
         item(Some(EntityType::User), Some("1"), Some("5")),
         item(Some(EntityType::User), Some("2"), Some("0")),
@@ -68,7 +69,7 @@ fn a_first_record_without_a_cost_gains_zero_and_a_singleton_keeps_its_absence() 
 
 #[test]
 fn costs_are_summed_as_exact_decimals() {
-    let aggregated = aggregate_spend_update_queue_items(&[
+    let aggregated = aggregate_queue_items(&[
         item(Some(EntityType::User), Some("1"), Some("0.1")),
         item(Some(EntityType::User), Some("1"), Some("0.2")),
     ])
@@ -78,7 +79,7 @@ fn costs_are_summed_as_exact_decimals() {
 
 #[test]
 fn the_same_id_under_different_kinds_stays_apart() {
-    let aggregated = aggregate_spend_update_queue_items(&[
+    let aggregated = aggregate_queue_items(&[
         item(Some(EntityType::User), Some("1"), Some("1.0")),
         item(Some(EntityType::Key), Some("1"), Some("2.0")),
     ])
@@ -94,7 +95,7 @@ fn compaction_leaves_its_inputs_untouched() {
         item(Some(EntityType::Team), None, Some("3.5")),
     ];
     let original = updates.clone();
-    let aggregated = aggregate_spend_update_queue_items(&updates).unwrap();
+    let aggregated = aggregate_queue_items(&updates).unwrap();
     assert_eq!(updates, original);
     assert_eq!(aggregated.len(), 2);
     assert_eq!(
@@ -108,7 +109,7 @@ fn compaction_leaves_its_inputs_untouched() {
 fn a_cost_that_overflows_the_decimal_range_is_reported() {
     let updates = vec![huge(EntityType::User, "1"), one(EntityType::User, "1")];
     assert!(matches!(
-        aggregate_spend_update_queue_items(&updates),
+        aggregate_queue_items(&updates),
         Err(SpendQueueError::CostOverflow)
     ));
 }
@@ -176,14 +177,14 @@ fn expected_transactions() -> SpendUpdateTransactions {
         .agent_list_transactions
         .insert("a".to_owned(), amount("10"));
     expected
-        .model_access_group_list_transactions
+        .model_access_group_spend
         .insert("mag".to_owned(), amount("11"));
     expected
 }
 
 #[test]
 fn database_aggregation_builds_every_bucket_and_skips_kinds_without_one() {
-    let transactions = aggregate_db_spend_update_transactions(&every_kind_updates()).unwrap();
+    let transactions = aggregate_db_transactions(&every_kind_updates()).unwrap();
     assert_eq!(transactions, expected_transactions());
 }
 
@@ -191,7 +192,7 @@ fn database_aggregation_builds_every_bucket_and_skips_kinds_without_one() {
 fn database_aggregation_reports_a_cost_that_overflows_the_decimal_range() {
     let updates = vec![huge(EntityType::Team, "t"), one(EntityType::Team, "t")];
     assert!(matches!(
-        aggregate_db_spend_update_transactions(&updates),
+        aggregate_db_transactions(&updates),
         Err(SpendQueueError::CostOverflow)
     ));
 }
@@ -206,13 +207,12 @@ async fn add_user_cost(queue: &SpendUpdateQueue, cost: &str) {
 #[tokio::test]
 async fn add_update_compacts_at_the_threshold_and_reports_the_compacted_size() {
     let sink = Arc::new(RecordingSink::default());
-    let queue = SpendUpdateQueue::new(8, 2, 10, Arc::clone(&sink)).unwrap();
+    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let queue = SpendUpdateQueue::new(8, 2, 10, port).unwrap();
     add_user_cost(&queue, "1.5").await;
     add_user_cost(&queue, "2.5").await;
     add_user_cost(&queue, "4.0").await;
-    let transactions = queue
-        .flush_and_get_aggregated_db_spend_update_transactions()
-        .unwrap();
+    let transactions = queue.flush_aggregated_transactions().unwrap();
     assert_eq!(
         transactions.user_list_transactions.get("1"),
         Some(&amount("8.0"))
@@ -242,9 +242,7 @@ async fn a_flush_logs_its_item_count_and_keeps_the_update_body_out_of_logs() {
         .add_update(item(Some(EntityType::Key), Some("sk-secret"), Some("1.5")))
         .await
         .unwrap();
-    queue
-        .flush_and_get_aggregated_db_spend_update_transactions()
-        .unwrap();
+    queue.flush_aggregated_transactions().unwrap();
     let text = logs.text();
     assert!(text.contains("Spend tracking - flushed spend update items from in-memory queue"));
     assert!(text.contains("items=1"));
@@ -256,9 +254,7 @@ async fn a_flush_logs_its_item_count_and_keeps_the_update_body_out_of_logs() {
 async fn an_empty_flush_builds_every_bucket_without_a_flush_log() {
     let logs = capture_logs();
     let queue = SpendUpdateQueue::new(8, 100, 10, Arc::new(NoSpendQueueEventSink)).unwrap();
-    let transactions = queue
-        .flush_and_get_aggregated_db_spend_update_transactions()
-        .unwrap();
+    let transactions = queue.flush_aggregated_transactions().unwrap();
     assert_eq!(transactions, SpendUpdateTransactions::default());
     assert!(!logs.contains("flushed spend update items"));
     queue.shutdown().await;
@@ -285,44 +281,50 @@ async fn a_full_queue_blocks_a_producer_until_a_flush_drains_it() {
             .await
             .is_err()
     );
-    let first = queue
-        .flush_and_get_aggregated_db_spend_update_transactions()
-        .unwrap();
+    let first = queue.flush_aggregated_transactions().unwrap();
     assert_eq!(first.user_list_transactions.len(), 1);
     timeout(Duration::from_secs(1), tasks.join_next())
         .await
         .unwrap()
         .unwrap()
         .unwrap();
-    let second = queue
-        .flush_and_get_aggregated_db_spend_update_transactions()
-        .unwrap();
+    let second = queue.flush_aggregated_transactions().unwrap();
     assert_eq!(second.user_list_transactions.get("2"), Some(&amount("2.5")));
     queue.shutdown().await;
 }
 
+#[rstest]
+#[case::key("key", EntityType::Key)]
+#[case::user("user", EntityType::User)]
+#[case::end_user("end_user", EntityType::EndUser)]
+#[case::team("team", EntityType::Team)]
+#[case::team_member("team_member", EntityType::TeamMember)]
+#[case::organization("organization", EntityType::Organization)]
+#[case::organization_member("organization_member", EntityType::OrganizationMember)]
+#[case::project("project", EntityType::Project)]
+#[case::tag("tag", EntityType::Tag)]
+#[case::agent("agent", EntityType::Agent)]
+#[case::model_access_group("model_access_group", EntityType::ModelAccessGroup)]
+#[case::proxy("proxy", EntityType::Proxy)]
+fn queue_items_decode_every_declared_entity_kind(#[case] name: &str, #[case] expected: EntityType) {
+    let json = format!(r#"{{"entity_type":"{name}"}}"#);
+    let item: SpendUpdateQueueItem = serde_json::from_str(&json).unwrap();
+    assert_eq!(item.entity_type, Some(expected), "{name}");
+}
+
 #[test]
-fn queue_items_decode_every_entity_kind_and_the_unknown_boundary() {
-    let cases = [
-        ("key", EntityType::Key),
-        ("user", EntityType::User),
-        ("end_user", EntityType::EndUser),
-        ("team", EntityType::Team),
-        ("team_member", EntityType::TeamMember),
-        ("organization", EntityType::Organization),
-        ("organization_member", EntityType::OrganizationMember),
-        ("project", EntityType::Project),
-        ("tag", EntityType::Tag),
-        ("agent", EntityType::Agent),
-        ("model_access_group", EntityType::ModelAccessGroup),
-        ("proxy", EntityType::Proxy),
-        ("window", EntityType::Unsupported("window".to_owned())),
-    ];
-    for (name, expected) in cases {
-        let json = format!(r#"{{"entity_type":"{name}"}}"#);
-        let item: SpendUpdateQueueItem = serde_json::from_str(&json).unwrap();
-        assert_eq!(item.entity_type, Some(expected), "{name}");
-    }
+fn an_unknown_kind_keeps_the_legacy_boundary_and_is_skipped() {
+    let update: SpendUpdateQueueItem =
+        serde_json::from_str(r#"{"entity_type":"window","entity_id":"w","response_cost":1}"#)
+            .unwrap();
+    assert_eq!(
+        update.entity_type,
+        Some(EntityType::Unsupported("window".to_owned()))
+    );
+    assert_eq!(
+        aggregate_db_transactions(&[update]).unwrap(),
+        SpendUpdateTransactions::default()
+    );
 }
 
 #[test]
@@ -336,12 +338,8 @@ fn spend_amounts_round_trip_through_json_numbers() {
 
 #[test]
 fn a_falsey_float_cost_is_stored_as_an_integer_zero() {
-    let transactions = aggregate_db_spend_update_transactions(&[item(
-        Some(EntityType::User),
-        Some("u"),
-        Some("0.0"),
-    )])
-    .unwrap();
+    let transactions =
+        aggregate_db_transactions(&[item(Some(EntityType::User), Some("u"), Some("0.0"))]).unwrap();
     let json = serde_json::to_string(&transactions).unwrap();
     assert!(
         json.contains(r#""user_list_transactions":{"u":0}"#),

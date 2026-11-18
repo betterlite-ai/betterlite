@@ -4,8 +4,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use indexmap::map::Entry;
 use rust_decimal::Decimal;
-use rust_decimal::serde::arbitrary_precision;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tokio_util::task::TaskTracker;
 
 use super::SpendQueueError;
@@ -14,7 +13,8 @@ use super::queue::BoundedUpdateQueue;
 use crate::queues::memory::EnqueueObserver;
 
 // Litellm_EntityType of litellm/proxy/_types.py, plus the two kinds the spend map has no bucket for.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(from = "String")]
 pub enum EntityType {
     Key,
     User,
@@ -32,9 +32,9 @@ pub enum EntityType {
     Unsupported(String),
 }
 
-impl EntityType {
-    fn from_name(name: &str) -> Self {
-        match name {
+impl From<String> for EntityType {
+    fn from(name: String) -> Self {
+        match name.as_str() {
             "key" => Self::Key,
             "user" => Self::User,
             "end_user" => Self::EndUser,
@@ -52,40 +52,13 @@ impl EntityType {
     }
 }
 
-impl<'de> Deserialize<'de> for EntityType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let name = String::deserialize(deserializer)?;
-        Ok(Self::from_name(&name))
-    }
-}
-
 // The response_cost field of SpendUpdateQueueItem, which is a float in the source and a Decimal here so a sum of costs stays exact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SpendAmount(pub Decimal);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SpendAmount(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
 
 impl SpendAmount {
     pub const ZERO: Self = Self(Decimal::ZERO);
-}
-
-impl Serialize for SpendAmount {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        arbitrary_precision::serialize(&self.0, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SpendAmount {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        arbitrary_precision::deserialize(deserializer).map(SpendAmount)
-    }
 }
 
 // SpendUpdateQueueItem of litellm/proxy/_types.py; every field is optional there.
@@ -112,11 +85,12 @@ pub struct SpendUpdateTransactions {
     pub project_list_transactions: BTreeMap<String, SpendAmount>,
     pub tag_list_transactions: BTreeMap<String, SpendAmount>,
     pub agent_list_transactions: BTreeMap<String, SpendAmount>,
-    pub model_access_group_list_transactions: BTreeMap<String, SpendAmount>,
+    #[serde(rename = "model_access_group_list_transactions")]
+    pub model_access_group_spend: BTreeMap<String, SpendAmount>,
 }
 
 impl SpendUpdateTransactions {
-    fn bucket_mut(
+    const fn bucket_mut(
         &mut self,
         entity_type: &EntityType,
     ) -> Option<&mut BTreeMap<String, SpendAmount>> {
@@ -131,14 +105,14 @@ impl SpendUpdateTransactions {
             EntityType::Project => Some(&mut self.project_list_transactions),
             EntityType::Tag => Some(&mut self.tag_list_transactions),
             EntityType::Agent => Some(&mut self.agent_list_transactions),
-            EntityType::ModelAccessGroup => Some(&mut self.model_access_group_list_transactions),
+            EntityType::ModelAccessGroup => Some(&mut self.model_access_group_spend),
             EntityType::Proxy | EntityType::Unsupported(_) => None,
         }
     }
 }
 
 // _get_aggregated_spend_update_queue_item: groups by entity type and id in first-seen order, keeps the first record of a group and adds every later cost onto it without touching an input record.
-pub fn aggregate_spend_update_queue_items(
+pub fn aggregate_queue_items(
     updates: &[SpendUpdateQueueItem],
 ) -> Result<Vec<SpendUpdateQueueItem>, SpendQueueError> {
     let mut grouped: IndexMap<(Option<&EntityType>, Option<&str>), SpendUpdateQueueItem> =
@@ -162,7 +136,7 @@ pub fn aggregate_spend_update_queue_items(
 }
 
 // get_aggregated_db_spend_update_transactions: one bucket per entity kind, keyed by the entity id with an absent id reading as the empty string.
-pub fn aggregate_db_spend_update_transactions(
+pub fn aggregate_db_transactions(
     updates: &[SpendUpdateQueueItem],
 ) -> Result<SpendUpdateTransactions, SpendQueueError> {
     let mut transactions = SpendUpdateTransactions::default();
@@ -221,12 +195,11 @@ impl SpendUpdateQueue {
         // The source logs the whole update here; betterlite's log line keeps spend bodies out of every log.
         tracing::debug!("Adding update to the in-memory spend queue");
         self.queue.add(update, self).await;
-        self.queue
-            .compact_when_full(aggregate_spend_update_queue_items)
+        self.queue.compact_when_full(aggregate_queue_items)
     }
 
     // flush_and_get_aggregated_db_spend_update_transactions: the entity queue owns no interrupted commits, so the drain is all a flush waits for.
-    pub fn flush_and_get_aggregated_db_spend_update_transactions(
+    pub fn flush_aggregated_transactions(
         &self,
     ) -> Result<SpendUpdateTransactions, SpendQueueError> {
         let updates = self.queue.drain();
@@ -236,7 +209,7 @@ impl SpendUpdateQueue {
                 "Spend tracking - flushed spend update items from in-memory queue"
             );
         }
-        aggregate_db_spend_update_transactions(&updates)
+        aggregate_db_transactions(&updates)
     }
 
     pub async fn shutdown(&self) {
