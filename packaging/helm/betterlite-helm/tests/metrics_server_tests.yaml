@@ -1,0 +1,79 @@
+suite: separate metrics server
+templates:
+  - deployment.yaml
+  - service.yaml
+  - service-metrics.yaml
+  - configmap-betterlite.yaml
+tests:
+  - it: exposes no metrics port, environment or Service by default
+    asserts:
+      - lengthEqual:
+          path: 'spec.template.spec.containers[0].ports'
+          count: 1
+        template: deployment.yaml
+      - notContains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: PROMETHEUS_METRICS_PORT }
+          any: true
+        template: deployment.yaml
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+        template: service.yaml
+      - hasDocuments:
+          count: 0
+        template: service-metrics.yaml
+
+  - it: wires the metrics server through the container, the environment and a ClusterIP Service
+    set:
+      metricsServer:
+        enabled: true
+        port: 4101
+      service:
+        type: LoadBalancer
+    asserts:
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: PROMETHEUS_METRICS_PORT, value: "4101" }
+        template: deployment.yaml
+      - contains:
+          path: 'spec.template.spec.containers[0].ports'
+          content: { name: metrics, containerPort: 4101, protocol: TCP }
+        template: deployment.yaml
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+        template: service.yaml
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+        template: service.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-betterlite-metrics
+        template: service-metrics.yaml
+      - equal:
+          path: spec.type
+          value: ClusterIP
+        template: service-metrics.yaml
+      - equal:
+          path: spec.ports
+          value:
+            - { port: 4101, targetPort: metrics, protocol: TCP, name: metrics }
+        template: service-metrics.yaml
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: betterlite
+            app.kubernetes.io/instance: RELEASE-NAME
+        template: service-metrics.yaml
+
+  - it: rejects a metrics port equal to the proxy port
+    set:
+      metricsServer:
+        enabled: true
+        port: 4000
+    asserts:
+      - failedTemplate:
+          errorMessage: metricsServer.port must differ from service.port
+        template: deployment.yaml

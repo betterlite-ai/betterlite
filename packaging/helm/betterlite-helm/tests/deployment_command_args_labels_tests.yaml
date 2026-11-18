@@ -1,0 +1,52 @@
+suite: deployment command, args and labels
+templates:
+  - deployment.yaml
+  - configmap-betterlite.yaml
+tests:
+  - it: runs the proxy on the chart's configuration by default
+    template: deployment.yaml
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].args', value: [--config, /etc/betterlite/config.yaml] }
+
+  - it: leaves the container command to the image by default
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: 'spec.template.spec.containers[0].command' }
+
+  - it: adds the worker count to the default args when numWorkers is set
+    template: deployment.yaml
+    set: { numWorkers: 4 }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].args', value: [--config, /etc/betterlite/config.yaml, --num_workers, "4"] }
+
+  - it: replaces the default args with a configured list
+    template: deployment.yaml
+    set: { args: [--custom-arg1, value1, --custom-arg2] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].args', value: [--custom-arg1, value1, --custom-arg2] }
+
+  - it: keeps the default args when args is set to an empty list
+    template: deployment.yaml
+    set: { args: [] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].args', value: [--config, /etc/betterlite/config.yaml] }
+
+  - it: sets the container command when configured
+    template: deployment.yaml
+    set: { command: [/bin/sh, -c] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].command', value: [/bin/sh, -c] }
+
+  - it: sets a custom command and args together
+    template: deployment.yaml
+    set: { command: [betterlite], args: [--config, /custom/config.yaml] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].command', value: [betterlite] }
+      - equal: { path: 'spec.template.spec.containers[0].args', value: [--config, /custom/config.yaml] }
+
+  - it: adds deploymentLabels to the deployment metadata
+    template: deployment.yaml
+    set: { deploymentLabels: { environment: production, team: platform } }
+    asserts:
+      - equal: { path: metadata.labels.environment, value: production }
+      - equal: { path: metadata.labels.team, value: platform }

@@ -1,0 +1,97 @@
+id: B9940
+title: Routing strategy arguments apply only to their own strategy
+description: >-
+  LiteLLM parses router_settings.routing_strategy_args only inside the handler of the active strategy:
+  _build_strategy_selector passes them to LowestTPMLoggingHandler for usage-based-routing and to
+  LowestTPMLoggingHandler_v2 for usage-based-routing-v2, and apply_lar1_routing_strategy reads them only for lar1.
+  Each handler builds its own RoutingArgs, so a ttl of 1.5 is a valid latency window under latency-based-routing and
+  nothing under simple-shuffle. betterlite's config sections parse the same keys whatever the strategy is.
+  usage_v2_accounting (B371) and usage_routing (B317) reject a ttl that isn't a whole number, and lar1_routing (B350)
+  rejects bad confidence thresholds, even when another strategy is active. A LiteLLM config with
+  routing_strategy latency-based-routing and ttl 1.5 fails to load in betterlite with InvalidInteger at
+  router_settings.routing_strategy_args.ttl.
+
+
+  Each of the three sections reads router_settings.routing_strategy next to routing_strategy_args and returns its
+  default settings unless the strategy is its own: usage_v2_accounting for usage-based-routing-v2, usage_routing for
+  usage-based-routing, lar1_routing for lar1. With its own strategy each section converts and rejects exactly as it does
+  now. B389 gates its latency_observations section on latency-based-routing the same way. betterlite then matches
+  LiteLLM, so the task adds no deviation row.
+
+
+  The existing tests load configs without a strategy, so their cases gain the section's routing_strategy line. B317's
+  usage_routing tests have a convert helper that runs the section alone, because ConfigLoader returned
+  usage_v2_accounting's error first. Remove it, and load those cases through ConfigLoader like the other tests.
+scope:
+  paths:
+  - crates/betterlite-config/src/sections/usage_v2_accounting.rs
+  - crates/betterlite-config/src/sections/usage_v2_accounting/**
+  - crates/betterlite-config/src/sections/usage_routing.rs
+  - crates/betterlite-config/src/sections/usage_routing/**
+  - crates/betterlite-config/src/sections/lar1_routing.rs
+  - crates/betterlite-config/src/sections/lar1_routing/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1338-L1379
+  why: _build_strategy_selector hands routing_strategy_args only to the active strategy's handler.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1150-L1159
+  why: apply_lar1_routing_strategy reads the args only when the strategy is lar1.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L33-L34
+  why: usage-based-routing-v2's RoutingArgs, ttl an int.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L27-L28
+  why: latency-based-routing's RoutingArgs, ttl a float, so 1.5 is valid there.
+dod:
+- text: >-
+    With routing_strategy usage-based-routing-v2, usage_v2_accounting converts and rejects the ttl as before. With
+    no strategy, simple-shuffle, latency-based-routing or usage-based-routing, a ttl of 1.5, "words" or a list loads
+    and the settings keep the 60 second default. The test is ignores_the_args_of_another_strategy under
+    sections::usage_v2_accounting::tests.
+  proof: [usage-v2-gate, section-tests]
+- text: >-
+    With routing_strategy usage-based-routing, usage_routing converts and rejects the ttl as before. With no strategy,
+    simple-shuffle, latency-based-routing or usage-based-routing-v2, a ttl of 1.5, "words" or a list loads and the
+    settings keep their default. The test is ignores_the_args_of_another_strategy under
+    sections::usage_routing::tests, and no test there converts the section alone.
+  proof: [usage-routing-gate, section-tests, no-convert-alone]
+- text: >-
+    With routing_strategy lar1, lar1_routing converts and rejects the thresholds as before. With no strategy or
+    simple-shuffle, a threshold of "words" loads and the settings keep their default. The test is
+    ignores_the_args_of_another_strategy under sections::lar1_routing::tests.
+  proof: [lar1-gate, section-tests]
+- text: The config corpus still replays.
+  proof: [config-corpus]
+checks:
+  optional: []
+  commands:
+  - id: usage-v2-gate
+    why: usage_v2_accounting still parses the ttl of another strategy.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::usage_v2_accounting::tests::ignores_the_args_of_another_strategy/)'
+  - id: usage-routing-gate
+    why: usage_routing still parses the ttl of another strategy.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::usage_routing::tests::ignores_the_args_of_another_strategy/)'
+  - id: lar1-gate
+    why: lar1_routing still parses the thresholds of another strategy.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::lar1_routing::tests::ignores_the_args_of_another_strategy/)'
+  - id: section-tests
+    why: A section no longer converts or rejects its args under its own strategy.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::(usage_v2_accounting|usage_routing|lar1_routing)::tests::/)'
+  - id: no-convert-alone
+    why: The usage_routing tests still convert the section alone, so a collision with another section stays hidden.
+    run: test -z "$(grep -l -E 'parse_view|Section as _' crates/betterlite-config/src/sections/usage_routing/tests.rs)"
+  - id: config-corpus
+    why: A corpus seed no longer parses after the gate.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- latency_observations in crates/betterlite-config/src/sections is B389's, and B389 gates it on latency-based-routing.
+- routing_groups keeps each group's routing_strategy_args as raw JSON for that group's own selector; it parses nothing and needs no gate.
+- Router and server code that reads these settings. They use them only under their own strategy already.
+pitfalls:
+- Read the strategy as Option<RoutingStrategy> from crate::types, the type router_core reads, so an unknown strategy name fails the same way in every section.
+- Compare the field inline in convert. A helper for one comparison breaks the no-one-line-functions rule.
+- Load test configs through ConfigLoader. A test that converts one section alone can't see another section's error, and that hid this bug in B317.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
