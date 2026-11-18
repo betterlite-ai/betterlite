@@ -15,8 +15,8 @@ deviations:
   - what: The scheduled export job is registered under the id cloudzero_export_usage_data. LiteLLM passes no job id to scheduler.add_job, so APScheduler mints one.
     why: A stable job id lets a restart replace its own job and matches the lease key the job uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L358-L363
-  - what: The initialization debug line does not print the connection ID. It prints the timezone only.
-    why: betterlite keeps credentials in SecretString and out of logs; the connection ID is part of the billing-drop URL.
+  - what: The logger's construction logs nothing. LiteLLM logs the connection ID and the timezone at debug on initialization; betterlite has no initialization log line, and the credentials stay in SecretString.
+    why: betterlite keeps credentials out of logs; the connection ID is part of the billing-drop URL.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L40-L41
   - what: The dry-run totals are a rust_decimal Decimal and an i64, and a sum that overflows returns DryRunError::TotalOverflow, where LiteLLM sums Python floats and ints without a bound.
     why: betterlite keeps money exact and reports a total it cannot represent instead of producing an infinite or imprecise one.
