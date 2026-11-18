@@ -4,8 +4,7 @@ use tokio::sync::mpsc;
 
 mod tests;
 
-// BaseUpdateQueue (litellm/proxy/db/db_transaction_queue/base_update_queue.py): one bounded queue whose
-// producer waits for capacity, a capped FIFO drain, and an enqueue observer that later queues fill in.
+// BaseUpdateQueue of the source: one bounded queue whose producer waits for capacity, a capped FIFO drain, and an enqueue observer.
 
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryQueueError {
@@ -85,7 +84,7 @@ impl<T: Send> MemoryUpdateQueue<T> {
     }
 
     #[must_use]
-    pub fn flush_all_updates_from_in_memory_queue(&self) -> Vec<T> {
+    pub fn drain_updates(&self) -> Vec<T> {
         let mut receiver = self.receiver.lock().unwrap_or_else(PoisonError::into_inner);
         let mut updates = Vec::new();
         while !receiver.is_empty() {

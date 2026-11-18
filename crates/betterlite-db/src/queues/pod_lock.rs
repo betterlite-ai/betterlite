@@ -8,14 +8,13 @@ use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use num_traits::ToPrimitive as _;
 use uuid::Uuid;
 
-use self::owner::{PodLockKey, PodOwnerError, decode_pod_owner};
+use self::owner::{PodOwnerError, decode_pod_owner, lease_key};
 
 pub mod cache;
 pub mod owner;
 mod tests;
 
-// PodLockManager (litellm/proxy/db/db_transaction_queue/pod_lock_manager.py): one UUID owner per proxy,
-// a Redis lease per cron job, and the acquired/released gauges of the service logger.
+// PodLockManager of the source: one UUID owner per proxy, a Redis lease per cron job, and the acquired/released gauges.
 
 #[derive(Debug, thiserror::Error)]
 pub enum LockCacheError {
@@ -159,7 +158,7 @@ impl<C: LockCache> PodLockManager<C> {
             Some(seconds) if seconds != 0 => seconds,
             _ => self.default_ttl_seconds,
         };
-        let lock_key = PodLockKey(cronjob_id).to_string();
+        let lock_key = lease_key(cronjob_id);
         match self
             .try_acquire(cache, &lock_key, lease_ttl, allow_reentrant)
             .await
@@ -189,7 +188,7 @@ impl<C: LockCache> PodLockManager<C> {
             tracing::debug!("redis_cache is None, skipping release_lock");
             return;
         };
-        let lock_key = PodLockKey(cronjob_id).to_string();
+        let lock_key = lease_key(cronjob_id);
         tracing::debug!(
             lock_key,
             "Pod attempting to release Redis lock for cronjob_id"
@@ -252,7 +251,7 @@ impl<C: LockCache> PodLockManager<C> {
             match script.run(lock_key, &self.pod_id).await {
                 Ok(deleted) => return Ok(deleted),
                 Err(_script_error) => {
-                    self.clear_release_script();
+                    *self.script.lock().unwrap_or_else(PoisonError::into_inner) = None;
                     tracing::warn!(
                         lock_key,
                         "Lua compare-and-delete failed for lock_key={lock_key}, falling back to GET+DEL"
@@ -277,11 +276,6 @@ impl<C: LockCache> PodLockManager<C> {
             *cached = cache.compare_and_delete_script();
         }
         cached.clone()
-    }
-
-    fn clear_release_script(&self) {
-        let mut cached = self.script.lock().unwrap_or_else(PoisonError::into_inner);
-        *cached = None;
     }
 
     fn emit(&self, call_type: PodLockCallType, cronjob_id: &str) {

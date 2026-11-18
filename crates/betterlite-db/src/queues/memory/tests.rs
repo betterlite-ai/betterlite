@@ -24,22 +24,21 @@ async fn adds_updates_in_fifo_order_and_drains_them() {
     queue.add_update(1).await.unwrap();
     queue.add_update(2).await.unwrap();
     queue.add_update(3).await.unwrap();
-    assert_eq!(
-        queue.flush_all_updates_from_in_memory_queue(),
-        vec![1, 2, 3]
-    );
-    assert!(queue.flush_all_updates_from_in_memory_queue().is_empty());
+    assert_eq!(queue.drain_updates(), vec![1, 2, 3]);
+    assert!(queue.drain_updates().is_empty());
 }
 
 #[tokio::test]
 async fn drains_at_most_the_flush_count_per_pass() {
     let queue = MemoryUpdateQueue::new(8, 4, 2, Arc::new(NoEnqueueObserver)).unwrap();
-    for update in 0..5 {
-        queue.add_update(update).await.unwrap();
-    }
-    assert_eq!(queue.flush_all_updates_from_in_memory_queue(), vec![0, 1]);
-    assert_eq!(queue.flush_all_updates_from_in_memory_queue(), vec![2, 3]);
-    assert_eq!(queue.flush_all_updates_from_in_memory_queue(), vec![4]);
+    queue.add_update(0).await.unwrap();
+    queue.add_update(1).await.unwrap();
+    queue.add_update(2).await.unwrap();
+    queue.add_update(3).await.unwrap();
+    queue.add_update(4).await.unwrap();
+    assert_eq!(queue.drain_updates(), vec![0, 1]);
+    assert_eq!(queue.drain_updates(), vec![2, 3]);
+    assert_eq!(queue.drain_updates(), vec![4]);
 }
 
 #[tokio::test]
@@ -47,18 +46,12 @@ async fn a_nonpositive_flush_count_drains_nothing() {
     let mut queue = MemoryUpdateQueue::new(4, 2, 0, Arc::new(NoEnqueueObserver)).unwrap();
     queue.add_update("first").await.unwrap();
     queue.add_update("second").await.unwrap();
-    assert!(queue.flush_all_updates_from_in_memory_queue().is_empty());
+    assert!(queue.drain_updates().is_empty());
     queue.flush_count = -1;
-    assert!(queue.flush_all_updates_from_in_memory_queue().is_empty());
+    assert!(queue.drain_updates().is_empty());
     queue.flush_count = 1;
-    assert_eq!(
-        queue.flush_all_updates_from_in_memory_queue(),
-        vec!["first"]
-    );
-    assert_eq!(
-        queue.flush_all_updates_from_in_memory_queue(),
-        vec!["second"]
-    );
+    assert_eq!(queue.drain_updates(), vec!["first"]);
+    assert_eq!(queue.drain_updates(), vec!["second"]);
 }
 
 #[test]
@@ -86,15 +79,9 @@ async fn add_update_waits_for_capacity_and_a_cancelled_add_admits_nothing() {
     queue.add_update("first").await.unwrap();
     let cancelled = tokio::time::timeout(Duration::from_millis(20), queue.add_update("second"));
     assert!(cancelled.await.is_err());
-    assert_eq!(
-        queue.flush_all_updates_from_in_memory_queue(),
-        vec!["first"]
-    );
+    assert_eq!(queue.drain_updates(), vec!["first"]);
     queue.add_update("second").await.unwrap();
-    assert_eq!(
-        queue.flush_all_updates_from_in_memory_queue(),
-        vec!["second"]
-    );
+    assert_eq!(queue.drain_updates(), vec!["second"]);
 }
 
 #[tokio::test]
@@ -106,7 +93,7 @@ async fn a_closed_queue_keeps_its_admitted_records_and_refuses_new_ones() {
         queue.add_update(8).await,
         Err(MemoryQueueError::Closed)
     ));
-    assert_eq!(queue.flush_all_updates_from_in_memory_queue(), vec![7]);
+    assert_eq!(queue.drain_updates(), vec![7]);
 }
 
 #[tokio::test]

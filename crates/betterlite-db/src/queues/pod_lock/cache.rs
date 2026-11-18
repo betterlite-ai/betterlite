@@ -4,6 +4,9 @@ use std::sync::Arc;
 use betterlite_redis::cache_primitives::decode::{CachedValue, validate_lua_count};
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_counters::scripts::RegisteredScript;
 use num_traits::ToPrimitive as _;
 use redis::Value;
@@ -13,24 +16,61 @@ use super::{LockCache, LockCacheError, LockScript};
 
 mod tests;
 
-// B126's RedisCache as the lease port sees it: async_set_cache with NX and EX stores the JSON string,
-// async_get_cache hands the owner back as text, and async_register_script caches the compare-and-delete Lua.
+// B126's RedisCache as the lease port sees it: async_set_cache with NX and EX stores the JSON string, async_get_cache returns the owner as text, and async_register_script caches the compare-and-delete Lua.
 pub struct RedisLockCache {
     pub cache: Arc<RedisCache>,
+}
+
+// Each Redis call reports its own error type; the lease port keeps the operation name and the source.
+trait LockCacheOperation {
+    fn into_lock_error(self, operation: &'static str) -> LockCacheError;
+}
+
+impl LockCacheOperation for RedisCacheError {
+    fn into_lock_error(self, operation: &'static str) -> LockCacheError {
+        LockCacheError::Cache {
+            operation,
+            source: self,
+        }
+    }
+}
+
+impl LockCacheOperation for RedisCacheValuesError {
+    fn into_lock_error(self, operation: &'static str) -> LockCacheError {
+        LockCacheError::Values {
+            operation,
+            source: self,
+        }
+    }
+}
+
+impl LockCacheOperation for RedisAdminError {
+    fn into_lock_error(self, operation: &'static str) -> LockCacheError {
+        LockCacheError::Admin {
+            operation,
+            source: self,
+        }
+    }
+}
+
+fn with_cache_error<T, E>(
+    operation: &'static str,
+    outcome: Result<T, E>,
+) -> Result<T, LockCacheError>
+where
+    E: LockCacheOperation,
+{
+    match outcome {
+        Ok(value) => Ok(value),
+        Err(source) => Err(source.into_lock_error(operation)),
+    }
 }
 
 impl LockCache for RedisLockCache {
     #[rustfmt::skip]
     fn get_owner(&self, key: &str) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
         async move {
-            let value = self
-                .cache
-                .async_get_cache(key)
-                .await
-                .map_err(|source| LockCacheError::Cache {
-                    operation: "async_get_cache",
-                    source,
-                })?;
+            let value = with_cache_error("async_get_cache", self.cache.async_get_cache(key).await)?;
             Ok(value.and_then(owner_bytes))
         }
     }
@@ -41,15 +81,7 @@ impl LockCache for RedisLockCache {
     fn set_owner_if_absent(&self, key: &str, owner: &str, ttl_seconds: i64) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         async move {
             let ttl = ttl_seconds.to_f64().unwrap_or_default();
-            let stored = self
-                .cache
-                .values
-                .async_set_cache(Some(key), owner, Some(ttl), true)
-                .await
-                .map_err(|source| LockCacheError::Values {
-                    operation: "async_set_cache",
-                    source,
-                })?;
+            let stored = with_cache_error("async_set_cache", self.cache.values.async_set_cache(Some(key), owner, Some(ttl), true).await)?;
             Ok(stored == Some(true))
         }
     }
@@ -57,14 +89,7 @@ impl LockCache for RedisLockCache {
     #[rustfmt::skip]
     fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         async move {
-            self.cache
-                .admin
-                .async_delete_cache(key)
-                .await
-                .map_err(|source| LockCacheError::Admin {
-                    operation: "async_delete_cache",
-                    source,
-                })
+            with_cache_error("async_delete_cache", self.cache.admin.async_delete_cache(key).await)
         }
     }
 
@@ -82,6 +107,7 @@ impl LockCache for RedisLockCache {
     }
 }
 
+// async_set_cache stored json.dumps(pod_id), so the script's ARGV[1] must carry the same quoted text.
 struct RedisLockScript {
     cache: Arc<RedisCache>,
     script: RegisteredScript,
@@ -91,17 +117,10 @@ impl LockScript for RedisLockScript {
     #[rustfmt::skip]
     fn run(&self, key: &str, owner: &str) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         async move {
-            // async_set_cache stored json.dumps(pod_id), so the script's ARGV[1] must carry the same quoted text.
             let owner_json = serde_json::to_string(owner)?;
-            let reply = self
-                .cache
-                .run_script(&self.script, &[key.to_owned()], &[RedisScalar::Text(owner_json)])
-                .await
-                .map_err(|source| LockCacheError::Cache {
-                    operation: "run_script",
-                    source,
-                })?;
-            deleted_one(reply)
+            let keys = [key.to_owned()];
+            let args = [RedisScalar::Text(owner_json)];
+            deleted_one(with_cache_error("run_script", self.cache.run_script(&self.script, &keys, &args).await)?)
         }
     }
 }

@@ -1,5 +1,3 @@
-use std::fmt;
-
 // PodLockManager._COMPARE_AND_DELETE_LOCK_SCRIPT: delete only when the stored JSON owner equals ours.
 pub const COMPARE_AND_DELETE_LOCK_SCRIPT: &str = r#"if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
@@ -9,13 +7,10 @@ end
 "#;
 
 // PodLockManager.get_redis_lock_key: the lease key for one cron job.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PodLockKey<'a>(pub &'a str);
-
-impl fmt::Display for PodLockKey<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "cronjob_lock:{}", self.0)
-    }
+pub fn lease_key(cronjob_id: &str) -> String {
+    let mut key = String::from("cronjob_lock:");
+    key.push_str(cronjob_id);
+    key
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -26,6 +21,8 @@ pub enum PodOwnerError {
 
 // A cache returns bytes; a legacy cache stored the raw owner while B126 stores the JSON string, which the Redis adapter hands back unquoted.
 pub fn decode_pod_owner(bytes: &[u8]) -> Result<String, PodOwnerError> {
-    let owner = std::str::from_utf8(bytes)?;
-    Ok(owner.to_owned())
+    match std::str::from_utf8(bytes) {
+        Ok(owner) => Ok(owner.to_owned()),
+        Err(source) => Err(PodOwnerError::Utf8(source)),
+    }
 }
