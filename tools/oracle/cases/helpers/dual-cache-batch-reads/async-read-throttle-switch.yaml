@@ -1,0 +1,30 @@
+kind: helper
+name: dual-cache-batch-reads-async-read-throttle-switch
+call:
+  b4294:
+    async_read_throttle_switch:
+      clock: 1000.0
+      default_in_memory_ttl: 30.0
+      memory:
+        - key: m
+          value: memory-m
+      keys: [k]
+      read_keys: []
+      ttl_keys: []
+      due_keys: []
+      write_keys: []
+      duplicate_keys: [d, d]
+      merge_keys: [m, "n"]
+      replies:
+        - [null]
+        - [null]
+        - [null, null]
+        - [redis-n]
+      own_replies: []
+      caches: []
+      breaker_caches: []
+      prepare_caches: []
+      apply_caches: []
+env: {}
+compare:
+  ignore: []

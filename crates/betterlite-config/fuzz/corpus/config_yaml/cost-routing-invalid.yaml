@@ -1,0 +1,8 @@
+model_list:
+  - model_name: cost-routing-group
+    litellm_params:
+      model: openai/gpt-4o-mini
+      tpm: not-a-number
+
+router_settings:
+  routing_strategy: cost-based-routing-all
