@@ -41,6 +41,10 @@ fn mcp_json_results() {
     let mixed = r#"{"result":{"content":[{"type":"text","text":"[1,\"x\",{\"title\":\"ok\"}]"}]}}"#;
     assert_eq!(titles(&decode(mixed, 200).unwrap()), vec!["ok"]);
 
+    let nonstandard =
+        r#"{"result":{"content":[{"type":"text","text":"[NaN,{\"title\":\"x\"}]"}]}}"#;
+    assert!(decode(nonstandard, 200).unwrap().results.is_empty());
+
     let blocks = r#"{"result":{"content":[7,"x",{"type":"image","text":"[{\"title\":\"no\"}]"},{"type":"text","text":"no json"},{"type":"text","text":9}]}}"#;
     assert!(decode(blocks, 200).unwrap().results.is_empty());
 
@@ -422,6 +426,22 @@ fn agentcore_search_reply_error() {
     let not_utf8 = decode_bytes(&[0xff, 0xfe], 200).unwrap_err();
     assert!(matches!(&not_utf8, SearchReplyError::NotUtf8 { .. }));
     assert_eq!(not_utf8.status(), None);
+
+    for nonstandard in [
+        r#"{"result":NaN}"#,
+        r#"{"result":Infinity}"#,
+        r#"{"result":"\ud800"}"#,
+    ] {
+        assert!(
+            matches!(decode(nonstandard, 200), Err(SearchReplyError::Json { .. })),
+            "{nonstandard}"
+        );
+    }
+    let deep = format!("{}7{}", "[".repeat(200), "]".repeat(200));
+    assert!(matches!(
+        decode(&deep, 200),
+        Err(SearchReplyError::Json { .. })
+    ));
 
     let valid = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}]}}"#;
     assert_eq!(titles(&decode(valid, 200).unwrap()), vec!["kept"]);
