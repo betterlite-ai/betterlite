@@ -1,4 +1,5 @@
-use betterlite_core::api::messages_fake_stream::MessagesFakeStream;
+use betterlite_core::api::messages_fake_stream::{MessagesFakeStream, MessagesFakeStreamError};
+use betterlite_guardrails::anthropic_sse::error::AnthropicSseError;
 use betterlite_guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
 use betterlite_guardrails::guardrail_message_scope::blocked_usage::{
     BlockedUsage, OriginalResponse, blocked_response_usage,
@@ -14,13 +15,13 @@ mod frames;
 #[derive(Debug, thiserror::Error)]
 pub enum AnthropicBlockError {
     #[error(transparent)]
-    FakeStream(#[from] betterlite_core::api::messages_fake_stream::MessagesFakeStreamError),
+    FakeStream(#[from] MessagesFakeStreamError),
     #[error("Anthropic stream event serialization failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Anthropic stream error serialization failed: {source}")]
     ErrorFrames {
         #[source]
-        source: betterlite_guardrails::anthropic_sse::error::AnthropicSseError,
+        source: AnthropicSseError,
     },
 }
 
@@ -29,7 +30,7 @@ pub struct BlockedException<'blocked> {
     pub message: &'blocked str,
     pub model: &'blocked str,
     pub message_id: &'blocked str,
-    pub original_response: Option<&'blocked OriginalResponse>,
+    pub original_response: &'blocked OriginalResponse,
 }
 
 #[derive(Serialize)]
@@ -54,11 +55,7 @@ pub fn build_block_sse_chunks(
     stream_started: bool,
     responses_so_far: Option<&[SseChunk]>,
 ) -> Result<Vec<Vec<u8>>, AnthropicBlockError> {
-    let usage = blocked_response_usage(
-        blocked
-            .original_response
-            .unwrap_or(&OriginalResponse::Absent),
-    );
+    let usage = blocked_response_usage(blocked.original_response);
     if stream_started {
         return continuation_frames(blocked, usage, responses_so_far);
     }

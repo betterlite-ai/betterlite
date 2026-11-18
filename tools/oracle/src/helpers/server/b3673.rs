@@ -7,6 +7,7 @@ use betterlite_server::guardrails::anthropic_translation::sse_events::{
 use betterlite_server::guardrails::responses_translation::block_events as responses_block;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::str;
 
 pub(crate) struct Op;
 
@@ -40,7 +41,7 @@ fn decode_frames(chunks: &[Vec<u8>]) -> HelperResult {
     let frames = chunks
         .iter()
         .map(|chunk| {
-            let source = std::str::from_utf8(chunk).or_value_error()?;
+            let source = str::from_utf8(chunk).or_value_error()?;
             let kind = source.lines().find_map(|line| line.strip_prefix("event: "));
             let data = source
                 .lines()
@@ -77,7 +78,7 @@ fn anthropic_answer(input: &Input, continuation: bool, chunks: &[SseChunk]) -> H
         message: &input.message,
         model: &input.model,
         message_id: &input.message_id,
-        original_response: Some(&original),
+        original_response: &original,
     };
     let frames = anthro_block::build_block_sse_chunks(&blocked, continuation, Some(chunks))
         .or_value_error()?;

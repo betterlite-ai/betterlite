@@ -13,7 +13,7 @@
 
 use serde_json::{Map, Value, json};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenItemState {
     pub item_id: String,
     pub item_type: String,

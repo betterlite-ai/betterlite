@@ -17,8 +17,9 @@ use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_fin
 use betterlite_guardrails::guardrail_translation::StreamingScanKey;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
+use std::str;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SseChunk {
     Bytes(Vec<u8>),
     Event(Map<String, Value>),
@@ -92,7 +93,7 @@ fn last_prefixed_line<'block>(block: &'block str, prefix: &str) -> Option<&'bloc
     trim_sse(block)
         .split('\n')
         .filter_map(|line| line.strip_prefix(prefix).map(trim_sse))
-        .last()
+        .next_back()
 }
 
 fn text_delta(event: &Map<String, Value>) -> Option<&str> {
@@ -113,7 +114,7 @@ fn stop_reason_is_set(event: &Map<String, Value>) -> bool {
 
 #[must_use]
 pub fn extract_text_from_sse(bytes: &[u8]) -> String {
-    let Ok(source) = std::str::from_utf8(bytes) else {
+    let Ok(source) = str::from_utf8(bytes) else {
         tracing::error!("Error extracting text from SSE");
         return String::new();
     };
@@ -171,7 +172,7 @@ pub fn streaming_has_ended(items: &[SseChunk]) -> bool {
 }
 
 fn has_ended_bytes(bytes: &[u8]) -> bool {
-    let Ok(source) = std::str::from_utf8(bytes) else {
+    let Ok(source) = str::from_utf8(bytes) else {
         tracing::error!("Error checking streaming end in SSE");
         return false;
     };
@@ -218,8 +219,9 @@ pub fn streamed_tool_use_fingerprints(items: &[SseChunk]) -> Vec<String> {
 pub fn streaming_scan_key(items: &[SseChunk]) -> StreamingScanKey {
     let stream_ended = streaming_has_ended(items);
     let fingerprints = streamed_tool_use_fingerprints(items);
+    let tool_calls_in_flight = !fingerprints.is_empty() && !stream_ended;
     let tool_calls = if stream_ended {
-        fingerprints.clone()
+        fingerprints
     } else {
         Vec::new()
     };
@@ -227,7 +229,7 @@ pub fn streaming_scan_key(items: &[SseChunk]) -> StreamingScanKey {
         texts: vec![streaming_string_so_far(items)],
         tool_calls,
         stream_ended,
-        tool_calls_in_flight: !fingerprints.is_empty() && !stream_ended,
+        tool_calls_in_flight,
     }
 }
 

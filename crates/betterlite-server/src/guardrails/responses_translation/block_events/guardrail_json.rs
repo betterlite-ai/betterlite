@@ -12,7 +12,11 @@ pub fn blocked_original_response(original_response: Option<&Value>) -> OriginalR
                 .iter()
                 .map(|item| match item {
                     Value::String(text) => StreamItem::Bytes(text.as_bytes().to_vec()),
-                    _ => StreamItem::Json(to_guardrail(item)),
+                    Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::Array(_)
+                    | Value::Object(_) => StreamItem::Json(to_guardrail(item)),
                 })
                 .collect(),
         ),

@@ -1,5 +1,6 @@
 #![cfg(test)]
 use serde_json::{Value, json};
+use std::str;
 
 use super::{
     BlockStamp, CostTarget, NoCost, ResponsesCostCalculator, build_block_sse_chunks,
@@ -16,7 +17,7 @@ fn stamp() -> BlockStamp {
 }
 
 fn frame_value(frame: &[u8]) -> Value {
-    let text = std::str::from_utf8(frame).unwrap();
+    let text = str::from_utf8(frame).unwrap();
     serde_json::from_str(text.strip_prefix("data: ").unwrap().trim()).unwrap()
 }
 
@@ -111,8 +112,36 @@ fn standalone_frames_omit_null_fields() {
     assert!(
         frames
             .iter()
-            .all(|frame| !std::str::from_utf8(frame).unwrap().contains("null"))
+            .all(|frame| !str::from_utf8(frame).unwrap().contains("null"))
     );
+}
+
+#[test]
+fn continuation_preserves_null_dictionary_entries() {
+    let events = [json!({
+        "type":"response.output_item.added", "output_index":0_i64,
+        "item":{"type":"function_call", "id":"call_1", "call_id":"c",
+            "name":"run", "arguments":"{}", "status":null,
+            "extra_meta":{"trace":null, "nested":[{"value":null},null]}}
+    })];
+    let frames =
+        build_block_sse_chunks("blocked", "m", None, true, Some(&events), &stamp()).unwrap();
+    let closed = frame_value(&frames[0]);
+    assert_eq!(closed["type"], "response.output_item.done");
+    assert_eq!(closed["item"]["status"], "incomplete");
+    assert_eq!(
+        closed["item"]["extra_meta"],
+        events[0]["item"]["extra_meta"]
+    );
+}
+
+#[rstest::rstest]
+#[case::item(json!({"type":"response.output_item.done", "item":{"type":"function_call", "status":null, "extra_meta":{"trace":null}}}), json!({"type":"response.output_item.done", "item":{"type":"function_call", "extra_meta":{"trace":null}}}))]
+#[case::part(json!({"type":"response.content_part.done", "part":{"type":"output_text", "logprobs":null, "extra_meta":{"trace":null}}}), json!({"type":"response.content_part.done", "part":{"type":"output_text", "extra_meta":{"trace":null}}}))]
+#[case::usage(json!({"type":"response.completed", "response":{"status":null, "metadata":{"trace":null}, "usage":{"input_tokens":1_i64, "output_tokens_details":null, "input_tokens_details":{"cached_tokens":null, "extra_meta":{"trace":null}}}}}), json!({"type":"response.completed", "response":{"metadata":{"trace":null}, "usage":{"input_tokens":1_i64, "input_tokens_details":{"extra_meta":{"trace":null}}}}}))]
+fn standalone_frame_omits_only_model_nulls(#[case] input: Value, #[case] expected: Value) {
+    let framed = super::frame(&input).unwrap();
+    assert_eq!(frame_value(&framed), expected);
 }
 
 #[test]
@@ -238,7 +267,7 @@ fn stream_error_has_guardrail_code_and_next_sequence() {
 
 #[test]
 fn continuation_identity_clamps_an_index_above_the_signed_range() {
-    let events = [json!({"output_index": 18446744073709551615_u64})];
+    let events = [json!({"output_index": u64::MAX})];
     assert_eq!(
         continuation_identity("m", Some(&events), &stamp()),
         ("resp_fixed".to_owned(), "m".to_owned(), i64::MAX)
@@ -287,8 +316,7 @@ fn blocked_response_reads_completed_stream_usage() {
 
 #[test]
 fn blocked_response_preserves_nested_usage_details() {
-    let details =
-        json!({"nested":[null,true,false,-2_i64,18446744073709551615_u64,"detail",{"key":7_i64}]});
+    let details = json!({"nested":[null,true,false,-2_i64,u64::MAX,"detail",{"key":7_i64}]});
     let original = json!({"usage":{"input_tokens":3_i64,"output_tokens":2_i64,"total_tokens":5_i64,"extra":details}});
     let response = build_blocked_response("stop", "m", Some(&original), &stamp());
     assert_eq!(response["usage"]["extra"], details);

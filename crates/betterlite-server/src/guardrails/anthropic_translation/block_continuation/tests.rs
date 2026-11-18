@@ -1,18 +1,19 @@
 #![cfg(test)]
+use crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::blocked_usage::OriginalResponse;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, str};
 
 use super::{BlockedException, SseChunk, build_block_sse_chunks, build_stream_error_items};
 
 fn frame_text(chunk: &[u8]) -> String {
-    std::str::from_utf8(chunk).unwrap().to_owned()
+    str::from_utf8(chunk).unwrap().to_owned()
 }
 
-fn blocked<'a>(
-    message: &'a str,
-    original_response: Option<&'a OriginalResponse>,
-) -> BlockedException<'a> {
+fn blocked<'original>(
+    message: &'original str,
+    original_response: &'original OriginalResponse,
+) -> BlockedException<'original> {
     BlockedException {
         message,
         model: "claude-test",
@@ -33,7 +34,9 @@ fn original_usage() -> OriginalResponse {
 
 #[test]
 fn standalone_block_is_fake_anthropic_stream() {
-    let frames = build_block_sse_chunks(&blocked("blocked", None), false, None).unwrap();
+    let frames =
+        build_block_sse_chunks(&blocked("blocked", &OriginalResponse::Absent), false, None)
+            .unwrap();
     assert!(frames[0].starts_with(b"event: message_start\n"));
     assert_eq!(frames.len(), 6);
     assert!(frames[4].starts_with(b"event: message_delta\n"));
@@ -49,7 +52,7 @@ fn standalone_block_is_fake_anthropic_stream() {
 #[test]
 fn standalone_block_uses_original_usage() {
     let original = original_usage();
-    let frames = build_block_sse_chunks(&blocked("blocked", Some(&original)), false, None).unwrap();
+    let frames = build_block_sse_chunks(&blocked("blocked", &original), false, None).unwrap();
     let start = frame_text(&frames[0]);
     assert!(
         start.contains("\"usage\": {\"input_tokens\": 10, \"output_tokens\": 0}"),
@@ -65,9 +68,12 @@ fn continuation_closes_open_block_and_adds_a_text_block() {
         b"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1}\n\n"
             .to_vec(),
     )];
-    let frames =
-        build_block_sse_chunks(&blocked("blocked, \u{1f5dd}", None), true, Some(&previous))
-            .unwrap();
+    let frames = build_block_sse_chunks(
+        &blocked("blocked, \u{1f5dd}", &OriginalResponse::Absent),
+        true,
+        Some(&previous),
+    )
+    .unwrap();
     assert_eq!(frames.len(), 6);
     assert_eq!(
         frame_text(&frames[0]),
@@ -97,7 +103,8 @@ fn continuation_closes_open_block_and_adds_a_text_block() {
 
 #[test]
 fn continuation_without_open_block_starts_at_index_zero() {
-    let frames = build_block_sse_chunks(&blocked("blocked", None), true, None).unwrap();
+    let frames =
+        build_block_sse_chunks(&blocked("blocked", &OriginalResponse::Absent), true, None).unwrap();
     assert_eq!(frames.len(), 5);
     assert_eq!(
         frame_text(&frames[0]),
@@ -113,8 +120,7 @@ fn continuation_uses_the_original_output_tokens() {
             .to_vec(),
     )];
     let frames =
-        build_block_sse_chunks(&blocked("blocked", Some(&original)), true, Some(&previous))
-            .unwrap();
+        build_block_sse_chunks(&blocked("blocked", &original), true, Some(&previous)).unwrap();
     let delta = frame_text(&frames[4]);
     assert!(delta.contains("\"output_tokens\": 2"), "{delta}");
 }
@@ -131,7 +137,12 @@ fn error_frames_match_shared_error_builder() {
 #[test]
 fn continuation_after_closed_blocks_uses_highest_seen_index() {
     let previous = [SseChunk::Bytes(b"data: {\"type\":\"content_block_start\",\"index\":5}\ndata: {\"type\":\"content_block_stop\",\"index\":5}\n\n".to_vec())];
-    let frames = build_block_sse_chunks(&blocked("", None), true, Some(&previous)).unwrap();
+    let frames = build_block_sse_chunks(
+        &blocked("", &OriginalResponse::Absent),
+        true,
+        Some(&previous),
+    )
+    .unwrap();
     assert_eq!(frames.len(), 5);
     assert!(frame_text(&frames[0]).contains("\"index\": 6"));
     assert!(frame_text(&frames[1]).contains("\"text\": \"\""));
@@ -143,8 +154,8 @@ fn standalone_reads_original_stream_bytes_usage() {
         "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7}}}\n\n",
         "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":3}}\n\n"
     ]"#).unwrap();
-    let converted = crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response(Some(&original));
-    let frames = build_block_sse_chunks(&blocked("stop", Some(&converted)), false, None).unwrap();
+    let converted = blocked_original_response(Some(&original));
+    let frames = build_block_sse_chunks(&blocked("stop", &converted), false, None).unwrap();
     assert!(frame_text(&frames[0]).contains("\"input_tokens\": 7"));
     assert!(frame_text(&frames[4]).contains("\"output_tokens\": 3"));
 }

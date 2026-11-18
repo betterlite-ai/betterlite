@@ -12,12 +12,15 @@
     )
 )]
 
+use crate::stream_chunks::{ChunkKind, StreamChunk, serialize::serialize_chunk};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::response_synthetic_events::{
     builder,
+    error::SyntheticEventsError,
     stamping::{CostTarget, ResponsesCostCalculator},
 };
 use betterlite_guardrails::guardrail_message_scope::{StreamItem, fingerprint::stream_item_field};
+use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::responses_event_records::event_types::{
     ErrorEvent, ErrorEventError, Extra,
 };
@@ -45,14 +48,21 @@ pub enum BlockEventError {
     #[error("response serialization failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("synthetic response events failed: {0}")]
-    Synthetic(#[from] betterlite_core::api::response_synthetic_events::error::SyntheticEventsError),
+    Synthetic(#[from] SyntheticEventsError),
 }
 
 fn stream_string_field(event: &Value, name: &str) -> Option<String> {
     let item = StreamItem::Json(to_guardrail(event));
     match stream_item_field(&item, name)? {
         GuardrailValue::Text(text) if !text.is_empty() => Some(text.clone()),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 
@@ -61,7 +71,12 @@ fn stream_index(event: &Value) -> Option<i64> {
     match stream_item_field(&item, "output_index")? {
         GuardrailValue::SignedInteger(index) => Some(*index),
         GuardrailValue::UnsignedInteger(index) => Some(i64::try_from(*index).unwrap_or(i64::MAX)),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 
@@ -198,22 +213,13 @@ fn block_continuation_events(
     events
 }
 
-fn without_nulls(input: Value) -> Value {
-    match input {
-        Value::Object(fields) => Value::Object(
-            fields
-                .into_iter()
-                .filter(|(_, value)| !value.is_null())
-                .map(|(name, value)| (name, without_nulls(value)))
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.into_iter().map(without_nulls).collect()),
-        scalar @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => scalar,
-    }
-}
-
 fn frame(value: &Value) -> Result<Vec<u8>, BlockEventError> {
-    let payload = serde_json::to_string(&without_nulls(value.clone()))?;
+    let chunk = StreamChunk {
+        body: serde_json::from_value(value.clone())?,
+        kind: ChunkKind::Event,
+        hidden: JsonObject::new(),
+    };
+    let payload = serialize_chunk(&chunk);
     Ok(format!("data: {payload}\n\n").into_bytes())
 }
 

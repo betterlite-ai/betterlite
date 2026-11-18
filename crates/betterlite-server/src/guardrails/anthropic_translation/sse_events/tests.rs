@@ -4,7 +4,14 @@ use super::{
     streamed_tool_use_fingerprints, streaming_has_ended, streaming_scan_key,
     streaming_string_so_far,
 };
-use serde_json::json;
+use serde_json::{Map, Value, json};
+use std::{
+    fs, io,
+    path::Path,
+    slice, str,
+    sync::{Arc, Mutex},
+};
+use tracing_subscriber::fmt::MakeWriter;
 
 #[test]
 fn iter_events_reads_json_objects_and_ignores_bad_data() {
@@ -96,7 +103,7 @@ fn mixed_chunks_append_text_in_order_and_skip_non_text() {
 #[test]
 fn invalid_utf8_does_not_end_stream_and_text_reader_returns_empty() {
     let invalid = SseChunk::Bytes(vec![0xff]);
-    assert!(!streaming_has_ended(std::slice::from_ref(&invalid)));
+    assert!(!streaming_has_ended(slice::from_ref(&invalid)));
     assert_eq!(extract_text_from_sse(&[0xff]), "");
 }
 
@@ -126,7 +133,7 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
     let end = SseChunk::Bytes(
         b"event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n".to_vec(),
     );
-    let pending = streaming_scan_key(std::slice::from_ref(&start));
+    let pending = streaming_scan_key(slice::from_ref(&start));
     assert!(pending.tool_calls.is_empty());
     assert!(pending.tool_calls_in_flight);
     let ended = streaming_scan_key(&[start, end]);
@@ -137,14 +144,13 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
 
 #[test]
 fn replays_the_anthropic_sse_events_corpus() {
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_sse_events");
-    std::fs::read_dir(directory).unwrap().for_each(|entry| {
-        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_sse_events");
+    fs::read_dir(directory).unwrap().for_each(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
         let chunk = SseChunk::Bytes(bytes);
         let _events = iter_sse_events(&chunk);
-        let _state = content_block_state(std::slice::from_ref(&chunk));
-        let _text = streaming_string_so_far(std::slice::from_ref(&chunk));
+        let _state = content_block_state(slice::from_ref(&chunk));
+        let _text = streaming_string_so_far(slice::from_ref(&chunk));
         let _ended = streaming_has_ended(&[chunk]);
     });
 }
@@ -218,7 +224,7 @@ fn iter_events_trims_line_and_payload_whitespace() {
     let chunk = SseChunk::Bytes(b"\x1c \tdata: \t{\"index\":2}\r\x1f\n".to_vec());
     assert_eq!(
         iter_sse_events(&chunk),
-        vec![serde_json::from_value(json!({"index":2_i64})).unwrap()]
+        vec![serde_json::from_value::<Map<String, Value>>(json!({"index":2_i64})).unwrap()]
     );
 }
 
@@ -244,10 +250,7 @@ fn has_ended_accepts_empty_reason_and_last_event_line() {
 #[test]
 fn text_and_end_skip_bad_json_and_missing_payloads() {
     let chunk = SseChunk::Bytes(b"event: content_block_delta\ndata: bad\n\nevent: content_block_delta\ndata: \n\nevent: message_delta\ndata: bad\n\nevent: message_delta\ndata: \n\nevent: content_block_delta\n\nevent: message_delta\n\nevent: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"kept\"}}\n\n".to_vec());
-    assert_eq!(
-        streaming_string_so_far(std::slice::from_ref(&chunk)),
-        "kept"
-    );
+    assert_eq!(streaming_string_so_far(slice::from_ref(&chunk)), "kept");
     assert!(!streaming_has_ended(&[chunk, SseChunk::Other]));
 }
 
@@ -268,20 +271,20 @@ fn block_state_reopens_indices_and_retains_highest_seen() {
 }
 
 #[derive(Clone, Default)]
-struct LogBuffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for LogBuffer {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+impl io::Write for LogBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0.lock().unwrap().extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
 
-impl tracing_subscriber::fmt::MakeWriter<'_> for LogBuffer {
+impl MakeWriter<'_> for LogBuffer {
     type Writer = Self;
 
     fn make_writer(&self) -> Self {
@@ -309,7 +312,7 @@ fn text_and_end_log_malformed_json_and_utf8() {
     assert_eq!(extract_text_from_sse(&[0xff]), "");
     assert!(!streaming_has_ended(&[SseChunk::Bytes(vec![0xff])]));
     let bytes = logs.0.lock().unwrap();
-    let output = std::str::from_utf8(&bytes).unwrap();
+    let output = str::from_utf8(&bytes).unwrap();
     assert_eq!(
         output
             .matches("WARN Failed to parse JSON from SSE data")

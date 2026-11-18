@@ -5,13 +5,13 @@
 
 use serde::Deserialize;
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct ResponseOutputEnvelope {
     pub output: Option<Vec<serde_json::Value>>,
     pub model: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct ResponsesStreamChunk {
     pub r#type: Option<String>,
     pub text: Option<String>,
