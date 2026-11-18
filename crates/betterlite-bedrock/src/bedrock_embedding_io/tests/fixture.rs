@@ -313,10 +313,7 @@ pub(super) fn managed_secrets(reader: Arc<ManagedReader>) -> SecretLookup {
             access_mode: SecretAccessMode::ReadOnly,
             hosted_keys: None,
         }),
-        oidc_http: Arc::new(NoOidc),
-        azure_tokens: Arc::new(NoOidc),
-        clock: Arc::new(NoOidc),
-        oidc_cache: OidcTokenCache::default(),
+        ..no_secrets()
     }
 }
 
