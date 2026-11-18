@@ -8,7 +8,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _DUMP: Final = TypeAdapter(dict[str, JsonValue])
-_NAMES: Final = TypeAdapter(list[JsonValue])
+_NAMES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 Operation: TypeAlias = Literal[
     "create", "update", "patch", "member_ref", "budget_patch", "bulk_delete", "bulk_update",
@@ -31,6 +31,11 @@ _MODELS: Final[dict[str, type[BaseModel]]] = {
     "bulk_delete": teams.BulkTeamMemberDeleteRequest, "spend_response": teams.TeamUserSpendResponse,
     "metadata_field": teams.TeamMetadataFieldSchema, "delete_result": teams.TeamMemberDeleteResult,
 }
+
+_BULK_ADD_RESPONSE: Final[type[BaseModel]] = teams.BulkTeamMemberAddResponse
+_NEW_TEAM: Final[type[BaseModel]] = proxy_types.NewTeamRequest
+_PATCH_TEAM: Final[type[BaseModel]] = proxy_types.PatchTeamRequest
+_UPDATE_TEAM: Final[type[BaseModel]] = proxy_types.UpdateTeamRequest
 
 
 class Input(TypedDict):
@@ -120,18 +125,18 @@ def bulk_add_answer(document: dict[str, JsonValue]) -> JsonValue:
 
 
 def bulk_add_response_answer(document: dict[str, JsonValue]) -> JsonValue:
-    response = teams.BulkTeamMemberAddResponse.model_validate(document)
+    response = _BULK_ADD_RESPONSE.model_validate(document)
     return dumped(response)
 
 
 def supplied_answer(operation: Operation, document: dict[str, JsonValue]) -> JsonValue:
     model: BaseModel
     if operation == "create":
-        model = proxy_types.NewTeamRequest.model_validate(document)
+        model = _NEW_TEAM.model_validate(document)
     elif operation == "update":
-        model = proxy_types.UpdateTeamRequest.model_validate(document)
+        model = _UPDATE_TEAM.model_validate(document)
     else:
-        model = proxy_types.PatchTeamRequest.model_validate(document)
+        model = _PATCH_TEAM.model_validate(document)
     return dumped_supplied(model)
 
 
