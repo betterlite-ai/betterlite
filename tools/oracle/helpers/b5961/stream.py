@@ -6,7 +6,7 @@ from litellm.llms.sagemaker.common_utils import AWSEventStreamDecoder
 from litellm.types.utils import GenericStreamingChunk, StreamingChatCompletionChunk
 from pydantic import JsonValue, TypeAdapter
 
-from .types import DecodeStream
+from .types import DecodeStream, Object
 
 Chunk: TypeAlias = GenericStreamingChunk | StreamingChatCompletionChunk  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434
 
@@ -74,14 +74,13 @@ def tool_calls_value(calls: list[ToolCallView]) -> JsonValue:
 
 
 def choice_value(choice: ChoiceView) -> JsonValue:
-    calls = choice["delta"].get("tool_calls")
-    return {
-        "index": choice["index"],
-        "finish_reason": choice["finish_reason"],
-        "content": choice["delta"].get("content"),
-        "role": choice["delta"].get("role"),
-        "tool_calls": None if calls is None else tool_calls_value(calls),
-    }
+    delta = choice["delta"]
+    calls = delta.get("tool_calls")
+    value: Object = {"index": choice["index"], "finish_reason": choice["finish_reason"]}
+    value["content"] = delta.get("content")
+    value["role"] = delta.get("role")
+    value["tool_calls"] = None if calls is None else tool_calls_value(calls)
+    return value
 
 
 def chat_value(value: JsonValue) -> JsonValue:
