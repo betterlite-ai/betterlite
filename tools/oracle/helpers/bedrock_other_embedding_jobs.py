@@ -202,7 +202,7 @@ def run(value: Input) -> JsonValue:
         body = ""
     logging = value.get("logging")
     fixture = Fixture(status, body)
-    embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L641
+    embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L641
     recorder = Recorder() if logging is True else None
     try:
         returned = asyncio.run(Caller().status(value, recorder))
