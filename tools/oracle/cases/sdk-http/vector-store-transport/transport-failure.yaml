@@ -1,0 +1,19 @@
+kind: sdk_http
+name: vector-store-transport-transport-failure
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_transport:
+    operation: update
+    mode: sync
+    vector_store_id: vs_a
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "3"}
+    body: slow down
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /vector_store_transport/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing

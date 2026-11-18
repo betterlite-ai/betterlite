@@ -1,0 +1,21 @@
+kind: sdk_http
+name: vector-store-transport-update-http-order
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_transport:
+    operation: update
+    mode: sync
+    vector_store_id: vs/a
+    optional_params:
+      name: notes
+      metadata: {keep: "yes", hidden_params: secret}
+    extra_body: {metadata: {count: 2}, name: replacement}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: replacement}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
