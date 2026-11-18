@@ -17,7 +17,7 @@ pub struct BulkTeamMemberAddRequest {
     pub max_budget_in_team: Option<Amount>,
 }
 
-const fn default_all_users() -> Option<bool> {
+pub const fn default_all_users() -> Option<bool> {
     Some(false)
 }
 

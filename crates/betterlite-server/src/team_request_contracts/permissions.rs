@@ -24,19 +24,20 @@ pub struct PermissionGetResponse {
 #[derive(Deserialize)]
 struct PermissionGetResponseInput {
     team_id: String,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    team_member_permissions: Option<Option<Vec<String>>>,
+    #[serde(default = "default_team_permissions")]
+    team_member_permissions: Option<Vec<String>>,
     all_available_permissions: Vec<String>,
+}
+
+pub const fn default_team_permissions() -> Option<Vec<String>> {
+    Some(vec![])
 }
 
 impl From<PermissionGetResponseInput> for PermissionGetResponse {
     fn from(input: PermissionGetResponseInput) -> Self {
         Self {
             team_id: input.team_id,
-            team_member_permissions: input.team_member_permissions.unwrap_or(Some(Vec::new())),
+            team_member_permissions: input.team_member_permissions,
             all_available_permissions: input.all_available_permissions,
         }
     }
