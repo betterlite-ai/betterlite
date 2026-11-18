@@ -1,0 +1,15 @@
+task: B3880
+deviations:
+  - what: The _get_proxy_llm_router function imports llm_router from litellm.proxy.proxy_server as an optional ambient global. In betterlite, router catalog view is passed as an optional injected parameter instead, keeping logging independent of server and allowing test mocking.
+    why: Ambient globals break isolation and make testing harder. Betterlite's dependency injection pattern passes the router view through method parameters rather than importing globals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L209-L214
+  - what: Invalid API key requests skip all metrics emission in betterlite (they do not enter the metrics callbacks), whereas LiteLLM's filter occurs later during failure event processing. The SDK/deployment success/failure emitters receive the invalid-key predicate for conditional use.
+    why: Catching invalid authentication early prevents any metrics inference on sensitive requests. The filter function is exposed to callers that do not go through the proxy failure hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2518-L2560
+  - what: Rate-limit exception provider attribution returns None when llm_provider is unset or equals PROXY_LLM_PROVIDER_FALLBACK ("litellm_proxy"), following LiteLLM's existing behavior of not emitting the fallback placeholder value as a label.
+    why: PROXY_LLM_PROVIDER_FALLBACK is an internal sentinel value that indicates the provider could not be determined at error time. Emitting it as a label would leak this internal detail into user-facing metrics cardinality.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2599-L2606
+  - what: Provider attribution infers the provider from a typed resolver that answers None for every model it cannot resolve, so a model LiteLLM rejects with BadRequestError and a model whose lookup raises an unexpected exception take the same path. betterlite writes one debug record naming the model when inference fails; LiteLLM writes that record only for the unexpected-exception branch and stays silent for BadRequestError.
+    why: betterlite-logging may not depend on the exception types of the provider resolver, and metrics labeling must never turn a lookup failure into a request failure. The debug record keeps the failure diagnosable without a request-visible difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2562-L2597
+kept_bugs: []
