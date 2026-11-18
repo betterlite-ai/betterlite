@@ -1,0 +1,16 @@
+kind: helper
+name: model-deprecation-first-slash-fallback
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      gpt-4o/x: {deprecation_date: "2026-05-01", litellm_provider: suffix}
+    deployments:
+      - model_name: multi-slash
+        litellm_params: {model: openai/gpt-4o/x}
+      - model_name: two-slash
+        litellm_params: {model: azure/other/gpt-4o/x}
+      - model_name: bare
+        litellm_params: {model: gpt-4o/x}
+env: {}
+compare: {ignore: []}

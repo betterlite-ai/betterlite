@@ -1,0 +1,5 @@
+kind: helper
+name: redis-cache-defaults-flush-size-given
+call: {b5630: {function: cache_defaults, default_redis_ttl: 120, redis_flush_size: 50}}
+env: {}
+compare: {ignore: []}

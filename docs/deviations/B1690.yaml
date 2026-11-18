@@ -1,0 +1,50 @@
+task: B1690
+deviations:
+  - what: >-
+      A nonpositive LITELLM_ASYNCIO_QUEUE_MAXSIZE or DEFAULT_CRON_JOB_LOCK_TTL_SECONDS prevents
+      startup with a named configuration error, and spend update bodies are omitted from debug logs.
+    why: >-
+      The source permits an unbounded asyncio queue and logs the raw spend update, conflicting with
+      bounded memory and secret-redaction rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/base_update_queue.py#L23-L39
+  - what: >-
+      The default MAX_SIZE_IN_MEMORY_QUEUE is floor(capacity * 4 / 5) in integer arithmetic,
+      where the source computes int(LITELLM_ASYNCIO_QUEUE_MAXSIZE * 0.8) in binary floating
+      point; the two differ for capacities above 2^53.
+    why: >-
+      docs/compatibility.md reads an integer environment value as an integer, so the derived
+      default is exact rather than whatever the nearest double yields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L411-L413
+  - what: >-
+      A LITELLM_ASYNCIO_QUEUE_MAXSIZE above 2305843009213693951 (i64::MAX / 4) prevents
+      startup with a named configuration error, because the derived 80 percent threshold
+      does not fit in an i64.
+    why: >-
+      Python integers are unbounded, so the source accepts any queue capacity; betterlite's
+      settings are i64 and the compatibility rules reject a derived value that cannot be
+      represented instead of wrapping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L411-L413
+  - what: >-
+      A closed in-memory spend queue refuses a later add with Closed and keeps the records it
+      already admitted drainable, where the source's asyncio.Queue has no close and a put on a
+      queue nobody reads blocks forever.
+    why: >-
+      betterlite shuts producers down through owned channels instead of abandoning the event loop
+      that holds the queue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/base_update_queue.py#L36-L40
+kept_bugs:
+  - what: >-
+      When the Lua compare-and-delete fails, release falls back to GET followed by DEL and is
+      therefore not atomic: a lock reacquired by another pod between the two commands is deleted.
+    why: >-
+      LiteLLM keeps this fallback for caches whose scripting fails, and the source intentionally
+      reaches it; a controlled race test in the pod_lock tests pins the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/pod_lock_manager.py#L184-L190
+  - what: >-
+      The acquired and released service events report DEFAULT_CRON_JOB_LOCK_TTL_SECONDS as their
+      duration even when the caller asked for a different lease TTL.
+    why: >-
+      LiteLLM hardcodes the constant in both emit helpers, so a dashboard sees 60 for every
+      lease; betterlite sends the configured default TTL there and keeps the custom lease out of
+      the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/pod_lock_manager.py#L192-L218

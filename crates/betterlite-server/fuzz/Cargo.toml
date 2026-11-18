@@ -294,6 +294,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "model_deprecation"
+path = "fuzz_targets/model_deprecation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "credential_request"
 path = "fuzz_targets/credential_request.rs"
 test = false

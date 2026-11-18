@@ -103,9 +103,14 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
+  - Cargo.lock
   - crates/betterlite-foundry/src/anthropic.rs
   - crates/betterlite-foundry/src/anthropic/**
+  - crates/betterlite-foundry/src/anthropic_messages/environment.rs
+  - crates/betterlite-anthropic/src/chat_call.rs
+  - crates/betterlite-anthropic/src/chat_call/**
   - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/foundry/Cargo.toml
   - tools/oracle/src/helpers/foundry/anthropic.rs
   - tools/oracle/src/helpers/foundry/anthropic/**
   - tools/oracle/helpers/foundry_anthropic.py
@@ -253,6 +258,8 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- 'Reuse B584''s steps instead of copying them (decision 2026-11-18). LiteLLM''s Azure Anthropic handler differs from AnthropicChatCompletion only in its environment and request body, so Foundry keeps only its own prepare in anthropic/handler.rs. Make the steps that follow prepare in crates/betterlite-anthropic/src/chat_call/ (the buffered send and the stream open) public, with one prepared input type that both prepares produce, and call them from Foundry''s completion. crates/betterlite-foundry/src/anthropic/buffered.rs and stream.rs then go. Anthropic''s own chat_call keeps its behavior and its tests.'
+- 'Call the existing explicit-key helper in crates/betterlite-foundry/src/anthropic_messages/environment.rs (make it pub(crate)) instead of the copy in anthropic/environment.rs.'
 - 'The oracle helper for this task is pre-registered as foundry_anthropic in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/anthropic.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_anthropic.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A dict with api_key=None blocks explicit-key insertion while a typed object with a falsey key does not.
 - Foundry chat keeps x-api-key from the Anthropic header builder; the native Messages rename is a different override.
