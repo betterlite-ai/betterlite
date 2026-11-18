@@ -11,26 +11,25 @@ use crate::sagemaker_stream::project::{
 
 const MODEL: &str = "decoder-model";
 
-fn chat(text: &str) -> Result<Chunk, SagemakerStreamError> {
-    match project(MODEL, true, text) {
-        Ok(Projection::Ready(SagemakerChunk::Chat(chunk))) => Ok(chunk),
-        Ok(Projection::Ready(SagemakerChunk::Token(_))) => {
-            panic!("a messages event yields a chat chunk")
-        }
-        Ok(Projection::Pending) => panic!("the fixture is JSON"),
-        Err(error) => Err(error),
+fn projected(text: &str, messages: bool) -> Result<SagemakerChunk, SagemakerStreamError> {
+    match project(MODEL, messages, text)? {
+        Projection::Ready(chunk) => Ok(chunk),
+        Projection::Pending => panic!("the fixture is JSON"),
     }
 }
 
+fn chat(text: &str) -> Result<Chunk, SagemakerStreamError> {
+    let SagemakerChunk::Chat(chunk) = projected(text, true)? else {
+        panic!("a messages event yields a chat chunk");
+    };
+    Ok(chunk)
+}
+
 fn token(text: &str) -> Result<GenericChunk, SagemakerStreamError> {
-    match project(MODEL, false, text) {
-        Ok(Projection::Ready(SagemakerChunk::Token(chunk))) => Ok(chunk),
-        Ok(Projection::Ready(SagemakerChunk::Chat(_))) => {
-            panic!("a token event yields a token chunk")
-        }
-        Ok(Projection::Pending) => panic!("the fixture is JSON"),
-        Err(error) => Err(error),
-    }
+    let SagemakerChunk::Token(chunk) = projected(text, false)? else {
+        panic!("a token event yields a token chunk");
+    };
+    Ok(chunk)
 }
 
 #[test]

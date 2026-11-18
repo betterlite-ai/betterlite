@@ -41,20 +41,34 @@ impl EventState {
     }
 
     pub fn finish(&mut self, pending: &mut VecDeque<EventItem>) {
-        if self.accumulated.is_empty() {
+        let Some(item) = self.leftover() else {
             return;
+        };
+        pending.push_back(item);
+    }
+
+    // the remaining buffer is parsed once: a chunk, a None for an unparseable text, or the policy's error
+    fn leftover(&mut self) -> Option<EventItem> {
+        if self.accumulated.is_empty() {
+            return None;
         }
         match project::project(&self.model, self.is_messages_api, &self.accumulated) {
-            Ok(Projection::Ready(chunk)) => self.push_chunk(chunk, pending),
+            Ok(Projection::Ready(chunk)) => {
+                self.accumulated.clear();
+                Some(Ok(Some(chunk)))
+            }
             Ok(Projection::Pending) => {
                 tracing::error!(
                     "Warning: Unparseable JSON data remained: {}",
                     self.accumulated
                 );
-                pending.push_back(Ok(None));
+                Some(Ok(None))
             }
-            Err(error) if self.policy == ErrorPolicy::Propagate => pending.push_back(Err(error)),
-            Err(error) => tracing::error!("Final error parsing accumulated JSON: {error}"),
+            Err(error) if self.policy == ErrorPolicy::Propagate => Some(Err(error)),
+            Err(error) => {
+                tracing::error!("Final error parsing accumulated JSON: {error}");
+                None
+            }
         }
     }
 
@@ -68,11 +82,7 @@ impl EventState {
             .unwrap_or_default()
             .replace("\n\n", "");
         self.accumulated.push_str(&message);
-        self.project_accumulated(pending)
-    }
-
-    // the buffer is cleared only when the text parses and projects, as the pinned iterator clears it after the yield
-    fn project_accumulated(&mut self, pending: &mut VecDeque<EventItem>) -> bool {
+        // the buffer is cleared only when the text parses and projects, as the pinned iterator clears it after the yield
         match project::project(&self.model, self.is_messages_api, &self.accumulated) {
             Ok(Projection::Ready(chunk)) => {
                 self.push_chunk(chunk, pending);
