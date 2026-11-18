@@ -279,6 +279,8 @@ fn replays_the_realtime_enforcement_corpus(
 #[case::boolean("true")]
 #[case::integer("42")]
 #[case::decimal("1.25")]
+#[case::exponent("1e40")]
+#[case::large_integer("18446744073709551616")]
 #[case::text(r#""not-an-object""#)]
 #[case::array(r#"[{"model":"forbidden"}]"#)]
 fn enforce_preserves_nonobject_transcription(#[case] value: &str) {
@@ -291,4 +293,27 @@ fn enforce_preserves_nonobject_transcription(#[case] value: &str) {
         r#"{{"type":"session.update","session":{{"input_audio_transcription":{value},"audio":{{"input":{{"transcription":{value}}}}}}}}}"#
     );
     assert_eq!(sender.enforce_session_model(&message).unwrap(), message);
+}
+
+#[rstest]
+#[case::session("1.25")]
+#[case::session_type(r#"{"type":1.25,"input_audio_transcription":{"model":"forbidden"}}"#)]
+#[case::audio(r#"{"audio":1.25,"input_audio_transcription":{"model":"forbidden"}}"#)]
+#[case::audio_input(
+    r#"{"audio":{"input":1.25},"input_audio_transcription":{"model":"forbidden"}}"#
+)]
+#[case::flat_transcription(r#"{"input_audio_transcription":1.25,"audio":{"input":{"transcription":{"model":"forbidden"}}}}"#)]
+#[case::ga_transcription(r#"{"input_audio_transcription":{"model":"forbidden"},"audio":{"input":{"transcription":1.25}}}"#)]
+#[case::large_sibling(r#"{"input_audio_transcription":{"model":"forbidden"},"audio":{"input":{"transcription":18446744073709551616}}}"#)]
+fn enforce_preserves_numbers_when_rewriting(#[case] session: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let message = format!(r#"{{"type":"session.update","session":{session}}}"#);
+    let expected = message.replace("forbidden", "allowed");
+    let enforced = sender.enforce_session_model(&message).unwrap();
+    assert_eq!(parsed(&enforced), parsed(&expected));
+    assert!(!state.is_transcription_session.0);
 }

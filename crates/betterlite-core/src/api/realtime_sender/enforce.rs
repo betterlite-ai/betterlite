@@ -37,6 +37,8 @@ enum SessionType {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 enum Slot<T> {
+    // Recognize arbitrary-precision numbers before their internal map can match a typed object.
+    Number(serde_json::Number),
     Object(T),
     Other(NonObject),
     Missing,
@@ -48,7 +50,6 @@ enum Slot<T> {
 enum NonObject {
     Null,
     Bool(bool),
-    Number(serde_json::Number),
     Text(String),
     List(Vec<Json>),
 }
@@ -57,7 +58,7 @@ impl<T> Slot<T> {
     const fn is_missing(&self) -> bool {
         match self {
             Self::Missing => true,
-            Self::Object(_) | Self::Other(_) => false,
+            Self::Number(_) | Self::Object(_) | Self::Other(_) => false,
         }
     }
 }
