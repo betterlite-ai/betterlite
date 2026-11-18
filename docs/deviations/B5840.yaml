@@ -1,0 +1,12 @@
+task: B5840
+deviations:
+  - what: Embeddings are signed and posted natively instead of through boto3 invoke_endpoint.
+    why: betterlite has no boto3. The body, path and status match; boto3 AWS_ENDPOINT_URL and shared-config lookups are not used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L533-L620
+  - what: A failing sync completion call returns SagemakerError with the upstream status.
+    why: LiteLLM's sync branch calls get on an httpx.Response and raises AttributeError; betterlite returns the intended wire error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L200-L260
+  - what: Sync and async completion share one async execution path.
+    why: A single transport path keeps the stream decoder and error policies consistent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L118-L560
+kept_bugs: []
