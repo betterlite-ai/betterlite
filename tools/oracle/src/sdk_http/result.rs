@@ -187,10 +187,10 @@ pub struct HeaderStreamRun {
 #[serde(deny_unknown_fields)]
 pub struct StreamFactoryRun {
     pub frames: Vec<String>,
-    pub closed: bool,
+    pub closed: Flag,
     pub request_body: IndexMap<String, Json>,
-    pub logging_object_passed: bool,
-    pub endpoint_anthropic: bool,
+    pub logging_object_passed: Flag,
+    pub endpoint_anthropic: Flag,
     pub url_route: String,
     pub response_status: u16,
 }

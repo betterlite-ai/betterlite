@@ -6,8 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_core::api::messages_stream_logging::StreamDeps;
 use betterlite_core::api::messages_stream_logging::seams::{
-    ChunkProcessorCall, LoggingFuture, LoggingJob, ReportedFailure, RouteStreamingLogging,
-    StreamSeams,
+    ChunkProcessorCall, LoggingFuture, ReportedFailure, RouteStreamingLogging, StreamSeams,
 };
 use betterlite_core::api::messages_stream_logging::slots::StreamSlots;
 use betterlite_core::api::messages_thinking::stream::native_stream_factory;
@@ -30,6 +29,7 @@ use reqwest::Response;
 use super::MessagesStreamFactoryCall;
 use super::error::SdkHttpError;
 use super::messages_header_stream::outbound;
+use super::messages_stream_logging::outcome::Flag;
 use super::result::{SdkResult, StreamFactoryRun};
 use super::vector_query_embedding::outbound_client;
 
@@ -84,7 +84,7 @@ impl StreamSeams for FactorySeams {
 
     fn chunk_processor(&self, call: ChunkProcessorCall<Live>) -> Chunks {
         let processed = Processed {
-            request_body: call.request_body.clone(),
+            request_body: call.request_body,
             endpoint_anthropic: call.endpoint_type == EndpointType::Anthropic,
             url_route: call.url_route.to_owned(),
             same_logging_object: Arc::ptr_eq(&call.logging_obj, &self.supplied),
@@ -113,22 +113,16 @@ impl SuccessClock for FixedClock {
     }
 }
 
-pub(crate) async fn send(
-    call: &MessagesStreamFactoryCall,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    let Json::Object(body) = &call.body else {
-        return Err(SdkHttpError::Invalid(
-            "the Messages factory request body must be an object".to_owned(),
-        ));
-    };
-    let request = outbound(api_base, body)?;
-    let client = outbound_client(env)?;
-    let sent = client
-        .send(request)
-        .await
-        .map_err(|error| SdkHttpError::Transport(Box::new(error)))?;
+struct Prepared {
+    seams: Arc<FactorySeams>,
+    supplied: Arc<StreamLoggingObject>,
+    deps: StreamDeps<FactorySeams>,
+    released: Arc<AtomicBool>,
+    live: Live,
+    body: IndexMap<String, Json>,
+}
+
+fn prepare(body: IndexMap<String, Json>, response: Response) -> Result<Prepared, SdkHttpError> {
     let supplied = Arc::new(StreamLoggingObject {
         slot: Mutex::new(None),
         dispatch: Arc::new(NoDispatch),
@@ -148,17 +142,34 @@ pub(crate) async fn send(
             injected_log_dispatch: None,
         }),
     };
-    let _lease: Lease = sent.lease;
     let released = Arc::new(AtomicBool::new(false));
     let live = Live {
-        response: sent.response,
+        response,
         released: Arc::clone(&released),
     };
-    let mut stream = native_stream_factory(deps, live, body.clone(), supplied);
+    Ok(Prepared {
+        seams,
+        supplied,
+        deps,
+        released,
+        live,
+        body,
+    })
+}
+
+async fn drain(mut stream: Chunks) -> Result<Vec<u8>, SdkHttpError> {
     let mut payload = Vec::new();
     while let Some(chunk) = stream.next().await {
         payload.extend_from_slice(&chunk?);
     }
+    Ok(payload)
+}
+
+fn assemble(
+    seams: &FactorySeams,
+    released: &AtomicBool,
+    payload: Vec<u8>,
+) -> Result<SdkResult, SdkHttpError> {
     let text = String::from_utf8(payload).map_err(SdkHttpError::FrameUtf8)?;
     let frames = text
         .split("\n\n")
@@ -176,12 +187,40 @@ pub(crate) async fn send(
     Ok(SdkResult::MessagesStreamFactory {
         value: StreamFactoryRun {
             frames,
-            closed: released.load(Ordering::SeqCst),
+            closed: Flag(released.load(Ordering::SeqCst)),
             request_body: processed.request_body,
-            logging_object_passed: processed.same_logging_object,
-            endpoint_anthropic: processed.endpoint_anthropic,
+            logging_object_passed: Flag(processed.same_logging_object),
+            endpoint_anthropic: Flag(processed.endpoint_anthropic),
             url_route: processed.url_route,
             response_status: processed.response_status,
         },
     })
+}
+
+pub(crate) async fn send(
+    call: &MessagesStreamFactoryCall,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<SdkResult, SdkHttpError> {
+    let Json::Object(body) = &call.body else {
+        return Err(SdkHttpError::Invalid(
+            "the Messages factory request body must be an object".to_owned(),
+        ));
+    };
+    let request = outbound(api_base, body)?;
+    let client = outbound_client(env)?;
+    let sent = client
+        .send(request)
+        .await
+        .map_err(|error| SdkHttpError::Transport(Box::new(error)))?;
+    let _lease: Lease = sent.lease;
+    let prepared = prepare(body.clone(), sent.response)?;
+    let stream = native_stream_factory(
+        prepared.deps,
+        prepared.live,
+        prepared.body,
+        prepared.supplied,
+    );
+    let payload = drain(stream).await?;
+    assemble(&prepared.seams, &prepared.released, payload)
 }

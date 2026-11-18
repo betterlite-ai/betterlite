@@ -82,22 +82,15 @@ def config_iterator(
     )
 
 
-def frame_list(text: str) -> list[JsonValue]:
-    frames: list[JsonValue] = []
-    for frame in text.split("\n\n"):
-        if frame:
-            frames.append(frame)
-    return frames
-
-
 def observed(
     recorder: Recorder, reply: httpx.Response, text: str, supplied: Logging
 ) -> JsonValue:
     call = recorder.seen
     if call is None:
         raise ValueError("the factory never reached the chunk processor")
+    frames: list[JsonValue] = [frame for frame in text.split("\n\n") if frame]
     return {
-        "frames": frame_list(text),
+        "frames": frames,
         "closed": reply.is_closed,
         "request_body": call["request_body"],
         "logging_object_passed": call["litellm_logging_obj"] is supplied,
