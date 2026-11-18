@@ -29,7 +29,6 @@ call:
     upstream_lines: []
     failure_message: the transport exploded
     request_header_names: []
-    response_header_names: []
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
 compare: {ignore: []}

@@ -45,7 +45,6 @@ class Input(TypedDict):
     upstream_lines: list[str]
     failure_message: str | None
     request_header_names: list[str]
-    response_header_names: list[str]
 
 
 class PreCallArguments(TypedDict):

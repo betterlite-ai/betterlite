@@ -47,7 +47,6 @@ call:
       - content-type
       - accept
       - anthropic-beta
-    response_header_names: []
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
 compare: {ignore: []}

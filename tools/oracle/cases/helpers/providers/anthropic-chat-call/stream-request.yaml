@@ -46,10 +46,6 @@ call:
       - content-type
       - accept
       - anthropic-beta
-    response_header_names:
-      - llm_provider-request-id
-      - llm_provider-anthropic-ratelimit-requests-limit
-      - x-ratelimit-limit-requests
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
 compare: {ignore: []}

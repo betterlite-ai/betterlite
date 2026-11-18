@@ -36,7 +36,6 @@ call:
       - 'data: {"type":"ping"}'
     failure_message: null
     request_header_names: [x-api-key]
-    response_header_names: [llm_provider-request-id]
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
 compare: {ignore: []}

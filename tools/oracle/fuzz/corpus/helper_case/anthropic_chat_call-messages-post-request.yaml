@@ -37,7 +37,6 @@ call:
     upstream_lines: []
     failure_message: null
     request_header_names: [x-api-key, anthropic-version, anthropic-beta]
-    response_header_names: []
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
 compare: {ignore: []}
