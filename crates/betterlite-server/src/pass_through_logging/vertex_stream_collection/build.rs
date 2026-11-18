@@ -55,7 +55,7 @@ pub(super) fn cost_record(body: &Json) -> CompletionResponse {
     }
 }
 
-fn body_model(body: &Json) -> Option<String> {
+pub(super) fn body_model(body: &Json) -> Option<String> {
     let Json::Object(fields) = body else {
         return None;
     };

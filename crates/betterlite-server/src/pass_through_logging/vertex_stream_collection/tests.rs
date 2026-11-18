@@ -9,7 +9,7 @@ use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
-    FakeCost, as_text, capture_logs, collected, detail, field, integer, kwarg, logged_model,
+    FakeCost, as_text, capture_logs, collected, detail, field, integer, json, kwarg, logged_model,
     number_text, optional_param, result_json, text,
 };
 
@@ -248,6 +248,16 @@ fn chunks_raw_predict_builds_and_prices_the_events() {
     assert_eq!(content(&result_json(&outcome)), " hi");
     assert_eq!(as_text(kwarg(&outcome, "model")), "claude-3");
     assert_eq!(cost.calls()[0].provider, "vertex_ai");
+}
+
+#[test]
+fn build_cost_record_reads_only_a_non_empty_body_model() {
+    assert_eq!(
+        build::body_model(&json(r#"{"model":"gemini-2.0-flash"}"#)),
+        Some("gemini-2.0-flash".to_owned())
+    );
+    assert_eq!(build::body_model(&json(r#"{"model":""}"#)), None);
+    assert_eq!(build::body_model(&json("[]")), None);
 }
 
 fn choice(body: &Json) -> &Json {

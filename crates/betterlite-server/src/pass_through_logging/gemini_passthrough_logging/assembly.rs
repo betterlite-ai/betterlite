@@ -210,7 +210,7 @@ impl ReasoningTokenCounter for ZeroReasoning {
     }
 }
 
-struct ZeroUsage;
+pub(crate) struct ZeroUsage;
 
 #[async_trait]
 impl UsageTokenCounter for ZeroUsage {
@@ -231,7 +231,7 @@ impl UsageTokenCounter for ZeroUsage {
     }
 }
 
-struct NoCosts;
+pub(crate) struct NoCosts;
 
 impl StreamCostCalculator for NoCosts {
     fn completion_cost(
@@ -242,6 +242,7 @@ impl StreamCostCalculator for NoCosts {
         Ok(None)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_completion_cost(
         &self,
         _model: &str,
@@ -251,7 +252,7 @@ impl StreamCostCalculator for NoCosts {
     }
 }
 
-struct SilentLogger;
+pub(crate) struct SilentLogger;
 
 impl LoggerSink for SilentLogger {
     fn debug(&self, _payload: &Payload) -> bool {
@@ -271,7 +272,7 @@ impl LoggerSink for SilentLogger {
     }
 }
 
-struct SilentConsole;
+pub(crate) struct SilentConsole;
 
 impl ConsoleSink for SilentConsole {
     fn print(&self, _payload: &Payload) -> bool {

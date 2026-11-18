@@ -2,16 +2,28 @@
 
 use std::sync::Arc;
 
+use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_stream_logging::types::{CollectedChunksHandler, HandlerError};
+use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_models::decisions::Json;
+use betterlite_models::usage_sum::UsageNumber;
+use betterlite_redact::structured::Payload;
+use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
+use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
+use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
+use betterlite_streaming::streamed_response_assembly::cost::{CostInput, StreamCostCalculator};
+use betterlite_vertex::vertex_relay_metadata::types::{CustomLlmProvider, ResponseLoggingKwargs};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::GeminiPassthroughError;
+use super::assembly;
 use super::cost::PassthroughCostError;
 use super::payload::create_gemini_response_logging_payload;
+use super::relay::{RelayLogging, relay_kwargs};
+use super::reply;
 use support::{
     FakeCost, as_text, capture_logs, collected, detail, field, fixture, gemini_input, integer,
     json, kwarg, kwargs, logged_model, logged_provider, logger, number_text, result_json, text,
@@ -32,6 +44,7 @@ const INTERACTIONS_BODY: &str =
     r#"{"model":"response-model","usage":{"total_input_tokens":3,"total_output_tokens":2}}"#;
 const VIDEO_BODY: &str = r#"{"name":"operations/generate_1234567890"}"#;
 const NO_MODEL_BODY: &str = r#"{"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#;
+const DETAILS_BODY: &str = r#"{"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5,"promptTokensDetails":[{"modality":"TEXT","tokenCount":3}]},"modelVersion":"gemini-2.0-flash"}"#;
 const USAGE_BODY: &str = r#"{"model":"response-model","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 
 const MISSING_RESPONSE: &str =
@@ -532,6 +545,181 @@ fn chunks_stream_without_a_model_logs_no_model() {
     assert_eq!(field(&result, "model"), &Json::Null);
     assert_eq!(as_text(kwarg(&outcome, "model")), "given-model");
     assert_eq!(logged_model(&fixture.logging_obj), "given-model");
+}
+
+#[test]
+fn route_interactions_uses_the_request_model_when_the_reply_names_none() {
+    let mut fixture = fixture(
+        INTERACTIONS_ROUTE,
+        r#"{"usage":{"total_input_tokens":3,"total_output_tokens":2}}"#,
+    );
+    fixture.request_body.insert(
+        "model".to_owned(),
+        serde_json::Value::String("request-model".to_owned()),
+    );
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the interactions reply is logged");
+    assert_eq!(text(&result_json(&outcome), "model"), "request-model");
+    assert_eq!(cost.calls()[0].model, "request-model");
+}
+
+#[test]
+fn route_predict_long_running_keeps_the_request_resolution() {
+    let mut fixture = fixture(VIDEO_ROUTE, VIDEO_BODY);
+    fixture.request_body.insert(
+        "parameters".to_owned(),
+        serde_json::json!({"resolution": " "}),
+    );
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the video operation is logged");
+    let usage = field(&result_json(&outcome), "usage");
+    assert_eq!(field(usage, "video_resolution"), &Json::Text(String::new()));
+}
+
+#[test]
+fn payload_usage_keeps_the_prompt_modality_details() {
+    let fixture = fixture(GENERATE_ROUTE, DETAILS_BODY);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the detailed usage is logged");
+    let usage = field(&result_json(&outcome), "usage");
+    assert_eq!(
+        field(usage, "prompt_tokens_details"),
+        &json(r#"{"text_tokens":3}"#)
+    );
+}
+
+#[test]
+fn relay_projection_carries_the_logged_model_and_details() {
+    let logging_obj = support::logging_object();
+    logging_obj.edit(&mut |state| {
+        state.model = "state-model".to_owned();
+        state.custom_llm_provider = Some("gemini".to_owned());
+        state
+            .model_call_details
+            .insert("model".to_owned(), Json::Text("detail-model".to_owned()));
+        state.model_call_details.insert(
+            "custom_llm_provider".to_owned(),
+            Json::Text("vertex_ai".to_owned()),
+        );
+    });
+    let relay = RelayLogging::project(&logging_obj);
+    assert_eq!(relay.logging.model.as_deref(), Some("state-model"));
+    assert_eq!(
+        relay.logging.custom_llm_provider,
+        Some(CustomLlmProvider::Gemini)
+    );
+    assert_eq!(
+        relay.logging.model_call_details.model.as_deref(),
+        Some("detail-model")
+    );
+    assert_eq!(
+        relay.logging.model_call_details.custom_llm_provider,
+        Some(CustomLlmProvider::VertexAi)
+    );
+}
+
+#[test]
+fn relay_projection_drops_an_empty_model_and_unknown_provider() {
+    let logging_obj = support::logging_object();
+    logging_obj.edit(&mut |state| {
+        state
+            .model_call_details
+            .insert("model".to_owned(), Json::Text(String::new()));
+        state.model_call_details.insert(
+            "custom_llm_provider".to_owned(),
+            Json::Text("openai".to_owned()),
+        );
+    });
+    let relay = RelayLogging::project(&logging_obj);
+    assert_eq!(relay.logging.model, None);
+    assert_eq!(relay.logging.custom_llm_provider, None);
+    assert_eq!(relay.logging.model_call_details.model, None);
+    assert_eq!(relay.logging.model_call_details.custom_llm_provider, None);
+}
+
+#[test]
+fn relay_kwargs_write_the_cost_model_and_provider() {
+    let requested = kwargs(&[("request_id", Json::Text("r1".to_owned()))]);
+    let built = relay_kwargs(
+        &requested,
+        ResponseLoggingKwargs {
+            response_cost: Some(Decimal::new(125, 2)),
+            model: Some("gemini-2.0-flash".to_owned()),
+            custom_llm_provider: Some(CustomLlmProvider::Gemini),
+        },
+    );
+    assert_eq!(
+        built.entries.get("request_id"),
+        Some(&Json::Text("r1".to_owned()))
+    );
+    assert_eq!(
+        number_text(built.entries.get("response_cost").expect("a cost")),
+        "1.25"
+    );
+    assert_eq!(
+        as_text(built.entries.get("model").expect("a model")),
+        "gemini-2.0-flash"
+    );
+    assert_eq!(
+        as_text(
+            built
+                .entries
+                .get("custom_llm_provider")
+                .expect("a provider")
+        ),
+        "gemini"
+    );
+}
+
+#[tokio::test]
+async fn assembly_zero_counters_count_no_tokens() {
+    assert_eq!(
+        assembly::ZeroReasoning
+            .count_reasoning_tokens("some text")
+            .expect("an infallible count"),
+        0
+    );
+    let usage = assembly::ZeroUsage;
+    assert_eq!(
+        usage.count_response_text("m", "hi").await.expect("a count"),
+        0
+    );
+    assert_eq!(usage.count_text("hi").await.expect("a count"), 0);
+    assert_eq!(usage.count_messages("m", None).await.expect("a count"), 0);
+}
+
+#[test]
+fn assembly_silent_hooks_accept_every_write() {
+    let payload = Payload::Bool(false);
+    assert!(assembly::SilentLogger.debug(&payload));
+    assert!(assembly::SilentLogger.info(&payload));
+    assert!(assembly::SilentLogger.error(&payload));
+    assert!(!assembly::SilentLogger.debug_enabled());
+    assert!(assembly::SilentConsole.print(&payload));
+}
+
+#[test]
+fn assembly_no_costs_prices_nothing() {
+    let hidden = JsonObject::new();
+    let usage = WireUsage::default();
+    let input = CostInput {
+        model: "gemini-2.0-flash",
+        usage: &usage,
+        hidden_params: &hidden,
+    };
+    assert_eq!(assembly::NoCosts.completion_cost(&input, None), Ok(None));
+}
+
+#[test]
+fn reply_renders_numeric_extras_in_their_json_type() {
+    assert_eq!(reply::extra_json(&UsageNumber::Integer(7)), json("7"));
+    assert_eq!(reply::extra_json(&UsageNumber::Boolean(true)), json("true"));
 }
 
 fn choices(result: &Json) -> &Json {
