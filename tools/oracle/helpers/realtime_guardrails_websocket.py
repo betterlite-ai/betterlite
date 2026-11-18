@@ -72,7 +72,7 @@ class ScriptedError(Exception):
         self.label = label
 
 
-class ScriptedRaise(ValueError):
+class ScriptedRaiseError(ValueError):
     def __init__(self, message: str, detail: JsonValue) -> None:
         super().__init__(message)
         self.detail = detail
@@ -187,7 +187,7 @@ class ApplyScript:
                 if raised is None:
                     raise ScriptedError("")
                 if raised.get("status_code") is not None or raised.get("value_error") is True:
-                    raise ScriptedRaise(raised["message"], raised.get("detail"))
+                    raise ScriptedRaiseError(raised["message"], raised.get("detail"))
                 raise ScriptedError(raised["message"])
 
 
