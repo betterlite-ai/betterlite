@@ -33,11 +33,11 @@ pub(super) fn record(
     log: &mut LogContext<'_, '_>,
     timing: &dyn ApiTiming,
     sync: bool,
-    started: StreamInstant,
-    ended: StreamInstant,
+    started: &StreamInstant,
+    ended: &StreamInstant,
 ) {
-    let begin = datetime(&started);
-    let finish = datetime(&ended);
+    let begin = datetime(started);
+    let finish = datetime(ended);
     if let (Some(begin), Some(finish)) = (begin, finish)
         && let Err(error) = record_call_duration(log.state, begin, finish)
     {

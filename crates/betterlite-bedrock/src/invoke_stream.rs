@@ -134,7 +134,7 @@ pub async fn custom_stream_wrapper<'deps>(
     };
     let effective = if transport.sync { &synchronous } else { deps };
     let outcome = open(transport, effective, &globals, log).await;
-    timing::record(log, timing, transport.sync, started, clock.now());
+    timing::record(log, timing, transport.sync, &started, &clock.now());
     let prepared = outcome?;
     Ok(assemble(transport, deps, ports, prepared))
 }
