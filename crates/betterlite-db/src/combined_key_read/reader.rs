@@ -166,17 +166,7 @@ where
             clock: &metric_clock,
             tasks: self.services.tasks,
         };
-        let outcome = log_db_metrics(operation, &call, context).await;
-        match outcome {
-            Ok(view) => Ok(view),
-            Err(DbMetricError::Lookup(DbLookupError::Database(fault))) => {
-                Err(KeyReadError::Database(DatabaseFailure::Reported(fault)))
-            }
-            Err(DbMetricError::Lookup(_non_database)) => Err(take_parked(parked)),
-            Err(DbMetricError::Metric(failure)) => Err(KeyReadError::Metrics {
-                message: failure.to_string(),
-            }),
-        }
+        metric_outcome(log_db_metrics(operation, &call, context).await, parked)
     }
 
     // one attempt records its own failure and hands the database fault to the metric wrapper
@@ -200,5 +190,25 @@ where
                 Err(parked_lookup_error())
             }
         }
+    }
+}
+
+// the metric wrapper hands back the fault, the parked non-database error, or its own failure
+fn metric_outcome<Failure>(
+    outcome: Result<Option<CombinedKeyView>, DbMetricError<Failure>>,
+    parked: Mutex<Option<KeyReadError>>,
+) -> Result<Option<CombinedKeyView>, KeyReadError>
+where
+    Failure: std::error::Error + 'static,
+{
+    match outcome {
+        Ok(view) => Ok(view),
+        Err(DbMetricError::Lookup(DbLookupError::Database(fault))) => {
+            Err(KeyReadError::Database(DatabaseFailure::Reported(fault)))
+        }
+        Err(DbMetricError::Lookup(_non_database)) => Err(take_parked(parked)),
+        Err(DbMetricError::Metric(failure)) => Err(KeyReadError::Metrics {
+            message: failure.to_string(),
+        }),
     }
 }
