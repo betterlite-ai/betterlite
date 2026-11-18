@@ -29,14 +29,14 @@ where
         &mut self,
         setup_message: &str,
     ) -> Result<String, RealtimeSenderError<Config::Error, CallbackError>> {
-        inject_auto_response_disable(
+        let injected = inject_auto_response_disable(
             setup_message,
             &mut self.state.setup.turn_detection_update_sent.0,
             self.guardrails,
             &self.state.request_data,
         )
-        .map(|injected| injected.unwrap_or_else(|| setup_message.to_owned()))
-        .map_err(|source| RealtimeSenderError::GuardrailSetup { source })
+        .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
+        Ok(injected.unwrap_or_else(|| setup_message.to_owned()))
     }
 
     // LiteLLM retries the VAD disable on the next opportunity until the provider transformation actually delivers it
@@ -45,16 +45,13 @@ where
         &mut self,
     ) -> SenderFuture<'_, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
         Box::pin(async move {
-            if self.state.setup.turn_detection_update_sent.0 {
-                return Ok(());
-            }
-            if !self.transcription_guardrails()? {
-                return Ok(());
-            }
-            let message = disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
-                .map_err(|source| RealtimeSenderError::Disable { source })?;
-            if self.send_to_backend(&message).await? {
-                self.state.setup.turn_detection_update_sent.0 = true;
+            if !self.state.setup.turn_detection_update_sent.0 && self.transcription_guardrails()? {
+                let message =
+                    disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
+                        .map_err(|source| RealtimeSenderError::Disable { source })?;
+                if self.send_to_backend(&message).await? {
+                    self.state.setup.turn_detection_update_sent.0 = true;
+                }
             }
             Ok(())
         })

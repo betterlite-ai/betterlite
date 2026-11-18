@@ -27,7 +27,7 @@ where
         Box::pin(async move {
             let enforced = self.enforce_session_model(message)?;
             let Some(provider) = self.provider else {
-                self.send_direct(enforced).await?;
+                self.send_frame(RealtimeMessage::Text(enforced)).await?;
                 return Ok(true);
             };
             let transformed = self.transform(provider, &enforced)?;
@@ -36,7 +36,9 @@ where
                 let delivered = match frame {
                     RealtimeMessage::Binary(payload) => {
                         provider.pace_backend_send(&payload).await;
-                        self.deliver_binary(payload).await?
+                        self.send_frame(RealtimeMessage::Binary(payload)).await?;
+                        self.state.setup.content_sent_after_setup.0 = true;
+                        true
                     }
                     RealtimeMessage::Text(text) => {
                         let kind = classify_text(provider, &text);
@@ -65,64 +67,40 @@ where
             .map_err(|source| RealtimeSenderError::Transform { source })
     }
 
-    // Without a provider the enforced frame is what the backend gets, byte for byte
-    fn send_direct(
+    async fn send_frame(
         &mut self,
-        message: String,
-    ) -> SenderFuture<'_, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
-            self.backend()?
-                .send(RealtimeMessage::Text(message))
-                .await
-                .map_err(|source| RealtimeSenderError::Backend { source })
-        })
+        frame: RealtimeMessage,
+    ) -> Result<(), RealtimeSenderError<Config::Error, CallbackError>> {
+        self.backend()?
+            .send(frame)
+            .await
+            .map_err(|source| RealtimeSenderError::Backend { source })
     }
 
-    fn deliver_binary(
-        &mut self,
-        payload: Vec<u8>,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
-            self.backend()?
-                .send(RealtimeMessage::Binary(payload))
-                .await
-                .map_err(|source| RealtimeSenderError::Backend { source })?;
-            self.state.setup.content_sent_after_setup.0 = true;
-            Ok(true)
-        })
-    }
-
-    fn deliver_text(
+    async fn deliver_text(
         &mut self,
         text: String,
         kind: FrameKind,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
-            if kind == FrameKind::Setup {
-                if self.state.setup.content_sent_after_setup.0 {
-                    tracing::debug!(
-                        "Dropping follow-up setup after content was already sent to backend"
-                    );
-                    return Ok(false);
-                }
-                let message = self.fold_auto_response_disable(&text)?;
-                self.backend()?
-                    .send(RealtimeMessage::Text(message.clone()))
-                    .await
-                    .map_err(|source| RealtimeSenderError::Backend { source })?;
-                self.cache_session_configuration(&message);
-                return Ok(true);
+    ) -> Result<bool, RealtimeSenderError<Config::Error, CallbackError>> {
+        if kind == FrameKind::Setup {
+            if self.state.setup.content_sent_after_setup.0 {
+                tracing::debug!(
+                    "Dropping follow-up setup after content was already sent to backend"
+                );
+                return Ok(false);
             }
-            self.backend()?
-                .send(RealtimeMessage::Text(text.clone()))
-                .await
-                .map_err(|source| RealtimeSenderError::Backend { source })?;
-            self.cache_session_configuration(&text);
-            if kind == FrameKind::Content {
-                self.state.setup.content_sent_after_setup.0 = true;
-            }
-            Ok(true)
-        })
+            let message = self.fold_auto_response_disable(&text)?;
+            self.send_frame(RealtimeMessage::Text(message.clone()))
+                .await?;
+            self.cache_session_configuration(&message);
+            return Ok(true);
+        }
+        self.send_frame(RealtimeMessage::Text(text.clone())).await?;
+        self.cache_session_configuration(&text);
+        if kind == FrameKind::Content {
+            self.state.setup.content_sent_after_setup.0 = true;
+        }
+        Ok(true)
     }
 
     fn backend(

@@ -67,32 +67,34 @@ where
                     ),
                 }
             }
-            self.client()?
-                .send_text(&encoded)
-                .await
-                .map_err(|source| RealtimeSenderError::Client { source })?;
+            self.send_client_text(&encoded).await?;
             Ok(true)
         })
     }
 
-    fn send_translated(
+    async fn send_translated(
         &mut self,
         event: &Json,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
-            let outcome = translate_event_to_beta(event.clone())
-                .map_err(|source| RealtimeSenderError::Beta { source })?;
-            let Some(translated) = outcome else {
-                return Ok(false);
-            };
-            let encoded = serde_json::to_string(&translated)
-                .map_err(|source| RealtimeSenderError::Encode { source })?;
-            self.client()?
-                .send_text(&encoded)
-                .await
-                .map_err(|source| RealtimeSenderError::Client { source })?;
-            Ok(true)
-        })
+    ) -> Result<bool, RealtimeSenderError<Config::Error, CallbackError>> {
+        let outcome = translate_event_to_beta(event.clone())
+            .map_err(|source| RealtimeSenderError::Beta { source })?;
+        let Some(translated) = outcome else {
+            return Ok(false);
+        };
+        let encoded = serde_json::to_string(&translated)
+            .map_err(|source| RealtimeSenderError::Encode { source })?;
+        self.send_client_text(&encoded).await?;
+        Ok(true)
+    }
+
+    async fn send_client_text(
+        &mut self,
+        text: &str,
+    ) -> Result<(), RealtimeSenderError<Config::Error, CallbackError>> {
+        self.client()?
+            .send_text(text)
+            .await
+            .map_err(|source| RealtimeSenderError::Client { source })
     }
 
     fn client(
