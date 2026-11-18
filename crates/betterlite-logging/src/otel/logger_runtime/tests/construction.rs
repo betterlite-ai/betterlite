@@ -51,6 +51,7 @@ fn build(
     config: &Settings,
     provider: &SdkTracerProvider,
     assembler: Option<&Arc<dyn StreamOutputAssembler>>,
+    settings: ConstructorSettings,
 ) -> Result<BuiltLogger, LoggerRuntimeError> {
     constructor.build(&LoggerBuildRequest {
         class,
@@ -62,7 +63,7 @@ fn build(
             meter_provider: None,
         },
         assembler,
-        settings: ConstructorSettings::default(),
+        settings,
         factories: Arc::clone(&fixture.runtime.factories),
         scope_source: Arc::clone(&fixture.runtime.scope),
         trace: Arc::clone(&fixture.runtime.trace),
@@ -81,6 +82,7 @@ fn the_generic_class_builds_b3853_callback_over_the_injected_provider() {
         &settings(vec![fixture_sink()]),
         &provider,
         None,
+        ConstructorSettings::default(),
     )
     .expect("the generic logger builds");
     assert_eq!(built.callback.callback_name(), "generic");
@@ -99,6 +101,7 @@ fn the_langfuse_class_builds_without_the_stream_assembler() {
         &settings(vec![fixture_sink()]),
         &provider,
         None,
+        ConstructorSettings::default(),
     )
     .expect("the Langfuse logger builds");
     assert_eq!(built.callback.callback_name(), "generic");
@@ -116,6 +119,7 @@ fn the_langfuse_content_class_needs_the_runtime_assembler() {
         &config,
         &provider,
         None,
+        ConstructorSettings::default(),
     );
     assert!(matches!(result, Err(LoggerRuntimeError::MissingAssembler)));
     let built = build(
@@ -125,6 +129,7 @@ fn the_langfuse_content_class_needs_the_runtime_assembler() {
         &config,
         &provider,
         Some(&fixture.runtime.assembler),
+        ConstructorSettings::default(),
     )
     .expect("the content logger builds");
     assert_eq!(built.callback.callback_name(), "generic");
@@ -143,6 +148,7 @@ fn an_unknown_mapper_name_fails_the_construction() {
         &config,
         &provider,
         None,
+        ConstructorSettings::default(),
     );
     assert!(matches!(
         result,
@@ -165,7 +171,105 @@ fn an_event_recorder_keeps_the_provider_it_reads() {
         &config,
         &provider,
         None,
+        ConstructorSettings::default(),
     )
     .expect("the generic logger builds");
     assert!(built.recorder_providers.1.is_some());
+}
+
+#[test]
+fn every_production_callback_reports_the_constructor_logging_settings() {
+    let fixture = fixture();
+    let provider = provider_exporting(&fixture.sdk_sink);
+    let config = settings(vec![fixture_sink()]);
+    let quiet = ConstructorSettings {
+        turn_off_message_logging: true,
+        message_logging: false,
+    };
+    let generic = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::Generic,
+        &config,
+        &provider,
+        None,
+        quiet,
+    )
+    .expect("the generic logger builds");
+    assert!(generic.callback.turn_off_message_logging());
+    assert!(!generic.callback.message_logging());
+    assert!(!generic.callback.redacts_messages_itself());
+    let langfuse = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::Langfuse,
+        &config,
+        &provider,
+        None,
+        quiet,
+    )
+    .expect("the Langfuse logger builds");
+    assert!(langfuse.callback.turn_off_message_logging());
+    assert!(!langfuse.callback.message_logging());
+    assert!(!langfuse.callback.redacts_messages_itself());
+    let content = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::LangfuseContent,
+        &config,
+        &provider,
+        Some(&fixture.runtime.assembler),
+        quiet,
+    )
+    .expect("the content logger builds");
+    assert!(content.callback.turn_off_message_logging());
+    assert!(!content.callback.message_logging());
+    assert!(!content.callback.redacts_messages_itself());
+}
+
+#[test]
+fn every_production_callback_keeps_the_default_logging_controls() {
+    let fixture = fixture();
+    let provider = provider_exporting(&fixture.sdk_sink);
+    let config = settings(vec![fixture_sink()]);
+    let defaults = ConstructorSettings::default();
+    let generic = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::Generic,
+        &config,
+        &provider,
+        None,
+        defaults,
+    )
+    .expect("the generic logger builds");
+    assert!(!generic.callback.turn_off_message_logging());
+    assert!(generic.callback.message_logging());
+    assert!(!generic.callback.redacts_messages_itself());
+    let langfuse = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::Langfuse,
+        &config,
+        &provider,
+        None,
+        defaults,
+    )
+    .expect("the Langfuse logger builds");
+    assert!(!langfuse.callback.turn_off_message_logging());
+    assert!(langfuse.callback.message_logging());
+    assert!(!langfuse.callback.redacts_messages_itself());
+    let content = build(
+        &constructor(),
+        &fixture,
+        LoggerClass::LangfuseContent,
+        &config,
+        &provider,
+        Some(&fixture.runtime.assembler),
+        defaults,
+    )
+    .expect("the content logger builds");
+    assert!(!content.callback.turn_off_message_logging());
+    assert!(content.callback.message_logging());
+    assert!(!content.callback.redacts_messages_itself());
 }

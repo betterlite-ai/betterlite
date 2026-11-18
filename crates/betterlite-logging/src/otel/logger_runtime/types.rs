@@ -26,10 +26,10 @@ pub enum LoggerClass {
 
 // litellm.integrations.otel.logger.build_otel_v2_logger's tracer/logger/meter arguments
 #[derive(Clone, Copy, Default)]
-pub struct InjectedProviders<'a> {
-    pub tracer_provider: Option<&'a SdkTracerProvider>,
-    pub logger_provider: Option<&'a SdkLoggerProvider>,
-    pub meter_provider: Option<&'a SdkMeterProvider>,
+pub struct InjectedProviders<'providers> {
+    pub tracer_provider: Option<&'providers SdkTracerProvider>,
+    pub logger_provider: Option<&'providers SdkLoggerProvider>,
+    pub meter_provider: Option<&'providers SdkMeterProvider>,
 }
 
 // CustomLogger.__init__'s turn_off_message_logging=False and deprecated message_logging=True
@@ -49,12 +49,12 @@ impl Default for ConstructorSettings {
 }
 
 // what the injected constructor needs; it owns the V2Callback/Langfuse assembly the proxy wires elsewhere
-pub struct LoggerBuildRequest<'a> {
+pub struct LoggerBuildRequest<'request> {
     pub class: LoggerClass,
-    pub config: &'a Settings,
-    pub callback_name: Option<&'a str>,
-    pub providers: InjectedProviders<'a>,
-    pub assembler: Option<&'a Arc<dyn StreamOutputAssembler>>,
+    pub config: &'request Settings,
+    pub callback_name: Option<&'request str>,
+    pub providers: InjectedProviders<'request>,
+    pub assembler: Option<&'request Arc<dyn StreamOutputAssembler>>,
     pub settings: ConstructorSettings,
     pub factories: Arc<ExporterFactories>,
     pub scope_source: Arc<dyn RequestScopeSource>,
@@ -86,7 +86,8 @@ impl V2Logger {
     // the proxy's open_telemetry_logger slot as a view over B3853's registered callback
     #[must_use]
     pub fn from_callback(callback: &Arc<V2Callback>) -> Self {
-        let erased: Arc<dyn CallbackLogger> = Arc::clone(callback);
+        let concrete = Arc::clone(callback);
+        let erased: Arc<dyn CallbackLogger> = concrete;
         Self {
             config: callback.logger.config.clone(),
             provider: callback.tracer_provider.clone(),

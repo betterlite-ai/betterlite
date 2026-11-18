@@ -98,7 +98,7 @@ impl V2LoggerConstructor for CallbackConstructor {
             logger,
             recorder_providers,
             error_info,
-        } = V2Callback::assemble(parts)
+        } = V2Callback::assemble(parts, request.settings)
             .map_err(|source| LoggerRuntimeError::Constructor { source })?;
         let callback: Arc<dyn CallbackLogger> = match request.class {
             LoggerClass::Generic => Arc::new(V2Callback {

@@ -20,6 +20,7 @@ use crate::otel::emitter::span_emission::{DedupCache, MapperKind, SpanEmitter};
 use crate::otel::fan_out::scope::RequestScopeSource;
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
 use crate::otel::logger::v2::{OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource};
+use crate::otel::logger_runtime::types::ConstructorSettings;
 use crate::otel::mappers::registry::resolve_mappers;
 use crate::otel::plumbing::events::{GenAIEventRecorder, SystemClock};
 use crate::otel::plumbing::exporters::{ExporterError, ExporterFactories, HttpClients};
@@ -107,7 +108,10 @@ pub struct V2CallbackAssembly {
 
 impl V2Callback {
     // litellm.integrations.otel.logger.OpenTelemetryV2.__init__ without the proxy's registration
-    pub fn assemble(parts: CallbackParts) -> Result<V2CallbackAssembly, CallbackError> {
+    pub fn assemble(
+        parts: CallbackParts,
+        settings: ConstructorSettings,
+    ) -> Result<V2CallbackAssembly, CallbackError> {
         let provider = resolve_tracer_provider(&parts)?;
         let scope = InstrumentationScope::builder(LITELLM_TRACER_NAME)
             .with_version(env!("CARGO_PKG_VERSION"))
@@ -124,7 +128,7 @@ impl V2Callback {
             attribute_limit: parts.emitter.attribute_limit,
             emitted: DedupCache::default(),
         };
-        let logger = OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
+        let mut logger = OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
             name: parts.callback_name.unwrap_or_default(),
             config: parts.config,
             tracer,
@@ -133,6 +137,7 @@ impl V2Callback {
             tenants: parts.tenants,
             trace: parts.trace,
         });
+        logger.settings = settings;
         Ok(V2CallbackAssembly {
             provider,
             logger,
@@ -142,7 +147,7 @@ impl V2Callback {
     }
 
     pub fn new(parts: CallbackParts, registry: &V2Registry) -> Result<Arc<Self>, CallbackError> {
-        let assembly = Self::assemble(parts)?;
+        let assembly = Self::assemble(parts, ConstructorSettings::default())?;
         let callback = Arc::new(Self {
             logger: assembly.logger,
             tracer_provider: assembly.provider,
@@ -260,6 +265,15 @@ fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> 
 impl CallbackLogger for V2Callback {
     fn callback_name(&self) -> &str {
         self.logger.callback_name()
+    }
+
+    // CustomLogger stores both flags on itself; the assembled logger carries what the factory passed
+    fn turn_off_message_logging(&self) -> bool {
+        self.logger.settings.turn_off_message_logging
+    }
+
+    fn message_logging(&self) -> bool {
+        self.logger.settings.message_logging
     }
 
     // the event fixtures live in the logger's own unit tests, which this integration target cannot reach

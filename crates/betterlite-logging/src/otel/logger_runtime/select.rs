@@ -71,7 +71,8 @@ pub(super) fn v2_logger_for(
     }
     drop(held);
     let registered = runtime.registered.registered_v2_logger()?;
-    let erased: Arc<dyn CallbackLogger> = Arc::clone(&registered);
+    let concrete = Arc::clone(&registered);
+    let erased: Arc<dyn CallbackLogger> = concrete;
     Arc::ptr_eq(&erased, callback).then(|| Arc::new(V2Logger::from_callback(&registered)))
 }
 
