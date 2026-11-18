@@ -3,12 +3,12 @@ name: tool_policy_lookups
 call:
   tool_policy:
     tools:
-      - {"tool_id":"t1","tool_name":"search","input_policy":"trusted","output_policy":"trusted"}
+      - {tool_id: t1, tool_name: search, input_policy: trusted, output_policy: trusted}
     permissions:
-      - {"object_permission_id":"perm-1","blocked_tools":["search"]}
+      - {object_permission_id: perm-1, blocked_tools: [search]}
     queries:
-      - {"tool_names":["search"],"key_permission_id":"perm-1","team_permission_id":null}
-      - {"tool_names":["search"],"key_permission_id":null,"team_permission_id":null}
-    output_tools: ["search"]
+      - {tool_names: [search], key_permission_id: perm-1, team_permission_id: null}
+      - {tool_names: [search], key_permission_id: null, team_permission_id: null}
+    output_tools: [search]
 env: {}
 compare: {ignore: []}

@@ -3,18 +3,18 @@ name: key_and_team_union
 call:
   tool_policy:
     tools:
-      - {"tool_id":"t1","tool_name":"blocked-a","input_policy":"trusted","output_policy":"trusted"}
-      - {"tool_id":"t2","tool_name":"blocked-b","input_policy":"untrusted"}
-      - {"tool_id":"t3","tool_name":"free","input_policy":"trusted"}
-      - {"tool_id":"t4","tool_name":"team-blocked","input_policy":"trusted","output_policy":"trusted"}
+      - {tool_id: t1, tool_name: blocked-a, input_policy: trusted, output_policy: trusted}
+      - {tool_id: t2, tool_name: blocked-b, input_policy: untrusted}
+      - {tool_id: t3, tool_name: free, input_policy: trusted}
+      - {tool_id: t4, tool_name: team-blocked, input_policy: trusted, output_policy: trusted}
     permissions:
-      - {"object_permission_id":"perm-key","blocked_tools":["blocked-a"]}
-      - {"object_permission_id":"perm-team","blocked_tools":["team-blocked"]}
-      - {"object_permission_id":"perm-both","blocked_tools":["blocked-b"]}
+      - {object_permission_id: perm-key, blocked_tools: [blocked-a]}
+      - {object_permission_id: perm-team, blocked_tools: [team-blocked]}
+      - {object_permission_id: perm-both, blocked_tools: [blocked-b]}
     queries:
-      - {"tool_names":["blocked-a","free","team-blocked"],"key_permission_id":"perm-key","team_permission_id":"perm-team"}
-      - {"tool_names":["blocked-b","free"],"key_permission_id":"perm-key","team_permission_id":"perm-both"}
-      - {"tool_names":["blocked-a","team-blocked"],"key_permission_id":null,"team_permission_id":null}
-    output_tools: ["free","team-blocked","blocked-a","missing"]
+      - {tool_names: [blocked-a, free, team-blocked], key_permission_id: perm-key, team_permission_id: perm-team}
+      - {tool_names: [blocked-b, free], key_permission_id: perm-key, team_permission_id: perm-both}
+      - {tool_names: [blocked-a, team-blocked], key_permission_id: null, team_permission_id: null}
+    output_tools: [free, team-blocked, blocked-a, missing]
 env: {}
 compare: {ignore: []}

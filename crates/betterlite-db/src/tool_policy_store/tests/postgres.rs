@@ -1,7 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
 use chrono::{DateTime, Utc};
-use tokio_postgres::Client;
 
 use crate::budget_permission_rows::Timestamp;
 use crate::tool_policy_store::blockers::{
@@ -145,14 +144,9 @@ async fn discovery_keeps_the_first_identity_and_increments_the_count() {
     assert_eq!(tool.key_hash.as_deref(), Some("k1"));
     assert_eq!(tool.team_id, None);
     assert_eq!(tool.call_count, 2);
-    assert_eq!(
-        tool.last_used_at,
-        Some(Timestamp::Naive(later_instant().naive_utc()))
-    );
-    assert_eq!(
-        tool.updated_at,
-        Some(Timestamp::Naive(later_instant().naive_utc()))
-    );
+    let used_at = Timestamp::Naive(later_instant().naive_utc());
+    assert_eq!(tool.last_used_at.as_ref(), Some(&used_at));
+    assert_eq!(tool.updated_at.as_ref(), Some(&used_at));
     db.close().await;
 }
 
