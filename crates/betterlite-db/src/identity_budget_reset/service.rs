@@ -67,13 +67,9 @@ where
         let Some(due) = read else {
             return NO_PROGRESS;
         };
-        if phase == IdentityPhase::Keys {
-            tracing::debug!(keys = ?LazyJson(&due), "Keys to reset");
-        }
+        tracing::debug!(subject = phase.subject(), due = ?LazyJson(&due), "Budget rows to reset");
         let (writes, failures) = collect_resets(phase, &due, self.rollover, self.schedule);
-        if !due.is_empty() {
-            tracing::debug!(subject = phase.subject(), rows = ?LazyJson(&writes), "Updated budget rows");
-        }
+        tracing::debug!(subject = phase.subject(), rows = ?LazyJson(&writes), "Updated budget rows");
         let fetched = due.len();
         let report = ChunkReport {
             fetched,
