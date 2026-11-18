@@ -4,7 +4,7 @@ use betterlite_prompts::message_content::{Content, ContentPart, Message};
 
 use super::{Fetcher, MessageError};
 
-// clippy::pub_use is denied and the task's expect budget is zero, so the re-exports reach only this crate's callers
+// clippy::pub_use is denied and no expect may be added, so the re-exports reach only this crate's callers
 pub(crate) use betterlite_prompts::anthropic_invokes::file_blocks::FileBlockError;
 pub(crate) use betterlite_prompts::anthropic_invokes::file_blocks::RemoteFileBlocks;
 
