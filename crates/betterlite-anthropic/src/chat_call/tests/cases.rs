@@ -92,11 +92,9 @@ fn messages_post_request() {
     assert_eq!(asynchronous.posts_pooled, 0);
     assert_posted(&asynchronous);
     assert_prepared(&asynchronous, "async");
-    // the reply mapper gets the popped options and the extracted json_mode, not the transform params
     assert_eq!(asynchronous.responses[0].json_mode, Some(true));
     assert!(!asynchronous.responses[0].has_vertex_request);
 
-    // the sync branch keeps only an HTTPHandler client, so an async one falls back to the pooled client
     let synchronous = execute(&Setup {
         optional_params: popped_options(),
         ..Setup::chat()
@@ -174,7 +172,6 @@ fn assert_prepared(run: &Run, mode: &str) {
         recorded.optional_params.get("is_vertex_request"),
         Some(&Json::Bool(false))
     );
-    // popped options never reach the config's transform_params
     assert!(!recorded.optional_params.contains_key("stream"));
     assert!(!recorded.optional_params.contains_key("json_mode"));
     assert!(
@@ -199,7 +196,6 @@ fn assert_prepared(run: &Run, mode: &str) {
 }
 
 fn assert_buffered_logged(run: &Run) {
-    // the response mapper's post_call replaces the pre_call record and keeps the filtered body it sent
     assert_eq!(
         run.detail(&["log_event_type"]),
         Some(&text("post_api_call"))
@@ -237,7 +233,6 @@ fn buffered_success() {
     assert_reply(&synchronous);
     assert_buffered_logged(&synchronous);
 
-    // a supplied sync client is the one a sync buffered call keeps
     let kept = execute(&Setup {
         supplied_kind: ClientKind::Sync,
         optional_params: speed_options(),
@@ -255,7 +250,6 @@ fn assert_reply(run: &Run) {
         Some("hello")
     );
     assert_eq!(reply.model.as_deref(), Some(MODEL));
-    // the response mapper got the popped optional_params, so the speed reaches the usage
     assert_eq!(reply.usage.as_ref().unwrap().speed.as_deref(), Some("fast"));
 }
 
@@ -281,7 +275,6 @@ fn stream_setup() -> Setup {
 
 fn stream_request() {
     let setup = stream_setup();
-    // the async stream accepts only an AsyncHTTPHandler, so this sync client is not used
     let asynchronous = execute(&Setup {
         style: CallStyle::Async,
         ..setup.clone()
@@ -292,7 +285,6 @@ fn stream_request() {
     assert_eq!(asynchronous.logger_calls.len(), 1);
     assert_eq!(asynchronous.logger_calls[0].original_response, "lines");
 
-    // make_sync_call takes any supplied client
     let synchronous = execute(&setup);
     assert_eq!(synchronous.posts_supplied, 1);
     assert_eq!(synchronous.posts_pooled, 0);
@@ -324,7 +316,6 @@ fn assert_streamed(run: &Run) {
             .map(String::as_str),
         Some("original")
     );
-    // data.stream is set after beta filtering, before pre_call, and reaches the transport
     assert_eq!(run.posted_bodies[0].get("stream"), Some(&Json::Bool(true)));
     assert_eq!(
         run.detail(&["additional_args", "complete_input_dict", "stream"]),
@@ -337,7 +328,6 @@ fn assert_streamed(run: &Run) {
 }
 
 fn pre_stream_error() {
-    // validation runs before any config or transport work
     let unauthenticated = execute(&Setup {
         caller_key: None,
         ..Setup::chat()

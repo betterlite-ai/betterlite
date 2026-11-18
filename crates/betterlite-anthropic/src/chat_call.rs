@@ -89,7 +89,7 @@ pub fn chat_call<'call, Config, Client, Counter>(
 where
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter + Unpin + Send,
+    Counter: ReasoningTokenCounter + Unpin + Send + 'call,
 {
     Box::pin(async move {
         if call.style == CallStyle::Embedding {
