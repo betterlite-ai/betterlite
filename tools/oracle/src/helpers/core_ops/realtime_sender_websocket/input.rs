@@ -23,7 +23,7 @@ impl Frame {
         }
     }
 
-    fn size(&self) -> usize {
+    const fn size(&self) -> usize {
         match self {
             Self::Text { text } => text.len(),
             Self::Binary { bytes } => bytes.len(),
@@ -48,7 +48,7 @@ pub(crate) struct GuardrailDocument {
     pub(crate) runs_for: Vec<GuardrailEventHooks>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Operation {
     Send { text: String },
@@ -107,23 +107,27 @@ impl Input {
         let Some(provider) = &self.provider else {
             return checked_capture(captured);
         };
-        if provider.transforms.len() > MAX_OPERATIONS {
-            return Err(String::from("the scripted sender input is past its limits"));
-        }
-        let mut frames = 0_usize;
-        for frame in provider.transforms.iter().flatten() {
-            let size = frame.size();
-            if size > MAX_TEXT_BYTES {
-                return Err(String::from("the scripted sender input is past its limits"));
-            }
-            frames = frames.saturating_add(1);
-            captured = captured.saturating_add(size);
-        }
-        if frames > MAX_FRAMES {
-            return Err(String::from("the scripted sender input is past its limits"));
-        }
-        checked_capture(captured)
+        check_provider(provider, captured)
     }
+}
+
+fn check_provider(provider: &ProviderDocument, mut captured: usize) -> Result<(), String> {
+    if provider.transforms.len() > MAX_OPERATIONS {
+        return Err(String::from("the scripted sender input is past its limits"));
+    }
+    let mut frames = 0_usize;
+    for frame in provider.transforms.iter().flatten() {
+        let size = frame.size();
+        if size > MAX_TEXT_BYTES {
+            return Err(String::from("the scripted sender input is past its limits"));
+        }
+        frames = frames.saturating_add(1);
+        captured = captured.saturating_add(size);
+    }
+    if frames > MAX_FRAMES {
+        return Err(String::from("the scripted sender input is past its limits"));
+    }
+    checked_capture(captured)
 }
 
 fn checked_capture(captured: usize) -> Result<(), String> {

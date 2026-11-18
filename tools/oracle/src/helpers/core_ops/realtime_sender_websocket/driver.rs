@@ -17,7 +17,8 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::Receiver;
+use tokio::runtime::Builder;
+use tokio::sync::mpsc::{Receiver, channel};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
@@ -51,7 +52,7 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
     input
         .check()
         .map_err(|message| failure("ValueError", message))?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
@@ -73,7 +74,7 @@ fn open(input: &Input) -> DriverFuture<'_, Value> {
         let address = listener
             .local_addr()
             .map_err(|error| failure("OSError", error.to_string()))?;
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(MAX_FRAMES);
+        let (sender, mut receiver) = channel(MAX_FRAMES);
         let mut relayed = JoinSet::new();
         relayed.spawn(relay(listener, sender));
         let outcome = run_operations(input, address, &mut receiver).await;
@@ -107,7 +108,7 @@ fn run_operations<'driver>(
             let delivered = streaming.backend_log.locked().delivered;
             settle(receiver, &mut upstream, delivered).await?;
         }
-        Ok(snapshot(&streaming, results, upstream))
+        Ok(snapshot(&streaming, &results, &upstream))
     })
 }
 
@@ -221,6 +222,7 @@ where
                 | RealtimeSenderError::ClientMissing
                 | RealtimeSenderError::Beta { .. }
                 | RealtimeSenderError::SessionUpdateTooDeep
+                | RealtimeSenderError::SessionUpdateUnreadable
                 | RealtimeSenderError::SessionUpdateInvalid { .. }
                 | RealtimeSenderError::Encode { .. } => "other",
             };
@@ -231,11 +233,11 @@ where
 
 async fn settle(
     receiver: &mut Receiver<Recorded>,
-    received: &mut Vec<Recorded>,
+    upstream: &mut Vec<Recorded>,
     delivered: usize,
 ) -> Result<(), Failure> {
-    while received.len() < delivered {
-        if received.len() >= MAX_FRAMES {
+    while upstream.len() < delivered {
+        if upstream.len() >= MAX_FRAMES {
             return Err(failure(
                 "InvalidInput",
                 String::from("the upstream capture is full"),
@@ -246,12 +248,12 @@ async fn settle(
         })?;
         let frame =
             next.ok_or_else(|| failure("TransportError", String::from("upstream ended")))?;
-        received.push(frame);
+        upstream.push(frame);
     }
     Ok(())
 }
 
-fn snapshot(session: &Session, results: Vec<Value>, upstream: Vec<Recorded>) -> Value {
+fn snapshot(session: &Session, results: &[Value], upstream: &[Recorded]) -> Value {
     let request = session
         .state
         .response

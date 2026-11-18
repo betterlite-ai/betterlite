@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::error::Error as _;
-use std::iter::once;
+use std::iter::{once, repeat_n};
 use std::sync::{Arc, Mutex};
 
 use betterlite_core::api::realtime_contracts::config::BaseRealtimeConfig as _;
@@ -23,13 +23,16 @@ const EMPTY_INPUT: &str = r#"{
     "guardrails":[], "backend_failures":[], "client_failures":[], "operations":[]
 }"#;
 
+// MAX_TEXT_BYTES is even and a two-byte character fills it with exactly this many characters
+const TWO_BYTE_CHARACTERS: usize = MAX_TEXT_BYTES >> 1;
+
 #[rstest]
 #[case::inside(MAX_OPERATIONS - 1, true)]
 #[case::limit(MAX_OPERATIONS, true)]
 #[case::outside(MAX_OPERATIONS + 1, false)]
 fn disable_operations_are_bounded(#[case] count: usize, #[case] accepted: bool) {
     let mut input: Input = serde_json::from_str(EMPTY_INPUT).unwrap();
-    input.operations = (0..count).map(|_| Operation::Disable).collect();
+    input.operations = repeat_n(Operation::Disable, count).collect();
     assert_eq!(input.check().is_ok(), accepted);
 }
 
@@ -46,13 +49,13 @@ fn model_bytes_are_bounded(#[case] bytes: usize, #[case] accepted: bool) {
 }
 
 #[rstest]
-#[case::inside(MAX_TEXT_BYTES / 2 - 1, true)]
-#[case::limit(MAX_TEXT_BYTES / 2, true)]
-#[case::outside(MAX_TEXT_BYTES / 2 + 1, false)]
+#[case::inside(TWO_BYTE_CHARACTERS - 1, true)]
+#[case::limit(TWO_BYTE_CHARACTERS, true)]
+#[case::outside(TWO_BYTE_CHARACTERS + 1, false)]
 fn operation_limits_count_utf8_bytes(#[case] characters: usize, #[case] accepted: bool) {
     let mut input: Input = serde_json::from_str(EMPTY_INPUT).unwrap();
     input.operations.push(Operation::Send {
-        text: "é".repeat(characters),
+        text: "\u{e9}".repeat(characters),
     });
     assert_eq!(input.check().is_ok(), accepted);
 }
@@ -65,12 +68,14 @@ fn operation_limits_count_utf8_bytes(#[case] characters: usize, #[case] accepted
 #[case::capture_limit(MAX_CAPTURE_BYTES - 1, 1, true)]
 #[case::capture_outside(MAX_CAPTURE_BYTES, 1, false)]
 fn generated_capture_limits(#[case] used: usize, #[case] size: usize, #[case] accepted: bool) {
-    let budget = Mutex::new(used);
+    let budget = Arc::new(Mutex::new(used));
     assert_eq!(capture(&budget, &[size]).is_ok(), accepted);
-    assert_eq!(
-        budget.into_inner().unwrap(),
-        if accepted { used + size } else { used }
-    );
+    let expected = if accepted {
+        used.saturating_add(size)
+    } else {
+        used
+    };
+    assert_eq!(*budget.lock().unwrap(), expected);
 }
 
 #[test]
@@ -82,7 +87,7 @@ fn enforced_frames_are_bounded_before_send() {
             r#"{"type":"session.update","session":{"input_audio_transcription":{}}}"#,
         ),
     });
-    assert!(input.check().is_ok());
+    input.check().unwrap();
     let actual = drive(&input).unwrap();
     assert_eq!(actual["results"], json!([{"error":"backend"}]));
     assert_eq!(actual["upstream"], json!([]));
@@ -125,7 +130,7 @@ fn binary_failure_fixture_reaches_backend_send() {
     let inputs = cases(include_str!(
         "../../../../cases/websocket/realtime-sender/realtime-backend-send-order.yaml"
     ));
-    let actual = drive(inputs.get(3).unwrap()).unwrap();
+    let actual = drive(&inputs[3]).unwrap();
     assert_eq!(
         actual["results"],
         json!([
