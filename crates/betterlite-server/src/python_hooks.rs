@@ -130,6 +130,11 @@ pub enum HooksError {
     Call(#[from] CallError),
     #[error("Invalid hook spec '{spec}': expected format is 'module.path:function_name'")]
     StartupSpec { spec: String },
-    #[error("Worker startup hook '{spec}' failed: {error}")]
-    Startup { spec: String, error: String },
+    #[error("Worker startup hook '{spec}' failed: {message}")]
+    Startup {
+        spec: String,
+        message: String,
+        #[source]
+        source: Box<load::StartupFailure>,
+    },
 }

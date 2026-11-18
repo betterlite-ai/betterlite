@@ -86,11 +86,12 @@ impl PythonHooks {
                 Ok(())
             }
             Err(source) => {
-                let error = startup_error_text(&source);
-                tracing::error!("Worker startup hook '{spec}' failed: {error}");
+                let message = startup_error_text(&source);
+                tracing::error!("Worker startup hook '{spec}' failed: {message}");
                 Err(HooksError::Startup {
                     spec: spec.to_owned(),
-                    error,
+                    message,
+                    source: Box::new(source),
                 })
             }
         }
@@ -166,7 +167,7 @@ fn import_in_interpreter(
 }
 
 #[derive(Debug, thiserror::Error)]
-enum StartupFailure {
+pub enum StartupFailure {
     #[error(transparent)]
     Import(#[from] PythonError),
     #[error(transparent)]

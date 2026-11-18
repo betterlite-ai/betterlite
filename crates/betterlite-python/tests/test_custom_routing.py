@@ -1,9 +1,11 @@
 import asyncio
 import inspect
+import subprocess
+import sys
+from collections.abc import Iterable
 from typing import Final
 
-from litellm.types.router import CustomRoutingStrategyBase as LiteLLMStrategy
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 from betterlite._custom_routing import CustomRoutingStrategyBase
@@ -11,32 +13,66 @@ from betterlite._custom_routing import CustomRoutingStrategyBase
 MODEL: Final = "gpt-4o"
 RENAMED: Final = {"input": "input_value"}
 KEYWORD_ONLY: Final = frozenset({"specific_deployment", "request_kwargs"})
+ROW: Final = TypeAdapter(list[tuple[str, str, str]])
+# LiteLLM types input and request_kwargs as bare list and dict, which strict mypy reads as Any,
+# so the probe reads its signature in a subprocess and this file only sees JSON rows
+LITELLM_PROBE: Final = """
+import inspect
+import json
+import sys
+
+from litellm.types.router import CustomRoutingStrategyBase
+
+method = getattr(CustomRoutingStrategyBase, sys.argv[1])
+rows: list[list[str]] = []
+for parameter in inspect.signature(method).parameters.values():
+    text = str(parameter)
+    default = text.partition(" = " if " = " in text else "=")[2]
+    rows.append([parameter.name, parameter.kind.name, default])
+print(json.dumps(rows))
+"""
 
 
-def rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
+def parameters(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     for parameter in signature.parameters.values():
-        name = parameter.name
-        if name in RENAMED:
-            name = RENAMED[name]
-        kind = "KEYWORD_ONLY" if name in KEYWORD_ONLY else parameter.kind.name
         # str(Parameter) spells the default after " = ", or after "=" when it has no annotation
         text = str(parameter)
         default = text.partition(" = " if " = " in text else "=")[2]
-        found.append((name, kind, default))
+        found.append((parameter.name, parameter.kind.name, default))
     return found
 
 
+def normalized(raw: Iterable[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    for name, kind, default in raw:
+        renamed = RENAMED[name] if name in RENAMED else name
+        found.append((renamed, "KEYWORD_ONLY" if renamed in KEYWORD_ONLY else kind, default))
+    return found
+
+
+def litellm_rows(method: str) -> list[tuple[str, str, str]]:
+    done = subprocess.run(
+        [sys.executable, "-c", LITELLM_PROBE, method],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    return ROW.validate_json(done.stdout)
+
+
 def test_async_signature_matches() -> None:
-    ours = rows(inspect.signature(CustomRoutingStrategyBase.async_get_available_deployment))
-    theirs = rows(inspect.signature(LiteLLMStrategy.async_get_available_deployment))
-    assert ours == theirs
+    signature = inspect.signature(CustomRoutingStrategyBase.async_get_available_deployment)
+    assert normalized(parameters(signature)) == normalized(
+        litellm_rows("async_get_available_deployment")
+    )
 
 
 def test_sync_signature_matches() -> None:
-    ours = rows(inspect.signature(CustomRoutingStrategyBase.get_available_deployment))
-    theirs = rows(inspect.signature(LiteLLMStrategy.get_available_deployment))
-    assert ours == theirs
+    signature = inspect.signature(CustomRoutingStrategyBase.get_available_deployment)
+    theirs = normalized(litellm_rows("get_available_deployment"))
+    assert normalized(parameters(signature)) == theirs
 
 
 def test_keyword_only_arguments() -> None:
@@ -45,7 +81,7 @@ def test_keyword_only_arguments() -> None:
         inspect.signature(CustomRoutingStrategyBase.get_available_deployment),
     ):
         for name in KEYWORD_ONLY:
-            assert signature.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            assert signature.parameters[name].kind.name == "KEYWORD_ONLY"
 
 
 class RecordingStrategy(CustomRoutingStrategyBase):

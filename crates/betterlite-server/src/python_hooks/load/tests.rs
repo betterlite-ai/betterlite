@@ -8,7 +8,7 @@ use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 use pyo3::types::PyAnyMethods as _;
 use serde_json::json;
 
-use super::CustomProviderItem;
+use super::{CustomProviderItem, StartupFailure};
 use crate::python_hooks::HooksError;
 use crate::python_hooks::HooksRuntime;
 use crate::python_hooks::PythonHooks;
@@ -297,10 +297,15 @@ async fn a_failing_hook_reports_litellms_line_and_stops_the_later_specs() {
     match error {
         HooksError::Startup {
             spec,
-            error: message,
+            message,
+            source,
         } => {
             assert_eq!(spec, specs[0]);
             assert_eq!(message, "boom");
+            assert!(matches!(
+                *source,
+                StartupFailure::Call(CallError::Python(_))
+            ));
         }
         other => panic!("expected a startup error, got {other:?}"),
     }
@@ -323,10 +328,12 @@ async fn a_startup_hook_that_cannot_be_imported_reports_the_python_message() {
     match error {
         HooksError::Startup {
             spec,
-            error: message,
+            message,
+            source,
         } => {
             assert_eq!(spec, specs[0]);
             assert!(message.contains("absent"), "got: {message}");
+            assert!(matches!(*source, StartupFailure::Import(_)));
         }
         other => panic!("expected a startup error, got {other:?}"),
     }
