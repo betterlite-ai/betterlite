@@ -321,16 +321,16 @@ async fn usage_routing_boundaries_cancel_a_strategy_call_without_state() {
         ignored_override: None,
     };
     let mut random = StdRng::seed_from_u64(7);
-    {
+    let first = {
         let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
         let mut call = pin!(strategy_select(
             Strategy::UsageBasedRouting,
             context,
             &mut random
         ));
-        let first = call.as_mut().poll(&mut Context::from_waker(Waker::noop()));
-        assert!(matches!(first, Poll::Ready(Ok(0))));
-    }
+        call.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+    };
+    assert!(matches!(first, Poll::Ready(Ok(0))));
     let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
     let selected = strategy_select(Strategy::UsageBasedRouting, context, &mut random).await;
     assert_eq!(selected.unwrap(), 0);
