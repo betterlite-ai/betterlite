@@ -331,8 +331,9 @@ impl Fixture {
         let timeline = Timeline::default();
         Self {
             provider: ScriptedProvider {
+                script: Script::default(),
                 timeline: timeline.clone(),
-                ..ScriptedProvider::default()
+                requires_session_configuration: false,
             },
             backend_log: BackendLog::default(),
             client_log: ClientLog::default(),
