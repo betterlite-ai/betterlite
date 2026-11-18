@@ -75,7 +75,7 @@ impl V2LoggerConstructor for CallbackConstructor {
             build: ProviderBuild {
                 factories: Arc::clone(&request.factories),
                 scope_source: Arc::clone(&request.scope_source),
-                clients: request.factories.clients(),
+                clients: request.factories.clients.clone(),
             },
             metric: MetricSettings {
                 callback_settings: Arc::clone(&self.callback_settings),
