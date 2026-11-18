@@ -130,9 +130,7 @@ fn assemble(
         .map(|outcome| outcome.body)
 }
 
-async fn assemble_body(
-    mut assembly: Assembly<'_>,
-) -> Result<ConverseRequestOutcome, Box<HelperError>> {
+async fn assemble_body(assembly: Assembly<'_>) -> Result<ConverseRequestOutcome, Box<HelperError>> {
     let mut keys = ModelCostKeys::default();
     let dynamic = NoDynamicMetadata;
     let resolution = assembly.fixture.resolution();
