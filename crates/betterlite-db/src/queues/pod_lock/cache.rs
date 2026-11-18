@@ -67,6 +67,8 @@ where
 }
 
 impl LockCache for RedisLockCache {
+    // A live cache needs a running Redis, which the db tests fake at the LockCache seam.
+    #[cfg_attr(test, mutants::skip)]
     async fn get_owner(&self, key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
         let value = with_cache_error("async_get_cache", self.cache.async_get_cache(key).await)?;
         Ok(value.and_then(owner_bytes))
@@ -91,6 +93,8 @@ impl LockCache for RedisLockCache {
         Ok(stored == Some(true))
     }
 
+    // A live cache needs a running Redis, which the db tests fake at the LockCache seam.
+    #[cfg_attr(test, mutants::skip)]
     async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
         with_cache_error(
             "async_delete_cache",
