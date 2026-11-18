@@ -70,5 +70,9 @@ fn a_base64_limit_that_is_not_a_number_stops_the_load() {
         "MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(),
         "many".to_owned(),
     )]);
-    assert!(ConfigLoader { lookup }.load("").is_err());
+    let error = ConfigLoader { lookup }.load("").unwrap_err();
+    assert!(
+        error.to_string().contains("MAX_BASE64_LENGTH_FOR_LOGGING"),
+        "{error}"
+    );
 }
