@@ -1,0 +1,9 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}},
+      {"type": "file", "file": {"file_id": "file-1"}}
+    ]
+  }
+]

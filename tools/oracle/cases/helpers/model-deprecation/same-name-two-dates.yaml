@@ -1,0 +1,15 @@
+kind: helper
+name: model-deprecation-same-name-two-dates
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: alpha
+        model_info: {deprecation_date: "2026-05-20"}
+      - model_name: alpha
+        model_info: {deprecation_date: "2026-05-10"}
+      - model_name: beta
+        model_info: {deprecation_date: "2026-05-15"}
+env: {}
+compare: {ignore: []}

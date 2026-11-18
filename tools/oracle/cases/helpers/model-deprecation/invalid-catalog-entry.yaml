@@ -1,0 +1,33 @@
+kind: helper
+name: model-deprecation-invalid-catalog-entry
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      text-entry: not a mapping
+      list-entry: [1, 2]
+      number-entry: 5
+      null-entry: null
+      bad-date: {deprecation_date: "not a date", litellm_provider: provider}
+      no-date: {litellm_provider: provider}
+      bad-provider: {deprecation_date: "2026-05-10", litellm_provider: 9}
+      bool-provider: {deprecation_date: "2026-05-11", litellm_provider: true}
+    deployments:
+      - model_name: text
+        litellm_params: {model: text-entry}
+      - model_name: list
+        litellm_params: {model: list-entry}
+      - model_name: number
+        litellm_params: {model: number-entry}
+      - model_name: null
+        litellm_params: {model: null-entry}
+      - model_name: bad-date
+        litellm_params: {model: bad-date}
+      - model_name: no-date
+        litellm_params: {model: no-date}
+      - model_name: bad-provider
+        litellm_params: {model: bad-provider}
+      - model_name: bool-provider
+        litellm_params: {model: bool-provider}
+env: {}
+compare: {ignore: []}

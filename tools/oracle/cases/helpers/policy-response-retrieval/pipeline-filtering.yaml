@@ -1,0 +1,23 @@
+kind: helper
+name: policy-response-retrieval-pipeline-filtering
+call:
+  b3269:
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+    auth: {team_alias: null, key_alias: null}
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies:
+      post:
+        pipeline: {mode: post_call, steps: [{guardrail: g-post}]}
+      pre:
+        pipeline: {mode: pre_call, steps: [{guardrail: g-pre}]}
+      guards:
+        guardrails: {add: [g-flat]}
+    attachments:
+      - {policy: post, scope: "*"}
+      - {policy: pre, scope: "*"}
+      - {policy: guards, scope: "*"}
+env: {}
+compare: {ignore: []}

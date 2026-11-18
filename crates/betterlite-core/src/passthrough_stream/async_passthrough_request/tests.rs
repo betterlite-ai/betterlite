@@ -2,8 +2,11 @@
 
 use std::net::TcpListener;
 use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
 use betterlite_http::error::HttpError;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
@@ -11,7 +14,7 @@ use super::{AsyncPassthroughReply, PassthroughSend, async_passthrough_request};
 use crate::passthrough_stream::error::PassthroughStreamError;
 use crate::passthrough_stream::tests::{
     ENDPOINT, FakeLogging, FakeSender, MODEL, PROVIDER, ReplyFixture, chunk_steps, fake_config,
-    http_reply, outbound_request, proxy_client, script, serve,
+    outbound_request, proxy_client, script,
 };
 
 const FIXTURE_URL: &str = "http://fixture.test/v1/chat/completions";
@@ -257,10 +260,14 @@ async fn streaming_empty_body_still_returns_a_stream() {
 
 #[tokio::test]
 async fn proxied_client_relays_a_non_streaming_reply() {
-    let serving = serve(http_reply(200, "pong"));
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
     let client = proxy_client(1024);
     let reply = async_passthrough_request(
-        send_to(&client, &serving.base_url(), false),
+        send_to(
+            &client,
+            &format!("http://{}/v1/chat/completions", serving.address),
+            false,
+        ),
         fake_config(),
         logging(),
         TaskTracker::new(),
@@ -274,20 +281,26 @@ async fn proxied_client_relays_a_non_streaming_reply() {
     assert_eq!(full.body, b"pong".to_vec());
     assert!(
         serving
-            .head()
+            .finish()
+            .unwrap()
+            .line
             .starts_with("POST /v1/chat/completions HTTP/1.1")
     );
 }
 
 #[tokio::test]
 async fn proxied_client_relays_a_streaming_reply_and_collects_chunks() {
-    let serving = serve(http_reply(200, "data: one\n\n"));
+    let serving = serve(reply("200 fixture", &[], "data: one\n\n"), Duration::ZERO).unwrap();
     let client = proxy_client(1024);
     let logging = logging();
     let config = fake_config();
     let collected = Arc::clone(&config.collected);
     let reply = async_passthrough_request(
-        send_to(&client, &serving.base_url(), true),
+        send_to(
+            &client,
+            &format!("http://{}/v1/chat/completions", serving.address),
+            true,
+        ),
         config,
         Arc::clone(&logging),
         TaskTracker::new(),
@@ -304,25 +317,28 @@ async fn proxied_client_relays_a_streaming_reply_and_collects_chunks() {
     assert_eq!(body, b"data: one\n\n".to_vec());
     stream.background_tasks.close();
     stream.background_tasks.wait().await;
-    assert_eq!(
-        collected
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len(),
-        1
-    );
+    let collected_count = collected
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
+    assert_eq!(collected_count, 1);
     let flushes = logging.flushed();
     assert_eq!(flushes.len(), 1);
     assert_eq!(flushes[0].logged, "data: one");
-    assert!(serving.head().contains("POST /v1/chat/completions"));
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("POST /v1/chat/completions"));
 }
 
 #[tokio::test]
 async fn proxied_client_reports_an_upstream_status_with_the_body() {
-    let serving = serve(http_reply(502, "bad gateway"));
+    let serving = serve(reply("502 fixture", &[], "bad gateway"), Duration::ZERO).unwrap();
     let client = proxy_client(1024);
     let reply = async_passthrough_request(
-        send_to(&client, &serving.base_url(), false),
+        send_to(
+            &client,
+            &format!("http://{}/v1/chat/completions", serving.address),
+            false,
+        ),
         fake_config(),
         logging(),
         TaskTracker::new(),
@@ -334,15 +350,25 @@ async fn proxied_client_reports_an_upstream_status_with_the_body() {
     };
     assert_eq!(status.status_code, 502);
     assert_eq!(status.body, b"bad gateway".to_vec());
-    assert!(serving.head().contains("POST /v1/chat/completions"));
+    assert!(
+        serving
+            .finish()
+            .unwrap()
+            .head
+            .contains("POST /v1/chat/completions")
+    );
 }
 
 #[tokio::test]
 async fn proxied_client_caps_a_non_streaming_body_at_the_transport_limit() {
-    let serving = serve(http_reply(200, "0123456789"));
+    let serving = serve(reply("200 fixture", &[], "0123456789"), Duration::ZERO).unwrap();
     let client = proxy_client(4);
     let reply = async_passthrough_request(
-        send_to(&client, &serving.base_url(), false),
+        send_to(
+            &client,
+            &format!("http://{}/v1/chat/completions", serving.address),
+            false,
+        ),
         fake_config(),
         logging(),
         TaskTracker::new(),
@@ -353,15 +379,25 @@ async fn proxied_client_caps_a_non_streaming_body_at_the_transport_limit() {
         panic!("expected a body read error");
     };
     assert!(matches!(inner.as_ref(), HttpError::TooLarge { limit: 4 }));
-    assert!(serving.head().contains("POST /v1/chat/completions"));
+    assert!(
+        serving
+            .finish()
+            .unwrap()
+            .head
+            .contains("POST /v1/chat/completions")
+    );
 }
 
 #[tokio::test]
 async fn proxied_client_accepts_a_body_at_the_transport_limit() {
-    let serving = serve(http_reply(200, "0123456789"));
+    let serving = serve(reply("200 fixture", &[], "0123456789"), Duration::ZERO).unwrap();
     let client = proxy_client(10);
     let reply = async_passthrough_request(
-        send_to(&client, &serving.base_url(), false),
+        send_to(
+            &client,
+            &format!("http://{}/v1/chat/completions", serving.address),
+            false,
+        ),
         fake_config(),
         logging(),
         TaskTracker::new(),
@@ -372,7 +408,13 @@ async fn proxied_client_accepts_a_body_at_the_transport_limit() {
         panic!("expected a full reply");
     };
     assert_eq!(full.body, b"0123456789".to_vec());
-    assert!(serving.head().contains("POST /v1/chat/completions"));
+    assert!(
+        serving
+            .finish()
+            .unwrap()
+            .head
+            .contains("POST /v1/chat/completions")
+    );
 }
 
 #[tokio::test]

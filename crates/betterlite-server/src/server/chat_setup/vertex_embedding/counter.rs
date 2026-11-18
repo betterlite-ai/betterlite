@@ -1,31 +1,9 @@
-use async_trait::async_trait;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{TextInput, TokenRequest};
-use betterlite_tokenizer::engine::Engine;
-use betterlite_tokenizer::engine::error::EngineError;
-use betterlite_tokenizer::engine::limits::{BlockingCounter, BuildJob, ConvertJob, CountJob};
 use betterlite_vertex::gemini_embedding_records::usage::TextTokenCounter;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
-
-// the counter only runs inside block_in_place, where the worker thread may block, so a job runs where it is called
-pub(crate) struct InlineCounter;
-
-#[async_trait]
-impl BlockingCounter for InlineCounter {
-    async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
-        job()
-    }
-
-    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
-        job()
-    }
-
-    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
-        job()
-    }
-}
 
 // the embedContent usage records count text synchronously, so the async tokenizer runs on a thread the runtime lets block
 pub(crate) struct RuntimeTextCounter {

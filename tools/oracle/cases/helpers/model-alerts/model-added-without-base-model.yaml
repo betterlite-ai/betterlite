@@ -1,0 +1,15 @@
+kind: helper
+name: model-alerts-model-added-without-base-model
+call:
+  b4030:
+    function: model_added
+    model_name: my-model
+    litellm_model_name: litellm_name
+    base_model: null
+    model_info:
+      litellm_name:
+        max_tokens: 128
+        mode: chat
+    proxy_base_url: null
+env: {}
+compare: {ignore: []}
