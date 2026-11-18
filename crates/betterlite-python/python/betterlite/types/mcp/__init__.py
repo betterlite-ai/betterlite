@@ -3,9 +3,16 @@ from betterlite.types.mcp.credentials import MCP_ADMIN_CONFIG_CREDENTIAL_KEYS, M
 from betterlite.types.mcp.enums import (
     DEFAULT_SUBJECT_TOKEN_TYPE,
     MCP_LEGACY_VERSIONS,
+    MCPAdvertisedVersions,
     MCPAuth,
+    MCPAuthType,
+    MCPLegacyVersion,
     MCPSpecVersion,
+    MCPSpecVersionType,
+    MCPTokenEndpointAuthMethod,
     MCPTransport,
+    MCPTransportType,
+    MCPUpstreamProtocol,
 )
 from betterlite.types.mcp.headers import (
     DEFAULT_CREDENTIAL_HEADER,
@@ -38,12 +45,13 @@ from betterlite.types.mcp.models import (
 
 __all__ = [
     "DEFAULT_CREDENTIAL_HEADER", "DEFAULT_SUBJECT_TOKEN_TYPE", "MCP_ADMIN_CONFIG_CREDENTIAL_KEYS",
-    "MCP_LEGACY_VERSIONS", "HiddenParams", "MCPAllowedClient", "MCPAuth", "MCPCredentials",
-    "MCPDuringCallRequestObject", "MCPDuringCallResponseObject", "MCPGatewaySession",
-    "MCPGatewaySessionGroupCount", "MCPGatewaySessionsResponse",
-    "MCPGatewaySessionsTerminateResponse", "MCPPostCallResponseObject", "MCPPreCallRequestObject",
-    "MCPPreCallResponseObject", "MCPPublicServer", "MCPServerCostInfo", "MCPSpecVersion",
-    "MCPStdioConfig", "MCPToolSearchSettings", "MCPTransport", "credential_redirect_hook",
-    "crosses_origin", "custom_credential_slot", "has_header", "normalize_upstream_header_name",
-    "same_header", "without_header",
+    "MCP_LEGACY_VERSIONS", "HiddenParams", "MCPAdvertisedVersions", "MCPAllowedClient", "MCPAuth",
+    "MCPAuthType", "MCPCredentials", "MCPDuringCallRequestObject", "MCPDuringCallResponseObject",
+    "MCPGatewaySession", "MCPGatewaySessionGroupCount", "MCPGatewaySessionsResponse",
+    "MCPGatewaySessionsTerminateResponse", "MCPLegacyVersion", "MCPPostCallResponseObject",
+    "MCPPreCallRequestObject", "MCPPreCallResponseObject", "MCPPublicServer", "MCPServerCostInfo",
+    "MCPSpecVersion", "MCPSpecVersionType", "MCPStdioConfig", "MCPTokenEndpointAuthMethod",
+    "MCPToolSearchSettings", "MCPTransport", "MCPTransportType", "MCPUpstreamProtocol",
+    "credential_redirect_hook", "crosses_origin", "custom_credential_slot", "has_header",
+    "normalize_upstream_header_name", "same_header", "without_header",
 ]

@@ -1,3 +1,4 @@
+from betterlite.types.llms.openai.core.aliases import EmbeddingInput
 from betterlite.types.llms.vertex_ai.batch import (
     GcsBucketResponse,
     GcsDestination,
@@ -36,6 +37,7 @@ from betterlite.types.llms.vertex_ai.content import (
 )
 from betterlite.types.llms.vertex_ai.credentials import (
     VERTEX_AI_PROVIDER_METADATA_FIELDS,
+    VERTEX_CREDENTIALS_TYPES,
     VertexAccessTokenResolver,
     VertexPartnerProvider,
 )
@@ -44,6 +46,7 @@ from betterlite.types.llms.vertex_ai.embeddings import (
     EmbedContentRequest,
     GeminiEmbedContentRequestBody,
     GeminiEmbedContentResponseObject,
+    GeminiEmbeddingInput,
     TaskTypeEnum,
     VertexAIBatchEmbeddingsRequestBody,
     VertexAIBatchEmbeddingsResponseObject,
@@ -51,7 +54,10 @@ from betterlite.types.llms.vertex_ai.embeddings import (
     VertexAITextEmbeddingsResponseObject,
 )
 from betterlite.types.llms.vertex_ai.generation import (
+    GeminiImageAspectRatio,
     GeminiImageConfig,
+    GeminiImageSize,
+    GeminiResponseModalities,
     GeminiThinkingConfig,
     GenerationConfig,
     PrebuiltVoiceConfig,
@@ -73,6 +79,7 @@ from betterlite.types.llms.vertex_ai.response import (
     Citation,
     CitationMetadata,
     Date,
+    GeminiFinishReason,
     GenerateContentResponseBody,
     GroundingMetadata,
     LogprobsCandidate,
@@ -84,7 +91,14 @@ from betterlite.types.llms.vertex_ai.response import (
     UrlContextMetadata,
     UrlMetadata,
 )
-from betterlite.types.llms.vertex_ai.safety import SafetSettingsConfig
+from betterlite.types.llms.vertex_ai.safety import (
+    HarmBlockMethod,
+    HarmBlockThreshold,
+    HarmCategory,
+    HarmProbability,
+    HarmSeverity,
+    SafetSettingsConfig,
+)
 from betterlite.types.llms.vertex_ai.schema import FunctionDeclaration, Schema
 from betterlite.types.llms.vertex_ai.tools import (
     FunctionCallingConfig,
@@ -116,14 +130,17 @@ from betterlite.types.llms.vertex_ai.video import (
 )
 
 __all__ = [
-    "TTL", "VERTEX_AI_PROVIDER_METADATA_FIELDS", "BlobType", "CachedContent",
-    "CachedContentListAllResponseBody", "CachedContentRequestBody", "Candidates", "Citation",
-    "CitationMetadata", "ContentEmbeddings", "ContentType", "Date", "EmbedContentRequest",
-    "FileDataType", "FineTuneHyperparameters", "FineTuneJobCreate", "FineTunesupervisedTuningSpec",
-    "FunctionCall", "FunctionCallingConfig", "FunctionDeclaration", "FunctionResponse",
-    "FunctionResponsePartType", "GcsBucketResponse", "GcsDestination", "GcsSource",
-    "GeminiEmbedContentRequestBody", "GeminiEmbedContentResponseObject", "GeminiImageConfig",
+    "TTL", "VERTEX_AI_PROVIDER_METADATA_FIELDS", "VERTEX_CREDENTIALS_TYPES", "BlobType",
+    "CachedContent", "CachedContentListAllResponseBody", "CachedContentRequestBody", "Candidates",
+    "Citation", "CitationMetadata", "ContentEmbeddings", "ContentType", "Date",
+    "EmbedContentRequest", "EmbeddingInput", "FileDataType", "FineTuneHyperparameters",
+    "FineTuneJobCreate", "FineTunesupervisedTuningSpec", "FunctionCall", "FunctionCallingConfig",
+    "FunctionDeclaration", "FunctionResponse", "FunctionResponsePartType", "GcsBucketResponse",
+    "GcsDestination", "GcsSource", "GeminiEmbedContentRequestBody",
+    "GeminiEmbedContentResponseObject", "GeminiEmbeddingInput", "GeminiFinishReason",
+    "GeminiImageAspectRatio", "GeminiImageConfig", "GeminiImageSize", "GeminiResponseModalities",
     "GeminiThinkingConfig", "GenerateContentResponseBody", "GenerationConfig", "GroundingMetadata",
+    "HarmBlockMethod", "HarmBlockThreshold", "HarmCategory", "HarmProbability", "HarmSeverity",
     "HttpxBlobType", "HttpxCodeExecutionResult", "HttpxContentType", "HttpxExecutableCode",
     "HttpxFunctionCall", "HttpxPartType", "HttpxServerSideToolCall", "HttpxServerSideToolResponse",
     "InputConfig", "Instance", "InstanceImage", "InstanceVideo", "LogprobsCandidate",
