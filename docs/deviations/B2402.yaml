@@ -13,15 +13,14 @@ deviations:
       produces it true on this path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6104-L6111
   - what: >-
-      The transport error record carries every header the provider answered with, including
-      content-length and content-encoding. LiteLLM's HTTP client re-raises a status error as
-      MaskedHTTPStatusError, which rebuilds the response without those two headers before
-      _handle_error reads them.
+      An integer status outside 0..=65535 is not kept: it counts as no status at all, so the
+      error becomes a synthesized 500. LiteLLM keeps whatever integer the exception carries,
+      however large.
     why: >-
-      The two headers are framing, not secrets: dropping content-length loses what the
-      provider actually sent and makes the recorded error differ from the bytes on the wire,
-      and no caller can rely on their absence.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L556-L580
+      betterlite's status is a u16 on every provider error record, and no HTTP response can
+      produce an out-of-range status; mapping it to the synthesized 500 says the status was
+      not a real one instead of overflowing or truncating it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6080
   - what: >-
       An error body that is not UTF-8 becomes the message "{bytes} bytes that are not
       UTF-8", while LiteLLM's response.text decodes it with replacement characters.
