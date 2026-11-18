@@ -23,7 +23,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use secrecy::SecretString;
 use serde_json::value::RawValue;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::super::error::EmbeddingJobsError;
 use super::super::logging::{StatusEvent, log_call};
@@ -353,10 +353,38 @@ pub(super) fn run(scenario: &Scenario) -> Run {
     let source = Source::new(scenario.credentials.clone());
     let secrets = secret_lookup();
     let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
+    let snapshots: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
+    let signing = AwsSigningExecutor::default();
+    let services = StatusServices {
+        source: &source,
+        secrets: &secrets,
+        region_worker: &region_worker,
+        factory: &factory,
+        signing: &signing,
+    };
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the fixture runtime builds");
+    let result = execute_status(scenario, &services, &runtime, Arc::clone(&snapshots));
+    Run {
+        result,
+        requests: factory.requests(),
+        factory_calls: factory.calls(),
+        resolved: source.calls(),
+        snapshots: snapshots.lock().unwrap().clone(),
+    }
+}
+
+fn execute_status(
+    scenario: &Scenario,
+    services: &StatusServices<'_, Source, Factory>,
+    runtime: &Runtime,
+    snapshots: Arc<Mutex<Vec<Json>>>,
+) -> Result<Json, EmbeddingJobsError> {
     let mut optional_params = parameters(scenario);
     let mut state = logging_state();
-    let snapshots: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
-    let logger = snapshot_logger(Arc::clone(&snapshots));
+    let logger = snapshot_logger(snapshots);
     let redactor = redactor();
     let sink = DiscardingSink;
     let mut logger_callback = |arn: &str, event: StatusEvent<'_>| {
@@ -377,28 +405,9 @@ pub(super) fn run(scenario: &Scenario) -> Run {
         environment: &scenario.environment,
         now: now(),
     };
-    let signing = AwsSigningExecutor::default();
-    let services = StatusServices {
-        source: &source,
-        secrets: &secrets,
-        region_worker: &region_worker,
-        factory: &factory,
-        signing: &signing,
-    };
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("the fixture runtime builds");
-    let result = runtime.block_on(get_async_invoke_status(
+    runtime.block_on(get_async_invoke_status(
         call,
-        &services,
+        services,
         scenario.logging.then_some(&mut logger_callback),
-    ));
-    Run {
-        result,
-        requests: factory.requests(),
-        factory_calls: factory.calls(),
-        resolved: source.calls(),
-        snapshots: snapshots.lock().unwrap().clone(),
-    }
+    ))
 }
