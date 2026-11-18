@@ -24,7 +24,10 @@ pub struct PermissionGetResponse {
 #[derive(Deserialize)]
 struct PermissionGetResponseInput {
     team_id: String,
-    #[serde(default, deserialize_with = "serde_with::rust::double_option::deserialize")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     team_member_permissions: Option<Option<Vec<String>>>,
     all_available_permissions: Vec<String>,
 }
