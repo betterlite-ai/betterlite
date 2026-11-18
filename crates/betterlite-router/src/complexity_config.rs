@@ -33,7 +33,16 @@ pub struct Resolved {
 pub fn resolve(declared: &Declared<'_>) -> Result<Resolved, ComplexityConfigError> {
     let normalized = normalize::apply(&declared.settings, &declared.checks)?;
     let features = order_features(&declared.checks, &normalized);
-    let tier_checks = tier_checks(&declared.checks, &normalized, &features);
+    let tier_checks = TierChecks {
+        classifier_type: declared.checks.classifier_type,
+        classifier_fallback: declared.checks.classifier_fallback,
+        fallback_tier: normalized.fallback_tier.as_deref(),
+        classification_prompt: normalized.classification_prompt.as_deref(),
+        classification_examples: normalized.classification_examples.as_deref(),
+        llm_system_prompt: declared.checks.llm_system_prompt,
+        classification_rubric: declared.checks.classification_rubric,
+        order_features: &features,
+    };
     let tiers = TierSet::resolve(&declared.tiers, &tier_checks)?;
     let dimensions = custom_dimensions::validate(
         declared.dimensions,
@@ -76,24 +85,4 @@ fn order_features(checks: &Checks<'_>, normalized: &Normalized) -> Vec<OrderFeat
         features.push(OrderFeature::EscalationKeywords);
     }
     features
-}
-
-fn tier_checks<'checks, 'config>(
-    checks: &'checks Checks<'config>,
-    normalized: &'checks Normalized,
-    features: &'checks [OrderFeature],
-) -> TierChecks<'checks>
-where
-    'config: 'checks,
-{
-    TierChecks {
-        classifier_type: checks.classifier_type,
-        classifier_fallback: checks.classifier_fallback,
-        fallback_tier: normalized.fallback_tier.as_deref(),
-        classification_prompt: normalized.classification_prompt.as_deref(),
-        classification_examples: normalized.classification_examples.as_deref(),
-        llm_system_prompt: checks.llm_system_prompt,
-        classification_rubric: checks.classification_rubric,
-        order_features: features,
-    }
 }

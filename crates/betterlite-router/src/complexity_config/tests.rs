@@ -10,6 +10,7 @@ use betterlite_models::decisions::Json;
 use crate::complexity_config::checks::{Checks, Declared};
 use crate::complexity_config::error::ComplexityConfigError;
 use crate::complexity_config::{Resolved, resolve};
+use crate::tier_definitions::checks::ClassifierKind;
 
 mod complexity_config_behaviors;
 mod complexity_config_boundaries;
@@ -62,7 +63,7 @@ pub(crate) fn strings(values: &[&str]) -> Vec<String> {
 // the checks a custom tier set needs: an LLM classifier with a defined fallback
 pub(crate) fn llm(fallback: &'static str) -> Checks<'static> {
     Checks {
-        classifier_type: crate::tier_definitions::checks::ClassifierKind::Llm,
+        classifier_type: ClassifierKind::Llm,
         fallback_tier: Some(fallback),
         ..base_checks()
     }

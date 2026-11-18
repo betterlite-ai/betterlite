@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::complexity_config as section;
 use betterlite_config::sections::custom_dimensions as dimensions_section;
 use betterlite_config::sections::tier_definitions as tier_section;
@@ -287,7 +289,7 @@ fn dimensions_are_validated_and_carried_through() {
         patterns: Vec::new(),
         scoring_mode: "binary".to_owned(),
     }];
-    let weights = std::collections::BTreeMap::new();
+    let weights = BTreeMap::new();
     let checks = base_checks();
     let resolved = resolve(&Declared {
         settings: blank(),
@@ -309,7 +311,7 @@ fn a_dimension_problem_surfaces_as_a_dimensions_error() {
         patterns: Vec::new(),
         scoring_mode: "binary".to_owned(),
     }];
-    let weights = std::collections::BTreeMap::new();
+    let weights = BTreeMap::new();
     let rejected = resolve(&Declared {
         settings: blank(),
         tiers: tiers(),
