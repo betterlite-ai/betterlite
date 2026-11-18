@@ -2,34 +2,21 @@
 
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
-use std::path::Path;
-use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use sha2::{Digest as _, Sha256};
-use tokio::fs;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
-use tokio_postgres::{Client as PostgresClient, Config, NoTls};
+use tokio_postgres::{Config, NoTls};
 use tracing::dispatcher::Dispatch;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::migration_drift::MigrationDriftCheck;
-use crate::schema_agent_identity::MIGRATION_CATALOG as AGENT_IDENTITY;
-use crate::schema_baseline::MIGRATION_CATALOG as BASELINE;
-use crate::schema_budget_windows::MIGRATION_CATALOG as BUDGET_WINDOWS;
 use crate::schema_contract::SchemaContract;
-use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE;
-use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY;
-use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES;
-use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES;
-use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 
 pub(super) const PUBLIC_SCHEMA: &str = "public";
 pub(super) const READ_TIMEOUT: Duration = Duration::from_secs(60);
@@ -102,68 +89,46 @@ pub(super) fn capture() -> (CapturedLogs, Dispatch) {
     (logs, Dispatch::new(subscriber))
 }
 
-// A unique schema per test: the fixture creates it and drops it with everything the test added
+// An empty database per test, dropped with everything the test added
 pub(super) async fn with_schema<F, Fut>(test: F)
 where
     F: FnOnce(TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture, pool, database) = schema_fixture().await;
+    let (fixture, pool, database) = database(Vec::new()).await;
     run(test(database), vec![pool], vec![fixture]).await;
 }
 
-// The pinned baseline SQL guards foreign-key names database-wide, so each independent history needs its own database
-pub(super) async fn with_databases<F, Fut>(count: usize, test: F)
+// One database per statement list: the pinned baseline SQL guards foreign-key names database-wide
+pub(super) async fn with_databases<F, Fut>(templates: Vec<Vec<String>>, test: F)
 where
     F: FnOnce(Vec<TestDatabase>) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let mut fixtures = Vec::with_capacity(count);
-    let mut pools = Vec::with_capacity(count);
-    let mut databases = Vec::with_capacity(count);
-    for _ in 0..count {
-        let fixture = PostgresFixture::provision_with_name_generator(
-            test_url().as_ref(),
-            &FixtureSeed::default(),
-            &mut RandomDatabaseName,
-        )
-        .resolve()
-        .await
-        .unwrap();
-        let pool = pool_for(&fixture);
-        let url = SecretString::from(fixture.options.url.expose_secret().to_owned());
-        databases.push(TestDatabase {
-            pool: pool.clone(),
-            url: url.clone(),
-            direct_url: url,
-            schema: PUBLIC_SCHEMA.to_owned(),
-        });
+    let mut fixtures = Vec::with_capacity(templates.len());
+    let mut pools = Vec::with_capacity(templates.len());
+    let mut databases = Vec::with_capacity(templates.len());
+    for statements in templates {
+        let (fixture, pool, test_database) = database(statements).await;
+        databases.push(test_database);
         pools.push(pool);
         fixtures.push(fixture);
     }
     run(test(databases), pools, fixtures).await;
 }
 
-async fn schema_fixture() -> (PostgresFixture, Pool, TestDatabase) {
-    let fixture = PostgresFixture::provision_schema(test_url().as_ref())
+async fn database(statements: Vec<String>) -> (PostgresFixture, Pool, TestDatabase) {
+    let fixture = PostgresFixture::provision_with_statements(test_url().as_ref(), statements)
         .resolve()
         .await
         .unwrap();
     let pool = pool_for(&fixture);
-    let schema: String = pool
-        .get()
-        .await
-        .unwrap()
-        .query_one("SELECT current_schema()", &[])
-        .await
-        .unwrap()
-        .get(0);
-    let direct_url = fixture.options.url.expose_secret().to_owned();
+    let url = SecretString::from(fixture.options.url.expose_secret().to_owned());
     let database = TestDatabase {
         pool: pool.clone(),
-        url: SecretString::from(format!("{direct_url}&schema={schema}")),
-        direct_url: SecretString::from(direct_url),
-        schema,
+        url: url.clone(),
+        direct_url: url,
+        schema: PUBLIC_SCHEMA.to_owned(),
     };
     (fixture, pool, database)
 }
@@ -196,54 +161,6 @@ fn pool_for(fixture: &PostgresFixture) -> Pool {
         .max_size(4)
         .build()
         .unwrap()
-}
-
-const SQL_DIR: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/schema_contract/fixtures/sql"
-);
-
-// The fixture seeds a partial baseline for its row seeds; a full history starts from an empty public schema
-pub(super) async fn reset_public(pool: &Pool) {
-    let reset = "DROP SCHEMA public CASCADE; CREATE SCHEMA public";
-    let client = pool.get().await.unwrap();
-    client.batch_execute(reset).await.unwrap();
-}
-
-pub(super) async fn apply_pinned(pool: &Pool) {
-    let manifest = include_str!("../schema_contract/fixtures/sql.sha256");
-    let client = pool.get().await.unwrap();
-    for line in manifest.lines() {
-        let (digest, file) = line.split_once("  ").unwrap();
-        let bytes = fs::read(Path::new(SQL_DIR).join(file)).await.unwrap();
-        assert_eq!(hex::encode(Sha256::digest(&bytes)), digest);
-        apply_script(&client, &bytes).await;
-    }
-}
-
-pub(super) async fn apply_compiled(pool: &Pool) {
-    let client = pool.get().await.unwrap();
-    for catalog in [
-        BASELINE,
-        DAILY_USAGE,
-        MANAGED_RESOURCES,
-        IDENTITY_HISTORY,
-        POLICY_RESOURCES,
-        ROUTING_STATE,
-        BUDGET_WINDOWS,
-        AGENT_IDENTITY,
-    ] {
-        for migration in catalog.files {
-            apply_script(&client, migration.bytes).await;
-        }
-    }
-}
-
-async fn apply_script(client: &PostgresClient, bytes: &[u8]) {
-    client
-        .batch_execute(str::from_utf8(bytes).unwrap())
-        .await
-        .unwrap();
 }
 
 pub(super) async fn read_contract(pool: &Pool, schema: &str) -> SchemaContract {

@@ -32,7 +32,7 @@ bytes = "1.12.1"
 chrono = { workspace = true, features = ["clock"] }
 csv = "1.4.0"
 deadpool-postgres.workspace = true
-futures-util = { version = "0.3.34", default-features = false }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 percent-encoding.workspace = true

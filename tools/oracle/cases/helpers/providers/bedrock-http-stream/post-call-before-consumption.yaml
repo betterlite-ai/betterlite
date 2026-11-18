@@ -1,0 +1,74 @@
+kind: helper
+name: bedrock-http-stream-post-call-before-consumption
+call:
+  bedrock_http_stream:
+    cases:
+    - path: invoke_sync
+      api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
+      headers:
+        content-type: application/json
+      data: '{"inputText":"hi"}'
+      signed_json_body: null
+      model: bedrock/amazon.titan
+      messages:
+      - role: user
+        content: hi
+      json_mode: null
+      fake_stream: false
+      status: 200
+      response_headers:
+        content-type: application/vnd.amazon.eventstream
+      body: 000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082
+      failure: null
+      consume: none
+      compare:
+        message: false
+        headers: false
+      provider: null
+    - path: invoke_sync
+      api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
+      headers:
+        content-type: application/json
+      data: '{"inputText":"hi"}'
+      signed_json_body: null
+      model: bedrock/amazon.titan
+      messages:
+      - role: user
+        content: hi
+      json_mode: null
+      fake_stream: true
+      status: 200
+      response_headers:
+        content-type: application/json
+      body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d7d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a31302c226f7574707574546f6b656e73223a352c22746f74616c546f6b656e73223a31357d7d
+      failure: null
+      consume: all
+      compare:
+        message: false
+        headers: false
+      provider: null
+    - path: converse_sync
+      api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
+      headers:
+        content-type: application/json
+      data: '{"messages":[{"role":"user","content":[{"text":"hi"}]}]}'
+      signed_json_body: null
+      model: bedrock/anthropic.claude-3
+      messages:
+      - role: user
+        content: hi
+      json_mode: null
+      fake_stream: false
+      status: 200
+      response_headers:
+        content-type: application/vnd.amazon.eventstream
+      body: 000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082
+      failure: null
+      consume: none
+      compare:
+        message: false
+        headers: false
+      provider: null
+env: {}
+compare:
+  ignore: []

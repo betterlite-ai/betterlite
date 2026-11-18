@@ -17,6 +17,7 @@ use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::key_hash::KeyHash;
 use crate::postgres_store::errors::DbError;
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::BASELINE;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
@@ -465,20 +466,14 @@ async fn database() -> (PostgresFixture, Pool) {
     let configured = Environment::parse_from(["key-repository-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(configured.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        configured.as_ref(),
+        vec![BASELINE.to_owned(), ADDED_COLUMNS.to_owned()],
+    )
+    .resolve()
+    .await
+    .unwrap();
     let pool = fixture_pool(&fixture.options.url);
-    let client = pool.get().await.unwrap();
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
-    client.batch_execute(ADDED_COLUMNS).await.unwrap();
-    drop(client);
     (fixture, pool)
 }
 

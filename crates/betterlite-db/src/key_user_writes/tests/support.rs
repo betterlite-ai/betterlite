@@ -1,0 +1,367 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::error::Error;
+use std::future::{Future, pending};
+use std::io::{Result as IoResult, Write};
+use std::mem;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
+
+use chrono::{DateTime, Utc};
+use clap::Parser as _;
+use deadpool_postgres::{Client, Manager, Pool};
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio_postgres::NoTls;
+use tokio_postgres::error::SqlState;
+use tracing_subscriber::fmt::MakeWriter;
+
+use betterlite_postgres_fixture::connection::PostgresFixture;
+
+use crate::key_repository::table::columns::TokenColumn;
+use crate::key_repository::table::{TokenValue, TokenWrite};
+use crate::key_user_writes::columns::{UserColumn, UserWrite};
+use crate::key_user_writes::retry::{
+    CallType, FailureEvent, FailureFuture, FailureSink, WriteClock,
+};
+use crate::key_user_writes::{KeyUserWriteError, WritePorts};
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use crate::migration_ledger::lock::JitterSource;
+use crate::postgres_store::errors::DbError;
+use crate::tool_spend::RetryPause;
+
+// extra token columns, the permission table, and a second user foreign key for the FK translation
+pub(crate) const SCHEMA: &str = r#"
+ALTER TABLE "LiteLLM_VerificationToken"
+    ADD COLUMN IF NOT EXISTS object_permission_id TEXT,
+    ADD COLUMN IF NOT EXISTS settings_updated_at TIMESTAMP(3),
+    ADD COLUMN IF NOT EXISTS budget_limits JSONB;
+CREATE TABLE IF NOT EXISTS "LiteLLM_ObjectPermissionTable" (
+    "object_permission_id" TEXT NOT NULL,
+    "mcp_servers" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    CONSTRAINT "LiteLLM_ObjectPermissionTable_pkey" PRIMARY KEY ("object_permission_id")
+);
+ALTER TABLE "LiteLLM_UserTable" DROP CONSTRAINT IF EXISTS "B2362_UserTable_team_id_fkey";
+ALTER TABLE "LiteLLM_UserTable" ADD CONSTRAINT "B2362_UserTable_team_id_fkey"
+    FOREIGN KEY ("team_id") REFERENCES "LiteLLM_TeamTable"("team_id") ON DELETE SET NULL;
+"#;
+
+#[derive(clap::Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+pub(crate) struct Harness {
+    pub(crate) fixture: PostgresFixture,
+    pub(crate) pool: Pool,
+}
+
+impl Harness {
+    pub(crate) async fn start() -> Self {
+        let url = Environment::parse_from(["key-user-writes-tests"])
+            .url
+            .map(SecretString::from);
+        let mut statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+        statements.push(SCHEMA.to_owned());
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+            .resolve()
+            .await
+            .unwrap();
+        let config = fixture.options.url.expose_secret().parse().unwrap();
+        let pool = Pool::builder(Manager::new(config, NoTls))
+            .max_size(4)
+            .build()
+            .unwrap();
+        Self { fixture, pool }
+    }
+
+    pub(crate) async fn client(&self) -> Client {
+        self.pool.get().await.unwrap()
+    }
+
+    pub(crate) async fn close(self) {
+        self.pool.close();
+        self.fixture.close_async().await.unwrap();
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(crate) fn fixed_now() -> DateTime<Utc> {
+    DateTime::from_timestamp(0, 0).unwrap()
+}
+
+pub(crate) struct StepClock {
+    base: Instant,
+    step: Duration,
+    calls: Mutex<u32>,
+}
+
+impl StepClock {
+    pub(crate) fn new(step: Duration) -> Self {
+        Self {
+            base: Instant::now(),
+            step,
+            calls: Mutex::new(0),
+        }
+    }
+}
+
+impl WriteClock for StepClock {
+    fn now(&self) -> DateTime<Utc> {
+        fixed_now()
+    }
+
+    fn instant(&self) -> Instant {
+        let mut calls = lock(&self.calls);
+        let index = *calls;
+        *calls = calls.saturating_add(1);
+        drop(calls);
+        self.base
+            .checked_add(self.step.saturating_mul(index))
+            .unwrap_or(self.base)
+    }
+}
+
+pub(crate) struct HalfJitter;
+
+impl JitterSource for HalfJitter {
+    fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64 {
+        upper_exclusive_nanos.checked_shr(1).unwrap_or(0)
+    }
+}
+
+// one log of a write's calls, so a test sees each pause after the failure event before it
+pub(crate) type Timeline = Arc<Mutex<Vec<String>>>;
+
+#[derive(Default)]
+pub(crate) struct RecordingPause {
+    pub(crate) delays: Mutex<Vec<Duration>>,
+    pub(crate) timeline: Timeline,
+}
+
+impl RecordingPause {
+    pub(crate) fn delays(&self) -> Vec<Duration> {
+        lock(&self.delays).clone()
+    }
+}
+
+impl RetryPause for RecordingPause {
+    fn pause(&self, delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        lock(&self.delays).push(delay);
+        let millis = delay.as_millis();
+        lock(&self.timeline).push(format!("pause {millis}"));
+        Box::pin(async {})
+    }
+}
+
+pub(crate) struct RecordedFailure {
+    pub(crate) call_type: CallType,
+    pub(crate) duration: Duration,
+    pub(crate) traceback: String,
+    pub(crate) message: String,
+    pub(crate) status: Option<u16>,
+    pub(crate) sql_state: Option<SqlState>,
+    pub(crate) source: Option<String>,
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingSink {
+    pub(crate) events: Mutex<Vec<RecordedFailure>>,
+    pub(crate) timeline: Timeline,
+}
+
+impl RecordingSink {
+    pub(crate) fn events(&self) -> Vec<RecordedFailure> {
+        let mut events = lock(&self.events);
+        mem::take(&mut *events)
+    }
+}
+
+impl FailureSink for RecordingSink {
+    fn record(&self, event: FailureEvent<'_>) -> FailureFuture<'_> {
+        let label = event.call_type.as_str();
+        lock(&self.timeline).push(format!("event {label}"));
+        lock(&self.events).push(RecordedFailure {
+            call_type: event.call_type,
+            duration: event.duration,
+            traceback: event.traceback.clone(),
+            message: event.error.to_string(),
+            status: event.error.http_status(),
+            sql_state: match event.error {
+                KeyUserWriteError::Database {
+                    source: DbError::SqlState { code, .. },
+                } => Some(code.clone()),
+                KeyUserWriteError::Database { .. }
+                | KeyUserWriteError::Row(_)
+                | KeyUserWriteError::Encode { .. }
+                | KeyUserWriteError::MissingField { .. }
+                | KeyUserWriteError::NonNumericUpdate { .. }
+                | KeyUserWriteError::OrganizationMissing { .. } => None,
+            },
+            source: Error::source(event.error).map(ToString::to_string),
+        });
+        Box::pin(async {})
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SinkBehaviour {
+    Stall,
+    Panic,
+    PanicBeforeReturning,
+}
+
+impl SinkBehaviour {
+    fn future(self) -> FailureFuture<'static> {
+        match self {
+            Self::Stall => Box::pin(pending()),
+            Self::Panic => Box::pin(async { panic!("broken failure sink") }),
+            Self::PanicBeforeReturning => panic!("broken failure sink"),
+        }
+    }
+}
+
+pub(crate) struct BrokenSink {
+    pub(crate) calls: AtomicUsize,
+    pub(crate) behaviour: SinkBehaviour,
+}
+
+impl FailureSink for BrokenSink {
+    fn record(&self, _event: FailureEvent<'_>) -> FailureFuture<'_> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.behaviour.future()
+    }
+}
+
+pub(crate) struct Ports {
+    pub(crate) clock: StepClock,
+    pub(crate) jitter: HalfJitter,
+    pub(crate) pause: RecordingPause,
+    pub(crate) sink: RecordingSink,
+}
+
+impl Ports {
+    pub(crate) fn new(step: Duration) -> Self {
+        let timeline = Timeline::default();
+        Self {
+            clock: StepClock::new(step),
+            jitter: HalfJitter,
+            pause: RecordingPause {
+                delays: Mutex::default(),
+                timeline: Arc::clone(&timeline),
+            },
+            sink: RecordingSink {
+                events: Mutex::default(),
+                timeline,
+            },
+        }
+    }
+
+    pub(crate) fn timeline(&self) -> Vec<String> {
+        lock(&self.pause.timeline).clone()
+    }
+
+    pub(crate) fn write_ports(&self) -> WritePorts<'_> {
+        WritePorts {
+            clock: &self.clock,
+            jitter: &self.jitter,
+            pause: &self.pause,
+            sink: &self.sink,
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    pub(crate) fn contents(&self) -> String {
+        let bytes = lock(&self.0).clone();
+        String::from_utf8(bytes).expect("the log writer records UTF-8")
+    }
+}
+
+impl Write for CapturedLogs {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        lock(&self.0).extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(crate) fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send + Sync) {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(logs.clone())
+        .finish();
+    (logs, subscriber)
+}
+
+pub(crate) fn key_write(alias: &str) -> TokenWrite {
+    let mut fields = TokenWrite::default();
+    fields
+        .0
+        .insert(TokenColumn::KeyAlias, TokenValue::Text(alias.to_owned()));
+    fields
+}
+
+pub(crate) fn key_column(column: TokenColumn, value: TokenValue) -> TokenWrite {
+    let mut fields = key_write("unused");
+    fields.0.insert(column, value);
+    fields
+}
+
+pub(crate) fn failing_key_write() -> TokenWrite {
+    key_column(
+        TokenColumn::MaxBudget,
+        TokenValue::Text(String::from("not-a-number")),
+    )
+}
+
+pub(crate) fn alias_update(alias: &str) -> TokenWrite {
+    let mut fields = TokenWrite::default();
+    fields
+        .0
+        .insert(TokenColumn::KeyAlias, TokenValue::Text(alias.to_owned()));
+    fields
+}
+
+pub(crate) fn user_write(user_id: &str, alias: &str) -> UserWrite {
+    UserWrite(BTreeMap::from([
+        (UserColumn::UserId, TokenValue::Text(user_id.to_owned())),
+        (UserColumn::UserAlias, TokenValue::Text(alias.to_owned())),
+    ]))
+}
+
+pub(crate) fn user_column(user_id: &str, column: UserColumn, value: TokenValue) -> UserWrite {
+    let mut fields = user_write(user_id, "unused");
+    fields.0.insert(column, value);
+    fields
+}
+
+pub(crate) fn user_alias_update(alias: &str) -> UserWrite {
+    let mut fields = UserWrite::default();
+    fields
+        .0
+        .insert(UserColumn::UserAlias, TokenValue::Text(alias.to_owned()));
+    fields
+}
