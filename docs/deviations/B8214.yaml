@@ -1,0 +1,15 @@
+task: B8214
+deviations:
+  - what: The initializer returns SemanticGuardArgs and registers nothing.
+    why: B3682 owns the guardrail registry and the callback registration that LiteLLM performs at the end of initialize_guardrail.
+    link: ""
+  - what: The hook class lives in the semantic_guard_hook module, and the route loader, templates and router builder stay in B3808's semantic_guard module.
+    why: B3808 owns semantic_guard and ships the loader and builder the hook calls; the hook keeps its own module so the two tasks do not share a file.
+    link: ""
+  - what: The initializer takes an injected environment lookup instead of reading DEFAULT_SEMANTIC_GUARD_EMBEDDING_MODEL and DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD from the process environment when the module is imported.
+    why: configuration enters through the config crate, and an empty environment value counts as unset as docs/compatibility.md says; the same defaults and the same explicit-zero rule apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L171-L174
+  - what: A user content part whose text is not a string answers a guardrail failure with status 500 and a detail naming the part, instead of raising TypeError out of the hook.
+    why: the declared content parts carry string text, and betterlite reports a value of the wrong type as an error naming the field instead of leaving the hook with an unhandled Python exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L179-L188
+kept_bugs: []
