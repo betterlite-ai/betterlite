@@ -223,6 +223,15 @@ async fn update_team_inserts_and_falls_back_to_the_rows_team_id() {
         patched.data.fields.base.team_alias.as_deref(),
         Some("patched")
     );
+    let mut unnamed = team_payload("ignored", "named");
+    unnamed.remove(&TeamColumn::TeamId);
+    let named = ops
+        .update_team(Some("team-9"), &unnamed, None)
+        .await
+        .expect("the named team insert runs");
+    assert_eq!(named.team_id, "team-9");
+    assert_eq!(named.data.fields.base.team_id, "team-9");
+    assert_eq!(named.data.fields.base.team_alias.as_deref(), Some("named"));
     harness.close().await;
 }
 
@@ -730,6 +739,11 @@ async fn delete_keys_hashes_tokens_and_applies_the_user_filter() {
         .await
         .expect("the literal delete runs");
     assert_eq!(literal, 1);
+    let absent = ops
+        .delete_keys(&[SecretString::from("sk-absent")], None)
+        .await
+        .expect("the absent delete runs");
+    assert_eq!(absent, 0);
     let remaining: i64 = db
         .query_one("SELECT count(*) FROM \"LiteLLM_VerificationToken\"", &[])
         .await

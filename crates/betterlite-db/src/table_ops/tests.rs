@@ -1,8 +1,21 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::time::Duration;
 
-use super::{DEFAULT_TEAM_LIST_LIMIT, OperationCallType, TableOpsError, TableSettings};
+use crate::key_hash::KeyHash;
+use crate::key_repository::table::TokenValue;
+use crate::migration_ledger::lock::JitterSource;
+use crate::postgres_store::errors::DbError;
+use crate::table_ops::columns::TeamColumn;
+use crate::table_ops::rows::SpendLogRow;
+
+use super::sql;
+use super::{
+    DEFAULT_TEAM_LIST_LIMIT, OperationCallType, TableOps, TableOpsError, TablePorts, TableSettings,
+};
+use support::{Ports, TableClient};
 
 mod failures;
 mod reads;
@@ -34,4 +47,106 @@ fn the_team_list_defaults_to_twenty() {
 fn a_missing_database_is_not_reported_as_a_database_fault() {
     let error = TableOpsError::<Infallible>::NoDbConnected;
     assert!(error.database_source().is_none());
+}
+
+#[test]
+fn a_database_error_keeps_its_source() {
+    let error = TableOpsError::<Infallible>::Database {
+        source: DbError::NoDbConnected,
+    };
+    assert!(matches!(
+        error.database_source(),
+        Some(DbError::NoDbConnected)
+    ));
+}
+
+struct FullJitter;
+
+impl JitterSource for FullJitter {
+    fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64 {
+        upper_exclusive_nanos
+    }
+}
+
+#[test]
+fn backoff_doubles_each_try_and_stops_at_the_budget() {
+    let ports = Ports::new();
+    let jitter = FullJitter;
+    let operations: TableOps<'_, TableClient> = TableOps {
+        database: None,
+        ports: TablePorts {
+            clock: &ports.clock,
+            jitter: &jitter,
+            pause: &ports.pause,
+            sink: &ports.sink,
+            invalidator: &ports.invalidator,
+        },
+        settings: TableSettings::default(),
+    };
+    let budget = Duration::from_secs(10);
+    assert_eq!(
+        operations.backoff(1, Duration::ZERO, budget),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        operations.backoff(2, Duration::ZERO, budget),
+        Duration::from_secs(2)
+    );
+    assert_eq!(
+        operations.backoff(3, Duration::ZERO, budget),
+        Duration::from_secs(4)
+    );
+    assert_eq!(operations.backoff(5, Duration::ZERO, budget), budget);
+    assert_eq!(
+        operations.backoff(2, Duration::from_secs(9), budget),
+        Duration::from_secs(1)
+    );
+}
+
+#[test]
+fn the_spend_log_debug_prints_no_api_key() {
+    let row: SpendLogRow = serde_json::from_str(
+        r#"{"request_id":"req-1","call_type":"acompletion","api_key":"sk-secret","spend":1.5,"startTime":"2024-01-01T00:00:00","endTime":"2024-01-01T00:00:00","created_at":"2024-01-01T00:00:00","updated_at":"2024-01-01T00:00:00"}"#,
+    )
+    .expect("the spend row parses");
+    let printed = format!("{row:?}");
+    assert!(printed.contains("SpendLogRow"));
+    assert!(printed.contains("req-1"));
+    assert!(!printed.contains("sk-secret"));
+}
+
+#[test]
+fn a_hashed_key_binds_into_a_text_column() {
+    let payload = BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+        (
+            TeamColumn::TeamAlias,
+            TokenValue::KeyHash(KeyHash::from("hashed-key")),
+        ),
+    ]);
+    let statement = sql::upsert::<Infallible, TeamColumn>(&payload, None)
+        .expect("the hashed key binds as text");
+    assert!(statement.sql.contains("\"team_alias\""));
+    assert_eq!(statement.parameters.bind_values().len(), 2);
+}
+
+#[test]
+fn null_and_bool_values_bind_their_column_types() {
+    let with_nulls = BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+        (TeamColumn::TeamAlias, TokenValue::Null),
+        (TeamColumn::Blocked, TokenValue::Null),
+        (TeamColumn::MaxParallelRequests, TokenValue::Null),
+        (TeamColumn::Models, TokenValue::Null),
+    ]);
+    let nulls = sql::upsert::<Infallible, TeamColumn>(&with_nulls, None)
+        .expect("the nulls bind their column types");
+    assert_eq!(nulls.parameters.bind_values().len(), 5);
+    let with_flag = BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+        (TeamColumn::Blocked, TokenValue::Bool(true)),
+    ]);
+    let flag = sql::upsert::<Infallible, TeamColumn>(&with_flag, None)
+        .expect("the flag binds as a boolean");
+    assert_eq!(flag.parameters.bind_values().len(), 2);
 }
