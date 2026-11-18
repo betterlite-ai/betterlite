@@ -1,0 +1,13 @@
+id: B9986
+milestone: M3 providers
+title: Anthropic chat through the gateway adapter
+status: todo
+depends_on: [B027, B9984, B9988]
+file: tasks/B9986-anthropic-gateway-adapter.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
