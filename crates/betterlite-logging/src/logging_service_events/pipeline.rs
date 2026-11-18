@@ -40,7 +40,7 @@ pub(crate) struct PipelineConfig {
 // The service event track: every call enqueues its pre-call and terminal events here for B191 to deliver.
 pub struct ServicePipeline {
     pub(crate) worker: LoggingWorker<Delivery>,
-    clock: Arc<dyn SuccessClock>,
+    pub(super) clock: Arc<dyn SuccessClock>,
     sink: Arc<dyn ServiceEventSink>,
     registry: Arc<CallbackRegistry>,
     redactor: Redactor,
@@ -103,7 +103,7 @@ impl ServicePipeline {
         report
     }
 
-    fn record(&self, event: ServiceEvent) {
+    pub(crate) fn record(&self, event: ServiceEvent) {
         let delivery = Delivery {
             sink: Arc::clone(&self.sink),
             registry: Arc::clone(&self.registry),
