@@ -17,12 +17,15 @@ const STALE_ID: &str = "ghost-id";
 const STALE_NAME: &str = "ghost";
 const STALE_INDEX: usize = 99;
 
+// The inferred provider a case declares, read through the snapshot's boxed closure.
+pub(crate) type Provider = Box<dyn Fn(&str) -> Option<String>>;
+
 // A Router as model_catalog_lookup sees it: the model list with its indices, the aliases and the routing groups.
 pub(crate) struct Snapshot {
     pub(crate) catalog: DeploymentCatalog,
     pub(crate) aliases: AliasMap,
     pub(crate) groups: RoutingGroupIndex,
-    pub(crate) provider: Box<dyn Fn(&str) -> Option<String>>,
+    pub(crate) provider: Provider,
 }
 
 impl Snapshot {
