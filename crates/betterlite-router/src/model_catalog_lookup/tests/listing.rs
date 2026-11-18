@@ -1,232 +1,148 @@
 use super::*;
 
 #[test]
-fn clear_all_metadata() {
-    let slots = Slots::filled();
-    let caches = slots.caches();
-    caches.invalidate(Invalidation::ModelMetadata);
-    assert!(slots.info.0.lock().unwrap().is_none());
-    assert!(slots.deployment.0.lock().unwrap().is_none());
-    assert!(slots.zero_cost.0.lock().unwrap().is_none());
-    assert!(slots.rows.0.lock().unwrap().is_none());
-    assert_eq!(
-        slots.access.0.lock().unwrap().clone(),
-        Some("stale".to_owned())
-    );
-    let mut catalog = catalog(&[priced("gpt-4o", "a", "1e-6")]);
-    *slots.zero_cost.0.lock().unwrap() = Some(true);
-    rebuild_ids(&mut catalog, vec![priced("gpt-4o", "a", "2e-6")], &caches).unwrap();
-    assert!(slots.zero_cost.0.lock().unwrap().is_none());
-}
-
-#[test]
-fn clear_access_only() {
-    let slots = Slots::filled();
-    slots.caches().invalidate(Invalidation::AccessGroups);
-    assert!(slots.access.0.lock().unwrap().is_none());
-    assert_eq!(
-        slots.info.0.lock().unwrap().clone(),
-        Some("stale".to_owned())
-    );
-    assert_eq!(
-        slots.deployment.0.lock().unwrap().clone(),
-        Some("stale".to_owned())
-    );
-    assert_eq!(slots.zero_cost.0.lock().unwrap().clone(), Some(true));
-    assert_eq!(
-        slots.rows.0.lock().unwrap().clone(),
-        Some("stale".to_owned())
-    );
-}
-
-#[test]
-fn resolve_model_id() {
-    let snapshot = Snapshot::new(&[
-        named("shared", "x", "openai/first"),
-        named("other", "shared", "openai/other"),
-        deployment("", "openai/second", object(vec![("id", text("id"))])),
-        named("provider-model", "p", "vertex_ai/veo-2.0-generate-001"),
-    ]);
-    let lookup = snapshot.lookup();
-    assert_eq!(
-        lookup.resolve_model_name(Some("shared")).unwrap(),
-        Some("shared".to_owned())
-    );
-    assert_eq!(
-        lookup.resolve_model_name(Some("p")).unwrap(),
-        Some("provider-model".to_owned())
-    );
-    assert_eq!(
-        lookup.resolve_model_name(Some("id")).unwrap(),
-        Some("id".to_owned())
-    );
-    assert_eq!(lookup.resolve_model_name(None).unwrap(), None);
-    assert_eq!(lookup.resolve_model_name(Some("nope")).unwrap(), None);
-}
-
-#[test]
-fn resolve_provider_model() {
-    let snapshot = Snapshot::new(&[
-        named("suffix-id", "s", "openai/prefix/veo-2.0-generate-001"),
-        named("colon-model", "q", "openai/model:seq-9"),
-        named("exact-model", "r", "plain"),
-    ]);
-    let lookup = snapshot.lookup();
-    assert_eq!(
-        lookup
-            .resolve_model_name(Some("veo-2.0-generate-001"))
-            .unwrap(),
-        Some("suffix-id".to_owned())
-    );
-    assert_eq!(
-        lookup.resolve_model_name(Some("seq-9")).unwrap(),
-        Some("colon-model".to_owned())
-    );
-    assert_eq!(
-        lookup.resolve_model_name(Some("plain")).unwrap(),
-        Some("exact-model".to_owned())
-    );
-}
-
-#[test]
-fn candidate_routes() {
+fn multiple_deployments() {
     let snapshot = Snapshot::new(&[
         named("gpt-4o", "a", "openai/gpt-4o"),
         named("gpt-4o", "b", "azure/gpt-4o"),
-        named("claude", "c", "anthropic/claude"),
-    ])
-    .with_alias("sonnet", AliasTarget::Name("gpt-4o".to_owned()))
-    .with_group("chat", &["claude"]);
+        named("claude", "a", "anthropic/claude"),
+    ]);
     let lookup = snapshot.lookup();
+    let siblings = lookup.get_model_list(Some("gpt-4o"), None).unwrap();
+    assert_eq!(ids(&siblings), vec!["a", "b"]);
     assert_eq!(
-        lookup.candidate_model_ids("sonnet", None).unwrap(),
-        BTreeSet::from(["a".to_owned(), "b".to_owned()])
+        lookup.get_model_ids(Some("gpt-4o"), false),
+        vec![text("a"), text("b")]
     );
+    let everything = lookup.get_model_list(None, None).unwrap();
+    assert_eq!(ids(&everything), vec!["a", "b", "a"]);
     assert_eq!(
-        lookup.candidate_model_ids("chat", None).unwrap(),
-        BTreeSet::from(["c".to_owned()])
+        lookup.get_model_ids(None, false),
+        vec![text("a"), text("b")]
     );
+    assert_eq!(lookup.get_model_ids(None, true), vec![text("a"), text("b")]);
     assert_eq!(
-        lookup.candidate_model_ids("gpt-4o", None).unwrap(),
-        BTreeSet::from(["a".to_owned(), "b".to_owned()])
+        lookup.get_deployment("a").unwrap().unwrap().model_name,
+        "claude"
     );
 }
 
-// An item alias resolves through its model field, and a blank one falls back to the request name.
 #[test]
-fn candidate_item_alias() {
+fn alias_model_list() {
     let snapshot = Snapshot::new(&[
         named("gpt-4o", "a", "openai/gpt-4o"),
         named("claude", "c", "anthropic/claude"),
     ])
+    .with_alias("sonnet", AliasTarget::Name("gpt-4o".to_owned()))
     .with_alias(
-        "sonnet",
+        "secret",
+        AliasTarget::Item {
+            model: Some(text("claude")),
+            hidden: Some(Json::Bool(true)),
+        },
+    )
+    .with_alias("broken", AliasTarget::Unsupported(Json::Bool(false)));
+    let lookup = snapshot.lookup();
+    let direct = lookup.list_from_alias(Some("sonnet")).unwrap();
+    assert_eq!(ids(&direct), vec!["a"]);
+    assert_eq!(names(&direct), vec!["sonnet"]);
+    assert_eq!(
+        snapshot.catalog.models.first().unwrap().model_name,
+        "gpt-4o"
+    );
+    let hidden = lookup.list_from_alias(Some("secret")).unwrap();
+    assert_eq!(ids(&hidden), vec!["c"]);
+    let everything = lookup.list_from_alias(None).unwrap();
+    assert_eq!(ids(&everything), vec!["a"]);
+    assert!(lookup.list_from_alias(Some("missing")).unwrap().is_empty());
+}
+
+#[test]
+fn alias_from_config() {
+    let aliases = IndexMap::from([(
+        "sonnet".to_owned(),
+        GroupAlias {
+            model: "gpt-4o".to_owned(),
+            hidden: true,
+        },
+    )]);
+    assert_eq!(
+        from_config(&aliases).get("sonnet"),
+        Some(&AliasTarget::Item {
+            model: Some(text("gpt-4o")),
+            hidden: Some(Json::Bool(true)),
+        })
+    );
+}
+
+#[test]
+fn malformed_aliases() {
+    let no_hidden = Snapshot::new(&[]).with_alias(
+        "partial",
         AliasTarget::Item {
             model: Some(text("gpt-4o")),
             hidden: None,
         },
-    )
-    .with_alias(
-        "blank",
+    );
+    assert!(matches!(
+        no_hidden.lookup().list_from_alias(Some("partial")),
+        Err(LookupError::MalformedAlias {
+            field: "hidden",
+            ..
+        })
+    ));
+    let no_model = Snapshot::new(&[]).with_alias(
+        "partial",
         AliasTarget::Item {
-            model: Some(text("")),
+            model: None,
             hidden: Some(Json::Bool(false)),
         },
-    )
-    .with_alias(
+    );
+    assert!(matches!(
+        no_model.lookup().list_from_alias(None),
+        Err(LookupError::MalformedAlias { field: "model", .. })
+    ));
+}
+
+#[test]
+fn include_deployment() {
+    let global = named("gpt-4o", "g", "openai/gpt-4o");
+    let empty_team = deployment(
         "gpt-4o",
-        AliasTarget::Item {
-            model: Some(text("")),
-            hidden: Some(Json::Bool(false)),
-        },
-    )
-    .with_alias("claude", AliasTarget::Name(String::new()));
-    let lookup = snapshot.lookup();
-    assert_eq!(
-        lookup.candidate_model_ids("sonnet", None).unwrap(),
-        BTreeSet::from(["a".to_owned()])
+        "openai/empty",
+        object(vec![("id", text("e")), ("team_id", text(""))]),
     );
-    assert!(
-        lookup
-            .candidate_model_ids("blank", None)
-            .unwrap()
-            .is_empty()
+    let owned = deployment(
+        "gpt-4o",
+        "openai/owned",
+        object(vec![("id", text("o")), ("team_id", text("t1"))]),
     );
-    assert_eq!(
-        lookup.candidate_model_ids("gpt-4o", None).unwrap(),
-        BTreeSet::from(["a".to_owned()])
-    );
-    assert_eq!(
-        lookup.candidate_model_ids("claude", None).unwrap(),
-        BTreeSet::from(["c".to_owned()])
-    );
+    let snapshot = Snapshot::new(&[global, empty_team, owned]);
+    let every = get_all_deployments(&snapshot.catalog, "gpt-4o", None, None);
+    let empty_team_id = get_all_deployments(&snapshot.catalog, "gpt-4o", None, Some(""));
+    let one_team = get_all_deployments(&snapshot.catalog, "gpt-4o", None, Some("t1"));
+    assert_eq!(ids(&every), vec!["g", "e", "o"]);
+    assert_eq!(ids(&empty_team_id), vec!["g", "e"]);
+    assert_eq!(ids(&one_team), vec!["g", "o"]);
 }
 
 #[test]
-fn candidate_route_fallbacks() {
-    let snapshot = Snapshot::new(&[
-        deployment("openai/*", "openai/*", object(vec![("id", text("w"))])),
-        raw("numbers", "{\"id\": 42}"),
-        raw("weird", "{\"id\": [\"x\"]}"),
-    ]);
-    let lookup = snapshot.lookup();
-    assert_eq!(
-        lookup.candidate_model_ids("openai/gpt-4o", None).unwrap(),
-        BTreeSet::from(["w".to_owned()])
+fn include_deployment_scan() {
+    let ghost = deployment(
+        "internal",
+        "openai/ghost",
+        object(vec![
+            ("id", text("s")),
+            ("team_id", text("")),
+            ("team_public_model_name", text("ghost")),
+        ]),
     );
-    assert_eq!(
-        lookup.candidate_model_ids("numbers", None).unwrap(),
-        BTreeSet::from(["42".to_owned()])
-    );
-    assert!(
-        lookup
-            .candidate_model_ids("weird", None)
-            .unwrap()
-            .is_empty()
-    );
-    // A team with no owned row of this name falls through to the patterns, it does not stop the route.
-    assert_eq!(
-        lookup
-            .candidate_model_ids("openai/gpt-4o", Some("t1"))
-            .unwrap(),
-        BTreeSet::from(["w".to_owned()])
-    );
-}
-
-#[test]
-fn candidate_empty_group_stops_the_route() {
-    let snapshot = Snapshot::new(&[deployment(
-        "*",
-        "openai/*",
-        object(vec![("id", text("star"))]),
-    )])
-    .with_group("empty", &[]);
-    let lookup = snapshot.lookup();
-    assert!(
-        lookup
-            .candidate_model_ids("empty", None)
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(
-        lookup.candidate_model_ids("other", None).unwrap(),
-        BTreeSet::from(["star".to_owned()])
-    );
-}
-
-#[test]
-fn candidate_id_text() {
-    let rows = vec![
-        raw("numbers", "{\"id\": 42}"),
-        raw("flags", "{\"id\": true}"),
-        raw("lists", "{\"id\": [\"x\"]}"),
-        raw("missing", "{}"),
-        named("plain", "text", "openai/plain"),
-    ];
-    assert_eq!(
-        deployment_ids(&rows),
-        BTreeSet::from(["42".to_owned(), "True".to_owned(), "text".to_owned()])
-    );
+    let snapshot = Snapshot::new(&[ghost]);
+    let found = get_all_deployments(&snapshot.catalog, "ghost", Some("alias"), Some(""));
+    assert_eq!(ids(&found), vec!["s"]);
+    assert_eq!(names(&found), vec!["alias"]);
+    assert!(get_all_deployments(&snapshot.catalog, "ghost", None, Some("t1")).is_empty());
+    assert!(get_all_deployments(&snapshot.catalog, "ghost", None, None).is_empty());
 }
 
 #[test]
