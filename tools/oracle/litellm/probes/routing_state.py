@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Annotated, Final, Literal, NoReturn
+from typing import Annotated, Final, Literal, NoReturn, TypeVar
 
 from litellm import constants as litellm_constants
 from litellm.caching.caching import DualCache
@@ -43,6 +43,7 @@ MODEL_LIST: Final[list[dict[str, JsonValue]]] = [
         "model_info": {"id": "dep-a"},
     }
 ]
+SleepResult = TypeVar("SleepResult")
 
 
 class Step(Strict):
@@ -145,8 +146,8 @@ class SleepInterruptedError(BaseException):
         self.delay: float = delay
 
 
-# asyncio.sleep's overloads are satisfied by one never-returning signature: NoReturn fits both results
-async def recorded_sleep(delay: float, result: object = None) -> NoReturn:
+# asyncio.sleep's second parameter is generic in the result; a fake that never returns fits every result type
+async def recorded_sleep(delay: float, result: SleepResult | None = None) -> NoReturn:
     _ = result
     raise SleepInterruptedError(delay)
 
@@ -160,7 +161,7 @@ class FakeStore(RedisCache):
     async def async_increment_pipeline(
         self,
         increment_list: list[RedisPipelineIncrementOperation],
-        **_kwargs: object,
+        **_kwargs: JsonValue,
     ) -> list[float] | None:
         if self.down:
             raise RedisConnectionError("connection down")
