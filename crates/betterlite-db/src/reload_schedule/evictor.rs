@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -6,11 +5,27 @@ pub type EvictFuture<'name> = Pin<Box<dyn Future<Output = Result<(), EvictError>
 
 // evict_config_param raises when the cache cannot drop the row, and every write helper awaits it
 #[derive(Debug, thiserror::Error)]
-#[error("the cached {param_name} row could not be evicted")]
-pub struct EvictError {
-    pub param_name: String,
-    #[source]
-    pub source: Box<dyn Error + Send + Sync>,
+pub enum EvictError {
+    #[error("the cached {param_name} row could not be evicted: {source}")]
+    Cache {
+        param_name: String,
+        #[source]
+        source: betterlite_cache::dual_cache::DualCacheError,
+    },
+    #[error("the cached {param_name} row could not be evicted: {source}")]
+    Io {
+        param_name: String,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+impl EvictError {
+    pub fn param_name(&self) -> &str {
+        match self {
+            Self::Cache { param_name, .. } | Self::Io { param_name, .. } => param_name,
+        }
+    }
 }
 
 // LiteLLM's evict_config_param drops this process's cached row; invalidate_config_param adds the publish step

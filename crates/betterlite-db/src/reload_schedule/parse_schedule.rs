@@ -38,7 +38,7 @@ pub fn parse_reload_schedule(row: &ReloadConfigRow) -> Result<ReloadSchedule, Pa
     Ok(ReloadSchedule {
         interval_hours: interval_hours(&row.param_value),
         reload_revision,
-        last_run_at: row.last_run_at.map(NaiveDateTime::and_utc),
+        last_run_at: row.last_run_at.map(|value| value.and_utc()),
     })
 }
 
@@ -52,6 +52,9 @@ fn interval_hours(param_value: &JsonData) -> Option<u32> {
         }
         other => other,
     };
+    if !matches!(value, JsonData::Object(_)) {
+        return None;
+    }
     let text = serde_json::to_string(value).ok()?;
     let config: IntervalConfig = serde_json::from_str(&text).ok()?;
     config.interval_hours

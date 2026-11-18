@@ -110,9 +110,9 @@ pub(crate) struct FailingEvictor;
 
 impl ConfigParamEvictor for FailingEvictor {
     fn evict_param<'call>(&'call self, param_name: &'call str) -> EvictFuture<'call> {
-        let refusal = EvictError {
+        let refusal = EvictError::Io {
             param_name: param_name.to_owned(),
-            source: Box::new(std::io::Error::other("the cache refused the eviction")),
+            source: std::io::Error::other("the cache refused the eviction"),
         };
         Box::pin(std::future::ready(Err(refusal)))
     }

@@ -53,6 +53,12 @@ fn validation_errors_read_a_non_object_param_value_as_no_schedule() {
         None
     );
     assert_eq!(interval_of(JsonData::Array(Vec::new())), None);
+    assert_eq!(
+        interval_of(JsonData::Array(vec![JsonData::Number(
+            serde_json::Number::from(1_i32),
+        )])),
+        None
+    );
 }
 
 #[test]

@@ -26,7 +26,7 @@ async fn write_interval_reports_a_failed_eviction_after_storing_the_interval() {
         .await
         .unwrap_err();
     let failure = eviction_failure(error);
-    assert_eq!(failure.param_name, RELOAD_CONFIG_PARAM_NAME);
+    assert_eq!(failure.param_name(), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(
         stored_row(&database).await.unwrap().param_value,
         JsonData::String(r#"{"interval_hours":8}"#.to_owned())
@@ -43,7 +43,7 @@ async fn clear_interval_reports_a_failed_eviction_after_clearing_the_interval() 
         .await
         .unwrap_err();
     let failure = eviction_failure(error);
-    assert_eq!(failure.param_name, RELOAD_CONFIG_PARAM_NAME);
+    assert_eq!(failure.param_name(), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(
         stored_row(&database).await.unwrap().param_value,
         JsonData::String(r#"{"interval_hours":null}"#.to_owned())
@@ -65,7 +65,7 @@ async fn record_run_reports_a_failed_eviction_after_stamping_the_run() {
     .await
     .unwrap_err();
     let failure = eviction_failure(error);
-    assert_eq!(failure.param_name, RELOAD_CONFIG_PARAM_NAME);
+    assert_eq!(failure.param_name(), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(
         stored_row(&database).await.unwrap().last_run_at,
         Some(instant())
@@ -86,7 +86,7 @@ async fn manual_reload_reports_a_failed_eviction_after_publishing_the_revision()
     .await
     .unwrap_err();
     let failure = eviction_failure(error);
-    assert_eq!(failure.param_name, RELOAD_CONFIG_PARAM_NAME);
+    assert_eq!(failure.param_name(), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(stored_row(&database).await.unwrap().reload_revision, 1);
     database.close().await;
 }
