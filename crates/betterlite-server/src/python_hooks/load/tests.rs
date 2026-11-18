@@ -259,6 +259,20 @@ async fn startup_hooks_run_in_order_and_await_coroutines() {
 }
 
 #[tokio::test]
+async fn a_sync_startup_hook_that_returns_a_coroutine_is_awaited() {
+    let workspace = test_support::workspace();
+    let module = workspace.module(
+        "b165_startup_awaitable",
+        "ORDER = []\n\nasync def _mark():\n    ORDER.append(\"awaited\")\n\n\
+def lazy():\n    return _mark()\n",
+    );
+    let service = test_support::service(Some(workspace.config_path.clone()));
+    let specs = vec![format!("{module}.lazy")];
+    service.run_startup_hooks(&specs).await.unwrap();
+    assert_eq!(recorded(&service, &module), vec!["awaited".to_owned()]);
+}
+
+#[tokio::test]
 async fn a_spec_without_a_colon_is_rejected_with_litellms_message() {
     let service = test_support::service(None);
     let specs = vec!["no_colon".to_owned()];

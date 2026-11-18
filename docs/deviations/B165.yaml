@@ -9,6 +9,12 @@ deviations:
   - what: Loading a hook, or running a startup hook, that runs past 60 seconds returns a timeout error.
     why: The config load cannot wait forever on a module that blocks at import; LiteLLM waits without a bound.
     link: ""
+  - what: A startup hook that is not a coroutine function but returns an awaitable is awaited, where LiteLLM awaits only when the hook itself is a coroutine function.
+    why: The pool's call path awaits any awaitable result; a coroutine a sync function returns would otherwise never run and would warn as never awaited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1271-L1274
+  - what: A dotless litellm_settings.callbacks entry is kept as a name even when it is not one of LiteLLM's known callbacks. LiteLLM keeps known dotless names and sends an unknown one to get_instance_fn, which fails on the empty module name.
+    why: Callers validate dotless names, and this load step cannot tell a typo from a logger the caller knows, so it leaves the entry whole instead of failing on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L178-L181
   - what: The proxy cannot import litellm. A user module imports betterlite instead.
     why: The module is named betterlite so that LiteLLM's name stays out of what betterlite ships.
     link: ""
