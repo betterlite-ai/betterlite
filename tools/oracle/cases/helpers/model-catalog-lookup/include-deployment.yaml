@@ -1,0 +1,156 @@
+kind: helper
+name: model-catalog-lookup-include-deployment
+call:
+  model_catalog_lookup:
+    function: should_include_deployment
+    model_list:
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+          team_public_model_name: team-gpt
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: other-internal
+        litellm_params:
+          model: openai/other
+        model_info:
+          id: o
+          team_id: t2
+          team_public_model_name: other-gpt
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: team-gpt
+      team_id: t1
+      deployment_index: 0
+calls:
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: other-internal
+          litellm_params:
+            model: openai/other
+          model_info:
+            id: o
+            team_id: t2
+            team_public_model_name: other-gpt
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: gpt-4o
+        team_id: null
+        deployment_index: 1
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: other-internal
+          litellm_params:
+            model: openai/other
+          model_info:
+            id: o
+            team_id: t2
+            team_public_model_name: other-gpt
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: gpt-4o
+        team_id: t2
+        deployment_index: 1
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: other-internal
+          litellm_params:
+            model: openai/other
+          model_info:
+            id: o
+            team_id: t2
+            team_public_model_name: other-gpt
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: other-gpt
+        team_id: t1
+        deployment_index: 2
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: other-internal
+          litellm_params:
+            model: openai/other
+          model_info:
+            id: o
+            team_id: t2
+            team_public_model_name: other-gpt
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: team-gpt
+        team_id: t1
+        deployment_index: 1
+env: {}
+compare: {ignore: []}

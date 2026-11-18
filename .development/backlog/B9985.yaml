@@ -1,0 +1,13 @@
+id: B9985
+milestone: R2 bug fixes
+title: A per-test Redis server fixture and real-Redis pod lock tests
+status: todo
+depends_on: [B1690]
+file: tasks/B9985-real-redis-pod-lock-tests.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
