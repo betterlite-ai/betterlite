@@ -86,7 +86,7 @@ async fn put_db_error_maps_a_lock_timeout_to_503() {
 }
 
 #[tokio::test]
-async fn put_db_error_maps_an_idle_session_timeout_to_503() {
+async fn put_db_error_maps_an_idle_in_transaction_timeout_to_503() {
     let reply = call(
         settings_app(
             Some(outage_repository(
@@ -99,6 +99,42 @@ async fn put_db_error_maps_an_idle_session_timeout_to_503() {
     )
     .await;
     assert_unavailable(&reply);
+}
+
+#[tokio::test]
+async fn put_db_error_maps_an_idle_session_timeout_to_503() {
+    let reply = call(
+        settings_app(
+            Some(outage_repository(
+                "57P05",
+                "terminating connection due to idle-session timeout",
+            )),
+            None,
+        ),
+        put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
+    )
+    .await;
+    assert_unavailable(&reply);
+}
+
+#[tokio::test]
+async fn put_db_error_keeps_a_cancelled_statement_at_internal_server_error() {
+    let reply = call(
+        settings_app(
+            Some(outage_repository(
+                "57014",
+                "canceling statement due to user request",
+            )),
+            None,
+        ),
+        put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        reply.text(),
+        r#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#
+    );
 }
 
 #[tokio::test]
