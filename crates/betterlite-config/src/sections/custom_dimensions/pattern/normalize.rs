@@ -59,7 +59,10 @@ impl Walker<'_> {
                 self.at_start = false;
                 Ok(())
             }
-            '{' => self.brace(),
+            '{' => {
+                self.brace();
+                Ok(())
+            }
             '#' if matches!(self.verbose.last(), Some(true)) => {
                 for character in self.input.by_ref() {
                     if character == '\n' {
@@ -167,7 +170,7 @@ impl Walker<'_> {
         }
     }
 
-    fn brace(&mut self) -> Result<(), PatternProblem> {
+    fn brace(&mut self) {
         self.at_start = false;
         let mut probe = self.input.clone();
         let mut content = String::new();
@@ -181,7 +184,7 @@ impl Walker<'_> {
         };
         if !closed || content.is_empty() {
             self.output.push_str("\\{");
-            return Ok(());
+            return;
         }
         for _ in 0..=content.chars().count() {
             let _ = self.input.next();
@@ -192,6 +195,5 @@ impl Walker<'_> {
         }
         self.output.push_str(&content);
         self.output.push('}');
-        Ok(())
     }
 }

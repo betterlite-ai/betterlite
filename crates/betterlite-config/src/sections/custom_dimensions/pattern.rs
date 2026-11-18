@@ -32,7 +32,6 @@ impl PatternProblem {
     }
 }
 
-// the pattern as the matcher engine reads it, and its measured work
 pub fn pattern_work(pattern: &str) -> Result<(String, u64), PatternProblem> {
     if pattern.chars().count() > MAX_CUSTOM_PATTERN_INPUT {
         return Err(PatternProblem::Syntax);

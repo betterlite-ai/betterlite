@@ -21,7 +21,6 @@ pub struct Input(Box<Payload>);
 #[serde(deny_unknown_fields)]
 struct Payload {
     function: Function,
-    // the complexity router config in the key names betterlite resolves, so a case configures the service as a file does
     #[serde(default, skip_serializing_if = "Option::is_none")]
     config: Option<ProbeConfig>,
     #[serde(default)]
@@ -96,13 +95,12 @@ pub(crate) fn run(
     };
     match payload.function {
         Function::PatternWork => {
-            fields.results = Some(
-                payload
-                    .patterns
-                    .iter()
-                    .map(|pattern| entry(pattern))
-                    .collect(),
-            );
+            let results = payload
+                .patterns
+                .iter()
+                .map(|pattern| entry(pattern))
+                .collect();
+            fields.results = Some(results);
         }
         Function::Validate => {
             let result = resolved(payload.config.as_ref());
@@ -145,10 +143,20 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     Ok(())
 }
 
-// the section's typed view of the router config, then the service's own validation of its dimensions
 fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationError> {
-    let mut scoring = scoring_section::Config::default();
-    scoring.dimension_weights = config.and_then(|config| config.dimension_weights.clone());
+    let scoring = scoring_section::Config {
+        tier_models: None,
+        complexity_thresholds: None,
+        dimension_weights: config.and_then(|config| config.dimension_weights.clone()),
+        tier_boundaries: None,
+        reasoning_override_min_score: None,
+        code_keywords: None,
+        reasoning_keywords: None,
+        technical_keywords: None,
+        custom_technical_keywords: None,
+        simple_keywords: None,
+        default_model: None,
+    };
     let mut resolved =
         Config::resolve(&scoring).map_err(|source| OperationError::InvalidRequest {
             message: source.to_string(),
