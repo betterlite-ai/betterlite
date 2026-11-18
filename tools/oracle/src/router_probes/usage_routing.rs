@@ -12,5 +12,10 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    Ok(ProbeOutput::UsageRouting(scenario::run_scenario(input)?))
+    match scenario::run_scenario(input) {
+        Ok(output) => Ok(ProbeOutput::UsageRouting(output)),
+        Err(error) => Err(OperationError::InvalidRequest {
+            message: error.to_string(),
+        }),
+    }
 }

@@ -15,10 +15,16 @@ use betterlite_server::routing::usage_routing::resolve;
 use chrono::{DateTime, Utc};
 use serde_json::Number;
 
-use crate::router_probes::error::OperationError;
 use crate::router_probes::usage_routing::wire::{
     Entry, Input, Observation, Output, Step, StepKind,
 };
+
+// The failure a step reports: an instant, a limit or a pool entry the operation cannot read.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum ScenarioError {
+    #[error("{message}")]
+    Invalid { message: String },
+}
 
 // The window store log_success_event writes and get_available_deployments reads, with gate steps injecting failures.
 #[derive(Debug, Default)]
@@ -66,7 +72,7 @@ impl UsageWindows for Windows {
     }
 }
 
-pub(super) fn run_scenario(input: &Input) -> Result<Output, OperationError> {
+pub(super) fn run_scenario(input: &Input) -> Result<Output, ScenarioError> {
     let ttl_seconds = resolve_ttl(input.ttl)?;
     let deployments = input
         .deployments
@@ -82,7 +88,7 @@ pub(super) fn run_scenario(input: &Input) -> Result<Output, OperationError> {
 }
 
 // the configured routing_strategy_args.ttl goes through the production config section and startup resolver
-fn resolve_ttl(ttl: Option<i64>) -> Result<i64, OperationError> {
+fn resolve_ttl(ttl: Option<i64>) -> Result<i64, ScenarioError> {
     let source = ttl.map_or_else(
         || "router_settings: {}\n".to_owned(),
         |value| format!("router_settings:\n  routing_strategy_args:\n    ttl: {value}\n"),
@@ -92,7 +98,7 @@ fn resolve_ttl(ttl: Option<i64>) -> Result<i64, OperationError> {
     Ok(resolve(&config.sections.usage_routing).ttl_seconds)
 }
 
-fn deployment(group: &str, entry: &Entry) -> Result<DeploymentSpec, OperationError> {
+fn deployment(group: &str, entry: &Entry) -> Result<DeploymentSpec, ScenarioError> {
     let mut params = JsonObject::from_iter([(
         "model".to_owned(),
         Json::Text(format!("openai/{}", entry.id)),
@@ -126,7 +132,7 @@ fn apply(
     deployments: &[DeploymentSpec],
     ttl_seconds: i64,
     step: &Step,
-) -> Result<Observation, OperationError> {
+) -> Result<Observation, ScenarioError> {
     let now = timestamp(step.now_millis)?;
     match step.kind {
         // log_success_event and async_log_success_event run the same read-modify-write
@@ -173,7 +179,7 @@ fn selected(
     deployments: &[DeploymentSpec],
     step: &Step,
     now: DateTime<Utc>,
-) -> Result<Option<String>, OperationError> {
+) -> Result<Option<String>, ScenarioError> {
     let pool = healthy_pool(deployments, &step.healthy)?;
     // the estimate the request computed is a failure's zero when it could not be counted
     let input_tokens = if step.token_count_failure.unwrap_or(false) {
@@ -191,7 +197,7 @@ fn selected(
 fn healthy_pool(
     deployments: &[DeploymentSpec],
     healthy: &[String],
-) -> Result<Vec<DeploymentSpec>, OperationError> {
+) -> Result<Vec<DeploymentSpec>, ScenarioError> {
     if healthy.is_empty() {
         return Ok(deployments.to_vec());
     }
@@ -234,7 +240,7 @@ fn window(key: &str, windows: &Windows) -> (Option<Vec<(String, i64)>>, Option<i
     }
 }
 
-fn timestamp(millis: i64) -> Result<DateTime<Utc>, OperationError> {
+fn timestamp(millis: i64) -> Result<DateTime<Utc>, ScenarioError> {
     DateTime::from_timestamp_millis(millis).ok_or_else(|| {
         invalid(format!(
             "{millis} milliseconds is not an instant chrono can hold"
@@ -242,11 +248,11 @@ fn timestamp(millis: i64) -> Result<DateTime<Utc>, OperationError> {
     })
 }
 
-fn invalid<E>(error: E) -> OperationError
+fn invalid<E>(error: E) -> ScenarioError
 where
     E: Display,
 {
-    OperationError::InvalidRequest {
+    ScenarioError::Invalid {
         message: error.to_string(),
     }
 }
