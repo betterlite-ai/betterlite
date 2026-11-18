@@ -38,3 +38,11 @@ fn enterprise_error_carries_the_provider_status() {
     let typed = EnterpriseError::FieldType { field: "apikey" };
     assert_eq!(typed.status(), None);
 }
+
+#[test]
+fn watsonx_errors_convert_through_the_boxed_variant() {
+    let converted = EnterpriseError::from(WatsonxError::IamApiKeyRequired);
+    assert_eq!(converted.status(), None);
+    assert_eq!(converted.to_string(), "API key is required");
+    assert!(matches!(converted, EnterpriseError::Watsonx(_)));
+}

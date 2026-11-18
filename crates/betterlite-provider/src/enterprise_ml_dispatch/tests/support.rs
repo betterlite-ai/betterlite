@@ -40,6 +40,7 @@ use crate::enterprise_ml_dispatch::embed::{self, EmbeddingContext, EmbeddingRepl
 use crate::enterprise_ml_dispatch::error::EnterpriseError;
 use crate::enterprise_ml_dispatch::sagemaker::SagemakerDeps;
 use crate::enterprise_ml_dispatch::select::EmbeddingConfig;
+use crate::enterprise_ml_dispatch::transport::{AwsCredentials, EnterpriseTransport};
 use crate::sap_auth::token::SapClock;
 
 const NO_HOME: &str = "/nonexistent-b8331-home";
