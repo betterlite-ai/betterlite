@@ -12,7 +12,11 @@ description: >-
   JSON with timeout in both modes. List copies query_params, overlays extra_query, transforms and logs
   them, then GETs with params and no per-call timeout in either mode. Catch only send failures with the
   shared error converter; preparation, logging and response transformation are outside that catch.
-  SdkHttpCall::VectorFileCreateListTransport invokes actual handlers against B2401's mock. Native lifecycle
+  SdkHttpCall::VectorFileCreateListTransport invokes actual handlers against the mock. Its placeholder is on
+  main under a shorter Rust module name: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/file_create_list_transport.rs (Call implements call_kind::CallKind) and fill
+  FileCreateListTransportRequest, keeping its field alias vector_file_create_list_transport, in
+  tools/oracle/sdk_http/vector_file_create_list_transport.py; the shared sdk_http files stay untouched. Native lifecycle
   tests inspect the client and logger boundaries. There is no new decoder. The functions contain 246
   nonblank/non-comment lines; budget 245 execution, 150 tests, 90 adapters, 100 fixtures, 35 wiring/corpus,
   620 total within 660.
@@ -20,9 +24,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/vector_file_http_create_list.rs
   - crates/betterlite-core/src/api/vector_file_http_create_list/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_create_list_transport.rs
+  - tools/oracle/src/sdk_http/file_create_list_transport/**
   - tools/oracle/sdk_http/vector_file_create_list_transport.py
   - tools/oracle/cases/sdk-http/vector-file-create-list-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-transport-*
@@ -74,7 +77,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_create_list::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: real handler HTTP capture lacks its Python adapter
-    run: test -f tools/oracle/sdk_http/vector_file_create_list_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_file_create_list_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: create/list transport inputs have no new decoder seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

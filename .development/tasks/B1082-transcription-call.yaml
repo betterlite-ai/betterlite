@@ -32,7 +32,10 @@ description: >-
   final type check. B011 owns exception mapping and provider=openai fallback. Cached conversion is a typed
   response constructor, not a second provider JSON decoder.
 
-  Add B2401 SDK HTTP operation transcription_call, config loader tests for every named global/env chain and
+  SdkHttpCall::TranscriptionCall is on main as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/transcription_call.rs (Call implements call_kind::CallKind, Outcome is the value
+  of SdkResult::TranscriptionCall) and fill TranscriptionCallRequest in tools/oracle/sdk_http/transcription_call.py,
+  leaving the shared sdk_http files alone. Add config loader tests for every named global/env chain and
   parser seeds. Count 279 nonblank/non-comment lines including the cached converter; budget 260 implementation,
   170 tests,140 HTTP fixtures,80 adapters,60 config/corpus and 40 wiring, total 750. Existing provider decoders
   and B1001's bounded audio-duration decoder handle external bytes.
@@ -41,9 +44,8 @@ scope:
   - crates/betterlite-core/src/api/transcription_call.rs
   - crates/betterlite-core/src/api/transcription_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/transcription-call-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/transcription_call.rs
+  - tools/oracle/src/sdk_http/transcription_call/**
   - tools/oracle/sdk_http/transcription_call.py
   - tools/oracle/cases/sdk-http/transcription-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/transcription-call-*
@@ -109,7 +111,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::transcription_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Transcription reaches providers and must use the SDK HTTP driver.
-    run: test -f tools/oracle/sdk_http/transcription_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/transcription_call.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: Config keys and transcription invocation require newly added parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/transcription-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/transcription-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

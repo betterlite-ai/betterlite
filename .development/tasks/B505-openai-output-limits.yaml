@@ -132,6 +132,7 @@ scope:
   - crates/betterlite-tokenizer/src/count/runtime/**
   - crates/betterlite-server/src/server/chat_setup/vertex_embedding.rs
   - crates/betterlite-server/src/server/chat_setup/vertex_embedding/counter.rs
+  - crates/betterlite-server/src/server/chat_setup/vertex_embedding/tests.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/openai/output_limits.rs
   - tools/oracle/src/helpers/openai/output_limits/**

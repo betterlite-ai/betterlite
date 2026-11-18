@@ -1,8 +1,6 @@
-use std::io::{Error as IoError, Read as _, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::str::from_utf8;
 use std::sync::Mutex;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
@@ -306,56 +304,4 @@ pub(crate) fn api_key_header() -> RequestHeaders {
 
 pub(crate) fn posted(body: &str) -> JsonValue {
     serde_json::from_str(body).unwrap()
-}
-
-pub(crate) struct Received {
-    pub(crate) head: String,
-    pub(crate) body: String,
-}
-
-pub(crate) struct Serving {
-    pub(crate) address: SocketAddr,
-    pub(crate) request: JoinHandle<Received>,
-}
-
-// the shared fixture reads only the head, and these operations have to see the JSON body they posted
-pub(crate) fn serve_with_body(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let (mut stream, _peer) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let received = read_request(&mut stream).unwrap();
-            if let Some(delay) = pause {
-                thread::park_timeout(delay);
-            }
-            drop(stream.write_all(&answer));
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<Received, IoError> {
-    let mut head_bytes = Vec::new();
-    while !head_bytes.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        head_bytes.push(byte[0]);
-    }
-    let head = String::from_utf8(head_bytes).map_err(IoError::other)?;
-    let length = head
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
-    let mut body = vec![0; length];
-    stream.read_exact(&mut body)?;
-    Ok(Received {
-        head,
-        body: String::from_utf8(body).map_err(IoError::other)?,
-    })
 }

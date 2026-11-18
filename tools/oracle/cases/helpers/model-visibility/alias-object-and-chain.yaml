@@ -1,0 +1,32 @@
+kind: helper
+name: model-visibility-alias-object-and-chain
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+      - model_name: visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: v1
+    model_group_alias:
+      alias-string: hidden
+      alias-item:
+        model: hidden
+        hidden: false
+      alias-item-hidden-flag:
+        model: hidden
+        hidden: true
+      alias-chain: alias-string
+      alias-visible: visible
+    arguments:
+      model_names: [alias-string, alias-item, alias-item-hidden-flag, alias-chain, alias-visible, hidden]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}

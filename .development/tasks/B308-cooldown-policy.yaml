@@ -15,6 +15,10 @@ description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 d
   (L518-L531), _get_cooldown_deployments (L534-L558). Implement these behaviors through the typed Rust
   services above; synchronous facades and structural accessors reuse the same primitive instead of separate
   ports.
+  Before _set_cooldown_deployments asks B369 for its decision, fill `DeploymentFacts::has_alternatives` the
+  way cooldown_handlers.py L355-L361 does: true when the requested model group has alternatives by B323
+  `RoutingGroups::has_alternatives` (betterlite-router routing_groups, on main) or the deployment has team
+  siblings by B8351 `CatalogQueries::team_model_has_alternatives` (betterlite-router catalog_queries).
   B016 registers RouteStage::CooldownPolicy as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/cooldown_policy.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:

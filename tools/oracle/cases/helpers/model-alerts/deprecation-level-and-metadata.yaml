@@ -1,0 +1,21 @@
+kind: helper
+name: model-alerts-deprecation-level-and-metadata
+call:
+  b4030:
+    function: deprecation_alert
+    deprecated: 1
+    imminent: 2
+    upcoming: 1
+calls:
+  - b4030:
+      function: deprecation_alert
+      deprecated: 0
+      imminent: 2
+      upcoming: 1
+  - b4030:
+      function: deprecation_alert
+      deprecated: 0
+      imminent: 0
+      upcoming: 3
+env: {}
+compare: {ignore: []}

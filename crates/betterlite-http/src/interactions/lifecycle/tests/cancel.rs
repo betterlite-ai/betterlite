@@ -4,22 +4,24 @@ use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 
 use super::support::{
     Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, dead_address,
-    serve_with_body, sync_handler,
+    sync_handler,
 };
 use crate::interactions::base::RequestFailure;
 use crate::interactions::base::tests::support as base;
 use crate::interactions::lifecycle::LifecycleError;
+use betterlite_http_fixture::server::serve;
 
 #[test]
 fn cancel_interaction_posts_the_transformed_body_as_json() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply(
             "200 OK",
             &[("x-request-id", "r2")],
             "{\"status\":\"cancelled\"}",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
@@ -32,18 +34,15 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
         .unwrap();
 
     assert_eq!(output, "{\"status\":\"cancelled\"}");
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
+    let head = &received.head;
     assert!(
-        received
-            .head
-            .starts_with("POST /v1beta/interactions/int_1:cancel HTTP/1.1"),
-        "{}",
-        received.head
+        head.starts_with("POST /v1beta/interactions/int_1:cancel HTTP/1.1"),
+        "{head}"
     );
     assert!(
-        received.head.contains("content-type: application/json\r\n"),
-        "{}",
-        received.head
+        head.contains("content-type: application/json\r\n"),
+        "{head}"
     );
     assert_eq!(received.body, r#"{"action":"cancel","reason":"user"}"#);
     assert_eq!(
@@ -58,7 +57,11 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
 
 #[test]
 fn cancel_interaction_turns_a_failing_status_into_the_error_class() {
-    let serving = serve_with_body(base::reply("500 Internal Server Error", &[], "boom"), None);
+    let serving = serve(
+        base::reply("500 Internal Server Error", &[], "boom"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -76,15 +79,16 @@ fn cancel_interaction_turns_a_failing_status_into_the_error_class() {
             .iter()
             .all(|call| !call.starts_with("cancel_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn cancel_interaction_turns_a_3xx_answer_into_the_error_class() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply("300 Multiple Choices", &[], "{\"status\":\"cancelled\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -102,15 +106,12 @@ fn cancel_interaction_turns_a_3xx_answer_into_the_error_class() {
             .iter()
             .all(|call| !call.starts_with("cancel_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn cancel_interaction_sends_the_given_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -123,15 +124,12 @@ fn cancel_interaction_sends_the_given_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn cancel_interaction_falls_back_to_the_request_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -143,12 +141,12 @@ fn cancel_interaction_falls_back_to_the_request_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn cancel_interaction_uses_a_supplied_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new().build().unwrap();
     let mut handler = build_handler(&fixture, Some(supplied));
@@ -159,7 +157,7 @@ fn cancel_interaction_uses_a_supplied_client() {
 
     assert_eq!(output, "{}");
     assert!(handler.clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -185,10 +183,11 @@ fn cancel_interaction_passes_a_transport_failure_through_the_error_handler() {
 
 #[tokio::test]
 async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply("200 OK", &[], "{\"status\":\"cancelled\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
         ..Fixture::new()
@@ -201,7 +200,7 @@ async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
         .unwrap();
 
     assert_eq!(output, "{\"status\":\"cancelled\"}");
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
     assert!(
         received
             .head
@@ -214,10 +213,7 @@ async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
 
 #[tokio::test]
 async fn async_cancel_interaction_sends_the_given_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -233,15 +229,12 @@ async fn async_cancel_interaction_sends_the_given_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_cancel_interaction_falls_back_to_the_request_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -256,12 +249,12 @@ async fn async_cancel_interaction_falls_back_to_the_request_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_cancel_interaction_turns_a_failing_status_into_the_error_class() {
-    let serving = serve_with_body(base::reply("404 Not Found", &[], "gone"), None);
+    let serving = serve(base::reply("404 Not Found", &[], "gone"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
 
@@ -280,5 +273,5 @@ async fn async_cancel_interaction_turns_a_failing_status_into_the_error_class() 
             .iter()
             .all(|call| !call.starts_with("cancel_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }

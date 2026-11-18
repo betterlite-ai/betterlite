@@ -1,0 +1,9 @@
+kind: helper
+name: b8605-record-disconnect-seed
+call:
+  b8605:
+    function: record_disconnect
+    requests:
+      - {litellm_call_id: call-seed}
+env: {}
+compare: {ignore: []}

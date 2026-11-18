@@ -2,7 +2,9 @@ id: B343
 title: Auto-router identity, member permissions and inference checks
 description: 'Revalidate B377 automatic-router dependencies at inference using B378 MemberRouterAccess
   and B052/B060 public services. Reject revoked members, blocked teams and unavailable ownership data
-  before any classifier or selected-model call. Reuse configuration-write policy; no duplicate quota or
+  before any classifier or selected-model call. The member check reads the membership through B2318
+  MembershipLookup::get_team_membership (betterlite-auth membership_load), as auto_router_checks.py L91
+  calls get_team_membership. Reuse configuration-write policy; no duplicate quota or
   authorization engine is introduced. Implement the owned native service in crates/betterlite-server/src/auto_router_access.rs.
   B301 registers ProbeOperation::AutoRouterAccess and its Python entry as stubs, so fill only tools/oracle/src/router_probes/auto_router_access.rs and tools/oracle/litellm/probes/auto_router_access.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
