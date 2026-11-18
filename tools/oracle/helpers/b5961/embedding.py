@@ -1,9 +1,8 @@
-from typing import Final, cast
+from typing import Final
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.tokenizer import Encoding as Tokenizer
 from litellm.llms.base_llm.embedding.transformation import BaseEmbeddingConfig
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
@@ -45,7 +44,9 @@ def headers(input_value: dict[str, JsonValue]) -> JsonValue:
     case = HEADERS.validate_python(input_value)
     config: BaseEmbeddingConfig = HF if case["kind"] == "hugging_face" else COHERE
     empty: Object = {}
-    validated: Object = OBJECT.validate_python(config.validate_environment(case["headers"], MODEL, [], empty, empty))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L146-L159
+    validated: Object = OBJECT.validate_python(
+        config.validate_environment(case["headers"], MODEL, [], empty, empty)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L146-L159
+    )
     given: Object = OBJECT.validate_python(case["headers"])
     return {"kind": case["kind"], "headers": validated, "given": given}
 
@@ -116,9 +117,16 @@ def cohere_reply(input_value: dict[str, JsonValue]) -> JsonValue:
         function_id="fn-1",
     )
     empty: Object = {}
-    litellm.encoding = cast(Tokenizer, Encoding())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L118
+    litellm.encoding = Encoding()  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L118
     response = COHERE.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L89-L120
-        case["model"], raw, EmbeddingResponse(), logging_obj, None, case["request_data"], empty, empty
+        case["model"],
+        raw,
+        EmbeddingResponse(),
+        logging_obj,
+        None,
+        case["request_data"],
+        empty,
+        empty,
     )
     reply = COHERE_REPLY.validate_json(response.model_dump_json())
     rows: list[JsonValue] = []
