@@ -36,7 +36,11 @@ pub fn coerce_input_to_string(
             };
             single
         }
-        other => other,
+        EmbeddingInput::Text(_)
+        | EmbeddingInput::Number(_)
+        | EmbeddingInput::Bool(_)
+        | EmbeddingInput::Null
+        | EmbeddingInput::Object(_) => raw,
     };
     // each refusal names the Python type it read, and an int is a token list, True included
     match candidate {

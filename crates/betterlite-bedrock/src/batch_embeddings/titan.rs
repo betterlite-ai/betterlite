@@ -23,12 +23,14 @@ where
     match provider_specific.get(field) {
         Some(ModelJson::Text(value)) if !value.is_empty() => Some(value.clone()),
         None
-        | Some(ModelJson::Null)
-        | Some(ModelJson::Bool(_))
-        | Some(ModelJson::Number(_))
-        | Some(ModelJson::Text(_))
-        | Some(ModelJson::List(_))
-        | Some(ModelJson::Object(_)) => None,
+        | Some(
+            ModelJson::Null
+            | ModelJson::Bool(_)
+            | ModelJson::Number(_)
+            | ModelJson::Text(_)
+            | ModelJson::List(_)
+            | ModelJson::Object(_),
+        ) => None,
     }
 }
 
