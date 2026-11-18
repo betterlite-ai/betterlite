@@ -5,9 +5,10 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use crate::converse_request::error::ConverseRequestError;
+use crate::converse_request::records::{NUMBER_MARKER, TAG_LEAD};
 use crate::model_routes::ParamValue;
 
-// The inverse of record_value: a Decimal becomes its own spelling as a JSON number, never a string.
+// The inverse of record_value: a tagged literal or a Decimal becomes a JSON number, never text.
 pub(super) fn value_of(record: &RequestRecord) -> Result<ParamValue, ConverseRequestError> {
     Ok(match record {
         RequestRecord::Null => ParamValue::Null,
@@ -15,7 +16,7 @@ pub(super) fn value_of(record: &RequestRecord) -> Result<ParamValue, ConverseReq
         RequestRecord::Signed(number) => ParamValue::Number(Number::from(*number)),
         RequestRecord::Unsigned(number) => ParamValue::Number(Number::from(*number)),
         RequestRecord::Decimal(number) => ParamValue::Number(decimal_number(number)?),
-        RequestRecord::String(text) => ParamValue::Text(text.clone()),
+        RequestRecord::String(text) => tagged_value(text)?,
         RequestRecord::Array(items) => ParamValue::List(
             items
                 .iter()
@@ -43,4 +44,20 @@ fn decimal_number(number: &Decimal) -> Result<Number, ConverseRequestError> {
         field: "params",
         expected: "a number this process can carry",
     })
+}
+
+// The inverse of the tag: the marker after a stripped lead byte picks a number, and a doubled lead returns caller text.
+fn tagged_value(text: &str) -> Result<ParamValue, ConverseRequestError> {
+    let Some(tagged) = text.strip_prefix(TAG_LEAD) else {
+        return Ok(ParamValue::Text(text.to_owned()));
+    };
+    let Some(literal) = tagged.strip_prefix(NUMBER_MARKER) else {
+        return Ok(ParamValue::Text(tagged.to_owned()));
+    };
+    Ok(ParamValue::Number(Number::from_str(literal).map_err(
+        |_| ConverseRequestError::FieldType {
+            field: "params",
+            expected: "a number this process can carry",
+        },
+    )?))
 }

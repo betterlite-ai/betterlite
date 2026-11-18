@@ -54,11 +54,11 @@ where
     Ok(converse_messages(&projected, &conversion, request.new_id).await?)
 }
 
-// The continue message leaves litellm_params once and joins the conversion; the caller keeps every other key.
+// The continue message leaves litellm_params once and joins the conversion; the name map keeps every rename.
 pub(super) async fn convert_messages<Lookup, R, Ids>(
     input: &mut ConverseRequestInput<'_, Lookup>,
     transformed: &TransformedMessages,
-    mut names: ToolNameMap,
+    names: &mut ToolNameMap,
     cache_points: CachePointSupport,
     media: &ConverseMedia<'_, R, Ids>,
 ) -> Result<Vec<Json>, ConverseRequestError>
@@ -81,7 +81,7 @@ where
             remote: media.remote,
             new_id: media.new_id,
         },
-        &mut names,
+        names,
     )
     .await
 }

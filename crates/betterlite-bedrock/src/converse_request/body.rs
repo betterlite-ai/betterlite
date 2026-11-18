@@ -113,7 +113,7 @@ fn filter_options(
         .shift_remove(OUTPUT_CONFIG_MARKER)
         .is_some_and(|value| carries_value(&value));
     let exceptions =
-        RequestRecordProjection::filter_parameters(record_of(optional_params)?, MAX_DEPTH);
+        RequestRecordProjection::filter_parameters(record_of(optional_params), MAX_DEPTH);
     let mut params = safe_copy(&params_of(&exceptions)?)?;
     params.shift_remove(JSON_MODE_FIELD);
     Ok((params, already_normalized))
@@ -137,7 +137,7 @@ where
         request.catalogs,
     )?);
     let internal =
-        RequestRecordProjection::filter_internal(record_of(&additional)?, &BTreeSet::new());
+        RequestRecordProjection::filter_internal(record_of(&additional), &BTreeSet::new());
     additional = params_of(&RequestRecordProjection::filter_parameters(
         internal, MAX_DEPTH,
     ))?;

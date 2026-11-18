@@ -1,10 +1,7 @@
 mod value;
 
-use std::str::FromStr as _;
-
 use betterlite_context::request_records::RequestRecordProjection;
 use betterlite_context::request_records::record::RequestRecord;
-use rust_decimal::Decimal;
 use serde_json::Number;
 
 use self::value::value_of;
@@ -14,58 +11,58 @@ use crate::model_routes::{ParamMap, ParamValue};
 
 pub(super) const MAX_DEPTH: i32 = 20;
 
+// RequestRecord carries no float, so every non-integer number keeps its literal behind this tag and a caller string's leading tag byte is doubled.
+pub(super) const TAG_LEAD: char = '\u{1}';
+pub(super) const NUMBER_MARKER: &str = "num:";
+
 // safe_deep_copy: the record layer owns the copy, and a JSON request never carries a live handle.
 pub(super) fn safe_copy(params: &ParamMap) -> Result<ParamMap, ConverseRequestError> {
-    let mut record = record_of(params)?;
+    let mut record = record_of(params);
     let copied = RequestRecordProjection::safe_copy(&mut record, false)?;
     params_of(&copied)
 }
 
-pub(super) fn record_of(params: &ParamMap) -> Result<RequestRecord, ConverseRequestError> {
-    params
-        .iter()
-        .map(|(key, value)| Ok((key.clone(), record_value(value)?)))
-        .collect::<Result<_, ConverseRequestError>>()
-        .map(RequestRecord::Object)
+pub(super) fn record_of(params: &ParamMap) -> RequestRecord {
+    RequestRecord::Object(
+        params
+            .iter()
+            .map(|(key, value)| (key.clone(), record_value(value)))
+            .collect(),
+    )
 }
 
-fn record_value(value: &ParamValue) -> Result<RequestRecord, ConverseRequestError> {
-    Ok(match value {
+fn record_value(value: &ParamValue) -> RequestRecord {
+    match value {
         ParamValue::Null => RequestRecord::Null,
         ParamValue::Bool(flag) => RequestRecord::Bool(*flag),
-        ParamValue::Number(number) => number_record(number)?,
-        ParamValue::Text(text) => RequestRecord::String(text.clone()),
-        ParamValue::List(items) => RequestRecord::Array(
-            items
-                .iter()
-                .map(record_value)
-                .collect::<Result<_, ConverseRequestError>>()?,
-        ),
+        ParamValue::Number(number) => number_record(number),
+        ParamValue::Text(text) => RequestRecord::String(escaped_text(text)),
+        ParamValue::List(items) => RequestRecord::Array(items.iter().map(record_value).collect()),
         ParamValue::Mapping(fields) => RequestRecord::Object(
             fields
                 .iter()
-                .map(|(key, value)| Ok((key.clone(), record_value(value)?)))
-                .collect::<Result<_, ConverseRequestError>>()?,
+                .map(|(key, value)| (key.clone(), record_value(value)))
+                .collect(),
         ),
-    })
+    }
 }
 
-// A float keeps its own scale in Decimal, so a parameter's spelling survives the record roundtrip.
-fn number_record(number: &Number) -> Result<RequestRecord, ConverseRequestError> {
+// Every other number keeps the exact literal the caller sent, which Decimal could change or reject.
+fn number_record(number: &Number) -> RequestRecord {
     if let Some(value) = number.as_i64() {
-        return Ok(RequestRecord::Signed(value));
+        return RequestRecord::Signed(value);
     }
     if let Some(value) = number.as_u64() {
-        return Ok(RequestRecord::Unsigned(value));
+        return RequestRecord::Unsigned(value);
     }
-    let text = number.to_string();
-    Decimal::from_str(&text)
-        .or_else(|_| Decimal::from_scientific(&text))
-        .map(RequestRecord::Decimal)
-        .map_err(|_| ConverseRequestError::FieldType {
-            field: "params",
-            expected: "a number this process can carry",
-        })
+    RequestRecord::String(format!("{TAG_LEAD}{NUMBER_MARKER}{number}"))
+}
+
+fn escaped_text(text: &str) -> String {
+    if text.starts_with(TAG_LEAD) {
+        return format!("{TAG_LEAD}{text}");
+    }
+    text.to_owned()
 }
 
 pub(super) fn params_of(record: &RequestRecord) -> Result<ParamMap, ConverseRequestError> {

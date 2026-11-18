@@ -22,6 +22,7 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::bedrock_images::remote::RemoteImage;
 use betterlite_prompts::bedrock_tools::capabilities::CachePointSupport;
+use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use betterlite_prompts::message_content::Message;
 use serde::Serialize;
 
@@ -77,6 +78,12 @@ pub struct ConverseRequestBody {
     pub common: CommonRequest,
 }
 
+// The wire body and the Bedrock-to-caller tool names the reply conversion restores.
+pub struct ConverseRequestOutcome {
+    pub body: ConverseRequestBody,
+    pub tool_name_mappings: ToolNameMap,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ConverseSettings<'request> {
     pub global_drop: bool,
@@ -109,7 +116,7 @@ pub async fn converse_request<Source, Transport, Lookup, R, Ids>(
     mut input: ConverseRequestInput<'_, Lookup>,
     media: ConverseMedia<'_, R, Ids>,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<ConverseRequestBody, ConverseRequestError>
+) -> Result<ConverseRequestOutcome, ConverseRequestError>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
@@ -121,10 +128,11 @@ where
         prepare_options(&mut input, environment).await?;
     let outcome =
         tools::process_tools(&mut input, &mut prepared, cache_points, environment).await?;
+    let mut tool_name_mappings = outcome.names;
     let converted = messages::convert_messages(
         &mut input,
         &transformed,
-        outcome.names,
+        &mut tool_name_mappings,
         cache_points,
         &media,
     )
@@ -138,9 +146,12 @@ where
             .map_or_else(Params::new, request_params),
         &mut common,
     );
-    Ok(ConverseRequestBody {
-        messages: converted,
-        common,
+    Ok(ConverseRequestOutcome {
+        body: ConverseRequestBody {
+            messages: converted,
+            common,
+        },
+        tool_name_mappings,
     })
 }
 
