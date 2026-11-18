@@ -105,7 +105,8 @@ description: >-
 
   Oracle. The three chat cases tools/oracle/cases/chat/openai-output-limit-buffered.yaml,
   openai-output-limit-stream.yaml and openai-422-drop-retry.yaml run the real gateway against LiteLLM; their
-  recovered replies carry the real prompt count. B505's first run already wrote them: read them with git show
+  recovered replies carry the real prompt count. B505's first run already wrote them: fetch that commit with git
+  fetch origin refs/pull/2410/head (B505's PR keeps it after the branch goes), then read them with git show
   672ada1dc5:tools/oracle/cases/chat/<name>.yaml and keep them unless the CI oracle run says LiteLLM answers
   otherwise.
 
@@ -262,9 +263,14 @@ pitfalls:
 - B024 (https://github.com/betterlite-ai/betterlite/pull/2247, merged) turned OpenAiResult into an enum and added
   module lines at the top of openai_dispatch.rs. Put mod recovery; at the bottom of openai_dispatch.rs, keep the
   decode and chat_request edits in their own hunks and leave OpenAiResult alone.
-- 'docs/deviations/B9988.yaml holds the second-422 row: after the second 422 the provider''s error reaches the
-  client, where LiteLLM''s two-iteration loop falls out of the function and returns None. Copy its what, why and link
-  from B505''s log at 672ada1dc5:docs/deviations/B505.yaml; B505 drops it from its own log.'
+- >-
+  docs/deviations/B9988.yaml holds the second-422 row, moved from B505's log. Its what is "A second 422 after the
+  dropped fields were resent reaches the client as the provider's own error. LiteLLM's two-iteration loop drops the
+  newly named fields and then falls out of the function, returning None, so the caller receives no completion at
+  all instead of an error." Its why is "A null completion reported as a success is a bug no working setup can rely
+  on, so rule owned-behavior-is-built keeps the provider error, which carries the status and the rejected fields."
+  Its link is
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L709-L842.
 - >-
   B9986 and this task share files: server/chat_setup/provider_call.rs, provider_call/embedding.rs,
   crates/betterlite-provider/src/operation.rs, operation/tests.rs, prepared/deployment.rs,
