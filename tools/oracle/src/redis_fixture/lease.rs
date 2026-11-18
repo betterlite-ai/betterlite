@@ -148,7 +148,7 @@ fn execute(
 fn redis_call(lua: &Lua, store: &Entries, name: &str, key: &str) -> Result<Value, mlua::Error> {
     match name.to_ascii_lowercase().as_str() {
         "get" => match live_entry(store, key) {
-            Some(entry) => Ok(Value::String(lua.create_string(&entry.value)?)),
+            Some(entry) => Ok(Value::String(lua.create_string(entry.value.as_bytes())?)),
             None => Ok(Value::Boolean(false)),
         },
         "del" => Ok(Value::Integer(deleted(store, key))),
