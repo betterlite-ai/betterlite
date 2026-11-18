@@ -29,8 +29,7 @@ pub(super) async fn attempt(
     }
 }
 
-// log_pre_api_call: the attempt holds one in-flight count until its guard releases it, and a counter that cannot take the
-// write only warns, since an accounting failure never fails the request
+// log_pre_api_call: the attempt holds one in-flight count until its guard releases it, and an unwritable counter only warns
 async fn start_count(
     context: &RouteContext<'_>,
     model_group: &str,

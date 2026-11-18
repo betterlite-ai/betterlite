@@ -380,8 +380,7 @@ fn in_flight(service: &LeastBusy, key: &RouteKey) -> i64 {
     }
 }
 
-// get_available_deployments: the attempt lands on the deployment holding the fewest in-flight calls, holds its own
-// count until release_least_busy, and a dropped attempt gives this worker's count back
+// get_available_deployments: the least counted deployment wins, and dropping the attempt returns this worker's count
 pub(super) async fn least_busy_picks_lowest_count() {
     let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
     let service = Arc::new(LeastBusy {
@@ -413,7 +412,11 @@ pub(super) async fn least_busy_picks_lowest_count() {
     assert_eq!(result.strategy, Some(Strategy::LeastBusy));
     let picked_key = request_count_key("gpt-4o", "a").unwrap();
     assert_eq!(in_flight(&service, &picked_key), 1);
-    assert!(result.release_least_busy().await.is_none());
+    let started = result
+        .least_busy
+        .take()
+        .expect("the attempt holds its count");
+    assert!(started.release().await.is_none());
     assert_eq!(in_flight(&service, &picked_key), 0);
     {
         let dropped = run_route(
@@ -452,6 +455,10 @@ pub(super) async fn each_strategy_counts_its_attempt() {
     .unwrap();
     let key = request_count_key("gpt-4o", picked(&result)).unwrap();
     assert_eq!(in_flight(&service, &key), 1);
-    assert!(result.release_least_busy().await.is_none());
+    let started = result
+        .least_busy
+        .take()
+        .expect("the attempt holds its count");
+    assert!(started.release().await.is_none());
     assert_eq!(in_flight(&service, &key), 0);
 }
