@@ -25,7 +25,10 @@ description: >-
   malformed or oversized bounds so no partition is selected from untrusted text.
   CleanupMetrics owns the five pinned litellm_spend_log_cleanup instruments, table/outcome
   labels and duration buckets 0.005,0.025,0.1,0.25,0.5,1,2.5,5,10,30,60. Registration occurs
-  once on first use through B3875's CollectorRegistry; a registration failure warns without retrying
+  once on first use into B3875's CollectorRegistry (betterlite-prometheus collector_registry),
+  passed to CleanupMetrics in its constructor; add betterlite-prometheus to betterlite-db's
+  dependencies. B3875 puts the registry there because betterlite-logging depends on
+  betterlite-db. A registration failure warns without retrying
   or preventing cleanup. Preserve any instruments already registered before that failure.
   rows_remaining is a live-max gauge across replicas, not a sum. Expose all six RunOutcome
   labels. Pure partition_calendar cases exercise naming, boundaries and drop selection;
