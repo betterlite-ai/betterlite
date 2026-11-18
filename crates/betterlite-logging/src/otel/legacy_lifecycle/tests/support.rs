@@ -323,7 +323,7 @@ pub(super) fn carry_in(kwargs: &mut MetadataMap, bucket: &str, span: &LiveSpan) 
     };
     let fields = params
         .entry(bucket.to_owned())
-        .or_insert_with(MetadataMap::default);
+        .or_insert_with(|| OtelModelValue::Object(MetadataMap::default()));
     let OtelModelValue::Object(metadata) = fields else {
         panic!("{bucket} must be an object");
     };

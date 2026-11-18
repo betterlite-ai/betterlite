@@ -285,7 +285,7 @@ fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
     let scope = [ScopeValue::Text("success".to_owned())];
     assert!((0..10_000).all(|index| {
         let key = format!("call-{index}");
-        dedupe.emit_once(Some(&key), &scope)
+        dedupe.emit_once(Some(key.as_str()), &scope)
     }));
 
     assert!(
