@@ -1,0 +1,900 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
+
+use rstest::rstest;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
+
+use super::{
+    MetadataBucket, PolicyPipelines, PolicyRouterView, RetrievalAuth, RetrievalData,
+    RetrievalDependencies, RetrievalRequest, UngovernedReason, UngovernedRetrieval,
+    attach_retrieval_pipelines, model_group_for_response_id, post_call_pipelines,
+    retrieval_context, submit_model_hidden_by,
+};
+use crate::attachment::AttachmentRegistry;
+use crate::context::PolicyMatchContext;
+use crate::pipeline::json_value::JsonValue;
+use crate::pipeline::{GuardrailPipeline, PipelineAction, PipelineMode, PipelineStep};
+use crate::registry::{PolicyRegistry, PolicySource};
+use crate::values::{ModelPatterns, Policy, PolicyAttachment, PolicyCondition, PolicyGuardrails};
+
+struct Router {
+    deployments: BTreeMap<String, String>,
+    aliases: Vec<(String, String)>,
+}
+
+impl Router {
+    fn new(deployments: &[(&str, &str)], aliases: &[(&str, &str)]) -> Self {
+        Self {
+            deployments: deployments
+                .iter()
+                .map(|(model_id, model_name)| ((*model_id).to_owned(), (*model_name).to_owned()))
+                .collect(),
+            aliases: aliases
+                .iter()
+                .map(|(alias, target)| ((*alias).to_owned(), (*target).to_owned()))
+                .collect(),
+        }
+    }
+}
+
+impl PolicyRouterView for Router {
+    fn deployment_model_name(&self, model_id: &str) -> Option<String> {
+        self.deployments.get(model_id).cloned()
+    }
+
+    fn model_group_aliases(&self) -> Vec<(String, String)> {
+        self.aliases.clone()
+    }
+}
+
+fn decode_with(model_id: &'static str) -> impl Fn(Option<&str>) -> Option<String> {
+    move |response_id: Option<&str>| response_id.map(|_| model_id.to_owned())
+}
+
+const fn decode_nothing(_response_id: Option<&str>) -> Option<String> {
+    None
+}
+
+fn step(guardrail: &str) -> PipelineStep {
+    PipelineStep {
+        guardrail: guardrail.to_owned(),
+        on_fail: PipelineAction::Block,
+        on_pass: PipelineAction::Allow,
+        on_error: None,
+        pass_data: false,
+        modify_response_message: None,
+    }
+}
+
+fn pipeline(mode: PipelineMode, guardrails: &[&str]) -> GuardrailPipeline {
+    GuardrailPipeline {
+        mode,
+        steps: guardrails.iter().copied().map(step).collect(),
+    }
+}
+
+fn plain_policy() -> Policy {
+    Policy {
+        inherit: None,
+        description: None,
+        guardrails: PolicyGuardrails::default(),
+        condition: None,
+        pipeline: None,
+    }
+}
+
+fn pipelined(mode: PipelineMode, guardrails: &[&str]) -> Policy {
+    let mut value = plain_policy();
+    value.pipeline = Some(pipeline(mode, guardrails));
+    value
+}
+
+fn conditioned(condition_model: &str) -> Policy {
+    let mut value = pipelined(PipelineMode::PostCall, &["g-cond"]);
+    value.condition = Some(PolicyCondition {
+        model: Some(ModelPatterns::One(condition_model.to_owned())),
+    });
+    value
+}
+
+fn registry(entries: Vec<(&str, Policy)>) -> PolicyRegistry {
+    let mut registry = PolicyRegistry::default();
+    for (name, value) in entries {
+        registry.add_policy(name, value, PolicySource::Config);
+    }
+    registry
+}
+
+fn attachments(entries: Vec<PolicyAttachment>) -> AttachmentRegistry {
+    let mut registry = AttachmentRegistry::default();
+    registry.load_attachments(entries);
+    registry
+}
+
+fn attached(policy_name: &str) -> PolicyAttachment {
+    PolicyAttachment {
+        policy: policy_name.to_owned(),
+        scope: Some("*".to_owned()),
+        teams: None,
+        keys: None,
+        models: None,
+        tags: None,
+        priority: None,
+        default: false,
+    }
+}
+
+fn text(value: &str) -> JsonValue {
+    JsonValue::String(value.to_owned())
+}
+
+fn object(entries: Vec<(&str, JsonValue)>) -> JsonValue {
+    JsonValue::Object(
+        entries
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    )
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+fn sources(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
+    entries
+        .iter()
+        .map(|(name, reason)| ((*name).to_owned(), (*reason).to_owned()))
+        .collect()
+}
+
+fn bucket_with_pipelines(pipelines: PolicyPipelines) -> MetadataBucket {
+    MetadataBucket {
+        guardrail_pipelines: Some(pipelines),
+        pipeline_managed_guardrails: None,
+        applied_policies: None,
+        applied_guardrails: None,
+        policy_sources: None,
+        passthrough: BTreeMap::new(),
+    }
+}
+
+fn data(response_id: &str, bucket: MetadataBucket) -> RetrievalData {
+    RetrievalData {
+        response_id: Some(response_id.to_owned()),
+        metadata: Some(Some(bucket)),
+        litellm_metadata: None,
+        passthrough: BTreeMap::new(),
+    }
+}
+
+fn bare_data(response_id: &str) -> RetrievalData {
+    RetrievalData {
+        response_id: Some(response_id.to_owned()),
+        metadata: None,
+        litellm_metadata: None,
+        passthrough: BTreeMap::new(),
+    }
+}
+
+fn bucket_of(data: &RetrievalData) -> &MetadataBucket {
+    let Some(Some(bucket)) = &data.metadata else {
+        panic!("metadata bucket missing");
+    };
+    bucket
+}
+
+fn stored_pipelines(bucket: &MetadataBucket) -> &PolicyPipelines {
+    let Some(pipelines) = &bucket.guardrail_pipelines else {
+        panic!("stored pipelines missing");
+    };
+    pipelines
+}
+
+fn request() -> RetrievalRequest<'static> {
+    RetrievalRequest {
+        auth: RetrievalAuth::default(),
+        tags: Vec::new(),
+    }
+}
+
+fn dependencies<'source>(
+    registry: &'source PolicyRegistry,
+    attachments: &'source AttachmentRegistry,
+    router: Option<&'source dyn PolicyRouterView>,
+    decoder: &'source dyn Fn(Option<&str>) -> Option<String>,
+) -> RetrievalDependencies<'source> {
+    RetrievalDependencies {
+        registry,
+        attachments,
+        router,
+        model_id_from_response_id: decoder,
+    }
+}
+
+fn run_standard_retrieval(data: &mut RetrievalData) {
+    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
+    let attachments = attachments(vec![attached("p1")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    attach_retrieval_pipelines(data, &request(), &deps);
+}
+
+struct MessageVisitor(String);
+
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
+
+impl<S: Subscriber> Layer<S> for Capture {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+        let level = *event.metadata().level();
+        if level != Level::WARN && level != Level::DEBUG {
+            return;
+        }
+        let mut visitor = MessageVisitor(String::new());
+        event.record(&mut visitor);
+        if !visitor.0.starts_with("Policy engine: ") {
+            return;
+        }
+        self.0.lock().expect("capture").push((level, visitor.0));
+    }
+}
+
+impl Capture {
+    fn messages(&self) -> Vec<(Level, String)> {
+        self.0.lock().expect("capture").clone()
+    }
+}
+
+fn captured<T, F>(run: F) -> (T, Vec<(Level, String)>)
+where
+    F: FnOnce() -> T,
+{
+    let capture = Capture::default();
+    let subscriber = tracing_subscriber::registry().with(capture.clone());
+    let result = with_default(subscriber, run);
+    (result, capture.messages())
+}
+
+#[test]
+fn model_group_lookup_returns_the_deployment_model_name() {
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decoder));
+    assert_eq!(result, Ok("gpt-4o".to_owned()));
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn model_group_lookup_without_a_router_is_ungoverned() {
+    let decoder = decode_with("dep-1");
+    let (result, logs) = captured(|| model_group_for_response_id(Some("resp_a"), None, &decoder));
+    assert_eq!(
+        result,
+        Err(UngovernedRetrieval {
+            reason: UngovernedReason::NoRouter
+        })
+    );
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn model_group_lookup_without_a_decodable_id_is_ungoverned() {
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decode_nothing));
+    assert_eq!(
+        result,
+        Err(UngovernedRetrieval {
+            reason: UngovernedReason::ResponseIdNamesNoDeployment
+        })
+    );
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn model_group_lookup_for_a_missing_deployment_is_ungoverned() {
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("gone-id");
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decoder));
+    assert_eq!(
+        result,
+        Err(UngovernedRetrieval {
+            reason: UngovernedReason::DeploymentNoLongerInRouter
+        })
+    );
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn wildcard_deployment_warns_that_the_submission_name_is_hidden() {
+    let router = Router::new(&[("dep-1", "gpt-4o-*")], &[]);
+    let decoder = decode_with("dep-1");
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decoder));
+    assert_eq!(result, Ok("gpt-4o-*".to_owned()));
+    assert_eq!(
+        logs,
+        vec![(
+            Level::WARN,
+            "Policy engine: background response resp_a re-matches policies on retrieval as model \
+             group gpt-4o-* (a wildcard deployment), so a policy attached to the model name it was \
+             submitted as does not run on it"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn alias_target_warns_with_every_alias() {
+    let router = Router::new(
+        &[("dep-1", "gpt-4o")],
+        &[
+            ("alias-one", "gpt-4o"),
+            ("alias-two", "gpt-4o"),
+            ("unrelated", "other"),
+        ],
+    );
+    let decoder = decode_with("dep-1");
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decoder));
+    assert_eq!(result, Ok("gpt-4o".to_owned()));
+    assert_eq!(
+        logs,
+        vec![(
+            Level::WARN,
+            "Policy engine: background response resp_a re-matches policies on retrieval as model \
+             group gpt-4o (the target of model_group_alias alias-one, alias-two), so a policy \
+             attached to the model name it was submitted as does not run on it"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn an_alias_targeting_another_group_does_not_warn() {
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[("alias-three", "other")]);
+    let decoder = decode_with("dep-1");
+    let (result, logs) =
+        captured(|| model_group_for_response_id(Some("resp_a"), Some(&router), &decoder));
+    assert_eq!(result, Ok("gpt-4o".to_owned()));
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn wildcard_names_win_over_aliases_when_the_name_is_hidden() {
+    let aliases = vec![("alias-one".to_owned(), "gpt-*".to_owned())];
+    assert_eq!(
+        submit_model_hidden_by("gpt-*", &aliases),
+        Some("a wildcard deployment".to_owned())
+    );
+}
+
+#[test]
+fn submit_model_hidden_by_names_matching_aliases_in_order() {
+    let aliases = vec![
+        ("alias-one".to_owned(), "gpt-4o".to_owned()),
+        ("alias-two".to_owned(), "claude".to_owned()),
+        ("alias-three".to_owned(), "gpt-4o".to_owned()),
+    ];
+    assert_eq!(
+        submit_model_hidden_by("gpt-4o", &aliases),
+        Some("the target of model_group_alias alias-one, alias-three".to_owned())
+    );
+    assert_eq!(submit_model_hidden_by("gpt-4o", &[]), None);
+    assert_eq!(submit_model_hidden_by("gpt-4o", &aliases[1..2]), None);
+}
+
+#[test]
+fn retrieval_context_carries_aliases_model_and_tags() {
+    let auth = RetrievalAuth {
+        team_alias: Some("team-a"),
+        key_alias: Some("key-1"),
+    };
+    let context = retrieval_context(&auth, "gpt-4o", vec!["prod-eu".to_owned()]);
+    assert_eq!(
+        context,
+        PolicyMatchContext {
+            team_alias: Some("team-a".to_owned()),
+            key_alias: Some("key-1".to_owned()),
+            model: Some("gpt-4o".to_owned()),
+            tags: Some(vec!["prod-eu".to_owned()]),
+        }
+    );
+}
+
+#[test]
+fn retrieval_context_leaves_unset_aliases_and_empty_tags_empty() {
+    let context = retrieval_context(&RetrievalAuth::default(), "gpt-4o", Vec::new());
+    assert_eq!(
+        context,
+        PolicyMatchContext {
+            team_alias: None,
+            key_alias: None,
+            model: Some("gpt-4o".to_owned()),
+            tags: None,
+        }
+    );
+}
+
+#[test]
+fn post_call_pipelines_are_filtered_and_sources_cover_every_match() {
+    let registry = registry(vec![
+        ("post", pipelined(PipelineMode::PostCall, &["g-post"])),
+        ("pre", pipelined(PipelineMode::PreCall, &["g-pre"])),
+        ("guards", plain_policy()),
+    ]);
+    let attachments = attachments(vec![attached("post"), attached("pre"), attached("guards")]);
+    let context = retrieval_context(&RetrievalAuth::default(), "gpt-4o", Vec::new());
+    let found = post_call_pipelines(&context, &registry, &attachments);
+    assert_eq!(
+        found.pipelines,
+        vec![(
+            "post".to_owned(),
+            pipeline(PipelineMode::PostCall, &["g-post"])
+        )]
+    );
+    assert_eq!(
+        found.sources,
+        sources(&[
+            ("post", "scope:*"),
+            ("pre", "scope:*"),
+            ("guards", "scope:*"),
+        ])
+    );
+}
+
+#[test]
+fn post_call_pipelines_without_matches_are_empty() {
+    let registry = registry(vec![(
+        "post",
+        pipelined(PipelineMode::PostCall, &["g-post"]),
+    )]);
+    let attachments = attachments(Vec::new());
+    let context = retrieval_context(&RetrievalAuth::default(), "gpt-4o", Vec::new());
+    let found = post_call_pipelines(&context, &registry, &attachments);
+    assert!(found.pipelines.is_empty());
+    assert!(found.sources.is_empty());
+}
+
+#[test]
+fn attaches_post_call_pipelines_to_the_bucket() {
+    let registry = registry(vec![
+        ("p1", pipelined(PipelineMode::PostCall, &["g1", "g2"])),
+        ("p2", pipelined(PipelineMode::PostCall, &["g2", "g3"])),
+    ]);
+    let attachments = attachments(vec![attached("p1"), attached("p2")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = bare_data("resp_a");
+    data.passthrough.insert("model".to_owned(), text("gpt-4o"));
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    attach_retrieval_pipelines(&mut data, &request(), &deps);
+    assert_eq!(data.passthrough.get("model"), Some(&text("gpt-4o")));
+    let bucket = bucket_of(&data);
+    assert_eq!(
+        stored_pipelines(bucket),
+        &vec![
+            (
+                "p1".to_owned(),
+                pipeline(PipelineMode::PostCall, &["g1", "g2"])
+            ),
+            (
+                "p2".to_owned(),
+                pipeline(PipelineMode::PostCall, &["g2", "g3"])
+            ),
+        ]
+    );
+    assert_eq!(
+        bucket.pipeline_managed_guardrails,
+        Some(strings(&["g1", "g2", "g3"]))
+    );
+}
+
+#[test]
+fn attaches_post_call_pipelines_with_provenance() {
+    let registry = registry(vec![
+        ("p1", pipelined(PipelineMode::PostCall, &["g1", "g2"])),
+        ("p2", pipelined(PipelineMode::PostCall, &["g2", "g3"])),
+    ]);
+    let attachments = attachments(vec![attached("p1"), attached("p2")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = bare_data("resp_a");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let bucket = bucket_of(&data);
+    assert_eq!(bucket.applied_policies, Some(strings(&["p1", "p2"])));
+    assert_eq!(
+        bucket.applied_guardrails,
+        Some(strings(&["g1", "g2", "g3"]))
+    );
+    assert_eq!(
+        bucket.policy_sources,
+        Some(sources(&[("p1", "scope:*"), ("p2", "scope:*")]))
+    );
+    assert_eq!(
+        logs,
+        vec![(
+            Level::DEBUG,
+            "Policy engine: attached post_call pipelines to the retrieval of background response \
+             resp_a (model group gpt-4o): p1, p2"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn writes_to_the_litellm_metadata_bucket_when_present() {
+    let mut caller = MetadataBucket::default();
+    caller.passthrough.insert("caller".to_owned(), text("kept"));
+    let mut data = data("resp_a", caller.clone());
+    data.litellm_metadata = Some(Some(caller.clone()));
+    run_standard_retrieval(&mut data);
+    let Some(Some(preferred)) = &data.litellm_metadata else {
+        panic!("litellm metadata bucket missing");
+    };
+    assert!(preferred.guardrail_pipelines.is_some());
+    assert_eq!(preferred.applied_policies, Some(strings(&["p1"])));
+    assert_eq!(bucket_of(&data), &caller);
+}
+
+#[test]
+fn null_litellm_metadata_is_replaced_by_a_bucket() {
+    let mut caller = MetadataBucket::default();
+    caller.passthrough.insert("caller".to_owned(), text("kept"));
+    let mut data = data("resp_a", caller.clone());
+    data.litellm_metadata = Some(None);
+    run_standard_retrieval(&mut data);
+    let Some(Some(preferred)) = &data.litellm_metadata else {
+        panic!("litellm metadata bucket missing");
+    };
+    assert!(preferred.guardrail_pipelines.is_some());
+    assert_eq!(bucket_of(&data), &caller);
+}
+
+#[test]
+fn creates_the_metadata_bucket_when_no_policies_match() {
+    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
+    let attachments = attachments(Vec::new());
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = bare_data("resp_a");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    assert_eq!(bucket_of(&data), &MetadataBucket::default());
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn uninitialized_registry_leaves_the_data_untouched() {
+    let registry = PolicyRegistry::default();
+    let attachments = attachments(vec![attached("p1")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = bare_data("resp_a");
+    data.passthrough.insert("caller".to_owned(), text("kept"));
+    let before = data.clone();
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    assert_eq!(data, before);
+    assert!(logs.is_empty());
+}
+
+#[rstest]
+#[case::no_router(Some("resp_a"), false, "dep-1", "no router", "resp_a")]
+#[case::missing_response_id(None, true, "dep-1", "response id names no deployment", "None")]
+#[case::deployment_gone(
+    Some("resp_a"),
+    true,
+    "gone-id",
+    "deployment no longer in the router",
+    "resp_a"
+)]
+fn ungoverned_retrieval_warns_and_leaves_the_data_untouched(
+    #[case] response_id: Option<&str>,
+    #[case] has_router: bool,
+    #[case] decoded_model_id: &'static str,
+    #[case] reason: &str,
+    #[case] log_id: &str,
+) {
+    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
+    let attachments = attachments(vec![attached("p1")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let router_view: &dyn PolicyRouterView = &router;
+    let decoder = decode_with(decoded_model_id);
+    let mut data = RetrievalData {
+        response_id: response_id.map(str::to_owned),
+        metadata: None,
+        litellm_metadata: None,
+        passthrough: BTreeMap::from([("caller".to_owned(), text("kept"))]),
+    };
+    let before = data.clone();
+    let deps = dependencies(
+        &registry,
+        &attachments,
+        has_router.then_some(router_view),
+        &decoder,
+    );
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    assert_eq!(data, before);
+    assert_eq!(
+        logs,
+        vec![(
+            Level::WARN,
+            format!(
+                "Policy engine: background response {log_id} is retrieved without its post_call \
+                 policy pipelines ({reason})"
+            )
+        )]
+    );
+}
+
+fn dedup_setup() -> (RetrievalData, PolicyRegistry, AttachmentRegistry, Router) {
+    let existing = pipeline(PipelineMode::PostCall, &["existing-guard"]);
+    let mut bucket = bucket_with_pipelines(vec![("existing-policy".to_owned(), existing)]);
+    bucket.applied_policies = Some(strings(&["existing-policy"]));
+    bucket.applied_guardrails = Some(strings(&["existing-guard"]));
+    bucket.policy_sources = Some(sources(&[("existing-policy", "scope:*")]));
+    let registry = registry(vec![
+        (
+            "existing-policy",
+            pipelined(PipelineMode::PostCall, &["existing-guard"]),
+        ),
+        (
+            "new-policy",
+            pipelined(PipelineMode::PostCall, &["new-guard"]),
+        ),
+    ]);
+    let attachments = attachments(vec![attached("existing-policy"), attached("new-policy")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    (data("resp_a", bucket), registry, attachments, router)
+}
+
+#[test]
+fn already_attached_pipelines_are_kept_and_new_ones_merged() {
+    let (mut data, registry, attachments, router) = dedup_setup();
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let bucket = bucket_of(&data);
+    assert_eq!(
+        stored_pipelines(bucket),
+        &vec![
+            (
+                "existing-policy".to_owned(),
+                pipeline(PipelineMode::PostCall, &["existing-guard"])
+            ),
+            (
+                "new-policy".to_owned(),
+                pipeline(PipelineMode::PostCall, &["new-guard"])
+            ),
+        ]
+    );
+    assert_eq!(
+        bucket.pipeline_managed_guardrails,
+        Some(strings(&["existing-guard", "new-guard"]))
+    );
+    assert_eq!(
+        logs,
+        vec![(
+            Level::DEBUG,
+            "Policy engine: attached post_call pipelines to the retrieval of background response \
+             resp_a (model group gpt-4o): new-policy"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn already_attached_policies_stay_in_the_headers_once() {
+    let (mut data, registry, attachments, router) = dedup_setup();
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    attach_retrieval_pipelines(&mut data, &request(), &deps);
+    let bucket = bucket_of(&data);
+    assert_eq!(
+        bucket.applied_policies,
+        Some(strings(&["existing-policy", "new-policy"]))
+    );
+    assert_eq!(
+        bucket.applied_guardrails,
+        Some(strings(&["existing-guard", "new-guard"]))
+    );
+    assert_eq!(
+        bucket.policy_sources,
+        Some(sources(&[
+            ("existing-policy", "scope:*"),
+            ("new-policy", "scope:*"),
+        ]))
+    );
+}
+
+#[test]
+fn a_fully_attached_bucket_is_left_alone() {
+    let existing = pipeline(PipelineMode::PostCall, &["existing-guard"]);
+    let stored = vec![("existing-policy".to_owned(), existing)];
+    let mut data = data("resp_a", bucket_with_pipelines(stored.clone()));
+    let registry = registry(vec![(
+        "existing-policy",
+        pipelined(PipelineMode::PostCall, &["existing-guard"]),
+    )]);
+    let attachments = attachments(vec![attached("existing-policy")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let bucket = bucket_of(&data);
+    assert_eq!(bucket.guardrail_pipelines, Some(stored));
+    assert_eq!(bucket.pipeline_managed_guardrails, None);
+    assert_eq!(bucket.applied_policies, None);
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn condition_filtered_policies_are_not_attached() {
+    let registry = registry(vec![
+        ("matching", conditioned("gpt-4.*")),
+        ("other-model", conditioned("claude")),
+    ]);
+    let attachments = attachments(vec![attached("matching"), attached("other-model")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = bare_data("resp_a");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    attach_retrieval_pipelines(&mut data, &request(), &deps);
+    let bucket = bucket_of(&data);
+    assert_eq!(
+        stored_pipelines(bucket),
+        &vec![(
+            "matching".to_owned(),
+            pipeline(PipelineMode::PostCall, &["g-cond"])
+        )]
+    );
+    assert_eq!(
+        bucket.policy_sources,
+        Some(sources(&[("matching", "scope:*")]))
+    );
+}
+
+#[test]
+fn existing_headers_and_sources_are_preserved() {
+    let existing = MetadataBucket {
+        guardrail_pipelines: None,
+        pipeline_managed_guardrails: None,
+        applied_policies: Some(strings(&["old-policy"])),
+        applied_guardrails: Some(strings(&["g-old"])),
+        policy_sources: Some(sources(&[("old-policy", "team:team-a")])),
+        passthrough: BTreeMap::new(),
+    };
+    let mut data = data("resp_a", existing);
+    run_standard_retrieval(&mut data);
+    let bucket = bucket_of(&data);
+    assert_eq!(
+        bucket.applied_policies,
+        Some(strings(&["old-policy", "p1"]))
+    );
+    assert_eq!(bucket.applied_guardrails, Some(strings(&["g-old", "g1"])));
+    assert_eq!(
+        bucket.policy_sources,
+        Some(sources(
+            &[("old-policy", "team:team-a"), ("p1", "scope:*"),]
+        ))
+    );
+}
+
+#[test]
+fn null_applied_headers_are_treated_as_empty() {
+    let mut data = data("resp_a", MetadataBucket::default());
+    run_standard_retrieval(&mut data);
+    let bucket = bucket_of(&data);
+    assert_eq!(bucket.applied_policies, Some(strings(&["p1"])));
+    assert_eq!(bucket.applied_guardrails, Some(strings(&["g1"])));
+}
+
+#[test]
+fn unmodeled_request_keys_ride_along() {
+    let mut bucket = MetadataBucket::default();
+    bucket.passthrough.insert("caller".to_owned(), text("kept"));
+    let mut data = data("resp_a", bucket);
+    data.passthrough.insert("model".to_owned(), text("gpt-4o"));
+    run_standard_retrieval(&mut data);
+    assert_eq!(
+        bucket_of(&data).passthrough.get("caller"),
+        Some(&text("kept"))
+    );
+    let serialized = serde_json::to_string(&data).expect("serialize retrieval data");
+    let round_trip: RetrievalData =
+        serde_json::from_str(&serialized).expect("decode retrieval data");
+    assert_eq!(round_trip, data);
+}
+
+#[test]
+fn absent_slots_stay_absent_and_a_null_slot_stays_null() {
+    let data = RetrievalData {
+        response_id: None,
+        metadata: None,
+        litellm_metadata: Some(None),
+        passthrough: BTreeMap::from([("caller".to_owned(), text("kept"))]),
+    };
+    let serialized = serde_json::to_string(&data).expect("serialize retrieval data");
+    let value: JsonValue = serde_json::from_str(&serialized).expect("decode retrieval data");
+    assert_eq!(
+        value,
+        object(vec![
+            ("litellm_metadata", JsonValue::Null),
+            ("caller", text("kept")),
+        ])
+    );
+}
+
+#[test]
+fn null_stored_pipelines_read_as_empty() {
+    let mut data = serde_json::from_str::<RetrievalData>(
+        r#"{"response_id": "resp_a", "metadata": {"_guardrail_pipelines": null}}"#,
+    )
+    .expect("retrieval data");
+    run_standard_retrieval(&mut data);
+    assert_eq!(
+        stored_pipelines(bucket_of(&data)),
+        &vec![("p1".to_owned(), pipeline(PipelineMode::PostCall, &["g1"]))]
+    );
+}
+
+#[test]
+fn a_non_object_metadata_value_fails_to_deserialize() {
+    let result = serde_json::from_str::<RetrievalData>(r#"{"metadata": "junk"}"#);
+    result.unwrap_err();
+}
+
+#[test]
+fn a_non_string_response_id_fails_to_deserialize() {
+    let result = serde_json::from_str::<RetrievalData>(r#"{"response_id": 1}"#);
+    result.unwrap_err();
+}
+
+#[test]
+fn a_non_list_guardrail_pipelines_value_fails_to_deserialize() {
+    let result =
+        serde_json::from_str::<RetrievalData>(r#"{"metadata": {"_guardrail_pipelines": "junk"}}"#);
+    result.unwrap_err();
+}
+
+#[test]
+fn a_malformed_stored_pipeline_fails_to_deserialize() {
+    let result = serde_json::from_str::<RetrievalData>(
+        r#"{"metadata": {"_guardrail_pipelines": [["p1", {"mode": "pre_call", "steps": []}]]}}"#,
+    );
+    result.unwrap_err();
+}
+
+#[test]
+fn a_non_list_applied_policies_header_fails_to_deserialize() {
+    let result = serde_json::from_str::<RetrievalData>(r#"{"metadata": {"applied_policies": 5}}"#);
+    result.unwrap_err();
+}
+
+#[test]
+fn a_non_object_policy_sources_value_fails_to_deserialize() {
+    let result =
+        serde_json::from_str::<RetrievalData>(r#"{"metadata": {"policy_sources": "junk"}}"#);
+    result.unwrap_err();
+}
