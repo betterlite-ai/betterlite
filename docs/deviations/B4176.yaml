@@ -1,0 +1,38 @@
+task: B4176
+deviations:
+  - what: >-
+      `--timeout_worker_healthcheck` is never honored. The resolved value stays in UvicornSettings and a
+      warning names the flag, where LiteLLM passes it to uvicorn when the installed uvicorn accepts the
+      parameter (0.37 and later) and warns only on older ones.
+    why: >-
+      betterlite serves with axum/tokio and has no uvicorn to introspect or hand the value to, so there is no
+      version to check and nothing to apply. The warning text keeps the literal flag name from LiteLLM without
+      a version, and the value is kept so a native worker can honor it later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L316-L324
+  - what: >-
+      Native settings never write `LITELLM_DEV_ENV_HOT_RELOAD`, or any other variable, into the process
+      environment. The hot reload flag crosses to the worker as ReloadSettings::env_hot_reload.
+    why: >-
+      LiteLLM sets the variable in the reloader process because forked workers inherit its environ. Rust has no
+      safe process-wide environment mutation, and a worker that reads it from the environment still gets the
+      same value from the config section, so the setting travels as data instead. The .env override warning
+      text is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L425-L433
+  - what: >-
+      A `LITELLM_LOG` value that is not a Python logging level name fails the config load with
+      ConfigError::InvalidScalar at LITELLM_LOG, where LiteLLM fails at import time with the AttributeError
+      from getattr(logging, name.upper()).
+    why: >-
+      The level is resolved while the config section loads, so the error names the field as a typed config
+      error and echoes no value or Python repr. Both refuse to start; only the error shape differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L642-L649
+  - what: >-
+      The reload watch list resolves the current directory and the config parent by canonicalizing them on
+      disk, where LiteLLM's `_get_reload_options` builds them with `os.path.abspath`, which keeps a symlink
+      as it is. A config reached through a symlinked directory therefore watches the real directory here.
+    why: >-
+      One resolver serves the reload kwargs and the StatReload extra paths, and LiteLLM resolves the latter
+      with `Path.resolve()`, so the two lists cannot disagree in betterlite. The watcher still sees every file
+      LiteLLM watches at the location the config really lives in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L365-L369
+kept_bugs: []
