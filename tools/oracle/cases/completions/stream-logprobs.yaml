@@ -1,0 +1,27 @@
+name: completions-stream-logprobs
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: openai/gpt-3.5-turbo-instruct, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: text-model, prompt: Once upon a time, stream: true, logprobs: 2}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream, x-request-id: provider-stream}
+    events:
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" Hel","index":0,"logprobs":{"tokens":[" Hel"],"token_logprobs":[-0.1]},"finish_reason":null}]}'
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":"lo","index":0,"logprobs":{"tokens":["lo"],"token_logprobs":[-0.2]},"finish_reason":null}]}'
+      - '{"id":"cmpl-text","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":"","index":0,"logprobs":null,"finish_reason":"stop"}]}'
+      - '[DONE]'
+compare:
+  headers: [content-type, llm_provider-x-request-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /0/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /1/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /2/created, why: LiteLLM timestamps every stream chunk}

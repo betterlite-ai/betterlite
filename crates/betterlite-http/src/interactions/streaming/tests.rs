@@ -10,6 +10,7 @@ use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::blocking::Response as BlockingResponse;
 use reqwest::{Client, Response};
 use rstest::rstest;
+use tokio::time::Instant as TokioInstant;
 
 use crate::interactions::base::Logging;
 use crate::interactions::base::tests::support as base;
@@ -158,8 +159,10 @@ fn create_sync_iterator_names_the_status_when_the_body_read_fails() {
 
 #[test]
 fn create_sync_iterator_names_the_status_when_a_stalled_body_read_ends() {
-    let (_client, response) =
-        sent_broken(Some(Duration::from_secs(5)), Some(Duration::from_secs(1)));
+    let (_client, response) = sent_broken(
+        Some(Duration::from_secs(5)),
+        Some(Duration::from_millis(200)),
+    );
     let fixture = Fixture::new();
     let started = Instant::now();
 
@@ -256,13 +259,11 @@ async fn create_async_iterator_names_the_status_when_the_body_read_fails() {
     assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn create_async_iterator_names_the_status_when_the_body_read_expires() {
     let address = broken_body(Some(Duration::from_secs(20)));
-    let client = base_builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .unwrap();
+    // A client timeout would fire on paused time while the server thread is still answering
+    let client = base_builder().build().unwrap();
     let response = client
         .get(format!("http://{address}/"))
         .send()
@@ -270,12 +271,14 @@ async fn create_async_iterator_names_the_status_when_the_body_read_expires() {
         .unwrap();
     let fixture = Fixture::new();
     let mut logging = Logging::default();
-    let started = Instant::now();
+    let started = TokioInstant::now();
 
     let error = create_async_iterator(&client, response, None, &mut logging, &fixture);
 
     assert_eq!(provider_error(error.await), FixtureError::Refused(500));
-    assert!(started.elapsed() < Duration::from_secs(15));
+    let waited = started.elapsed();
+    assert!(waited >= Duration::from_secs(5), "{waited:?}");
+    assert!(waited < Duration::from_secs(15), "{waited:?}");
     let calls = fixture.calls();
     assert!(calls.contains(&"error|500||-".to_owned()), "{calls:?}");
     assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));

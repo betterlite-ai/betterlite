@@ -208,11 +208,11 @@ async fn a_sync_success_event_posts_the_mapped_envelope() {
         .log_success_event(&event())
         .expect("the event is accepted");
     adapter.tracker.close();
-    adapter.tracker.wait().await;
-
-    let received = timeout(Duration::from_secs(5), served)
-        .await
-        .expect("the envelope is posted");
+    let (posted, ()) = tokio::join!(
+        timeout(Duration::from_secs(5), served),
+        adapter.tracker.wait()
+    );
+    let received = posted.expect("the envelope is posted");
     assert_eq!(received.request_line, "POST /oai/v1/log HTTP/1.1");
     assert_eq!(
         received.headers.get("authorization").map(String::as_str),
@@ -271,11 +271,11 @@ async fn a_vertex_ai_provider_routes_a_claude_model_to_the_custom_endpoint() {
         .log_success_event(&event_from(&fixture))
         .expect("the event is accepted");
     adapter.tracker.close();
-    adapter.tracker.wait().await;
-
-    let received = timeout(Duration::from_secs(5), served)
-        .await
-        .expect("the envelope is posted");
+    let (posted, ()) = tokio::join!(
+        timeout(Duration::from_secs(5), served),
+        adapter.tracker.wait()
+    );
+    let received = posted.expect("the envelope is posted");
     assert_eq!(received.request_line, "POST /custom/v1/log HTTP/1.1");
     let body: Json = serde_json::from_slice(&received.body).expect("the posted body is JSON");
     let request = field(&body, "providerRequest");

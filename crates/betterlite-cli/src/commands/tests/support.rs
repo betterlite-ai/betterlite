@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read as _, Write as _};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -114,6 +115,8 @@ pub(crate) struct TestServer {
     pub(crate) base_url: String,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
     handle: Option<thread::JoinHandle<()>>,
+    // finish() drops it, so the server stops waiting for requests and pauses the test no longer needs
+    finishing: Option<SyncSender<()>>,
 }
 
 impl TestServer {
@@ -123,17 +126,20 @@ impl TestServer {
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = Arc::clone(&requests);
+        let (finishing, finished) = sync_channel(0);
         let handle = thread::Builder::new()
-            .spawn(move || serve_answers(&listener, answers, &recorded))
+            .spawn(move || serve_answers(&listener, answers, &recorded, &finished))
             .unwrap();
         Self {
             base_url: format!("http://{address}"),
             requests,
             handle: Some(handle),
+            finishing: Some(finishing),
         }
     }
 
     pub(crate) fn finish(mut self) -> Vec<RecordedRequest> {
+        drop(self.finishing.take());
         if let Some(handle) = self.handle.take() {
             handle.join().unwrap();
         }
@@ -153,23 +159,32 @@ fn serve_answers(
     listener: &TcpListener,
     answers: Vec<Answer>,
     recorded: &Arc<Mutex<Vec<RecordedRequest>>>,
+    finished: &Receiver<()>,
 ) {
     let deadline = Instant::now().checked_add(ACCEPT_DEADLINE).unwrap();
     for answer in answers {
-        let Some(mut stream) = accept_before(listener, deadline) else {
+        let Some(mut stream) = accept_before(listener, deadline, finished) else {
             return;
         };
         let request = read_request(&mut stream);
         recorded.lock().unwrap().push(request);
-        serve(&mut stream, &answer);
+        serve(&mut stream, &answer, finished);
     }
 }
 
-fn accept_before(listener: &TcpListener, deadline: Instant) -> Option<TcpStream> {
+fn accept_before(
+    listener: &TcpListener,
+    deadline: Instant,
+    finished: &Receiver<()>,
+) -> Option<TcpStream> {
     while Instant::now() < deadline {
         match listener.accept() {
             Ok((stream, _address)) => return Some(stream),
-            Err(error) if error.kind() == ErrorKind::WouldBlock => thread::park_timeout(POLL_PAUSE),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                if finished.recv_timeout(POLL_PAUSE) == Err(RecvTimeoutError::Disconnected) {
+                    return None;
+                }
+            }
             Err(_) => return None,
         }
     }
@@ -215,9 +230,9 @@ fn read_request(stream: &mut TcpStream) -> RecordedRequest {
     }
 }
 
-fn serve(stream: &mut TcpStream, answer: &Answer) {
+fn serve(stream: &mut TcpStream, answer: &Answer, finished: &Receiver<()>) {
     if let Some(pause) = answer.pause {
-        thread::park_timeout(pause);
+        let _finished_early = finished.recv_timeout(pause);
     }
     let length = answer.declared_length.unwrap_or(answer.body.len());
     let mut head = format!("HTTP/1.1 {} {}\r\n", answer.status, answer.reason);
