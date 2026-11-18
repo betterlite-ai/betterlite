@@ -65,9 +65,12 @@ impl RateLimitCache for RoutingRateLimitCache {
         let Ok(key) = RouteKey::parse(key) else {
             return RemoteRead::Failed;
         };
+        // RedisCache.async_get_cache swallows a connection failure and returns None, so a failed read is an absent value
         match store.get(&key).await {
             Ok(observed) => match (observed.value, observed.warning) {
-                (_, Some(StoreWarning::Unavailable { .. })) => RemoteRead::Failed,
+                (StoreRead::Missing, Some(StoreWarning::Unavailable { .. })) => {
+                    RemoteRead::Value(None)
+                }
                 (StoreRead::Value(RouteValue::Counter(value)), _) => RemoteRead::Value(Some(value)),
                 (StoreRead::Missing, _) => RemoteRead::Value(None),
                 (StoreRead::Value(_), _) => RemoteRead::Failed,

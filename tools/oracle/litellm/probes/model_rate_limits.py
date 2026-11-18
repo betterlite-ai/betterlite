@@ -82,7 +82,12 @@ class FakeRedisStore:
         self.values: dict[str, int] = values
         self.mode: Literal["up", "breaker", "down"] = mode
 
-    def _fail(self) -> None:
+    def _read(self) -> None:
+        # RedisCache's get methods swallow a connection failure and answer None; only the breaker guard raises
+        if self.mode == "breaker":
+            raise RedisCircuitBreakerOpenError()
+
+    def _write(self) -> None:
         if self.mode == "breaker":
             raise RedisCircuitBreakerOpenError()
         if self.mode == "down":
@@ -90,16 +95,20 @@ class FakeRedisStore:
 
     def get_cache(self, key: str, parent_otel_span: object = None) -> int | None:
         _ = parent_otel_span
-        self._fail()
+        self._read()
+        if self.mode == "down":
+            return None
         return self.values.get(key)
 
     async def async_get_cache(self, key: str, parent_otel_span: object = None) -> int | None:
         _ = parent_otel_span
-        self._fail()
+        self._read()
+        if self.mode == "down":
+            return None
         return self.values.get(key)
 
     def increment_cache(self, key: str, value: float, **_kwargs: object) -> int:
-        self._fail()
+        self._write()
         current = self.values.get(key, 0) + int(value)
         self.values[key] = current
         return current
@@ -112,7 +121,7 @@ class FakeRedisStore:
         **_kwargs: object,
     ) -> int:
         _ = parent_otel_span
-        self._fail()
+        self._write()
         current = self.values.get(key, 0) + int(value)
         self.values[key] = current
         return current

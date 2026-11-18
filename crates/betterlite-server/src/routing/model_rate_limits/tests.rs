@@ -13,10 +13,14 @@ use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_core::message_utilities::prompt_cache_checks::PromptCacheSettings;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::CacheFacts;
-use betterlite_router::io_token_reservations::clock::IoClock;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::io_token_reservations::clock::{IoClock, minute_label};
 use betterlite_router::model_rate_limits::cache::RateLimitCache;
+use betterlite_router::model_rate_limits::error::{ModelRateLimitError, RateLimitChannel};
+use betterlite_router::model_rate_limits::keys::cache_keys;
 use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
 use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
 use betterlite_router::router_core::services::RouteServices;
@@ -27,6 +31,8 @@ use betterlite_router::routing_state_store::{
 use betterlite_router::routing_value_store::{
     RouteIncrement, RouteKey, RoutingValueStore, StoreSettings,
 };
+use betterlite_tokenizer::reservation::RequestBody;
+use serde_json::Number;
 
 use super::{ModelRateLimitStores, RoutingRateLimitCache, build};
 use crate::routing::prompt_affinity::PromptAffinityInputs;
@@ -184,6 +190,67 @@ fn an_oversized_key_is_not_counted() {
     let key = "k".repeat(2048);
     assert_eq!(cache.local(&key), None);
     assert_eq!(cache.increment_local(&key, 1, 60), None);
+}
+
+fn limited_deployment() -> DeploymentSpec {
+    let mut params = JsonObject::new();
+    params.insert(
+        String::from("model"),
+        Json::Text(String::from("openai/gpt-4o")),
+    );
+    params.insert(String::from("tpm"), Json::Number(Number::from(5_i64)));
+    params.insert(String::from("rpm"), Json::Number(Number::from(1_i64)));
+    let mut info = JsonObject::new();
+    info.insert(String::from("id"), Json::Text(String::from("a")));
+    DeploymentSpec {
+        model_name: String::from("gpt-4o"),
+        litellm_params: params,
+        model_info: info,
+        extra: JsonObject::new(),
+    }
+}
+
+// RedisCache.async_get_cache answers None when the connection fails, so the rpm increment still runs and rejects
+#[test]
+fn a_redis_outage_keeps_the_rpm_check() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let server = runtime
+        .block_on(FakeRedis::try_start())
+        .expect("the fake redis starts");
+    let store =
+        RoutingStateStore::new(&remote_settings(server.port()), Arc::new(|| Duration::ZERO))
+            .expect("the state store opens");
+    let local = local();
+    let deployment = limited_deployment();
+    let keys = cache_keys(&deployment, &minute_label(clock()()));
+    let rpm = RouteKey::parse(&keys.rpm).expect("the rpm key parses");
+    local
+        .increment(&rpm, &RouteIncrement::Counter(1), None)
+        .expect("the local rpm counter seeds");
+    let check = build(
+        &section::Settings {
+            enforce_model_rate_limits: true,
+        },
+        ModelRateLimitStores {
+            local,
+            remote: Some(Arc::new(store)),
+        },
+        None,
+        clock(),
+    )
+    .expect("the check is registered");
+    server.set_down(true);
+    let error = runtime
+        .block_on(check.async_pre_call_check(&deployment, &mut RequestBody::new()))
+        .expect_err("the rpm limit rejects during the outage");
+    let ModelRateLimitError::Exceeded(exceeded) = error else {
+        panic!("expected a rate limit, got {error:?}");
+    };
+    assert_eq!(exceeded.channel, RateLimitChannel::Rpm);
+    assert_eq!(exceeded.current, 2);
 }
 
 struct AllowAll;

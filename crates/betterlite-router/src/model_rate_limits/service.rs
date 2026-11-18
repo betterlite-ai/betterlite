@@ -42,21 +42,6 @@ pub struct SuccessUsage<'usage> {
     pub total_tokens: i64,
 }
 
-impl<'usage> SuccessUsage<'usage> {
-    #[must_use]
-    pub const fn new(
-        model_id: Option<&'usage str>,
-        model: Option<&'usage str>,
-        total_tokens: i64,
-    ) -> Self {
-        Self {
-            model_id,
-            model,
-            total_tokens,
-        }
-    }
-}
-
 // The answer a tpm read gives the check: a current count, or the observation is unusable and the request goes through
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CurrentTpm {

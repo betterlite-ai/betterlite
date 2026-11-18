@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, UNIX_EPOCH};
@@ -8,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_tokenizer::reservation::RequestBody;
 use serde_json::Number;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::io_token_reservations::clock::IoClock;
@@ -302,4 +304,39 @@ pub(super) fn run_case_table(name: &str, cases: &[(&'static str, fn())]) {
         }
     }
     panic!("unknown case {name}");
+}
+
+// The lines the check logs while a test runs, so the warning assertions read what was emitted, not what a helper returned
+#[derive(Clone)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Captured {
+    pub(super) fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }

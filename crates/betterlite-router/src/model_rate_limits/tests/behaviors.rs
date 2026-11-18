@@ -6,10 +6,13 @@ use crate::model_rate_limits::error::RateLimitChannel;
 use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
-    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, check_async, exceeded, read_count,
-    request, rpm_key, run_case_table, service, spec, tiers, tpm_cache, tpm_key, with_info,
-    with_param,
+    FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, capture_logs, check_async, exceeded,
+    read_count, request, rpm_key, run_case_table, service, spec, tiers, tpm_cache, tpm_key,
+    with_info, with_param,
 };
+
+const COEXIST_WARNING: &str =
+    "deployment configures itpm/otpm alongside tpm/rpm; both limit types are enforced";
 
 pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
@@ -188,7 +191,11 @@ async fn rpm_increments_first_and_rejects_over_limit() {
 async fn success_event_counts_tpm_usage() {
     let cache = Arc::new(FakeCache::new());
     let check = service(Arc::clone(&cache), None);
-    let usage = SuccessUsage::new(Some("a"), Some("openai/gpt-4o"), 120);
+    let usage = SuccessUsage {
+        model_id: Some("a"),
+        model: Some("openai/gpt-4o"),
+        total_tokens: 120,
+    };
     check.async_log_success_event(&usage).await;
     assert_eq!(tiers(&cache), [Some(120), Some(120)]);
 }
@@ -294,8 +301,15 @@ async fn coexist_warning_logs_once() {
         "tpm",
         100,
     );
-    assert!(check.logs_coexist_warning(&deployment).unwrap());
-    assert!(!check.logs_coexist_warning(&deployment).unwrap());
+    let (logs, _guard) = capture_logs();
+    for _request in 0..2 {
+        check
+            .async_pre_call_check(&deployment, &mut request())
+            .await
+            .unwrap();
+    }
+    let text = logs.text();
+    assert_eq!(text.matches(COEXIST_WARNING).count(), 1, "{text}");
 }
 
 async fn coexist_warning_without_id_logs_every_time() {
@@ -310,8 +324,15 @@ async fn coexist_warning_without_id_logs_every_time() {
         100,
     );
     deployment.model_info.shift_remove("id");
-    assert!(check.logs_coexist_warning(&deployment).unwrap());
-    assert!(check.logs_coexist_warning(&deployment).unwrap());
+    let (logs, _guard) = capture_logs();
+    for _request in 0..2 {
+        check
+            .async_pre_call_check(&deployment, &mut request())
+            .await
+            .unwrap();
+    }
+    let text = logs.text();
+    assert_eq!(text.matches(COEXIST_WARNING).count(), 2, "{text}");
 }
 
 async fn sync_facade_counts_local_only() {
@@ -327,7 +348,11 @@ async fn sync_facade_counts_local_only() {
 
 async fn sync_success_event_counts_local_only() {
     let cache = Arc::new(FakeCache::new());
-    let usage = SuccessUsage::new(Some("a"), Some("openai/gpt-4o"), 7);
+    let usage = SuccessUsage {
+        model_id: Some("a"),
+        model: Some("openai/gpt-4o"),
+        total_tokens: 7,
+    };
     service(Arc::clone(&cache), None).log_success_event(&usage);
     assert_eq!(tiers(&cache), [Some(7), None]);
 }

@@ -65,8 +65,9 @@ impl RateLimitCache for FakeCache {
                     .get(key)
                     .copied(),
             ),
+            // RedisCache.async_get_cache swallows a connection failure and answers None, so a down store reads as absent
+            RedisMode::Down | RedisMode::None => RemoteRead::Value(None),
             RedisMode::Breaker => RemoteRead::BreakerOpen,
-            RedisMode::Down | RedisMode::None => RemoteRead::Failed,
         }
     }
 
