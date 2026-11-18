@@ -113,7 +113,7 @@ pub(crate) fn run(
 }
 
 fn entry(pattern: &str) -> Entry {
-    match section::pattern_work(pattern) {
+    match section::pattern::pattern_work(pattern) {
         Ok((_matcher, work)) => Entry {
             work: Some(work),
             message: None,
@@ -147,7 +147,7 @@ fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationErro
     let scoring = scoring_section::Config {
         tier_models: None,
         complexity_thresholds: None,
-        dimension_weights: config.and_then(|config| config.dimension_weights.clone()),
+        dimension_weights: config.and_then(|settings| settings.dimension_weights.clone()),
         tier_boundaries: None,
         reasoning_override_min_score: None,
         code_keywords: None,
@@ -162,8 +162,8 @@ fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationErro
             message: source.to_string(),
         })?;
     let empty = Vec::new();
-    let dimensions = config.map_or(&empty, |config| &config.custom_dimensions);
-    let classifier = config.map_or("heuristic", |config| config.classifier_type.as_str());
+    let dimensions = config.map_or(&empty, |settings| &settings.custom_dimensions);
+    let classifier = config.map_or("heuristic", |settings| settings.classifier_type.as_str());
     let validated =
         validate(dimensions, classifier, &resolved.dimension_weights).map_err(|source| {
             OperationError::InvalidRequest {

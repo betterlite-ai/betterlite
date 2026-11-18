@@ -41,12 +41,15 @@ fn decode_item(item: &ast::ClassSetItem, items: &mut Vec<ClassItem>) -> Result<(
             Ok(())
         }
         ast::ClassSetItem::Union(union) => {
-            for item in &union.items {
-                decode_item(item, items)?;
+            for member in &union.items {
+                decode_item(member, items)?;
             }
             Ok(())
         }
-        _ => Err(PatternProblem::Unsupported),
+        ast::ClassSetItem::Empty(_)
+        | ast::ClassSetItem::Ascii(_)
+        | ast::ClassSetItem::Unicode(_)
+        | ast::ClassSetItem::Bracketed(_) => Err(PatternProblem::Unsupported),
     }
 }
 

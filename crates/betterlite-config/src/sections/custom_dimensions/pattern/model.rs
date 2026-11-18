@@ -1,3 +1,4 @@
+use regex_syntax::ast::parse::ParserBuilder;
 use regex_syntax::ast::{self, Ast};
 
 use super::{MAX_REPEAT, PatternProblem};
@@ -16,12 +17,12 @@ pub(super) enum PyNode {
         items: Vec<ClassItem>,
     },
     Unsupported,
-    Subpattern(Vec<PyNode>),
-    Branch(Vec<Vec<PyNode>>),
+    Subpattern(Vec<Self>),
+    Branch(Vec<Vec<Self>>),
     Repeat {
         min: u64,
         max: u64,
-        body: Vec<PyNode>,
+        body: Vec<Self>,
     },
 }
 
@@ -36,7 +37,7 @@ pub(super) enum ClassItem {
 }
 
 pub(super) fn parse(pattern: &str) -> Result<Vec<PyNode>, PatternProblem> {
-    let mut parser = regex_syntax::ast::parse::ParserBuilder::new()
+    let mut parser = ParserBuilder::new()
         .nest_limit(1000)
         .octal(true)
         .empty_min_range(true)
@@ -48,14 +49,45 @@ pub(super) fn parse(pattern: &str) -> Result<Vec<PyNode>, PatternProblem> {
 }
 
 fn lower(ast: &Ast) -> Result<Vec<PyNode>, PatternProblem> {
-    match ast {
-        Ast::Empty(_) | Ast::Flags(_) => Ok(Vec::new()),
-        Ast::Concat(concat) => lower_concat(&concat.asts),
-        Ast::Alternation(alternation) => alternation::nodes(alternation),
-        Ast::Group(group) if matches!(&group.kind, ast::GroupKind::NonCapturing(flags) if flags.items.is_empty()) => {
-            lower(&group.ast)
+    let node = match ast {
+        Ast::Empty(_) | Ast::Flags(_) => return Ok(Vec::new()),
+        Ast::Concat(concat) => return lower_concat(&concat.asts),
+        Ast::Alternation(alternation) => return alternation::nodes(alternation),
+        Ast::Group(group) if matches!(&group.kind, ast::GroupKind::NonCapturing(flags) if flags.items.is_empty()) =>
+        {
+            return lower(&group.ast);
         }
-        node => Ok(vec![single(node)?]),
+        Ast::Literal(literal) => PyNode::Literal(literal.c),
+        Ast::Dot(_) => PyNode::Any,
+        Ast::Assertion(assertion) => assertion_node(&assertion.kind)?,
+        Ast::ClassPerl(perl) => PyNode::Class {
+            negated: false,
+            items: vec![ClassItem::Category {
+                negated: perl.negated,
+                kind: perl.kind.clone(),
+            }],
+        },
+        Ast::ClassBracketed(bracketed) => class_decode::node(bracketed)?,
+        Ast::Repetition(repetition) => repeat_node(repetition)?,
+        Ast::Group(group) => PyNode::Subpattern(lower(&group.ast)?),
+        Ast::ClassUnicode(_) => PyNode::Unsupported,
+    };
+    Ok(vec![node])
+}
+
+fn assertion_node(kind: &ast::AssertionKind) -> Result<PyNode, PatternProblem> {
+    if matches!(
+        kind,
+        ast::AssertionKind::StartLine
+            | ast::AssertionKind::EndLine
+            | ast::AssertionKind::StartText
+            | ast::AssertionKind::EndText
+            | ast::AssertionKind::WordBoundary
+            | ast::AssertionKind::NotWordBoundary
+    ) {
+        Ok(PyNode::Assertion(kind.clone()))
+    } else {
+        Err(PatternProblem::Unsupported)
     }
 }
 
@@ -67,62 +99,24 @@ fn lower_concat(asts: &[Ast]) -> Result<Vec<PyNode>, PatternProblem> {
     Ok(nodes)
 }
 
-fn single(ast: &Ast) -> Result<PyNode, PatternProblem> {
-    match ast {
-        Ast::Literal(literal) => Ok(PyNode::Literal(literal.c)),
-        Ast::Dot(_) => Ok(PyNode::Any),
-        Ast::Assertion(assertion) => assertion_node(&assertion.kind),
-        Ast::ClassPerl(perl) => Ok(PyNode::Class {
-            negated: false,
-            items: vec![ClassItem::Category {
-                negated: perl.negated,
-                kind: perl.kind.clone(),
-            }],
-        }),
-        Ast::ClassBracketed(bracketed) => class_decode::node(bracketed),
-        Ast::Repetition(repetition) => repeat_node(repetition),
-        Ast::Group(group) => Ok(PyNode::Subpattern(lower(&group.ast)?)),
-        _ => Ok(PyNode::Unsupported),
-    }
-}
-
-fn assertion_node(kind: &ast::AssertionKind) -> Result<PyNode, PatternProblem> {
-    match kind {
-        ast::AssertionKind::StartLine
-        | ast::AssertionKind::EndLine
-        | ast::AssertionKind::StartText
-        | ast::AssertionKind::EndText
-        | ast::AssertionKind::WordBoundary
-        | ast::AssertionKind::NotWordBoundary => Ok(PyNode::Assertion(kind.clone())),
-        _ => Err(PatternProblem::Unsupported),
-    }
-}
-
 fn repeat_node(repetition: &ast::Repetition) -> Result<PyNode, PatternProblem> {
-    match &*repetition.ast {
-        Ast::Assertion(_) => return Err(PatternProblem::Syntax),
-        Ast::Repetition(inner) => {
-            let possessive = repetition.greedy
-                && inner.greedy
-                && matches!(&repetition.op.kind, ast::RepetitionKind::OneOrMore)
-                && !matches!(&*inner.ast, Ast::Repetition(_));
-            if possessive {
-                // a node, so a refusal earlier in the sequence still reports first
-                return Ok(PyNode::Unsupported);
-            }
-            return Err(PatternProblem::Syntax);
+    if matches!(&*repetition.ast, Ast::Assertion(_)) {
+        return Err(PatternProblem::Syntax);
+    }
+    if let Ast::Repetition(inner) = &*repetition.ast {
+        let possessive = repetition.greedy
+            && inner.greedy
+            && matches!(&repetition.op.kind, ast::RepetitionKind::OneOrMore)
+            && !matches!(&*inner.ast, Ast::Repetition(_));
+        if possessive {
+            return Ok(PyNode::Unsupported);
         }
-        _ => {}
+        return Err(PatternProblem::Syntax);
     }
     let Some((min, max)) = repetition_bounds(&repetition.op.kind) else {
         return Err(PatternProblem::Syntax);
     };
-    let body = match &*repetition.ast {
-        Ast::Group(group) if matches!(&group.kind, ast::GroupKind::NonCapturing(flags) if flags.items.is_empty()) => {
-            lower(&group.ast)?
-        }
-        other => vec![single(other)?],
-    };
+    let body = lower(&repetition.ast)?;
     Ok(PyNode::Repeat { min, max, body })
 }
 
@@ -145,20 +139,18 @@ fn repetition_bounds(kind: &ast::RepetitionKind) -> Option<(u64, u64)> {
 }
 
 fn explicit(count: u32) -> Option<u64> {
-    if u64::from(count) < MAX_REPEAT {
-        Some(u64::from(count))
-    } else {
-        None
+    match count {
+        u32::MAX => None,
+        finite => Some(u64::from(finite)),
     }
 }
 
 pub(super) fn class_atom_steps(node: &PyNode) -> u64 {
-    match node {
-        PyNode::Class { negated, items } => {
-            let count = u64::try_from(items.len()).unwrap_or(u64::MAX);
-            count.saturating_add(1).saturating_add(u64::from(*negated))
-        }
-        _ => 1,
+    if let PyNode::Class { negated, items } = node {
+        let count = u64::try_from(items.len()).unwrap_or(u64::MAX);
+        count.saturating_add(1).saturating_add(u64::from(*negated))
+    } else {
+        1
     }
 }
 

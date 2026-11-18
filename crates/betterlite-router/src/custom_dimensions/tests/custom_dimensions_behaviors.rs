@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::custom_dimensions as section;
+use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
 use rstest::rstest;
 
 use super::{config, dim, named, run, weights};
@@ -79,7 +80,7 @@ use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
     weights(&[]),
     Err(DimensionsError::Dimension(section::DimensionProblem::Pattern {
         pattern: "a{65}".to_owned(),
-        problem: section::PatternProblem::Repeat,
+        problem: PatternProblem::Repeat,
     }))
 )]
 #[case::an_invalid_scoring_mode_is_reported(

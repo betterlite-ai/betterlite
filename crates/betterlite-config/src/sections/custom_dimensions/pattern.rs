@@ -2,11 +2,11 @@ mod cost;
 mod model;
 mod normalize;
 
-pub const MAX_CUSTOM_PATTERN_REPEAT: u64 = 64;
-pub const MAX_CUSTOM_PATTERN_WORK: u64 = 2048;
-pub const MAX_CUSTOM_PATTERN_DEPTH: u64 = 16;
-pub const MAX_REPEAT: u64 = 4_294_967_295;
-pub const MAX_CUSTOM_PATTERN_INPUT: usize = 4096;
+const MAX_CUSTOM_PATTERN_REPEAT: u64 = 64;
+const MAX_CUSTOM_PATTERN_WORK: u64 = 2048;
+const MAX_CUSTOM_PATTERN_DEPTH: u64 = 16;
+const MAX_REPEAT: u64 = 0xFFFF_FFFF;
+const MAX_CUSTOM_PATTERN_INPUT: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternProblem {
@@ -19,7 +19,7 @@ pub enum PatternProblem {
 
 impl PatternProblem {
     #[must_use]
-    pub const fn message(self) -> &'static str {
+    const fn message(self) -> &'static str {
         match self {
             Self::Syntax => "is not a valid regex",
             Self::Unsupported => "contains an unsupported regex construct",

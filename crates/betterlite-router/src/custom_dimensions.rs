@@ -104,24 +104,7 @@ pub fn validate(
     if !matches!(classifier_type, Heuristic | HeuristicFirst | Hybrid) {
         return Err(DimensionsError::Classifier);
     }
-    let reserved: BTreeSet<String> = BUILT_IN_DIMENSIONS
-        .iter()
-        .map(|name| caseless::default_case_fold_str(name))
-        .collect();
-    let mut names = BTreeSet::new();
-    for dimension in &checked {
-        let folded = caseless::default_case_fold_str(&dimension.name);
-        if reserved.contains(&folded) || !names.insert(folded) {
-            return Err(DimensionsError::Names);
-        }
-    }
-    let weighted: BTreeSet<String> = dimension_weights
-        .keys()
-        .map(|name| caseless::default_case_fold_str(name))
-        .collect();
-    if names.iter().any(|name| weighted.contains(name)) {
-        return Err(DimensionsError::Weights);
-    }
+    validate_names(&checked, dimension_weights)?;
     let work = checked
         .iter()
         .fold(0_u64, |work, dimension| work.saturating_add(dimension.work));
@@ -133,6 +116,30 @@ pub fn validate(
     }
     let dimensions = checked.into_iter().map(convert).collect();
     Ok(Validated { dimensions, work })
+}
+
+fn validate_names(
+    checked: &[section::Checked],
+    dimension_weights: &BTreeMap<String, f64>,
+) -> Result<(), DimensionsError> {
+    let mut names = BTreeSet::new();
+    for dimension in checked {
+        let folded = caseless::default_case_fold_str(&dimension.name);
+        if BUILT_IN_DIMENSIONS
+            .iter()
+            .any(|name| caseless::default_case_fold_str(name) == folded)
+            || !names.insert(folded)
+        {
+            return Err(DimensionsError::Names);
+        }
+    }
+    if dimension_weights
+        .keys()
+        .any(|name| names.contains(&caseless::default_case_fold_str(name)))
+    {
+        return Err(DimensionsError::Weights);
+    }
+    Ok(())
 }
 
 fn convert(checked: section::Checked) -> CustomDimension {

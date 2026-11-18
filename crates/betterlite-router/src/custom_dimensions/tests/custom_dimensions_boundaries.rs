@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::custom_dimensions as section;
+use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
 use rstest::rstest;
 
 use super::{class_repeat, counted, dim, filled, keyworded, long_name, many, named, run, weighted};
@@ -93,14 +94,14 @@ fn fifteen_then(last: usize) -> Vec<usize> {
     vec![dim("domain", &[], &["a{65}"])],
     Err(DimensionsError::Dimension(section::DimensionProblem::Pattern {
         pattern: "a{65}".to_owned(),
-        problem: section::PatternProblem::Repeat,
+        problem: PatternProblem::Repeat,
     }))
 )]
 #[case::reversed_repeat_bounds(
     vec![dim("domain", &[], &["a{2,1}"])],
     Err(DimensionsError::Dimension(section::DimensionProblem::Pattern {
         pattern: "a{2,1}".to_owned(),
-        problem: section::PatternProblem::Syntax,
+        problem: PatternProblem::Syntax,
     }))
 )]
 #[case::class_repeat_just_under_the_work_limit(vec![class_repeat(30)], Ok(1987))]
@@ -108,7 +109,7 @@ fn fifteen_then(last: usize) -> Vec<usize> {
     vec![class_repeat(31)],
     Err(DimensionsError::Dimension(section::DimensionProblem::Pattern {
         pattern: class_repeat(31).patterns[0].clone(),
-        problem: section::PatternProblem::Work,
+        problem: PatternProblem::Work,
     }))
 )]
 #[case::a_blank_keyword(
