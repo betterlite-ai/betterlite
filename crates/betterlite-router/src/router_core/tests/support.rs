@@ -24,6 +24,7 @@ use crate::router_core::pipeline::{
 use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
 use crate::router_core::services::{Cancelled, RouteServices};
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
+use crate::routing_groups::group::RoutingGroup;
 use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::TokenLimits;
 use crate::strategy::StrategyContext;
@@ -527,6 +528,18 @@ impl RouteServices for LastOnly {
         deployments: Vec<DeploymentSpec>,
     ) -> Result<Vec<DeploymentSpec>, Cancelled> {
         Ok(deployments.into_iter().rev().take(1).collect())
+    }
+}
+
+// The router's services with one callable group, which answers only for its own name.
+pub(super) struct Grouped {
+    pub(super) name: String,
+    pub(super) group: RoutingGroup,
+}
+
+impl RouteServices for Grouped {
+    fn routing_group(&self, model: &str) -> Option<&RoutingGroup> {
+        (model == self.name).then_some(&self.group)
     }
 }
 

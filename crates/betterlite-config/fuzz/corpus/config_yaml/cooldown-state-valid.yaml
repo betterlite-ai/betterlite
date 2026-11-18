@@ -1,0 +1,11 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-cooldown-state
+general_settings:
+  enable_health_check_routing: true
+  health_check_staleness_threshold: 120
+  health_check_ignore_transient_errors: true
+router_settings:
+  cooldown_time: 2.5
