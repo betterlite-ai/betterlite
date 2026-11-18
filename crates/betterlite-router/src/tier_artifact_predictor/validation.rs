@@ -10,6 +10,7 @@ use crate::tier_artifact_predictor::artifact::{
     GlobalStatistics, TierNumber, TierStatistic, TierStatistics, ValidatedArtifact,
 };
 use crate::tier_artifact_predictor::error::PredictorError;
+use crate::tier_artifact_predictor::posterior_check;
 
 pub(crate) fn validate(artifact: &Artifact) -> Result<ValidatedArtifact, PredictorError> {
     if artifact.schema_version != 1 {
@@ -26,7 +27,7 @@ pub(crate) fn validate(artifact: &Artifact) -> Result<ValidatedArtifact, Predict
     let datasets = datasets(&artifact.datasets)?;
     require_text(&artifact.success_definition, "success_definition")?;
     require_text(&artifact.split_method, "split_method")?;
-    Ok(ValidatedArtifact {
+    let validated = ValidatedArtifact {
         global,
         domain,
         cohort,
@@ -36,7 +37,9 @@ pub(crate) fn validate(artifact: &Artifact) -> Result<ValidatedArtifact, Predict
         datasets,
         success_definition: artifact.success_definition.clone(),
         split_method: artifact.split_method.clone(),
-    })
+    };
+    posterior_check::finite_posteriors(&validated)?;
+    Ok(validated)
 }
 
 trait DeclaredStatistic {

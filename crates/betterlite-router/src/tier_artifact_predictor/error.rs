@@ -17,6 +17,8 @@ pub enum PredictorError {
     TierRange { tier: u32 },
     #[error("tier artifact statistic {field} must be finite")]
     NonFinite { field: String },
+    #[error("the tier artifact's posterior for {statistic} is not finite")]
+    NonFinitePosterior { statistic: String },
     #[error("tier artifact statistic {field} cannot be negative, got {value}")]
     NegativeSuccesses { field: String, value: f64 },
     #[error("tier artifact statistic {field} needs observations above zero, got {value}")]
