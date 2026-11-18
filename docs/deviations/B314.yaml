@@ -1,5 +1,23 @@
 task: B314
 deviations:
+  - what: >-
+      A config with routing_strategy least-busy answers RoutingError::NotBuilt naming the entry for every route,
+      instead of selecting by in-flight count, and no attempt outside this service starts or releases a count,
+      where get_available_deployments picks the least busy deployment and the logging handler counts every
+      attempt from the pre-call, success and failure callbacks. The production route cannot reach the counters:
+      StrategyContext carries only deployments, route, dispatch and resolution, and the RouteServices trait the
+      route exposes has no counters accessor, while no production code constructs RouterCounters.
+    why: >-
+      The seam is outside this task's scope. Passing the B360 and B390 stores to the strategy arm needs
+      crates/betterlite-router/src/strategy.rs or crates/betterlite-router/src/router_core/services.rs, and
+      running pre_call and release per attempt needs the request execution path that delivers B016's success and
+      failure events. Replacing the stub in scope would also break B016's pipeline-level not-built cases at
+      crates/betterlite-router/src/router_core/tests.rs:123 and router_core/tests/boundaries.rs:152-165, both
+      outside scope. This service, its ownership guard and its oracle cases are built and tested against the
+      same LiteLLM behavior; the wiring is owned by the task that installs B304's counters in the server and
+      passes them into the route context, which B304's text assigns to B019 (io-token-limits) and which no
+      current task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L122-L166
   - what: An attempt releases its in-flight count exactly once, through the guard pre_call returns; LiteLLM decrements the counter on every success or failure callback for the same attempt, and a second callback floors the counter, which erases another call's contribution.
     why: The task requires one release per started call on success, mapped failure or a cancelled stream, and a second decrement would make a concurrent call invisible to the selector.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L125-L151
