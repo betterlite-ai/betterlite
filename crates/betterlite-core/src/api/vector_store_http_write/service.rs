@@ -122,24 +122,6 @@ pub enum WriteCall<'call> {
     Delete(DeleteCall<'call>),
 }
 
-impl<'call> WriteCall<'call> {
-    #[must_use]
-    pub const fn operation(&self) -> Operation {
-        match self {
-            Self::Update(_) => Operation::Update,
-            Self::Delete(_) => Operation::Delete,
-        }
-    }
-
-    #[must_use]
-    pub const fn target(&self) -> &WriteTarget<'call> {
-        match self {
-            Self::Update(call) => &call.target,
-            Self::Delete(call) => &call.target,
-        }
-    }
-}
-
 enum Selected<'client, Client> {
     Supplied(&'client Client),
     Created(Client),
@@ -169,22 +151,33 @@ pub fn prepare<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
     call: &WriteCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<PreparedWrite<'borrow, C, S>, WriteError> {
-    let target = call.target();
+    let (target, operation) = match call {
+        WriteCall::Update(update) => (&update.target, Operation::Update),
+        WriteCall::Delete(delete) => (&delete.target, Operation::Delete),
+    };
     let client = select_client(deps, mode, target.params.ssl_verify)?;
+    let mut caller_headers = OpenAiHeaders::new();
+    for (name, value) in target.extra_headers.into_iter().flatten() {
+        caller_headers.insert(name.clone(), SecretString::from(value.clone()));
+    }
     let headers = deps
         .config
-        .validate_environment(extra_headers(target.extra_headers), target.params);
+        .validate_environment(caller_headers, target.params);
     let api_base = deps
         .config
         .complete_url(target.params)
         .map_err(WriteError::Url)?;
-    let url = store_url(&api_base, target.vector_store_id)?;
+    let encoded =
+        encode_segment(target.vector_store_id, "vector_store_id").map_err(WriteError::Segment)?;
+    // The literal slash plus one encoded id lands after any query string, exactly as LiteLLM's f-string does
+    let text = format!("{api_base}/{encoded}");
+    let url = Url::parse(&text).map_err(|source| WriteError::RequestUrl { url: text, source })?;
     let body = match call {
         WriteCall::Update(update) => Some(update.optional_params.request_body(update.extra_body)?),
         WriteCall::Delete(_) => None,
     };
     log_pre_call(&api_base, &headers, body.as_ref(), log)?;
-    let method = match call.operation() {
+    let method = match operation {
         Operation::Update => Method::POST,
         Operation::Delete => Method::DELETE,
     };
@@ -207,7 +200,7 @@ pub fn prepare<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
             body,
             timeout,
         },
-        operation: call.operation(),
+        operation,
         mode,
     })
 }
@@ -223,25 +216,6 @@ fn select_client<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
         return Ok(Selected::Supplied(supplied.transport));
     }
     Ok(Selected::Created(deps.source.client(ssl_verify)?))
-}
-
-fn extra_headers(headers: Option<&BTreeMap<String, String>>) -> OpenAiHeaders {
-    let Some(headers) = headers else {
-        return BTreeMap::new();
-    };
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
-        .collect()
-}
-
-// The literal slash plus one encoded id lands after any query string, exactly as LiteLLM's f-string does
-fn store_url(api_base: &str, vector_store_id: &str) -> Result<Url, WriteError> {
-    let encoded =
-        encode_segment(vector_store_id, "vector_store_id").map_err(WriteError::Segment)?;
-    let text = format!("{api_base}/{encoded}");
-    let parsed = Url::parse(&text);
-    parsed.map_err(|source| WriteError::RequestUrl { url: text, source })
 }
 
 fn log_pre_call(
@@ -301,35 +275,24 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
         operation,
         mode,
     } = prepared;
-    let sent = Sent {
-        mode,
-        operation,
-        timeout: request.timeout.unwrap_or(client.get().default_timeout()),
-        elapsed: Duration::ZERO,
-    };
+    let timeout = request.timeout.unwrap_or(client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
     let sent = Sent {
+        mode,
+        operation,
+        timeout,
         elapsed: started.elapsed(),
-        ..sent
     };
     let reply =
         reply.map_err(|error| WriteError::Provider(handle_transport(&error, &sent, config)))?;
     if reply.status < 400 {
-        return complete(config, operation, &reply);
+        return match operation {
+            Operation::Update => config
+                .transform_create_response(&facts::http_response(&reply))
+                .map_err(WriteError::Provider),
+            Operation::Delete => serde_json::from_slice(&reply.body).map_err(WriteError::Reply),
+        };
     }
     Err(WriteError::Provider(handle_reply(&reply, config)))
-}
-
-fn complete<C: WriteConfig>(
-    config: &C,
-    operation: Operation,
-    reply: &UpstreamResponse,
-) -> Result<Json, WriteError> {
-    match operation {
-        Operation::Update => config
-            .transform_create_response(&facts::http_response(reply))
-            .map_err(WriteError::Provider),
-        Operation::Delete => serde_json::from_slice(&reply.body).map_err(WriteError::Reply),
-    }
 }
