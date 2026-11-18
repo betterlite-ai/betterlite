@@ -3347,6 +3347,7 @@ dependencies = [
 name = "betterlite-oracle-policy"
 version = "0.1.0"
 dependencies = [
+ "betterlite-core",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
@@ -3355,6 +3356,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3797,6 +3800,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tracing",
