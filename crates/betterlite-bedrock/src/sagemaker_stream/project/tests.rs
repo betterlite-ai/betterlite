@@ -11,30 +11,37 @@ use crate::sagemaker_stream::project::{
 
 const MODEL: &str = "decoder-model";
 
-fn projected(text: &str, messages: bool) -> Result<SagemakerChunk, SagemakerStreamError> {
-    match project(MODEL, messages, text)? {
-        Projection::Ready(chunk) => Ok(chunk),
+fn projected(text: &str, messages: bool) -> SagemakerChunk {
+    match project(MODEL, messages, text).unwrap() {
+        Projection::Ready(chunk) => *chunk,
         Projection::Pending => panic!("the fixture is JSON"),
     }
 }
 
-fn chat(text: &str) -> Result<Chunk, SagemakerStreamError> {
-    let SagemakerChunk::Chat(chunk) = projected(text, true)? else {
+fn chat(text: &str) -> Chunk {
+    let SagemakerChunk::Chat(chunk) = projected(text, true) else {
         panic!("a messages event yields a chat chunk");
     };
-    Ok(chunk)
+    chunk
 }
 
-fn token(text: &str) -> Result<GenericChunk, SagemakerStreamError> {
-    let SagemakerChunk::Token(chunk) = projected(text, false)? else {
+fn token(text: &str) -> GenericChunk {
+    let SagemakerChunk::Token(chunk) = projected(text, false) else {
         panic!("a token event yields a token chunk");
     };
-    Ok(chunk)
+    chunk
+}
+
+fn project_error(text: &str, messages: bool) -> SagemakerStreamError {
+    let Err(error) = project(MODEL, messages, text) else {
+        panic!("the fixture is refused");
+    };
+    error
 }
 
 #[test]
 fn the_object_is_forced_and_the_model_defaults_to_the_decoder_one() {
-    let chunk = chat(r#"{"id": "1", "created": 2, "choices": []}"#).unwrap();
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": []}"#);
 
     assert_eq!(chunk.object, CHUNK_OBJECT);
     assert_eq!(chunk.model, MODEL);
@@ -48,8 +55,7 @@ fn the_object_is_forced_and_the_model_defaults_to_the_decoder_one() {
 fn a_chunk_object_is_replaced_with_the_chunk_one() {
     let chunk = chat(
         r#"{"id": "1", "object": "chat.completion", "created": 2, "model": "own", "choices": []}"#,
-    )
-    .unwrap();
+    );
 
     assert_eq!(chunk.object, CHUNK_OBJECT);
     assert_eq!(chunk.model, "own");
@@ -57,7 +63,7 @@ fn a_chunk_object_is_replaced_with_the_chunk_one() {
 
 #[test]
 fn a_null_model_takes_the_decoder_model() {
-    let chunk = chat(r#"{"id": "1", "created": 2, "model": null, "choices": []}"#).unwrap();
+    let chunk = chat(r#"{"id": "1", "created": 2, "model": null, "choices": []}"#);
 
     assert_eq!(chunk.model, MODEL);
 }
@@ -66,8 +72,7 @@ fn a_null_model_takes_the_decoder_model() {
 fn a_messages_chunk_keeps_its_choices() {
     let chunk = chat(
         r#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "hi"}, "finish_reason": null}]}"#,
-    )
-    .unwrap();
+    );
 
     assert_eq!(chunk.choices.len(), 1);
     assert_eq!(chunk.choices[0].index, 0);
@@ -78,7 +83,7 @@ fn a_messages_chunk_keeps_its_choices() {
 
 #[test]
 fn a_chunk_without_choices_is_refused() {
-    let error = chat(r#"{"id": "1", "created": 2}"#).unwrap_err();
+    let error = project_error(r#"{"id": "1", "created": 2}"#, true);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
     assert_eq!(
@@ -90,7 +95,7 @@ fn a_chunk_without_choices_is_refused() {
 // the OpenAI chunk models set extra="allow", so an extra key is read past instead of failing the chunk
 #[test]
 fn an_unknown_chunk_field_is_ignored() {
-    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [], "extra": 1}"#).unwrap();
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [], "extra": 1}"#);
 
     assert_eq!(chunk.id, "1");
     assert_eq!(chunk.choices.len(), 0);
@@ -98,7 +103,7 @@ fn an_unknown_chunk_field_is_ignored() {
 
 #[test]
 fn a_non_object_messages_chunk_is_refused() {
-    let error = chat("[1]").unwrap_err();
+    let error = project_error("[1]", true);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
@@ -114,8 +119,7 @@ fn a_partial_object_is_pending() {
 // StreamingChoices.__init__ maps an alias through map_finish_reason before the chunk reaches a client
 #[test]
 fn an_alias_finish_reason_maps_to_stop() {
-    let chunk =
-        chat(r#"{"id": "1", "created": 2, "choices": [{"finish_reason": "eos_token"}]}"#).unwrap();
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [{"finish_reason": "eos_token"}]}"#);
 
     assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some(STOP_REASON));
 }
@@ -123,7 +127,7 @@ fn an_alias_finish_reason_maps_to_stop() {
 // StreamingChoices defaults index to 0 and delta to an empty Delta when the choice omits them
 #[test]
 fn a_choice_without_index_or_delta_takes_the_defaults() {
-    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [{}]}"#).unwrap();
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [{}]}"#);
     let choice = &chunk.choices[0];
 
     assert_eq!(choice.index, 0);
@@ -136,8 +140,7 @@ fn a_choice_without_index_or_delta_takes_the_defaults() {
 #[test]
 fn a_null_delta_and_an_empty_finish_reason_take_the_defaults() {
     let chunk =
-        chat(r#"{"id": "1", "created": 2, "choices": [{"delta": null, "finish_reason": ""}]}"#)
-            .unwrap();
+        chat(r#"{"id": "1", "created": 2, "choices": [{"delta": null, "finish_reason": ""}]}"#);
 
     assert!(chunk.choices[0].delta.content.is_none());
     assert_eq!(chunk.choices[0].finish_reason, None);
@@ -148,8 +151,7 @@ fn a_null_delta_and_an_empty_finish_reason_take_the_defaults() {
 fn a_tool_call_without_index_or_type_takes_the_defaults() {
     let chunk = chat(
         r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}}]}"#,
-    )
-    .unwrap();
+    );
     let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
 
     assert_eq!(calls.len(), 1);
@@ -166,8 +168,7 @@ fn a_tool_call_without_index_or_type_takes_the_defaults() {
 fn an_explicit_tool_call_index_leaves_the_counter_alone() {
     let chunk = chat(
         r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"index": 7, "type": "custom", "function": {}}, {}]}}]}"#,
-    )
-    .unwrap();
+    );
     let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
 
     assert_eq!(calls[0].index, 7);
@@ -181,8 +182,7 @@ fn an_explicit_tool_call_index_leaves_the_counter_alone() {
 fn two_tool_calls_without_indexes_are_numbered_in_order() {
     let chunk = chat(
         r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {}}, {"function": {}}]}}]}"#,
-    )
-    .unwrap();
+    );
     let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
 
     assert_eq!(calls[0].index, 0);
@@ -191,7 +191,7 @@ fn two_tool_calls_without_indexes_are_numbered_in_order() {
 
 #[test]
 fn a_missing_token_and_index_read_as_empty_and_zero() {
-    let chunk = token("{}").unwrap();
+    let chunk = token("{}");
 
     assert_eq!(chunk.text, "");
     assert_eq!(chunk.index, Some(0));
@@ -204,14 +204,14 @@ fn a_missing_token_and_index_read_as_empty_and_zero() {
 
 #[test]
 fn a_null_token_reads_as_an_empty_one() {
-    let chunk = token(r#"{"token": null}"#).unwrap();
+    let chunk = token(r#"{"token": null}"#);
 
     assert_eq!(chunk.text, "");
 }
 
 #[test]
 fn a_null_text_reads_as_empty() {
-    let chunk = token(r#"{"token": {"text": null}}"#).unwrap();
+    let chunk = token(r#"{"token": {"text": null}}"#);
 
     assert_eq!(chunk.text, "");
     assert!(!chunk.is_finished);
@@ -219,7 +219,7 @@ fn a_null_text_reads_as_empty() {
 
 #[test]
 fn a_text_token_is_used_as_given() {
-    let chunk = token(r#"{"token": {"text": "hello world"}, "index": 7}"#).unwrap();
+    let chunk = token(r#"{"token": {"text": "hello world"}, "index": 7}"#);
 
     assert_eq!(chunk.text, "hello world");
     assert_eq!(chunk.index, Some(7));
@@ -231,7 +231,7 @@ fn a_text_token_is_used_as_given() {
 fn the_end_of_text_token_finishes_with_stop() {
     let fixture = format!(r#"{{"token": {{"text": "{END_OF_TEXT}"}}, "index": 2}}"#);
 
-    let chunk = token(&fixture).unwrap();
+    let chunk = token(&fixture);
     assert_eq!(chunk.text, "");
     assert_eq!(chunk.index, Some(2));
     assert!(chunk.is_finished);
@@ -241,14 +241,14 @@ fn the_end_of_text_token_finishes_with_stop() {
 
 #[test]
 fn an_index_is_used_as_given_negative_included() {
-    let chunk = token(r#"{"index": -3}"#).unwrap();
+    let chunk = token(r#"{"index": -3}"#);
 
     assert_eq!(chunk.index, Some(-3));
 }
 
 #[test]
 fn a_zero_index_stays_zero() {
-    let chunk = token(r#"{"token": {"text": "x"}, "index": 0}"#).unwrap();
+    let chunk = token(r#"{"token": {"text": "x"}, "index": 0}"#);
 
     assert_eq!(chunk.index, Some(0));
     assert_eq!(chunk.text, "x");
@@ -256,42 +256,42 @@ fn a_zero_index_stays_zero() {
 
 #[test]
 fn a_null_index_is_zero() {
-    let chunk = token(r#"{"index": null}"#).unwrap();
+    let chunk = token(r#"{"index": null}"#);
 
     assert_eq!(chunk.index, Some(0));
 }
 
 #[test]
 fn a_text_index_is_refused() {
-    let error = token(r#"{"index": "first"}"#).unwrap_err();
+    let error = project_error(r#"{"index": "first"}"#, false);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_float_index_is_refused() {
-    let error = token(r#"{"index": 1.5}"#).unwrap_err();
+    let error = project_error(r#"{"index": 1.5}"#, false);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_list_token_is_refused() {
-    let error = token(r#"{"token": []}"#).unwrap_err();
+    let error = project_error(r#"{"token": []}"#, false);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_number_text_is_refused() {
-    let error = token(r#"{"token": {"text": 5}}"#).unwrap_err();
+    let error = project_error(r#"{"token": {"text": 5}}"#, false);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_non_object_token_is_refused() {
-    let error = token("[1]").unwrap_err();
+    let error = project_error("[1]", false);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }

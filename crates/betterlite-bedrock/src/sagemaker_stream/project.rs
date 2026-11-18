@@ -74,20 +74,23 @@ pub fn project(
     }
     if is_messages_api {
         return match serde_json::from_str::<ChatEvent>(text) {
-            Ok(event) => Ok(Projection::Ready(SagemakerChunk::Chat(
+            Ok(event) => Ok(Projection::Ready(Box::new(SagemakerChunk::Chat(
                 event.into_chunk(model),
-            ))),
+            )))),
             Err(source) => Err(SagemakerStreamError::Json(source)),
         };
     }
     match serde_json::from_str::<TokenEvent>(text) {
-        Ok(event) => Ok(Projection::Ready(SagemakerChunk::Token(event.into_chunk()))),
+        Ok(event) => Ok(Projection::Ready(Box::new(SagemakerChunk::Token(
+            event.into_chunk(),
+        )))),
         Err(source) => Err(SagemakerStreamError::Json(source)),
     }
 }
 
 pub enum Projection {
-    Ready(SagemakerChunk),
+    // boxed: a chat chunk dwarfs the pending marker
+    Ready(Box<SagemakerChunk>),
     Pending,
 }
 
@@ -127,37 +130,33 @@ impl ChoiceEvent {
 
 impl DeltaEvent {
     fn into_delta(self) -> Delta {
-        // Delta.__init__ numbers a tool call without an index in list order and types it function
-        let mut tool_calls = None;
-        if let Some(calls) = self.tool_calls {
-            let mut numbered = Vec::with_capacity(calls.len());
-            let mut next_index = 0;
-            for call in calls {
-                let index = match call.index {
-                    Some(index) => index,
-                    None => {
-                        let index = next_index;
-                        next_index = next_index.saturating_add(1);
-                        index
-                    }
-                };
-                numbered.push(ToolCall {
-                    index,
-                    id: call.id,
-                    kind: Some(call.kind.unwrap_or_else(|| String::from("function"))),
-                    function: call.function,
-                });
-            }
-            tool_calls = Some(numbered);
-        }
         Delta {
             role: self.role,
             content: self.content,
             refusal: self.refusal,
-            tool_calls,
+            tool_calls: self.tool_calls.map(number_calls),
             function_call: self.function_call,
         }
     }
+}
+
+// Delta.__init__ numbers a tool call without an index in list order and types it function
+fn number_calls(calls: Vec<ToolCallEvent>) -> Vec<ToolCall> {
+    let mut numbered = Vec::with_capacity(calls.len());
+    let mut next_index = 0_u32;
+    for call in calls {
+        let index = call.index.unwrap_or(next_index);
+        if call.index.is_none() {
+            next_index = next_index.saturating_add(1);
+        }
+        numbered.push(ToolCall {
+            index,
+            id: call.id,
+            kind: Some(call.kind.unwrap_or_else(|| String::from("function"))),
+            function: call.function,
+        });
+    }
+    numbered
 }
 
 impl TokenEvent {

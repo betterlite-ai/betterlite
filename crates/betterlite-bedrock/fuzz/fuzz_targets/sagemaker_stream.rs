@@ -10,10 +10,6 @@ fuzz_target!(|bytes: &[u8]| {
     let data = bytes.get(1..).unwrap_or_default();
     for policy in [ErrorPolicy::Propagate, ErrorPolicy::Skip] {
         for messages in [false, true] {
-            let chunks = data
-                .chunks(size)
-                .map(|chunk| Ok(chunk.to_vec()))
-                .collect::<Vec<_>>();
             let events = SagemakerEvents {
                 state: EventState {
                     model: String::from("sagemaker-model"),
@@ -22,7 +18,7 @@ fuzz_target!(|bytes: &[u8]| {
                     frames: BytesMut::new(),
                     accumulated: String::new(),
                 },
-                chunks: chunks.into_iter(),
+                chunks: data.chunks(size).map(|chunk| Ok(chunk.to_vec())),
                 pending: VecDeque::new(),
                 done: false,
             };

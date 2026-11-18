@@ -5,7 +5,6 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use betterlite_http::error::HttpError;
 use bytes::BytesMut;
 
 use crate::sagemaker_stream::events::{EventItem, EventState};
@@ -16,12 +15,11 @@ const MODEL: &str = "sagemaker-model";
 // the fuzz target reads the first byte as the chunk size and feeds the rest as one byte stream
 fn decode(bytes: &[u8], messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
     let size = usize::from(bytes.first().copied().unwrap_or(0)).max(1);
-    let chunks: Vec<Result<Vec<u8>, HttpError>> = bytes
+    let chunks = bytes
         .get(1..)
         .unwrap_or_default()
         .chunks(size)
-        .map(|chunk| Ok(chunk.to_vec()))
-        .collect();
+        .map(|chunk| Ok(chunk.to_vec()));
     SagemakerEvents {
         state: EventState {
             model: MODEL.to_owned(),
@@ -30,7 +28,7 @@ fn decode(bytes: &[u8], messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
             frames: BytesMut::new(),
             accumulated: String::new(),
         },
-        chunks: chunks.into_iter(),
+        chunks,
         pending: VecDeque::new(),
         done: false,
     }

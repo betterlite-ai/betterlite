@@ -26,17 +26,16 @@ impl EventState {
     pub fn absorb(&mut self, bytes: &[u8], pending: &mut VecDeque<EventItem>) -> bool {
         self.frames.extend_from_slice(bytes);
         loop {
-            match decode_aws_event_frame(&mut self.frames) {
-                Ok(Some(event)) => {
-                    if !self.event(&event, pending) {
-                        return false;
-                    }
-                }
+            let event = match decode_aws_event_frame(&mut self.frames) {
+                Ok(Some(event)) => event,
                 Ok(None) => return true,
                 Err(source) => {
                     pending.push_back(Err(SagemakerStreamError::Frame(source)));
                     return false;
                 }
+            };
+            if !self.event(&event, pending) {
+                return false;
             }
         }
     }
@@ -56,7 +55,7 @@ impl EventState {
         match project::project(&self.model, self.is_messages_api, &self.accumulated) {
             Ok(Projection::Ready(chunk)) => {
                 self.accumulated.clear();
-                Some(Ok(Some(chunk)))
+                Some(Ok(Some(*chunk)))
             }
             Ok(Projection::Pending) => {
                 tracing::error!(
@@ -86,7 +85,7 @@ impl EventState {
         // the buffer is cleared only when the text parses and projects, as the pinned iterator clears it after the yield
         match project::project(&self.model, self.is_messages_api, &self.accumulated) {
             Ok(Projection::Ready(chunk)) => {
-                self.push_chunk(chunk, pending);
+                self.push_chunk(*chunk, pending);
                 true
             }
             Ok(Projection::Pending) => true,

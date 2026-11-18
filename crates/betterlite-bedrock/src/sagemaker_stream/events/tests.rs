@@ -32,11 +32,11 @@ fn text(value: &str) -> HeaderValue {
 }
 
 fn frame(headers: &[(&str, HeaderValue)], payload: &[u8]) -> Vec<u8> {
-    let headers = headers
+    let parts = headers
         .iter()
         .map(|(name, value)| Header::new((*name).to_owned(), value.clone()))
         .collect();
-    let message = Message::new_from_parts(headers, payload.to_vec());
+    let message = Message::new_from_parts(parts, payload.to_vec());
     let mut out = Vec::new();
     write_message_to(&message, &mut out).unwrap();
     out
@@ -60,7 +60,7 @@ fn exception(payload: &[u8]) -> Vec<u8> {
 
 fn corrupted(frame: &[u8]) -> Vec<u8> {
     let mut bytes = frame.to_vec();
-    let last = bytes.len() - 1;
+    let last = bytes.len().saturating_sub(1);
     bytes[last] ^= 0xff;
     bytes
 }
