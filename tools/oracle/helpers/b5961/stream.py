@@ -108,8 +108,8 @@ def token_value(value: JsonValue) -> JsonValue:
     }
 
 
-def chunk_value(item: Chunk | None, *, is_messages_api: bool) -> JsonValue:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434
-    if item is None:
+def chunk_value(item: Chunk | None, *, is_messages_api: bool) -> JsonValue:
+    if item is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434
         return {"kind": "none"}
     value = JSON.validate_json(CHUNKS.dump_json(item))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2057
     if is_messages_api:
