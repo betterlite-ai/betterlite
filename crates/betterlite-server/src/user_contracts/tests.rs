@@ -187,6 +187,31 @@ fn update_response_defaults() {
     assert_eq!(response.results.len(), 1);
     assert_eq!(response.total_requested, 1);
     assert_eq!(response.failed_updates, 0);
+    assert!(
+        serde_json::from_str::<BulkUpdateUserResponse>(r#"{"results": [], "total_requested": 0}"#)
+            .is_err()
+    );
+}
+
+#[test]
+fn update_wrong_types() {
+    let users = update(r#"{"users": 5}"#).expect_err("a number is not a users list");
+    assert_eq!(
+        rejection_text(&users),
+        "users has a value of the wrong JSON type"
+    );
+    let all_users = update(r#"{"all_users": 1, "user_updates": {}}"#)
+        .expect_err("betterlite rejects the integer pydantic would coerce");
+    assert_eq!(
+        rejection_text(&all_users),
+        "all_users has a value of the wrong JSON type"
+    );
+    let updates = update(r#"{"all_users": true, "user_updates": []}"#)
+        .expect_err("a list is not an updates model");
+    assert_eq!(
+        rejection_text(&updates),
+        "user_updates has a value of the wrong JSON type"
+    );
 }
 
 #[test]
@@ -367,6 +392,13 @@ fn new_response_nulls() {
     .expect("a bulk new response");
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.meta.created, 1);
+    assert!(serde_json::from_str::<BulkNewUserResponse>(r#"{"data": []}"#).is_err());
+    assert!(
+        serde_json::from_str::<BulkNewUserResponse>(
+            r#"{"data": [], "meta": {"total_requested": 0, "created": 0}}"#
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -544,6 +576,12 @@ fn search_where_and_list_rows() {
     let null_term = UserSearchWhere::from_value(&contract(r#"{"OR": [{"user_id": null}]}"#))
         .expect_err("a null mapping value is not an absent key");
     assert_contract_decode_rejected(&null_term);
+    let null_or = UserSearchWhere::from_value(&contract(r#"{"OR": null}"#))
+        .expect_err("OR holds a tuple, not null");
+    assert_contract_decode_rejected(&null_or);
+    let list_body =
+        UserSearchWhere::from_value(&contract(r#"[]"#)).expect_err("the filter is an object");
+    assert_contract_decode_rejected(&list_body);
     let junk = UserSearchWhere::from_value(&contract(
         r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive", "junk": 1}}], "AND": []}"#,
     ))
