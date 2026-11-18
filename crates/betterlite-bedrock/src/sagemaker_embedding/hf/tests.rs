@@ -52,7 +52,7 @@ fn an_inputs_option_replaces_the_input() {
 
 #[test]
 fn token_inputs_are_sent_as_they_came() {
-    let built = transform_request(&input(r#"[[2, 3]]"#), &Object::new());
+    let built = transform_request(&input("[[2, 3]]"), &Object::new());
 
     assert_eq!(built, object(r#"{"inputs": [[2, 3]]}"#));
 }
@@ -60,7 +60,7 @@ fn token_inputs_are_sent_as_they_came() {
 #[test]
 fn a_raw_list_reply_becomes_embedding_rows() {
     let reply = transform_response(
-        br#"[[0.1, 0.2], [0.3]]"#,
+        b"[[0.1, 0.2], [0.3]]",
         200,
         "meta-llama/Llama-2-7b",
         &inputs(r#"["hello world"]"#),
@@ -118,7 +118,7 @@ fn a_wrapped_dict_reply_reads_its_embedding_field() {
 #[test]
 fn every_string_in_the_inputs_adds_its_words() {
     let reply = transform_response(
-        br#"[]"#,
+        b"[]",
         200,
         "model",
         &inputs(r#"["one two", " three ", ""]"#),
@@ -132,28 +132,28 @@ fn every_string_in_the_inputs_adds_its_words() {
 
 #[test]
 fn a_text_input_counts_its_non_space_characters() {
-    let reply = transform_response(br#"[]"#, 200, "model", &inputs(r#""hello world""#)).unwrap();
+    let reply = transform_response(b"[]", 200, "model", &inputs(r#""hello world""#)).unwrap();
 
     assert_eq!(reply.usage.prompt_tokens, 10);
 }
 
 #[test]
 fn a_token_input_adds_no_words() {
-    let reply = transform_response(br#"[]"#, 200, "model", &inputs("[1, 2]")).unwrap();
+    let reply = transform_response(b"[]", 200, "model", &inputs("[1, 2]")).unwrap();
 
     assert_eq!(reply.usage.prompt_tokens, 0);
 }
 
 #[test]
 fn a_token_list_input_adds_no_words() {
-    let reply = transform_response(br#"[]"#, 200, "model", &inputs("[[1, 2]]")).unwrap();
+    let reply = transform_response(b"[]", 200, "model", &inputs("[[1, 2]]")).unwrap();
 
     assert_eq!(reply.usage.prompt_tokens, 0);
 }
 
 #[test]
 fn an_absent_inputs_key_counts_no_words() {
-    let reply = transform_response(br#"[]"#, 200, "model", &Object::new()).unwrap();
+    let reply = transform_response(b"[]", 200, "model", &Object::new()).unwrap();
 
     assert_eq!(
         reply.usage,
@@ -171,7 +171,7 @@ fn an_inputs_option_changes_the_counted_words() {
         &input(r#""one two three""#),
         &object(r#"{"inputs": ["one two"]}"#),
     );
-    let reply = transform_response(br#"[]"#, 200, "model", &request).unwrap();
+    let reply = transform_response(b"[]", 200, "model", &request).unwrap();
 
     assert_eq!(reply.usage.prompt_tokens, 2);
 }
@@ -304,7 +304,7 @@ fn a_row_that_is_not_numbers_or_text_is_refused() {
 
 #[test]
 fn an_inputs_value_that_is_not_text_or_a_list_is_named() {
-    let error = transform_response(br#"[]"#, 200, "model", &inputs("5")).unwrap_err();
+    let error = transform_response(b"[]", 200, "model", &inputs("5")).unwrap_err();
 
     assert_eq!(error.status_code(), 500);
     assert_eq!(

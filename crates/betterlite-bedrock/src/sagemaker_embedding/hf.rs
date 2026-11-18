@@ -191,9 +191,9 @@ fn embedding_rows(embeddings: &[EmbeddingVector]) -> Vec<HfEmbeddingRecord> {
 impl HfScalar {
     fn kind(&self) -> &'static str {
         match self {
-            Self::Bool(_) => "bool",
+            Self::Bool(_value) => "bool",
             Self::Number(number) => number_kind(number),
-            Self::Text(_) => "str",
+            Self::Text(_value) => "str",
             Self::Null => "NoneType",
         }
     }
