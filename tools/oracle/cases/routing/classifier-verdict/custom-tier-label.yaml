@@ -122,4 +122,37 @@ probes:
     samples: []
     operation:
       classifier_verdict: {function: resolve_label, label: NON_REASONING}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: parse_reply
+        reply: {kind: text, content: '{"tier": "Cheap"}'}
+        tier_config:
+          tier_labels: {SIMPLE: Cheap, MEDIUM: Balanced, COMPLEX: Deep, REASONING: Max}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: parse_reply
+        reply: {kind: text, content: '{"tier": "Quick"}'}
+        tier_config:
+          tier_definitions:
+            - {name: quick, description: short factual replies}
+            - {name: reasoning}
+          tier_models: {quick: cheap-model, reasoning: deep-model}
+          classifier_type: llm
+          fallback_tier: quick
+          classifier_llm_config: {model: judge}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: parse_reply
+        reply: {kind: text, content: '{"tier": "NON_REASONING"}'}
+        tier_config:
+          non_reasoning_tier: true
+          classifier_type: llm
+          classifier_llm_config: {model: judge}
+          tier_models: {NON_REASONING: tiny-model}
 compare: {ignore: []}

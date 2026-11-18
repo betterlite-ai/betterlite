@@ -70,4 +70,47 @@ probes:
       classifier_verdict:
         function: logging_flag
         request_kwargs: {metadata: {turn_off_message_logging: false}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: logging_flag
+        request_kwargs: {litellm_metadata: {turn_off_message_logging: true}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: calibration_examples, rubric: chat}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: built_in_prompt
+        window: 0
+        rubric: legacy
+        examples: "a one-line greeting -> SIMPLE"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: system_prompt
+        window: 0
+        labeled_tiers:
+          - {tier: NON_REASONING, label: Relay}
+          - {tier: SIMPLE, label: SIMPLE}
+          - {tier: MEDIUM, label: MEDIUM}
+          - {tier: COMPLEX, label: COMPLEX}
+          - {tier: REASONING, label: REASONING}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: system_prompt
+        window: 0
+        rubric: business
+        labeled_tiers:
+          - {tier: NON_REASONING, label: Relay}
+          - {tier: SIMPLE, label: SIMPLE}
+          - {tier: MEDIUM, label: MEDIUM}
+          - {tier: COMPLEX, label: COMPLEX}
+          - {tier: REASONING, label: REASONING}
 compare: {ignore: []}
