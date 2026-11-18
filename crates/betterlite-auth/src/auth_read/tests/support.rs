@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::error::Error;
+use std::future::pending;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,9 +18,11 @@ use betterlite_db::user_repository::RowDecodeError;
 use betterlite_db::user_repository::projection::UserRecordError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rust_decimal::Decimal;
+use tokio::time::error::Elapsed;
+use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 use tracing::Level;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::auth_read::repository::NativeKey;
@@ -119,8 +123,15 @@ pub(super) enum Mode {
     Row,
     Missing,
     Error,
+    Elapsed,
     Pending,
     Delayed,
+}
+
+async fn elapsed() -> Elapsed {
+    timeout(Duration::from_secs(1), pending::<()>())
+        .await
+        .expect_err("the pending lookup elapses")
 }
 
 pub(super) struct RecordingRepo {
@@ -164,33 +175,37 @@ impl RecordingRepo {
 
     async fn stall<Output>(&self) -> Result<Output, AuthReadError<RowDecodeError>> {
         let _held = HeldFlag(&self.dropped);
-        std::future::pending().await
+        pending().await
     }
 
     async fn reply<Output>(&self, ready: Output) -> Result<Output, AuthReadError<RowDecodeError>> {
         match self.mode {
             Mode::Pending => self.stall().await,
             Mode::Delayed => {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                sleep(Duration::from_secs(60)).await;
                 Ok(ready)
             }
             Mode::Error => Err(repository_error()),
+            Mode::Elapsed => Err(AuthReadError::Lookup(DbLookupError::Elapsed(
+                elapsed().await,
+            ))),
             Mode::Row | Mode::Missing => Ok(ready),
         }
     }
 
     async fn reply_one(&self) -> Result<Option<RichRow>, AuthReadError<RowDecodeError>> {
-        let ready = match self.mode {
-            Mode::Missing => None,
-            Mode::Row | Mode::Error | Mode::Pending | Mode::Delayed => Some(self.row.clone()),
-        };
-        self.reply(ready).await
+        if matches!(self.mode, Mode::Missing) {
+            return self.reply(None).await;
+        }
+        self.reply(Some(self.row.clone())).await
     }
 
     async fn reply_many(&self) -> Result<Vec<RichRow>, AuthReadError<RowDecodeError>> {
         let ready = match self.mode {
             Mode::Missing => Vec::new(),
-            Mode::Row | Mode::Error | Mode::Pending | Mode::Delayed => self.rows.clone(),
+            Mode::Row | Mode::Error | Mode::Elapsed | Mode::Pending | Mode::Delayed => {
+                self.rows.clone()
+            }
         };
         self.reply(ready).await
     }
@@ -267,7 +282,7 @@ pub(super) fn native_key() -> NativeKey<Infallible> {
 
 pub(super) fn assert_connect<Output, Failure>(read: Result<Output, AuthReadError<Failure>>)
 where
-    Failure: std::error::Error + std::fmt::Debug + 'static,
+    Failure: Error + Debug + 'static,
 {
     match read {
         Err(AuthReadError::Repository(RepositoryFault::NoDbConnected)) => {}
@@ -304,7 +319,9 @@ impl Default for ManualClock {
 impl ManualClock {
     pub(super) fn advance(&self, seconds: u64) {
         let mut now = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        *now += Duration::from_secs(seconds);
+        *now = now
+            .checked_add(Duration::from_secs(seconds))
+            .expect("the manual clock stays inside the instant range");
     }
 }
 
@@ -361,7 +378,7 @@ impl Logs {
             .with_max_level(Level::TRACE)
             .with_writer(logs.clone())
             .finish();
-        (logs, tracing::subscriber::set_default(subscriber))
+        (logs, set_default(subscriber))
     }
 
     pub(super) fn text(&self) -> String {

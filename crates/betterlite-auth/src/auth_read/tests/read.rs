@@ -1,15 +1,20 @@
-use std::future::Future;
+use std::error::Error;
+use std::future::{Future, poll_fn};
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::Duration;
 
-use betterlite_db::user_repository::tables::USER_TABLE;
+use betterlite_db::database_failures::deadline::DbLookupError;
 use rstest::rstest;
+use tokio::task::yield_now;
+use tokio::time::timeout;
 
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::repository::RepositoryTable;
 use crate::auth_read::table::{
     AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, Update,
 };
+use crate::auth_read::user_rows::{UserCreate, UserEmailFilter, UserRows};
 
 use super::support::{
     Fields, Harness, Mode, RecordedCall, assert_connect, assert_deadline, native_key,
@@ -261,12 +266,12 @@ async fn repository_error_cause_kept() {
         panic!("the repository error must not become a deadline, got {error:?}");
     };
     assert_eq!(fault.to_string(), "invalid database record");
-    let decode = std::error::Error::source(&fault).expect("the decode failure stays attached");
+    let decode = Error::source(&fault).expect("the decode failure stays attached");
     assert_eq!(
         decode.to_string(),
         "the stored user record is not a readable row"
     );
-    let reason = std::error::Error::source(decode).expect("the decode reason stays attached");
+    let reason = Error::source(decode).expect("the decode reason stays attached");
     assert_eq!(
         reason.to_string(),
         "the stored user record needs to be a JSON object"
@@ -283,18 +288,18 @@ async fn read_cancel_propagates() {
             filter: filter(),
             include: Presence::Omitted,
         }));
-        std::future::poll_fn(|poll_context| {
+        poll_fn(|poll_context| {
             assert!(
                 read.as_mut().poll(poll_context).is_pending(),
                 "the read waits on the pending repository"
             );
-            std::task::Poll::Ready(())
+            Poll::Ready(())
         })
         .await;
-        tokio::task::yield_now().await;
+        yield_now().await;
         assert!(!repo.dropped());
     }
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(repo.dropped());
     harness.drain().await;
 }
@@ -342,7 +347,7 @@ async fn tag_end_user_group_adapters_unwrapped(#[case] adapter: AuthReadAdapter)
     let harness = Harness::new();
     let repo = recording_repo(Mode::Pending);
     let table = adapter.open(Arc::clone(&repo), String::new(), harness.context(5.0));
-    let read = tokio::time::timeout(
+    let read = timeout(
         Duration::from_secs(30),
         table.find_unique(FindOne {
             filter: filter(),
@@ -371,7 +376,7 @@ async fn repository_composes_with_native_table() {
     let harness = Harness::new();
     let repository: RepositoryTable<deadpool_postgres::Client, _> = RepositoryTable {
         client: None,
-        table: USER_TABLE,
+        table: UserRows,
     };
     let table = AuthReadAdapter::Team.open(
         Arc::new(repository),
@@ -389,7 +394,7 @@ async fn repository_composes_with_native_table() {
     assert_connect(
         table
             .find_first(FindOne {
-                filter: Vec::new(),
+                filter: UserEmailFilter::default(),
                 include: Presence::Omitted,
             })
             .await,
@@ -407,18 +412,41 @@ async fn repository_composes_with_native_table() {
         table
             .update(Update {
                 filter: native_key(),
-                data: (),
+                data: UserCreate::default(),
             })
             .await,
     );
     assert_connect(
         table
             .create(Create {
-                data: (),
+                data: UserCreate::default(),
                 include: Presence::Omitted,
             })
             .await,
     );
+    harness.drain().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn inner_lookup_timeout_is_named_deadline() {
+    let harness = Harness::new();
+    let repo = recording_repo(Mode::Elapsed);
+    let table = AuthReadAdapter::User.open(Arc::clone(&repo), String::new(), harness.context(30.0));
+    let error = table
+        .find_unique(FindOne {
+            filter: filter(),
+            include: Presence::Omitted,
+        })
+        .await
+        .expect_err("an elapsed inner lookup is a deadline");
+    let AuthReadError::Lookup(DbLookupError::Deadline(exceeded)) = error else {
+        panic!("the inner timeout must become a named deadline, got {error:?}");
+    };
+    assert_eq!(exceeded.lookup, "user");
+    assert_eq!(exceeded.deadline_seconds.to_bits(), 30.0_f64.to_bits());
+    let cause = exceeded.cause.expect("the elapsed cause stays attached");
+    assert!(matches!(*cause, DbLookupError::Elapsed(_)));
+    assert!(harness.tracker.stalled_within(f64::INFINITY));
     harness.drain().await;
 }
 
