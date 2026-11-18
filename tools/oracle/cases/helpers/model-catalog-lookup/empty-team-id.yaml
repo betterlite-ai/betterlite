@@ -1,0 +1,90 @@
+kind: helper
+name: model-catalog-lookup-empty-team-id
+call:
+  model_catalog_lookup:
+    function: should_include_deployment
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: g
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+      - model_name: empty-team
+        litellm_params:
+          model: openai/empty
+        model_info:
+          id: e
+          team_id: ""
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: gpt-4o
+      team_id: ""
+      deployment_index: 0
+calls:
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: g
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+        - model_name: empty-team
+          litellm_params:
+            model: openai/empty
+          model_info:
+            id: e
+            team_id: ""
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: internal
+        team_id: ""
+        deployment_index: 1
+  - model_catalog_lookup:
+      function: should_include_deployment
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: g
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+        - model_name: empty-team
+          litellm_params:
+            model: openai/empty
+          model_info:
+            id: e
+            team_id: ""
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: empty-team
+        team_id: ""
+        deployment_index: 2
+env: {}
+compare: {ignore: []}

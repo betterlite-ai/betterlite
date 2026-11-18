@@ -1714,6 +1714,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "opentelemetry",
  "percent-encoding",
  "rand 0.10.3",
  "rcgen",
