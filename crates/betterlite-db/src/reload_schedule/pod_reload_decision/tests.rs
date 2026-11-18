@@ -20,6 +20,7 @@ fn at() -> DateTime<Utc> {
 #[case::revision_mismatch(Some(6), None, 3, 0, true)]
 #[case::revision_mismatch_without_a_schedule(None, None, 3, 0, true)]
 #[case::no_interval_never_fires(None, Some(3_600), 4, 100_000, false)]
+#[case::no_interval_never_fires_before_the_first_run(None, None, 4, 0, false)]
 #[case::a_schedule_that_never_ran_fires(Some(6), None, 4, 0, true)]
 #[case::data_loaded_within_the_interval_waits(Some(6), Some(3_600), 4, 18_000, false)]
 #[case::a_second_before_the_boundary_waits(Some(6), Some(3_600), 4, 21_599, false)]
