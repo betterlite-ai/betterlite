@@ -1,0 +1,100 @@
+id: B9964
+title: Proxy model-not-found error and route endpoint map
+description: >-
+  LiteLLM's route_llm_request.py holds two items every model route needs when no deployment matches:
+  ROUTE_ENDPOINT_MAPPING, the route type to endpoint path map (L76-L148), and ProxyModelNotFoundError
+  (L151-L159), the HTTP 400 a route answers for an unknown model. B004 covers that file but built neither, and
+  main has neither: `git grep -i 'available models for your key' -- crates` finds nothing. Eight todo tasks raise
+  the error or name a route with the map: B6460, B7430, B8692 and B1020 in betterlite-core, B3615, B9372 and
+  B9800 in betterlite-server, and B4788 in betterlite-proxy. B1716 checks for the error in betterlite-logging.
+  This task builds both once, in betterlite-error. betterlite-core, betterlite-sdk, betterlite-server and
+  betterlite-logging already depend on it, betterlite-proxy can add it, and it depends only on betterlite-redact,
+  so no caller makes a cycle.
+
+
+  Module `proxy_model_not_found` (crates/betterlite-error/src/proxy_model_not_found.rs, tests in
+  proxy_model_not_found/tests.rs). The plan commit already declares `pub mod proxy_model_not_found;` in
+  betterlite-error's lib.rs over an empty file.
+
+
+  The map. `route_endpoint(route_type: &str) -> Option<&'static str>` is LiteLLM's
+  ROUTE_ENDPOINT_MAPPING.get(route_type): a `match` over the 66 route type texts of the map, in its order, from
+  "acompletion" => "/chat/completions" to "aretrieve_batch" => "/batches", and None for any other text. Path
+  templates stay as LiteLLM writes them, such as "/videos/{video_id}" and "/evals/{eval_id}/runs/{run_id}/cancel".
+  A caller that wants LiteLLM's ROUTE_ENDPOINT_MAPPING.get(route_type, route_type) writes
+  `route_endpoint(route_type).unwrap_or(route_type)`, so a route type the map lacks, such as anthropic_messages or
+  allm_passthrough_route, is its own route name. The spend writer's ROUTE_ENDPOINT_MAPPING.get(call_type, None)
+  is the plain Option.
+
+
+  The error. `ProxyModelNotFoundError::new(route: &str, model_name: &str, retryable_with_model_read_through: bool)
+  -> Self` takes the route name the caller already picked: the map's path, the route type itself, or a caller's
+  own text such as "file operation" or "completion". It has three pub fields. `detail: ModelNotFoundDetail` is a
+  struct with one field, `error: String`, that serializes as {"error": "..."} and holds "<route>: Invalid model
+  name passed in model=<model_name>. Call `/v1/models` to view available models for your key.".
+  `spend_log_error_message: String` holds "<route>: Invalid model name passed in. Call `/v1/models` to view
+  available models for your key.", the same text without the model, so a spend log never stores the model the
+  caller typed. `retryable_with_model_read_through: bool` is kept as given; LiteLLM defaults it to true, and the
+  Rust callers pass it explicitly. The associated const `STATUS: StatusCode` (axum's, already a dependency of
+  this crate) is 400. Display is the detail's error text. Derive Debug, Clone, PartialEq and Eq, and implement
+  std::error::Error with thiserror, so callers wrap it in their own error enums by `#[from]`. The hint sentence
+  is one private const that both messages use.
+
+
+  Tests. proxy_model_not_found::tests are rstest cases in two groups. route_endpoint_ cases: one #[case] for each
+  of the 66 map entries, written from the LiteLLM source, and None for "anthropic_messages",
+  "allm_passthrough_route", "afile_content" and "". not_found_ cases: the detail and spend texts for a mapped
+  path ("/chat/completions", model "gpt-x"), for "file operation" and for "anthropic_messages"; an empty model
+  name ("model=. Call"); the flag kept for true and for false; STATUS is 400; Display equals the detail's error;
+  and serde_json::to_value of the detail is exactly {"error": text}. No oracle case: the map is a constant and
+  the error a fixed format, and the callers' HTTP cases (B093 and B094 among them) compare the 400 through the
+  booted proxy.
+scope:
+  paths:
+  - crates/betterlite-error/src/proxy_model_not_found.rs
+  - crates/betterlite-error/src/proxy_model_not_found/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L76-L148
+  why: ROUTE_ENDPOINT_MAPPING, all 66 entries in order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L151-L159
+  why: The hint sentence and ProxyModelNotFoundError's status, detail, spend message and retry flag.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L717-L725
+  why: route_request's own raise, with the mapped name or the route type and the default retry flag.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L386-L389
+  why: A caller with its own route text and the retry flag false.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1434-L1438
+  why: The spend log stores spend_log_error_message instead of the detail.
+dod:
+- text: >-
+    route_endpoint answers each of LiteLLM's 66 route types with its path and None for any other text.
+  proof: [route-map-tests]
+- text: >-
+    ProxyModelNotFoundError has status 400, LiteLLM's detail and spend texts for any route name and model, the
+    retry flag as given, and Display equal to the detail's error.
+  proof: [error-tests]
+checks:
+  optional: []
+  commands:
+  - id: route-map-tests
+    why: The route endpoint map is missing, out of date with the pin, or answers a route type it lacks.
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_model_not_found::tests::route_endpoint_/)'
+  - id: error-tests
+    why: The not-found error's status, texts, flag or Display differ from LiteLLM.
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_model_not_found::tests::not_found_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "Raising the error and picking the route name: B1020, B3615, B4788, B6460, B7430, B8692, B9372 and B9800 each do that for their own route."
+- "Turning the error into a response body: each route's exception handling does that, as LiteLLM's route handlers do."
+- "ProxyMissingRequiredParamError and raise_if_required_body_param_missing (route_llm_request.py L160-L190): B9800."
+- "The unknown-model flag and the spend message in spend logs: B1716 and B1713."
+pitfalls:
+- 'The map has 66 entries, path templates included. Copy them from the pinned source, not from the OpenAI docs: "aimage_generation" maps to "/image/generations" (singular "image"), and "aretrieve_batch" maps to "/batches" with no batch id.'
+- 'The spend message has no model and ends "passed in. Call ...", while the detail has "passed in model=<model>. Call ...". Both share the one hint const.'
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

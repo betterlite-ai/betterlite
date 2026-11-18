@@ -10,7 +10,7 @@ description: >-
   loads_end_user_spend_settings tests them through config and its existing YAML decoder.
   Preserve the separate disable_end_user_cost_tracking_prometheus_only setting's lack of
   use in this function rather than treating it as an inverse enable flag.
-  Record whether the original response is ProxyModelNotFoundError before converting a
+  Record whether the original response is B9964's ProxyModelNotFoundError before converting a
   nonmapping/nonmodel response to a result string. OCR uses B1715 usage_info projection;
   ordinary usage is suppressed for B188's unbilled non-inference calls. Only when usage
   remains empty does a typed combined_usage_object supply recovered mid-stream usage.
