@@ -32,6 +32,9 @@ pub(super) const EVERY: BatchReadOptions = BatchReadOptions {
     throttle_redis: false,
 };
 
+// one read per cache of a shared read, in the order the caches were passed
+pub(super) type ReadResults = Vec<Option<Vec<Option<Json>>>>;
+
 // the memory tier's own batch read, either answering or failing the way B2226's tier can
 pub(super) struct HarnessMemory {
     inner: LocalMemoryOps,
@@ -183,13 +186,7 @@ pub(super) async fn group(
     setup: &Setup,
     entries: &[CacheFields],
     call: &Fields,
-) -> Result<
-    (
-        Vec<DualCache<HarnessMemory>>,
-        Vec<Option<Vec<Option<Json>>>>,
-    ),
-    Box<HelperError>,
-> {
+) -> Result<(Vec<DualCache<HarnessMemory>>, ReadResults), Box<HelperError>> {
     let mut caches = Vec::with_capacity(entries.len());
     for entry in entries {
         let failures = Failures {

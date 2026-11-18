@@ -2,10 +2,10 @@ use serde_json::json;
 
 use super::input::Fields;
 use super::scenario::{
-    EVERY, Failures, HarnessMemory, Setup, THROTTLED, build_cache, group, reservation, seeded,
-    ttl_values,
+    EVERY, Failures, HarnessMemory, ReadResults, Setup, THROTTLED, build_cache, group, reservation,
+    seeded, ttl_values,
 };
-use betterlite_cache::batch_reads::BatchReads;
+use betterlite_cache::batch_reads::BatchReads as _;
 use betterlite_cache::dual_cache::{DualCache, Ttl};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -161,7 +161,7 @@ async fn merge_output(
     call: &Fields,
     setup: &Setup,
     caches: &[DualCache<HarnessMemory>],
-    results: Vec<Option<Vec<Option<Json>>>>,
+    results: ReadResults,
 ) -> HelperResult {
     let mut memory: Vec<Vec<Option<Json>>> = Vec::with_capacity(caches.len());
     let mut ttls: Vec<Vec<Option<Ttl>>> = Vec::with_capacity(caches.len());
@@ -187,7 +187,7 @@ async fn failures_output(
     call: &Fields,
     setup: &Setup,
     breaker_caches: &[DualCache<HarnessMemory>],
-    breaker: Vec<Option<Vec<Option<Json>>>>,
+    breaker: ReadResults,
 ) -> HelperResult {
     let mut breaker_due: Vec<serde_json::Value> = Vec::with_capacity(breaker_caches.len());
     for (built, entry) in breaker_caches.iter().zip(&call.breaker_caches) {
