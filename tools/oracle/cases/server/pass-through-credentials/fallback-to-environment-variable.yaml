@@ -1,0 +1,11 @@
+kind: helper
+name: fallback-to-environment-variable
+call:
+  b3602:
+    function: credentials
+    provider: openai
+    deployments: []
+    environment:
+      OPENAI_API_KEY: environment-key
+env: {}
+compare: {ignore: []}

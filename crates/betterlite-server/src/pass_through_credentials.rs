@@ -5,7 +5,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct VertexPassThroughCredentials {
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,

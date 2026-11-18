@@ -1,0 +1,21 @@
+kind: helper
+name: vertex-disagreement-returns-none
+call:
+  b3602:
+    function: vertex_deployments
+    deployments:
+      - model_name: first
+        litellm_params:
+          model: vertex_ai/gemini-2.0-flash
+          use_in_pass_through: true
+          vertex_project: project-one
+          vertex_location: us-central1
+      - model_name: second
+        litellm_params:
+          model: vertex_ai/gemini-1.5-pro
+          use_in_pass_through: true
+          vertex_project: project-two
+          vertex_location: us-central1
+    environment: {}
+env: {}
+compare: {ignore: []}

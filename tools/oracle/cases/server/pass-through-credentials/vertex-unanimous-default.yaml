@@ -1,0 +1,27 @@
+kind: helper
+name: vertex-unanimous-default
+call:
+  b3602:
+    function: vertex_deployments
+    deployments:
+      - model_name: first
+        litellm_params:
+          model: vertex_ai/gemini-2.0-flash
+          use_in_pass_through: true
+          vertex_project: shared-project
+          vertex_location: us-central1
+          vertex_credentials:
+            client_email: service@example.test
+            private_key: key
+      - model_name: second
+        litellm_params:
+          model: vertex_ai/gemini-1.5-pro
+          use_in_pass_through: true
+          vertex_project: shared-project
+          vertex_location: us-central1
+          vertex_credentials:
+            private_key: key
+            client_email: service@example.test
+    environment: {}
+env: {}
+compare: {ignore: []}

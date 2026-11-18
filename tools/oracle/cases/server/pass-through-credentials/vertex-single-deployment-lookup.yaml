@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-single-deployment-lookup
+call:
+  b3602:
+    function: vertex_deployments
+    model: gemini
+    deployments:
+      - model_name: gemini
+        litellm_params:
+          model: vertex_ai/gemini-2.0-flash
+          use_in_pass_through: true
+          vertex_project: project-one
+          vertex_location: us-central1
+          vertex_credentials: /credentials.json
+    environment: {}
+env: {}
+compare: {ignore: []}
