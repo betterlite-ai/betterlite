@@ -96,7 +96,7 @@ impl SensitiveRoutingCache for FakeCache {
     }
 }
 
-fn state(
+const fn state(
     redis_configured: bool,
     redis_get: Option<Result<Option<String>, FakeError>>,
     redis_ttl: Option<Result<Option<Duration>, FakeError>>,
@@ -151,7 +151,7 @@ fn redis_ttl_failure(memory: &str) -> FakeState {
     )
 }
 
-fn redis_set_outcome(outcome: Result<(), FakeError>) -> FakeState {
+const fn redis_set_outcome(outcome: Result<(), FakeError>) -> FakeState {
     state(true, None, None, Some(outcome), None)
 }
 
@@ -182,7 +182,7 @@ fn request(model: Option<&str>) -> JsonMap {
     data
 }
 
-fn keyed(api_key: &str) -> PrincipalIdentity<'_> {
+const fn keyed(api_key: &str) -> PrincipalIdentity<'_> {
     PrincipalIdentity {
         hashed_api_key: Some(api_key),
         user_id: None,
@@ -191,11 +191,11 @@ fn keyed(api_key: &str) -> PrincipalIdentity<'_> {
     }
 }
 
-fn claims(
-    user_id: Option<&str>,
-    team_id: Option<&str>,
-    org_id: Option<&str>,
-) -> PrincipalIdentity<'_> {
+const fn claims<'identity>(
+    user_id: Option<&'identity str>,
+    team_id: Option<&'identity str>,
+    org_id: Option<&'identity str>,
+) -> PrincipalIdentity<'identity> {
     PrincipalIdentity {
         hashed_api_key: None,
         user_id,
