@@ -38,11 +38,10 @@ impl RedisServer {
     }
 
     pub(super) fn unsupported(&self) -> Option<String> {
-        let slot = locked(&self.inner.unsupported);
-        if slot.is_none() {
-            return None;
+        match locked(&self.inner.unsupported).as_ref() {
+            Some(command) => Some(command.clone()),
+            None => None,
         }
-        slot.clone()
     }
 
     pub(super) fn polling(&self) -> RedisPolling {
