@@ -44,8 +44,15 @@ async fn outcome(
     tokens: Option<usize>,
 ) -> Result<usize, RoutingError> {
     let facts = RequestFacts {
+        messages: None,
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
+        target_order: None,
         input_token_count: tokens,
-        ..RequestFacts::default()
+        compaction_pending: false,
     };
     let request = route_request("gpt-4o", &facts);
     let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
