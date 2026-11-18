@@ -30,6 +30,7 @@ pub mod error;
 pub mod file_azure_storage;
 pub mod messages_chat_stream;
 pub(crate) mod messages_header_stream;
+pub(crate) mod messages_stream_factory;
 pub mod messages_stream_logging;
 pub mod messages_sync_stream;
 pub(crate) mod native;
@@ -82,6 +83,7 @@ pub enum SdkHttpCall {
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
     AnthropicBetaConfig(AnthropicBetaConfigCall),
     MessagesHeaderStream(MessagesHeaderStreamCall),
+    MessagesStreamFactory(MessagesStreamFactoryCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
     MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
@@ -134,6 +136,14 @@ pub struct MessagesHeaderStreamCall {
     pub(crate) body: Json,
     #[serde(default)]
     pub(crate) buffered_provider_output: Option<Json>,
+}
+
+// The factory takes no model, so this one is only carried to the Python call that ignores it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessagesStreamFactoryCall {
+    pub(crate) model: String,
+    pub(crate) body: Json,
 }
 
 // the call names no address: the harness points the endpoint at its own mock, or leaves it empty
@@ -249,6 +259,18 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
             if !matches!(stream.body, Json::Object(_)) {
                 return Err(SdkHttpError::Invalid(
                     "the Messages header stream body must be an object".to_owned(),
+                ));
+            }
+        }
+        SdkHttpCall::MessagesStreamFactory(factory) => {
+            if factory.model.is_empty() {
+                return Err(SdkHttpError::Invalid(
+                    "the Messages factory call needs a model name".to_owned(),
+                ));
+            }
+            if !matches!(factory.body, Json::Object(_)) {
+                return Err(SdkHttpError::Invalid(
+                    "the Messages factory request body must be an object".to_owned(),
                 ));
             }
         }

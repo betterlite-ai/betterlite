@@ -23,6 +23,10 @@ from messages_native_stream import (
     MessagesNativeStreamCall,
     run_messages_native_stream,
 )
+from messages_stream_factory import (
+    MessagesStreamFactoryCall,
+    run_messages_stream_factory,
+)
 from messages_stream_logging import (
     MessagesStreamLoggingCall,
     run_messages_stream_logging,
@@ -93,6 +97,15 @@ class MessagesHeaderStreamRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         return run_messages_header_stream(self.messages_header_stream, api_base)
+
+
+class MessagesStreamFactoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    messages_stream_factory: MessagesStreamFactoryCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_messages_stream_factory(self.messages_stream_factory, api_base)
 
 
 class MessagesStreamLoggingRequest(BaseModel):
@@ -167,6 +180,7 @@ class Request(BaseModel):
         | VectorQueryEmbeddingCall
         | AnthropicBetaConfigCall
         | MessagesHeaderStreamRequest
+        | MessagesStreamFactoryRequest
         | MessagesStreamLoggingRequest
         | MessagesNativeStreamRequest
         | MessagesSyncStreamRequest
