@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 
 use super::fixture::{
     ACCESS_KEY, Factory, FixtureClient, Reply, SECRET_KEY, SESSION_TOKEN, Source, credentials,
-    environment, headers, json, no_secrets, now, object, raw, runtime, secret,
+    environment, headers, json, now, object, raw, runtime, secret, secret_lookup,
 };
 use crate::aws_endpoints::provider::BedrockEmbeddingProvider;
 use crate::aws_settings::sources::Credentials;

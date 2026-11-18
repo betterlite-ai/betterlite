@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use secrecy::ExposeSecret as _;
 use serde_json::value::RawValue;
 
-use super::fixture::{Source, credentials, environment, headers, no_secrets, now, runtime};
+use super::fixture::{Source, credentials, environment, headers, now, runtime, secret_lookup};
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::{CredentialRequest, load_credentials};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
