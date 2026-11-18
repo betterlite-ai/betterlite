@@ -104,6 +104,19 @@ async fn window_entity_mapping_and_compound_key(#[case] entity_type: CounterEnti
         rows.window_lookups(),
         vec![(WindowEntity::Key, "k1".to_owned(), "1h".to_owned())]
     );
+    let missing = reseed_with(None, services(25), 5.0);
+    assert_eq!(
+        window_spend(&missing, start, WindowOp::Table).await,
+        Ok(None)
+    );
+}
+
+#[tokio::test]
+async fn window_table_team_and_user_lookups() {
+    let start = naive("2026-11-18T00:00:00");
+    let rows = Arc::new(FakeRows::default());
+    *rows.window.lock().expect("the fake window row lock") = Some(window_spend_row(start, "6.5"));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let team_type = CounterEntityType::Team;
     let team = counter
         .window_from_table(
@@ -135,11 +148,6 @@ async fn window_entity_mapping_and_compound_key(#[case] entity_type: CounterEnti
         .await;
     assert_eq!(user, Ok(None));
     assert_eq!(rows.window_lookups().len(), 2);
-    let missing = reseed_with(None, services(25), 5.0);
-    assert_eq!(
-        window_spend(&missing, start, WindowOp::Table).await,
-        Ok(None)
-    );
 }
 
 #[rstest]
@@ -242,24 +250,6 @@ async fn aggregate_entity_start_filter_empty_and_first_row() {
             utc("2026-11-18T00:00:00Z")
         )]
     );
-    let team_type = CounterEntityType::Team;
-    let team_first = counter
-        .window_from_spend_logs(&WindowQuery {
-            entity_type: &team_type,
-            entity_id: "t1",
-            start,
-        })
-        .await;
-    assert_eq!(team_first, Ok(Some(decimal("7.5"))));
-    assert_eq!(
-        rows.log_lookups().last(),
-        Some(&(
-            WindowEntity::Team,
-            "t1".to_owned(),
-            utc("2026-11-18T00:00:00Z")
-        ))
-    );
-
     *rows.logs.lock().expect("the fake logs lock") = Vec::new();
     assert_eq!(
         window_spend(&counter, start, WindowOp::Logs).await,
@@ -278,6 +268,31 @@ async fn aggregate_entity_start_filter_empty_and_first_row() {
     assert_eq!(
         window_spend(&rowless, start, WindowOp::Logs).await,
         Ok(None)
+    );
+}
+
+#[tokio::test]
+async fn aggregate_team_first_row_and_failed_logs() {
+    let start = aware("2026-11-18T00:00:00Z");
+    let rows = Arc::new(FakeRows::default());
+    *rows.logs.lock().expect("the fake logs lock") = vec![mapping_sum("7.5"), mapping_sum("100")];
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let team_type = CounterEntityType::Team;
+    let team_first = counter
+        .window_from_spend_logs(&WindowQuery {
+            entity_type: &team_type,
+            entity_id: "t1",
+            start,
+        })
+        .await;
+    assert_eq!(team_first, Ok(Some(decimal("7.5"))));
+    assert_eq!(
+        rows.log_lookups().last(),
+        Some(&(
+            WindowEntity::Team,
+            "t1".to_owned(),
+            utc("2026-11-18T00:00:00Z")
+        ))
     );
 
     rows.logs_fail.store(true, Ordering::Relaxed);
@@ -321,12 +336,16 @@ async fn query_failure_falls_back_but_conversion_propagates() {
     );
     assert!(logs.contains("window_from_table: failed"));
     assert!(logs.contains("window_from_spend_logs: failed"));
+}
 
-    rows.window_fails.store(false, Ordering::Relaxed);
-    rows.logs_fail.store(false, Ordering::Relaxed);
+#[tokio::test]
+async fn stale_window_row_reads_the_logs_aggregate() {
+    let start = aware("2026-11-18T00:00:00Z");
+    let rows = Arc::new(FakeRows::default());
     *rows.window.lock().expect("the fake window row lock") =
         Some(window_spend_row(naive("2026-11-17T00:00:00"), "20"));
     *rows.logs.lock().expect("the fake logs lock") = vec![mapping_sum("8")];
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     assert_eq!(
         window_spend(&counter, start, WindowOp::Db).await,
         Ok(Some(decimal("8")))

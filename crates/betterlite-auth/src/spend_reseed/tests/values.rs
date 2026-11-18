@@ -18,7 +18,7 @@ fn mapping(sum: JsonData) -> SpendAggregateRow {
 }
 
 #[test]
-fn mapping_and_attribute_sum_shapes() {
+fn mapping_sum_shapes() {
     assert_eq!(
         aggregate_amount(&mapping(sum_object("3.5"))),
         Ok(decimal("3.5"))
@@ -31,6 +31,10 @@ fn mapping_and_attribute_sum_shapes() {
         aggregate_amount(&mapping(sum_object("false"))),
         Ok(Decimal::ZERO)
     );
+}
+
+#[test]
+fn mapping_sum_falsey_shapes() {
     assert_eq!(
         aggregate_amount(&mapping(sum_object("[]"))),
         Ok(Decimal::ZERO)
@@ -51,6 +55,10 @@ fn mapping_and_attribute_sum_shapes() {
         aggregate_amount(&mapping(spend_json("7"))),
         Ok(Decimal::ZERO)
     );
+}
+
+#[test]
+fn mapping_sum_non_numeric_errors() {
     assert_eq!(
         aggregate_amount(&mapping(sum_object("\"abc\""))),
         Err(SpendValueError::OutOfRange {
@@ -65,7 +73,10 @@ fn mapping_and_attribute_sum_shapes() {
         aggregate_amount(&mapping(sum_object("{\"a\": 1}"))),
         Err(SpendValueError::NotNumeric { kind: "an object" })
     );
+}
 
+#[test]
+fn mapping_and_attribute_sum_shapes() {
     // a row object answers its _sum attribute, and a missing one reads as zero
     assert_eq!(
         aggregate_amount(&SpendAggregateRow::Attribute {
@@ -110,7 +121,10 @@ fn stored_and_cache_amount_names() {
             text: "nope".to_owned()
         })
     );
+}
 
+#[test]
+fn cache_amount_names() {
     assert_eq!(
         cache_amount(&ReseedCacheValue::Number(decimal("6.25"))),
         Ok(decimal("6.25"))

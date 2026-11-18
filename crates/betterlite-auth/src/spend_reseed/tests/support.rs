@@ -266,7 +266,7 @@ impl FakeCache {
         }
     }
 
-    pub(crate) fn with_memory(mut self, counter_key: &str, value: ReseedCacheValue) -> Self {
+    pub(crate) fn with_memory(self, counter_key: &str, value: ReseedCacheValue) -> Self {
         self.memory
             .lock()
             .expect("the fake memory lock")
@@ -274,7 +274,7 @@ impl FakeCache {
         self
     }
 
-    pub(crate) fn with_memory_answers<I>(mut self, answers: I) -> Self
+    pub(crate) fn with_memory_answers<I>(self, answers: I) -> Self
     where
         I: IntoIterator<Item = Option<ReseedCacheValue>>,
     {
@@ -282,12 +282,12 @@ impl FakeCache {
         self
     }
 
-    pub(crate) fn with_redis(mut self, value: ReseedCacheValue) -> Self {
+    pub(crate) fn with_redis(self, value: ReseedCacheValue) -> Self {
         *self.redis.lock().expect("the fake redis lock") = Some(value);
         self
     }
 
-    pub(crate) fn answer(mut self, answer: RedisAnswer) -> Self {
+    pub(crate) fn answer(self, answer: RedisAnswer) -> Self {
         self.redis_answers
             .lock()
             .expect("the fake answer lock")

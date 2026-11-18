@@ -152,18 +152,18 @@ async fn primary_query_bound_gate_error_log_and_none() {
     "{\"x\": 1}",
     Err(SpendValueError::NotNumeric { kind: "an object" })
 )]
-#[case::zero("0", Ok(Decimal::ZERO))]
-#[case::null("null", Ok(Decimal::ZERO))]
-#[case::false_value("false", Ok(Decimal::ZERO))]
-#[case::empty_text("\"\"", Ok(Decimal::ZERO))]
-#[case::empty_list("[]", Ok(Decimal::ZERO))]
-#[case::empty_object("{}", Ok(Decimal::ZERO))]
-#[case::padded_text("\" 2.5 \"", Ok(decimal("2.5")))]
-#[case::exponent_text("\"1e2\"", Ok(decimal("100")))]
+#[case::zero("0", Ok(Some(Decimal::ZERO)))]
+#[case::null("null", Ok(Some(Decimal::ZERO)))]
+#[case::false_value("false", Ok(Some(Decimal::ZERO)))]
+#[case::empty_text("\"\"", Ok(Some(Decimal::ZERO)))]
+#[case::empty_list("[]", Ok(Some(Decimal::ZERO)))]
+#[case::empty_object("{}", Ok(Some(Decimal::ZERO)))]
+#[case::padded_text("\" 2.5 \"", Ok(Some(decimal("2.5"))))]
+#[case::exponent_text("\"1e2\"", Ok(Some(decimal("100"))))]
 #[tokio::test]
 async fn conversion_after_query_catch(
     #[case] spend: &str,
-    #[case] expected: Result<Decimal, SpendValueError>,
+    #[case] expected: Result<Option<Decimal>, SpendValueError>,
 ) {
     let counter = reseed(FakeRows::with_row(spend_row(spend)));
     assert_eq!(counter.from_db("spend:key:token").await, expected);
@@ -539,7 +539,10 @@ async fn warm_failure_partial_effects_default_vs_required() {
         .coalesced(&strict_cache, &strict_batch, "spend:key:t", true)
         .await;
     assert!(matches!(strict, Err(CoalescedError::Cache(FakeError))));
+}
 
+#[tokio::test]
+async fn warm_failure_keeps_an_ordered_redis_set() {
     let partial_rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let partial = reseed_with(Some(Arc::clone(&partial_rows)), services(25), 5.0);
     let partial_cache = FakeCache::new(true)
