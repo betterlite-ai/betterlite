@@ -8,6 +8,7 @@ use betterlite_config::sections::compatible_embedding_settings::Globals;
 use betterlite_models::decisions::Json;
 use betterlite_openai::compatible_embedding::Mode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use futures_util::future::join;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -29,11 +30,8 @@ where
                 let runtime = Builder::new_current_thread().enable_all().build().unwrap();
                 runtime.block_on(async move {
                     let listener = TcpListener::from_std(std_listener).unwrap();
-                    timeout(EXCHANGE_TIMEOUT, async {
-                        tokio::join!(serve(&listener), future)
-                    })
-                    .await
-                    .unwrap()
+                    let served = join(serve(&listener), future);
+                    timeout(EXCHANGE_TIMEOUT, served).await.unwrap()
                 })
             })
             .join()

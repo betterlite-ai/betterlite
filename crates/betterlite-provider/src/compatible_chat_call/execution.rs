@@ -234,7 +234,6 @@ impl<'source> CompatibleChatExecution<'source> {
         }
     }
 
-    #[must_use]
     pub async fn execute<'execution>(
         &'execution self,
         client: &'execution ProxiedClient,

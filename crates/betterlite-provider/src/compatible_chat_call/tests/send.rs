@@ -5,6 +5,7 @@ use std::thread;
 
 use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use futures_util::future::join;
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
@@ -31,11 +32,8 @@ fn the_execution_completes_on_a_second_thread() {
                 let runtime = Builder::new_current_thread().enable_all().build().unwrap();
                 runtime.block_on(async move {
                     let listener = TcpListener::from_std(std_listener).unwrap();
-                    timeout(EXCHANGE_TIMEOUT, async {
-                        tokio::join!(serve(&listener, 200, REPLY.as_bytes()), future)
-                    })
-                    .await
-                    .unwrap()
+                    let served = join(serve(&listener, 200, REPLY.as_bytes()), future);
+                    timeout(EXCHANGE_TIMEOUT, served).await.unwrap()
                 })
             })
             .join()

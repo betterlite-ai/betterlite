@@ -92,7 +92,6 @@ impl SharedEmbedding<'_> {
 }
 
 // main.py's shared arm: the pre-call log runs with the env, the send leaves it alone, and the post-call log sees the answer
-#[must_use]
 pub fn shared_embedding<'source>(
     embedding: &'source SharedEmbedding<'_>,
     client: &'source ProxiedClient,
