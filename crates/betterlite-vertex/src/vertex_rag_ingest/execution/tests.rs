@@ -90,6 +90,17 @@ fn an_empty_bucket_environment_counts_as_unset() {
 }
 
 #[test]
+fn an_empty_project_environment_counts_as_unset() {
+    let error = RagIngestSettings::resolve(
+        &options(corpus_record(), None),
+        &vertex_settings(Some(""), None),
+        Some(BUCKET),
+    )
+    .unwrap_err();
+    assert!(matches!(error, RagIngestError::MissingProject));
+}
+
+#[test]
 fn settings_fall_back_to_the_vertex_environment() {
     let settings = RagIngestSettings::resolve(
         &options(corpus_record(), None),
