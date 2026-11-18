@@ -93,6 +93,7 @@ async fn deployment_id_generalized() {
 #[case::override_pre_call_bound(behaviors::override_pre_call_bound())]
 #[case::override_pre_call_absent(behaviors::override_pre_call_absent())]
 #[case::least_busy_picks_lowest_count(behaviors::least_busy_picks_lowest_count())]
+#[case::each_strategy_counts_its_attempt(behaviors::each_strategy_counts_its_attempt())]
 #[tokio::test]
 async fn router_core_behaviors<Fut>(#[case] case: Fut)
 where

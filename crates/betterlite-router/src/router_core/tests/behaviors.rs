@@ -430,3 +430,28 @@ pub(super) async fn least_busy_picks_lowest_count() {
     }
     assert_eq!(in_flight(&service, &picked_key), 0);
 }
+
+// every route attempt holds an in-flight count while it runs, whatever strategy the config names
+pub(super) async fn each_strategy_counts_its_attempt() {
+    let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
+    let service = Arc::new(LeastBusy {
+        local: in_flight_store(),
+        shared: None,
+    });
+    let counted = Counted(Arc::clone(&service));
+    let mut random = seeded();
+    let setup = RequestSetup::new("gpt-4o");
+    let mut result = run_route(
+        &fixture,
+        &setup,
+        &counted,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    let key = request_count_key("gpt-4o", picked(&result)).unwrap();
+    assert_eq!(in_flight(&service, &key), 1);
+    assert!(result.release_least_busy().await.is_none());
+    assert_eq!(in_flight(&service, &key), 0);
+}
