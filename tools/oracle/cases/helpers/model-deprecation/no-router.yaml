@@ -1,0 +1,10 @@
+kind: helper
+name: model-deprecation-no-router
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      openai/raw: {deprecation_date: "2026-05-10"}
+    deployments: null
+env: {}
+compare: {ignore: []}
