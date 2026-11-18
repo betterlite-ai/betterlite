@@ -35,7 +35,7 @@ description: >-
   Dispatch entry. The architect adds one core entry for these routes to B014's core-stubs list, `ContainerCall` with module `container_call`
   (operation/container_call.rs and dispatch/container_call.rs). The request holds a `ContainerRouteType` and a `ContainerCallArgs`; the result is a `ContainerReply`. This task replaces the
   NotBuilt stub and its stub test. Its execute function takes the route input and two injected `ContainerCalls` (the router one, which may be absent, and the direct one) and runs the plan:
-  `Router` calls the router implementation, `Direct` calls the direct one, `NotFound` returns the model-not-found error with route name and the model from the args (empty text when none).
+  `Router` calls the router implementation, `Direct` calls the direct one, `NotFound` returns B9964's `ProxyModelNotFoundError` (betterlite_error::proxy_model_not_found) with the route name from B9964's `route_endpoint` for the request's `ContainerRouteType::name` (all nine container route types have an entry), the model from the args (empty text when none) and the retry flag true. The entry's error type wraps it by `#[from]`.
   Leave operation.rs and dispatch.rs as they are.
 
   Sdk side, module `router_container` in betterlite-sdk (files router_container.rs and router_container/**). It plugs the nine calls into B6021's `RouterGeneric`. `ContainerExecutor` is a
@@ -97,7 +97,7 @@ dod:
       plan_container_call returns Generic with passthrough false and model set when the decoded id or the forwarded model_id (trimmed, non-blank) gives one, Generic with passthrough true for a non-blank model argument, and Direct otherwise; model_id stays in the args.
     proof: [plan-model]
   - text: >-
-      The ContainerCall dispatch entry runs the Router, Direct and NotFound results of the plan against the matching collaborator, and a NotFound plan returns the model-not-found error.
+      The ContainerCall dispatch entry runs the Router, Direct and NotFound results of the plan against the matching collaborator, and a NotFound plan returns B9964's model-not-found error with the route type's path.
     proof: [entry-dispatch]
   - text: >-
       The sdk executors read their arguments by the shared key names and call B3368, B3369 or B3370 for their route type; content comes back as Bytes and every other reply as Json.

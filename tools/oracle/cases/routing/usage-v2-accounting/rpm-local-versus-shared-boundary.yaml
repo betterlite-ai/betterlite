@@ -1,0 +1,48 @@
+kind: probe
+name: usage-v2-accounting-rpm-local-versus-shared-boundary
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/usage_v2_accounting/steps/2
+      reference:
+        kind: rejected
+        step: 2
+        status_code: 429
+        code: "429"
+        error_type: throttling_error
+        retry_after: null
+        num_retries: null
+      rust:
+        kind: allowed
+        step: 2
+      why: >-
+        pre_call_check compares the redis reply of its own increment, so a shared count of five
+        rejects a request at limit two even though this instance counted one; the sync facade in
+        betterlite compares the local counter exactly like the async path, and both reach the same
+        count after the sync step.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L155-L156
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_v2_accounting:
+        ttl_seconds: 60
+        steps:
+          - kind: seed_store
+            now_millis: 0
+            key: "dep-a:openai/gpt-4o:rpm:00-00"
+            value: 5
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 2}
+          - kind: pre_call
+            now_millis: 0
+            sync: true
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 2}
+          - {kind: sync, now_millis: 0}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o:rpm:00-00"}
+          - kind: pre_call
+            now_millis: 0
+            sync: true
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 2}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o:rpm:00-00"}

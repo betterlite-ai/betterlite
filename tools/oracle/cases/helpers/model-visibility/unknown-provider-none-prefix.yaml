@@ -1,0 +1,23 @@
+kind: helper
+name: model-visibility-unknown-provider-none-prefix
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: None/*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w1
+          discoverable: false
+      - model_name: wat/wat
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: v1
+    model_group_alias: {}
+    arguments:
+      model_names: [wat/other, wat/wat]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}

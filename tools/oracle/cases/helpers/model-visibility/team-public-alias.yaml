@@ -1,0 +1,86 @@
+kind: helper
+name: model-visibility-team-public-alias
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: team-group
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: t1
+          team_id: team-a
+          team_public_model_name: team-public
+          discoverable: false
+      - model_name: global-hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: g1
+          discoverable: false
+      - model_name: visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: v1
+    model_group_alias: {}
+    arguments:
+      model_names: [team-group, team-public, global-hidden, visible]
+      user_role: internal_user
+      team_id: team-a
+calls:
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: team-group
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: team-public
+            discoverable: false
+        - model_name: global-hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: g1
+            discoverable: false
+        - model_name: visible
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: v1
+      model_group_alias: {}
+      arguments:
+        model_names: [team-group, team-public, global-hidden, visible]
+        user_role: internal_user
+        team_id: team-b
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: team-group
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: team-public
+            discoverable: false
+        - model_name: global-hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: g1
+            discoverable: false
+        - model_name: visible
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: v1
+      model_group_alias: {}
+      arguments:
+        model_names: [team-group, team-public, global-hidden, visible]
+        user_role: internal_user
+env: {}
+compare: {ignore: []}

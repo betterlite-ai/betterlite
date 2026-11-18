@@ -18,8 +18,9 @@ description: >-
   but a replace records a separate final set that wins even over later add/remove
   operations; preserve this asymmetry with group PATCH. Names retain scim_metadata.
   Capture prior active before applying metadata mutations, reconcile rosters through B1637,
-  derive the role from final team ids via B1635, write user data, evict/broadcast the user
-  cache, then change key blocks only for a non-null active transition. Removing active
+  derive the role from final team ids via B1635, write user data, evict and broadcast the user
+  cache entry with B878's evict_and_broadcast (betterlite-auth auth_pubsub) and the one key
+  user_id, then change key blocks only for a non-null active transition. Removing active
   therefore displays the default true without unblocking previously SCIM-blocked keys.
   Return B1633's resource with application/scim+json. Compare pure patch projections through
   scim_user_patch helper cases and the actual route through B1644 eligible HTTP transcripts,

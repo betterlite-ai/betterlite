@@ -7,7 +7,9 @@ description: >-
   scanning, B1024 for rewritten JSONL, B1022 for validation and B1021 for target/model/storage extraction.
   B206 owns get_or_create_metadata_bucket; B2400 owns the known-model predicate used by the load-balancing branch.
   B900 sends multipart requests through both running proxies; it records provider uploads rather than
-  invoking the FastAPI function. B1139/B856 supply keys and team metadata. Configure master key sk-test
+  invoking the FastAPI function. B1139/B856 supply keys and team metadata, and a seeded key passes auth
+  through B755's VirtualKeyValidation stage (betterlite-auth auth_key_validation, registered in B732's
+  server state). Configure master key sk-test
   for every authenticated case. B003 supplies FastAPI-compatible required-field errors and final error
   serialization; B004 supplies response headers; B8393/B8394/B8395 supply observable pre/success/failure hooks.
 
