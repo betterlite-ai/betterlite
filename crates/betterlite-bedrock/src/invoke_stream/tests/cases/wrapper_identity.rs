@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
 
@@ -10,11 +11,15 @@ use crate::invoke_stream::{
 };
 
 use super::super::support::{
-    BASE, Fixture, Opened, TITAN, TimingRecord, call, chunk_frame, contents, data, member,
-    messages, run, sorted_pairs,
+    BASE, Fixture, Opened, TITAN, TimingRecord, call, chunk_frame, contents, data, error_frame,
+    member, messages, run, sorted_pairs,
 };
 
 const MODEL: &str = "amazon.titan-text-express-v1";
+const DEEPSEEK_MODEL: &str = "deepseek_r1/deepseek.r1-v1:0";
+// A DeepSeek reply before its </think>: LiteLLM's decoder reports the text as reasoning content.
+const DEEPSEEK: &str = r#"{"generation":"hello","stop_reason":null,"prompt_token_count":1,"generation_token_count":2}"#;
+const ERROR_BODY: &str = r#"{"message":"boom"}"#;
 const RESPONSE_HEADERS: [(&str, &str); 2] = [
     ("content-type", "application/vnd.amazon.eventstream"),
     ("x-amzn-requestid", "req-1"),
@@ -32,9 +37,13 @@ pub(super) fn wrapper_identity() {
     logging_context();
     client_chunks_and_logging();
     converse_chunks();
+    deepseek_chunks();
     hidden_params();
     stream_options_add_a_usage_chunk();
     timing_on_success_and_failure();
+    read_timeouts_are_a_timeout();
+    other_read_failures_are_connection_errors();
+    provider_errors_keep_the_bedrock_class();
     config_flags();
 }
 
@@ -190,6 +199,26 @@ fn converse_chunks() {
     assert!(fields.contains_key("trace"));
 }
 
+// LiteLLM's DeepSeek decoder names no provider model; the wrapper still emits the reasoning chunk.
+fn deepseek_chunks() {
+    let messages = messages();
+    let data = data();
+    let call = call(DEEPSEEK_MODEL, BASE, &data, &messages);
+    let fixture = Fixture::new(HandlerKind::Async, &RESPONSE_HEADERS, chunk_frame(DEEPSEEK));
+    let opened = run(
+        &call,
+        Some(Arc::clone(&fixture)),
+        Arc::clone(&fixture),
+        false,
+        None,
+    );
+    assert_eq!(opened.failure, None);
+    assert_eq!(opened.chunks[0].model, DEEPSEEK_MODEL);
+    let delta = &opened.chunks[0].choices[0].delta;
+    assert_eq!(delta.reasoning_content.as_deref(), Some("hello"));
+    assert_eq!(delta.content, None);
+}
+
 // CustomStreamWrapper.__init__ gives every chunk the model id, api_base and response headers it reports.
 fn hidden_params() {
     let messages = messages();
@@ -286,6 +315,93 @@ fn timing_on_success_and_failure() {
     assert!(failed.chunks.is_empty());
     assert_duration_millis(&failed, 3_000);
     assert_eq!(failed.timings, vec![timing(ASYNC_TIMING)]);
+}
+
+// B691's read timeout is litellm.Timeout: 408, raised as is instead of becoming a fallback.
+fn read_timeouts_are_a_timeout() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, BASE, &data, &messages);
+    let fixture = Fixture::failing(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        vec![Err(HttpError::Timeout)],
+    );
+    let opened = run(
+        &call,
+        Some(Arc::clone(&fixture)),
+        Arc::clone(&fixture),
+        false,
+        None,
+    );
+    assert!(opened.failure.is_some());
+    assert!(opened.chunks.is_empty());
+    assert_eq!(opened.failure_status, Some(408));
+    assert!(!opened.fallback);
+}
+
+// A read that is not a timeout is APIConnectionError 500, which the wrapper wraps for a fallback.
+fn other_read_failures_are_connection_errors() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, BASE, &data, &messages);
+    let fixture = Fixture::failing(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        vec![Err(HttpError::TooLarge { limit: 10 })],
+    );
+    let opened = run(
+        &call,
+        Some(Arc::clone(&fixture)),
+        Arc::clone(&fixture),
+        false,
+        None,
+    );
+    assert!(opened.failure.is_some());
+    assert!(opened.chunks.is_empty());
+    assert_eq!(opened.failure_status, Some(500));
+    assert!(opened.fallback);
+}
+
+// A provider error event goes through the Bedrock mapper: 500 is ServiceUnavailable 503, a validation 400 stays 400.
+fn provider_errors_keep_the_bedrock_class() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, BASE, &data, &messages);
+
+    let internal = Fixture::new(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        error_frame("internalServerException", ERROR_BODY),
+    );
+    let unavailable = run(
+        &call,
+        Some(Arc::clone(&internal)),
+        Arc::clone(&internal),
+        false,
+        None,
+    );
+    assert!(unavailable.failure.is_some());
+    assert!(unavailable.chunks.is_empty());
+    assert_eq!(unavailable.failure_status, Some(503));
+    assert!(unavailable.fallback);
+
+    let invalid = Fixture::new(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        error_frame("validationException", ERROR_BODY),
+    );
+    let rejected = run(
+        &call,
+        Some(Arc::clone(&invalid)),
+        Arc::clone(&invalid),
+        false,
+        None,
+    );
+    assert!(rejected.failure.is_some());
+    assert!(rejected.chunks.is_empty());
+    assert_eq!(rejected.failure_status, Some(400));
+    assert!(!rejected.fallback);
 }
 
 fn config_flags() {

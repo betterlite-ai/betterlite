@@ -11,6 +11,7 @@ use aws_smithy_types::str_bytes::StrBytes;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_core::rules::{RuleDecision, RuleEvaluator};
+use betterlite_error::error::ErrorClass;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
@@ -209,6 +210,18 @@ pub(super) fn chunk_frame(source: &str) -> Vec<u8> {
     frame
 }
 
+// The event-stream frame a Bedrock error event arrives in: the modeled exception and its JSON body.
+pub(super) fn error_frame(exception_type: &str, payload: &str) -> Vec<u8> {
+    let headers = vec![
+        Header::new(":message-type".to_owned(), text("error")),
+        Header::new(":exception-type".to_owned(), text(exception_type)),
+    ];
+    let message = Message::new_from_parts(headers, payload.as_bytes().to_vec());
+    let mut frame = Vec::new();
+    write_message_to(&message, &mut frame).unwrap();
+    frame
+}
+
 fn text(value: &str) -> HeaderValue {
     HeaderValue::String(StrBytes::from(value.to_owned()))
 }
@@ -230,6 +243,9 @@ pub(super) struct Opened {
     pub(super) logs: Vec<Json>,
     pub(super) chunks: Vec<StreamChunk>,
     pub(super) failure: Option<String>,
+    // the failing ChatStreamError's class: its status and whether the wrapper wrapped it for a fallback
+    pub(super) failure_status: Option<u16>,
+    pub(super) fallback: bool,
     pub(super) duration: Option<Json>,
     pub(super) timings: Vec<TimingRecord>,
     pub(super) logged_chunks: usize,
@@ -244,6 +260,8 @@ struct Collected {
     headers: HeaderMap,
     chunks: Vec<StreamChunk>,
     failure: Option<String>,
+    failure_status: Option<u16>,
+    fallback: bool,
 }
 
 // One wrapper call over the case's fixtures, consumed to its end so every port's work shows.
@@ -277,6 +295,8 @@ pub(super) fn run(
             headers: HeaderMap::new(),
             chunks: Vec::new(),
             failure: Some(message),
+            failure_status: None,
+            fallback: false,
         },
     };
     Opened {
@@ -285,6 +305,8 @@ pub(super) fn run(
         headers: collected.headers,
         chunks: collected.chunks,
         failure: collected.failure,
+        failure_status: collected.failure_status,
+        fallback: collected.fallback,
         logs: logs.entries(),
         duration: state.model_call_details.get(DURATION_KEY).cloned(),
         timings: fakes.timing.entries(),
@@ -340,6 +362,8 @@ fn consume(mut wrapped: WrappedInvokeStream<'_>) -> Collected {
                     headers,
                     chunks,
                     failure: None,
+                    failure_status: None,
+                    fallback: false,
                 };
             }
             Err(error) => {
@@ -349,6 +373,8 @@ fn consume(mut wrapped: WrappedInvokeStream<'_>) -> Collected {
                     headers,
                     chunks,
                     failure: Some(error.to_string()),
+                    failure_status: Some(error.class.metadata().status_code),
+                    fallback: matches!(&error.class, ErrorClass::MidStreamFallback(_)),
                 };
             }
         }
