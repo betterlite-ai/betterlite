@@ -3,15 +3,27 @@ use std::fmt::Write as _;
 use super::super::PatternProblem;
 use super::Walker;
 
+const FLAG_LETTERS: [char; 10] = ['a', 'i', 'L', 'm', 's', 'u', 'U', 'R', 'x', '-'];
+
 pub(super) fn group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
     let mut probe = walker.input.clone();
     match (probe.next(), probe.next()) {
-        (Some('?'), Some('#')) => comment_group(walker),
+        (Some('?'), Some('#')) => {
+            let _prefix = walker.input.nth(1);
+            loop {
+                match walker.input.next() {
+                    Some('\\') => {
+                        walker.input.next().ok_or(PatternProblem::Syntax)?;
+                    }
+                    Some(')') => return Ok(()),
+                    Some(_) => {}
+                    None => return Err(PatternProblem::Syntax),
+                }
+            }
+        }
         (Some('?'), Some('<')) => Err(PatternProblem::Syntax),
         (Some('?'), Some('P')) => named_group(walker),
-        (Some('?'), Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
-            flags_group(walker)
-        }
+        (Some('?'), Some(letter)) if FLAG_LETTERS.contains(&letter) => flags_group(walker),
         _ => {
             walker.output.push('(');
             let verbose = matches!(walker.verbose.last(), Some(true));
@@ -48,16 +60,12 @@ fn named_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
 
 fn flags_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
     let mut probe = walker.input.clone().skip(1);
-    let mut spec = String::new();
-    let terminator = loop {
-        match probe.next() {
-            Some(character @ (':' | ')')) => break character,
-            Some(letter @ ('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
-                spec.push(letter);
-            }
-            _ => return Err(PatternProblem::Syntax),
-        }
-    };
+    let spec: String = probe
+        .by_ref()
+        .take_while(|letter| FLAG_LETTERS.contains(letter))
+        .collect();
+    let terminator = probe.next().filter(|letter| matches!(letter, ':' | ')'));
+    let terminator = terminator.ok_or(PatternProblem::Syntax)?;
     apply_flags(walker, &spec, terminator)
 }
 
@@ -91,20 +99,6 @@ fn apply_flags(
     walker.verbose.push(verbose);
     walker.at_start = false;
     Ok(())
-}
-
-fn comment_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
-    let _prefix = walker.input.nth(1);
-    loop {
-        match walker.input.next() {
-            Some('\\') => {
-                walker.input.next().ok_or(PatternProblem::Syntax)?;
-            }
-            Some(')') => return Ok(()),
-            Some(_) => {}
-            None => return Err(PatternProblem::Syntax),
-        }
-    }
 }
 
 fn identifier(name: &str) -> bool {

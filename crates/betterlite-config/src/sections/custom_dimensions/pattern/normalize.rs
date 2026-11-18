@@ -17,10 +17,10 @@ pub(super) fn pattern(input: &str) -> Result<String, PatternProblem> {
         let Some(character) = walker.input.next() else {
             return Ok(walker.output);
         };
-        if walker.class != ClassState::Outside {
-            walker.in_class(character)?;
-        } else {
+        if walker.class == ClassState::Outside {
             walker.outside(character)?;
+        } else {
+            walker.in_class(character)?;
         }
     }
 }
@@ -135,26 +135,25 @@ impl Walker<'_> {
             self.class = ClassState::Body;
             return self.escape(true);
         }
-        let leading = matches!(self.class, ClassState::Leading | ClassState::Negated);
-        match character {
-            '^' if self.class == ClassState::Leading => {
-                self.class = ClassState::Negated;
-                self.output.push('^');
-            }
-            ']' | '-' if leading => {
-                self.class = ClassState::Body;
-                self.output.push('\\');
-                self.output.push(character);
-            }
-            ']' => {
-                self.class = ClassState::Outside;
-                self.output.push(']');
-            }
-            _ => {
-                self.class = ClassState::Body;
-                self.class_character(character);
-            }
+        if self.class == ClassState::Leading && character == '^' {
+            self.class = ClassState::Negated;
+            self.output.push('^');
+            return Ok(());
         }
+        let leading = matches!(self.class, ClassState::Leading | ClassState::Negated);
+        if leading && matches!(character, ']' | '-') {
+            self.class = ClassState::Body;
+            self.output.push('\\');
+            self.output.push(character);
+            return Ok(());
+        }
+        if character == ']' {
+            self.class = ClassState::Outside;
+            self.output.push(']');
+            return Ok(());
+        }
+        self.class = ClassState::Body;
+        self.class_character(character);
         Ok(())
     }
 

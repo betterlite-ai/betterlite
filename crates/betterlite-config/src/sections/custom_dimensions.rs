@@ -187,26 +187,31 @@ fn default_scoring_mode() -> String {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
+    fn convert<L: EnvironmentLookup>(self, lookup: &L) -> Result<Self::Settings, ConfigError> {
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let configured = deployment
-                .litellm_params
-                .complexity_router_config
-                .and_then(|config| config.custom_dimensions)
-                .unwrap_or_default();
-            let mut dimensions = Vec::with_capacity(configured.len());
-            for (position, raw) in configured.into_iter().enumerate() {
-                let path = format!("model_list.{index}.{PATH_ROOT}.{position}");
-                dimensions.push(raw.resolve(&path, lookup)?);
-            }
-            deployments.push(dimensions);
+            deployments.push(resolve_deployment(index, deployment, lookup)?);
         }
         Ok(Settings { deployments })
     }
+}
+
+fn resolve_deployment<L: EnvironmentLookup>(
+    index: usize,
+    deployment: RawDeployment,
+    lookup: &L,
+) -> Result<Vec<Config>, ConfigError> {
+    let configured = deployment
+        .litellm_params
+        .complexity_router_config
+        .and_then(|config| config.custom_dimensions)
+        .unwrap_or_default();
+    let mut dimensions = Vec::with_capacity(configured.len());
+    for (position, raw) in configured.into_iter().enumerate() {
+        let path = format!("model_list.{index}.{PATH_ROOT}.{position}");
+        dimensions.push(raw.resolve(&path, lookup)?);
+    }
+    Ok(dimensions)
 }
 
 impl RawDimension {
