@@ -1,5 +1,9 @@
-from typing import Literal, TypedDict
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal, NotRequired, Protocol, TypedDict, Unpack
 
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from litellm.types.utils import ModelResponse
 from pydantic import JsonValue
 
 Action = Literal[
@@ -59,3 +63,56 @@ class Observation(TypedDict):
 class Case(TypedDict):
     inputs: list[Input]
     expected: list[Observation]
+
+
+class PostArguments(TypedDict):
+    input: list[dict[str, JsonValue]]
+    api_key: str | None
+    original_response: ModelResponse
+
+
+class PostRecorder(Protocol):
+    def post_call(self, **kwargs: Unpack[PostArguments]) -> None: ...
+
+
+class Arguments(TypedDict):
+    model: str
+    messages: list[dict[str, JsonValue]]
+    api_base: str
+    api_key: str | None
+    custom_llm_provider: str
+    optional_params: dict[str, JsonValue]
+    litellm_params: dict[str, JsonValue]
+    headers: dict[str, str]
+    encoding: str
+    acompletion: bool
+    model_response: ModelResponse
+    logging_obj: PostRecorder
+    timeout: int
+    custom_prompt_dict: NotRequired[dict[str, JsonValue]]
+    stream: NotRequired[bool]
+    client: NotRequired[HTTPHandler | None]
+    shared_session: NotRequired[str | None]
+    print_verbose: NotRequired[Callable[[str], None]]
+    logger_fn: NotRequired[None]
+
+
+@dataclass
+class Context:
+    acompletion: bool
+    api_base: str | None
+    api_key: str | None
+    custom_prompt_dict: dict[str, JsonValue]
+    headers: dict[str, str]
+    litellm_params: dict[str, JsonValue]
+    logging: PostRecorder
+    messages: list[dict[str, JsonValue]]
+    model: str
+    model_response: ModelResponse
+    optional_params: dict[str, JsonValue]
+    shared_session: str | None
+    stream: bool
+    timeout: int
+    client: HTTPHandler | None
+    custom_llm_provider: str
+    logger_fn: None

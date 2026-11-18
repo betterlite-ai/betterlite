@@ -19,16 +19,15 @@ fn helper_seeds_select_anthropic_provider() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no anthropic_provider seeds");
-    for path in seeds {
+    assert!(seeds.iter().all(|path| {
         let case: HelperCase =
-            serde_saphyr::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        validate_helper(&path, &case).unwrap();
-        assert_eq!(case.call.operation, "anthropic_provider");
-        assert!(
-            case.calls
+            serde_saphyr::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        validate_helper(path, &case).unwrap();
+        case.call.operation == "anthropic_provider"
+            && case
+                .calls
                 .iter()
                 .all(|call| call.operation == "anthropic_provider")
-        );
-        run_case(&[crate::GROUP], &case, false).unwrap();
-    }
+            && run_case(&[crate::GROUP], &case, false).is_ok()
+    }));
 }

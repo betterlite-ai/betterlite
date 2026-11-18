@@ -1,10 +1,12 @@
 from typing import Final, TypedDict
 
+from litellm.types.utils import LiteLLMBatch
 from pydantic import JsonValue, TypeAdapter
 
 import anthropic_batches
 import anthropic_count_tokens
 import anthropic_files
+
 from .types import Input, Observation, Recorded
 
 JSON: Final = TypeAdapter(JsonValue)
@@ -30,15 +32,15 @@ class CountOutput(TypedDict):
 
 
 def count(supplied: Input) -> Observation:
-    payload = TypeAdapter(dict[str, JsonValue]).validate_python({
+    payload: dict[str, JsonValue] = {
         "function": "handle", "cases": [{
-            "model": supplied["model"], "messages": supplied["messages"],
+            "model": supplied["model"], "messages": JSON.validate_python(supplied["messages"]),
             "api_key": supplied["api_key"], "api_base": supplied["api_base"],
-            "system": supplied["system"], "tools": supplied["tools"],
+            "system": supplied["system"], "tools": JSON.validate_python(supplied["tools"]),
             "optional_params": supplied["optional_params"],
             "reply": {"body": supplied["response"], "status": 200},
         }],
-    })
+    }
     answer = TypeAdapter(CountOutput).validate_python(anthropic_count_tokens.run(payload))
     call = answer["calls"][0]
     request = call["request"]
@@ -77,7 +79,7 @@ class Batch(TypedDict):
 
 class BatchScenario(TypedDict):
     requests: list[BatchRequest]
-    batch: Batch
+    batch: LiteLLMBatch
 
 
 class BatchOutput(TypedDict):
@@ -99,6 +101,7 @@ def batch(supplied: Input) -> Observation:
         }],
     }}))
     scenario = answer["scenarios"][0]
+    result = TypeAdapter(Batch).validate_json(scenario["batch"].model_dump_json())
     request = scenario["requests"][0]
     headers = request["headers"]
     headers[request["auth_header"]] = "matched"
@@ -107,7 +110,7 @@ def batch(supplied: Input) -> Observation:
         "query": [], "headers": headers, "body": None,
     }
     return {
-        "result": JSON.validate_python(scenario["batch"]), "post_call": False,
+        "result": JSON.validate_python(result), "post_call": False,
         "post_matches": True, "request": observed,
     }
 

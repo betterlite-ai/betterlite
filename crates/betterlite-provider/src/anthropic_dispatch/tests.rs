@@ -69,7 +69,8 @@ async fn anthropic_provider_secret_safe_failure() {
     case.call.anthropic_provider.inputs[0].failure = Some(503);
     let globals = super::base::Globals {
         api_key: case.call.anthropic_provider.inputs[0].api_key.clone(),
-        ..super::base::Globals::default()
+        api_base: None,
+        anthropic_key: None,
     };
     assert!(!format!("{globals:?}").contains("sk-oracle-explicit"));
     let result = execute(&case.call.anthropic_provider).await.unwrap();
