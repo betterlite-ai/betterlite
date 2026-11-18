@@ -205,13 +205,7 @@ tests:
 
   - it: annotates the pod with the checksum of the created ConfigMap
     template: deployment.yaml
-    set:
-      fullnameOverride: checksum-test
-      proxy_config:
-        model_list:
-          - model_name: pinned-model
-            litellm_params: { model: openai/pinned, api_key: pinned-key }
-        general_settings: { master_key: os.environ/PROXY_MASTER_KEY }
+    set: { fullnameOverride: checksum-test, proxy_config: { model_list: [{ model_name: pinned-model, litellm_params: { model: openai/pinned, api_key: pinned-key } }], general_settings: { master_key: os.environ/PROXY_MASTER_KEY } } }
     asserts:
       - equal: { path: 'spec.template.metadata.annotations["checksum/config"]', value: 34b3bff4787e71384dfae8fcff91626ff86c9f5fdbcb776151022539bed59b53 }
 
@@ -385,19 +379,10 @@ tests:
 
   - it: orders DATABASE_READER_HOST before the read-replica URL
     template: deployment.yaml
-    set:
-      db:
-        deployStandalone: false
-        useExisting: true
-        readReplicaUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)"
-        secret: { endpointKey: host, readReplicaEndpointKey: reader-host }
+    set: { db: { deployStandalone: false, useExisting: true, readReplicaUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)", secret: { endpointKey: host, readReplicaEndpointKey: reader-host } } }
     asserts:
-      - equal:
-          path: 'spec.template.spec.containers[0].env[7]'
-          value: { name: DATABASE_READER_HOST, valueFrom: { secretKeyRef: { name: postgres, key: reader-host } } }
-      - equal:
-          path: 'spec.template.spec.containers[0].env[8]'
-          value: { name: DATABASE_URL_READ_REPLICA, value: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)" }
+      - equal: { path: 'spec.template.spec.containers[0].env[7]', value: { name: DATABASE_READER_HOST, valueFrom: { secretKeyRef: { name: postgres, key: reader-host } } } }
+      - equal: { path: 'spec.template.spec.containers[0].env[8]', value: { name: DATABASE_URL_READ_REPLICA, value: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)" } }
 
   - it: leaves the read-replica environment out without a replica URL
     template: deployment.yaml
@@ -408,17 +393,11 @@ tests:
 
   - it: lets a read-replica URL secret replace the endpoint-key host
     template: deployment.yaml
-    set:
-      db:
-        deployStandalone: false
-        useExisting: true
-        readReplicaUrl: postgresql://fallback
-        secret: { readReplicaEndpointKey: reader-host, readReplicaUrlKey: reader-url }
+    set: { db: { deployStandalone: false, useExisting: true, readReplicaUrl: postgresql://fallback, secret: { readReplicaEndpointKey: reader-host, readReplicaUrlKey: reader-url } } }
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_READER_HOST }, any: true }
-      - equal:
-          path: 'spec.template.spec.containers[0].env[7]'
-          value: { name: DATABASE_URL_READ_REPLICA, valueFrom: { secretKeyRef: { name: postgres, key: reader-url } } }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_URL_READ_REPLICA, value: postgresql://fallback }, any: true }
+      - equal: { path: 'spec.template.spec.containers[0].env[7]', value: { name: DATABASE_URL_READ_REPLICA, valueFrom: { secretKeyRef: { name: postgres, key: reader-url } } } }
 
   - it: imports environmentSecrets and environmentConfigMaps
     template: deployment.yaml
@@ -457,15 +436,15 @@ tests:
 
   - it: prints the ingress URL in the notes
     template: NOTES.txt
-    set:
-      ingress:
-        enabled: true
-        hosts:
-          - host: gateway.example.com
-            paths:
-              - { path: /v1, pathType: Prefix }
+    set: { ingress: { enabled: true, hosts: [{ host: gateway.example.com, paths: [{ path: /v1, pathType: Prefix }] }] } }
     asserts:
       - matchRegex: { path: raw, pattern: 'http://gateway\.example\.com/v1' }
+
+  - it: prints the https ingress URL in the notes
+    template: NOTES.txt
+    set: { ingress: { enabled: true, tls: [{ secretName: gateway-tls }], hosts: [{ host: gateway.example.com, paths: [{ path: /v1, pathType: Prefix }] }] } }
+    asserts:
+      - matchRegex: { path: raw, pattern: 'https://gateway\.example\.com/v1' }
 
   - it: prints the NodePort commands in the notes
     template: NOTES.txt
