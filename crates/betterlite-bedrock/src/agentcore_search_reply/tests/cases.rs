@@ -132,6 +132,15 @@ fn search_result_fields() {
 
     assert_eq!(response.results[4].title, "");
     assert_eq!(response.results[4].snippet, "fallback snippet");
+
+    let precedence = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"p\",\"text\":\"from text\",\"snippet\":\"from snippet\",\"publishedDate\":\"2024-01-01\",\"date\":\"2024-02-02\"}]"}]}}"#;
+    let precedence_response = decode(precedence, 200).unwrap();
+    assert_eq!(precedence_response.results.len(), 1);
+    assert_eq!(precedence_response.results[0].snippet, "from text");
+    assert_eq!(
+        precedence_response.results[0].date.as_deref(),
+        Some("2024-01-01")
+    );
 }
 
 fn mcp_sse_results() {
@@ -205,6 +214,25 @@ data: {"jsonrpc":"2.0","method":"notifications/message"}
     let crlf = "data: {\"result\":{\"structuredContent\":[{\"title\":\"crlf\"}]}}\r\n\r\n";
     assert_eq!(titles(&decode(crlf, 200).unwrap()), vec!["crlf"]);
 
+    let error_first = r#"data: {"error":{}}
+
+data: {"result":{"structuredContent":[{"title":"later"}]}}
+
+"#;
+    let error_first_failure = decode(error_first, 200).unwrap_err();
+    assert_eq!(provider_status(&error_first_failure), 502);
+    assert_eq!(
+        provider_message(&error_first_failure),
+        "AgentCore gateway MCP error: {}"
+    );
+
+    let null_error_first = r#"data: {"error":null}
+
+data: {"result":{"structuredContent":[{"title":"later"}]}}
+
+"#;
+    assert!(decode(null_error_first, 200).unwrap().results.is_empty());
+
     for boundary in [
         '\u{0b}', '\u{0c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
     ] {
@@ -230,26 +258,26 @@ fn mcp_sse_no_frame() {
     );
 
     let long = format!("data: {}", "x".repeat(300));
-    let error = decode(&long, 500).unwrap_err();
-    assert_eq!(provider_status(&error), 502);
+    let long_error = decode(&long, 500).unwrap_err();
+    assert_eq!(provider_status(&long_error), 502);
     let expected: String = long.chars().take(200).collect();
     assert_eq!(
-        provider_message(&error),
+        provider_message(&long_error),
         format!("AgentCore gateway returned SSE without a JSON data frame: {expected}")
     );
 
     let exactly = format!("data: {}", "y".repeat(194));
-    let error = decode(&exactly, 200).unwrap_err();
+    let exactly_error = decode(&exactly, 200).unwrap_err();
     assert_eq!(
-        provider_message(&error),
+        provider_message(&exactly_error),
         format!("AgentCore gateway returned SSE without a JSON data frame: {exactly}")
     );
 
     let over = format!("data: {}", "y".repeat(195));
-    let error = decode(&over, 200).unwrap_err();
+    let over_error = decode(&over, 200).unwrap_err();
     let cut: String = over.chars().take(200).collect();
     assert_eq!(
-        provider_message(&error),
+        provider_message(&over_error),
         format!("AgentCore gateway returned SSE without a JSON data frame: {cut}")
     );
 
@@ -295,11 +323,15 @@ fn mcp_error_precedence() {
 
     let tool_error =
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"no\"}]"}],"isError":true}}"#;
-    let error = decode(tool_error, 200).unwrap_err();
-    assert_eq!(provider_status(&error), 502);
-    assert_eq!(error.status(), Some(502));
+    let in_band_error = decode(tool_error, 200).unwrap_err();
+    assert_eq!(provider_status(&in_band_error), 502);
+    assert_eq!(in_band_error.status(), Some(502));
     assert_eq!(
-        provider_message(&error),
+        provider_headers(&in_band_error),
+        Some(&ErrorHeaders::Http(headers()))
+    );
+    assert_eq!(
+        provider_message(&in_band_error),
         "AgentCore web search tool error: [{\"title\":\"no\"}]"
     );
 
@@ -415,9 +447,9 @@ fn agentcore_search_reply_error() {
     assert!(matches!(&error, SearchReplyError::Json { .. }));
     assert_eq!(error.status(), None);
 
-    let error = decode(truncated, 500).unwrap_err();
-    assert!(matches!(&error, SearchReplyError::Json { .. }));
-    assert_eq!(error.status(), None);
+    let second_error = decode(truncated, 500).unwrap_err();
+    assert!(matches!(&second_error, SearchReplyError::Json { .. }));
+    assert_eq!(second_error.status(), None);
 
     let not_object = decode("7", 200).unwrap_err();
     assert!(matches!(&not_object, SearchReplyError::NotObject));
