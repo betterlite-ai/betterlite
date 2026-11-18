@@ -1,6 +1,6 @@
 use super::fakes::{
-    DeprecatedStep, FullJitter, NoopPause, RecordedQuery, RecordedReconnect, RecordingDiagnostics,
-    RecordingHook, RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
+    FullJitter, NoopPause, RecordedQuery, RecordedReconnect, RecordingDiagnostics, RecordingHook,
+    RecordingSink, ScriptedDatabase, ScriptedReconnect, ScriptedStep, StepClock,
 };
 use super::trace::Trace;
 use super::{DeprecatedFields, Fault, Input, QueryType, ReconnectStep, Step};
@@ -19,7 +19,6 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use tokio::runtime::Builder;
@@ -55,8 +54,8 @@ impl ServiceState {
         let trace = Trace::default();
         Ok(Self {
             database: ScriptedDatabase::new(
-                row_steps(&input.rows)?,
-                deprecated_steps(&input.deprecated)?,
+                scripted_steps(&input.rows, |data| Ok(JsonData::Object(data.clone())))?,
+                scripted_steps(&input.deprecated, deprecated_token)?,
             ),
             reconnect: ScriptedReconnect::new(reconnect_steps(&input.reconnects)),
             sink: Arc::new(RecordingSink),
@@ -114,28 +113,19 @@ fn wall_clock(now: &str) -> Result<DateTime<Utc>, Box<HelperError>> {
         .or_value_error()?
         .with_timezone(&Utc))
 }
-fn row_steps(
-    rows: &[Option<Step<BTreeMap<String, JsonData>>>],
-) -> Result<Vec<RowStep>, Box<HelperError>> {
-    rows.iter()
-        .map(|step| match step {
+fn scripted_steps<T, U>(
+    steps: &[Option<Step<T>>],
+    convert: fn(&T) -> Result<U, Box<HelperError>>,
+) -> Result<Vec<ScriptedStep<U>>, Box<HelperError>> {
+    let mut scripted = Vec::with_capacity(steps.len());
+    for step in steps {
+        scripted.push(match step {
             None => Ok(Ok(None)),
             Some(Step::Failure { error }) => Ok(Err(DatabaseFailure::from(database_fault(error)?))),
-            Some(Step::Data { data }) => Ok(Ok(Some(JsonData::Object(data.clone())))),
-        })
-        .collect()
-}
-fn deprecated_steps(
-    steps: &[Option<Step<DeprecatedFields>>],
-) -> Result<Vec<DeprecatedStep>, Box<HelperError>> {
-    steps
-        .iter()
-        .map(|step| match step {
-            None => Ok(Ok(None)),
-            Some(Step::Failure { error }) => Ok(Err(DatabaseFailure::from(database_fault(error)?))),
-            Some(Step::Data { data }) => Ok(Ok(Some(deprecated_token(data)?))),
-        })
-        .collect()
+            Some(Step::Data { data }) => Ok(Ok(Some(convert(data)?))),
+        });
+    }
+    Ok(scripted)
 }
 fn deprecated_token(data: &DeprecatedFields) -> Result<DeprecatedToken, Box<HelperError>> {
     let revoke_at = DateTime::from_timestamp(data.revoke_at_seconds, 0)

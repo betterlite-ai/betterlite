@@ -143,8 +143,9 @@ pub(crate) struct RecordedQuery {
     pub(crate) now_seconds: Option<i64>,
 }
 
-pub(crate) type RowStep = Result<Option<JsonData>, DatabaseFailure>;
-pub(crate) type DeprecatedStep = Result<Option<DeprecatedToken>, DatabaseFailure>;
+pub(crate) type ScriptedStep<T> = Result<Option<T>, DatabaseFailure>;
+pub(crate) type RowStep = ScriptedStep<JsonData>;
+pub(crate) type DeprecatedStep = ScriptedStep<DeprecatedToken>;
 
 pub(crate) struct ScriptedDatabase {
     rows: Mutex<VecDeque<RowStep>>,
@@ -187,20 +188,18 @@ impl ScriptedDatabase {
     }
 }
 
-fn scripted_step<T>(steps: &Mutex<VecDeque<T>>, fallback: T) -> T {
-    let mut queue = steps.lock().unwrap_or_else(PoisonError::into_inner);
-    queue.pop_front().unwrap_or(fallback)
+fn take_step<T>(queue: &Mutex<VecDeque<T>>) -> Option<T> {
+    queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop_front()
 }
 
 impl KeyReadDatabase for ScriptedDatabase {
-    fn read_row<'lookup>(
-        &'lookup self,
-        hash: &'lookup KeyHash,
-        use_writer: bool,
-    ) -> RowFuture<'lookup> {
+    fn read_row(&self, hash: &KeyHash, use_writer: bool) -> RowFuture<'_> {
         self.record_query(COMBINED_VIEW_TABLE, hash, use_writer, None);
-        let next: RowStep = scripted_step(&self.rows, Ok(None));
-        Box::pin(async move { next })
+        let row = take_step(&self.rows).unwrap_or(Ok(None));
+        Box::pin(async move { row })
     }
 
     fn deprecated_row<'lookup>(
@@ -215,11 +214,10 @@ impl KeyReadDatabase for ScriptedDatabase {
             use_writer,
             Some(now.timestamp()),
         );
-        let next: DeprecatedStep = scripted_step(&self.deprecated, Ok(None));
         // the SQL keeps only rows whose revoke_at is still ahead of the lookup's now
-        let next = match next {
-            Ok(Some(row)) if row.revoke_at <= now => Ok(None),
-            other => other,
+        let next = match take_step(&self.deprecated) {
+            Some(Ok(Some(row))) if row.revoke_at <= now => Ok(None),
+            other => other.unwrap_or(Ok(None)),
         };
         Box::pin(async move { next })
     }
