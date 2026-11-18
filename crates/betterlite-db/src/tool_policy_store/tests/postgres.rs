@@ -431,6 +431,25 @@ async fn blocked_list_writes_report_a_failed_update() {
 }
 
 #[tokio::test]
+async fn blocked_list_read_failures_report_false_and_log() {
+    let db = Db::start().await;
+    db.batch(
+        "ALTER TABLE \"LiteLLM_ObjectPermissionTable\" RENAME TO \"LiteLLM_ObjectPermissionTable_moved\"",
+    )
+    .await;
+    let (logs, guard) = captured_logs();
+    let client = db.client().await;
+    assert!(!add_tool_to_object_permission_blocked(Some(&client), "perm-1", "search").await);
+    assert!(!remove_tool_from_object_permission_blocked(Some(&client), "perm-1", "search").await);
+    drop(guard);
+    drop(client);
+    let text = logs.text();
+    assert!(text.contains("add_tool_to_object_permission_blocked error"));
+    assert!(text.contains("remove_tool_from_object_permission_blocked error"));
+    db.close().await;
+}
+
+#[tokio::test]
 async fn refresh_loads_tool_maps_and_permissions() {
     let db = Db::start().await;
     let client = db.client().await;
