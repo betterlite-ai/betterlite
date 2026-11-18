@@ -1,19 +1,20 @@
 import asyncio
+import warnings
 from typing import Final, Literal
 
 from litellm.router import Router
-from litellm.router_strategy.complexity_router.complexity_router import ComplexityRouter
-from litellm.router_strategy.complexity_router.config import (
-    ComplexityRouterConfig,
-    ComplexityTier,
-    custom_pattern_work,
-)
+from litellm.router_strategy import complexity_router
 from pydantic import Field, TypeAdapter, ValidationError
 from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-_TIER: Final = TypeAdapter(ComplexityTier)
+_TIER: Final = TypeAdapter(complexity_router.ComplexityTier)
+_CONFIG: Final = TypeAdapter(complexity_router.ComplexityRouterConfig)
+# the package exports the model and its dimension type; a validated instance lends the dimension class
+_DIMENSION: Final = _CONFIG.validate_python(
+    {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": ["a"]}]}
+).custom_dimensions[0]
 
 
 class DimensionInput(TypedDict, total=False):
@@ -45,16 +46,37 @@ class Output(Strict):
     cause: str | None = None
 
 
+def _rejection(error: ValidationError, pattern: str) -> str:
+    message = error.errors()[0]["msg"]
+    return message.removeprefix(f"Value error, custom dimension pattern {pattern!r} ")
+
+
+def _outcome(pattern: str) -> int | str:
+    # model_construct skips the field bounds, so the pattern reaches the same cost walk validation uses
+    work = _DIMENSION.model_construct(
+        name="probe", weight=1.0, patterns=(pattern,), keywords=(), scoring_mode="binary"
+    ).pattern_work()
+    if work:
+        return work
+    # the cost walk already ran above; asking validation again for its refusal must not repeat its warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            _ = _CONFIG.validate_python(
+                {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": [pattern]}]}
+            )
+        except ValidationError as error:
+            return _rejection(error, pattern)
+    raise ProbeError("invalid_request", f"pattern {pattern!r} reported neither work nor a refusal")
+
+
 def _entry(pattern: str) -> Entry:
-    try:
-        work = custom_pattern_work(pattern)
-    except ValueError as error:
-        raise ProbeError("invalid_request", str(error)) from error
-    match work:
+    outcome = _outcome(pattern)
+    match outcome:
         case str():
-            return Entry(message=work)
+            return Entry(message=outcome)
         case int():
-            return Entry(work=work)
+            return Entry(work=outcome)
 
 
 class CustomDimensions(Operation):
@@ -71,13 +93,13 @@ class CustomDimensions(Operation):
         raw: ConfigInput = {} if self.config is None else self.config
         if self.function == "validate":
             try:
-                configured = ComplexityRouterConfig.model_validate(raw)
+                configured = _CONFIG.validate_python(raw)
             except ValidationError:
                 return Output(accepted=False)
             work = sum(dimension.pattern_work() for dimension in configured.custom_dimensions)
             return Output(accepted=True, work=work)
         try:
-            router = ComplexityRouter(
+            router = complexity_router.ComplexityRouter(
                 model_name="probe",
                 litellm_router_instance=Router(),
                 complexity_router_config=raw,
