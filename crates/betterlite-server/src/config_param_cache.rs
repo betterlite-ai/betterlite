@@ -5,6 +5,8 @@ mod tests;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::error::Error;
+use std::future::Future;
+use std::pin::Pin;
 
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::dual_cache::{CacheOptions, DualCache, DualCacheError};
@@ -77,9 +79,14 @@ where
     }
 }
 
+pub type ConfigChangeFuture<'call> = Pin<Box<dyn Future<Output = ()> + Send + 'call>>;
+
 // LiteLLM's publish_config_param_change is best effort and returns nothing, so a Redis outage never fails a write
 pub trait ConfigChangePublisher: Send + Sync {
-    async fn publish_param_change(&self, param_name: &str);
+    fn publish_param_change<'call>(
+        &'call self,
+        param_name: &'call str,
+    ) -> ConfigChangeFuture<'call>;
 }
 
 pub struct ConfigParamCache<'cache, Memory: MemoryCacheOps> {

@@ -10,7 +10,8 @@ use betterlite_models::decisions::Json;
 use super::support::{FakeStore, Harness};
 use crate::config_param_cache::store::ConfigParamCacheInvalidator;
 use crate::config_param_cache::{
-    CONFIG_CACHE_PREFIX, ConfigChangePublisher, ConfigParamCacheError, MISS_MARKER,
+    CONFIG_CACHE_PREFIX, ConfigChangeFuture, ConfigChangePublisher, ConfigParamCacheError,
+    MISS_MARKER,
 };
 
 struct OrderPublisher<'view> {
@@ -20,12 +21,17 @@ struct OrderPublisher<'view> {
 }
 
 impl ConfigChangePublisher for OrderPublisher<'_> {
-    async fn publish_param_change(&self, param_name: &str) {
-        let present = self.cache.async_get_cache(&self.key, true).await.is_some();
-        self.seen
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push((param_name.to_owned(), present));
+    fn publish_param_change<'call>(
+        &'call self,
+        param_name: &'call str,
+    ) -> ConfigChangeFuture<'call> {
+        Box::pin(async move {
+            let present = self.cache.async_get_cache(&self.key, true).await.is_some();
+            self.seen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((param_name.to_owned(), present));
+        })
     }
 }
 
