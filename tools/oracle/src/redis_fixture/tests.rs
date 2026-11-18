@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_db::queues::pod_lock::cache::RedisLockCache;
+use betterlite_db::queues::pod_lock::owner::PodId;
 use betterlite_db::queues::pod_lock::{
     PodLockCallType, PodLockEvent, PodLockEventSink, PodLockManager,
 };
@@ -22,11 +23,18 @@ use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use chrono::Utc;
 use redis::Value;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use super::OracleRedis;
 
 const LEASE_KEY: &str = "cronjob_lock:job";
+
+async fn start_fixture() -> OracleRedis {
+    let mut startup = JoinSet::new();
+    startup.spawn_blocking(OracleRedis::start);
+    startup.join_next().await.unwrap().unwrap().unwrap()
+}
 
 #[derive(Default)]
 struct RecordingEvents(Mutex<Vec<PodLockEvent>>);
@@ -60,20 +68,20 @@ fn manager(
         })),
         60,
         sink,
-        Uuid::new_v4(),
+        PodId::try_from(Uuid::new_v4()).unwrap(),
     )
 }
 
 #[tokio::test]
 async fn a_first_acquire_stores_the_quoted_owner_with_an_expiry() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let events = Arc::new(RecordingEvents::default());
     let holder = manager(&cache, &events);
     assert_eq!(holder.acquire_lock("job", None, true).await, Some(true));
     assert_eq!(
         cache.async_get_cache(LEASE_KEY).await.unwrap(),
-        Some(CachedValue::Text(holder.pod_id.clone()))
+        Some(CachedValue::Text(holder.pod_id.to_string()))
     );
     assert!(
         cache
@@ -87,7 +95,7 @@ async fn a_first_acquire_stores_the_quoted_owner_with_an_expiry() {
 
 #[tokio::test]
 async fn another_pod_is_denied_while_the_lease_lives() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let holder_events = Arc::new(RecordingEvents::default());
     let holder = manager(&cache, &holder_events);
@@ -98,13 +106,56 @@ async fn another_pod_is_denied_while_the_lease_lives() {
     assert!(other_events.events().is_empty());
     assert_eq!(
         cache.async_get_cache(LEASE_KEY).await.unwrap(),
-        Some(CachedValue::Text(holder.pod_id.clone()))
+        Some(CachedValue::Text(holder.pod_id.to_string()))
+    );
+}
+
+#[tokio::test]
+async fn simultaneous_nx_acquisitions_have_one_owner() {
+    let fixture = start_fixture().await;
+    let cache = fixture.cache(None).await.unwrap();
+    let first = manager(&cache, &Arc::new(RecordingEvents::default()));
+    let second = manager(&cache, &Arc::new(RecordingEvents::default()));
+    let (first_result, second_result) = tokio::join!(
+        first.acquire_lock("job", None, true),
+        second.acquire_lock("job", None, true),
+    );
+    assert_ne!(first_result, second_result);
+    assert!(matches!(first_result, Some(true) | Some(false)));
+    assert!(matches!(second_result, Some(true) | Some(false)));
+    let owner = if first_result == Some(true) {
+        first.pod_id
+    } else {
+        second.pod_id
+    };
+    assert_eq!(
+        cache.async_get_cache(LEASE_KEY).await.unwrap(),
+        Some(CachedValue::Text(owner.to_string()))
+    );
+}
+
+#[tokio::test]
+async fn redis_stores_the_json_encoded_owner() {
+    let fixture = start_fixture().await;
+    let cache = fixture.cache(None).await.unwrap();
+    let holder = manager(&cache, &Arc::new(RecordingEvents::default()));
+    assert_eq!(holder.acquire_lock("job", None, true).await, Some(true));
+    let script = cache
+        .counters
+        .async_register_script("return redis.call('get', KEYS[1])");
+    let stored = cache
+        .run_script(&script, &[LEASE_KEY.to_owned()], &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        stored,
+        Value::BulkString(serde_json::to_vec(holder.pod_id.as_ref()).unwrap())
     );
 }
 
 #[tokio::test]
 async fn a_reentrant_acquire_keeps_the_original_expiry_and_emits_once() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let events = Arc::new(RecordingEvents::default());
     let holder = manager(&cache, &events);
@@ -131,7 +182,7 @@ async fn a_reentrant_acquire_keeps_the_original_expiry_and_emits_once() {
 
 #[tokio::test]
 async fn an_expired_lease_is_reacquired_by_another_pod() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let first_events = Arc::new(RecordingEvents::default());
     let first = manager(&cache, &first_events);
@@ -143,14 +194,14 @@ async fn an_expired_lease_is_reacquired_by_another_pod() {
     assert_eq!(second.acquire_lock("job", None, true).await, Some(true));
     assert_eq!(
         cache.async_get_cache(LEASE_KEY).await.unwrap(),
-        Some(CachedValue::Text(second.pod_id.clone()))
+        Some(CachedValue::Text(second.pod_id.to_string()))
     );
     assert!(second_events.events().is_empty());
 }
 
 #[tokio::test]
 async fn a_stale_owner_cannot_release_a_reacquired_lease() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let stale_events = Arc::new(RecordingEvents::default());
     let stale = manager(&cache, &stale_events);
@@ -163,7 +214,7 @@ async fn a_stale_owner_cannot_release_a_reacquired_lease() {
     assert!(stale_events.events().is_empty());
     assert_eq!(
         cache.async_get_cache(LEASE_KEY).await.unwrap(),
-        Some(CachedValue::Text(live.pod_id.clone()))
+        Some(CachedValue::Text(live.pod_id.to_string()))
     );
     assert_eq!(live.acquire_lock("job", None, true).await, Some(true));
     assert_eq!(
@@ -179,7 +230,7 @@ async fn a_stale_owner_cannot_release_a_reacquired_lease() {
 
 #[tokio::test]
 async fn the_fixture_runs_the_loaded_source_not_a_rust_copy() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let events = Arc::new(RecordingEvents::default());
     let holder = manager(&cache, &events);
@@ -198,7 +249,7 @@ async fn the_fixture_runs_the_loaded_source_not_a_rust_copy() {
 
 #[tokio::test]
 async fn release_deletes_the_lease_and_emits_one_event() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let events = Arc::new(RecordingEvents::default());
     let holder = manager(&cache, &events);
@@ -328,7 +379,7 @@ fn assert_lease_event(event: &ServiceEvent, call_type: &str, labels: &str, gauge
 
 #[tokio::test]
 async fn lease_events_reach_the_owned_logging_delivery() {
-    let fixture = OracleRedis::start().unwrap();
+    let fixture = start_fixture().await;
     let cache = fixture.cache(None).await.unwrap();
     let delivery = lease_delivery();
     let manager = PodLockManager::new(
@@ -337,7 +388,7 @@ async fn lease_events_reach_the_owned_logging_delivery() {
         })),
         60,
         Arc::clone(&delivery.sink),
-        Uuid::new_v4(),
+        PodId::try_from(Uuid::new_v4()).unwrap(),
     );
     assert_eq!(
         manager.acquire_lock("spend:reset", Some(120), true).await,
@@ -359,16 +410,22 @@ async fn lease_events_reach_the_owned_logging_delivery() {
 
 #[tokio::test]
 async fn shutdown_stops_serving_and_removes_its_directory() {
-    let mut fixture = OracleRedis::start().unwrap();
+    let mut fixture = start_fixture().await;
     let address = fixture.address;
     let directory = fixture.directory.as_ref().unwrap().path().to_path_buf();
+    let pid = fixture.server.id();
+    assert_ne!(pid, std::process::id());
     {
         let cache = fixture.cache(None).await.unwrap();
         assert!(cache.admin.ping(None).await.unwrap());
     }
-    fixture.shutdown();
+    fixture.shutdown().unwrap();
+    assert!(fixture.server.try_wait().unwrap().is_some());
+    #[cfg(target_os = "linux")]
+    assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
     assert!(!directory.exists());
     assert!(TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err());
+    fixture.shutdown().unwrap();
 }
 
 #[test]
@@ -376,7 +433,11 @@ fn drop_stops_serving_and_removes_its_directory() {
     let fixture = OracleRedis::start().unwrap();
     let address = fixture.address;
     let directory = fixture.directory.as_ref().unwrap().path().to_path_buf();
+    let pid = fixture.server.id();
+    assert_ne!(pid, std::process::id());
     drop(fixture);
+    #[cfg(target_os = "linux")]
+    assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
     assert!(!directory.exists());
     assert!(TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err());
 }

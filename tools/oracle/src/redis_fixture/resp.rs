@@ -37,7 +37,7 @@ struct Shared {
     served: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
-// No redis-server binary exists in the gate image, so the oracle's Redis listens in process on a loopback port.
+// Polling scenarios retain their limited RESP fake; lease tests use the owned redis-server process.
 pub(crate) struct RespServer {
     pub(crate) addr: SocketAddr,
     pub(crate) unsupported: Arc<Mutex<Option<String>>>,

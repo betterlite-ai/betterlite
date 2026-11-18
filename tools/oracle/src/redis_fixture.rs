@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::net::{SocketAddr, TcpListener};
+use std::process::{Child, ExitStatus};
+use std::sync::Arc;
 
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
@@ -14,15 +15,13 @@ use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::TempDir;
+use uuid::Uuid;
 
-pub(crate) mod lease;
+mod process;
 pub(crate) mod resp;
 mod tests;
-
-use self::lease::LeaseCommands;
-use self::resp::{CommandHandler, Entries, RespServer};
 
 const DEFAULT_TTL: i64 = 60;
 
@@ -30,34 +29,48 @@ const DEFAULT_TTL: i64 = 60;
 pub enum RedisFixtureError {
     #[error("cannot create the fixture directory")]
     Directory(#[source] std::io::Error),
-    #[error("cannot start the in-process Redis fixture")]
+    #[error("cannot start redis-server")]
     Start(#[source] std::io::Error),
+    #[error("cannot stop redis-server")]
+    Stop(#[source] std::io::Error),
+    #[error("redis-server exited before it became ready: {0}")]
+    Exited(ExitStatus),
+    #[error("redis-server did not answer PING before the readiness deadline")]
+    ReadinessTimeout,
+    #[error("cannot probe redis-server")]
+    Probe(#[from] redis::RedisError),
     #[error("cannot build the fixture cache")]
     Cache(#[source] RedisCacheError),
 }
 
-// An in-process Redis on a loopback port with a temporary directory of its own; the URI never leaves this module.
+// The random password and readiness PID check prevent a port allocation race from selecting another server.
 pub struct OracleRedis {
-    server: Option<RespServer>,
+    server: Child,
     address: SocketAddr,
     directory: Option<TempDir>,
+    password: SecretString,
 }
 
 impl OracleRedis {
     pub fn start() -> Result<Self, RedisFixtureError> {
         let directory = TempDir::new().map_err(RedisFixtureError::Directory)?;
-        let entries: Entries = Entries::default();
-        let handler: Arc<dyn CommandHandler> = Arc::new(LeaseCommands {
-            entries: Arc::clone(&entries),
-            scripts: Mutex::new(BTreeMap::new()),
-        });
-        let server = RespServer::start(handler).map_err(RedisFixtureError::Start)?;
-        let address = server.addr;
-        Ok(Self {
-            server: Some(server),
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(RedisFixtureError::Start)?;
+        let address = listener.local_addr().map_err(RedisFixtureError::Start)?;
+        let password = SecretString::from(Uuid::new_v4().to_string());
+        drop(listener);
+        let server = process::launch(directory.path(), address, &password)?;
+        let mut fixture = Self {
+            server,
             address,
             directory: Some(directory),
-        })
+            password,
+        };
+        let client = redis::Client::open(format!(
+            "redis://:{}@{address}/0",
+            fixture.password.expose_secret()
+        ))?;
+        process::wait_ready(&mut fixture.server, &client)?;
+        Ok(fixture)
     }
 
     pub async fn cache(
@@ -65,7 +78,7 @@ impl OracleRedis {
         namespace: Option<&str>,
     ) -> Result<Arc<RedisCache>, RedisFixtureError> {
         let options = RedisCacheOptions {
-            overrides: overrides(self.address),
+            overrides: overrides(self.address, &self.password),
             family: RedisCacheFamily::Standalone,
             namespace: namespace.map(str::to_owned),
             default_ttl: DEFAULT_TTL,
@@ -83,20 +96,34 @@ impl OracleRedis {
             .map_err(RedisFixtureError::Cache)
     }
 
-    pub fn shutdown(&mut self) {
-        let _server = self.server.take();
-        let _directory = self.directory.take();
+    pub fn shutdown(&mut self) -> Result<(), RedisFixtureError> {
+        if self
+            .server
+            .try_wait()
+            .map_err(RedisFixtureError::Stop)?
+            .is_none()
+        {
+            self.server.kill().map_err(RedisFixtureError::Stop)?;
+        }
+        self.server.wait().map_err(RedisFixtureError::Stop)?;
+        if let Some(directory) = self.directory.take() {
+            directory.close().map_err(RedisFixtureError::Directory)?;
+        }
+        Ok(())
     }
 }
 
-fn overrides(address: SocketAddr) -> RedisOverrides {
+fn overrides(address: SocketAddr, password: &SecretString) -> RedisOverrides {
     RedisOverrides {
         host: None,
         port: None,
         db: None,
         username: None,
         password: None,
-        url: Some(Some(SecretString::from(format!("redis://{address}/0")))),
+        url: Some(Some(SecretString::from(format!(
+            "redis://:{}@{address}/0",
+            password.expose_secret()
+        )))),
         ssl: None,
         socket_timeout: None,
         socket_connect_timeout: None,
@@ -126,7 +153,9 @@ fn overrides(address: SocketAddr) -> RedisOverrides {
 
 impl Drop for OracleRedis {
     fn drop(&mut self) {
-        self.shutdown();
+        if let Err(error) = self.shutdown() {
+            tracing::warn!(%error, "failed to clean up the Redis fixture");
+        }
     }
 }
 

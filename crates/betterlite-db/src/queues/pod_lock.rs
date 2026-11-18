@@ -7,9 +7,8 @@ use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use futures_util::future::BoxFuture;
 use num_traits::ToPrimitive as _;
-use uuid::Uuid;
 
-use self::owner::{PodOwnerError, decode_pod_owner, lease_key};
+use self::owner::{PodId, PodOwnerError, decode_pod_owner, lease_key};
 
 pub mod cache;
 pub mod owner;
@@ -119,7 +118,7 @@ enum Acquisition {
 }
 
 pub struct PodLockManager<C: LockCache> {
-    pub pod_id: String,
+    pub pod_id: PodId,
     pub cache: Option<Arc<C>>,
     pub default_ttl_seconds: i64,
     pub event_duration_seconds: f64,
@@ -134,10 +133,10 @@ impl<C: LockCache> PodLockManager<C> {
         cache: Option<Arc<C>>,
         default_ttl_seconds: i64,
         events: Arc<dyn PodLockEventSink>,
-        pod_id: Uuid,
+        pod_id: PodId,
     ) -> Self {
         Self {
-            pod_id: pod_id.to_string(),
+            pod_id,
             cache,
             default_ttl_seconds,
             event_duration_seconds: default_ttl_seconds.to_f64().unwrap_or_default(),
@@ -228,7 +227,7 @@ impl<C: LockCache> PodLockManager<C> {
             "Pod attempting to acquire Redis lock for cronjob_id"
         );
         if cache
-            .set_owner_if_absent(lock_key, &self.pod_id, lease_ttl)
+            .set_owner_if_absent(lock_key, self.pod_id.as_ref(), lease_ttl)
             .await?
         {
             return Ok(Acquisition::Fresh);
@@ -237,7 +236,7 @@ impl<C: LockCache> PodLockManager<C> {
             return Ok(Acquisition::Denied);
         };
         let owner = decode_pod_owner(&bytes)?;
-        if owner == self.pod_id && allow_reentrant {
+        if owner == self.pod_id.as_ref() && allow_reentrant {
             return Ok(Acquisition::Reentrant);
         }
         tracing::info!(
@@ -251,7 +250,7 @@ impl<C: LockCache> PodLockManager<C> {
 
     async fn compare_and_delete(&self, cache: &C, lock_key: &str) -> Result<bool, LockCacheError> {
         if let Some(script) = self.release_script(cache) {
-            match script.run(lock_key, &self.pod_id).await {
+            match script.run(lock_key, self.pod_id.as_ref()).await {
                 Ok(deleted) => return Ok(deleted),
                 Err(_script_error) => {
                     *self.script.lock().unwrap_or_else(PoisonError::into_inner) = None;
@@ -267,7 +266,7 @@ impl<C: LockCache> PodLockManager<C> {
             return Ok(false);
         };
         let owner = decode_pod_owner(&bytes)?;
-        if owner != self.pod_id {
+        if owner != self.pod_id.as_ref() {
             return Ok(false);
         }
         Ok(cache.delete(lock_key).await? == 1)

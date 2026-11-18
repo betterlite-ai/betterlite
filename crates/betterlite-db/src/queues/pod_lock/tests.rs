@@ -8,7 +8,7 @@ use futures_util::future::BoxFuture;
 use rstest::rstest;
 use uuid::Uuid;
 
-use super::owner::{decode_pod_owner, lease_key};
+use super::owner::{PodId, PodOwnerError, decode_pod_owner, lease_key};
 use super::{
     LockCache, LockCacheError, LockScript, NoPodLockEventSink, PodLockCallType, PodLockEvent,
     PodLockEventSink, PodLockManager,
@@ -229,13 +229,22 @@ impl RecordingEvents {
 
 fn build(cache: &Arc<FakeCache>, events: &Arc<RecordingEvents>) -> PodLockManager<FakeCache> {
     let sink: Arc<dyn PodLockEventSink> = Arc::<RecordingEvents>::clone(events);
-    PodLockManager::new(Some(Arc::clone(cache)), 60, sink, Uuid::new_v4())
+    PodLockManager::new(
+        Some(Arc::clone(cache)),
+        60,
+        sink,
+        PodId::try_from(Uuid::new_v4()).unwrap(),
+    )
 }
 
 #[tokio::test]
 async fn acquiring_without_a_cache_returns_none() {
-    let manager =
-        PodLockManager::<FakeCache>::new(None, 60, Arc::new(NoPodLockEventSink), Uuid::new_v4());
+    let manager = PodLockManager::<FakeCache>::new(
+        None,
+        60,
+        Arc::new(NoPodLockEventSink),
+        PodId::try_from(Uuid::new_v4()).unwrap(),
+    );
     assert_eq!(manager.acquire_lock("job", None, true).await, None);
     manager.release_lock("job").await;
 }
@@ -246,7 +255,7 @@ async fn a_fresh_set_acquires_without_an_event() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
-    assert_eq!(cache.stored_owners(), vec![manager.pod_id.clone()]);
+    assert_eq!(cache.stored_owners(), vec![manager.pod_id.to_string()]);
     assert_eq!(cache.set_ttls(), vec![60]);
     assert!(events.events().is_empty());
 }
@@ -274,7 +283,7 @@ async fn a_reentrant_acquire_succeeds_and_emits_the_acquired_gauge() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     cache.contend();
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
     assert_eq!(
         events.events(),
@@ -293,7 +302,7 @@ async fn a_reentrant_event_reports_the_default_ttl_for_a_custom_lease() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     cache.contend();
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     assert_eq!(
         manager.acquire_lock("job", Some(120), true).await,
         Some(true)
@@ -315,7 +324,7 @@ async fn reentrancy_can_be_disabled() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     cache.contend();
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     assert_eq!(manager.acquire_lock("job", None, false).await, Some(false));
     assert!(events.events().is_empty());
 }
@@ -411,7 +420,7 @@ async fn a_script_failure_clears_the_handle_warns_and_falls_back() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     cache.failing_script();
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     cache.delete_count(1);
     manager.release_lock("job").await;
     assert_eq!(cache.registrations(), 1);
@@ -439,7 +448,7 @@ async fn the_get_and_delete_fallback_cannot_be_atomic() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     // GET returns our owner, another pod's set lands before DEL, and the fallback deletes that fresh lease.
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     cache.delete_count(1);
     cache.reacquired_between_get_and_delete("another-pod");
     manager.release_lock("job").await;
@@ -473,7 +482,7 @@ async fn a_fallback_delete_that_removes_nothing_emits_nothing() {
     let cache = Arc::new(FakeCache::default());
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
-    cache.respond_with_owner(&manager.pod_id);
+    cache.respond_with_owner(manager.pod_id.as_ref());
     cache.delete_count(0);
     manager.release_lock("job").await;
     assert_eq!(cache.deletes(), 1);
@@ -497,14 +506,41 @@ async fn the_constructed_uuid_owns_every_acquire() {
     let owner = Uuid::new_v4();
     let cache = Arc::new(FakeCache::default());
     let sink: Arc<dyn PodLockEventSink> = Arc::new(NoPodLockEventSink);
-    let manager = PodLockManager::new(Some(Arc::clone(&cache)), 60, sink, owner);
-    assert_eq!(manager.pod_id, owner.to_string());
+    let manager = PodLockManager::new(
+        Some(Arc::clone(&cache)),
+        60,
+        sink,
+        PodId::try_from(owner).unwrap(),
+    );
+    assert_eq!(manager.pod_id.to_string(), owner.to_string());
     manager.acquire_lock("first", None, true).await;
     manager.acquire_lock("second", None, true).await;
     assert_eq!(
         cache.stored_owners(),
         vec![owner.to_string(), owner.to_string()]
     );
+}
+
+#[rstest]
+#[case::nil("00000000-0000-0000-0000-000000000000")]
+#[case::v1("67e55044-10b1-126f-9247-bb680e5fe0c8")]
+#[case::v3("67e55044-10b1-326f-9247-bb680e5fe0c8")]
+#[case::v5("67e55044-10b1-526f-9247-bb680e5fe0c8")]
+#[case::v7("67e55044-10b1-726f-9247-bb680e5fe0c8")]
+#[case::wrong_variant("67e55044-10b1-426f-7247-bb680e5fe0c8")]
+fn rejects_owners_that_are_not_v4(#[case] owner: &str) {
+    assert!(matches!(
+        PodId::try_from(Uuid::parse_str(owner).unwrap()),
+        Err(PodOwnerError::NotV4)
+    ));
+}
+
+#[test]
+fn accepts_and_formats_a_v4_owner() {
+    let text = "67e55044-10b1-426f-9247-bb680e5fe0c8";
+    let owner = PodId::try_from(Uuid::parse_str(text).unwrap()).unwrap();
+    assert_eq!(owner.as_ref(), text);
+    assert_eq!(owner.to_string(), text);
 }
 
 #[test]

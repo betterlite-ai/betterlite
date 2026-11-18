@@ -1,4 +1,7 @@
+use std::fmt::{self, Display, Formatter};
 use std::str::{self, Utf8Error};
+
+use uuid::{Uuid, Variant, Version};
 
 // PodLockManager._COMPARE_AND_DELETE_LOCK_SCRIPT: delete only when the stored JSON owner equals ours.
 pub const COMPARE_AND_DELETE_LOCK_SCRIPT: &str = r#"if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -19,6 +22,34 @@ pub fn lease_key(cronjob_id: &str) -> String {
 pub enum PodOwnerError {
     #[error("the cached pod owner is not valid UTF-8")]
     Utf8(#[from] Utf8Error),
+    #[error("the pod owner must be an RFC 4122 UUID v4")]
+    NotV4,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PodId(String);
+
+impl TryFrom<Uuid> for PodId {
+    type Error = PodOwnerError;
+
+    fn try_from(owner: Uuid) -> Result<Self, Self::Error> {
+        if owner.get_version() != Some(Version::Random) || owner.get_variant() != Variant::RFC4122 {
+            return Err(PodOwnerError::NotV4);
+        }
+        Ok(Self(owner.to_string()))
+    }
+}
+
+impl AsRef<str> for PodId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for PodId {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 // A cache returns bytes; a legacy cache stored the raw owner while B126 stores the JSON string, which the Redis adapter hands back unquoted.
