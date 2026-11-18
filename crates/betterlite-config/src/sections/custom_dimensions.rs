@@ -82,9 +82,7 @@ pub struct Checked {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DimensionProblem {
-    #[error(
-        "a custom dimension name must be 1 to 64 ASCII letters, digits or underscores and start with a letter"
-    )]
+    #[error("name needs a letter then ASCII letters, digits or underscores; max 64")]
     Name,
     #[error("a custom dimension weight must be finite, greater than 0 and at most 1")]
     Weight,
@@ -100,6 +98,16 @@ pub enum DimensionProblem {
     Pattern {
         pattern: String,
         problem: PatternProblem,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LoadError {
+    #[error("invalid custom dimension at {path}: {source}")]
+    Dimension {
+        path: String,
+        #[source]
+        source: DimensionProblem,
     },
 }
 
@@ -215,8 +223,7 @@ where
     for (position, raw) in configured.into_iter().enumerate() {
         let path = format!("model_list.{index}.{PATH_ROOT}.{position}");
         let config = raw.resolve(&path, lookup)?;
-        validate_dimension(&config)
-            .map_err(|_problem| ConfigError::InvalidScalar { path, value: false })?;
+        validate_dimension(&config).map_err(|source| LoadError::Dimension { path, source })?;
         dimensions.push(config);
     }
     Ok(dimensions)

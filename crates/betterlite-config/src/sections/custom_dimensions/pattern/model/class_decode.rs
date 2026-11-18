@@ -1,7 +1,7 @@
 use regex_syntax::ast;
 
 use super::super::PatternProblem;
-use super::{ClassItem, PyNode};
+use super::{ClassItem, PyNode, push_unique};
 
 pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternProblem> {
     let mut items = Vec::new();
@@ -10,7 +10,6 @@ pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternPro
         // a node, so a refusal earlier in the sequence still reports first
         ast::ClassSet::BinaryOp(_) => return Ok(PyNode::Unsupported),
     }
-    dedupe(&mut items);
     if let [ClassItem::Literal(character)] = items.as_slice() {
         if bracketed.negated {
             return Ok(PyNode::NotLiteral(*character));
@@ -25,40 +24,26 @@ pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternPro
 
 fn decode_item(item: &ast::ClassSetItem, items: &mut Vec<ClassItem>) -> Result<(), PatternProblem> {
     match item {
-        ast::ClassSetItem::Literal(literal) => {
-            items.push(ClassItem::Literal(literal.c));
-            Ok(())
-        }
+        ast::ClassSetItem::Literal(literal) => push_unique(items, ClassItem::Literal(literal.c)),
         ast::ClassSetItem::Range(range) => {
-            items.push(ClassItem::Range(range.start.c, range.end.c));
-            Ok(())
+            push_unique(items, ClassItem::Range(range.start.c, range.end.c));
         }
-        ast::ClassSetItem::Perl(perl) => {
-            items.push(ClassItem::Category {
+        ast::ClassSetItem::Perl(perl) => push_unique(
+            items,
+            ClassItem::Category {
                 negated: perl.negated,
                 kind: perl.kind.clone(),
-            });
-            Ok(())
-        }
+            },
+        ),
         ast::ClassSetItem::Union(union) => {
             for member in &union.items {
                 decode_item(member, items)?;
             }
-            Ok(())
         }
         ast::ClassSetItem::Empty(_)
         | ast::ClassSetItem::Ascii(_)
         | ast::ClassSetItem::Unicode(_)
-        | ast::ClassSetItem::Bracketed(_) => Err(PatternProblem::Unsupported),
+        | ast::ClassSetItem::Bracketed(_) => return Err(PatternProblem::Unsupported),
     }
-}
-
-fn dedupe(items: &mut Vec<ClassItem>) {
-    let mut unique: Vec<ClassItem> = Vec::with_capacity(items.len());
-    for item in items.drain(..) {
-        if !unique.contains(&item) {
-            unique.push(item);
-        }
-    }
-    *items = unique;
+    Ok(())
 }

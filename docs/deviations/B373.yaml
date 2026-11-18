@@ -30,4 +30,7 @@ deviations:
   - what: Python's inline ASCII flag (`(?a)`, `(?a:...)`, and a combined spec carrying it) is read and scored by LiteLLM, while betterlite refuses it as an unsupported regex construct.
     why: The Rust matcher has no ASCII mode to carry the flag into, and dropping it would silently widen `\w`, `\d`, `\s` and case folding to Unicode, so the construct is refused by name instead; the kept flags (`i`, `m`, `s`, `u`, `x`) are the ones the matcher reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: A non-multiline dollar assertion followed by a newline-consuming expression can lose a match. For pattern `a$\n` against `a\n`, LiteLLM selects REASONING at score 0.700000 with the domain signal, while betterlite selects SIMPLE at -0.100000 without it.
+    why: The reused regex matcher has no lookahead assertion for Python's final-newline position. Its optional-newline normalization preserves terminal-dollar matches but consumes the newline needed by a continuation; changing the shared matcher belongs to B328.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
 kept_bugs: []

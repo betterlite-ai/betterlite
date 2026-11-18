@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::FromStr;
 
 use betterlite_config::sections::custom_dimensions as section;
 
@@ -18,6 +19,40 @@ const BUILT_IN_DIMENSIONS: [&str; 7] = [
     "questionComplexity",
 ];
 
+#[derive(Debug, PartialEq, Eq)]
+enum ClassifierType {
+    Heuristic,
+    HeuristicV2,
+    Llm,
+    Capability,
+    LlmV2,
+    Custom,
+    HeuristicFirst,
+    Hybrid,
+    Jev,
+}
+
+impl FromStr for ClassifierType {
+    type Err = DimensionsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "heuristic" => Ok(Self::Heuristic),
+            "heuristic_v2" => Ok(Self::HeuristicV2),
+            "llm" => Ok(Self::Llm),
+            "capability" => Ok(Self::Capability),
+            "llm_v2" => Ok(Self::LlmV2),
+            "custom" => Ok(Self::Custom),
+            "heuristic_first" => Ok(Self::HeuristicFirst),
+            "hybrid" => Ok(Self::Hybrid),
+            "jev" => Ok(Self::Jev),
+            _ => Err(DimensionsError::ClassifierType {
+                value: value.to_owned(),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DimensionsError {
     #[error("classifier_type {value:?} is not a known classifier type")]
@@ -30,9 +65,7 @@ pub enum DimensionsError {
     Names,
     #[error("custom dimension weights must be inline, not in dimension_weights")]
     Weights,
-    #[error(
-        "custom_dimensions regex work estimate is {work}; the limit across the router is {limit}"
-    )]
+    #[error("custom_dimensions work {work} exceeds router limit {limit}")]
     Work { work: u64, limit: u64 },
     #[error("custom_dimensions allows at most {limit} dimensions, not {count}")]
     Count { count: usize, limit: usize },
@@ -59,27 +92,18 @@ pub fn validate(
             limit: MAX_CUSTOM_DIMENSIONS,
         });
     }
-    if !matches!(
-        classifier,
-        "heuristic"
-            | "heuristic_v2"
-            | "llm"
-            | "capability"
-            | "llm_v2"
-            | "custom"
-            | "heuristic_first"
-            | "hybrid"
-            | "jev"
-    ) {
-        return Err(DimensionsError::ClassifierType {
-            value: classifier.to_owned(),
-        });
-    }
+    let classifier_type = ClassifierType::from_str(classifier)?;
     if checked.is_empty() {
         return Ok(Validated::default());
     }
-    if !matches!(classifier, "heuristic" | "heuristic_first" | "hybrid") {
-        return Err(DimensionsError::Classifier);
+    match classifier_type {
+        ClassifierType::Heuristic | ClassifierType::HeuristicFirst | ClassifierType::Hybrid => {}
+        ClassifierType::HeuristicV2
+        | ClassifierType::Llm
+        | ClassifierType::Capability
+        | ClassifierType::LlmV2
+        | ClassifierType::Custom
+        | ClassifierType::Jev => return Err(DimensionsError::Classifier),
     }
     validate_names(&checked, dimension_weights)?;
     let work = checked

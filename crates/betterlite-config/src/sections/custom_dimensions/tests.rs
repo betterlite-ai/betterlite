@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::custom_dimensions::pattern::{PatternProblem, pattern_work};
 use crate::sections::custom_dimensions::{
-    Config, DimensionProblem, ScoringMode, Settings, validate_dimension,
+    Config, DimensionProblem, LoadError, ScoringMode, Settings, validate_dimension,
 };
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
@@ -141,6 +141,42 @@ fn config_loading_validates_pattern_bounds(#[case] pattern: &str, #[case] accept
     if let Err(error) = result {
         assert!(error.contains("custom_dimensions.0"), "{error}");
     }
+}
+
+#[rstest]
+#[case::repeat("a{65}", PatternProblem::Repeat)]
+#[case::work("a{0,64}b{0,64}", PatternProblem::Work)]
+fn configuration_errors_retain_the_dimension_problem(
+    #[case] pattern: &str,
+    #[case] problem: PatternProblem,
+) {
+    let keys = format!(
+        "          - name: domain\n            weight: 0.5\n            patterns: ['{pattern}']\n"
+    );
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&deployment(&keys))
+    .unwrap_err();
+    let expected = DimensionProblem::Pattern {
+        pattern: pattern.to_owned(),
+        problem,
+    };
+    assert_eq!(error.category(), "custom_dimensions");
+    assert_eq!(
+        std::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<DimensionProblem>(),
+        Some(&expected)
+    );
+    let ConfigError::CustomDimensions(LoadError::Dimension { path, source }) = error else {
+        panic!("expected a typed dimension error");
+    };
+    assert_eq!(
+        path,
+        "model_list.0.litellm_params.complexity_router_config.custom_dimensions.0"
+    );
+    assert_eq!(source, expected);
 }
 
 #[test]

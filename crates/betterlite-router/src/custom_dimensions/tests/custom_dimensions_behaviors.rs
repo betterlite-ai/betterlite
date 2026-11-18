@@ -6,10 +6,59 @@ use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
 use rstest::rstest;
 
 use super::{config, dim, named, run, weights};
+use crate::complexity_scoring::classify::{PromptInput, Scorer};
+use crate::complexity_scoring::config::Config;
+use crate::complexity_scoring::decision::RoutingDecisionCause;
 use crate::complexity_scoring::dimensions::{
     CustomDimension, CustomDimensionMatcher, ScoringMode, score_custom_dimensions,
 };
-use crate::custom_dimensions::{DimensionsError, validate};
+use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
+
+#[rstest]
+#[case::heuristic("heuristic", ClassifierType::Heuristic, true)]
+#[case::heuristic_v2("heuristic_v2", ClassifierType::HeuristicV2, false)]
+#[case::llm("llm", ClassifierType::Llm, false)]
+#[case::capability("capability", ClassifierType::Capability, false)]
+#[case::llm_v2("llm_v2", ClassifierType::LlmV2, false)]
+#[case::custom("custom", ClassifierType::Custom, false)]
+#[case::heuristic_first("heuristic_first", ClassifierType::HeuristicFirst, true)]
+#[case::hybrid("hybrid", ClassifierType::Hybrid, true)]
+#[case::jev("jev", ClassifierType::Jev, false)]
+fn classifier_names_parse_and_gate_dimensions(
+    #[case] name: &str,
+    #[case] expected: ClassifierType,
+    #[case] permitted: bool,
+) {
+    assert_eq!(name.parse::<ClassifierType>().unwrap(), expected);
+    assert!(validate(&[], name, &BTreeMap::new()).is_ok());
+    let result = validate(&[named("domain")], name, &BTreeMap::new());
+    assert_eq!(result.is_ok(), permitted);
+    if !permitted {
+        assert_eq!(result, Err(DimensionsError::Classifier));
+    }
+}
+
+#[test]
+fn dollar_continuation_deviation_is_explicit() {
+    let declared = [config("domain", 0.8_f64, &[], &["a$\\n"], "binary")];
+    let mut settings =
+        Config::resolve(&betterlite_config::sections::complexity_scoring::Config::default())
+            .unwrap();
+    settings.custom_dimensions = validate(&declared, "heuristic", &BTreeMap::new())
+        .unwrap()
+        .dimensions;
+    let outcome = Scorer::new(settings)
+        .unwrap()
+        .score_and_classify(&PromptInput {
+            prompt: "a\n",
+            system_prompt: None,
+        })
+        .unwrap();
+    assert_eq!(outcome.tier.name(), "SIMPLE");
+    assert_eq!(format!("{:.6}", outcome.score), "-0.100000");
+    assert_eq!(outcome.signals, ["short (0 tokens)"]);
+    assert_eq!(outcome.cause, RoutingDecisionCause::HeuristicScorer);
+}
 
 #[rstest]
 #[case::absent(vec![], "heuristic", weights(&[]), Ok(0))]

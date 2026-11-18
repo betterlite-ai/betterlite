@@ -15,16 +15,14 @@ pub(super) fn pattern(input: &str, python_dollar: bool) -> Result<String, Patter
         multiline: vec![false],
         python_dollar,
     };
-    loop {
-        let Some(character) = walker.input.next() else {
-            return Ok(walker.output);
-        };
+    while let Some(character) = walker.input.next() {
         if walker.class == ClassState::Outside {
             walker.outside(character)?;
         } else {
             walker.in_class(character)?;
         }
     }
+    Ok(walker.output)
 }
 
 struct Walker<'input> {
@@ -48,14 +46,13 @@ enum ClassState {
 impl Walker<'_> {
     fn outside(&mut self, character: char) -> Result<(), PatternProblem> {
         match character {
-            '\\' => self.escape(false),
+            '\\' => self.escape(false)?,
             '[' => {
                 self.output.push('[');
                 self.class = ClassState::Leading;
                 self.at_start = false;
-                Ok(())
             }
-            '(' => groups::group(self),
+            '(' => groups::group(self)?,
             ')' => {
                 self.output.push(')');
                 if self.verbose.len() != 1 {
@@ -63,26 +60,18 @@ impl Walker<'_> {
                     self.multiline.pop();
                 }
                 self.at_start = false;
-                Ok(())
             }
             '$' if self.python_dollar && !matches!(self.multiline.last(), Some(true)) => {
                 self.output.push_str("(?:\\n?\\z)");
                 self.at_start = false;
-                Ok(())
             }
-            '{' => {
-                self.brace();
-                Ok(())
-            }
+            '{' => self.brace(),
             '#' if matches!(self.verbose.last(), Some(true)) => {
                 let _newline = self.input.by_ref().find(|next| *next == '\n');
-                Ok(())
             }
-            _ => {
-                self.literal(character);
-                Ok(())
-            }
+            _ => self.literal(character),
         }
+        Ok(())
     }
 
     fn literal(&mut self, character: char) {

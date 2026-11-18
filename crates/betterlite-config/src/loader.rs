@@ -35,6 +35,8 @@ impl EnvironmentLookup for BTreeMap<String, String> {
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error(transparent)]
+    CustomDimensions(#[from] crate::sections::custom_dimensions::LoadError),
+    #[error(transparent)]
     Environment {
         #[from]
         source: betterlite_env::EnvError,
@@ -73,6 +75,7 @@ impl ConfigError {
     #[must_use]
     pub const fn category(&self) -> &'static str {
         match self {
+            Self::CustomDimensions(_) => "custom_dimensions",
             Self::Yaml { .. } => "yaml",
             Self::Unsupported { .. } => "unsupported_key",
             Self::MissingEnvironment { .. } => "missing_environment",

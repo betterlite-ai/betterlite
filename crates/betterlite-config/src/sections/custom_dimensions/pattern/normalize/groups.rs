@@ -67,18 +67,13 @@ fn named_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
 fn flags_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
     let mut probe = walker.input.clone().skip(1);
     let mut spec = String::new();
-    loop {
-        let Some(letter) = probe.clone().next() else {
-            return Err(PatternProblem::Syntax);
-        };
-        if !FLAG_LETTERS.contains(&letter) {
-            break;
+    let terminator = loop {
+        match probe.next() {
+            Some(letter) if FLAG_LETTERS.contains(&letter) => spec.push(letter),
+            Some(end @ (':' | ')')) => break end,
+            _ => return Err(PatternProblem::Syntax),
         }
-        spec.push(letter);
-        let _letter = probe.next();
-    }
-    let candidate = probe.next().filter(|letter| matches!(letter, ':' | ')'));
-    let terminator = candidate.ok_or(PatternProblem::Syntax)?;
+    };
     apply_flags(walker, &spec, terminator)
 }
 
@@ -122,13 +117,10 @@ fn apply_flags(
 
 fn identifier(name: &str) -> bool {
     let mut characters = name.chars();
-    let Some(first) = characters.next() else {
-        return false;
-    };
-    if !(first == '_' || unicode_ident::is_xid_start(first)) {
-        return false;
-    }
-    characters.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
+    characters
+        .next()
+        .is_some_and(|first| first == '_' || unicode_ident::is_xid_start(first))
+        && characters.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
 }
 
 fn kept_flags(spec: &str) -> Result<(String, String), PatternProblem> {

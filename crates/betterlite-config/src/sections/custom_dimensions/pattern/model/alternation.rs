@@ -8,13 +8,9 @@ pub(super) fn nodes(alternation: &ast::Alternation) -> Result<Vec<PyNode>, Patte
     for branch in &alternation.asts {
         branches.push(lower(branch)?);
     }
-    let mut prefix = Vec::new();
-    hoist(&mut branches, &mut prefix);
-    let mut nodes = prefix;
-    match merge(&branches) {
-        Some(node) => nodes.push(node),
-        None => nodes.push(PyNode::Branch(branches)),
-    }
+    let mut nodes = Vec::new();
+    hoist(&mut branches, &mut nodes);
+    nodes.push(merge(&branches).unwrap_or(PyNode::Branch(branches)));
     Ok(nodes)
 }
 
