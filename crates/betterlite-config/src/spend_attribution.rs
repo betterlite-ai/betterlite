@@ -10,7 +10,7 @@ use crate::sections::settings::JsonValue;
 
 pub const ENV_USE_LITELLM_PROXY: &str = "USE_LITELLM_PROXY";
 const GLOBAL_USE_LITELLM_PROXY_PATH: &str = "litellm_settings.use_litellm_proxy";
-const DEPLOYMENT_USE_LITELLM_PROXY_PATH: &str = "model_list[].litellm_params.use_litellm_proxy";
+const DEPLOYMENT_PROXY_FLAG_PATH: &str = "model_list[].litellm_params.use_litellm_proxy";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -56,7 +56,7 @@ impl Section for Raw {
         let mut deployment_use_litellm_proxy = Vec::with_capacity(self.model_list.len());
         for deployment in self.model_list {
             deployment_use_litellm_proxy.push(configured_flag(
-                DEPLOYMENT_USE_LITELLM_PROXY_PATH,
+                DEPLOYMENT_PROXY_FLAG_PATH,
                 &deployment.litellm_params.use_litellm_proxy,
             )?);
         }
