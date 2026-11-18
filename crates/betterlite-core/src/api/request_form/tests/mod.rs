@@ -239,6 +239,8 @@ fn an_integer_text_parses_like_python(#[case] source: &str, #[case] expected: &s
 }
 
 #[rstest]
+#[case("+")]
+#[case("-")]
 #[case("3.5")]
 #[case("nan")]
 #[case("inf")]
