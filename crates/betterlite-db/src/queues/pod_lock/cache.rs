@@ -35,6 +35,8 @@ impl LockCache for RedisLockCache {
         }
     }
 
+    // A live cache needs a running Redis: db tests fake at the LockCache seam, and the oracle fixture tests run this adapter against real Redis.
+    #[cfg_attr(test, mutants::skip)]
     #[rustfmt::skip]
     fn set_owner_if_absent(&self, key: &str, owner: &str, ttl_seconds: i64) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         async move {
@@ -66,6 +68,8 @@ impl LockCache for RedisLockCache {
         }
     }
 
+    // The registered handle is only exercised by a script run, which needs the running Redis of the oracle fixture tests.
+    #[cfg_attr(test, mutants::skip)]
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
         let script = self
             .cache

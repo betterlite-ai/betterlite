@@ -1709,6 +1709,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "mutants",
  "num-traits",
  "percent-encoding",
  "rand 0.10.3",

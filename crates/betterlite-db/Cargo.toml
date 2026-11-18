@@ -65,6 +65,7 @@ aws-smithy-types = "=1.9.1"
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+mutants = "0.0.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 serde_json = { version = "1.0.145", features = ["raw_value"] }
