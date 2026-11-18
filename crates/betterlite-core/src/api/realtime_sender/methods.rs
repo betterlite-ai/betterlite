@@ -49,13 +49,13 @@ where
         kind: FrameKind,
     ) -> SenderFuture<'_, bool, Config::Error, CallbackError> {
         async move {
+            if kind == FrameKind::Setup && self.state.setup.content_sent_after_setup.0 {
+                tracing::debug!(
+                    "Dropping follow-up setup after content was already sent to backend"
+                );
+                return Ok(false);
+            }
             if kind == FrameKind::Setup {
-                if self.state.setup.content_sent_after_setup.0 {
-                    tracing::debug!(
-                        "Dropping follow-up setup after content was already sent to backend"
-                    );
-                    return Ok(false);
-                }
                 // Setup injection commits its flag before sending, unlike the setup cache below
                 let injected = inject_auto_response_disable(
                     &text,
