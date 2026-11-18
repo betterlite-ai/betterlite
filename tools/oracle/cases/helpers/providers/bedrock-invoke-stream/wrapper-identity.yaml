@@ -1,0 +1,219 @@
+kind: helper
+name: bedrock-invoke-stream-wrapper-identity
+call:
+  bedrock_invoke_stream:
+    scenario: wrapper_identity
+    runs:
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: 'say "hi"'
+          max_tokens: 5
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: c2lnbmVk
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-1
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: false
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: c2lnbmVk
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-2
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: false
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: ""
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-3
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: false
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-4
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: false
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-5
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: false
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-6
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: true
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: 4096
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-7
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: true
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-8
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: true
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: 4096
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-9
+        response_body: "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082"
+        response_fails: true
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://proxy.example.com/ai21/anthropic
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-10
+        response_body: "7b226f7574707574223a7b226d657373616765223a7b22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d2c22726f6c65223a22617373697374616e74227d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a312c226f7574707574546f6b656e73223a312c22746f74616c546f6b656e73223a327d7d"
+        response_fails: false
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://proxy.example.com/ai21/anthropic
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-11
+        response_body: "7b226f7574707574223a7b226d657373616765223a7b22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d2c22726f6c65223a22617373697374616e74227d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a312c226f7574707574546f6b656e73223a312c22746f74616c546f6b656e73223a327d7d"
+        response_fails: false
+env: {}
+compare:
+  ignore: []

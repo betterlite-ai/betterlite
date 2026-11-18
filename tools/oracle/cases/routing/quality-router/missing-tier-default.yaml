@@ -1,0 +1,54 @@
+kind: probe
+name: quality-router-missing-tier-default
+compare:
+  numeric:
+    - pointer: /output/quality_router/decision/score
+      absolute_tolerance: 0.000001
+      why: the score is the classifier's float sum, and its last bits may differ between the two runtimes
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: []
+                  default_model: fb
+        messages:
+          - role: user
+            content: hello there
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: []
+                  default_model: fb
+        messages:
+          - role: user
+            content: hello there
+        default_model: explicit
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: []
+        messages:
+          - role: user
+            content: hello there
+        default_model: explicit

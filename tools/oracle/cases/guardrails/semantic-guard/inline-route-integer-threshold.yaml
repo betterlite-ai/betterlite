@@ -1,0 +1,15 @@
+kind: helper
+name: inline-route-integer-threshold
+call:
+  b3808:
+    function: build_routes
+    custom_routes:
+      - route_name: strict_route
+        utterances: ["a strict one"]
+        similarity_threshold: 1
+      - route_name: loose_route
+        utterances: ["a loose one"]
+        similarity_threshold: 0
+    global_threshold: 0.75
+env: {}
+compare: {ignore: []}

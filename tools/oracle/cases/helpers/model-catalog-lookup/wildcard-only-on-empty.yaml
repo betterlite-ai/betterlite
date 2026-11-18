@@ -1,0 +1,53 @@
+kind: helper
+name: model-catalog-lookup-wildcard-only-on-empty
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: openai/gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: e
+      - model_name: openai/*
+        litellm_params:
+          model: openai/*
+        model_info:
+          id: w
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: openai
+    stale_index: false
+    arguments:
+      model_name: openai/gpt-4o
+calls:
+  - model_catalog_lookup:
+      function: get_model_list
+      model_list:
+        - model_name: openai/*
+          litellm_params:
+            model: openai/*
+          model_info:
+            id: w
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: openai
+      stale_index: false
+      arguments:
+        model_name: openai/gpt-4o
+  - model_catalog_lookup:
+      function: get_model_list
+      model_list:
+        - model_name: openai/*
+          litellm_params:
+            model: openai/*
+          model_info:
+            id: w
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: openai
+      stale_index: false
+      arguments:
+        model_name: mystery-model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,34 @@
+kind: helper
+name: model-catalog-lookup-invalid-row
+call:
+  model_catalog_lookup:
+    function: get_deployment
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: true
+    arguments:
+      model_id: ghost-id
+calls:
+  - model_catalog_lookup:
+      function: get_deployment_by_model_group_name
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: true
+      arguments:
+        model_name: ghost
+env: {}
+compare: {ignore: []}
