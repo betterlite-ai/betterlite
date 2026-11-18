@@ -1,0 +1,16 @@
+kind: helper
+name: response-chat-request-tools
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params:
+      tools: [{type: function, function: {name: lookup}}]
+      web_search_options: {search_context_size: high}
+      extra_body: {reasoning_effort: high}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: marker
+env: {}
+compare: {ignore: []}

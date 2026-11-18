@@ -691,3 +691,10 @@ path = "fuzz_targets/watsonx_transcription_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "text_stream"
+path = "fuzz_targets/text_stream.rs"
+test = false
+doc = false
+bench = false
