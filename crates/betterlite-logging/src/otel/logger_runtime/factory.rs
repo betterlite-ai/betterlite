@@ -64,7 +64,7 @@ pub fn build_otel_v2_logger(
         content: assembler,
         logging: settings,
     };
-    build_logger(runtime, config, inputs)
+    build_logger(runtime, config, &inputs)
 }
 
 // logger.py:871: the OTEL_* fallback builds plain OpenTelemetryV2, so a config naming langfuse still gets that class
@@ -74,13 +74,13 @@ pub(super) fn build_generic_otel_v2_logger(
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let provider = fan_out_provider_for(runtime, &config)?;
     let inputs = BuildInputs::generic(&provider);
-    build_logger(runtime, config, inputs)
+    build_logger(runtime, config, &inputs)
 }
 
 fn build_logger(
     runtime: &LoggerRuntime,
     config: Settings,
-    inputs: BuildInputs<'_>,
+    inputs: &BuildInputs<'_>,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let request = LoggerBuildRequest {
         class: inputs.kind,
