@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 use betterlite_error::error::details::{MidStreamFallbackDetails, MidStreamStatus};
@@ -11,6 +10,7 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde::Serialize;
 use thiserror::Error;
 
 use super::ResponsesStreamHooks;
@@ -18,9 +18,7 @@ use super::billing::FailurePrice;
 use super::events::nested_response;
 use super::state::ResponsesStreamHookState;
 use crate::api::response_synthetic_events::billing::{UsageSource, usage_as_model};
-use crate::api::responses_stream_primitives::error_fields::{
-    StreamErrorAttributes, StreamErrorObject,
-};
+use crate::api::responses_stream_primitives::error_fields::StreamErrorObject;
 use crate::api::responses_stream_primitives::failure::{
     map_stream_error_to_exception, mid_stream_fallback_eligible,
 };
@@ -48,7 +46,7 @@ impl ResponsesStreamHooks<'_> {
         let error = response.and_then(|response| response.error.as_ref());
         record_failed_response_usage(response, details, calculator).await;
         let mapped = map_response_error(
-            error,
+            &error,
             &state.model,
             state.custom_llm_provider.as_deref().unwrap_or_default(),
             self.redactor,
@@ -139,22 +137,17 @@ fn decimal_json(cost: Decimal) -> Option<Json> {
     }
 }
 
-fn map_response_error(
-    error: Option<&BTreeMap<String, Json>>,
+fn map_response_error<T: Serialize>(
+    error: &T,
     model: &str,
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let attributes = match error {
-        Some(fields) => StreamErrorAttributes {
-            message: fields.get("message"),
-            error_type: fields.get("type"),
-            code: fields.get("code"),
-        },
-        None => StreamErrorAttributes::default(),
-    };
+    let fields = serde_json::to_value(error)
+        .and_then(serde_json::from_value::<IndexMap<String, Json>>)
+        .unwrap_or_default();
     map_stream_error_to_exception(
-        StreamErrorObject::Attributes(attributes),
+        StreamErrorObject::Mapping(&fields),
         model,
         provider,
         redactor,
@@ -168,54 +161,33 @@ fn mapped_event_error(
     redactor: &Redactor,
 ) -> Option<ErrorClass> {
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => match known.as_ref() {
-            KnownResponseEvent::Error(error) => {
-                let message = Json::Text(error.error.message.clone());
-                let error_type = Json::Text(error.error.r#type.clone());
-                let code = Json::Text(error.error.code.clone());
-                Some(map_stream_error_to_exception(
-                    StreamErrorObject::Attributes(StreamErrorAttributes {
-                        message: Some(&message),
-                        error_type: Some(&error_type),
-                        code: Some(&code),
-                    }),
+        ResponsesAPIStreamingResponse::Known(known) => {
+            if let KnownResponseEvent::Error(record) = known.as_ref() {
+                Some(map_response_error(&record.error, model, provider, redactor))
+            } else if let KnownResponseEvent::ResponseFailed(record) = known.as_ref() {
+                Some(map_response_error(
+                    &record.response.error,
                     model,
                     provider,
                     redactor,
                 ))
+            } else {
+                None
             }
-            KnownResponseEvent::ResponseFailed(error) => Some(map_response_error(
-                error.response.error.as_ref(),
+        }
+        ResponsesAPIStreamingResponse::Generic(record) => match record.r#type.as_str() {
+            "error" => Some(map_response_error(
+                &record.extra.get("error"),
                 model,
                 provider,
                 redactor,
             )),
+            "response.failed" => Some(map_response_error(&Json::Null, model, provider, redactor)),
             _ => None,
         },
-        ResponsesAPIStreamingResponse::Generic(generic) if generic.r#type == "error" => {
-            match generic.extra.get("error") {
-                Some(Json::Object(fields)) => Some(map_stream_error_to_exception(
-                    StreamErrorObject::Attributes(StreamErrorAttributes {
-                        message: fields.get("message"),
-                        error_type: fields.get("type"),
-                        code: fields.get("code"),
-                    }),
-                    model,
-                    provider,
-                    redactor,
-                )),
-                _ => Some(map_response_error(None, model, provider, redactor)),
-            }
-        }
-        // a generic failed event's nested response is a dict, so getattr(response, "error") is None
-        ResponsesAPIStreamingResponse::Generic(generic) if generic.r#type == "response.failed" => {
-            Some(map_response_error(None, model, provider, redactor))
-        }
-        ResponsesAPIStreamingResponse::Generic(_) => None,
     }
 }
 
-// str(mapped_exception) without its Python module prefix; the class label is part of the message
 fn exception_message(class: &ErrorClass) -> String {
     let Ok(value) = serde_json::to_value(class) else {
         return String::new();

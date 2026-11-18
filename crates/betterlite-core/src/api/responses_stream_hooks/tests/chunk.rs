@@ -157,9 +157,7 @@ async fn deployment_chunk_hooks_fall_back_to_the_model_call_details() {
 
     let requests = hook.requests();
     assert_eq!(requests.len(), 2);
-    for request in requests {
-        assert_eq!(request.get("model"), Some(&text("gpt-4o")));
-    }
+    assert_eq!(requests, vec![details.clone(), details]);
 }
 
 #[tokio::test]
@@ -235,4 +233,30 @@ async fn deployment_chunk_hooks_without_hooks_leave_the_chunk_alone() {
 
     assert!(!callback.post_streaming_hooks_ran);
     assert_eq!(event_json(&returned), event_json(&input));
+}
+
+#[tokio::test]
+async fn chunk_marker_does_not_leak_to_the_next_chunk() {
+    let redactor = redactor();
+    let mut hooks = hooks(&redactor);
+    hooks.chunk_hooks = vec![ChunkHook::new("first", ChunkAction::Keep)];
+    let mut callback = ResponsesStreamHookState::default();
+    let details = call_details();
+    hooks
+        .chunk_hook(
+            &mut callback,
+            context(None, None, None, &details),
+            completed_event(),
+        )
+        .await;
+    assert!(callback.post_streaming_hooks_ran);
+    hooks.chunk_hooks = vec![ChunkHook::new("second", ChunkAction::Fail)];
+    hooks
+        .chunk_hook(
+            &mut callback,
+            context(None, None, None, &details),
+            completed_event(),
+        )
+        .await;
+    assert!(!callback.post_streaming_hooks_ran);
 }

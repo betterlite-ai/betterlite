@@ -174,6 +174,24 @@ class Probe(StreamBase):
         self._hidden_params["additional_headers"] = row.processed
         self._raw_response_headers = row.raw
 
+    def failure_result(self, recorder: Recorder) -> JsonValue:
+        row = recorder.row
+        try:
+            self._maybe_raise_for_error_event(row.event)
+        except MidStreamFallbackError as error:
+            return {
+                "status": error.status_code, "pre": error.is_pre_first_chunk,
+                "original": error.original_exception is not None,
+                "billed": "combined_usage_object" in recorder.model_call_details,
+            }
+        except (AuthenticationError, BadRequestError, NotFoundError) as error:
+            return {
+                "status": FailureView.model_validate(error, from_attributes=True).status_code,
+                "pre": None, "original": False,
+                "billed": "combined_usage_object" in recorder.model_call_details,
+            }
+        return None
+
     async def invoke(self, operation: Operation, recorder: Recorder) -> JsonValue:
         row = recorder.row
         extra: JsonValue = None
@@ -190,20 +208,7 @@ class Probe(StreamBase):
             extra = JSON.validate_python(copy.response._hidden_params)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L607
         elif operation == "failed":
             self._handle_logging_failed_response()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L616
-            try:
-                self._maybe_raise_for_error_event(row.event)
-            except MidStreamFallbackError as error:
-                extra = {
-                    "status": error.status_code, "pre": error.is_pre_first_chunk,
-                    "original": error.original_exception is not None,
-                    "billed": "combined_usage_object" in recorder.model_call_details,
-                }
-            except (AuthenticationError, BadRequestError, NotFoundError) as error:
-                extra = {
-                    "status": FailureView.model_validate(error, from_attributes=True).status_code,
-                    "pre": None, "original": False,
-                    "billed": "combined_usage_object" in recorder.model_call_details,
-                }
+            extra = self.failure_result(recorder)
         elif operation == "chunk":
             result = await self._call_post_streaming_deployment_hook(row.event)
             view = ChunkView.model_validate(result, from_attributes=True)

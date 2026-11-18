@@ -168,30 +168,26 @@ async fn failed_usage_and_error() {
     assert_eq!(details.provider.as_deref(), Some("openai"));
 }
 
+#[rstest::rstest]
+#[case::missing(Calculator::missing())]
+#[case::failed(Calculator::failing())]
 #[tokio::test]
-async fn failed_usage_and_error_defaults_the_cost_to_zero() {
+async fn failed_usage_and_error_defaults_the_cost_to_zero(#[case] calculator: Calculator) {
     let redactor = redactor();
     let usage = Some(r#"{"input_tokens":3,"output_tokens":4,"total_tokens":7}"#);
     let event = Some(r#"{"message":"boom","type":"invalid_request_error","code":"bad"}"#);
-    for calculator in [Calculator::missing(), Calculator::failing()] {
-        let mut hooks = hooks(&redactor);
-        hooks.failure = Some(FailureRecorder::recording());
-        let mut state = base_state();
-        state.completed_response = Some(response_failed_event(usage, event));
-        let mut callback = ResponsesStreamHookState::default();
-        let mut details = IndexMap::new();
+    let mut hooks = hooks(&redactor);
+    hooks.failure = Some(FailureRecorder::recording());
+    let mut state = base_state();
+    state.completed_response = Some(response_failed_event(usage, event));
+    let mut callback = ResponsesStreamHookState::default();
+    let mut details = IndexMap::new();
 
-        hooks
-            .handle_logging_failed_response(
-                &mut state,
-                &mut callback,
-                &mut details,
-                Some(&calculator),
-            )
-            .await;
+    hooks
+        .handle_logging_failed_response(&mut state, &mut callback, &mut details, Some(&calculator))
+        .await;
 
-        assert_eq!(details.get("response_cost"), Some(&number("0")));
-    }
+    assert_eq!(details.get("response_cost"), Some(&number("0")));
 }
 
 #[tokio::test]
@@ -243,26 +239,27 @@ async fn failed_usage_and_error_skips_billing_for_an_untyped_response() {
     assert!(state.failure_handled);
 }
 
-#[test]
-fn failed_usage_and_error_raises_the_mapped_error_for_an_ineligible_status() {
+#[rstest::rstest]
+#[case::bad_request("invalid_request_error", "invalid_request_error", 400)]
+#[case::authentication("authentication_error", "401", 401)]
+#[case::not_found("not_found_error", "404", 404)]
+fn failed_usage_and_error_raises_the_mapped_error_for_an_ineligible_status(
+    #[case] error_type: &str,
+    #[case] code: &str,
+    #[case] status: u16,
+) {
     let redactor = redactor();
     let hooks = hooks(&redactor);
     let state = base_state();
-    for (error_type, code, status) in [
-        ("invalid_request_error", "invalid_request_error", 400),
-        ("authentication_error", "401", 401),
-        ("not_found_error", "404", 404),
-    ] {
-        let event = error_event("boom", error_type, code);
-        let raised = hooks
-            .maybe_raise_for_error_event(&state, &event)
-            .expect_err("a 4xx error is raised directly");
-        assert!(!matches!(
-            raised.exception,
-            ErrorClass::MidStreamFallback(_)
-        ));
-        assert_eq!(raised.exception.metadata().status_code, status);
-    }
+    let event = error_event("boom", error_type, code);
+    let raised = hooks
+        .maybe_raise_for_error_event(&state, &event)
+        .expect_err("a 4xx error is raised directly");
+    assert!(!matches!(
+        raised.exception,
+        ErrorClass::MidStreamFallback(_)
+    ));
+    assert_eq!(raised.exception.metadata().status_code, status);
 }
 
 #[test]
@@ -384,18 +381,18 @@ fn failed_usage_and_error_defaults_a_generic_failed_response() {
     assert_eq!(fallback(&raised.exception).original_status.0, 500);
 }
 
-#[test]
-fn failed_usage_and_error_passes_every_other_event() {
+#[rstest::rstest]
+#[case::created(r#"{"type":"response.created","response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#)]
+#[case::generic(r#"{"type":"response.queued","id":"resp_1"}"#)]
+fn failed_usage_and_error_passes_every_other_event(#[case] text: &str) {
     let redactor = redactor();
     let hooks = hooks(&redactor);
     let state = base_state();
-    for text in [
-        r#"{"type":"response.created","response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#,
-        r#"{"type":"response.queued","id":"resp_1"}"#,
-    ] {
-        let event = decode(text);
-        assert!(hooks.maybe_raise_for_error_event(&state, &event).is_ok());
-    }
+    assert!(
+        hooks
+            .maybe_raise_for_error_event(&state, &decode(text))
+            .is_ok()
+    );
 }
 
 #[test]

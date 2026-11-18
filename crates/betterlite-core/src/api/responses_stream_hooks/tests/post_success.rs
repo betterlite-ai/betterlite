@@ -73,33 +73,34 @@ async fn post_success_metadata() {
     assert_eq!(hook_calls[0].response, event_json(completed));
 }
 
+#[rstest::rstest]
+#[case::absent(None)]
+#[case::invalid(Some("bogus"))]
 #[tokio::test]
-async fn post_success_metadata_defaults_the_call_type_and_params() {
+async fn post_success_metadata_defaults_the_call_type_and_params(#[case] explicit: Option<&str>) {
     let redactor = redactor();
-    for explicit in [None, Some("bogus")] {
-        let mut hooks = hooks(&redactor);
-        let hook = SuccessHook::recording();
-        hooks.success_hook = Some(std::sync::Arc::<SuccessHook>::clone(&hook));
-        let mut state = base_state();
-        state.call_type = explicit.map(str::to_owned);
-        state.request_data = json_object(&[("model", text("request-model"))]);
-        state.completed_response = Some(completed_event());
-        let mut callback = ResponsesStreamHookState::default();
-        let details = json_object(&[("response_cost", number("0.25"))]);
+    let mut hooks = hooks(&redactor);
+    let hook = SuccessHook::recording();
+    hooks.success_hook = Some(std::sync::Arc::<SuccessHook>::clone(&hook));
+    let mut state = base_state();
+    state.call_type = explicit.map(str::to_owned);
+    state.request_data = json_object(&[("model", text("request-model"))]);
+    state.completed_response = Some(completed_event());
+    let mut callback = ResponsesStreamHookState::default();
+    let details = json_object(&[("response_cost", number("0.25"))]);
 
-        hooks
-            .run_post_success_hooks(&mut state, &mut callback, &details, timestamp(END))
-            .await;
-        await_pending_logging(&mut callback).await;
+    hooks
+        .run_post_success_hooks(&mut state, &mut callback, &details, timestamp(END))
+        .await;
+    await_pending_logging(&mut callback).await;
 
-        let calls = hook.calls();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].call_type, "responses");
-        assert_eq!(
-            calls[0].request_data.get("litellm_params"),
-            Some(&json_value(&[]))
-        );
-    }
+    let calls = hook.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].call_type, "responses");
+    assert_eq!(
+        calls[0].request_data.get("litellm_params"),
+        Some(&json_value(&[]))
+    );
 }
 
 #[tokio::test]

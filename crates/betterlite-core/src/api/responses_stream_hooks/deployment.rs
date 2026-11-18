@@ -18,24 +18,10 @@ pub struct ChunkHookContext<'call> {
 
 #[must_use]
 pub fn resolve_call_type(explicit: Option<&str>, logging: Option<&str>) -> Option<CallType> {
-    explicit
-        .and_then(valid_call_type)
-        .or_else(|| logging.and_then(valid_call_type))
-}
-
-#[must_use]
-pub fn call_type_name(call_type: CallType) -> Option<String> {
-    match serde_json::to_value(call_type) {
-        Ok(value) => value.as_str().map(str::to_owned),
-        Err(_) => None,
-    }
-}
-
-// an unknown name reaches the hooks as None, exactly as CallTypes(value) raising ValueError does
-fn valid_call_type(name: &str) -> Option<CallType> {
-    let parsed: Result<CallType, ValueError> =
-        CallType::deserialize(StrDeserializer::<ValueError>::new(name));
-    parsed.ok()
+    [explicit, logging]
+        .into_iter()
+        .flatten()
+        .find_map(|name| CallType::deserialize(StrDeserializer::<ValueError>::new(name)).ok())
 }
 
 impl ResponsesStreamHooks<'_> {
@@ -45,6 +31,7 @@ impl ResponsesStreamHooks<'_> {
         context: ChunkHookContext<'_>,
         mut chunk: ResponsesAPIStreamingResponse,
     ) -> ResponsesAPIStreamingResponse {
+        callback.post_streaming_hooks_ran = false;
         let call_type = resolve_call_type(context.explicit_call_type, context.logging_call_type);
         let request_data = match context.request_data {
             Some(data) if !data.is_empty() => data,

@@ -17,14 +17,12 @@ pub const POST_SUCCESS_TASK: &str = "Responses stream post-call success hook";
 pub const FAILURE_LOGGING_TASK: &str = "Responses stream failure logging";
 pub const SUCCESS_DISPATCH_TASK: &str = "Responses stream success dispatch";
 
-// A dependency's own failure, carried as text because every caller either logs it or swallows it
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct PortFailure {
     pub message: String,
 }
 
-// The dynamic backend is forwarded to B4297 without changing its identity.
 pub trait DynamicCacheBackend: Send + Sync {}
 
 impl<T: EnvelopeBackend + ?Sized> DynamicCacheBackend for T {}
@@ -87,7 +85,6 @@ pub trait ResponsesStreamFailureTarget: Send + Sync {
     fn failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure>;
 }
 
-// traceback_exception has no Rust source: LiteLLM formats the Python stack of the call site
 #[derive(Clone)]
 pub struct FailureDelivery {
     pub exception: ErrorClass,
@@ -96,7 +93,6 @@ pub struct FailureDelivery {
     pub end_time: DateTime<FixedOffset>,
 }
 
-// B004's update_response_metadata; the adapter maps include_overhead=false onto the request overhead timing
 pub trait ResponseMetadataTarget: Send + Sync {
     fn update_response_metadata(&self, call: ResponseMetadataCall<'_>) -> Result<(), PortFailure>;
 }
@@ -124,7 +120,6 @@ pub struct ChunkHookCall<'call> {
     pub call_type: Option<CallType>,
 }
 
-// B5367's betterlite_sdk::call_setup::hooks::success_deployment_hook behind the one port this crate can name
 #[async_trait]
 pub trait SuccessDeploymentHook: Send + Sync {
     async fn success_deployment_hook(

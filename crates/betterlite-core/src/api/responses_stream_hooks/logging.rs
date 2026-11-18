@@ -63,7 +63,6 @@ pub fn restore_headers(
         .insert("_hidden_params".to_owned(), Json::Object(restored));
 }
 
-// a truthy source header map wins; a nonmapping candidate becomes {}, never the fallback
 fn copied_header_map(
     candidate: Option<&Json>,
     fallback: &IndexMap<String, Json>,

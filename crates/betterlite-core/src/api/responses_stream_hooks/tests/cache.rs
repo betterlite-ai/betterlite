@@ -1,16 +1,14 @@
-use std::str::FromStr as _;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::Number;
 use tokio::runtime::Builder;
 
 use super::super::cache::{cache_request_kwargs, converted_stream_requested};
 use super::super::ports::PortFailure;
 use super::support::{
     Cache, CacheHandler, base_state, capture, completed_event, decode, dual_token, hooks,
-    json_object, json_value, number, path, redactor, response_failed_event, text,
+    json_object, json_value, number, path, redactor, text,
 };
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 
@@ -134,48 +132,48 @@ async fn terminal_cache_write_keeps_nonnull_metadata_and_drops_a_null_key() {
     assert!(!kwargs.contains_key("cache_key"));
 }
 
+#[rstest::rstest]
+#[case::boolean(Json::Bool(true))]
+#[case::number(number("1"))]
+#[case::text(Json::Text("yes".to_owned()))]
 #[tokio::test]
-async fn terminal_cache_write_accepts_a_truthy_converted_stream_flag() {
+async fn terminal_cache_write_accepts_a_truthy_converted_stream_flag(#[case] value: Json) {
     let redactor = redactor();
-    for value in [Json::Bool(true), number("1"), Json::Text("yes".to_owned())] {
-        let mut hooks = hooks(&redactor);
-        let cache = Cache::succeeding();
-        hooks.cache = Some(Arc::<Cache>::clone(&cache));
-        hooks.cache_handler = Some(streaming_handler(&[
-            ("stream", Json::Bool(false)),
-            ("_headroom_interception_converted_stream", value),
-        ]));
-        let mut state = streaming_state();
+    let mut hooks = hooks(&redactor);
+    let cache = Cache::succeeding();
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
+    hooks.cache_handler = Some(streaming_handler(&[
+        ("stream", Json::Bool(false)),
+        ("_headroom_interception_converted_stream", value),
+    ]));
+    let mut state = streaming_state();
 
-        hooks.persist_cache(&mut state).expect("the write succeeds");
+    hooks.persist_cache(&mut state).expect("the write succeeds");
 
-        assert_eq!(cache.writes().len(), 1);
-        assert!(state.completed_response_cached);
-    }
+    assert_eq!(cache.writes().len(), 1);
+    assert!(state.completed_response_cached);
 }
 
+#[rstest::rstest]
+#[case::null(Json::Null)]
+#[case::disabled(Json::Bool(false))]
+#[case::number(number("1"))]
+#[case::text(Json::Text("true".to_owned()))]
 #[tokio::test]
-async fn terminal_cache_write_requires_stream_exactly_true() {
+async fn terminal_cache_write_requires_stream_exactly_true(#[case] value: Json) {
     let redactor = redactor();
-    for value in [
-        Json::Null,
-        Json::Bool(false),
-        number("1"),
-        Json::Text("true".to_owned()),
-    ] {
-        let mut hooks = hooks(&redactor);
-        let cache = Cache::succeeding();
-        hooks.cache = Some(Arc::<Cache>::clone(&cache));
-        hooks.cache_handler = Some(streaming_handler(&[("stream", value)]));
-        let mut state = streaming_state();
+    let mut hooks = hooks(&redactor);
+    let cache = Cache::succeeding();
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
+    hooks.cache_handler = Some(streaming_handler(&[("stream", value)]));
+    let mut state = streaming_state();
 
-        hooks
-            .persist_cache(&mut state)
-            .expect("a skipped write is not an error");
+    hooks
+        .persist_cache(&mut state)
+        .expect("a skipped write is not an error");
 
-        assert!(cache.writes().is_empty());
-        assert!(!state.completed_response_cached);
-    }
+    assert!(cache.writes().is_empty());
+    assert!(!state.completed_response_cached);
 }
 
 #[tokio::test]
@@ -228,29 +226,23 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
     assert!(cached_state.completed_response_cached);
 }
 
+#[rstest::rstest]
+#[case::progress(r#"{"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#)]
+#[case::untyped(r#"{"type":"response.completed"}"#)]
+#[case::failed(r#"{"type":"response.failed","sequence_number":2,"response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#)]
 #[tokio::test]
-async fn terminal_cache_write_requires_a_completed_typed_response() {
+async fn terminal_cache_write_requires_a_completed_typed_response(#[case] raw: &str) {
     let redactor = redactor();
     let cache = Cache::succeeding();
     let mut hooks = hooks(&redactor);
     hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
-    let in_progress = decode(
-        r#"{"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#,
-    );
-    let generic = decode(r#"{"type":"response.completed"}"#);
-    for event in [in_progress, generic, response_failed_event(None, None)] {
-        let mut state = base_state();
-        state.completed_response = Some(event);
-        hooks
-            .persist_cache(&mut state)
-            .expect("a non terminal event skips the write");
-        assert!(!state.completed_response_cached);
-    }
+    let mut state = base_state();
+    state.completed_response = Some(decode(raw));
+    hooks.persist_cache(&mut state).unwrap();
+    assert!(!state.completed_response_cached);
     let mut empty = base_state();
-    hooks
-        .persist_cache(&mut empty)
-        .expect("a missing event skips the write");
+    hooks.persist_cache(&mut empty).unwrap();
     assert!(cache.writes().is_empty());
 }
 
@@ -310,33 +302,26 @@ fn terminal_cache_write_logs_an_async_failure_and_keeps_the_flag() {
     );
 }
 
-#[test]
-fn converted_stream_flags_require_truthy_values() {
-    let key = "_websearch_interception_converted_stream";
-    let mut kwargs = IndexMap::new();
-    for value in [
-        Json::Null,
-        Json::Bool(false),
-        number("0"),
-        Json::Number(Number::from_f64(0.0).expect("a finite number")),
-        Json::Text(String::new()),
-        Json::List(Vec::new()),
-        Json::Object(IndexMap::new()),
-    ] {
-        kwargs.insert(key.to_owned(), value);
-        assert!(!converted_stream_requested(&kwargs));
-    }
-    for value in [
-        Json::Bool(true),
-        number("1"),
-        Json::Number(Number::from_f64(0.5).expect("a finite number")),
-        Json::Text("yes".to_owned()),
-        Json::List(vec![Json::Null]),
-        Json::Object(IndexMap::from([("key".to_owned(), Json::Null)])),
-    ] {
-        kwargs.insert(key.to_owned(), value);
-        assert!(converted_stream_requested(&kwargs));
-    }
+#[rstest::rstest]
+#[case::null(r#"null"#, false)]
+#[case::disabled(r#"false"#, false)]
+#[case::zero(r#"0"#, false)]
+#[case::decimal_zero(r#"0.0"#, false)]
+#[case::empty_text(r#""""#, false)]
+#[case::empty_list(r#"[]"#, false)]
+#[case::empty_object(r#"{}"#, false)]
+#[case::enabled(r#"true"#, true)]
+#[case::one(r#"1"#, true)]
+#[case::fraction(r#"0.5"#, true)]
+#[case::text(r#""yes""#, true)]
+#[case::list(r#"[null]"#, true)]
+#[case::object(r#"{"key":null}"#, true)]
+#[case::negative_exponent(r#"1e-9"#, true)]
+#[case::exponent_zero(r#"0e8"#, false)]
+fn converted_stream_flags_require_truthy_values(#[case] raw: &str, #[case] expected: bool) {
+    let value = serde_json::from_str::<Json>(raw).unwrap();
+    let kwargs = IndexMap::from([("_websearch_interception_converted_stream".to_owned(), value)]);
+    assert_eq!(converted_stream_requested(&kwargs), expected);
 }
 
 #[test]

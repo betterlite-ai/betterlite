@@ -61,17 +61,7 @@ impl Session<'_> {
                 Ok(Value::Null)
             }
             Operation::Logging => self.logging().await,
-            Operation::Headers => {
-                let copied = serde_json::to_value(logging_event(
-                    &probe.row.event,
-                    &self.base.hidden_params,
-                    &self.base.raw_response_headers,
-                ))?;
-                Ok(copied
-                    .pointer("/response/_hidden_params")
-                    .cloned()
-                    .unwrap_or(Value::Null))
-            }
+            Operation::Headers => self.headers(&probe.row),
             Operation::Failed => Ok(self.failed(probe).await),
             Operation::Chunk => Ok(self.chunk(&probe.row).await),
             Operation::Metadata => {
@@ -100,6 +90,18 @@ impl Session<'_> {
                 Ok(Value::Null)
             }
         }
+    }
+
+    fn headers(&self, row: &Row) -> HelperResult {
+        let copied = serde_json::to_value(logging_event(
+            &row.event,
+            &self.base.hidden_params,
+            &self.base.raw_response_headers,
+        ))?;
+        Ok(copied
+            .pointer("/response/_hidden_params")
+            .cloned()
+            .unwrap_or(Value::Null))
     }
 
     async fn logging(&mut self) -> HelperResult {

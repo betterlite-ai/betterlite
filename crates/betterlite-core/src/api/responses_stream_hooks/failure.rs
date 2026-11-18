@@ -32,8 +32,7 @@ impl ResponsesStreamHooks<'_> {
             return;
         };
         if Handle::try_current().is_ok() {
-            let task_delivery = delivery.clone();
-            let work = async move { run_failure_handlers(failure.as_ref(), &task_delivery).await };
+            let work = async move { run_failure_handlers(failure.as_ref(), &delivery).await };
             if let Some(handle) =
                 spawn_logging_task(&state.pending_tasks, FAILURE_LOGGING_TASK, work)
             {
@@ -41,7 +40,6 @@ impl ResponsesStreamHooks<'_> {
             }
             return;
         }
-        // without a loop LiteLLM blocks in run_async_function, then submits the sync handler
         let _outcome = run_failure_handlers(failure.as_ref(), &delivery).await;
     }
 }

@@ -6,12 +6,11 @@ use indexmap::IndexMap;
 use tokio::runtime::Handle;
 
 use super::ResponsesStreamHooks;
-use super::deployment::{call_type_name, resolve_call_type};
+use super::deployment::resolve_call_type;
 use super::ports::{POST_SUCCESS_TASK, ResponseMetadataCall};
 use super::state::ResponsesStreamHookState;
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 use crate::api::responses_stream_primitives::tasks::spawn_logging_task;
-use crate::routes::CallType;
 
 impl ResponsesStreamHooks<'_> {
     pub async fn run_post_success_hooks(
@@ -27,15 +26,15 @@ impl ResponsesStreamHooks<'_> {
         let Some(hook) = self.success_hook.as_ref().map(Arc::clone) else {
             return;
         };
-        let call_type =
-            resolve_call_type(state.call_type.as_deref(), None).unwrap_or(CallType::Responses);
-        let call_type_text = call_type_name(call_type).unwrap_or_default();
+        let call_type_text = state
+            .call_type
+            .as_deref()
+            .filter(|name| resolve_call_type(Some(name), None).is_some())
+            .unwrap_or("responses")
+            .to_owned();
         if Handle::try_current().is_ok() {
-            let task_payload = payload.clone();
-            let task_response = response.clone();
-            let task_call_type = call_type_text.clone();
             let work = async move {
-                hook.success_deployment_hook(&task_payload, &task_response, &task_call_type)
+                hook.success_deployment_hook(&payload, &response, &call_type_text)
                     .await
                     .map(|_kept| ())
             };
@@ -45,7 +44,6 @@ impl ResponsesStreamHooks<'_> {
             }
             return;
         }
-        // without a loop LiteLLM runs the coroutine to completion and swallows its error
         if let Err(error) = hook
             .success_deployment_hook(&payload, &response, &call_type_text)
             .await

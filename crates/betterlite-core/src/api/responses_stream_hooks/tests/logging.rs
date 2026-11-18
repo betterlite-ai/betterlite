@@ -427,15 +427,15 @@ fn logging_header_isolation_lets_existing_target_keys_win() {
     assert_eq!(path(hidden, &["headers", "x-raw"]), Some(&text("raw")));
 }
 
-#[test]
-fn logging_header_isolation_ignores_events_without_a_typed_response() {
+#[rstest::rstest]
+#[case::generic(r#"{"type":"response.queued","response":{"id":"resp_1"}}"#)]
+#[case::delta(r#"{"type":"response.output_text.delta","sequence_number":1,"item_id":"item","output_index":0,"content_index":0,"delta":"hi"}"#)]
+fn logging_header_isolation_ignores_events_without_a_typed_response(#[case] raw: &str) {
     let state = base_state();
-    let generic = decode(r#"{"type":"response.queued","response":{"id":"resp_1"}}"#);
-    let known = decode(
-        r#"{"type":"response.output_text.delta","sequence_number":1,"item_id":"item","output_index":0,"content_index":0,"delta":"hi"}"#,
+    let payload = logging_event(
+        &decode(raw),
+        &state.hidden_params,
+        &state.raw_response_headers,
     );
-    for event in [generic, known] {
-        let payload = logging_event(&event, &state.hidden_params, &state.raw_response_headers);
-        assert_eq!(path(&payload, &["response", "_hidden_params"]), None);
-    }
+    assert_eq!(path(&payload, &["response", "_hidden_params"]), None);
 }
