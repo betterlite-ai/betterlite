@@ -4,7 +4,7 @@ from typing import Final, Literal, TypeAlias, TypedDict
 from litellm.proxy.common_request_processing import (
     _assembled_model_came_from_a_later_chunk,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L356
     _assembled_model_is_the_name_the_client_asked_for,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L378
-    _record_streaming_client_disconnect_if_needed,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L293
+    _record_streaming_client_disconnect_if_needed,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L293
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -19,17 +19,10 @@ class ModelCheck(TypedDict):
     request_data: JsonObject
 
 
-class RecordInput(TypedDict):
-    function: Literal["record_disconnect"]
+class Input(TypedDict):
+    function: Literal["record_disconnect", "model_checks"]
     requests: list[JsonObject]
-
-
-class ChecksInput(TypedDict):
-    function: Literal["model_checks"]
     checks: list[ModelCheck]
-
-
-Input: TypeAlias = RecordInput | ChecksInput
 
 
 async def record_answers(requests: list[JsonObject]) -> list[JsonObject]:
