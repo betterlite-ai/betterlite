@@ -1,0 +1,27 @@
+kind: probe
+name: priority-overlap
+probes:
+  - clock: {unix_millis: 1700000001400, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        aliases: {premium: escalation}
+        groups:
+          - group_name: fast
+            models: [probe-shared, probe-premium]
+            routing_strategy: priority
+            model_priorities: {probe-shared: 1, probe-premium: 2}
+          - group_name: slow
+            models: [probe-shared]
+            routing_strategy: priority
+            model_priorities: {probe-shared: 5}
+          - group_name: escalation
+            models: [probe-premium]
+            routing_strategy: priority
+            model_priorities: {probe-premium: 1}
+        deployments:
+          - {model_name: probe-shared, identifier: shared-1, model: "openai/probe-shared"}
+          - {model_name: probe-premium, identifier: premium-1, model: "openai/probe-premium"}
+          - {model_name: probe-premium, identifier: premium-2, model: "openai/probe-premium"}
+        names: [fast, slow, probe-shared, premium, escalation]
+compare: {ignore: []}

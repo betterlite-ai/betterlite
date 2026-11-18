@@ -1,0 +1,15 @@
+kind: probe
+name: none-never-rounded
+probes:
+  - clock: {unix_millis: 1700000001900, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        rounds:
+          - {requested: none, declared: [none, high]}
+          - {requested: low, declared: [none, high]}
+          - {requested: minimal, declared: [none]}
+          - {requested: low, declared: [none, minimal]}
+          - {requested: none, declared: []}
+          - {requested: medium, declared: [none]}
+compare: {ignore: []}
