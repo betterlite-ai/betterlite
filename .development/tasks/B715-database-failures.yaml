@@ -74,6 +74,8 @@ description: >-
   and 30 registration lines, 645 within 700. Separate gate, deadline and metric modules below 300 lines.
 scope:
   paths:
+    - "crates/betterlite-logging/**"
+    - "crates/betterlite-config"
     - crates/betterlite-db/src/database_failures.rs
     - crates/betterlite-db/src/database_failures/**
     - crates/betterlite-db/Cargo.toml

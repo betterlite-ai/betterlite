@@ -1,0 +1,12 @@
+kind: helper
+name: custom-routes-file-single-mapping
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      route_name: single
+      description: a single mapping
+      utterances: ["only one"]
+    global_threshold: 0.55
+env: {}
+compare: {ignore: []}

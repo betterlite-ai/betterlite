@@ -53,6 +53,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "spend_queue_setting"
+path = "fuzz_targets/spend_queue_setting.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "prompt_runtime"
 path = "fuzz_targets/prompt_runtime.rs"
 test = false
