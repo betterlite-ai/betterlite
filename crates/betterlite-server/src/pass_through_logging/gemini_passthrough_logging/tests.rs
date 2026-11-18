@@ -574,7 +574,8 @@ fn route_predict_long_running_keeps_the_request_resolution() {
     let outcome = logger(Arc::clone(&cost))
         .gemini_passthrough_handler(gemini_input(&fixture))
         .expect("the video operation is logged");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(field(usage, "video_resolution"), &Json::Text(String::new()));
 }
 
@@ -585,7 +586,8 @@ fn payload_usage_keeps_the_prompt_modality_details() {
     let outcome = logger(Arc::clone(&cost))
         .gemini_passthrough_handler(gemini_input(&fixture))
         .expect("the detailed usage is logged");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(
         field(usage, "prompt_tokens_details"),
         &json(r#"{"text_tokens":3}"#)
@@ -688,7 +690,8 @@ fn chunks_without_usage_count_the_assembled_text() {
     let outcome = logger(Arc::clone(&cost))
         .handle(&fixture.call())
         .expect("the chunk builds a response");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(integer(usage, "prompt_tokens"), 0);
     assert_eq!(integer(usage, "completion_tokens"), 2);
     assert_eq!(integer(usage, "total_tokens"), 2);
@@ -731,20 +734,25 @@ fn reply_drops_the_unset_message_fields() {
         .gemini_passthrough_handler(gemini_input(&fixture))
         .expect("the generateContent reply is logged");
     let result = result_json(&outcome);
-    let Json::Object(message) = field(choices(result), "message") else {
+    let Json::Object(message) = field(choices(&result), "message") else {
         panic!("the message is an object");
     };
-    for name in [
-        "reasoning_content",
-        "audio",
-        "annotations",
-        "provider_specific_fields",
-    ] {
-        assert!(
-            message.get(name).is_none(),
-            "{name} stays out of the message"
-        );
-    }
+    assert!(
+        message.get("reasoning_content").is_none(),
+        "reasoning_content stays out of the message"
+    );
+    assert!(
+        message.get("audio").is_none(),
+        "audio stays out of the message"
+    );
+    assert!(
+        message.get("annotations").is_none(),
+        "annotations stays out of the message"
+    );
+    assert!(
+        message.get("provider_specific_fields").is_none(),
+        "provider_specific_fields stays out of the message"
+    );
 }
 
 fn choices(result: &Json) -> &Json {

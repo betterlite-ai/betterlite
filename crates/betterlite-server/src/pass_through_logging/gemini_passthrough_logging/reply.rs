@@ -2,7 +2,7 @@ use betterlite_core::api::media_relay_logging::spend::decimal_json;
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::{PromptTokensDetails, Usage, UsageNumber};
 use betterlite_vertex::gemini_candidates::choice::{Choice, Choices, Message};
-use betterlite_vertex::gemini_response::complete::CompleteResponse;
+use betterlite_vertex::gemini_response::complete::{CompleteMetadata, CompleteResponse};
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -33,7 +33,11 @@ pub(crate) fn logged_response(
     if let Some(tier) = &response.service_tier {
         fields.insert("service_tier".to_owned(), Json::Text(tier.clone()));
     }
-    let metadata = response.metadata.as_ref();
+    insert_metadata_lists(&mut fields, response.metadata.as_ref());
+    Ok(Json::Object(fields))
+}
+
+fn insert_metadata_lists(fields: &mut IndexMap<String, Json>, metadata: Option<&CompleteMetadata>) {
     for (name, values) in [
         (
             "vertex_ai_grounding_metadata",
@@ -57,7 +61,6 @@ pub(crate) fn logged_response(
             Json::List(values.cloned().unwrap_or_default()),
         );
     }
-    Ok(Json::Object(fields))
 }
 
 // The provider's raw finish reason rides the choice's provider_specific_fields beside the mapped one.
@@ -109,7 +112,7 @@ fn message_json(message: &Message) -> Result<Json, serde_json::Error> {
     if let Json::Object(fields) = &mut value {
         for name in UNSET_MESSAGE_FIELDS {
             if fields.get(name) == Some(&Json::Null) {
-                fields.remove(name);
+                fields.shift_remove(name);
             }
         }
     }

@@ -24,22 +24,17 @@ impl CollectedCounter {
             engine: Engine::Tiktoken(Arc::new(engine)),
         })
     }
-
-    fn encode_len(&self, text: &str) -> Result<i64, CountError> {
-        let ids = self.engine.encode(text)?;
-        i64::try_from(ids.len()).map_err(|_conversion| CountError::Overflow)
-    }
 }
 
 #[async_trait]
 impl UsageTokenCounter for CollectedCounter {
     async fn count_response_text(&self, _model: &str, text: &str) -> Result<i64, CountError> {
-        self.encode_len(text)
+        i64::try_from(self.engine.encode(text)?.len()).map_err(|_conversion| CountError::Overflow)
     }
 
     // The reasoning fallback calls token_counter(text=...) with no model, which also lands on cl100k_base.
     async fn count_text(&self, text: &str) -> Result<i64, CountError> {
-        self.encode_len(text)
+        i64::try_from(self.engine.encode(text)?.len()).map_err(|_conversion| CountError::Overflow)
     }
 
     // token_counter(messages=None) raises in LiteLLM and the builder counts 0, so an error or an Ok(0) answer is the same count.

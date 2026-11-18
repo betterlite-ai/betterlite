@@ -16,7 +16,7 @@ pub(crate) fn create_gemini_response_logging_payload(
     cost: &dyn PassthroughCompletionCost,
     response: &mut Json,
     model: &str,
-    mut kwargs: PassThroughLoggingKwargs,
+    kwargs: PassThroughLoggingKwargs,
     logging_obj: &StreamLoggingObject,
     custom_llm_provider: &str,
 ) -> Result<PassThroughLoggingKwargs, GeminiPassthroughError> {
@@ -32,16 +32,7 @@ pub(crate) fn create_gemini_response_logging_payload(
             model: model.to_owned(),
             source,
         })?;
-    kwargs
-        .entries
-        .insert("response_cost".to_owned(), decimal_json(response_cost));
-    kwargs
-        .entries
-        .insert("model".to_owned(), Json::Text(model.to_owned()));
-    kwargs.entries.insert(
-        "custom_llm_provider".to_owned(),
-        Json::Text(custom_llm_provider.to_owned()),
-    );
+    let kwargs = cost_kwargs(kwargs, model, custom_llm_provider, response_cost);
     let mut logged_model = model.to_owned();
     if let Json::Object(fields) = response {
         let call_id = logging_obj
@@ -61,6 +52,25 @@ pub(crate) fn create_gemini_response_logging_payload(
         response_cost,
     );
     Ok(kwargs)
+}
+
+fn cost_kwargs(
+    mut kwargs: PassThroughLoggingKwargs,
+    model: &str,
+    custom_llm_provider: &str,
+    response_cost: Decimal,
+) -> PassThroughLoggingKwargs {
+    kwargs
+        .entries
+        .insert("response_cost".to_owned(), decimal_json(response_cost));
+    kwargs
+        .entries
+        .insert("model".to_owned(), Json::Text(model.to_owned()));
+    kwargs.entries.insert(
+        "custom_llm_provider".to_owned(),
+        Json::Text(custom_llm_provider.to_owned()),
+    );
+    kwargs
 }
 
 // This factory is the only one that writes response_cost into the call details.

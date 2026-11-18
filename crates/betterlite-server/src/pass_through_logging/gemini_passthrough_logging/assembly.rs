@@ -96,11 +96,10 @@ fn gemini_chunk(chunk: StreamChunk) -> Result<Chunk, CollectedStreamError> {
             StreamItem::Projected(projected) => serde_json::from_value(
                 serde_json::to_value(projected.as_ref()).map_err(CollectedStreamError::from)?,
             )?,
-            StreamItem::EmptyDelta { index } => {
-                let mut choice = Choice::default();
-                choice.index = Some(index);
-                choice
-            }
+            StreamItem::EmptyDelta { index } => Choice {
+                index: Some(index),
+                ..Choice::default()
+            },
         });
     }
     Ok(Chunk {
@@ -114,9 +113,9 @@ fn gemini_chunk(chunk: StreamChunk) -> Result<Chunk, CollectedStreamError> {
         usage: chunk
             .usage
             .as_ref()
-            .map(|usage| {
+            .map(|usage| -> Result<JsonValue, CollectedStreamError> {
                 let value = serde_json::to_value(super::reply::usage_json(usage))?;
-                Ok(serde_json::from_value(value)?)
+                serde_json::from_value(value).map_err(CollectedStreamError::from)
             })
             .transpose()?,
         choices,

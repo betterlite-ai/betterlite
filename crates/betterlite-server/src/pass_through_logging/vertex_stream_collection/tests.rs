@@ -165,7 +165,7 @@ fn chunks_store_the_location_before_the_response_work() {
 fn chunks_vertex_host_uses_the_vertex_ai_provider() {
     let fixture = collected(VERTEX_GENERATE_ROUTE, &[CHUNK], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -202,7 +202,7 @@ fn chunks_vertex_host_uses_the_vertex_ai_provider() {
 fn chunks_gemini_host_uses_the_gemini_provider() {
     let fixture = collected(GEMINI_GENERATE_ROUTE, &[CHUNK], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -226,7 +226,7 @@ fn chunks_use_the_given_model_when_the_stream_names_none() {
         Some("given-model"),
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -278,7 +278,7 @@ fn chunks_raw_predict_builds_and_prices_the_events() {
         None,
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     let outcome = collector
         .handle(&fixture.call())
         .expect("the events build a response");
@@ -295,11 +295,12 @@ fn chunks_raw_predict_without_usage_counts_the_text_and_reasoning() {
         None,
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     let outcome = collector
         .handle(&fixture.call())
         .expect("the events build a response");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(integer(usage, "prompt_tokens"), 0);
     assert_eq!(integer(usage, "completion_tokens"), 3);
     assert_eq!(integer(usage, "total_tokens"), 3);
@@ -316,11 +317,12 @@ fn chunks_raw_predict_counts_reasoning_for_a_reported_usage() {
         None,
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = stream_collector(Arc::clone(&cost));
     let outcome = collector
         .handle(&fixture.call())
         .expect("the events build a response");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(integer(usage, "prompt_tokens"), 10);
     assert_eq!(integer(usage, "completion_tokens"), 5);
     let details = field(usage, "completion_tokens_details");
@@ -340,6 +342,10 @@ fn build_cost_record_reads_only_a_non_empty_body_model() {
 fn bundled_counter() -> CollectedCounter {
     let built = CollectedCounter::bundled();
     built.expect("the bundled cl100k vocabulary loads")
+}
+
+fn stream_collector(cost: Arc<FakeCost>) -> VertexStreamCollector {
+    VertexStreamCollector::new(cost)
 }
 
 fn choice(body: &Json) -> &Json {
