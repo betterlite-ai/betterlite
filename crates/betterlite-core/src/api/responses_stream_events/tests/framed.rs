@@ -307,3 +307,74 @@ async fn quota_protocol_is_exposed_without_a_per_event_call() {
         .expect("the terminal is processed");
     assert_eq!(counter.calls(), 1);
 }
+
+#[tokio::test]
+async fn payloads_over_the_event_limit_are_dropped_like_malformed_json() {
+    let redactor = redactor();
+    let ports = Ports::recording();
+    let hooks = ports.hooks(&redactor, fixed_clock());
+    let transform: Option<Direct> = Some(Direct);
+    let tokenization: Option<Tokenization> = None;
+    let calculator: Option<Calculator> = None;
+    let limits = ApiLimits::default();
+    let mut details = IndexMap::new();
+    let mut state = stream_state();
+    let mut callback = ResponsesStreamHookState::default();
+    let logging = logging_object();
+    let mut processor = ResponsesEventProcessor {
+        transform: transform.as_ref(),
+        tokenization: tokenization.as_ref(),
+        calculator: calculator.as_ref(),
+        hooks: &hooks,
+        details: &mut details,
+        dispatch: Dispatch::Inline,
+        limits: &limits,
+    };
+    let padding = "x".repeat(limits.max_event_bytes);
+    let payload = format!(
+        r#"{{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi","pad":"{padding}"}}"#
+    );
+    let outcome = processor
+        .process(&payload, &mut state, &mut callback, &logging)
+        .await;
+    assert!(matches!(outcome, Ok(None)));
+    assert_eq!(state.generated_content, "");
+    assert!(state.completed_response.is_none());
+    assert_eq!(completion_start(&logging), Some(timestamp(CLOCK)));
+    assert!(ports.failure.calls.entries().is_empty());
+}
+
+#[tokio::test]
+async fn payloads_at_the_event_limit_still_reach_the_provider_transform() {
+    let redactor = redactor();
+    let ports = Ports::recording();
+    let hooks = ports.hooks(&redactor, fixed_clock());
+    let transform: Option<Direct> = Some(Direct);
+    let tokenization: Option<Tokenization> = None;
+    let calculator: Option<Calculator> = None;
+    let limits = ApiLimits::default();
+    let mut details = IndexMap::new();
+    let mut state = stream_state();
+    let mut callback = ResponsesStreamHookState::default();
+    let logging = logging_object();
+    let mut processor = ResponsesEventProcessor {
+        transform: transform.as_ref(),
+        tokenization: tokenization.as_ref(),
+        calculator: calculator.as_ref(),
+        hooks: &hooks,
+        details: &mut details,
+        dispatch: Dispatch::Inline,
+        limits: &limits,
+    };
+    let prefix = r#"{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi","pad":""#;
+    let padding = "x".repeat(limits.max_event_bytes - prefix.len() - 2);
+    let payload = format!("{prefix}{padding}\"}}");
+    assert_eq!(payload.len(), limits.max_event_bytes);
+    processor
+        .process(&payload, &mut state, &mut callback, &logging)
+        .await
+        .expect("the payload at the limit is processed")
+        .expect("the payload at the limit is handed on");
+    assert_eq!(state.generated_content, "hi");
+    assert_eq!(completion_start(&logging), Some(timestamp(CLOCK)));
+}
