@@ -299,8 +299,7 @@ fn reject_unsupported_speed(request: &TransformRequest<'_>) -> Result<(), Config
     match maybe_drop_speed_param(&call, &catalogs) {
         Ok(_) => Ok(()),
         Err(error) => {
-            let class = error.classify();
-            let failure: ConfigError = match class {
+            let failure: ConfigError = match error.classify() {
                 Some(class) => Box::new(ClassifiedConfigError {
                     source: Box::new(error),
                     class,

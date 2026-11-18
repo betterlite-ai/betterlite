@@ -58,7 +58,7 @@ pub(crate) fn completion(input: &Input) -> HelperResult {
     };
     let argument = input.api_key.clone().map(SecretString::from);
     let credentials = credentials(input);
-    let request = request_of(input, &argument, &credentials);
+    let request = request_of(input, argument.as_ref(), &credentials);
     let fixture = Runtime::new()?;
     let mut state = fixture.state()?;
     let env = fixture.env();
@@ -120,7 +120,7 @@ fn stream_value(
 
 fn request_of<'call>(
     input: &'call Input,
-    argument: &'call Option<SecretString>,
+    argument: Option<&'call SecretString>,
     credentials: &'call DeploymentSettings,
 ) -> ChatRequest<'call> {
     ChatRequest {
@@ -131,7 +131,7 @@ fn request_of<'call>(
         caller_headers: input.caller_headers.clone(),
         api_base: input.api_base.as_str(),
         params_key: ParamsKey::DictAbsent,
-        argument_key: argument.as_ref(),
+        argument_key: argument,
         configured_key: None,
         token: TokenSource {
             credentials,
@@ -200,6 +200,7 @@ fn recorded_parts(wire: &Wire) -> Recorded {
     let body = posts.first().map_or(Value::Null, |post| {
         serde_json::from_slice(&post.body).unwrap_or(Value::Null)
     });
+    drop(posts);
     let mut fields = IndexMap::new();
     for name in BODY_KEYS {
         if let Some(value) = body.get(name) {
