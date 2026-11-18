@@ -1,0 +1,28 @@
+kind: sdk_http
+name: native-stream-factory
+env: {}
+call:
+  messages_stream_factory:
+    model: ignored-model
+    body:
+      model: claude-sonnet-4-5
+      max_tokens: 32
+      stream: true
+      messages:
+        - {role: user, content: hi}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"id": "msg_a", "model": "claude-sonnet-4-5", "content": []}}'
+      - '{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}'
+      - '{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hello"}}'
+      - '{"type": "content_block_stop", "index": 0}'
+      - '{"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
