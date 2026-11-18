@@ -202,8 +202,8 @@ pitfalls:
   into the body.
 - >-
   The OpenAI path now reads the request into ChatParameters, as the Anthropic path does, so a value of the wrong type
-  answers OperationError::Parameters with ParameterError::Encode where the body sent it before. The regressions
-  check runs every openai_dispatch_cases case, so each one that passes on main must still pass.
+  answers OperationError::Parameters with ParameterError::Encode, a 400 through B9986's RequestError::Body arm, where
+  the body sent it before and the upstream answered 400. The regressions check runs every openai_dispatch_cases case, so each one that passes on main must still pass.
 budget:
   max_changed_lines: 800
   max_new_expects: 0

@@ -170,7 +170,9 @@ description: >-
   OperationError exhaustively, so both gain the two arms here: OperationError::Anthropic goes to CallError::Operation
   next to TransformRetry, a 500. OperationError::Parameters with ParameterError::Unsupported { names, .. } goes to
   ChatError::Request with RequestError::Unsupported { name: names joined with a comma and a space }, the 400 the route
-  already answers for a rejected parameter, and any other ParameterError goes to CallError::Operation, a 500.
+  already answers for a rejected parameter. ParameterError::Encode { source } goes to ChatError::Request with
+  RequestError::Body { source }, also a 400, since a value of the wrong type is the client's error. Any other
+  ParameterError goes to CallError::Operation, a 500.
 
 
   The other Upstream matches. openai_dispatch.rs and aiohttp_openai_dispatch.rs add Upstream::Anthropic(_) to their
