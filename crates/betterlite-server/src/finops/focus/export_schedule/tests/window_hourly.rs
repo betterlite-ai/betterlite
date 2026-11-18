@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
+use crate::finops::focus::export_schedule::{compute_time_window, initialize_focus_export_job};
 use crate::finops::focus::support::{self, ExportCall, Recorder, at};
 
 #[rstest]
@@ -24,8 +25,7 @@ fn the_hourly_window_is_the_last_full_hour(
     #[case] expected_start: &str,
     #[case] expected_end: &str,
 ) {
-    let window = support::configured("hourly", None, None)
-        .compute_time_window(at(now))
+    let window = compute_time_window(&support::configured("hourly", None, None), at(now))
         .expect("hourly has a window");
     assert_eq!(window.start_time, at(expected_start));
     assert_eq!(window.end_time, at(expected_end));
@@ -41,8 +41,7 @@ async fn the_scheduled_run_exports_the_last_full_hour() {
         recorder.factory(),
         None,
     );
-    logger
-        .initialize_focus_export_job()
+    initialize_focus_export_job(&logger)
         .await
         .expect("the fake export succeeds");
     assert_eq!(

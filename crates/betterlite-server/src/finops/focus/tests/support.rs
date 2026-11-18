@@ -6,6 +6,10 @@ use std::future::{Future, pending, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use betterlite_db::queues::pod_lock::owner::PodId;
+use betterlite_db::queues::pod_lock::{
+    LockCache, LockCacheError, LockScript, NoPodLockEventSink, PodLockManager,
+};
 use betterlite_logging::finops::focus::destinations::factory::resolve::DestinationOverrides;
 use betterlite_logging::finops::focus::engine::ExportSettings;
 use betterlite_logging::finops::metering::clock::UtcClock;
@@ -40,7 +44,7 @@ pub(super) fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> 
         .collect()
 }
 
-const fn params() -> FocusLoggerParams {
+pub(super) const fn params() -> FocusLoggerParams {
     FocusLoggerParams {
         provider: None,
         export_format: None,
@@ -339,7 +343,69 @@ impl FocusPodLock for FakePodLock {
 }
 
 pub(super) fn as_pod_lock(lock: &Arc<FakePodLock>) -> Arc<dyn FocusPodLock> {
-    lock.clone()
+    Arc::clone(lock)
+}
+
+// One lease per key, like the redis cache the real manager talks to, and the TTLs the manager asked for.
+#[derive(Clone, Default)]
+pub(super) struct SharedLockCache {
+    owners: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    ttls: Arc<Mutex<Vec<i64>>>,
+}
+
+impl SharedLockCache {
+    pub(super) fn ttls(&self) -> Vec<i64> {
+        self.ttls.lock().unwrap().clone()
+    }
+}
+
+impl LockCache for SharedLockCache {
+    fn get_owner(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
+        let owner = self.owners.lock().unwrap().get(key).cloned();
+        ready(Ok(owner))
+    }
+
+    fn set_owner_if_absent(
+        &self,
+        key: &str,
+        owner: &str,
+        ttl_seconds: i64,
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
+        self.ttls.lock().unwrap().push(ttl_seconds);
+        let mut owners = self.owners.lock().unwrap();
+        let stored = if owners.contains_key(key) {
+            false
+        } else {
+            owners.insert(key.to_owned(), owner.as_bytes().to_vec());
+            true
+        };
+        drop(owners);
+        ready(Ok(stored))
+    }
+
+    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
+        let removed = self.owners.lock().unwrap().remove(key);
+        ready(Ok(i64::from(removed.is_some())))
+    }
+
+    fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
+        None
+    }
+}
+
+// A real pod lock manager over the shared cache, with a pod id of its own.
+pub(super) fn lock_manager(
+    cache: Option<Arc<SharedLockCache>>,
+) -> Arc<PodLockManager<SharedLockCache>> {
+    Arc::new(PodLockManager::new(
+        cache,
+        60,
+        Arc::new(NoPodLockEventSink),
+        PodId::try_from(uuid::Uuid::new_v4()).expect("the pod id is a v4 UUID"),
+    ))
 }
 
 pub(super) struct RecordingScheduler<F: FocusEngineFactory> {

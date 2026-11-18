@@ -2,6 +2,7 @@
 
 use rstest::rstest;
 
+use crate::finops::focus::export_schedule::compute_time_window;
 use crate::finops::focus::support::{self, at};
 
 #[rstest]
@@ -18,8 +19,7 @@ fn the_daily_window_is_the_last_full_day(
     #[case] expected_start: &str,
     #[case] expected_end: &str,
 ) {
-    let window = support::configured("daily", None, None)
-        .compute_time_window(at(now))
+    let window = compute_time_window(&support::configured("daily", None, None), at(now))
         .expect("daily has a window");
     assert_eq!(window.start_time, at(expected_start));
     assert_eq!(window.end_time, at(expected_end));

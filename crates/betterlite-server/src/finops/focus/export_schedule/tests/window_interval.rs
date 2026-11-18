@@ -2,6 +2,7 @@
 
 use rstest::rstest;
 
+use crate::finops::focus::export_schedule::compute_time_window;
 use crate::finops::focus::support::{self, FIXED_NOW, at};
 
 #[rstest]
@@ -13,9 +14,11 @@ fn the_interval_window_ends_now_and_is_as_wide_as_the_interval(
     #[case] interval_seconds: Option<i64>,
     #[case] expected_start: &str,
 ) {
-    let window = support::configured("interval", None, interval_seconds)
-        .compute_time_window(at(FIXED_NOW))
-        .expect("interval is valid");
+    let window = compute_time_window(
+        &support::configured("interval", None, interval_seconds),
+        at(FIXED_NOW),
+    )
+    .expect("interval is valid");
     assert_eq!(window.start_time, at(expected_start));
     assert_eq!(window.end_time, at(FIXED_NOW));
     assert_eq!(window.frequency, "interval");
@@ -23,8 +26,7 @@ fn the_interval_window_ends_now_and_is_as_wide_as_the_interval(
 
 #[test]
 fn an_unset_interval_reads_as_sixty_seconds() {
-    let window = support::configured("interval", None, None)
-        .compute_time_window(at(FIXED_NOW))
+    let window = compute_time_window(&support::configured("interval", None, None), at(FIXED_NOW))
         .expect("interval is valid");
     assert_eq!(window.start_time, at("2024-03-10T13:46:23.123456Z"));
     assert_eq!(window.end_time, at("2024-03-10T13:47:23.123456Z"));

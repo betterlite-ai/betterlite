@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker;
 
 use super::error::{FocusError, FocusInitError, ScheduleError};
-use super::export::{FocusEngineFactory, FocusLogger};
+use super::export::{FocusEngineFactory, FocusExporter, FocusLogger};
 
 #[path = "export_schedule/tests/exact_type_match.rs"]
 mod exact_type_match;
@@ -116,11 +116,11 @@ impl<Cache: LockCache> FocusPodLock for PodLockManager<Cache> {
     }
 
     fn acquire_lock<'job>(&'job self, cronjob_id: &'job str) -> BoxFuture<'job, Option<bool>> {
-        Box::pin(PodLockManager::acquire_lock(self, cronjob_id, None, true))
+        Box::pin(Self::acquire_lock(self, cronjob_id, None, true))
     }
 
     fn release_lock<'job>(&'job self, cronjob_id: &'job str) -> BoxFuture<'job, ()> {
-        Box::pin(PodLockManager::release_lock(self, cronjob_id))
+        Box::pin(Self::release_lock(self, cronjob_id))
     }
 }
 
@@ -159,81 +159,92 @@ impl Drop for PodLockLease {
     }
 }
 
-impl<F: FocusEngineFactory> FocusLogger<F> {
-    pub fn build_scheduler_trigger(&self) -> Result<ScheduleTrigger, ScheduleError> {
-        match ExportFrequency::parse(&self.frequency) {
-            ExportFrequency::Interval => Ok(ScheduleTrigger::Interval {
-                seconds: self.interval_seconds,
-            }),
-            ExportFrequency::Hourly => Ok(ScheduleTrigger::Cron {
-                hour: None,
-                minute: self.cron_offset_minute.clamp(0, 59),
+// The scheduling half of the logger: free functions here, so FocusLogger keeps its one inherent impl in export.rs.
+pub fn build_scheduler_trigger<F>(logger: &FocusLogger<F>) -> Result<ScheduleTrigger, ScheduleError>
+where
+    F: FocusEngineFactory,
+{
+    match ExportFrequency::parse(&logger.frequency) {
+        ExportFrequency::Interval => Ok(ScheduleTrigger::Interval {
+            seconds: logger.interval_seconds,
+        }),
+        ExportFrequency::Hourly => Ok(ScheduleTrigger::Cron {
+            hour: None,
+            minute: logger.cron_offset_minute.clamp(0, 59),
+            second: 0,
+        }),
+        ExportFrequency::Daily => {
+            let total_minutes = logger.cron_offset_minute.max(0);
+            Ok(ScheduleTrigger::Cron {
+                hour: Some(total_minutes.div_euclid(60).min(23)),
+                minute: total_minutes.rem_euclid(60).min(59),
                 second: 0,
-            }),
-            ExportFrequency::Daily => {
-                let total_minutes = self.cron_offset_minute.max(0);
-                Ok(ScheduleTrigger::Cron {
-                    hour: Some(total_minutes.div_euclid(60).min(23)),
-                    minute: total_minutes.rem_euclid(60).min(59),
-                    second: 0,
-                })
-            }
-            ExportFrequency::Unsupported(frequency) => {
-                Err(ScheduleError::UnsupportedFrequency { frequency })
-            }
+            })
+        }
+        ExportFrequency::Unsupported(frequency) => {
+            Err(ScheduleError::UnsupportedFrequency { frequency })
         }
     }
+}
 
-    pub fn compute_time_window(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<FocusTimeWindow, ScheduleError> {
-        let (start_time, end_time) = match ExportFrequency::parse(&self.frequency) {
-            ExportFrequency::Hourly => truncated_window(now, TimeDelta::try_hours(1))?,
-            ExportFrequency::Daily => truncated_window(now, TimeDelta::try_days(1))?,
-            ExportFrequency::Interval => {
-                let interval = TimeDelta::try_seconds(self.interval_seconds)
-                    .ok_or(ScheduleError::TimeWindowOutOfRange)?;
-                let start_time = now
-                    .checked_sub_signed(interval)
-                    .ok_or(ScheduleError::TimeWindowOutOfRange)?;
-                (start_time, now)
-            }
-            ExportFrequency::Unsupported(frequency) => {
-                return Err(ScheduleError::UnsupportedFrequency { frequency });
-            }
-        };
-        Ok(FocusTimeWindow {
-            start_time,
-            end_time,
-            frequency: self.frequency.clone(),
-        })
-    }
-
-    pub async fn initialize_focus_export_job(&self) -> Result<(), FocusError<F::Engine::Error>> {
-        let lease = match self.pod_lock.as_ref() {
-            Some(pod_lock) if pod_lock.has_cache() => {
-                if pod_lock.acquire_lock(FOCUS_USAGE_DATA_JOB_NAME).await != Some(true) {
-                    tracing::debug!("Focus export: unable to acquire pod lock");
-                    return Ok(());
-                }
-                Some(PodLockLease::start(Arc::clone(pod_lock), &self.tasks))
-            }
-            _ => None,
-        };
-        let computed = self.compute_time_window(self.clock.now());
-        let result = match computed {
-            Ok(window) => {
-                self.export_usage_data(None, Some(window.start_time), Some(window.end_time))
-                    .await
-            }
-            Err(error) => Err(FocusError::Schedule(error)),
-        };
-        if let Some(lease) = lease {
-            lease.release().await;
+pub fn compute_time_window<F>(
+    logger: &FocusLogger<F>,
+    now: DateTime<Utc>,
+) -> Result<FocusTimeWindow, ScheduleError>
+where
+    F: FocusEngineFactory,
+{
+    let (start_time, end_time) = match ExportFrequency::parse(&logger.frequency) {
+        ExportFrequency::Hourly => truncated_window(now, TimeDelta::try_hours(1))?,
+        ExportFrequency::Daily => truncated_window(now, TimeDelta::try_days(1))?,
+        ExportFrequency::Interval => {
+            let interval = TimeDelta::try_seconds(logger.interval_seconds)
+                .ok_or(ScheduleError::TimeWindowOutOfRange)?;
+            let start_time = now
+                .checked_sub_signed(interval)
+                .ok_or(ScheduleError::TimeWindowOutOfRange)?;
+            (start_time, now)
         }
-        result
+        ExportFrequency::Unsupported(frequency) => {
+            return Err(ScheduleError::UnsupportedFrequency { frequency });
+        }
+    };
+    Ok(FocusTimeWindow {
+        start_time,
+        end_time,
+        frequency: logger.frequency.clone(),
+    })
+}
+
+pub async fn initialize_focus_export_job<F>(
+    logger: &FocusLogger<F>,
+) -> Result<(), FocusError<<F::Engine as FocusExporter>::Error>>
+where
+    F: FocusEngineFactory,
+{
+    let lease = match logger.pod_lock.as_ref() {
+        Some(pod_lock) if pod_lock.has_cache() => {
+            if pod_lock.acquire_lock(FOCUS_USAGE_DATA_JOB_NAME).await != Some(true) {
+                tracing::debug!("Focus export: unable to acquire pod lock");
+                return Ok(());
+            }
+            Some(PodLockLease::start(Arc::clone(pod_lock), &logger.tasks))
+        }
+        _ => None,
+    };
+    let computed = compute_time_window(logger, logger.clock.now());
+    let result = match computed {
+        Ok(window) => {
+            logger
+                .export_usage_data(None, Some(window.start_time), Some(window.end_time))
+                .await
+        }
+        Err(error) => Err(FocusError::Schedule(error)),
+    };
+    if let Some(lease) = lease {
+        lease.release().await;
     }
+    result
 }
 
 pub fn init_focus_export_job<F, S>(
@@ -251,7 +262,7 @@ where
         tracing::debug!("No Focus export logger registered; skipping scheduler");
         return Ok(());
     };
-    let trigger = entry.logger.build_scheduler_trigger()?;
+    let trigger = build_scheduler_trigger(&entry.logger)?;
     scheduler
         .add_job(Arc::clone(&entry.logger), trigger)
         .map_err(FocusInitError::Scheduler)

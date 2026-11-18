@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::finops::focus::export_schedule::ScheduleTrigger;
+use crate::finops::focus::export_schedule::{ScheduleTrigger, build_scheduler_trigger};
 use crate::finops::focus::support;
 
 #[rstest]
@@ -14,8 +14,7 @@ fn the_interval_trigger_uses_the_configured_seconds(
     #[case] interval_seconds: Option<i64>,
     #[case] expected_seconds: i64,
 ) {
-    let trigger = support::configured("interval", None, interval_seconds)
-        .build_scheduler_trigger()
+    let trigger = build_scheduler_trigger(&support::configured("interval", None, interval_seconds))
         .expect("interval is supported");
     assert_eq!(
         trigger,

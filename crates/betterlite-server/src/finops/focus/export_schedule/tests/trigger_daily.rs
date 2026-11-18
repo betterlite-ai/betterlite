@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::finops::focus::export_schedule::ScheduleTrigger;
+use crate::finops::focus::export_schedule::{ScheduleTrigger, build_scheduler_trigger};
 use crate::finops::focus::support;
 
 #[rstest]
@@ -19,8 +19,7 @@ fn the_daily_trigger_splits_the_offset_into_hour_and_minute(
     #[case] expected_hour: Option<i64>,
     #[case] expected_minute: i64,
 ) {
-    let trigger = support::configured("daily", Some(offset), None)
-        .build_scheduler_trigger()
+    let trigger = build_scheduler_trigger(&support::configured("daily", Some(offset), None))
         .expect("daily is supported");
     assert_eq!(
         trigger,

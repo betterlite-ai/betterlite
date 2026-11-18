@@ -52,7 +52,10 @@ pub trait FocusExporter: Send + Sync {
 pub trait FocusEngineFactory: Send + Sync {
     type Engine: FocusExporter;
 
-    fn create(&self, settings: ExportSettings) -> Result<Self::Engine, Self::Engine::Error>;
+    fn create(
+        &self,
+        settings: ExportSettings,
+    ) -> Result<Self::Engine, <Self::Engine as FocusExporter>::Error>;
 }
 
 impl<Destination, Source, Clock> FocusExporter for FocusExportEngine<Destination, Source, Clock>
@@ -113,12 +116,11 @@ pub struct FocusLogger<F: FocusEngineFactory> {
 }
 
 impl<F: FocusEngineFactory> FocusLogger<F> {
-    #[must_use]
     pub fn new<L>(
         environment: &L,
         params: FocusLoggerParams,
         deps: FocusLoggerDeps<F>,
-    ) -> Result<Self, FocusError<F::Engine::Error>>
+    ) -> Result<Self, FocusError<<F::Engine as FocusExporter>::Error>>
     where
         L: EnvironmentLookup + ?Sized,
     {
@@ -157,7 +159,9 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
     }
 
     // _ensure_engine: built on first use, kept afterwards, and built again after a failure
-    fn ensure_engine(&self) -> Result<Arc<F::Engine>, FocusError<F::Engine::Error>> {
+    fn ensure_engine(
+        &self,
+    ) -> Result<Arc<F::Engine>, FocusError<<F::Engine as FocusExporter>::Error>> {
         let mut cached = self.exporter.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(engine) = cached.as_ref() {
             return Ok(Arc::clone(engine));
@@ -179,7 +183,7 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
         limit: Option<i64>,
         start_time_utc: Option<DateTime<Utc>>,
         end_time_utc: Option<DateTime<Utc>>,
-    ) -> Result<(), FocusError<F::Engine::Error>> {
+    ) -> Result<(), FocusError<<F::Engine as FocusExporter>::Error>> {
         match (start_time_utc, end_time_utc) {
             (Some(start_time), Some(end_time)) => {
                 let window = FocusTimeWindow {

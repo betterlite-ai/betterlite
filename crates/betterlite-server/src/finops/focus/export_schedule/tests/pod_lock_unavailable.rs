@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::finops::focus::export_schedule::initialize_focus_export_job;
 use crate::finops::focus::support::{self, Recorder};
 
 #[tokio::test]
@@ -13,8 +14,7 @@ async fn without_a_pod_lock_the_export_runs_unlocked() {
         recorder.factory(),
         None,
     );
-    logger
-        .initialize_focus_export_job()
+    initialize_focus_export_job(&logger)
         .await
         .expect("the fake export succeeds");
     assert_eq!(recorder.calls().len(), 1);
@@ -23,8 +23,7 @@ async fn without_a_pod_lock_the_export_runs_unlocked() {
 #[tokio::test]
 async fn without_a_redis_cache_the_export_runs_unlocked() {
     let (logger, recorder, lock) = support::locked(Recorder::new(false), false, Some(true));
-    logger
-        .initialize_focus_export_job()
+    initialize_focus_export_job(&logger)
         .await
         .expect("the fake export succeeds");
     assert_eq!(recorder.calls().len(), 1);
