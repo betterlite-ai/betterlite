@@ -256,6 +256,24 @@ fn a_fractional_counter_is_truncated() {
 }
 
 #[test]
+fn a_fractional_counter_beyond_the_integer_range_is_reported() {
+    let first = update(
+        "k",
+        with_field(
+            daily_row("1.0"),
+            "prompt_tokens",
+            SpendColumnValue::Decimal(decimal("10000000000000000000")),
+        ),
+    );
+    assert!(matches!(
+        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        Err(SpendQueueError::FieldOverflow {
+            field: "prompt_tokens"
+        })
+    ));
+}
+
+#[test]
 fn a_missing_required_incoming_field_is_reported() {
     let second = update("k", without_field(daily_row("1.0"), "spend"));
     assert!(matches!(

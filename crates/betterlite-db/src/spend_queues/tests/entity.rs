@@ -335,6 +335,21 @@ fn spend_amounts_round_trip_through_json_numbers() {
 }
 
 #[test]
+fn a_falsey_float_cost_is_stored_as_an_integer_zero() {
+    let transactions = aggregate_db_spend_update_transactions(&[item(
+        Some(EntityType::User),
+        Some("u"),
+        Some("0.0"),
+    )])
+    .unwrap();
+    let json = serde_json::to_string(&transactions).unwrap();
+    assert!(
+        json.contains(r#""user_list_transactions":{"u":0}"#),
+        "{json}"
+    );
+}
+
+#[test]
 fn a_capacity_of_at_least_one_is_required() {
     let sink = Arc::new(NoSpendQueueEventSink);
     assert!(matches!(
