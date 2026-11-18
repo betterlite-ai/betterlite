@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 
-use super::{Context, Observation, ScenarioError, ScenarioStep, TTL_SECONDS, required};
+use super::{Context, Observation, ScenarioError, ScenarioStep, TTL_SECONDS};
 
 pub(super) async fn pre_call(
     index: usize,
@@ -22,8 +22,16 @@ pub(super) async fn pre_call(
 
 // lowest_tpm_rpm_v2.async_pre_call_check's window key: "{model_id}:{deployment_name}:rpm:{hour}-{minute}"
 fn window_key(step: &ScenarioStep) -> Result<String, ScenarioError> {
-    let deployment = required(&step.deployment_id, "a deployment id")?;
-    let model = required(&step.model, "a model")?;
+    let deployment = step
+        .deployment_id
+        .as_deref()
+        .ok_or(ScenarioError::Missing {
+            what: "a deployment id",
+        })?;
+    let model = step
+        .model
+        .as_deref()
+        .ok_or(ScenarioError::Missing { what: "a model" })?;
     let minutes = step.now_millis / 60_000;
     let hour = (minutes / 60) % 24;
     let minute = minutes % 60;
@@ -43,7 +51,12 @@ pub(super) fn outcome(
     context: &Context<'_>,
     kind: Outcome,
 ) -> Result<Observation, ScenarioError> {
-    let deployment = required(&step.deployment_id, "a deployment id")?;
+    let deployment = step
+        .deployment_id
+        .as_deref()
+        .ok_or(ScenarioError::Missing {
+            what: "a deployment id",
+        })?;
     match kind {
         Outcome::Success => {
             let key = context

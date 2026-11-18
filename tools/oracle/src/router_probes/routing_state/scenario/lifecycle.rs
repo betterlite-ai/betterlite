@@ -3,7 +3,7 @@ use betterlite_router::routing_value_store::RouteKey;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 
-use super::{Context, Observation, ScenarioError, ScenarioStep, required};
+use super::{Context, Observation, ScenarioError, ScenarioStep};
 
 pub(super) async fn sync(
     index: usize,
@@ -31,8 +31,10 @@ pub(super) fn switch(
 }
 
 pub(super) fn metadata(index: usize, step: &ScenarioStep) -> Result<Observation, ScenarioError> {
-    let channels: metadata::CallbackChannels =
-        serde_json::from_str(required(&step.channels, "a channels object")?)?;
+    let text = step.channels.as_deref().ok_or(ScenarioError::Missing {
+        what: "a channels object",
+    })?;
+    let channels: metadata::CallbackChannels = serde_json::from_str(text)?;
     let channel = metadata::deployment_channel(&channels).map(|(name, _bucket)| name.to_owned());
     let tokens = metadata::get_counted_usage_tokens(&channels);
     Ok(Observation::Channel {
@@ -47,8 +49,11 @@ pub(super) async fn redis(
     step: &ScenarioStep,
     context: &Context<'_>,
 ) -> Result<Observation, ScenarioError> {
-    let key = RouteKey::parse(required(&step.key, "a key")?)
-        .map_err(|source| ScenarioError::Key { source })?;
+    let text = step
+        .key
+        .as_deref()
+        .ok_or(ScenarioError::Missing { what: "a key" })?;
+    let key = RouteKey::parse(text).map_err(|source| ScenarioError::Key { source })?;
     let observed = context
         .store
         .increment_float(&key, 0.0_f64, None, false)

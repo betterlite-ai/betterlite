@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -145,10 +145,6 @@ impl<S: DeltaStore> SyncState<S> {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, Batches> {
-        self.batches.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     // add_to_in_memory_keys_to_update: the set is capped so a long-running router never grows it without bound
     pub(super) fn track(&self, key: &RouteKey) {
         let mut tracked = self.tracked.lock().unwrap_or_else(PoisonError::into_inner);
@@ -181,7 +177,7 @@ impl<S: DeltaStore> SyncState<S> {
         value: Decimal,
         ttl: Duration,
     ) -> Result<(RouteValue, Recorded), StoreError> {
-        let mut batches = self.lock();
+        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
         let updated =
             self.local
                 .increment(key, &RouteIncrement::Spend(value), Some(ttl.as_secs_f64()))?;
@@ -207,7 +203,7 @@ impl<S: DeltaStore> SyncState<S> {
         value: i64,
         ttl: Duration,
     ) -> Result<bool, CounterError> {
-        let mut batches = self.lock();
+        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
         self.local
             .increment(
                 key,
@@ -241,7 +237,7 @@ impl<S: DeltaStore> SyncState<S> {
     }
 
     pub(super) fn queue(&self, delta: Delta) -> bool {
-        let mut batches = self.lock();
+        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
         if batches.pending.len() >= MAX_PENDING_DELTAS {
             return false;
         }
@@ -251,7 +247,7 @@ impl<S: DeltaStore> SyncState<S> {
 
     // the snapshot of what the store push covers: read and detach share the lock the increments take
     fn snapshot(&self, keys: &[RouteKey]) -> Option<(Vec<Decimal>, Vec<Delta>)> {
-        let mut batches = self.lock();
+        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
         let before = keys
             .iter()
             .map(|key| local_amount(&self.local, key))
@@ -354,7 +350,7 @@ fn merge<S: DeltaStore>(
     before: &[Decimal],
     values: &BTreeMap<String, Decimal>,
 ) {
-    let _batches = state.lock();
+    let _batches = state.batches.lock().unwrap_or_else(PoisonError::into_inner);
     for (key, before) in keys.iter().zip(before) {
         let after = local_amount(&state.local, key);
         let redis_value = values.get(key.as_ref()).copied().unwrap_or_default();

@@ -257,7 +257,12 @@ async fn apply(
         StepKind::Failure => counters::outcome(index, step, context, counters::Outcome::Failure),
         // track_deployment_metrics.get_deployment_successes_for_current_minute / failures
         StepKind::Outcomes => {
-            let deployment = required(&step.deployment_id, "a deployment id")?;
+            let deployment = step
+                .deployment_id
+                .as_deref()
+                .ok_or(ScenarioError::Missing {
+                    what: "a deployment id",
+                })?;
             Ok(Observation::Outcomes {
                 step: index,
                 successes: context.counters.successes_for_minute(deployment),
@@ -273,10 +278,6 @@ async fn apply(
         StepKind::Metadata => lifecycle::metadata(index, step),
         StepKind::Redis => lifecycle::redis(index, step, context).await,
     }
-}
-
-fn required<'a>(value: &'a Option<String>, what: &'static str) -> Result<&'a str, ScenarioError> {
-    value.as_deref().ok_or(ScenarioError::Missing { what })
 }
 
 // the step's own interval wins, then the configured default, then LiteLLM's constant
