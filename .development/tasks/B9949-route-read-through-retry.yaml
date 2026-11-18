@@ -5,8 +5,9 @@ description: >-
   ProxyModelNotFoundError it asks the model registry read-through to load the missing model from the database and
   routes once more. This covers a model another replica just added: the row is in Postgres, but this replica's
   router has not reloaded it yet. No task owns that retry. Nothing on main ports route_request: the built
-  /chat/completions and /embeddings routes (crates/betterlite-server/src/routes/chat.rs L163 and routes/embeddings.rs
-  L143) answer an unknown model at once from pick_deployment, without a read-through. B8231 built the read-through
+  /chat/completions, /completions and /embeddings routes (crates/betterlite-server/src/routes/chat.rs L163,
+  routes/completions.rs L188 and routes/embeddings.rs L143) answer an unknown model at once from pick_deployment,
+  without a read-through. B8231 built the read-through
   itself (crates/betterlite-server/src/registry_read_through), and B9800 writes its own retry for /v1/messages.
   This task builds the retry once, in betterlite-server, next to B8231's read-through. betterlite-core cannot depend
   on betterlite-server, so a core dispatch entry gets the retry from the server code that calls it.
@@ -91,13 +92,13 @@ deviations: []
 out_of_scope:
 - "RegistryReadThrough, its attempt rules and ModelResync over the ModelSync port: B8231."
 - "ProxyModelNotFoundError: B9964."
-- "The production models RegistryReadThrough: a ModelSync over the model rows and the deployment sync, a DbObjects and the state slot that hands it to the routes. No task builds it yet."
-- "Calling the retry from a route. B9800 calls it for /v1/messages; the other routes that reach route_request in LiteLLM are their own tasks' to wire."
+- "The production models read-through: B9948 builds it in crates/betterlite, B8613 builds it at startup and B8610 puts it in Shared and in the routes' model_read_through slot. This task uses none of it: its tests pass fakes."
+- "Calling the retry from a route: B9947 for /chat/completions, /completions and /embeddings, B9800 for /v1/messages. The other routes that reach route_request in LiteLLM are their own tasks' to wire."
 pitfalls:
 - 'The second attempt must see the router as it is after the read-through, not a handle taken before the first attempt. LiteLLM reads proxy_server.llm_router again (L462), since a resync can create the router when none existed. So the attempt reads the current router each time it runs.'
 - 'What the first attempt changes in the request data before a not-found (it drops enable_tag_filtering, it renames generationConfig) does not change the second attempt, so running it on the original or the changed data gives the same result.'
 - 'A read-through that answers false returns the first error unchanged. Do not build a new not-found error for it.'
 review_level: standard
 budget:
-  max_changed_lines: 350
+  max_changed_lines: 1500
   max_new_expects: 0

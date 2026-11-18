@@ -43,6 +43,10 @@ description: >-
   subscriber over the auth cache plus the spend counter and BYOK credential memory caches), and the two stops, which log
   and swallow errors. DeploymentSync also holds the auto-router catalog (auto_router_db_catalog): every successful row read from B8382 rebuilds it with B379's build_auto_router_catalog, `catalog()` hands it to readers, and `remove_catalog_entries(ids)` drops rows for removed models. DeploymentSync implements B379's AutoRouterCatalog (betterlite-server, router_preview_validation), returning the current catalog.
 
+  Two steps are pub for B9948's models read-through: `sync_credentials(db)` runs get_credentials, and `add_rows(rows)`
+  runs the Add step over only the given rows. B9948 calls both inside the reconcile lock it takes (LiteLLM's
+  _resync_model_deployments, registry_read_through.py L127-L129), so neither takes the lock itself.
+
   Tests use in-memory repositories and a recording router. No oracle case: the reconcile runs on a schedule and its
   result reaches clients only through the model routes, whose tasks own those cases.
 scope:
