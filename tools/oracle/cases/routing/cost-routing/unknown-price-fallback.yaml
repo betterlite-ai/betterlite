@@ -7,8 +7,8 @@ probes:
       cost_routing:
         model_group: cost-routing
         model_cost:
-          openai/known: {input_cost_per_token: 0.5, output_cost_per_token: 0.5}
-          openai/partial: {input_cost_per_token: 0.25}
+          openai/known: {input_cost_per_token: 4.95, output_cost_per_token: 4.95}
+          openai/partial: {input_cost_per_token: 5.02}
         deployments:
           - {id: a, model: openai/unknown}
           - {id: b, model: openai/known}

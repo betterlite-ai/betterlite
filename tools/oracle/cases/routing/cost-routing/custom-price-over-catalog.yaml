@@ -9,8 +9,8 @@ probes:
         model_cost:
           openai/catalog: {input_cost_per_token: 0.5, output_cost_per_token: 0.5}
         deployments:
-          - {id: a, model: openai/catalog, input_cost_per_token: 0.25, output_cost_per_token: 0.25}
           - {id: b, model: openai/catalog}
+          - {id: a, model: openai/catalog, input_cost_per_token: 0.25, output_cost_per_token: 0.25}
           - {id: c, model: openai/catalog, input_cost_per_token: 0.125}
         steps:
           - {kind: select, now_millis: 1795003200000}
