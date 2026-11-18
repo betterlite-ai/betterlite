@@ -51,6 +51,13 @@ pub(crate) struct AlertLog {
 }
 
 impl AlertLog {
+    pub(crate) fn down() -> Self {
+        Self {
+            messages: Mutex::new(Vec::new()),
+            down: true,
+        }
+    }
+
     pub(crate) fn messages(&self) -> Vec<String> {
         self.messages.lock().unwrap().clone()
     }
@@ -87,7 +94,11 @@ impl FakeLease {
     pub(crate) fn held_by(owner: &str) -> Self {
         Self {
             owner: Mutex::new(Some(owner.to_owned())),
-            ..Self::default()
+            read_fails: false,
+            acquire_fails: false,
+            deletes: Mutex::new(0),
+            keys: Mutex::new(Vec::new()),
+            ttls: Mutex::new(Vec::new()),
         }
     }
 
@@ -147,6 +158,10 @@ impl LockCache for FakeLease {
     }
 }
 
+pub(crate) async fn ddl(client: &Client, sql: &str) {
+    client.batch_execute(sql).await.unwrap();
+}
+
 pub(crate) fn manager(lease: &Arc<FakeLease>) -> PodLockManager<FakeLease> {
     PodLockManager::new(
         Some(Arc::clone(lease)),
@@ -159,9 +174,12 @@ pub(crate) fn manager(lease: &Arc<FakeLease>) -> PodLockManager<FakeLease> {
 // A lease whose write fails, with the later owner read either answering "absent" or failing too.
 pub(crate) fn manager_that_cannot_acquire(read_fails: bool) -> PodLockManager<FakeLease> {
     let lease = Arc::new(FakeLease {
-        acquire_fails: true,
+        owner: Mutex::new(None),
         read_fails,
-        ..FakeLease::default()
+        acquire_fails: true,
+        deletes: Mutex::new(0),
+        keys: Mutex::new(Vec::new()),
+        ttls: Mutex::new(Vec::new()),
     });
     manager(&lease)
 }
@@ -240,96 +258,62 @@ pub(crate) fn no_database() -> PostgresStore {
 }
 
 pub(crate) async fn seed(client: &Client, rows: &str) {
-    let sql = format!(
-        "INSERT INTO \"LiteLLM_DailyTeamSpend\" \
-         (\"id\", \"team_id\", \"date\", \"api_key\", \"model\", \"model_group\", \
-          \"custom_llm_provider\", \"mcp_namespaced_tool_name\", \"endpoint\", \"spend\", \
-          \"api_requests\", \"prompt_tokens\", \"created_at\", \"updated_at\", \"ptu_flat_cost\") \
-         VALUES {rows}"
-    );
-    client.batch_execute(&sql).await.unwrap();
-}
-
-pub(crate) async fn seed_sentinel(client: &Client, date: &str, model: &str, cost: &str) {
-    seed(
+    ddl(
         client,
         &format!(
-            "('{model}', 'team-1', '{date}', '__ptu_flat_cost__', '{model}', '{model}', \
-              '', '', '', 0, 0, 0, now(), '{date} 11:00:00', {cost})"
+            "INSERT INTO \"LiteLLM_DailyTeamSpend\" \
+             (\"id\", \"team_id\", \"date\", \"api_key\", \"model\", \"model_group\", \
+              \"custom_llm_provider\", \"mcp_namespaced_tool_name\", \"endpoint\", \"spend\", \
+              \"api_requests\", \"prompt_tokens\", \"created_at\", \"updated_at\", \"ptu_flat_cost\") \
+             VALUES {rows}"
         ),
     )
     .await;
 }
 
+pub(crate) async fn seed_sentinel(client: &Client, date: &str, model: &str, cost: &str) {
+    let rows = format!(
+        "('{model}', 'team-1', '{date}', '__ptu_flat_cost__', '{model}', '{model}', \
+          '', '', '', 0, 0, 0, now(), '{date} 11:00:00', {cost})"
+    );
+    seed(client, &rows).await;
+}
+
 // A deployment whose window closed before the run, so the day scans it and writes no charge for it.
 pub(crate) async fn seed_lapsed_deployment(client: &Client, date: &str) {
-    stored::insert_stored_model(
-        client,
-        "model-z",
-        "name-z",
-        &ended_info("team-1", "2026-02-15T00:00:00Z"),
-    )
-    .await;
+    let info = ended_info("team-1", "2026-02-15T00:00:00Z");
+    insert_stored_model(client, "model-z", "name-z", &info).await;
     seed_sentinel(client, date, "model-z", "3.5").await;
 }
 
-pub(crate) async fn failing_upserts(client: &Client, model: &str, limit: i32) {
-    let sql = format!(
-        "CREATE SEQUENCE ptu_upsert_attempts; \
-         CREATE FUNCTION ptu_flaky_upsert() RETURNS trigger LANGUAGE plpgsql AS $$ \
+// More lapsed deployments than the alert's name limit, each scanned but accruing nothing.
+pub(crate) async fn seed_lapsed_fleet(client: &Client, count: u32) {
+    for index in 0..count {
+        let name = format!("lapsed-{index}");
+        let info = ended_info("team-1", "2026-02-15T00:00:00Z");
+        insert_stored_model(client, &name, &name, &info).await;
+    }
+}
+
+fn rejection_sql(column: &str, value: &str) -> String {
+    format!(
+        "CREATE FUNCTION ptu_reject_write() RETURNS trigger LANGUAGE plpgsql AS $$ \
          BEGIN \
-           IF NEW.model = '{model}' AND nextval('ptu_upsert_attempts') <= {limit} THEN \
-             RAISE EXCEPTION 'transient upsert failure'; \
+           IF NEW.{column} = '{value}' THEN \
+             RAISE EXCEPTION 'the charge cannot be written'; \
            END IF; \
            RETURN NEW; \
          END; \
          $$; \
-         CREATE TRIGGER ptu_flaky_upsert_trigger BEFORE INSERT OR UPDATE \
-         ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_flaky_upsert();"
-    );
-    client.batch_execute(&sql).await.unwrap();
+         CREATE TRIGGER ptu_reject_write_trigger BEFORE INSERT OR UPDATE \
+         ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_reject_write();"
+    )
 }
 
-pub(crate) async fn failing_upserts_on_date(client: &Client, date: &str) {
-    let sql = format!(
-        "CREATE FUNCTION ptu_reject_day() RETURNS trigger LANGUAGE plpgsql AS $$ \
-         BEGIN \
-           IF NEW.date = '{date}' THEN \
-             RAISE EXCEPTION 'the day cannot be written'; \
-           END IF; \
-           RETURN NEW; \
-         END; \
-         $$; \
-         CREATE TRIGGER ptu_reject_day_trigger BEFORE INSERT OR UPDATE \
-         ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_reject_day();"
-    );
-    client.batch_execute(&sql).await.unwrap();
-}
-
-pub(crate) async fn rejecting_deletes(client: &Client) {
-    client
-        .batch_execute(
-            "CREATE FUNCTION ptu_reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$ \
-             BEGIN RAISE EXCEPTION 'the prune must not delete'; END; $$; \
-             CREATE TRIGGER ptu_reject_delete_trigger BEFORE DELETE \
-             ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_reject_delete();",
-        )
-        .await
-        .unwrap();
-}
-
-pub(crate) async fn logging_writes(client: &Client) {
-    client
-        .batch_execute(
-            "CREATE TABLE ptu_write_log (seq serial, model text, date text); \
-             CREATE FUNCTION ptu_log_write() RETURNS trigger LANGUAGE plpgsql AS $$ \
-             BEGIN INSERT INTO ptu_write_log(model, date) VALUES (NEW.model, NEW.date); RETURN NEW; END; \
-             $$; \
-             CREATE TRIGGER ptu_log_write_trigger BEFORE INSERT OR UPDATE \
-             ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_log_write();",
-        )
-        .await
-        .unwrap();
+// Fails every write whose row matches this column value, so each retrying upsert for that charge exhausts its attempts.
+pub(crate) async fn reject_writes(client: &Client, column: &str, value: &str) {
+    let sql = rejection_sql(column, value);
+    ddl(client, &sql).await;
 }
 
 pub(crate) async fn logged_writes(client: &Client) -> Vec<String> {
@@ -348,28 +332,19 @@ pub(crate) async fn logged_writes(client: &Client) -> Vec<String> {
         .collect()
 }
 
-pub(crate) async fn cost_of(client: &Client, date: &str, model: &str) -> Option<Decimal> {
-    let row = client
-        .query_opt(
-            "SELECT \"ptu_flat_cost\" FROM \"LiteLLM_DailyTeamSpend\" \
-             WHERE \"date\" = $1 AND \"model\" = $2",
-            &[&date, &model],
-        )
-        .await
-        .unwrap()?;
+pub(crate) async fn cell(client: &Client, column: &str, date: &str, model: &str) -> Option<String> {
+    let sql = format!(
+        "SELECT \"{column}\"::text FROM \"LiteLLM_DailyTeamSpend\" \
+         WHERE \"date\" = $1 AND \"model\" = $2"
+    );
+    let row = client.query_opt(&sql, &[&date, &model]).await.unwrap()?;
     Some(row.get(0))
 }
 
-pub(crate) async fn group_of(client: &Client, date: &str, model: &str) -> Option<String> {
-    let row = client
-        .query_opt(
-            "SELECT \"model_group\" FROM \"LiteLLM_DailyTeamSpend\" \
-             WHERE \"date\" = $1 AND \"model\" = $2",
-            &[&date, &model],
-        )
+pub(crate) async fn cost_of(client: &Client, date: &str, model: &str) -> Option<Decimal> {
+    cell(client, "ptu_flat_cost", date, model)
         .await
-        .unwrap()?;
-    Some(row.get(0))
+        .map(|text| text.parse().unwrap())
 }
 
 pub(crate) async fn models_on(client: &Client, date: &str) -> Vec<String> {
@@ -393,21 +368,12 @@ pub(crate) async fn row_count(client: &Client) -> i64 {
 
 pub(crate) async fn daily(
     store: &PostgresStore,
-    clock: &FixedClock,
-    target: Option<NaiveDate>,
-    may_prune: bool,
-) -> Result<RollupResult, RollupError> {
-    daily_with(store, &[], clock, target, may_prune).await
-}
-
-pub(crate) async fn daily_with(
-    store: &PostgresStore,
     entries: &[RouterEntry],
     clock: &FixedClock,
     target: Option<NaiveDate>,
     may_prune: bool,
 ) -> Result<RollupResult, RollupError> {
-    let mut sleeper = stored::Recorder::default();
+    let mut sleeper = Recorder::default();
     run_ptu_flat_cost_rollup(DailyRun {
         store,
         entries,
@@ -424,7 +390,7 @@ pub(crate) async fn backfill(
     clock: &FixedClock,
     today: Option<NaiveDate>,
 ) -> Result<BackfillResult, RollupError> {
-    let mut sleeper = stored::Recorder::default();
+    let mut sleeper = Recorder::default();
     run_ptu_flat_cost_backfill(BackfillRun {
         store,
         entries: &[],
@@ -445,7 +411,7 @@ pub(crate) struct Schedule<'run> {
 }
 
 pub(crate) async fn scheduled(run: Schedule<'_>) -> Result<Option<RollupResult>, RollupError> {
-    let mut sleeper = stored::Recorder::default();
+    let mut sleeper = Recorder::default();
     run_scheduled_ptu_rollup(ScheduledRun {
         store: run.store,
         entries: &[],

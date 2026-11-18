@@ -7,8 +7,8 @@ use tracing::subscriber::set_default;
 use super::support as stored;
 use super::support::{
     AlertLog, FakeLease, FixedClock, Schedule, active_info, cacheless_manager, clock, cost_of, day,
-    ended_info, manager, manager_that_cannot_acquire, ptu_info, row_count, scheduled,
-    seed_lapsed_deployment, seed_sentinel, store,
+    manager, manager_that_cannot_acquire, ptu_info, row_count, scheduled, seed_lapsed_deployment,
+    seed_sentinel, store,
 };
 use crate::postgres_store::session::PostgresStore;
 use crate::ptu::rollup::RollupError;
@@ -75,7 +75,10 @@ async fn a_run_without_a_lock_manager_runs_unguarded() {
     drop(guard);
     assert!(unguarded.is_some());
     assert!(uncached.is_some());
-    assert_eq!(cost_of(&client, DAY, "model-z"), Some(Decimal::new(35, 1)));
+    assert_eq!(
+        cost_of(&client, DAY, "model-z").await,
+        Some(Decimal::new(35, 1))
+    );
     assert!(logs.contents().contains("without the cross-pod lock"));
     stored::close(fixture, pool, client).await;
 }
@@ -131,7 +134,10 @@ async fn a_failed_acquire_without_a_visible_holder_runs_unguarded() {
     .unwrap();
     drop(guard);
     assert!(absent_run.is_some());
-    assert_eq!(cost_of(&client, DAY, "model-z"), Some(Decimal::new(35, 1)));
+    assert_eq!(
+        cost_of(&client, DAY, "model-z").await,
+        Some(Decimal::new(35, 1))
+    );
     assert!(
         logs.contents().contains("no other pod holds it"),
         "{}",
@@ -161,7 +167,10 @@ async fn an_unreadable_lock_runs_unguarded_after_the_warning() {
     .unwrap();
     drop(guard);
     assert!(unreadable_run.is_some());
-    assert_eq!(cost_of(&client, DAY, "model-z"), Some(Decimal::new(35, 1)));
+    assert_eq!(
+        cost_of(&client, DAY, "model-z").await,
+        Some(Decimal::new(35, 1))
+    );
     assert!(
         logs.contents().contains("could not read the rollup lock"),
         "{}",
@@ -189,8 +198,11 @@ async fn an_acquired_lock_prunes_and_is_released() {
     .await
     .unwrap();
     assert!(result.is_some());
-    assert!(cost_of(&client, DAY, "model-z").is_none());
-    assert_eq!(cost_of(&client, DAY, "gone"), Some(Decimal::new(15, 1)));
+    assert!(cost_of(&client, DAY, "model-z").await.is_none());
+    assert_eq!(
+        cost_of(&client, DAY, "gone").await,
+        Some(Decimal::new(15, 1))
+    );
     assert_eq!(lease.deletes(), 1);
     assert_eq!(
         lease.keys(),
@@ -206,17 +218,8 @@ async fn a_failed_charge_alerts_before_the_lapsed_alert_with_at_most_ten_names()
     let (fixture, pool) = stored::database().await;
     let client = pool.get().await.unwrap();
     stored::insert_stored_model(&client, "model-a", "name-a", &active_info("team-1")).await;
-    stored::failing_upserts(&client, "model-a", 100).await;
-    for index in 0..12_u32 {
-        let name = format!("lapsed-{index}");
-        stored::insert_stored_model(
-            &client,
-            &name,
-            &name,
-            &ended_info("team-1", "2026-02-15T00:00:00Z"),
-        )
-        .await;
-    }
+    stored::reject_writes(&client, "model", "model-a").await;
+    stored::seed_lapsed_fleet(&client, 12).await;
     let owned = manager(&Arc::new(FakeLease::default()));
     let alert = AlertLog::default();
     let result = scheduled(schedule(
@@ -246,11 +249,8 @@ async fn an_unavailable_or_absent_alert_channel_never_fails_the_run() {
     let (fixture, pool) = stored::database().await;
     let client = pool.get().await.unwrap();
     stored::insert_stored_model(&client, "model-a", "name-a", &active_info("team-1")).await;
-    stored::failing_upserts(&client, "model-a", 100).await;
-    let down = AlertLog {
-        down: true,
-        ..AlertLog::default()
-    };
+    stored::reject_writes(&client, "model", "model-a").await;
+    let down = AlertLog::down();
     let postgres = store(&pool);
     let (logs, subscriber) = stored::capture_logs();
     let guard = set_default(subscriber);
@@ -300,8 +300,8 @@ async fn catch_up_runs_only_when_the_target_date_is_absent() {
     .unwrap()
     .unwrap();
     assert_eq!(targeted.day, day("2026-02-28"));
-    assert!(cost_of(&client, "2026-02-26", "model-a").is_none());
-    assert!(cost_of(&client, "2026-02-27", "model-a").is_none());
+    assert!(cost_of(&client, "2026-02-26", "model-a").await.is_none());
+    assert!(cost_of(&client, "2026-02-27", "model-a").await.is_none());
     assert_eq!(row_count(&client).await, 1);
     stored::close(fixture, pool, client).await;
 }
@@ -324,11 +324,11 @@ async fn an_absent_target_date_catches_up_the_missing_days() {
         .unwrap();
     assert_eq!(full.day, day("2026-02-28"));
     assert_eq!(
-        cost_of(&client, "2026-02-26", "model-a"),
+        cost_of(&client, "2026-02-26", "model-a").await,
         Some(Decimal::from(24_i32))
     );
     assert_eq!(
-        cost_of(&client, "2026-02-27", "model-a"),
+        cost_of(&client, "2026-02-27", "model-a").await,
         Some(Decimal::from(24_i32))
     );
     assert_eq!(row_count(&client).await, 3);
@@ -376,7 +376,7 @@ async fn a_catch_up_charge_failure_alerts_the_unpriced_days() {
         &ptu_info("team-1", 1, "1", "2026-02-26T00:00:00Z", None),
     )
     .await;
-    stored::failing_upserts_on_date(&client, "2026-02-27").await;
+    stored::reject_writes(&client, "date", "2026-02-27").await;
     let alert = AlertLog::default();
     let result = scheduled(schedule(&store(&pool), &clock(), None, Some(&alert), None))
         .await
@@ -384,12 +384,12 @@ async fn a_catch_up_charge_failure_alerts_the_unpriced_days() {
         .unwrap();
     assert_eq!(result.rows_failed, 0);
     assert_eq!(
-        cost_of(&client, "2026-02-26", "model-a"),
+        cost_of(&client, "2026-02-26", "model-a").await,
         Some(Decimal::from(24_i32))
     );
-    assert!(cost_of(&client, "2026-02-27", "model-a").is_none());
+    assert!(cost_of(&client, "2026-02-27", "model-a").await.is_none());
     assert_eq!(
-        cost_of(&client, "2026-02-28", "model-a"),
+        cost_of(&client, "2026-02-28", "model-a").await,
         Some(Decimal::from(24_i32))
     );
     let messages = alert.messages();

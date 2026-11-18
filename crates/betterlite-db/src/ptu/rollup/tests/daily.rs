@@ -5,8 +5,8 @@ use tracing::subscriber::set_default;
 
 use super::support as stored;
 use super::support::{
-    active_info, clock, cost_of, daily, daily_with, day, ended_info, entry, group_of, models_on,
-    no_database, row_count, store,
+    active_info, cell, clock, cost_of, daily, day, ended_info, entry, models_on, no_database,
+    row_count, store,
 };
 use crate::ptu::rollup::RollupError;
 use crate::ptu::store::StoreError;
@@ -18,14 +18,16 @@ async fn the_day_defaults_to_yesterday_utc() {
     let (fixture, pool) = stored::database().await;
     let client = pool.get().await.unwrap();
     stored::insert_stored_model(&client, "model-a", "name-a", &active_info("team-1")).await;
-    let result = daily(&store(&pool), &clock(), None, false).await.unwrap();
+    let result = daily(&store(&pool), &[], &clock(), None, false)
+        .await
+        .unwrap();
     assert_eq!(result.day, day("2026-02-28"));
     assert_eq!(result.models_processed, 1);
     assert_eq!(result.rows_written, 1);
     assert_eq!(result.rows_failed, 0);
     assert!(result.lapsed.is_empty());
     assert_eq!(
-        cost_of(&client, "2026-02-28", "model-a"),
+        cost_of(&client, "2026-02-28", "model-a").await,
         Some(Decimal::from(24_i32))
     );
     stored::close(fixture, pool, client).await;
@@ -37,14 +39,23 @@ async fn a_config_deployment_is_priced_alongside_the_stored_ones() {
     let client = pool.get().await.unwrap();
     stored::insert_stored_model(&client, "db-a", "stored-a", &active_info("team-1")).await;
     let entries = [entry("cfg-b", "cfg-name", &active_info("team-2"))];
-    let result = daily_with(&store(&pool), &entries, &clock(), Some(day(DAY)), true)
+    let result = daily(&store(&pool), &entries, &clock(), Some(day(DAY)), true)
         .await
         .unwrap();
     assert_eq!(result.models_processed, 2);
     assert_eq!(result.rows_written, 2);
-    assert_eq!(cost_of(&client, DAY, "db-a"), Some(Decimal::from(24_i32)));
-    assert_eq!(cost_of(&client, DAY, "cfg-b"), Some(Decimal::from(24_i32)));
-    assert_eq!(group_of(&client, DAY, "cfg-b").as_deref(), Some("cfg-name"));
+    assert_eq!(
+        cost_of(&client, DAY, "db-a").await,
+        Some(Decimal::from(24_i32))
+    );
+    assert_eq!(
+        cost_of(&client, DAY, "cfg-b").await,
+        Some(Decimal::from(24_i32))
+    );
+    assert_eq!(
+        cell(&client, "model_group", DAY, "cfg-b").await.as_deref(),
+        Some("cfg-name")
+    );
     stored::close(fixture, pool, client).await;
 }
 
@@ -52,7 +63,9 @@ async fn a_config_deployment_is_priced_alongside_the_stored_ones() {
 async fn a_missing_database_warns_and_reports_a_zero_count_day() {
     let (logs, subscriber) = stored::capture_logs();
     let guard = set_default(subscriber);
-    let result = daily(&no_database(), &clock(), None, false).await.unwrap();
+    let result = daily(&no_database(), &[], &clock(), None, false)
+        .await
+        .unwrap();
     drop(guard);
     assert_eq!(result.day, day("2026-02-28"));
     assert_eq!(result.models_processed, 0);
@@ -81,20 +94,23 @@ async fn a_failed_charge_keeps_the_landed_rows_and_skips_the_prune() {
           '', '', '', 0, 0, 0, now(), '2026-03-01 11:00:00', 3.5)",
     )
     .await;
-    stored::failing_upserts(&client, "model-a", 100).await;
+    stored::reject_writes(&client, "model", "model-a").await;
     let (logs, subscriber) = stored::capture_logs();
     let guard = set_default(subscriber);
-    let result = daily(&store(&pool), &clock(), Some(day(DAY)), true)
+    let result = daily(&store(&pool), &[], &clock(), Some(day(DAY)), true)
         .await
         .unwrap();
     drop(guard);
     assert_eq!(result.rows_written, 1);
     assert_eq!(result.rows_failed, 1);
     assert_eq!(
-        cost_of(&client, DAY, "model-b"),
+        cost_of(&client, DAY, "model-b").await,
         Some(Decimal::from(24_i32))
     );
-    assert_eq!(cost_of(&client, DAY, "model-z"), Some(Decimal::new(35, 1)));
+    assert_eq!(
+        cost_of(&client, DAY, "model-z").await,
+        Some(Decimal::new(35, 1))
+    );
     let captured = logs.contents();
     assert!(
         captured.contains("1 charge(s) failed for 2026-03-01"),
@@ -113,7 +129,7 @@ async fn a_scan_error_propagates() {
         .batch_execute("DROP TABLE \"LiteLLM_ProxyModelTable\"")
         .await
         .unwrap();
-    let result = daily(&store(&pool), &clock(), Some(day(DAY)), false).await;
+    let result = daily(&store(&pool), &[], &clock(), Some(day(DAY)), false).await;
     assert!(matches!(
         result,
         Err(RollupError::Store(StoreError::Scan(_)))
@@ -139,14 +155,21 @@ async fn a_prune_error_propagates_after_the_writes_land() {
           '', '', '', 0, 0, 0, now(), '2026-03-01 11:00:00', 3.5)",
     )
     .await;
-    stored::rejecting_deletes(&client).await;
-    let result = daily(&store(&pool), &clock(), Some(day(DAY)), true).await;
+    stored::ddl(
+        &client,
+        "CREATE FUNCTION ptu_reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$ \
+         BEGIN RAISE EXCEPTION 'the prune must not delete'; END; $$; \
+         CREATE TRIGGER ptu_reject_delete_trigger BEFORE DELETE \
+         ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_reject_delete();",
+    )
+    .await;
+    let result = daily(&store(&pool), &[], &clock(), Some(day(DAY)), true).await;
     assert!(matches!(
         result,
         Err(RollupError::Store(StoreError::Prune(_)))
     ));
     assert_eq!(
-        cost_of(&client, DAY, "model-a"),
+        cost_of(&client, DAY, "model-a").await,
         Some(Decimal::from(24_i32))
     );
     assert_eq!(row_count(&client).await, 2);
@@ -173,12 +196,15 @@ async fn an_unguarded_run_skips_the_prune_and_says_so() {
     .await;
     let (logs, subscriber) = stored::capture_logs();
     let guard = set_default(subscriber);
-    let result = daily(&store(&pool), &clock(), Some(day(DAY)), false)
+    let result = daily(&store(&pool), &[], &clock(), Some(day(DAY)), false)
         .await
         .unwrap();
     drop(guard);
     assert_eq!(result.rows_written, 1);
-    assert_eq!(cost_of(&client, DAY, "model-z"), Some(Decimal::new(35, 1)));
+    assert_eq!(
+        cost_of(&client, DAY, "model-z").await,
+        Some(Decimal::new(35, 1))
+    );
     assert!(
         logs.contents().contains("without the cross-pod lock"),
         "{}",
@@ -207,11 +233,11 @@ async fn the_prune_stays_inside_the_scanned_deployments() {
           '', '', '', 0, 0, 0, now(), '2026-03-01 11:00:00', 1.5)",
     )
     .await;
-    daily(&store(&pool), &clock(), Some(day(DAY)), true)
+    daily(&store(&pool), &[], &clock(), Some(day(DAY)), true)
         .await
         .unwrap();
-    assert!(cost_of(&client, DAY, "model-z").is_none());
-    let remaining: BTreeSet<String> = models_on(&client, DAY).into_iter().collect();
+    assert!(cost_of(&client, DAY, "model-z").await.is_none());
+    let remaining: BTreeSet<String> = models_on(&client, DAY).await.into_iter().collect();
     assert_eq!(remaining, stored::names(&["gone", "model-a"]));
     stored::close(fixture, pool, client).await;
 }
@@ -234,7 +260,7 @@ async fn the_result_reports_lapsed_names_escaped_newest_first() {
         &ended_info("team-1", "2026-02-25T00:00:00Z"),
     )
     .await;
-    let result = daily(&store(&pool), &clock(), Some(day(DAY)), false)
+    let result = daily(&store(&pool), &[], &clock(), Some(day(DAY)), false)
         .await
         .unwrap();
     assert_eq!(result.lapsed, ["newer&amp;", "old&lt;&amp;&gt;"]);

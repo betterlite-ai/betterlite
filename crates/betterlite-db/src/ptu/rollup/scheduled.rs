@@ -61,7 +61,10 @@ where
 }
 
 // A Redis that cannot be read reports "not held" so the caller runs the day; being wrong here costs a duplicate reconcile.
-async fn lock_is_held<L: LockCache>(lock: &PodLockManager<L>) -> bool {
+async fn lock_is_held<L>(lock: &PodLockManager<L>) -> bool
+where
+    L: LockCache,
+{
     let Some(cache) = lock.cache.as_deref() else {
         return false;
     };
@@ -178,11 +181,14 @@ fn lapsed_message(lapsed: &[String]) -> String {
     )
 }
 
-async fn deliver_alert<A: OperatorAlert>(alert: Option<&A>, message: &str) {
-    let Some(alert) = alert else {
+async fn deliver_alert<A>(alert: Option<&A>, message: &str)
+where
+    A: OperatorAlert,
+{
+    let Some(channel) = alert else {
         return;
     };
-    if let Err(error) = alert.send(message).await {
+    if let Err(error) = channel.send(message).await {
         tracing::error!("PTU rollup: could not deliver the failed-charge alert: {error}");
     }
 }
