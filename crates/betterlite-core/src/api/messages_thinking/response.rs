@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_anthropic::api::messages_errors::wire::ResponseRecord;
 use betterlite_anthropic::stream_events::error::AnthropicError;
 use serde_json::error::Category;
@@ -40,10 +42,17 @@ pub fn decode_messages_response(
         Ok(fields) => Ok(fields),
         // a valid body of the wrong shape only fails the keyword expansion, which is an internal failure
         Err(source) if source.classify() == Category::Data => Err(ResponseJsonError::NotAnObject),
-        Err(_source) => Err(AnthropicError {
-            message: String::from_utf8_lossy(body).into_owned(),
+        Err(_source) => Err(ResponseJsonError::Anthropic(AnthropicError {
+            message: body_text(body),
             status_code: status,
-        }
-        .into()),
+        })),
     }
+}
+
+// Python's json.loads reads the body as text, and bytes that are not UTF-8 are named by their count
+fn body_text(body: &[u8]) -> String {
+    str::from_utf8(body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", body.len()),
+        str::to_owned,
+    )
 }

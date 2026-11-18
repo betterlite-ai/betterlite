@@ -12,23 +12,18 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::logging_success::ports::SuccessClock;
-use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
-use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
-use crate::api::messages_stream_logging::StreamDeps;
 use crate::api::messages_stream_logging::seams::{
-    ChunkProcessorCall, LoggingFuture, LoggingJob, ReportedFailure, RouteStreamingLogging,
-    StreamSeams,
+    ChunkProcessorCall, LoggingFuture, ReportedFailure, RouteStreamingLogging, StreamSeams,
 };
-use crate::api::messages_stream_logging::slots::StreamSlots;
 
 pub(super) fn time() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").expect("the fixture is RFC 3339")
@@ -77,7 +72,7 @@ pub(super) fn logging_object() -> Arc<StreamLoggingObject> {
         },
         &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles"),
         || "generated-trace".to_owned(),
-        Duration::default(),
+        Duration::default,
     )
     .expect("the logging fixture builds");
     Arc::new(StreamLoggingObject {
@@ -131,55 +126,5 @@ impl StreamSeams for Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(processed);
         relayed
-    }
-}
-
-pub(super) struct Harness {
-    pub(super) seams: Arc<Recorder>,
-    worker: Arc<LoggingWorker<LoggingJob>>,
-    slots: Arc<StreamSlots>,
-    handler: Arc<PassThroughEndpointLogging>,
-    pub(super) logging_obj: Arc<StreamLoggingObject>,
-    pub(super) request_body: IndexMap<String, Json>,
-}
-
-impl Harness {
-    pub(super) fn new(existing: Option<Arc<StreamLoggingObject>>) -> Self {
-        let logging_obj = existing.unwrap_or_else(logging_object);
-        let seams = Arc::new(Recorder {
-            processed: Mutex::new(None),
-            supplied: Arc::clone(&logging_obj),
-        });
-        Self {
-            seams,
-            worker: Arc::new(
-                LoggingWorker::start(WorkerSettings::default()).expect("the worker starts"),
-            ),
-            slots: Arc::new(StreamSlots::default()),
-            handler: Arc::new(PassThroughEndpointLogging {
-                injected_log_dispatch: None,
-            }),
-            logging_obj,
-            request_body: IndexMap::from([("model".to_owned(), Json::Text("claude".to_owned()))]),
-        }
-    }
-
-    pub(super) fn deps(&self) -> StreamDeps<Recorder> {
-        StreamDeps {
-            seams: Arc::clone(&self.seams),
-            worker: Arc::clone(&self.worker),
-            slots: Arc::clone(&self.slots),
-            clock: Arc::new(FixedClock),
-            success_handler: Arc::clone(&self.handler),
-        }
-    }
-
-    pub(super) fn processed(&self) -> Processed {
-        self.seams
-            .processed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .expect("the factory reached the chunk processor")
     }
 }

@@ -29,14 +29,14 @@ pub fn degrade_effort<'effort>(
     if let Some(level) = chain.iter().find(|level| {
         accepted
             .iter()
-            .any(|supported| effort_wire_name(*supported) == **level)
+            .any(|tier| effort_wire_name(*tier) == **level)
     }) {
-        return *level;
+        return level;
     }
     accepted
         .iter()
-        .find(|supported| **supported != ReasoningEffort::None)
-        .map_or(floor, |supported| effort_wire_name(*supported))
+        .find(|tier| **tier != ReasoningEffort::None)
+        .map_or(floor, |accepted_tier| effort_wire_name(*accepted_tier))
 }
 
 // normalize_reasoning_effort_value: get_model_info raising for an unmapped model leaves no metadata, which keeps the floor.

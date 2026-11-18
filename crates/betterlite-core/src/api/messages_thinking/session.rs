@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, JsonBoundary};
 
-const OPENAI_MAX_PROMPT_CACHE_KEY_LENGTH: usize = 64;
+const PROMPT_CACHE_KEY_LIMIT: usize = 64;
 
 // _ClaudeCodeUserId: only session_id is per conversation, and extra metadata keys are ignored.
 #[derive(Debug, Deserialize)]
@@ -31,7 +31,7 @@ pub fn decode_messages_thinking(
     let key: String = user_id
         .session_id
         .chars()
-        .take(OPENAI_MAX_PROMPT_CACHE_KEY_LENGTH)
+        .take(PROMPT_CACHE_KEY_LIMIT)
         .collect();
     Ok((!key.is_empty()).then_some(key))
 }

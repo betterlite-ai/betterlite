@@ -17,8 +17,7 @@ pub fn local_model_name<'model>(
     model: &'model str,
     custom_llm_provider: Option<&str>,
 ) -> &'model str {
-    match custom_llm_provider {
-        Some(provider) => model.strip_prefix(&format!("{provider}/")).unwrap_or(model),
-        None => model,
-    }
+    custom_llm_provider.map_or(model, |provider| {
+        model.strip_prefix(&format!("{provider}/")).unwrap_or(model)
+    })
 }

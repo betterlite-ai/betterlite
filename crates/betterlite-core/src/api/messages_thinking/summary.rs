@@ -1,6 +1,6 @@
-// is_reasoning_auto_summary_enabled: the environment only ever turns the global flag on, on the exact word "true".
 #[must_use]
-pub fn is_reasoning_auto_summary_enabled(global: bool, environment: Option<&str>) -> bool {
+pub fn auto_summary_enabled(global: bool, environment: Option<&str>) -> bool {
+    // the environment only ever turns the global flag on, and only on the exact word "true"
     if global {
         return true;
     }

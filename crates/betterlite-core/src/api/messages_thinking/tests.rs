@@ -3,8 +3,11 @@
 mod support;
 
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
+use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
+use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::record::ModelInfo;
 use betterlite_models::metadata::levels::ReasoningEffort;
 use betterlite_models::model_metadata_resolution::names::ModelCostMap;
@@ -13,13 +16,15 @@ use rstest::rstest;
 use serde_json::value::RawValue;
 
 use crate::api::api_boundaries::ApiLimits;
+use crate::api::messages_stream_logging::StreamDeps;
+use crate::api::messages_stream_logging::slots::StreamSlots;
 
 use super::bridge::{BridgeKwargs, local_model_name};
 use super::effort::{degrade_effort, normalize_reasoning_effort};
 use super::response::{ResponseJsonError, decode_messages_response};
 use super::session::{SessionKeyError, decode_messages_thinking};
-use super::stream::native_stream_factory;
-use super::summary::is_reasoning_auto_summary_enabled;
+use super::stream;
+use super::summary::auto_summary_enabled;
 
 const LIMITS: ApiLimits = ApiLimits {
     max_json_bytes: 4096,
@@ -102,6 +107,19 @@ fn response_json_reports_invalid_json_as_an_anthropic_error(#[case] body: &str) 
     }
 }
 
+#[test]
+fn response_json_names_a_body_that_is_not_utf8() {
+    let error =
+        decode_messages_response(b"\xff\xfe", 502, &LIMITS).expect_err("the body is not text");
+    match error {
+        ResponseJsonError::Anthropic(anthropic) => {
+            assert_eq!(anthropic.status_code, 502);
+            assert_eq!(anthropic.message, "2 bytes that are not UTF-8");
+        }
+        _ => panic!("a body that is not JSON is the AnthropicError json() raises"),
+    }
+}
+
 #[rstest]
 #[case::list("[]")]
 #[case::null("null")]
@@ -145,7 +163,7 @@ fn bridge_kwargs_keep_the_supplied_logging_object() {
         request_body: IndexMap::new(),
     };
     let found = kwargs.litellm_logging_obj.as_ref();
-    assert!(found.is_some_and(|found| Arc::ptr_eq(found, &logging_obj)));
+    assert!(found.is_some_and(|held| Arc::ptr_eq(held, &logging_obj)));
     assert!(BridgeKwargs::default().litellm_logging_obj.is_none());
 }
 
@@ -172,10 +190,8 @@ fn reasoning_effort_degradation(
 #[case::minimal_floor("minimal", "low")]
 fn reasoning_effort_degradation_without_metadata(#[case] effort: &str, #[case] expected: &str) {
     assert_eq!(degrade_effort(effort, None), expected);
-    assert_eq!(
-        degrade_effort(effort, Some(&[] as &[ReasoningEffort])),
-        expected
-    );
+    let empty: &[ReasoningEffort] = &[];
+    assert_eq!(degrade_effort(effort, Some(empty)), expected);
 }
 
 #[rstest]
@@ -271,25 +287,43 @@ fn loads_summary_settings(
     #[case] environment: Option<&str>,
     #[case] expected: bool,
 ) {
-    assert_eq!(
-        is_reasoning_auto_summary_enabled(global, environment),
-        expected
-    );
+    assert_eq!(auto_summary_enabled(global, environment), expected);
 }
 
 #[tokio::test]
 async fn native_stream_factory() {
-    let harness = support::Harness::new(None);
-    let stream = native_stream_factory(
-        harness.deps(),
+    let logging_obj = support::logging_object();
+    let seams = Arc::new(support::Recorder {
+        processed: Mutex::new(None),
+        supplied: Arc::clone(&logging_obj),
+    });
+    let deps = StreamDeps {
+        seams: Arc::clone(&seams),
+        worker: Arc::new(
+            LoggingWorker::start(WorkerSettings::default()).expect("the worker starts"),
+        ),
+        slots: Arc::new(StreamSlots::default()),
+        clock: Arc::new(support::FixedClock),
+        success_handler: Arc::new(PassThroughEndpointLogging {
+            injected_log_dispatch: None,
+        }),
+    };
+    let request_body = IndexMap::from([("model".to_owned(), Json::Text("claude".to_owned()))]);
+    let relayed = stream::native_stream_factory(
+        deps,
         "provider stream".to_owned(),
-        harness.request_body.clone(),
-        Arc::clone(&harness.logging_obj),
+        request_body.clone(),
+        Arc::clone(&logging_obj),
     );
-    assert_eq!(stream, "processed provider stream");
-    let processed = harness.processed();
+    assert_eq!(relayed, "processed provider stream");
+    let processed = seams
+        .processed
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+        .expect("the factory reached the chunk processor");
     assert_eq!(processed.response, "provider stream");
-    assert_eq!(processed.request_body, harness.request_body);
+    assert_eq!(processed.request_body, request_body);
     assert!(processed.same_logging_object);
     assert_eq!(processed.url_route, "/v1/messages");
     assert!(processed.endpoint_anthropic);
