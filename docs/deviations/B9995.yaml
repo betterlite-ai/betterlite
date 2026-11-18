@@ -1,0 +1,13 @@
+task: B9995
+deviations:
+  - what: >-
+      A semantic guard match on the post-call path with on_flagged_action passthrough carries the blocked response into
+      the passthrough failure, so the synthetic reply keeps the upstream token usage. The pre-call path has no response
+      and carries none, as before.
+    why: >-
+      LiteLLM's semantic guard raises the passthrough exception without original_response, so the reply reports zero
+      usage for a call that consumed tokens. That is lost data no working setup relies on, and LiteLLM's
+      raise_passthrough_exception exists to carry it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py#L149-L155
+kept_bugs: []
