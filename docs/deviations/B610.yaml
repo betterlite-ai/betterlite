@@ -1,0 +1,9 @@
+task: B610
+deviations:
+  - what: Buffered error bodies that are not UTF-8 report their byte count instead of replacement characters.
+    why: Keep the existing B682 typed string error boundary while preserving status and headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_handler.py#L476-L484
+kept_bugs:
+  - what: Async streaming accepts the call timeout but does not pass it to the default stream client.
+    why: Preserve the timeout behavior of existing asynchronous streaming callers; synchronous calls still apply it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_handler.py#L139-L150
