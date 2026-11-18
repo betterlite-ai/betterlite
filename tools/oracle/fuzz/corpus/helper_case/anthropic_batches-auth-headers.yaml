@@ -1,0 +1,20 @@
+kind: helper
+name: anthropic-batches-auth-headers-seed
+call:
+  anthropic_batches:
+    auth_headers:
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: seed-key}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: [[anthropic-beta, ""]]
+          expected_auth: seed-key
+        - environment: {}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: []
+          expected_auth: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: oidc-token-response-seed
+call:
+  oidc_token_response:
+    body: '{"access_token": "seed-token", "token_type": "Bearer", "expires_in": 3600}'
+env: {}
+compare:
+  ignore: []

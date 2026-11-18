@@ -1,0 +1,115 @@
+kind: helper
+name: sso-claims-opaque-access-token
+call:
+  sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process:
+    - access_token: null
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields:
+          tenant:
+            id: t-1
+      role_mappings: null
+    - access_token: opaque-token
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields:
+          tenant:
+            id: t-1
+      role_mappings: null
+    - access_token: a.b.c
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields:
+          tenant:
+            id: t-1
+      role_mappings: null
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJBY2Nlc3NARXhhbXBsZS5jb20iLCAibmFtZSI6IG51bGwsICJyb2xlIjogInByb3h5X2FkbWluIiwgImdyb3VwcyI6IFsiYWNjZXNzLWdyb3VwIl0sICJ0ZWFtX2lkcyI6IFsiYXQtMSIsICJhdC0yIl0sICJ0ZWFtX2lkIjogImF0LTMiLCAibmVzdGVkIjogeyJ0ZWFtIjogIm4tMSJ9fQ.c2lnbmF0dXJl
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields:
+          tenant:
+            id: t-1
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJBY2Nlc3NARXhhbXBsZS5jb20iLCAibmFtZSI6IG51bGwsICJyb2xlIjogInByb3h5X2FkbWluIiwgImdyb3VwcyI6IFsiYWNjZXNzLWdyb3VwIl0sICJ0ZWFtX2lkcyI6IFsiYXQtMSIsICJhdC0yIl0sICJ0ZWFtX2lkIjogImF0LTMiLCAibmVzdGVkIjogeyJ0ZWFtIjogIm4tMSJ9fQ.c2lnbmF0dXJl
+      sso_settings: null
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings: null
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJBY2Nlc3NARXhhbXBsZS5jb20iLCAibmFtZSI6IG51bGwsICJyb2xlIjogInByb3h5X2FkbWluIiwgImdyb3VwcyI6IFsiYWNjZXNzLWdyb3VwIl0sICJ0ZWFtX2lkcyI6IFsiYXQtMSIsICJhdC0yIl0sICJ0ZWFtX2lkIjogImF0LTMiLCAibmVzdGVkIjogeyJ0ZWFtIjogIm4tMSJ9fQ.c2lnbmF0dXJl
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity: null
+      role_mappings: null
+    convert:
+      response: {}
+      jwt_settings: {}
+      sso_settings: null
+      role_mappings: null
+      team_mappings: null
+env: {}
+compare:
+  ignore: []
