@@ -723,6 +723,30 @@ fn reply_renders_numeric_extras_in_their_json_type() {
     assert_eq!(reply::extra_json(&UsageNumber::Boolean(true)), json("true"));
 }
 
+#[test]
+fn reply_drops_the_unset_message_fields() {
+    let fixture = fixture(GENERATE_ROUTE, GENERATE_BODY);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the generateContent reply is logged");
+    let result = result_json(&outcome);
+    let Json::Object(message) = field(choices(result), "message") else {
+        panic!("the message is an object");
+    };
+    for name in [
+        "reasoning_content",
+        "audio",
+        "annotations",
+        "provider_specific_fields",
+    ] {
+        assert!(
+            message.get(name).is_none(),
+            "{name} stays out of the message"
+        );
+    }
+}
+
 fn choices(result: &Json) -> &Json {
     let Json::List(rows) = field(result, "choices") else {
         panic!("the choices are a list");

@@ -36,6 +36,8 @@ const THINKING_DELTA: &str = r#"data:{"type":"content_block_delta","index":0,"de
 const HELLO_DELTA: &str =
     r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#;
 const NO_USAGE_STOP: &str = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#;
+const USAGE_STOP: &str =
+    r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#;
 
 const VERTEX_MISSING_RESPONSE: &str =
     "Unable to build complete streaming response for Vertex passthrough endpoint, not logging...";
@@ -304,6 +306,25 @@ fn chunks_raw_predict_without_usage_counts_the_text_and_reasoning() {
     let details = field(usage, "completion_tokens_details");
     assert_eq!(integer(details, "reasoning_tokens"), 2);
     assert_eq!(integer(details, "text_tokens"), 1);
+}
+
+#[test]
+fn chunks_raw_predict_counts_reasoning_for_a_reported_usage() {
+    let fixture = collected(
+        VERTEX_RAW_ROUTE,
+        &[MESSAGE_START, THINKING_DELTA, USAGE_STOP],
+        None,
+    );
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let outcome = collector
+        .handle(&fixture.call())
+        .expect("the events build a response");
+    let usage = field(&result_json(&outcome), "usage");
+    assert_eq!(integer(usage, "prompt_tokens"), 10);
+    assert_eq!(integer(usage, "completion_tokens"), 5);
+    let details = field(usage, "completion_tokens_details");
+    assert_eq!(integer(details, "reasoning_tokens"), 2);
 }
 
 #[test]
