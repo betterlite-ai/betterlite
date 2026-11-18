@@ -283,3 +283,15 @@ fn an_oversized_input_is_rejected() {
         Err(CustomRoutesError::TooLarge { limit }) if limit == MAX_ROUTES_FILE_BYTES
     ));
 }
+
+#[test]
+fn an_input_at_the_byte_limit_is_read() {
+    let prefix = "- route_name: big\n  utterances: [\"";
+    let suffix = "\"]\n";
+    let filler = "a".repeat(MAX_ROUTES_FILE_BYTES - prefix.len() - suffix.len());
+    let text = format!("{prefix}{filler}{suffix}");
+    assert_eq!(text.len(), MAX_ROUTES_FILE_BYTES);
+    let routes = custom_routes::decode(text.as_bytes()).unwrap();
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].route_name, "big");
+}
