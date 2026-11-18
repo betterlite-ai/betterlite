@@ -33,8 +33,13 @@ pub(super) fn at(millis: u64) -> DateTime<Utc> {
 
 pub(super) fn rpm(limit: Option<i64>) -> DeploymentUsage {
     DeploymentUsage {
+        tpm: None,
         rpm: limit,
-        ..DeploymentUsage::default()
+        params_tpm: None,
+        params_rpm: None,
+        model_info_tpm: None,
+        model_info_rpm: None,
+        io_token_limits: false,
     }
 }
 
@@ -135,15 +140,27 @@ impl Harness {
     }
 
     pub(super) fn with_ttl(ttl: Duration) -> Self {
+        Self::build(ttl, counter_settings())
+    }
+
+    // BaseRoutingStrategy.__init__(default_sync_interval=0.1): the loop this harness starts ticks at once
+    pub(super) fn with_sync_interval(interval: Duration) -> Self {
+        Self::build(
+            TTL,
+            Settings {
+                sync_interval: Some(interval),
+                default_sync_interval: Duration::from_secs(1),
+                should_batch_redis_writes: true,
+            },
+        )
+    }
+
+    fn build(ttl: Duration, settings: Settings) -> Self {
         let clock = Arc::new(AtomicU64::new(0));
         let store = Arc::new(MemoryStore::default());
         let local = RoutingValueStore::new(store_settings(), value_clock(&clock))
             .expect("the local store builds");
-        let counters = RouterCounters::new(
-            counter_settings(),
-            Arc::new(local),
-            Some(Arc::clone(&store)),
-        );
+        let counters = RouterCounters::new(settings, Arc::new(local), Some(Arc::clone(&store)));
         Self {
             accounting: UsageV2Accounting {
                 counters: Arc::new(counters),

@@ -37,6 +37,9 @@ pub(super) async fn run(name: &str) {
         }
         "rpm_storage_error_fails_open" => rpm_storage_error_fails_open().await,
         "the_v2_counter_loop_starts_and_stops" => the_v2_counter_loop_starts_and_stops().await,
+        "sync_pre_call_counts_the_request_before_rejecting_it" => {
+            sync_pre_call_counts_the_request_before_rejecting_it().await;
+        }
         other => panic!("unknown case {other}"),
     }
 }
@@ -162,17 +165,42 @@ async fn rpm_storage_error_fails_open() {
     assert!(harness.accounting.counters.get_tracked_keys().is_empty());
 }
 
-// BaseRoutingStrategy.__init__ starts the sync task; cancel_sync_task and cleanup stop it again
+// BaseRoutingStrategy.setup_sync_task: a started loop flushes on its tick and a cancelled one stops
 async fn the_v2_counter_loop_starts_and_stops() {
-    let harness = Harness::new();
+    let harness = Harness::with_sync_interval(SYNC_INTERVAL);
+    let facts = deployment("dep-a", rpm(Some(2)));
+    assert_eq!(harness.accounting.pre_call(&facts, at(0)).await, Ok(()));
     harness.accounting.counters.start();
-    harness.accounting.counters.cancel_sync_task();
-    let stopped = tokio::time::timeout(
-        Duration::from_secs(1),
-        harness.accounting.counters.cleanup(),
-    )
+    let flushed = tokio::time::timeout(Duration::from_secs(2), async {
+        while harness.store.value(RPM_KEY) == Decimal::ZERO {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
     .await;
-    assert!(stopped.is_ok(), "cleanup did not stop the v2 sync task");
+    assert!(
+        flushed.is_ok(),
+        "the started loop never flushed the queued increment"
+    );
+    harness.accounting.counters.cancel_sync_task();
+    assert_eq!(harness.accounting.pre_call(&facts, at(0)).await, Ok(()));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(harness.store.value(RPM_KEY), Decimal::ONE);
+    harness.accounting.counters.cleanup().await;
+}
+
+// pre_call_check counts the sync request first and rejects it once the updated count is past the limit
+async fn sync_pre_call_counts_the_request_before_rejecting_it() {
+    let harness = Harness::new();
+    let facts = deployment("dep-a", rpm(Some(0)));
+    let error = harness
+        .accounting
+        .pre_call_now(&facts, at(0))
+        .expect_err("an rpm of zero rejects the first request");
+    assert_eq!(error.limit, 0);
+    assert_eq!(error.usage, Decimal::ONE);
+    assert_eq!(error.retry_after_seconds, None);
+    assert_eq!(error.num_retries, None);
+    assert_eq!(harness.local(RPM_KEY), Some(1));
 }
 
 fn counter_loop_uses_the_v2_interval_and_batching() {

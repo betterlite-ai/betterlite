@@ -53,8 +53,7 @@ impl<S: DeltaStore + 'static> UsageV2Accounting<S> {
         }
     }
 
-    // pre_call_check: the sync facade stages the same reservation through the sink, then reads the count
-    // back; its rejection carries neither a retry header nor num_retries
+    // pre_call_check: the sync facade stages the reservation; its rejection has no retry header or num_retries
     pub fn pre_call_now(
         &self,
         deployment: &DeploymentFacts<'_>,

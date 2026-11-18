@@ -133,10 +133,13 @@ fn facts(deployment: &DeploymentInput) -> Result<DeploymentFacts<'_>, ScenarioEr
         model_id,
         model,
         limits: DeploymentUsage {
+            tpm: None,
             rpm: deployment.rpm,
+            params_tpm: None,
             params_rpm: deployment.params_rpm,
+            model_info_tpm: None,
             model_info_rpm: deployment.model_info_rpm,
-            ..DeploymentUsage::default()
+            io_token_limits: false,
         },
         num_retries: deployment.num_retries,
     })

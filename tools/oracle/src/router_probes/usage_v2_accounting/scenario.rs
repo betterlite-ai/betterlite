@@ -154,14 +154,16 @@ pub(super) async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput
     let section = config::Settings {
         ttl: Duration::from_secs(input.ttl_seconds.unwrap_or(config::DEFAULT_TTL_SECONDS)),
     };
-    let adapter::Resolved { ttl, counters } =
-        adapter::resolve(&section, &state_config::Settings::default());
+    let adapter::Resolved {
+        ttl,
+        counters: counter_settings,
+    } = adapter::resolve(&section, &state_config::Settings::default());
     let store = Arc::new(RoutingStateStore::new(
         &redis_settings(&server),
         breaker_clock(&clock),
     )?);
     let local = RoutingValueStore::new(local_settings(), value_clock(&clock))?;
-    let counters = RouterCounters::new(counters, Arc::new(local), Some(Arc::clone(&store)));
+    let counters = RouterCounters::new(counter_settings, Arc::new(local), Some(Arc::clone(&store)));
     let accounting = UsageV2Accounting {
         counters: Arc::new(counters),
         ttl,

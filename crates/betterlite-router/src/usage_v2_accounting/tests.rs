@@ -46,6 +46,9 @@ fn usage_v2_accounting_behaviors(#[case] name: &str) {
     "counter_loop_uses_the_v2_interval_and_batching"
 )]
 #[case::the_v2_counter_loop_starts_and_stops("the_v2_counter_loop_starts_and_stops")]
+#[case::sync_pre_call_counts_the_request_before_rejecting_it(
+    "sync_pre_call_counts_the_request_before_rejecting_it"
+)]
 fn usage_v2_accounting_boundaries(#[case] name: &str) {
     runtime().block_on(boundaries::run(name));
 }

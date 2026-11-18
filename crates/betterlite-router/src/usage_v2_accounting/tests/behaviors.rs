@@ -80,10 +80,13 @@ async fn rpm_without_a_limit_never_rejects() {
 async fn rpm_limit_prefers_the_deployment_value() {
     let harness = Harness::new();
     let limits = DeploymentUsage {
+        tpm: None,
         rpm: Some(1),
+        params_tpm: None,
         params_rpm: Some(5),
+        model_info_tpm: None,
         model_info_rpm: Some(9),
-        ..DeploymentUsage::default()
+        io_token_limits: false,
     };
     let facts = deployment("dep-a", limits);
     assert_eq!(harness.accounting.pre_call(&facts, at(0)).await, Ok(()));
@@ -100,9 +103,13 @@ async fn rpm_limit_falls_back_in_order() {
     let from_params = deployment(
         "dep-a",
         DeploymentUsage {
+            tpm: None,
+            rpm: None,
+            params_tpm: None,
             params_rpm: Some(1),
+            model_info_tpm: None,
             model_info_rpm: Some(9),
-            ..DeploymentUsage::default()
+            io_token_limits: false,
         },
     );
     assert_eq!(
@@ -118,8 +125,13 @@ async fn rpm_limit_falls_back_in_order() {
     let from_model_info = deployment(
         "dep-b",
         DeploymentUsage {
+            tpm: None,
+            rpm: None,
+            params_tpm: None,
+            params_rpm: None,
+            model_info_tpm: None,
             model_info_rpm: Some(1),
-            ..DeploymentUsage::default()
+            io_token_limits: false,
         },
     );
     assert_eq!(

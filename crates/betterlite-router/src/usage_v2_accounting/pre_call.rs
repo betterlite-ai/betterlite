@@ -9,8 +9,7 @@ use super::deployment::DeploymentFacts;
 use super::error::RpmLimitExceeded;
 use super::keys::window_keys;
 
-// the fields a rejection carries: the async check sends a retry header and the deployment's
-// num_retries, the sync check sends neither
+// the fields a rejection carries: the async check sends a retry header and num_retries, the sync neither
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Rejection {
     retry_after_seconds: Option<u64>,
