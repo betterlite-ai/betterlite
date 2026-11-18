@@ -11,7 +11,7 @@ from probes.protocol import Operation, ProbeError, Strict
 
 _TIER: Final = TypeAdapter(complexity_router.ComplexityTier)
 _CONFIG: Final = TypeAdapter(complexity_router.ComplexityRouterConfig)
-# the package exports the model and its dimension type; a validated instance lends the dimension class
+# the package exports the model and its dimension type; a validated instance gives the class
 _DIMENSION: Final = _CONFIG.validate_python(
     {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": ["a"]}]}
 ).custom_dimensions[0]
@@ -46,19 +46,14 @@ class Output(Strict):
     cause: str | None = None
 
 
-def _rejection(error: ValidationError, pattern: str) -> str:
-    message = error.errors()[0]["msg"]
-    return message.removeprefix(f"Value error, custom dimension pattern {pattern!r} ")
-
-
-def _outcome(pattern: str) -> int | str:
-    # model_construct skips the field bounds, so the pattern reaches the same cost walk validation uses
+def _entry(pattern: str) -> Entry:
+    # model_construct skips the field bounds, so the pattern reaches validation's cost walk
     work = _DIMENSION.model_construct(
         name="probe", weight=1.0, patterns=(pattern,), keywords=(), scoring_mode="binary"
     ).pattern_work()
     if work:
-        return work
-    # the cost walk already ran above; asking validation again for its refusal must not repeat its warnings
+        return Entry(work=work)
+    # the cost walk ran above, so asking validation again must not repeat the warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
@@ -66,17 +61,9 @@ def _outcome(pattern: str) -> int | str:
                 {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": [pattern]}]}
             )
         except ValidationError as error:
-            return _rejection(error, pattern)
+            prefix = f"Value error, custom dimension pattern {pattern!r} "
+            return Entry(message=error.errors()[0]["msg"].removeprefix(prefix))
     raise ProbeError("invalid_request", f"pattern {pattern!r} reported neither work nor a refusal")
-
-
-def _entry(pattern: str) -> Entry:
-    outcome = _outcome(pattern)
-    match outcome:
-        case str():
-            return Entry(message=outcome)
-        case int():
-            return Entry(work=outcome)
 
 
 class CustomDimensions(Operation):
