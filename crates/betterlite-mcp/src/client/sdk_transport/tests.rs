@@ -47,7 +47,9 @@ use crate::client::sessions::factory::{
 };
 use crate::client::sessions::negotiate::{ClientSession, InitializeOutcome, InitializeRequest};
 use crate::client::sessions::runtime::{McpRuntime as _, SessionOptions};
-use crate::client::sessions::stdio::StdioStreams;
+use crate::client::sessions::stdio::{
+    FORCE_KILL_TIMEOUT, SDK_SHUTDOWN, StdioShutdown, StdioStreams,
+};
 use crate::client::sessions::stdio_runtime::{StdioRuntime, StdioSessionFactory};
 use crate::client::sessions::stream::{MessageHandler, StreamFailureKind};
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext as _};
@@ -573,7 +575,7 @@ async fn a_data_only_event_is_a_message() {
     ));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_cut_sse_body_reconnects_with_last_event_id() {
     let server = RawTestServer::start(Arc::new(|request: &RecordedRequest| {
         if request.method == Method::POST {
@@ -795,6 +797,7 @@ async fn a_stdio_round_trip_through_the_async_rw_transport() {
     let script = "while IFS= read -r line; do printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'; done";
     let runtime = StdioRuntime {
         factory: Arc::new(UnusedFactory),
+        shutdown: SDK_SHUTDOWN,
     };
     let stdio = runtime.stdio_client(StdioServerParameters {
         command: "/bin/sh".to_owned(),
@@ -813,9 +816,14 @@ async fn a_stdio_round_trip_through_the_async_rw_transport() {
 
 #[tokio::test]
 async fn exiting_the_stdio_context_terminates_the_child_gracefully() {
-    let script = r#"trap 'printf "%s\n" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"stopped\"}}"; exit 0' TERM; while :; do sleep 0.05; done"#;
+    let script = r#"trap 'printf "%s\n" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"stopped\"}}"; exit 0' TERM; printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"ready"}}'; while :; do sleep 0.05; done"#;
+    // The ready notice comes once the trap is set, so SIGTERM need not wait long after stdin closes
     let runtime = StdioRuntime {
         factory: Arc::new(UnusedFactory),
+        shutdown: StdioShutdown {
+            termination: Duration::from_millis(100),
+            force_kill: FORCE_KILL_TIMEOUT,
+        },
     };
     let stdio = runtime.stdio_client(StdioServerParameters {
         command: "/bin/sh".to_owned(),
@@ -825,6 +833,10 @@ async fn exiting_the_stdio_context_terminates_the_child_gracefully() {
     });
     let mut transport = SdkTransport::Stdio(StdioContext(stdio));
     let mut streams = enter(&mut transport).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
     transport.exit().await.unwrap();
     assert!(matches!(
         receive(&mut streams).await,

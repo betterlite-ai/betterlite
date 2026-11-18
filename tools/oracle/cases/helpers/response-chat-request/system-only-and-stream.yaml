@@ -1,0 +1,103 @@
+kind: helper
+name: system-only-and-stream
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: system, content: rules}]
+    optional_params: {}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: system, content: ""}]
+      optional_params: {}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: system, content: rules}, {role: user, content: hi}]
+      optional_params: {instructions: other}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {instructions: other}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: system, content: ""}, {role: user, content: hi}]
+      optional_params: {instructions: other}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {stream: true}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {stream: false}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {stream: true}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {stream: false}
+      litellm_params: {stream: true}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {extra_headers: {X-Sdk: "2"}}
+      headers: {X-Caller: "1"}
+      reasoning_auto_summary: false
+      client: marker-sdk
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {extra_headers: {X-Sdk: "2"}}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      optional_params: {previous_response_id: resp_a}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: marker-sdk
+env: {}
+compare:
+  ignore: []

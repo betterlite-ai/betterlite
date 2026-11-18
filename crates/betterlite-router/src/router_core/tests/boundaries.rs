@@ -4,10 +4,10 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Cancelling, Checked, Cooldown, Fixture, Providers, RequestSetup, Windows, body, deployment,
-    error_of, group_and_ids, hidden, hidden_with, metadata, no_deployment_of, number, object,
-    paused, picked, run_checked, run_healthy, run_route, run_simple, run_windowed, seeded, text,
-    weighted, with_info,
+    Cancelling, Checked, Cooldown, Fixture, Grouped, Providers, RequestSetup, Windows, body,
+    deployment, error_of, group_and_ids, hidden, hidden_with, metadata, no_deployment_of, number,
+    object, paused, picked, run_checked, run_healthy, run_route, run_simple, run_windowed, seeded,
+    text, weighted, with_info,
 };
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
@@ -23,6 +23,7 @@ use crate::router_core::services::RouteServices;
 use crate::router_core::tests::support::{
     NoLimits, NoServices, route_context, route_request, strategy_context,
 };
+use crate::routing_groups::group::RoutingGroup;
 use crate::simple_shuffle::Candidate;
 use crate::simple_shuffle::error::ShuffleError;
 use crate::static_eligibility::error::EligibilityError;
@@ -670,4 +671,76 @@ pub(super) fn token_count_non_numeric() {
         Json::Object(object(&[("total_tokens", text("9"))])),
     )]);
     assert_eq!(response_total_token_count(&response), 0);
+}
+
+// A priority group's order is written before the order filter runs, so the pick carries it.
+pub(super) async fn routing_group_priority_reaches_the_pick() {
+    let fixture = Fixture::aliased(
+        group_and_ids(&[("member", "m1"), ("member", "m2")]),
+        &[("cheap", "member")],
+        &[],
+    );
+    let group = RoutingGroup::new(
+        String::from("cheap"),
+        vec![String::from("member")],
+        "priority",
+        None,
+        Some(BTreeMap::from([(String::from("member"), 4)])),
+    )
+    .unwrap();
+    let services = Grouped {
+        name: String::from("cheap"),
+        group,
+    };
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("cheap"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.group, "member");
+    assert_eq!(
+        result.deployment.litellm_params.get("order"),
+        Some(&number(4))
+    );
+    assert!(matches!(picked(&result), "m1" | "m2"));
+}
+
+// A group whose members are absent from the resolved pool leaves the route with nothing to pick.
+pub(super) async fn routing_group_members_missing_from_the_pool_leave_none() {
+    let fixture = Fixture::aliased(
+        group_and_ids(&[("member", "m1")]),
+        &[("cheap", "member")],
+        &[],
+    );
+    let group = RoutingGroup::new(
+        String::from("cheap"),
+        vec![String::from("other")],
+        "simple-shuffle",
+        None,
+        None,
+    )
+    .unwrap();
+    let services = Grouped {
+        name: String::from("cheap"),
+        group,
+    };
+    let mut random = seeded();
+    let error = run_route(
+        &fixture,
+        &RequestSetup::new("cheap"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap_err();
+    let RoutingError::NoDeployment(no_deployment) = error else {
+        panic!("an empty pool reports no deployment");
+    };
+    assert_eq!(no_deployment.model, "member");
 }

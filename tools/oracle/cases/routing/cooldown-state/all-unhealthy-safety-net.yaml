@@ -1,0 +1,64 @@
+kind: probe
+name: all-unhealthy-safety-net
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_health:
+          a: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+          b: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+        deployments:
+          - {model_name: gpt, id: a}
+          - {model_name: gpt, id: b}
+        health: {enabled: true, has_allowed_fails_policy: false}
+        steps:
+          - {kind: filter, now_millis: 0}
+          - {kind: filter, now_millis: 0, health_check_probe: true}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_health:
+          a: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+          b: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+        deployments:
+          - {model_name: gpt, id: a}
+          - {model_name: gpt, id: b}
+        health: {enabled: true, has_allowed_fails_policy: true}
+        steps:
+          - {kind: filter, now_millis: 0}
+          - {kind: filter, now_millis: 0, health_check_probe: true}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_health:
+          a: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+          b: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+        deployments:
+          - {model_name: gpt, id: a}
+          - {model_name: gpt, id: b}
+        health: {enabled: true, has_allowed_fails_policy: false, scoped_groups: [other]}
+        steps:
+          - {kind: filter, now_millis: 0}
+          - {kind: filter, now_millis: 0, health_check_probe: true}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_health:
+          a: {is_healthy: false, timestamp: 0.0, reason: probe failure}
+          b: {is_healthy: true, timestamp: 0.0}
+        deployments:
+          - {model_name: gpt, id: a}
+          - {model_name: gpt, id: b}
+        health: {enabled: true, has_allowed_fails_policy: false, scoped_groups: [gpt]}
+        steps:
+          - {kind: filter, now_millis: 0}
+          - {kind: filter, now_millis: 0, health_check_probe: true}
+compare: {ignore: []}

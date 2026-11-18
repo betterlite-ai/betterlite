@@ -54,6 +54,7 @@ use super::route::SandboxedCode;
 use super::route::routes;
 use super::run::CallOutcome;
 use super::run::CodeSandbox;
+use super::run::EXECUTION_TIMEOUT;
 use super::run::LoadOutcome;
 use super::run::LoadedCode;
 use super::run::SandboxHost;
@@ -73,13 +74,14 @@ const ADMIN_REQUIRED: &str = "Admin access required to test custom code guardrai
 enum Answer {
     Value(GuardrailValue),
     Pending(GuardrailValue),
-    // Three seconds before the coroutine and three inside it, so only the shared deadline cuts it at the timeout
+    // One step before the coroutine and one inside it, each under the timeout, so only the shared deadline cuts it
     Slow(GuardrailValue),
     PendingForever,
     Error(String),
 }
 
-const SLOW_STEP: Duration = Duration::from_secs(3);
+const SHORT_TIMEOUT: Duration = Duration::from_millis(400);
+const SLOW_STEP: Duration = Duration::from_millis(250);
 
 enum HostReply {
     Answer(Answer),
@@ -202,7 +204,10 @@ fn host(reply: HostReply) -> Arc<FakeHost> {
 fn sandbox(host: &Arc<FakeHost>) -> Arc<SandboxedCode> {
     let cloned = Arc::clone(host);
     let dynamic: Arc<dyn SandboxHost> = cloned;
-    Arc::new(SandboxedCode { host: dynamic })
+    Arc::new(SandboxedCode {
+        host: dynamic,
+        timeout: EXECUTION_TIMEOUT,
+    })
 }
 
 struct Scripted {
@@ -862,8 +867,12 @@ async fn result_non_object_becomes_allow_with_warning(
 
 #[tokio::test]
 async fn result_load_past_five_seconds_times_out() {
-    let fake = host(HostReply::Stuck);
-    let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
+    let fake: Arc<dyn SandboxHost> = host(HostReply::Stuck);
+    let quick = SandboxedCode {
+        host: fake,
+        timeout: SHORT_TIMEOUT,
+    };
+    let response = run_test(request(ALLOW_SOURCE), &quick).await;
     assert!(!response.success);
     assert_eq!(response.error_type, Some(ErrorType::Execution));
     assert_eq!(
@@ -874,8 +883,12 @@ async fn result_load_past_five_seconds_times_out() {
 
 #[tokio::test]
 async fn result_run_past_five_seconds_times_out() {
-    let fake = host(HostReply::Answer(Answer::PendingForever));
-    let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
+    let fake: Arc<dyn SandboxHost> = host(HostReply::Answer(Answer::PendingForever));
+    let quick = SandboxedCode {
+        host: fake,
+        timeout: SHORT_TIMEOUT,
+    };
+    let response = run_test(request(ALLOW_SOURCE), &quick).await;
     assert!(!response.success);
     assert_eq!(response.error_type, Some(ErrorType::Execution));
     assert_eq!(
@@ -886,10 +899,14 @@ async fn result_run_past_five_seconds_times_out() {
 
 #[tokio::test]
 async fn result_async_result_shares_the_deadline() {
-    let fake = host(HostReply::Answer(Answer::Slow(GuardrailValue::Object(
+    let fake: Arc<dyn SandboxHost> = host(HostReply::Answer(Answer::Slow(GuardrailValue::Object(
         object(r#"{"action":"allow"}"#),
     ))));
-    let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
+    let quick = SandboxedCode {
+        host: fake,
+        timeout: SHORT_TIMEOUT,
+    };
+    let response = run_test(request(ALLOW_SOURCE), &quick).await;
     assert!(!response.success);
     assert_eq!(response.error_type, Some(ErrorType::Execution));
     assert_eq!(

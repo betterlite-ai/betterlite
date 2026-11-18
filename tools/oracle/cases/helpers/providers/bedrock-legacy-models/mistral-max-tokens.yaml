@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-legacy-models-mistral-max-tokens
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: mistral
+          non_default:
+            max_tokens: 16
+            temperature: 0.1
+            top_p: 0.2
+            stop: [END]
+            stream: true
+            top_k: 40
+            unknown: 1
+          optional: {keep: 1}
+          model: mistral.mistral-7b-instruct-v0:2
+          drop_params: false
+          global_drop_params: false
+        - family: mistral
+          non_default: {stop: END}
+          optional: {}
+          model: mistral.mixtral-8x7b-instruct-v0:1
+          drop_params: true
+          global_drop_params: true
+env: {}
+compare: {ignore: []}

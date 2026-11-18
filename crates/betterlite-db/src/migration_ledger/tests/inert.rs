@@ -23,7 +23,7 @@ fn inert_rejects_changes(#[case] script: &str) {
 
 #[tokio::test]
 async fn noninert_not_rolled_back() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let ddl = migration(
             "20250105000000_noninert",
@@ -50,7 +50,7 @@ async fn noninert_not_rolled_back() {
 
 #[tokio::test]
 async fn failed_inert_recovery() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let inert = migration("20250106000000_inert", "-- retired\nSELECT 1;\n");
         insert_failed(&database.pool, "row-inert", &inert, FIXED_STARTED_AT).await;
@@ -78,7 +78,7 @@ async fn failed_inert_recovery() {
 
 #[tokio::test]
 async fn inert_already_rolled_back() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let inert = migration("20250107000000_inert", "SELECT 1;");
         insert_failed(&database.pool, "row-inert", &inert, FIXED_STARTED_AT).await;
@@ -103,7 +103,7 @@ async fn inert_already_rolled_back() {
 
 #[tokio::test]
 async fn inert_invalid_utf8() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let invalid = Migration {
             name: "20250108000000_invalid".to_owned(),
             checksum: checksum_of("SELECT 1;"),
@@ -122,7 +122,7 @@ async fn inert_invalid_utf8() {
 
 #[tokio::test]
 async fn inert_guard_rowcount() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let inert = migration("20250109000000_guarded", "SELECT 1;");
         insert_failed(&database.pool, "row-guarded", &inert, FIXED_STARTED_AT).await;

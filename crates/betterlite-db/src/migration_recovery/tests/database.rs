@@ -40,7 +40,7 @@ impl TestDatabase {
         PgSteps::new(PgStepsInputs {
             schema: self.schema.clone(),
             catalog,
-            prisma_url: self.prisma_url(),
+            prisma_url: self.url.clone(),
             deploy_url: self.url.clone(),
             lock_url: self.url.clone(),
             database_url: self.url.clone(),
@@ -53,14 +53,6 @@ impl TestDatabase {
             next_id,
         })
         .expect("the test database URL builds a deploy pool")
-    }
-
-    fn prisma_url(&self) -> SecretString {
-        SecretString::from(format!(
-            "{}&schema={}",
-            self.url.expose_secret(),
-            self.schema
-        ))
     }
 }
 
@@ -81,7 +73,7 @@ where
     F: FnOnce(TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let fixture = PostgresFixture::provision_schema(test_url().as_ref())
+    let fixture = PostgresFixture::provision_with_statements(test_url().as_ref(), Vec::new())
         .resolve()
         .await
         .expect("the Postgres fixture is available");

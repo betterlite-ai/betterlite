@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::io;
-use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{
     PublishChange, PublishFuture, redis_config_change_publisher,
 };
@@ -37,15 +35,11 @@ use crate::auxiliary_repository::repository::{
 };
 use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
 use crate::resource_repository::table::{ResourceActions, ResourceBinding, RowWrite};
 use crate::stored_cipher::DbCipher;
-use crate::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
 
 pub(crate) const NO_DB: &str =
     "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys";
@@ -63,12 +57,10 @@ fn test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
-// The migrations look constraint names up across the whole database, so each fixture gets its own.
 async fn provision() -> PostgresFixture {
-    PostgresFixture::provision_with_name_generator(
+    PostgresFixture::provision_with_statements(
         test_url().as_ref(),
-        &FixtureSeed::default(),
-        &mut RandomDatabaseName,
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
     )
     .resolve()
     .await
@@ -82,27 +74,6 @@ pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
     PostgresStore { pool: Some(pool) }
 }
 
-async fn migrate(store: &PostgresStore) {
-    let client = store.session().await.unwrap();
-    for catalog in [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ] {
-        for migration in catalog.files {
-            client
-                .batch_execute(from_utf8(migration.bytes).unwrap())
-                .await
-                .unwrap();
-        }
-    }
-}
-
 pub(crate) struct Case {
     fixtures: Vec<PostgresFixture>,
     pub(crate) writer: PostgresStore,
@@ -112,35 +83,26 @@ pub(crate) struct Case {
 
 impl Case {
     pub(crate) async fn new() -> Self {
-        Self::assemble(provision().await, None).await
+        Self::assemble(provision().await, None)
     }
 
     pub(crate) async fn split() -> Self {
-        Self::assemble(provision().await, Some(provision().await)).await
+        Self::assemble(provision().await, Some(provision().await))
     }
 
-    async fn assemble(
-        writer_fixture: PostgresFixture,
-        reader_fixture: Option<PostgresFixture>,
-    ) -> Self {
+    fn assemble(writer_fixture: PostgresFixture, reader_fixture: Option<PostgresFixture>) -> Self {
         let writer = store(&writer_fixture);
         let reader = reader_fixture
             .as_ref()
             .map_or_else(|| writer.clone(), store);
-        let separate = reader_fixture.is_some();
         let mut fixtures = vec![writer_fixture];
         fixtures.extend(reader_fixture);
-        let case = Self {
+        Self {
             fixtures,
             writer,
             reader,
             availability: Availability::default(),
-        };
-        migrate(&case.writer).await;
-        if separate {
-            migrate(&case.reader).await;
         }
-        case
     }
 
     pub(crate) const fn client(&self) -> PrismaClient<'_> {
