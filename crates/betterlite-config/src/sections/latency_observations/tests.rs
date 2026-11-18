@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::Args;
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
+use crate::sections::Section as _;
 
 fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Args, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
@@ -19,6 +20,13 @@ fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Args, ConfigErr
 
 fn load(source: &str) -> Args {
     load_with(source, &[]).unwrap()
+}
+
+// this section's own view and conversion, without the sibling sections the whole loader also runs
+fn convert(source: &str) -> Result<Args, ConfigError> {
+    let (raw, _ignored) = parse_view::<super::Raw>(source)?;
+    let settings = raw.convert(&BTreeMap::<String, String>::new())?;
+    Ok(*settings)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,24 +161,30 @@ fn resolves_environment(
     "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/ROUTER_TTL\n",
     Rejection::MissingEnvironment
 )]
-#[case::list_ttl(
-    "router_settings:\n  routing_strategy_args:\n    ttl: [60]\n",
-    Rejection::InvalidScalar
-)]
-#[case::boolean_ttl(
-    "router_settings:\n  routing_strategy_args:\n    ttl: true\n",
-    Rejection::InvalidScalar
+fn rejects(#[case] source: &str, #[case] expected: Rejection) {
+    let error = load_with(source, &[]).expect_err("the section rejects the source");
+    assert_eq!(rejection(&error), expected);
+}
+
+#[rstest]
+#[case::fractional_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n",
+    Rejection::InvalidInteger
 )]
 #[case::words_ttl(
     "router_settings:\n  routing_strategy_args:\n    ttl: soon\n",
     Rejection::InvalidInteger
 )]
-#[case::fractional_ttl(
-    "router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n",
-    Rejection::InvalidInteger
+#[case::boolean_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: true\n",
+    Rejection::InvalidScalar
 )]
-fn rejects(#[case] source: &str, #[case] expected: Rejection) {
-    let error = load_with(source, &[]).expect_err("the section rejects the source");
+#[case::list_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: [60]\n",
+    Rejection::InvalidScalar
+)]
+fn rejects_the_shared_ttl(#[case] source: &str, #[case] expected: Rejection) {
+    let error = convert(source).expect_err("the section rejects the shared ttl");
     assert_eq!(rejection(&error), expected);
 }
 
@@ -187,11 +201,22 @@ fn rejects_unknown_arguments(#[case] source: &str, #[case] expected: Rejection) 
 #[test]
 fn a_rejected_ttl_names_the_shared_argument() {
     let source = "router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n";
-    let error = load_with(source, &[]).expect_err("the section rejects the fractional ttl");
+    let error = convert(source).expect_err("the section rejects the fractional ttl");
     assert!(matches!(
         error,
         ConfigError::InvalidInteger { path, .. }
             if path == "router_settings.routing_strategy_args.ttl"
+    ));
+}
+
+#[test]
+fn a_boolean_ttl_keeps_the_value_it_was_given() {
+    let source = "router_settings:\n  routing_strategy_args:\n    ttl: true\n";
+    let error = convert(source).expect_err("the section rejects the boolean ttl");
+    assert!(matches!(
+        error,
+        ConfigError::InvalidScalar { path, value }
+            if path == "router_settings.routing_strategy_args.ttl" && value
     ));
 }
 
