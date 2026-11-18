@@ -584,8 +584,13 @@ fn request_prunes_unlisted_keys() {
     assert!(!request.contains_key("top_p"));
 }
 
-#[test]
-fn request_keeps_every_allowed_key() {
+#[rstest]
+#[case::tools("tools")]
+#[case::tool_choice("tool_choice")]
+#[case::reasoning("reasoning")]
+#[case::previous_response_id("previous_response_id")]
+#[case::truncation("truncation")]
+fn request_keeps_each_allowed_key(#[case] key: &str) {
     let options = request_options(
         r#"{
             "tools": [{"type": "function", "name": "lookup", "parameters": {"type": "object", "properties": {}}}],
@@ -599,15 +604,7 @@ fn request_keeps_every_allowed_key() {
     let request = transform_request(&options).expect("the request transforms");
     assert_eq!(request.len(), 11);
     assert!(!request.contains_key("temperature"));
-    for key in [
-        "tools",
-        "tool_choice",
-        "reasoning",
-        "previous_response_id",
-        "truncation",
-    ] {
-        assert_eq!(request.get(key), options.get(key), "{key} survives");
-    }
+    assert_eq!(request.get(key), options.get(key), "{key} survives");
 }
 
 #[test]

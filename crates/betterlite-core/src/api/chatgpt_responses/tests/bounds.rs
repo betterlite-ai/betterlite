@@ -30,9 +30,9 @@ fn sse_rejects_an_event_over_the_boundary() {
     assert_eq!(error.http_status(), Some(502));
     assert!(matches!(
         error,
-        ChatGptResponsesError::Recovery(ResponsesSseRecoveryError::Limit(
-            ApiLimitError::EventTooLarge { .. }
-        ))
+        ChatGptResponsesError::Recovery {
+            source: ResponsesSseRecoveryError::Limit(ApiLimitError::EventTooLarge { .. })
+        }
     ));
 }
 
@@ -48,9 +48,9 @@ fn sse_rejects_more_items_than_the_boundary() {
     assert_eq!(error.http_status(), Some(400));
     assert!(matches!(
         error,
-        ChatGptResponsesError::Recovery(ResponsesSseRecoveryError::Limit(
-            ApiLimitError::TooManyItems { .. }
-        ))
+        ChatGptResponsesError::Recovery {
+            source: ResponsesSseRecoveryError::Limit(ApiLimitError::TooManyItems { .. })
+        }
     ));
 }
 
