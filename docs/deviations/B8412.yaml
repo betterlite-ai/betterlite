@@ -48,13 +48,6 @@ deviations:
       str and repr text are not part of the declared dict[str, str] type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2346
   - what: >-
-      callback_vars keys are walked in sorted order, so with two unknown keys the message names the
-      first in sorted order. LiteLLM walks the caller's dict in insertion order.
-    why: >-
-      Only the first unknown key is reported; sorted order makes the same body report the same key
-      on every run.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2343
-  - what: >-
       A metadata that is not an object together with a managed metadata field fails with a 422
       validation error. LiteLLM indexes into the value and raises TypeError, which the route turns
       into a 500.
