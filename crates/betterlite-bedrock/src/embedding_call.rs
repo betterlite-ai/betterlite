@@ -13,11 +13,9 @@ use std::time::SystemTime;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_models::decisions;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
-use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
@@ -101,16 +99,4 @@ where
     )
     .await?;
     execute::execute(call, &plan, &dependencies, supplied, log).await
-}
-
-pub fn decisions_value(value: &Json) -> Result<decisions::Json, serde_json::Error> {
-    serde_json::from_value(serde_json::to_value(value)?)
-}
-
-pub fn decisions_object(value: &Object) -> Result<decisions::Extra, serde_json::Error> {
-    serde_json::from_value(serde_json::to_value(value)?)
-}
-
-pub fn decisions_list(input: &[String]) -> decisions::Json {
-    decisions::Json::List(input.iter().cloned().map(decisions::Json::Text).collect())
 }

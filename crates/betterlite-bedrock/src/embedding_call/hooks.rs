@@ -8,33 +8,37 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
+use super::LogContext;
 use super::error::EmbeddingCallError;
-use super::{LogContext, decisions_list, decisions_object, decisions_value};
-use crate::signing::request::AwsSignedRequest;
 
-pub enum Event {
+pub(super) enum Input {
+    Texts(Vec<String>),
+    Body,
+}
+
+pub(super) enum Event {
     Pre {
-        input: Vec<String>,
+        input: Input,
         body: Object,
         headers: Option<Headers>,
         api_base: Option<String>,
     },
     Post {
-        input: Vec<String>,
+        input: Input,
         body: Object,
         original_response: Json,
     },
 }
 
 #[derive(Default)]
-pub struct Recorder {
+pub(super) struct Recorder {
     events: Vec<Event>,
 }
 
 impl EmbeddingHooks for Recorder {
     fn pre_call(&mut self, call: CoherePreCall<'_>) {
         self.events.push(Event::Pre {
-            input: call.input.to_vec(),
+            input: Input::Texts(call.input.to_vec()),
             body: call.body.clone(),
             headers: call.headers.cloned(),
             api_base: call.api_base.map(str::to_owned),
@@ -43,68 +47,102 @@ impl EmbeddingHooks for Recorder {
 
     fn post_call(&mut self, call: CoherePostCall<'_>) {
         self.events.push(Event::Post {
-            input: call.input.to_vec(),
+            input: Input::Texts(call.input.to_vec()),
             body: call.body.clone(),
             original_response: call.original_response.clone(),
         });
     }
 }
 
-impl Recorder {
-    pub fn into_events(self) -> Vec<Event> {
-        self.events
+impl IntoIterator for Recorder {
+    type Item = Event;
+    type IntoIter = std::vec::IntoIter<Event>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.events.into_iter()
     }
 }
 
-// The hooks borrow the logging state, which is not Send, so B1418's execute records its calls and
-// they reach B249 here in the same pre-then-post order.
-pub fn replay(events: Vec<Event>, log: &mut LogContext<'_, '_>) -> Result<(), EmbeddingCallError> {
+// the hooks borrow the logging state, which is not Send, so B1418 records its calls and B249 logs them here
+pub(super) fn replay<Events>(
+    events: Events,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(), EmbeddingCallError>
+where
+    Events: IntoIterator<Item = Event>,
+{
     for event in events {
-        match event {
-            Event::Pre {
-                input,
-                body,
-                headers,
-                api_base,
-            } => pre_call(
+        log_event(event, log)?;
+    }
+    Ok(())
+}
+
+fn log_event(event: Event, log: &mut LogContext<'_, '_>) -> Result<(), EmbeddingCallError> {
+    match event {
+        Event::Pre {
+            input,
+            body,
+            headers,
+            api_base,
+        } => {
+            let logged = headers.as_ref().map(logged_headers);
+            pre_call(
                 log.state,
                 &PreCall {
-                    input: decisions_list(&input),
+                    input: input_value(input, &body)?,
                     model: None,
-                    additional_args: AdditionalArgs {
-                        api_base,
-                        headers: headers.as_ref().map(logged_headers),
-                        complete_input_dict: Some(RawBody::Object(decisions_object(&body)?)),
-                        request_str: None,
-                        openai_sdk: None,
-                        passthrough: IndexMap::new(),
-                    },
+                    additional_args: arguments(api_base, logged, &body)?,
                 },
                 log.env,
-            )?,
-            Event::Post {
-                input,
-                body,
-                original_response,
-            } => post_call(
+            )?;
+        }
+        Event::Post {
+            input,
+            body,
+            original_response,
+        } => {
+            post_call(
                 log.state,
                 &PostCall {
-                    original_response: decisions_value(&original_response)?,
-                    input: decisions_list(&input),
-                    additional_args: AdditionalArgs {
-                        api_base: None,
-                        headers: None,
-                        complete_input_dict: Some(RawBody::Object(decisions_object(&body)?)),
-                        request_str: None,
-                        openai_sdk: None,
-                        passthrough: IndexMap::new(),
-                    },
+                    original_response: serde_json::from_value(serde_json::to_value(
+                        &original_response,
+                    )?)?,
+                    input: input_value(input, &body)?,
+                    additional_args: arguments(None, None, &body)?,
                 },
                 log.env,
-            ),
+            );
         }
     }
     Ok(())
+}
+
+fn input_value(input: Input, body: &Object) -> Result<decisions::Json, EmbeddingCallError> {
+    match input {
+        Input::Texts(texts) => Ok(decisions::Json::List(
+            texts.into_iter().map(decisions::Json::Text).collect(),
+        )),
+        Input::Body => Ok(decisions::Json::Object(serde_json::from_value(
+            serde_json::to_value(body)?,
+        )?)),
+    }
+}
+
+fn arguments(
+    api_base: Option<String>,
+    headers: Option<IndexMap<String, decisions::Json>>,
+    body: &Object,
+) -> Result<AdditionalArgs, EmbeddingCallError> {
+    Ok(AdditionalArgs {
+        api_base,
+        headers,
+        complete_input_dict: Some(RawBody::Object(serde_json::from_value(
+            serde_json::to_value(body)?,
+        )?)),
+        request_str: None,
+        openai_sdk: None,
+        passthrough: IndexMap::new(),
+    })
 }
 
 fn logged_headers(headers: &Headers) -> IndexMap<String, decisions::Json> {
@@ -112,55 +150,4 @@ fn logged_headers(headers: &Headers) -> IndexMap<String, decisions::Json> {
         .iter()
         .map(|(name, value)| (name.clone(), decisions::Json::Text(value.clone())))
         .collect()
-}
-
-// the per-input path logs its own request and reply around B693's call
-pub fn log_request(
-    data: &Object,
-    signed: &AwsSignedRequest,
-    log: &mut LogContext<'_, '_>,
-) -> Result<(), EmbeddingCallError> {
-    let body = decisions_object(data)?;
-    pre_call(
-        log.state,
-        &PreCall {
-            input: decisions::Json::Object(body.clone()),
-            model: None,
-            additional_args: AdditionalArgs {
-                api_base: Some(signed.url.clone()),
-                headers: Some(logged_headers(&signed.headers.iter().cloned().collect())),
-                complete_input_dict: Some(RawBody::Object(body)),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        },
-        log.env,
-    )?;
-    Ok(())
-}
-
-pub fn log_reply(
-    data: &Object,
-    response: &Object,
-    log: &mut LogContext<'_, '_>,
-) -> Result<(), EmbeddingCallError> {
-    let body = decisions_object(data)?;
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: decisions::Json::Object(decisions_object(response)?),
-            input: decisions::Json::Object(body.clone()),
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                complete_input_dict: Some(RawBody::Object(body)),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        },
-        log.env,
-    );
-    Ok(())
 }

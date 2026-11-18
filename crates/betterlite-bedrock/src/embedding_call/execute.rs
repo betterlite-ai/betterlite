@@ -6,10 +6,10 @@ use betterlite_openai::cohere_legacy_embedding::execute::{ExecuteInput, LegacyEm
 use betterlite_openai::cohere_legacy_embedding::plan::{PlanInput, plan as cohere_plan};
 use betterlite_openai::cohere_legacy_embedding::{SYNC_CLIENT_TIMEOUT, SdkMode};
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::EmbeddingCallError;
-use super::hooks::{Recorder, log_reply, log_request, replay};
+use super::hooks::{Event, Input, Recorder, replay};
 use super::plan::{EmbeddingPlan, remaining_options};
 use super::sign::{AsyncSigningInput, SigningInput, sign_item, sign_owned};
 use super::{CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext};
@@ -29,6 +29,15 @@ struct BatchClients<'client, Factory: ClientFactory> {
     supplied: Option<(ClientKind, &'client Factory::Client)>,
     factory: &'client Factory,
     signing: &'client AwsSigningExecutor,
+}
+
+impl<Factory: ClientFactory + Sync> BatchClients<'_, Factory> {
+    async fn deliver(&self, call: &IoCall<'_>) -> Result<Object, EmbeddingCallError> {
+        let supplied = self
+            .supplied
+            .map(|(kind, transport)| SuppliedClient { kind, transport });
+        Ok(post_embedding(call, supplied, self.factory).await?)
+    }
 }
 
 pub async fn execute<Source, Factory, Transport>(
@@ -74,12 +83,33 @@ where
 {
     let mut responses = Vec::with_capacity(batch.len());
     for data in batch {
-        let response = if item.call.aembedding {
-            send_async(item, data, clients, log).await?
-        } else {
-            send_sync(item, data, clients, log).await?
+        let signed = sign(item, serde_json::to_vec(data)?, clients.signing).await?;
+        replay(
+            [Event::Pre {
+                input: Input::Body,
+                body: data.clone(),
+                headers: Some(signed.headers.iter().cloned().collect()),
+                api_base: Some(signed.url.clone()),
+            }],
+            log,
+        )?;
+        let call = IoCall {
+            asynchronous: item.call.aembedding,
+            url: &item.plan.endpoint_url,
+            headers: &signed.headers,
+            data,
+            timeout: item.call.timeout.clone(),
         };
-        responses.push(response);
+        let reply = clients.deliver(&call).await?;
+        replay(
+            [Event::Post {
+                input: Input::Body,
+                body: data.clone(),
+                original_response: Json::Object(reply.clone()),
+            }],
+            log,
+        )?;
+        responses.push(reply);
     }
     Ok(transform_response(
         &responses,
@@ -90,50 +120,20 @@ where
     )?)
 }
 
-// sync signs on this thread; async moves every signature off the event loop as LiteLLM does
-fn signed_sync(
+async fn sign(
     item: &Item<'_, '_, '_>,
-    body: &[u8],
+    body: Vec<u8>,
+    signing: &AwsSigningExecutor,
 ) -> Result<AwsSignedRequest, EmbeddingCallError> {
-    Ok(sign_item(
-        body,
-        SigningInput {
-            endpoint_url: &item.plan.endpoint_url,
-            credentials: item.plan.credentials.as_ref(),
-            region: &item.plan.region,
-            extra_headers: item.call.extra_headers.unwrap_or_default(),
-            api_key: item.call.api_key,
-            configured_bearer: item.call.environment.bearer_token,
-            now: item.call.now,
-        },
-    )?)
+    if !item.call.aembedding {
+        return Ok(sign_item(&body, signing_input(item))?);
+    }
+    let input = async_input(item, body);
+    Ok(signing.run(move || sign_owned(input)).await??)
 }
 
-async fn send_sync<Factory>(
-    item: &Item<'_, '_, '_>,
-    data: &Object,
-    clients: &BatchClients<'_, Factory>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Object, EmbeddingCallError>
-where
-    Factory: ClientFactory + Sync,
-{
-    let body = serde_json::to_vec(data)?;
-    let signed = signed_sync(item, &body)?;
-    send_prepared(item, data, &signed, clients, log).await
-}
-
-async fn send_async<Factory>(
-    item: &Item<'_, '_, '_>,
-    data: &Object,
-    clients: &BatchClients<'_, Factory>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Object, EmbeddingCallError>
-where
-    Factory: ClientFactory + Sync,
-{
-    let body = serde_json::to_vec(data)?;
-    let input = AsyncSigningInput {
+fn async_input(item: &Item<'_, '_, '_>, body: Vec<u8>) -> AsyncSigningInput {
+    AsyncSigningInput {
         endpoint_url: item.plan.endpoint_url.clone(),
         body,
         credentials: item.plan.credentials.clone(),
@@ -142,39 +142,19 @@ where
         api_key: item.call.api_key.cloned(),
         configured_bearer: item.call.environment.bearer_token.cloned(),
         now: item.call.now,
-    };
-    let signed = clients.signing.run(move || sign_owned(input)).await??;
-    send_prepared(item, data, &signed, clients, log).await
+    }
 }
 
-async fn send_prepared<Factory>(
-    item: &Item<'_, '_, '_>,
-    data: &Object,
-    signed: &AwsSignedRequest,
-    clients: &BatchClients<'_, Factory>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Object, EmbeddingCallError>
-where
-    Factory: ClientFactory + Sync,
-{
-    log_request(data, signed, log)?;
-    let supplied = clients
-        .supplied
-        .map(|(kind, transport)| SuppliedClient { kind, transport });
-    let reply = post_embedding(
-        &IoCall {
-            asynchronous: item.call.aembedding,
-            url: &item.plan.endpoint_url,
-            headers: &signed.headers,
-            data,
-            timeout: item.call.timeout.clone(),
-        },
-        supplied,
-        clients.factory,
-    )
-    .await?;
-    log_reply(data, &reply, log)?;
-    Ok(reply)
+fn signing_input(item: &Item<'_, '_, '_>) -> SigningInput<'_> {
+    SigningInput {
+        endpoint_url: &item.plan.endpoint_url,
+        credentials: item.plan.credentials.as_ref(),
+        region: &item.plan.region,
+        extra_headers: item.call.extra_headers.unwrap_or_default(),
+        api_key: item.call.api_key,
+        configured_bearer: item.call.environment.bearer_token,
+        now: item.call.now,
+    }
 }
 
 async fn cohere<Source, Factory, Transport>(
@@ -192,7 +172,7 @@ where
     Transport: LegacyEmbeddingTransport,
 {
     let body = serde_json::to_vec(data)?;
-    let signed = signed_sync(&Item { call, plan }, &body)?;
+    let signed = sign_item(&body, signing_input(&Item { call, plan }))?;
     let headers: Headers = signed.headers.iter().cloned().collect();
     let options = remaining_options(&call.optional_params)?;
     let legacy = cohere_plan(&PlanInput {
@@ -227,12 +207,11 @@ where
         }
         _ => cohere_execute(dependencies.transport, input, &mut recorder).await,
     };
-    replay(recorder.into_events(), log)?;
+    replay(recorder, log)?;
     Ok(outcome?)
 }
 
-// B1418's plan keeps one deadline: the blocking handler ignores the caller timeout and the async
-// handler's own default is also 600 seconds, so a Record timeout collapses to its longest phase.
+// B1418's plan keeps one deadline: the blocking handler ignores the caller timeout and the async default is 600 seconds too
 fn cohere_timeout(call: &EmbeddingCall<'_>) -> Result<Duration, EmbeddingCallError> {
     if !call.aembedding {
         return Ok(SYNC_CLIENT_TIMEOUT);

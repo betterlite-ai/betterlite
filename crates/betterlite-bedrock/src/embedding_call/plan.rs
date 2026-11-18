@@ -198,26 +198,30 @@ struct Bodies<'text> {
 }
 
 fn bodies(spec: Bodies<'_>) -> Result<(Option<Object>, Option<Vec<Object>>), EmbeddingCallError> {
-    match spec.provider {
-        BedrockEmbeddingProvider::Cohere => Ok((
-            Some(cohere::transform_request(
-                spec.model,
-                spec.input,
-                spec.inference_params,
-            )),
-            None,
-        )),
-        // an amazon model outside the four titan ids builds no body and falls to the caller's
-        // Unmapped check after the runtime endpoint was already read
+    let batch = match spec.provider {
+        BedrockEmbeddingProvider::Cohere => {
+            let data = cohere::transform_request(spec.model, spec.input, spec.inference_params);
+            return Ok((Some(data), None));
+        }
+        // an amazon model outside the four titan ids builds no body; the caller's Unmapped check follows
         BedrockEmbeddingProvider::Amazon => {
             let Some(kind) = titan_kind(spec.model) else {
                 return Ok((None, None));
             };
-            Ok((None, Some(titan_bodies(kind, &spec)?)))
+            let mut requests = Vec::with_capacity(spec.input.len());
+            for text in spec.input {
+                requests.push(match kind {
+                    Titan::Multimodal => multimodal::transform_request(text, spec.inference_params),
+                    Titan::G1 => g1::transform_request(text),
+                    Titan::V2 => v2::transform_request(text, spec.inference_params)?,
+                });
+            }
+            requests
         }
-        BedrockEmbeddingProvider::Twelvelabs => Ok((None, Some(marengo_bodies(&spec)?))),
-        BedrockEmbeddingProvider::Nova => Ok((None, Some(nova_bodies(&spec)?))),
-    }
+        BedrockEmbeddingProvider::Twelvelabs => async_bodies(&spec, Family::Marengo)?,
+        BedrockEmbeddingProvider::Nova => async_bodies(&spec, Family::Nova)?,
+    };
+    Ok((None, Some(batch)))
 }
 
 #[derive(Clone, Copy)]
@@ -225,6 +229,12 @@ enum Titan {
     Multimodal,
     G1,
     V2,
+}
+
+#[derive(Clone, Copy)]
+enum Family {
+    Marengo,
+    Nova,
 }
 
 fn titan_kind(model: &str) -> Option<Titan> {
@@ -236,53 +246,34 @@ fn titan_kind(model: &str) -> Option<Titan> {
     }
 }
 
-fn titan_bodies(kind: Titan, spec: &Bodies<'_>) -> Result<Vec<Object>, EmbeddingCallError> {
-    let mut batch = Vec::with_capacity(spec.input.len());
-    for text in spec.input {
-        batch.push(match kind {
-            Titan::Multimodal => multimodal::transform_request(text, spec.inference_params),
-            Titan::G1 => g1::transform_request(text),
-            Titan::V2 => v2::transform_request(text, spec.inference_params)?,
-        });
-    }
-    Ok(batch)
-}
-
-fn marengo_bodies(spec: &Bodies<'_>) -> Result<Vec<Object>, EmbeddingCallError> {
-    let inference_params = serde_json::from_value(serde_json::to_value(spec.inference_params)?)?;
-    let mut batch = Vec::with_capacity(spec.input.len());
-    for text in spec.input {
-        let request = marengo_request(TransformRequest {
-            model: Some(spec.model),
-            input: text,
-            inference_params: &inference_params,
-            async_invoke_route: spec.asynchronous,
-            model_id: Some(spec.model_id),
-            output_s3_uri: output_s3_uri(spec.inference_params),
-            drop_params: spec.drop_params,
-        })?;
-        batch.push(serde_json::from_value(serde_json::to_value(request)?)?);
-    }
-    Ok(batch)
-}
-
-fn nova_bodies(spec: &Bodies<'_>) -> Result<Vec<Object>, EmbeddingCallError> {
+fn async_bodies(spec: &Bodies<'_>, family: Family) -> Result<Vec<Object>, EmbeddingCallError> {
     let inference_params: Params =
         serde_json::from_value(serde_json::to_value(spec.inference_params)?)?;
+    let output_s3_uri = spec
+        .inference_params
+        .get("output_s3_uri")
+        .and_then(Json::as_str);
     let mut batch = Vec::with_capacity(spec.input.len());
     for text in spec.input {
-        let request = nova_request(
-            text,
-            &inference_params,
-            spec.asynchronous,
-            Some(spec.model_id),
-            output_s3_uri(spec.inference_params),
-        )?;
-        batch.push(serde_json::from_value(serde_json::to_value(request)?)?);
+        let request = match family {
+            Family::Marengo => serde_json::to_value(marengo_request(TransformRequest {
+                model: Some(spec.model),
+                input: text,
+                inference_params: &inference_params,
+                async_invoke_route: spec.asynchronous,
+                model_id: Some(spec.model_id),
+                output_s3_uri,
+                drop_params: spec.drop_params,
+            })?)?,
+            Family::Nova => serde_json::to_value(nova_request(
+                text,
+                &inference_params,
+                spec.asynchronous,
+                Some(spec.model_id),
+                output_s3_uri,
+            )?)?,
+        };
+        batch.push(serde_json::from_value(request)?);
     }
     Ok(batch)
-}
-
-fn output_s3_uri(params: &Object) -> Option<&str> {
-    params.get("output_s3_uri").and_then(Json::as_str)
 }
