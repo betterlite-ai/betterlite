@@ -35,4 +35,13 @@ deviations:
       with `Path.resolve()`, so the two lists cannot disagree in betterlite. The watcher still sees every file
       LiteLLM watches at the location the config really lives in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L365-L369
+  - what: >-
+      A `--config` path whose file name is not valid UTF-8 (or has no file name at all) fails the reload
+      setup with ReloadError::FileName, where LiteLLM appends the basename string to uvicorn's
+      reload_includes and hands it to uvicorn's glob.
+    why: >-
+      uvicorn's include patterns are strings, and Python carries a non-UTF-8 name in one as surrogates
+      while betterlite's reload_includes holds String patterns that cannot. The caller gets an error that
+      names the path instead of a pattern no watcher here could match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L364-L369
 kept_bugs: []
