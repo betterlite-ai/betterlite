@@ -43,6 +43,7 @@ pub struct EmbeddingUsage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PromptTokenCounts {
     pub image_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub query_count: Option<u64>,
 }
 

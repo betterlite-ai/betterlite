@@ -1,5 +1,5 @@
 import os
-from typing import TypeAlias, TypedDict, cast
+from typing import NotRequired, TypeAlias, TypedDict, cast
 
 import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
@@ -24,7 +24,7 @@ class RecordPayload(TypedDict):
 
 class DetailsPayload(TypedDict):
     image_count: int | None
-    query_count: int | None
+    query_count: NotRequired[int | None]
 
 
 class UsagePayload(TypedDict):
@@ -50,10 +50,10 @@ def reply_value(response: EmbeddingResponse) -> dict[str, JsonValue]:
     details = usage_payload["prompt_tokens_details"]
     details_value: JsonValue = None
     if details is not None:
-        details_value = {
-            "image_count": details["image_count"],
-            "query_count": details["query_count"],
-        }
+        counts: dict[str, JsonValue] = {"image_count": details["image_count"]}
+        if "query_count" in details:
+            counts["query_count"] = details["query_count"]
+        details_value = counts
     usage: dict[str, JsonValue] = {
         "prompt_tokens": usage_payload["prompt_tokens"],
         "completion_tokens": usage_payload["completion_tokens"],

@@ -556,7 +556,7 @@ fn embedding_usage() {
         BedrockEmbeddingProvider::Amazon,
         &[r#"{"embedding":[0.5],"inputTextTokenCount":4}"#],
         Some(&[r#"{"inputImage":"aW1n"}"#, r#"{"inputText":"hello"}"#]),
-        r#"{"object":"list","data":[{"object":"embedding","embedding":[0.5],"index":0}],"model":"amazon.titan-embed-image-v1","usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#,
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[0.5],"index":0}],"model":"amazon.titan-embed-image-v1","usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4,"prompt_tokens_details":{"image_count":1}},"invocation_arn":null}"#,
     );
     assert_usage_reply(
         MARENGO_MODEL,
@@ -574,7 +574,7 @@ fn embedding_usage() {
         BedrockEmbeddingProvider::Nova,
         &[r#"{"embeddings":[{"embedding":[1,2,3,4],"truncatedCharLength":12}]}"#],
         Some(&[r#"{"singleEmbeddingParams":{"image":{"format":"png"}}}"#]),
-        r#"{"object":"list","data":[{"object":"embedding","embedding":[1,2,3,4],"index":0}],"model":"amazon.nova-2-multimodal-embeddings-v1:0","usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#,
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[1,2,3,4],"index":0}],"model":"amazon.nova-2-multimodal-embeddings-v1:0","usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3,"prompt_tokens_details":{"image_count":1}},"invocation_arn":null}"#,
     );
     cohere_reply_is_unmapped();
     titan_model_is_chosen_before_the_provider();
