@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use super::{inputs, text_option, unreadable_reply};
+use super::{inputs, text_option};
 use crate::sagemaker_runtime::error::RuntimeError;
+use crate::sagemaker_runtime::runtime::unreadable_reply;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Value;

@@ -12,8 +12,13 @@ use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use std::time::Duration;
 use url::Url;
+use uuid::Uuid;
 
 struct Counter;
+
+fn test_identifier() -> Uuid {
+    Uuid::nil()
+}
 
 impl TextTokenCounter for Counter {
     fn count_response_tokens(&self, text: &str) -> u64 {
@@ -83,6 +88,7 @@ fn outbound_validates_url_and_builds_post_request() {
         ),
         counter: &counter,
         timeout: Duration::from_secs(3),
+        identifier: test_identifier,
     };
     let prepared = PreparedCall {
         url: String::from("https://runtime.example/invocations"),

@@ -9,9 +9,11 @@ use super::endpoint::{ParamMap, call_region, endpoint_name};
 use super::runtime::{
     PreparedCall, body_text, epoch_seconds, reply_headers, stream_error, wire_error,
 };
+use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_settings::sources::Credentials;
 use crate::signing::error::SigningError;
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
+use crate::signing::target::RegionInputs;
 use betterlite_models::decisions::Json;
 use futures_util::stream;
 use http::{HeaderMap, HeaderValue};
@@ -121,33 +123,42 @@ fn removes_runtime_provider_prefix(#[case] model: &str, #[case] expected: &str) 
 }
 
 #[test]
-fn completion_region_uses_explicit_then_environment_without_session_region() {
+fn completion_region_prefers_aws_region_over_aws_region_name() {
     let params = ParamMap::new();
+    let both = RegionInputs {
+        environment_region_name: Some("eu-west-1"),
+        environment_region: Some("us-east-1"),
+        session_region: Some("ap-south-1"),
+    };
+    assert_eq!(call_region(&params, both).expect("both"), "us-east-1");
+    let name_only = RegionInputs {
+        environment_region_name: Some("eu-west-1"),
+        ..RegionInputs::default()
+    };
+    assert_eq!(
+        call_region(&params, name_only).expect("name only"),
+        "eu-west-1"
+    );
+    let session_only = RegionInputs {
+        session_region: Some("ap-south-1"),
+        ..RegionInputs::default()
+    };
+    assert_eq!(
+        call_region(&params, session_only).expect("session only"),
+        "us-west-2"
+    );
+}
+
+#[test]
+fn completion_region_rejects_a_non_string_region_name() {
+    let raw = serde_json::value::RawValue::from_string(String::from("5")).expect("region JSON");
+    let params = ParamMap::from([(String::from("aws_region_name"), raw)]);
     assert!(matches!(
-        call_region(
-            &params,
-            crate::signing::target::RegionInputs {
-                environment_region_name: Some("eu-west-1"),
-                environment_region: Some("us-east-1"),
-                session_region: Some("ap-south-1"),
-            }
-        ),
-        Ok(region) if region == "eu-west-1"
-    ));
-    assert!(matches!(
-        call_region(&params, crate::signing::target::RegionInputs::default()),
-        Ok(region) if region == "us-west-2"
-    ));
-    assert!(matches!(
-        call_region(
-            &params,
-            crate::signing::target::RegionInputs {
-                environment_region_name: None,
-                environment_region: None,
-                session_region: Some("ap-south-1"),
-            }
-        ),
-        Ok(region) if region == "us-west-2"
+        call_region(&params, RegionInputs::default()),
+        Err(SigningError::Endpoint(AwsEndpointError::Field {
+            field: "aws_region_name",
+            ..
+        }))
     ));
 }
 
@@ -159,7 +170,7 @@ fn explicit_completion_region_overrides_environment() {
     assert!(matches!(
         call_region(
             &params,
-            crate::signing::target::RegionInputs {
+            RegionInputs {
                 environment_region_name: Some("eu-west-1"),
                 environment_region: Some("us-east-1"),
                 session_region: None,

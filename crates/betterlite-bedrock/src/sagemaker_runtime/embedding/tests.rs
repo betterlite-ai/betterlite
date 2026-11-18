@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{EmbeddingReply, embedding_body, voyage_body, voyage_reply};
+use super::{embedding_body, voyage_body};
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_prompts::arguments::json::Object as Body;
 use serde_json::json;
@@ -36,21 +36,4 @@ fn voyage_request_copies_caller_options_after_default_fields() {
         Some(&super::Json::Text(String::from("voyage-3")))
     );
     assert_eq!(body.get("extra"), Some(&super::Json::Bool(true)));
-}
-
-#[test]
-fn voyage_reply_projects_json_and_reports_invalid_json() {
-    let reply = voyage_reply(br#"{"data": [{"embedding": [1, 2]}]}"#).expect("reply");
-    assert!(matches!(reply, EmbeddingReply::Voyage(_)));
-    let error = voyage_reply(b"not-json").expect_err("invalid reply");
-    assert_eq!(error.status_code, 200);
-    assert_eq!(error.message, "not-json");
-}
-
-#[test]
-fn voyage_reply_returns_projected_value() {
-    assert!(matches!(
-        voyage_reply(br#"{"data": []}"#).expect("reply"),
-        EmbeddingReply::Voyage(_)
-    ));
 }
