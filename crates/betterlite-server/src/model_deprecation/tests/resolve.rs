@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use serde_json::Number;
 
 use crate::model_deprecation::dates::parse_json_date;
@@ -122,26 +123,23 @@ fn first_slash_fallback() {
     assert_eq!(resolved.litellm_model.as_deref(), Some("gpt-4o/x"));
 }
 
-#[test]
-fn invalid_override_falls_through() {
+#[rstest]
+#[case::not_a_date(text("not a date"))]
+#[case::impossible_day(text("2026-02-30"))]
+#[case::datetime_text(text("2026-04-01T00:00:00Z"))]
+#[case::null(Json::Null)]
+#[case::number(Json::Number(Number::from(20_260_401)))]
+fn invalid_override_falls_through(#[case] invalid: Json) {
     let catalog = TestCatalog::new(vec![("openai/raw-model", "2026-04-01", Some("openai"))]);
     let params = object(vec![("model", text("openai/raw-model"))]);
-    for invalid in [
-        text("not a date"),
-        text("2026-02-30"),
-        text("2026-04-01T00:00:00Z"),
-        Json::Null,
-        Json::Number(Number::from(20_260_401)),
-    ] {
-        let info = object(vec![
-            ("deprecation_date", invalid),
-            ("litellm_provider", text("ignored")),
-        ]);
-        let resolved = resolve_deprecation(&view(Some("alpha"), &params, &info), &catalog)
-            .expect("the catalog date resolves");
-        assert_eq!(resolved.deprecation_date, calendar_date("2026-04-01"));
-        assert_eq!(resolved.litellm_provider.as_deref(), Some("openai"));
-    }
+    let info = object(vec![
+        ("deprecation_date", invalid),
+        ("litellm_provider", text("ignored")),
+    ]);
+    let resolved = resolve_deprecation(&view(Some("alpha"), &params, &info), &catalog)
+        .expect("the catalog date resolves");
+    assert_eq!(resolved.deprecation_date, calendar_date("2026-04-01"));
+    assert_eq!(resolved.litellm_provider.as_deref(), Some("openai"));
 }
 
 #[test]

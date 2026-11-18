@@ -48,6 +48,25 @@ fn already_deprecated() {
 }
 
 #[test]
+fn invalid_date() {
+    let specs = vec![
+        dated("bad-day", "raw/a", "2026-02-30"),
+        dated("bad-text", "raw/b", "not a date"),
+        dated("dated", "raw/c", "2026-05-10"),
+    ];
+    let response = collect_from_specs(
+        &specs,
+        &TestCatalog::new(Vec::new()),
+        &fixed_clock(),
+        DEFAULT_DEPRECATION_WARN_DAYS,
+        None,
+    );
+    assert_eq!(names(&response.imminent), ["dated"]);
+    assert!(response.deprecated.is_empty());
+    assert!(response.upcoming.is_empty());
+}
+
+#[test]
 fn upcoming_boundary() {
     let specs = vec![
         dated("at-window", "raw/a", "2026-05-31"),
