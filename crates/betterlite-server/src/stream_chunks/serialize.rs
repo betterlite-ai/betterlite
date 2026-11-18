@@ -3,11 +3,15 @@ use betterlite_models::model_registration::JsonObject;
 
 use super::{ChunkKind, StreamChunk};
 
+mod tool_shapes;
+
 // these keys hold declared models that exclude_none descends into; other values are dictionary entries
 #[derive(Clone, Copy)]
 enum Shape {
     Value,
     Fields(&'static [(&'static str, Shape)]),
+    Tagged(&'static [(&'static str, Shape)]),
+    Tools(&'static [(&'static str, Shape)]),
 }
 
 const EMPTY: &[(&str, Shape)] = &[];
@@ -70,7 +74,7 @@ const RESPONSE: &[(&str, Shape)] = &[
     ("incomplete_details", Shape::Fields(EMPTY)),
     ("text", Shape::Fields(TEXT)),
     ("tool_choice", Shape::Fields(EMPTY)),
-    ("tools", Shape::Fields(EMPTY)),
+    ("tools", Shape::Tools(tool_shapes::TOOL_VARIANTS)),
     ("usage", Shape::Fields(RESPONSE_USAGE)),
 ];
 const RESPONSE_EVENT: &[(&str, Shape)] = &[("response", Shape::Fields(RESPONSE))];
@@ -131,7 +135,40 @@ fn without_nulls(value: &Json, shape: Shape) -> Json {
     match shape {
         Shape::Value => value.clone(),
         Shape::Fields(fields) => strip_nulls(value, fields),
+        Shape::Tagged(variants) => tagged_without_nulls(value, variants),
+        Shape::Tools(variants) => tool_shapes::tools_without_nulls(value, variants),
     }
+}
+
+// a tagged union member is a model when its type matches, and anything else stays a dictionary
+fn tagged_without_nulls(value: &Json, variants: &[(&str, Shape)]) -> Json {
+    match value {
+        Json::List(items) => Json::List(
+            items
+                .iter()
+                .map(|item| tagged_object(item, variants))
+                .collect(),
+        ),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            tagged_object(value, variants)
+        }
+    }
+}
+
+fn tagged_object(value: &Json, variants: &[(&str, Shape)]) -> Json {
+    let Json::Object(entries) = value else {
+        return value.clone();
+    };
+    let Some(Json::Text(kind)) = entries.get("type") else {
+        return value.clone();
+    };
+    variants
+        .iter()
+        .find(|(name, _shape)| *name == kind.as_str())
+        .map_or_else(
+            || value.clone(),
+            |(_name, shape)| without_nulls(value, *shape),
+        )
 }
 
 // exclude_none drops a model's null fields; an array keeps null items and walks every other item

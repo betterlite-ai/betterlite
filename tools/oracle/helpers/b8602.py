@@ -43,7 +43,7 @@ EVENT_CLASSES: Final[dict[str, type[CarrierBase]]] = {
     "response.incomplete": openai_types.ResponseIncompleteEvent,
     "response.output_item.added": openai_types.OutputItemAddedEvent,
     "response.output_item.done": openai_types.OutputItemDoneEvent,
-    "response.reasoning_summary_part.added": openai_types.ResponsePartAddedEvent,
+    "response.reasoning_summary_part.added": openai_types.ResponsePartAddedEvent,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1619
     "response.reasoning_summary_part.done": openai_types.ReasoningSummaryPartDoneEvent,
 }
 

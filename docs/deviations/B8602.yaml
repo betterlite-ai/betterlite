@@ -6,7 +6,7 @@ deviations:
   - what: A ModelStream chunk keeps delta.reasoning_items when its delta is otherwise simple; LiteLLM's fast serializer copies only role and content, so those reasoning items never reach the client.
     why: Dropping provider reasoning items loses data the model returned, and the canonical model_dump_json path keeps the same field, so betterlite keeps it on every stream chunk.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9503-L9523
-  - what: An output item in a Responses event keeps its own null fields even where LiteLLM's union validates it into an output item model and drops them, and a tools entry that matches no tool model drops null fields that LiteLLM's dict member keeps.
-    why: The serializer sees JSON without pydantic's union, so it treats output items as dictionaries and every tools entry as a declared tool model; reproducing the union's per-item model-or-dict fallback would need every output item and tool schema.
+  - what: An output item in a Responses event keeps its own null fields even where LiteLLM's union validates it into an output item model and drops them, and a tools entry whose declared type carries a value pydantic rejects is still serialized by that model's shape while LiteLLM falls back to its dictionary member and keeps every null.
+    why: The serializer sees JSON without pydantic's union, so it treats output items as dictionaries and picks a tools entry's model shape by its type tag alone; reproducing the union's validation-failure fallback would need every tool and output item schema.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1397-L1412
 kept_bugs: []

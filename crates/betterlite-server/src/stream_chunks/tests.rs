@@ -25,6 +25,8 @@ use super::{
     ChunkKind, DONE_FRAME, MAX_RAW_SSE_BUFFER_CHARS, SSE_FRAME_DELIMITERS, StreamChunk, StreamItem,
 };
 
+mod tool_models;
+
 static ROUTER_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn value(text: &str) -> Json {
@@ -676,7 +678,7 @@ fn serialize_event_models_drop_nulls() {
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_1","created_at":5,"#,
             r#""metadata":{"trace":null},"output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[],"error":null}],"reasoning":{"effort":null},"#,
-            r#""usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"text_tokens":2}},"tools":[{"type":"unknown_tool"}]}}"#
+            r#""usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"text_tokens":2}},"tools":[{"type":"unknown_tool","extra_null":null}]}}"#
         )
     );
     let summary = typed_chunk(
