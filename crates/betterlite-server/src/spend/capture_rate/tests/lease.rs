@@ -22,7 +22,8 @@ async fn an_absent_lock_manager_allows_the_alert() {
         alert: &alert,
     };
     let settings = settings(&[SpendCaptureProvider::Openai], "0.9", 1, &[]);
-    run_scheduled_check(&job, &settings, None, Some(date("2026-11-18")))
+    let no_manager: Option<&PodLockManager<FakeLeaseCache>> = None;
+    run_scheduled_check(&job, &settings, no_manager, Some(date("2026-11-18")))
         .await
         .unwrap();
     assert_eq!(publisher.take().len(), 1);

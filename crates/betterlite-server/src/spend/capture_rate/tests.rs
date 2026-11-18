@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
+use std::mem::take;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -101,7 +102,7 @@ impl Timeline {
 
     fn take(&self) -> Vec<String> {
         let mut entries = self.entries.lock().unwrap();
-        std::mem::take(&mut *entries)
+        take(&mut *entries)
     }
 }
 
@@ -130,7 +131,7 @@ impl FakeHttpGet {
 
     fn take_requests(&self) -> Vec<BillingHttpRequest> {
         let mut requests = self.requests.lock().unwrap();
-        std::mem::take(&mut *requests)
+        take(&mut *requests)
     }
 }
 
@@ -171,7 +172,7 @@ impl FakeSpend {
 
     fn take_requests(&self) -> Vec<SpendCall> {
         let mut requests = self.requests.lock().unwrap();
-        std::mem::take(&mut *requests)
+        take(&mut *requests)
     }
 }
 
@@ -213,7 +214,7 @@ impl RecordingPublisher {
 
     fn take(&self) -> Vec<(SpendCaptureProvider, Option<Decimal>)> {
         let mut published = self.published.lock().unwrap();
-        std::mem::take(&mut *published)
+        take(&mut *published)
     }
 }
 
@@ -253,7 +254,7 @@ impl RecordingAlert {
 
     fn take(&self) -> Vec<String> {
         let mut messages = self.messages.lock().unwrap();
-        std::mem::take(&mut *messages)
+        take(&mut *messages)
     }
 }
 
