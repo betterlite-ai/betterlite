@@ -97,6 +97,12 @@ pub(super) fn run(name: &str) {
         }
         "no_placement_leaves_the_tier_and_signals" => no_placement_leaves_the_tier_and_signals(),
         "the_fit_accepts_an_unknown_group" => the_fit_accepts_an_unknown_group(),
+        "a_disabled_gate_ignores_a_supplied_fit" => a_disabled_gate_ignores_a_supplied_fit(),
+        "catalog_custom_provider_overrides_the_model_prefix" => {
+            catalog_custom_provider_overrides_the_model_prefix();
+        }
+        "an_empty_parts_message_adds_no_bytes" => an_empty_parts_message_adds_no_bytes(),
+        "the_tool_truthiness_follows_python_values" => the_tool_truthiness_follows_python_values(),
         _ => panic!("unknown behavior case {name}"),
     }
 }
@@ -903,4 +909,112 @@ fn the_fit_accepts_an_unknown_group() {
     };
     assert!(!known.accepts("small"));
     assert!(known.accepts("other"));
+}
+
+// a caller can hand the placement a fit it computed under another gate state, and the gate still decides
+fn a_disabled_gate_ignores_a_supplied_fit() {
+    let config = config(false, 0.95);
+    let deployments = catalog(vec![
+        deployment("small", r#"{"model":"openai/gpt-4o"}"#, &window(100)),
+        deployment("large", r#"{"model":"openai/gpt-4o"}"#, &window(10_000)),
+    ]);
+    let info = ExtraModelInfo;
+    let counter = FixedCounter { value: 96 };
+    let placement_service = service(&config, &deployments, &info, &counter);
+    let set = tier_set(&[("SIMPLE", &["small"]), ("MEDIUM", &["large"])]);
+    let tier = Tier::BuiltIn(ComplexityTier::Simple);
+    let messages = [message(&"x".repeat(200))];
+    let out_of_band = OutOfBand::default();
+    let request = RequestFacts {
+        messages: Some(&messages),
+        out_of_band,
+        compaction_pending: false,
+    };
+    let supplied = ContextFit {
+        facts: BTreeMap::from([
+            (
+                "small".to_owned(),
+                WindowFacts {
+                    window: Some(100),
+                    has_unknown: false,
+                },
+            ),
+            (
+                "large".to_owned(),
+                WindowFacts {
+                    window: Some(10_000),
+                    has_unknown: false,
+                },
+            ),
+        ]),
+        needed: Some(96),
+        buffer: 0.95,
+    };
+    let input = PlacementRequest {
+        tier: &tier,
+        set: &set,
+        default_model: None,
+        pool_override: None,
+        request,
+    };
+    let outcome = super::runtime()
+        .block_on(placement_service.context_window_placement(&input, Some(&supplied)));
+    assert_eq!(outcome.unwrap(), None);
+}
+
+fn catalog_custom_provider_overrides_the_model_prefix() {
+    let catalog = model_catalog(
+        r#"{"gpt-4o":{"litellm_provider":"openai","mode":"chat","max_input_tokens":1000}}"#,
+    );
+    let info = CatalogModelInfo { catalog: &catalog };
+    let spec = deployment(
+        "group",
+        r#"{"model":"azure/gpt-4o","custom_llm_provider":"openai"}"#,
+        "{}",
+    );
+    assert_eq!(
+        deployment_limit(&info, "group", &spec, ModelLimitKey::InputTokens),
+        Some(1000)
+    );
+}
+
+fn an_empty_parts_message_adds_no_bytes() {
+    let empty = betterlite_openai::chat::ChatMessage {
+        role: betterlite_openai::chat::Role::User,
+        content: Some(betterlite_openai::chat::MessageContent::Parts(Vec::new())),
+        name: None,
+        tool_calls: None,
+        tool_call_id: None,
+        passthrough: indexmap::IndexMap::new(),
+    };
+    let out_of_band = OutOfBand::default();
+    assert_eq!(request_byte_upper_bound(Some(&[empty]), &out_of_band), 0);
+}
+
+// Python's truthiness decides which tools value is carried: text and a mapping count, a zero does not
+fn the_tool_truthiness_follows_python_values() {
+    let text = Json::Text("tool".to_owned());
+    let object = json(r#"{"a":1}"#);
+    let zero = json("0");
+    let from_text = OutOfBand {
+        instructions: None,
+        system: None,
+        body_tools: Some(&text),
+        request_tools: None,
+    };
+    assert_eq!(out_of_band_text(&from_text), "tool");
+    let from_object = OutOfBand {
+        instructions: None,
+        system: None,
+        body_tools: Some(&object),
+        request_tools: None,
+    };
+    assert_eq!(out_of_band_text(&from_object), r#"{"a":1}"#);
+    let from_zero = OutOfBand {
+        instructions: None,
+        system: None,
+        body_tools: Some(&zero),
+        request_tools: None,
+    };
+    assert_eq!(out_of_band_text(&from_zero), "");
 }

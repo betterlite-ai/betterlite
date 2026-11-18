@@ -62,6 +62,12 @@ fn runtime() -> Runtime {
 #[case::a_match_by_name_returns_the_placement_tier("a_match_by_name_returns_the_placement_tier")]
 #[case::no_placement_leaves_the_tier_and_signals("no_placement_leaves_the_tier_and_signals")]
 #[case::the_fit_accepts_an_unknown_group("the_fit_accepts_an_unknown_group")]
+#[case::a_disabled_gate_ignores_a_supplied_fit("a_disabled_gate_ignores_a_supplied_fit")]
+#[case::catalog_custom_provider_overrides_the_model_prefix(
+    "catalog_custom_provider_overrides_the_model_prefix"
+)]
+#[case::an_empty_parts_message_adds_no_bytes("an_empty_parts_message_adds_no_bytes")]
+#[case::the_tool_truthiness_follows_python_values("the_tool_truthiness_follows_python_values")]
 fn context_placement_behaviors(#[case] name: &str) {
     behaviors::run(name);
 }
