@@ -32,7 +32,7 @@ fn an_empty_model_stays_empty() {
 
 #[rstest]
 #[case::boolean(Json::Bool(true))]
-#[case::number(Json::Number(Number::from(3)))]
+#[case::number(Json::Number(Number::from(3_i32)))]
 #[case::list(Json::List(Vec::new()))]
 #[case::object(Json::Object(IndexMap::new()))]
 fn non_string_collapse(#[case] model: Json) {

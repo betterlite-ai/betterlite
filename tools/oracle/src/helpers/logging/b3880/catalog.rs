@@ -42,8 +42,7 @@ pub(crate) fn boxed(input: &super::inputs::CatalogInput) -> Box<dyn RequestedMod
 }
 
 fn pattern_matches(pattern: &str, model: &str) -> bool {
-    match pattern.strip_suffix('*') {
-        Some(prefix) => model.starts_with(prefix),
-        None => pattern == model,
-    }
+    pattern
+        .strip_suffix('*')
+        .map_or_else(|| pattern == model, |prefix| model.starts_with(prefix))
 }
