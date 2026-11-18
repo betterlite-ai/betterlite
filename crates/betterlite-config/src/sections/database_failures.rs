@@ -57,16 +57,15 @@ impl Section for Raw {
 }
 
 fn concurrency_from_text(text: &str) -> Result<usize, ConfigError> {
-    let parsed = text
-        .trim()
-        .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
+    match text.trim().parse::<i64>() {
+        Ok(parsed) => Ok(usize::try_from(parsed)
+            .unwrap_or_default()
+            .max(MIN_CONCURRENCY)),
+        Err(source) => Err(ConfigError::InvalidInteger {
             path: CONCURRENCY_VARIABLE.to_owned(),
             source,
-        })?;
-    Ok(usize::try_from(parsed)
-        .unwrap_or_default()
-        .max(MIN_CONCURRENCY))
+        }),
+    }
 }
 
 fn deadline_from_text(text: &str) -> Result<f64, ConfigError> {

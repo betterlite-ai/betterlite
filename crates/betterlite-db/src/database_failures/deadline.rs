@@ -179,23 +179,22 @@ pub(super) fn deadline_text(value: f64) -> String {
 }
 
 fn fixed_notation(digits: &str, exponent: i32) -> String {
-    if exponent >= 0 {
-        let point = usize::try_from(exponent.saturating_add(1)).unwrap_or(usize::MAX);
-        if let Some((integer, fraction)) = digits.split_at_checked(point) {
-            return if fraction.is_empty() {
-                integer.to_owned()
-            } else {
-                format!("{integer}.{fraction}")
-            };
-        }
-        let mut body = digits.to_owned();
-        body.push_str(&"0".repeat(point.saturating_sub(digits.len())));
+    let mut body = String::new();
+    if exponent.is_negative() {
+        let zeros = exponent.unsigned_abs().saturating_sub(1);
+        body.push_str("0.");
+        body.push_str(&"0".repeat(usize::try_from(zeros).unwrap_or_default()));
+        body.push_str(digits);
         return body;
     }
-    let zeros = usize::try_from(exponent.saturating_neg().saturating_sub(1)).unwrap_or_default();
-    let mut body = String::from("0.");
-    body.push_str(&"0".repeat(zeros));
-    body.push_str(digits);
+    let point = usize::try_from(exponent.saturating_add(1)).unwrap_or(usize::MAX);
+    for (position, digit) in digits.chars().enumerate() {
+        if position == point {
+            body.push('.');
+        }
+        body.push(digit);
+    }
+    body.push_str(&"0".repeat(point.saturating_sub(body.len())));
     body
 }
 
