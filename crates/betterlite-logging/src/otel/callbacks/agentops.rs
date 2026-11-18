@@ -114,12 +114,12 @@ impl AgentOpsCallback {
             ),
             ("telemetry.sdk.name".to_owned(), SDK_NAME.to_owned()),
         ]);
-        let project_id = self
+        if let Some(project_id) = self
             .auth
             .as_ref()
             .and_then(|auth| auth.project_id.as_deref())
-            .filter(|project| !project.is_empty());
-        if let Some(project_id) = project_id {
+            .filter(|project| !project.is_empty())
+        {
             attributes.insert("project.id".to_owned(), project_id.to_owned());
         }
         attributes

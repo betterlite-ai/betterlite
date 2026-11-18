@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use opentelemetry::trace::{Span as _, SpanKind, Status, Tracer as _};
+use opentelemetry::trace::{Span, SpanKind, Status, Tracer as _};
 use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
 use opentelemetry_sdk::trace::{SdkTracer, Span as SdkSpan};
 use rust_decimal::prelude::ToPrimitive as _;
@@ -136,11 +136,11 @@ fn write_optional_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayloa
 }
 
 fn write_prompts(span: &mut SdkSpan, messages: Option<&Json>) -> Option<()> {
-    let Some(Json::List(messages)) = messages else {
+    let Some(Json::List(entries)) = messages else {
         // kwargs.get("messages") is None here and enumerate(None) raises
         return None;
     };
-    for (index, message) in messages.iter().enumerate() {
+    for (index, message) in entries.iter().enumerate() {
         write_role_and_content(span, &format!("{LLM_PROMPTS}.{index}"), as_object(message)?);
     }
     Some(())
@@ -148,31 +148,39 @@ fn write_prompts(span: &mut SdkSpan, messages: Option<&Json>) -> Option<()> {
 
 fn write_role_and_content<S>(span: &mut S, prefix: &str, fields: &IndexMap<String, Json>)
 where
-    S: opentelemetry::trace::Span,
+    S: Span,
 {
     write_attribute(span, &format!("{prefix}.role"), fields.get("role"));
     write_attribute(span, &format!("{prefix}.content"), fields.get("content"));
 }
 
 fn write_usage(span: &mut SdkSpan, usage: Option<&Json>) {
-    let Some(usage) = usage.and_then(as_object) else {
+    let Some(usage_fields) = usage.and_then(as_object) else {
         return;
     };
-    write_attribute(span, LLM_USAGE_TOTAL_TOKENS, usage.get("total_tokens"));
+    write_attribute(
+        span,
+        LLM_USAGE_TOTAL_TOKENS,
+        usage_fields.get("total_tokens"),
+    );
     write_attribute(
         span,
         LLM_USAGE_COMPLETION_TOKENS,
-        usage.get("completion_tokens"),
+        usage_fields.get("completion_tokens"),
     );
-    write_attribute(span, LLM_USAGE_PROMPT_TOKENS, usage.get("prompt_tokens"));
+    write_attribute(
+        span,
+        LLM_USAGE_PROMPT_TOKENS,
+        usage_fields.get("prompt_tokens"),
+    );
 }
 
 fn write_completions(span: &mut SdkSpan, choices: Option<&Json>) -> Option<()> {
-    let Some(Json::List(choices)) = choices else {
+    let Some(Json::List(entries)) = choices else {
         // response_obj.get("choices") is None here and enumerate(None) raises
         return None;
     };
-    for (index, choice) in choices.iter().enumerate() {
+    for (index, choice) in entries.iter().enumerate() {
         let fields = as_object(choice)?;
         let prefix = format!("{LLM_COMPLETIONS}.{index}");
         write_attribute(
@@ -188,7 +196,7 @@ fn write_completions(span: &mut SdkSpan, choices: Option<&Json>) -> Option<()> {
 
 fn write_attribute<S>(span: &mut S, key: &str, value: Option<&Json>)
 where
-    S: opentelemetry::trace::Span,
+    S: Span,
 {
     let Some(attribute) = value.and_then(attribute_value) else {
         return;
@@ -203,7 +211,7 @@ fn attribute_value(value: &Json) -> Option<Value> {
         Json::Bool(flag) => Some(Value::Bool(*flag)),
         Json::Number(number) => number.as_i64().map_or_else(
             || number.as_f64().map(Value::F64),
-            |value| Some(Value::I64(value)),
+            |whole| Some(Value::I64(whole)),
         ),
         Json::List(items) => string_array(items),
         Json::Null | Json::Object(_) => None,

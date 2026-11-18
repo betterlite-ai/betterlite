@@ -138,10 +138,10 @@ fn header_fields(
     ids: IdGenerator,
     response: &IndexMap<String, Json>,
 ) -> IndexMap<String, Json> {
-    let id = match response.get("id").and_then(as_text) {
-        Some(id) => id.to_owned(),
-        None => ids(),
-    };
+    let id = response
+        .get("id")
+        .and_then(as_text)
+        .map_or_else(ids, |id| id.to_owned());
     IndexMap::from([
         ("id".to_owned(), Json::Text(id)),
         (
