@@ -184,10 +184,10 @@ fn validate_definition_names(names: &[&str]) -> Result<(), TierDefinitionsError>
         return Err(TierDefinitionsError::TierCount { count: names.len() });
     }
     let duplicated = duplicate_names(names);
-    if duplicated.is_empty() {
-        return Ok(());
+    if !duplicated.is_empty() {
+        return Err(TierDefinitionsError::DuplicateNames { names: duplicated });
     }
-    Err(TierDefinitionsError::DuplicateNames { names: duplicated })
+    Ok(())
 }
 
 // the names that repeat a case-insensitive spelling, each listed once and sorted
@@ -210,8 +210,7 @@ fn validate_defined_pools(
     names: &[&str],
     pools: &BTreeMap<String, TierPool>,
 ) -> Result<(), TierDefinitionsError> {
-    let defined: BTreeSet<&str> = names.iter().copied().collect();
-    let missing: Vec<String> = defined
+    let missing: Vec<String> = names
         .iter()
         .filter(|name| !pools.contains_key(**name))
         .map(|name| (*name).to_owned())
@@ -221,7 +220,7 @@ fn validate_defined_pools(
     }
     let unknown: Vec<String> = pools
         .keys()
-        .filter(|name| !defined.contains(name.as_str()))
+        .filter(|name| !names.contains(&name.as_str()))
         .cloned()
         .collect();
     if !unknown.is_empty() {
@@ -279,13 +278,12 @@ fn definition_conflicts(
 
 // _built_in_opening_conflicts: a section-shaped rubric needs an LLM classifier and a free prompt slot
 fn validate_opening(checks: &TierChecks<'_>) -> Result<(), TierDefinitionsError> {
-    let field = if checks.classification_prompt.is_some() {
-        Some("classification_prompt")
-    } else if checks.classification_examples.is_some() {
-        Some("classification_examples")
-    } else {
-        None
-    };
+    let prompt = checks
+        .classification_prompt
+        .map(|_| "classification_prompt");
+    let field = prompt.or(checks
+        .classification_examples
+        .map(|_| "classification_examples"));
     let Some(field) = field else {
         return Ok(());
     };
