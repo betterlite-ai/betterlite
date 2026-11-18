@@ -53,7 +53,7 @@ async fn clear_cache() {
     assert!(router.gate_held);
     let text = logs.contents();
     assert!(text.contains("Clearing only DB models, preserving config models"));
-    assert!(text.contains("Reconciled 2 DB models, preserved 1 config models"));
+    assert!(text.contains("Reconciled 3 DB models, preserved 1 config models"));
 }
 
 #[tokio::test]
