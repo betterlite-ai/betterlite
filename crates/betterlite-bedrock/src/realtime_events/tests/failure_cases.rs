@@ -87,18 +87,20 @@ fn native_cause() {
     );
 }
 
-// An unmapped failure goes up as it arrived, so its native cause stays reachable through the error chain
+// An unmapped failure goes up as it arrived, so its display and source chain still reach the native exception
 fn unchanged_native_cause() {
-    let failure = Failure {
+    let error = as_bedrock_error(Failure {
         class_name: "Throttling".to_owned(),
         message: "slow down".to_owned(),
         source: Some(io::Error::other("connection reset")),
-    };
-    let error = as_bedrock_error(failure);
-    assert!(matches!(error, ProviderStreamError::Unchanged(_)));
-    let cause = Error::source(&error).expect("the native cause");
-    assert_eq!(cause.to_string(), "connection reset");
-    assert!(cause.source().is_none());
+    });
+    let mut chain = vec![error.to_string()];
+    let mut cause = Error::source(&error);
+    while let Some(next) = cause {
+        chain.push(next.to_string());
+        cause = next.source();
+    }
+    assert_eq!(chain, ["slow down", "connection reset"]);
 }
 
 fn redaction() {
