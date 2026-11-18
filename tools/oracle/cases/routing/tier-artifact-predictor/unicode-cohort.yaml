@@ -22,4 +22,57 @@ probes:
         function: similarity_cohort
         prompt: abcdé fghé
         request_type: general
+  # "code" followed by U+0301 COMBINING ACUTE ACCENT, which Python's \b does not count as a word character
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: similarity_cohort
+        prompt: codé
+        request_type: general
+  # "function" with U+0131 LATIN SMALL LETTER DOTLESS I, which re.IGNORECASE folds to i
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: similarity_cohort
+        prompt: functıon
+        request_type: general
+  # "function" with U+017F LATIN SMALL LETTER LONG S, which re.IGNORECASE does not fold to i
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: similarity_cohort
+        prompt: functſon
+        request_type: general
+  # the same three prompts select through the packaged artifact, where a wrong cohort changes the tier
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        prompt: codé
+        request_type: general
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        prompt: functıon
+        request_type: general
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        prompt: functſon
+        request_type: general
+  # the classify path reports the same full-precision forecast the predict probes compare
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: classify
+        prompt: codé
 compare: {ignore: []}

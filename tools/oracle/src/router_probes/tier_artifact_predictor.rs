@@ -1,6 +1,5 @@
 use betterlite_config::sections::tier_artifact_predictor as section;
 use betterlite_config::sections::tier_artifact_predictor::artifact::Artifact;
-use betterlite_models::decisions::Json;
 use betterlite_router::adaptive_classification::request_type::RequestType;
 use betterlite_router::complexity_scoring::decision::RoutingDecisionCause;
 use betterlite_router::tier_artifact_predictor::artifact::{parse_artifact, resolve_tier_artifact};
@@ -14,9 +13,8 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
-const MAX_PADDED_BYTES: u64 = 0x0020_0000;
+const MAX_EXPANDED_BYTES: usize = 0x0020_0000;
 
-// the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Input(Box<Payload>);
@@ -25,20 +23,20 @@ pub struct Input(Box<Payload>);
 #[serde(deny_unknown_fields)]
 struct Payload {
     function: Function,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     artifact_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    artifact: Option<Json>,
-    // a threshold the case spells as text, so the exact double survives the case file
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    artifact: Option<ArtifactInput>,
     threshold: Option<String>,
     #[serde(default)]
     prompt: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     request_type: Option<RequestType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     artifact_bytes: Option<Bytes>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct ArtifactInput(Artifact);
+
+impl Eq for ArtifactInput {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -63,37 +61,51 @@ enum Bytes {
     },
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
-// every field is always on the wire, so a missing value compares as null rather than as absence
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Fields {
     cohort: Option<String>,
     status: Option<String>,
     tier: Option<String>,
-    score: Option<String>,
+    score: Option<f64>,
     signals: Option<Vec<String>>,
     cause: Option<RoutingDecisionCause>,
-    probabilities: Option<Vec<String>>,
-    threshold: Option<String>,
+    probabilities: Option<Vec<f64>>,
+    threshold: Option<f64>,
     predicted_tier: Option<String>,
     request_type: Option<String>,
 }
+
+// a validated diagnostic is finite, so equality over these doubles is total
+impl Eq for Fields {}
 
 pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let fields = match payload.function {
-        Function::SimilarityCohort => cohort_fields(payload)?,
-        Function::Predict => predict_fields(payload)?,
-        Function::Classify => classify_fields(payload)?,
-        Function::Startup => startup_fields(payload)?,
-        Function::ParseArtifact => parse_fields(payload)?,
+    let mut fields = Fields {
+        cohort: None,
+        status: None,
+        tier: None,
+        score: None,
+        signals: None,
+        cause: None,
+        probabilities: None,
+        threshold: None,
+        predicted_tier: None,
+        request_type: None,
     };
+    match payload.function {
+        Function::SimilarityCohort => cohort_fields(payload, &mut fields)?,
+        Function::Predict => predict_fields(payload, &mut fields)?,
+        Function::Classify => classify_fields(payload, &mut fields)?,
+        Function::Startup => startup_fields(payload, &mut fields)?,
+        Function::ParseArtifact => parse_fields(payload, &mut fields)?,
+    }
     Ok(ProbeOutput::TierArtifactPredictor(Output(Box::new(fields))))
 }
 
@@ -103,21 +115,14 @@ fn invalid(message: &str) -> OperationError {
     }
 }
 
-// an inline artifact is validated by the router; a name resolves to the packaged artifact
-fn artifact_source(payload: &Payload) -> Result<section::ArtifactSource, OperationError> {
-    if let Some(artifact) = &payload.artifact {
-        let value =
-            serde_json::to_value(artifact).map_err(|source| invalid(&source.to_string()))?;
-        let parsed = serde_json::from_value::<Artifact>(value)
-            .map_err(|source| invalid(&source.to_string()))?;
-        return Ok(section::ArtifactSource::Inline(Box::new(parsed)));
+fn artifact_source(payload: &Payload) -> section::ArtifactSource {
+    match (&payload.artifact, &payload.artifact_name) {
+        (Some(ArtifactInput(artifact)), _) => {
+            section::ArtifactSource::Inline(Box::new(artifact.clone()))
+        }
+        (None, Some(name)) => section::ArtifactSource::BuiltIn(name.clone()),
+        (None, None) => section::ArtifactSource::default(),
     }
-    Ok(payload
-        .artifact_name
-        .as_ref()
-        .map_or_else(section::ArtifactSource::default, |name| {
-            section::ArtifactSource::BuiltIn(name.clone())
-        }))
 }
 
 fn threshold(text: Option<&str>) -> Result<Option<f64>, OperationError> {
@@ -135,111 +140,101 @@ fn request_type(payload: &Payload) -> Result<RequestType, OperationError> {
         .ok_or_else(|| invalid("request_type is required for this function"))
 }
 
-fn texts(probabilities: &[f64; 4]) -> Vec<String> {
-    probabilities
-        .iter()
-        .map(|probability| format!("{probability:.6}"))
-        .collect()
+fn predictor(payload: &Payload) -> Result<TierSuccessPredictor, OperationError> {
+    let artifact = resolve_tier_artifact(&artifact_source(payload))
+        .map_err(|source| invalid(&source.to_string()))?;
+    TierSuccessPredictor::new(artifact, threshold(payload.threshold.as_deref())?)
+        .map_err(|source| invalid(&source.to_string()))
 }
 
-fn cohort_fields(payload: &Payload) -> Result<Fields, OperationError> {
+fn cohort_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
     let matcher = CohortMatcher::new().map_err(|source| invalid(&source.to_string()))?;
-    let cohort = matcher.similarity_cohort(&payload.prompt, request_type(payload)?);
-    Ok(Fields {
-        cohort: Some(cohort),
-        ..Fields::default()
-    })
+    fields.cohort = Some(matcher.similarity_cohort(&payload.prompt, request_type(payload)?));
+    Ok(())
 }
 
-fn predict_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let predictor = TierSuccessPredictor::new(
-        resolve_tier_artifact(&artifact_source(payload)?)
-            .map_err(|source| invalid(&source.to_string()))?,
-        threshold(payload.threshold.as_deref())?,
-    )
-    .map_err(|source| invalid(&source.to_string()))?;
+fn predict_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
+    let predictor = predictor(payload)?;
     let prediction = predictor.predict(&payload.prompt, request_type(payload)?);
-    Ok(Fields {
-        probabilities: Some(texts(&prediction.probabilities)),
-        threshold: Some(format!("{:.6}", predictor.threshold)),
-        predicted_tier: Some(prediction.required_tier.built_in().name().to_owned()),
-        ..Fields::default()
-    })
+    fields.probabilities = Some(prediction.probabilities.to_vec());
+    fields.threshold = Some(predictor.threshold);
+    fields.predicted_tier = Some(prediction.required_tier.built_in().name().to_owned());
+    Ok(())
 }
 
-fn classify_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let predictor = TierArtifactPredictor::new(
-        resolve_tier_artifact(&artifact_source(payload)?)
-            .map_err(|source| invalid(&source.to_string()))?,
-        threshold(payload.threshold.as_deref())?,
-    )
-    .map_err(|source| invalid(&source.to_string()))?;
+fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
+    let predictor = TierArtifactPredictor::new(predictor(payload)?)
+        .map_err(|source| invalid(&source.to_string()))?;
     let outcome = predictor.classify(&payload.prompt);
-    Ok(Fields {
-        tier: Some(outcome.tier.name().to_owned()),
-        signals: Some(outcome.signals),
-        cause: Some(outcome.cause),
-        probabilities: Some(texts(&outcome.forecast.probabilities)),
-        threshold: Some(format!("{:.6}", outcome.forecast.threshold)),
-        predicted_tier: Some(outcome.forecast.predicted_tier.name().to_owned()),
-        request_type: Some(outcome.forecast.request_type.to_string()),
-        ..Fields::default()
-    })
+    fields.tier = Some(outcome.tier.name().to_owned());
+    fields.score = outcome.score;
+    fields.signals = Some(outcome.signals);
+    fields.cause = Some(outcome.cause);
+    fields.probabilities = Some(outcome.forecast.probabilities.to_vec());
+    fields.threshold = Some(outcome.forecast.threshold);
+    fields.predicted_tier = Some(outcome.forecast.predicted_tier.name().to_owned());
+    fields.request_type = Some(outcome.forecast.request_type.to_string());
+    Ok(())
 }
 
-// the reference builds the whole router here, so an invalid threshold, name or artifact rejects startup
-fn startup_fields(payload: &Payload) -> Result<Fields, OperationError> {
+fn startup_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
     let config = section::Config {
-        artifact: artifact_source(payload)?,
+        artifact: artifact_source(payload),
         success_threshold: threshold(payload.threshold.as_deref())?,
     };
-    let artifact = resolve_tier_artifact(&config.artifact)
-        .and_then(|artifact| TierArtifactPredictor::new(artifact, config.success_threshold));
-    let accepted = config.validate("heuristic_v2_success_threshold").is_ok() && artifact.is_ok();
-    Ok(Fields {
-        status: Some(if accepted { "accepted" } else { "rejected" }.to_owned()),
-        ..Fields::default()
-    })
+    fields.status = Some(status_text(startup_accepted(&config)).to_owned());
+    Ok(())
 }
 
-fn parse_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let bytes = artifact_bytes(payload)?;
-    Ok(match parse_artifact(&bytes) {
-        Ok(artifact) => Fields {
-            status: Some("accepted".to_owned()),
-            threshold: Some(format!("{:.6}", artifact.routing_threshold)),
-            ..Fields::default()
-        },
-        Err(_error) => Fields {
-            status: Some("rejected".to_owned()),
-            ..Fields::default()
-        },
-    })
+fn startup_accepted(config: &section::Config) -> bool {
+    config.validate("heuristic_v2_success_threshold").is_ok()
+        && resolve_tier_artifact(&config.artifact)
+            .and_then(|artifact| TierSuccessPredictor::new(artifact, config.success_threshold))
+            .and_then(TierArtifactPredictor::new)
+            .is_ok()
 }
 
-// the request message is capped at 1 MiB, so a case spells a large artifact as content plus a repeated pad
+fn parse_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
+    let artifact = parse_artifact(&artifact_bytes(payload)?);
+    fields.status = Some(status_text(artifact.is_ok()).to_owned());
+    fields.threshold = artifact.ok().map(|artifact| artifact.routing_threshold);
+    Ok(())
+}
+
+fn status_text(accepted: bool) -> &'static str {
+    if accepted { "accepted" } else { "rejected" }
+}
+
 fn artifact_bytes(payload: &Payload) -> Result<Vec<u8>, OperationError> {
-    let Some(bytes) = &payload.artifact_bytes else {
-        return Err(invalid("artifact_bytes is required for parse_artifact"));
-    };
-    match bytes {
-        Bytes::Text { content } => Ok(content.as_bytes().to_vec()),
-        Bytes::Padded {
+    match &payload.artifact_bytes {
+        None => Err(invalid("artifact_bytes is required for parse_artifact")),
+        Some(Bytes::Text { content }) => expanded(content, "", 0),
+        Some(Bytes::Padded {
             content,
             pad,
             pad_len,
-        } => {
-            if pad.is_empty() || !pad.is_ascii() || *pad_len > MAX_PADDED_BYTES {
-                return Err(invalid(
-                    "a padded artifact needs an ASCII pad and at most 2097152 pad bytes",
-                ));
-            }
-            let count = usize::try_from(*pad_len).map_err(|_error| {
-                invalid(&format!("pad_len {pad_len} does not fit this platform"))
-            })?;
-            let mut builder = content.clone();
-            builder.push_str(&pad.repeat(count));
-            Ok(builder.into_bytes())
-        }
+        }) => expanded(content, pad, *pad_len),
     }
+}
+
+fn expanded(content: &str, pad: &str, pad_len: u64) -> Result<Vec<u8>, OperationError> {
+    let repetitions = usize::try_from(pad_len)
+        .map_err(|_error| invalid(&format!("pad_len {pad_len} does not fit this platform")))?;
+    let total = pad
+        .len()
+        .checked_mul(repetitions)
+        .and_then(|extra| content.len().checked_add(extra));
+    let Some(total) = total else {
+        return Err(invalid("the padded artifact overflows this platform"));
+    };
+    if total > MAX_EXPANDED_BYTES {
+        return Err(invalid(&format!(
+            "artifact over {MAX_EXPANDED_BYTES} bytes"
+        )));
+    }
+    let mut builder = content.to_owned();
+    if !pad.is_empty() {
+        builder.push_str(&pad.repeat(repetitions));
+    }
+    Ok(builder.into_bytes())
 }

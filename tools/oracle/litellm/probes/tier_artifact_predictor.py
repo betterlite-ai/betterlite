@@ -1,5 +1,5 @@
 import asyncio
-from typing import Final, Literal
+from typing import Final, Literal, NotRequired
 
 from litellm.router import Router
 from litellm.router_strategy.complexity_router.complexity_router import ComplexityRouter
@@ -11,17 +11,59 @@ from litellm.router_strategy.complexity_router.tier_predictor import (
     similarity_cohort,
 )
 from litellm.types.router import RequestType
-from pydantic import JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
+from pydantic import TypeAdapter, ValidationError
+from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnusedCallResult=false
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 _ARTIFACT: Final = TypeAdapter(TrainedTierArtifact)
 _TIER: Final = TypeAdapter(ComplexityTier)
 _REQUEST_TYPE: Final = TypeAdapter(RequestType)
 _TIERS: Final = (1, 2, 3, 4)
+_MAX_EXPANDED_BYTES: Final = 2_097_152
+
+
+class StatisticInput(TypedDict):
+    tier: int
+    successes: float
+    observations: float
+
+
+class DomainStatisticInput(StatisticInput):
+    request_type: str
+
+
+class CohortStatisticInput(StatisticInput):
+    cohort: str
+
+
+class DatasetInput(TypedDict):
+    name: str
+    url: str
+    license: str
+    rows: int
+    success_definition: NotRequired[str]
+
+
+class ArtifactInput(TypedDict):
+    schema_version: NotRequired[int]
+    global_statistics: list[StatisticInput]
+    domain_statistics: NotRequired[list[DomainStatisticInput]]
+    cohort_statistics: NotRequired[list[CohortStatisticInput]]
+    domain_prior_mass: NotRequired[float]
+    cohort_prior_mass: NotRequired[float]
+    routing_threshold: NotRequired[float]
+    datasets: NotRequired[list[DatasetInput]]
+    success_definition: NotRequired[str]
+    split_method: NotRequired[str]
+
+
+class RouterConfig(TypedDict):
+    classifier_type: Literal["heuristic_v2"]
+    heuristic_v2_artifact: ArtifactInput | str
+    heuristic_v2_success_threshold: float | None
 
 
 class ArtifactBytes(Strict):
@@ -35,11 +77,11 @@ class Output(Strict):
     cohort: str | None = None
     status: str | None = None
     tier: str | None = None
-    score: str | None = None
+    score: float | None = None
     signals: list[str] | None = None
     cause: str | None = None
-    probabilities: list[str] | None = None
-    threshold: str | None = None
+    probabilities: list[float] | None = None
+    threshold: float | None = None
     predicted_tier: str | None = None
     request_type: str | None = None
 
@@ -47,7 +89,7 @@ class Output(Strict):
 class TierArtifactPredictor(Operation):
     function: Literal["similarity_cohort", "predict", "classify", "startup", "parse_artifact"]
     artifact_name: str | None = None
-    artifact: dict[str, JsonValue] | None = None
+    artifact: ArtifactInput | None = None
     threshold: str | None = None
     prompt: str = ""
     request_type: str | None = None
@@ -65,17 +107,10 @@ class TierArtifactPredictor(Operation):
             return Output(status=self._startup())
         return self._parse()
 
-    def _artifact_value(self) -> str | dict[str, JsonValue]:
-        if self.artifact is not None:
-            return self.artifact
-        return self.artifact_name if self.artifact_name is not None else "ultrafeedback"
-
     def _resolved_artifact(self) -> TrainedTierArtifact:
         if self.artifact is not None:
             return _ARTIFACT.validate_python(self.artifact)
-        if self.artifact_name is not None:
-            return resolve_tier_artifact(self.artifact_name)
-        return resolve_tier_artifact("ultrafeedback")
+        return resolve_tier_artifact(self.artifact_name if self.artifact_name is not None else "ultrafeedback")
 
     def _threshold(self) -> float | None:
         return None if self.threshold is None else float(self.threshold)
@@ -85,11 +120,13 @@ class TierArtifactPredictor(Operation):
             raise ProbeError("invalid_request", "request_type is required for this function")
         return _REQUEST_TYPE.validate_python(self.request_type)
 
-    def _router_config(self) -> dict[str, object]:
-        # the section's keys as the reference's complexity router config reads them
+    def _router_config(self) -> RouterConfig:
+        artifact: str | ArtifactInput = self.artifact_name if self.artifact_name is not None else "ultrafeedback"
+        if self.artifact is not None:
+            artifact = self.artifact
         return {
             "classifier_type": "heuristic_v2",
-            "heuristic_v2_artifact": self._artifact_value(),
+            "heuristic_v2_artifact": artifact,
             "heuristic_v2_success_threshold": self._threshold(),
         }
 
@@ -100,8 +137,8 @@ class TierArtifactPredictor(Operation):
         predictor = TierSuccessPredictor(self._resolved_artifact(), routing_threshold=self._threshold())
         prediction = predictor.predict(self.prompt, self._request_type())
         return Output(
-            probabilities=[f"{prediction.probabilities[tier]:.6f}" for tier in _TIERS],
-            threshold=f"{predictor.routing_threshold:.6f}",
+            probabilities=[prediction.probabilities[tier] for tier in _TIERS],
+            threshold=predictor.routing_threshold,
             predicted_tier=TIER_SEVERITY_ORDER[prediction.required_tier - 1].value,
         )
 
@@ -117,11 +154,11 @@ class TierArtifactPredictor(Operation):
             raise ProbeError("invalid_request", "the heuristic_v2 outcome carries no forecast")
         return Output(
             tier=_TIER.validate_python(outcome.tier).name,
-            score=None if outcome.score is None else f"{outcome.score:.6f}",
+            score=outcome.score,
             signals=list(outcome.signals),
             cause=outcome.cause,
-            probabilities=[f"{forecast['probabilities'][tier.value]:.6f}" for tier in TIER_SEVERITY_ORDER],
-            threshold=f"{forecast['threshold']:.6f}",
+            probabilities=[forecast["probabilities"][tier.value] for tier in TIER_SEVERITY_ORDER],
+            threshold=forecast["threshold"],
             predicted_tier=forecast["predicted_tier"],
             request_type=forecast["request_type"],
         )
@@ -142,13 +179,22 @@ class TierArtifactPredictor(Operation):
             artifact = TrainedTierArtifact.model_validate_json(self._bytes())
         except ValidationError:
             return Output(status="rejected")
-        return Output(status="accepted", threshold=f"{artifact.routing_threshold:.6f}")
+        return Output(status="accepted", threshold=artifact.routing_threshold)
 
     def _bytes(self) -> bytes:
         if self.artifact_bytes is None:
             raise ProbeError("invalid_request", "artifact_bytes is required for parse_artifact")
+        content = self.artifact_bytes.content.encode()
         if self.artifact_bytes.kind == "text":
-            return self.artifact_bytes.content.encode()
-        if self.artifact_bytes.pad is None or self.artifact_bytes.pad_len is None:
+            if len(content) > _MAX_EXPANDED_BYTES:
+                raise ProbeError("invalid_request", f"artifact over {_MAX_EXPANDED_BYTES} bytes")
+            return content
+        pad = self.artifact_bytes.pad
+        pad_len = self.artifact_bytes.pad_len
+        if pad is None or pad_len is None:
             raise ProbeError("invalid_request", "a padded artifact needs pad and pad_len")
-        return (self.artifact_bytes.content + self.artifact_bytes.pad * self.artifact_bytes.pad_len).encode()
+        if pad_len < 0:
+            raise ProbeError("invalid_request", "pad_len cannot be negative")
+        if len(content) + len(pad.encode()) * pad_len > _MAX_EXPANDED_BYTES:
+            raise ProbeError("invalid_request", f"artifact over {_MAX_EXPANDED_BYTES} bytes")
+        return (self.artifact_bytes.content + pad * pad_len).encode()

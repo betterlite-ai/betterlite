@@ -8,7 +8,7 @@ probes:
         function: parse_artifact
         artifact_bytes:
           kind: text
-          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":1,"observations":2},{"tier":3,"successes":1,"observations":2}]}'
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":1,"observations":2},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":1,"observations":2}]}'
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
