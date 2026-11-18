@@ -1,78 +1,52 @@
 task: B8412
 deviations:
   - what: >-
-      The invalid callback variable message lists the valid names sorted, as in
-      "Invalid callback variable: bogus. Must be one of ['arize_api_key', ...]".
-      LiteLLM prints the Python set of names, whose order changes between processes.
+      The invalid callback variable message lists the valid names sorted, as in "Invalid callback variable: bogus. Must be one of ['arize_api_key', ...]". LiteLLM prints the Python set of names, whose order changes between processes.
     why: >-
-      The set order is not stable even in LiteLLM, so no working setup can depend on it.
-      The Rust test asserts the sorted list; the oracle compares that the request is
-      rejected, not the error wording.
+      The set order is not stable even in LiteLLM, so no working setup can depend on it. The Rust test asserts the sorted list; the oracle compares that the request is rejected, not the error wording.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2345
   - what: >-
-      A failing record returns a typed MemberContractError carrying the validator's text, and
-      the pydantic error list is not rebuilt.
+      A failing record returns a typed MemberContractError carrying the validator's text, and the pydantic error list is not rebuilt.
     why: >-
       The routes own the 422 body; the status and the message a user reads stay LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2340-L2352
   - what: >-
-      A callback_vars that is explicitly null, or not an object, fails with a 422 validation error
-      in AddTeamCallback. LiteLLM calls .items() on it in the before-validator, which raises
-      AttributeError and the route turns into a 500.
+      A callback_vars that is explicitly null, or not an object, fails with a 422 validation error in AddTeamCallback. LiteLLM calls .items() on it in the before-validator, which raises AttributeError and the route turns into a 500.
     why: >-
-      A body the caller can fix is a 4xx; the declared type is dict[str, str], so a non-object is a
-      wrong type rather than a crash.
+      A body the caller can fix is a 4xx; the declared type is dict[str, str], so a non-object is a wrong type rather than a crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2341-L2343
   - what: >-
-      A TeamCallbackMetadata callback_vars that is a list holding an object fails with a 422 decode
-      error. LiteLLM checks each item as a dict key, raises TypeError on the unhashable object and
-      the route returns a 500.
+      A TeamCallbackMetadata callback_vars that is a list holding an object fails with a 422 decode error. LiteLLM checks each item as a dict key, raises TypeError on the unhashable object and the route returns a 500.
     why: >-
       Same rule as the AddTeamCallback case: a wrong type the caller can fix is a 4xx.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2398-L2401
   - what: >-
-      A request body that is not a JSON object fails with a 422 validation error in every record.
-      LiteLLM's before-validators call .get on the raw body, so a string, list or number body raises
-      AttributeError and the route returns a 500, in AddTeamCallback, TeamCallbackMetadata,
-      OrganizationTableUpdate and the four member delete and update requests.
+      A request body that is not a JSON object fails with a 422 validation error in every record. LiteLLM's before-validators call .get on the raw body, so a string, list or number body raises AttributeError and the route returns a 500, in AddTeamCallback, TeamCallbackMetadata, OrganizationTableUpdate and the four member delete and update requests.
     why: >-
-      A body the caller wrote wrong is a 4xx, and every one of these records declares an object
-      body.
+      A body the caller wrote wrong is a 4xx, and every one of these records declares an object body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4666-L4668
   - what: >-
-      A callback_vars value that is a JSON number is kept as its decimal text, while a boolean,
-      array or object is a wrong-type error. LiteLLM runs str() over every value, so a boolean
-      becomes "True" and an object its Python repr.
+      A callback_vars value that is a JSON number is kept as its decimal text, while a boolean, array or object is a wrong-type error. LiteLLM runs str() over every value, so a boolean becomes "True" and an object its Python repr.
     why: >-
-      Numbers are the common non-string value a caller sends for a callback variable; Python's
-      str and repr text are not part of the declared dict[str, str] type.
+      Numbers are the common non-string value a caller sends for a callback variable; Python's str and repr text are not part of the declared dict[str, str] type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2346
   - what: >-
-      A metadata that is not an object together with a managed metadata field fails with a 422
-      validation error. LiteLLM indexes into the value and raises TypeError, which the route turns
-      into a 500.
+      A metadata that is not an object together with a managed metadata field fails with a 422 validation error. LiteLLM indexes into the value and raises TypeError, which the route turns into a 500.
     why: >-
       Same rule as the callback_vars case: a wrong type the caller can fix is a 4xx.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3624-L3630
   - what: >-
-      A langfuse_environment with a trailing newline is rejected. LiteLLM's re.match with a
-      dollar anchor accepts "production\n".
+      A langfuse_environment with a trailing newline is rejected. LiteLLM's re.match with a dollar anchor accepts "production\n".
     why: >-
-      B188's shared validate_environment requires every byte to be in the allowed set, and an
-      environment with a newline is not one Langfuse accepts.
+      B188's shared validate_environment requires every byte to be in the allowed set, and an environment with a newline is not one Langfuse accepts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L70-L76
   - what: >-
-      An OrgMember role outside the three org roles fails with
-      "Input should be 'org_admin', 'internal_user' or 'internal_user_viewer'". LiteLLM renders the
-      Python members, as in "Input should be <LitellmUserRoles.ORG_ADMIN: 'org_admin'>, ...".
+      An OrgMember role outside the three org roles fails with "Input should be 'org_admin', 'internal_user' or 'internal_user_viewer'". LiteLLM renders the Python members, as in "Input should be <LitellmUserRoles.ORG_ADMIN: 'org_admin'>, ...".
     why: >-
-      The enum repr is Python artifact text; the same three values in quotes is what a user reads.
-      The Rust test asserts that wording; the oracle compares the rejection, not the message.
+      The enum repr is Python artifact text; the same three values in quotes is what a user reads. The Rust test asserts that wording; the oracle compares the rejection, not the message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2148-L2153
   - what: >-
-      An unknown enum value, such as a callback_type outside the three, a team member role outside
-      admin and user, or an OrgMember role LiteLLM does not know, is a decode error naming the
-      expected values. LiteLLM reports a pydantic literal or enum error.
+      An unknown enum value, such as a callback_type outside the three, a team member role outside admin and user, or an OrgMember role LiteLLM does not know, is a decode error naming the expected values. LiteLLM reports a pydantic literal or enum error.
     why: >-
       The typed error carries the same 422; pydantic's error list text is not rebuilt.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2311-L2318
