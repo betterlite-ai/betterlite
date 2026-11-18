@@ -5,8 +5,11 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde::Deserialize as _;
+use serde::de::value::{Error as ValueError, I64Deserializer};
 use serde_json::Number;
 
+use super::RawPrice;
 use crate::loader::ConfigLoader;
 use crate::sections::quality_router::{Deployment, Preferences, RouterConfig, Settings};
 
@@ -227,6 +230,18 @@ model_list:
     assert_eq!(
         resolved.deployments[0].input_cost_per_token,
         Some("0.1000000000000000001".parse().unwrap())
+    );
+}
+
+// the schema mode never asks a visitor what it expected, so the message is read through serde's own value deserializer
+#[test]
+fn a_price_visitor_names_the_scalars_it_accepts() {
+    let error = RawPrice::deserialize(I64Deserializer::<ValueError>::new(5)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("a YAML number or an os.environ reference"),
+        "{error}"
     );
 }
 
