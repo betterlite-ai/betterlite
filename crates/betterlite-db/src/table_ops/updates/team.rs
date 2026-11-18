@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use tokio_postgres::types::ToSql;
+
 use crate::budget_permission_rows::Timestamp;
 use crate::database_replica::client::DatabaseClient;
 use crate::key_repository::table::TokenValue;
@@ -8,7 +10,7 @@ use crate::team_rows::team::LiteLLMTeamTable;
 use crate::table_ops::access::{TEAM_ATTRIBUTE, TablePoolAccess};
 use crate::table_ops::columns::TeamColumn;
 use crate::table_ops::rows::RowDecoder;
-use crate::table_ops::sql::{self, InsertConflict};
+use crate::table_ops::sql::{self, Bound, InsertConflict};
 use crate::table_ops::team_json::jsonify_team_update;
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
@@ -52,13 +54,10 @@ where
         stamp_updated_at(&mut update, now);
         // Prisma's upsert filters on the resolved id, so a different team_id in the payload only reaches the written row
         let update = sql::update_where(&update, &resolved)?;
+        let parameters: Vec<&(dyn ToSql + Sync)> =
+            update.parameters.values.iter().map(Bound::as_sql).collect();
         let stored = self
-            .text_rows(
-                TEAM_ATTRIBUTE,
-                "update",
-                &update.sql,
-                &update.parameters.bind_values(),
-            )
+            .text_rows(TEAM_ATTRIBUTE, "update", &update.sql, &parameters)
             .await?
             .into_iter()
             .next();

@@ -128,7 +128,7 @@ fn a_hashed_key_binds_into_a_text_column() {
     let statement = sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep)
         .expect("the hashed key binds as text");
     assert!(statement.sql.contains("\"team_alias\""));
-    assert_eq!(statement.parameters.bind_values().len(), 2);
+    assert_eq!(statement.parameters.values.len(), 2);
 }
 
 #[test]
@@ -155,12 +155,12 @@ fn null_and_bool_values_bind_their_column_types() {
     ]);
     let nulls = sql::insert::<Infallible, TeamColumn>(&with_nulls, InsertConflict::Keep)
         .expect("the nulls bind their column types");
-    assert_eq!(nulls.parameters.bind_values().len(), 5);
+    assert_eq!(nulls.parameters.values.len(), 5);
     let with_flag = BTreeMap::from([
         (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
         (TeamColumn::Blocked, TokenValue::Bool(true)),
     ]);
     let flag = sql::insert::<Infallible, TeamColumn>(&with_flag, InsertConflict::Keep)
         .expect("the flag binds as a boolean");
-    assert_eq!(flag.parameters.bind_values().len(), 2);
+    assert_eq!(flag.parameters.values.len(), 2);
 }

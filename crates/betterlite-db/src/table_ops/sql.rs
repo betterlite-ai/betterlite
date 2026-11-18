@@ -19,7 +19,7 @@ pub(super) enum Bound {
 }
 
 impl Bound {
-    fn as_sql(&self) -> &(dyn ToSql + Sync) {
+    pub(super) fn as_sql(&self) -> &(dyn ToSql + Sync) {
         match self {
             Self::Text(value) => value,
             Self::Bool(value) => value,
@@ -31,17 +31,13 @@ impl Bound {
 
 #[derive(Default)]
 pub(super) struct Parameters {
-    values: Vec<Bound>,
+    pub(super) values: Vec<Bound>,
 }
 
 impl Parameters {
     fn push(&mut self, bound: Bound) -> usize {
         self.values.push(bound);
         self.values.len()
-    }
-
-    pub(super) fn bind_values(&self) -> Vec<&(dyn ToSql + Sync)> {
-        self.values.iter().map(Bound::as_sql).collect()
     }
 }
 

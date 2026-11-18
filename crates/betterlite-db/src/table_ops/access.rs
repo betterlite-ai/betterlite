@@ -12,7 +12,7 @@ use crate::postgres_store::diagnostics::{DriverError, PoolFailure};
 use crate::postgres_store::errors::DbError;
 
 use super::rows::RowError;
-use super::sql::Statement;
+use super::sql::{Bound, Statement};
 use super::{OperationCallType, RetryPolicy, TableOps, TableOpsError};
 
 pub const USER_ATTRIBUTE: &str = "litellm_usertable";
@@ -154,13 +154,14 @@ where
         attribute: &str,
         statement: &Statement,
     ) -> Result<String, TableOpsError<Client::Error>> {
+        let parameters: Vec<&(dyn ToSql + Sync)> = statement
+            .parameters
+            .values
+            .iter()
+            .map(Bound::as_sql)
+            .collect();
         let rows = self
-            .text_rows(
-                attribute,
-                "upsert",
-                &statement.sql,
-                &statement.parameters.bind_values(),
-            )
+            .text_rows(attribute, "upsert", &statement.sql, &parameters)
             .await?;
         match rows.into_iter().next() {
             Some(text) => Ok(text),
@@ -182,7 +183,12 @@ where
             .await?
             .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
         for statement in statements {
-            let parameters = statement.parameters.bind_values();
+            let parameters: Vec<&(dyn ToSql + Sync)> = statement
+                .parameters
+                .values
+                .iter()
+                .map(Bound::as_sql)
+                .collect();
             self.bounded(
                 "statement",
                 self.settings.query_timeout,

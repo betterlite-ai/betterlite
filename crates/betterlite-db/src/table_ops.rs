@@ -11,10 +11,7 @@ pub mod updates;
 
 mod tests;
 
-use std::error::Error;
-use std::future::Future;
-use std::pin::Pin;
-use std::time::Duration;
+use std::{error::Error, future::Future, pin::Pin, time::Duration};
 
 use tokio::time::timeout;
 

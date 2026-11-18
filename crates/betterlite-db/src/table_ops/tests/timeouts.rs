@@ -6,7 +6,10 @@ use std::time::Duration;
 use super::support::{Harness, Ports, TableClient};
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
-use crate::table_ops::{TableOpsError, TableSettings};
+use crate::table_ops::{
+    DEFAULT_ACQUIRE_TIMEOUT, DEFAULT_QUERY_TIMEOUT, DEFAULT_TEAM_LIST_LIMIT, TableOpsError,
+    TableSettings,
+};
 
 #[tokio::test]
 async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
@@ -20,8 +23,9 @@ async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
     let ops = ports.operations_with(
         &client,
         TableSettings {
+            team_list_limit: DEFAULT_TEAM_LIST_LIMIT,
+            acquire_timeout: DEFAULT_ACQUIRE_TIMEOUT,
             query_timeout: Duration::from_millis(100),
-            ..TableSettings::default()
         },
     );
     let error = ops
@@ -53,8 +57,9 @@ async fn a_batch_statement_waiting_on_a_lock_times_out() {
     let ops = ports.operations_with(
         &client,
         TableSettings {
+            team_list_limit: DEFAULT_TEAM_LIST_LIMIT,
+            acquire_timeout: DEFAULT_ACQUIRE_TIMEOUT,
             query_timeout: Duration::from_millis(50),
-            ..TableSettings::default()
         },
     );
     let rows = vec![BTreeMap::from([
@@ -96,8 +101,9 @@ async fn a_call_with_no_free_connection_times_out_waiting_for_one() {
     let ops = ports.operations_with(
         &client,
         TableSettings {
+            team_list_limit: DEFAULT_TEAM_LIST_LIMIT,
             acquire_timeout: Duration::from_millis(20),
-            ..TableSettings::default()
+            query_timeout: DEFAULT_QUERY_TIMEOUT,
         },
     );
     let error = ops

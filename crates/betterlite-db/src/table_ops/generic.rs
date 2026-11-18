@@ -93,10 +93,6 @@ impl<'value> GenericFilter<'value> for ConfigFilter<'value> {
     }
 }
 
-fn first_sql(table: &str, column: &str) -> String {
-    format!("SELECT row_to_json(t)::text FROM \"{table}\" AS t WHERE t.\"{column}\" = $1 LIMIT 1")
-}
-
 impl<Client> TableOps<'_, Client>
 where
     Client: DatabaseClient,
@@ -110,7 +106,10 @@ where
         Filter: GenericFilter<'value>,
     {
         let (column, value) = filter.parts();
-        let sql = first_sql(Filter::TABLE, column);
+        let sql = format!(
+            "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{column}\" = $1 LIMIT 1",
+            Filter::TABLE,
+        );
         let moment;
         let bound: &(dyn ToSql + Sync) = match &value {
             FilterValue::Text(text) => text,
@@ -131,7 +130,11 @@ where
         column: SpendFilterColumn,
         value: &str,
     ) -> Result<Option<SpendLogRow>, TableOpsError<Client::Error>> {
-        let sql = first_sql(SPEND_TABLE, column.name());
+        let sql = format!(
+            "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{}\" = $1 LIMIT 1",
+            SPEND_TABLE,
+            column.name(),
+        );
         self.find_generic(SPEND_ATTRIBUTE, &sql, &value, SpendLogRow::decode_row)
             .await
     }
