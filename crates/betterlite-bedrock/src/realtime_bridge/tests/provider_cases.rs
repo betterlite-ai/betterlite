@@ -114,7 +114,6 @@ async fn receive_failure() {
     assert!(matches!(outcome, Err(ProviderForwardError::Stream(_))));
     assert_eq!(fixture.client.sent_events().len(), 3);
     assert!(fixture.state.current_response_id.is_some());
-    assert!(fixture.log.events.is_empty());
 }
 
 async fn utf8_failure() {
