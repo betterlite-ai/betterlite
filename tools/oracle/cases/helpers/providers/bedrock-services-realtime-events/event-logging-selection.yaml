@@ -1,0 +1,101 @@
+kind: helper
+name: event-logging-selection
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    - 00000000-0000-4000-8000-000000000011
+    - 00000000-0000-4000-8000-000000000012
+    - 00000000-0000-4000-8000-000000000013
+    - 00000000-0000-4000-8000-000000000014
+    - 00000000-0000-4000-8000-000000000015
+    - 00000000-0000-4000-8000-000000000016
+    - 00000000-0000-4000-8000-000000000017
+    - 00000000-0000-4000-8000-000000000018
+    - 00000000-0000-4000-8000-000000000019
+    - 00000000-0000-4000-8000-000000000020
+    - 00000000-0000-4000-8000-000000000021
+    steps:
+    - method: dispatch
+      message: '{"event": {"sessionStart": {"sessionId": "s"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "logged"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks:
+        - type: response.text.delta
+          content_index: 0
+          event_id: event_00000000-0000-4000-8000-000000000006
+          item_id: item_00000000-0000-4000-8000-000000000002
+          output_index: 0
+          response_id: resp_00000000-0000-4000-8000-000000000001
+          delta: logged
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"unknownThing": 1}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"userSpeechStart": {}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: null
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: null
+    - method: session_updated
+      trace_id: trace-1
+      modalities:
+      - text
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,83 @@
+kind: helper
+name: session-update-first
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    - 00000000-0000-4000-8000-000000000011
+    - 00000000-0000-4000-8000-000000000012
+    - 00000000-0000-4000-8000-000000000013
+    - 00000000-0000-4000-8000-000000000014
+    steps:
+    - method: dispatch
+      message: ''
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"sessionStart": {"sessionId": "s"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "first"}}}'
+      state:
+        session_configuration_request: '{"configured": true}'
+        current_output_item_id: item_00000000-0000-4000-8000-000000000002
+        current_response_id: resp_00000000-0000-4000-8000-000000000001
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_00000000-0000-4000-8000-000000000003
+        current_delta_type: text
+env: {}
+compare:
+  ignore: []

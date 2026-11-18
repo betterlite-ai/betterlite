@@ -1,0 +1,46 @@
+kind: helper
+name: ack-session-update-order
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    - 00000000-0000-4000-8000-000000000011
+    - 00000000-0000-4000-8000-000000000012
+    steps:
+    - method: session_updated
+      trace_id: trace-1
+      modalities: null
+    - method: session_updated
+      trace_id: trace-2
+      modalities: []
+    - method: session_updated
+      trace_id: trace-3
+      modalities:
+      - text
+      - audio
+    - method: dispatch
+      message: '{"event": {"sessionStart": {"sessionId": "s"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: session_updated
+      trace_id: trace-4
+      modalities:
+      - audio
+env: {}
+compare:
+  ignore: []
