@@ -89,6 +89,7 @@ out_of_scope:
 - PodLockManager's code; if a real-Redis test fails, report the mismatch with the LiteLLM line instead of changing the manager.
 - A nextest setup script, a shared server or a CI service container.
 pitfalls:
+- 'Give the production Redis cache the fixture''s socket as its url setting (redis+unix://...). That setting goes through redis-rs''s own URL parser in crates/betterlite-redis/src/redis_live_client/plans.rs, while the host and port settings only build a TCP address.'
 - 'Pass the server''s options on the command line, not in a config file, and keep it on the unix socket only (--port 0), so parallel tests never race for a port.'
 - 'The 5-second readiness limit is a deadline, not a wait: poll the socket every few milliseconds and return as soon as PING answers.'
 - 'Do not use unsafe (no pre_exec or PR_SET_PDEATHSIG). Drop handles normal ends and panics, and a CI container ends with its job.'

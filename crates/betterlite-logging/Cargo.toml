@@ -35,7 +35,7 @@ http = "1.5.0"
 hyper = { version = "1.12.0", default-features = false }
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
-lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "hostname", "rustls-native-certs", "rustls-no-provider", "smtp-transport"] }
+lettre = { version = "0.11.24", default-features = false, features = ["aws-lc-rs", "hostname", "rustls-native-certs", "rustls-no-provider", "smtp-transport"] }
 mail-builder = { version = "=2.0.0", default-features = false }
 md-5 = "0.11.0"
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
@@ -147,3 +147,7 @@ path = "src/otel/logger/tests/suite.rs"
 [[test]]
 name = "v2_callback_tests"
 path = "src/otel/v2_callback/tests/suite.rs"
+
+[[test]]
+name = "legacy_lifecycle"
+path = "src/otel/legacy_lifecycle/tests/suite.rs"
