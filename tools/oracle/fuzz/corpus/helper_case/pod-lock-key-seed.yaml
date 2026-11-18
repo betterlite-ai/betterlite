@@ -1,0 +1,5 @@
+kind: helper
+name: pod-lock-key-seed
+call: {pod_lock_key: {cronjob_id: 'spend:reset-é'}}
+env: {}
+compare: {ignore: []}

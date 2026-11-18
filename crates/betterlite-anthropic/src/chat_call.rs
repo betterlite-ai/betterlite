@@ -1,7 +1,8 @@
 pub mod config;
 pub mod error;
-mod prepare;
-mod send;
+pub mod prepare;
+pub mod send;
+pub mod steps;
 mod tests;
 pub mod transport;
 
@@ -15,7 +16,7 @@ use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::anthropic_http_stream::call::{StreamBuild, StreamLogger};
+use crate::anthropic_http_stream::call::StreamLogger;
 use crate::anthropic_http_stream::completion::WrappedStream;
 use crate::anthropic_http_stream::transport::StreamTransport;
 use crate::credentials::AnthropicSettings;
@@ -25,7 +26,7 @@ use crate::usage::ReasoningTokenCounter;
 
 use config::ChatConfig;
 use error::ChatCallError;
-use send::streams::{StreamFacts, open_stream};
+use steps::finish;
 use transport::{ChatTransport, SuppliedChatClient};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
@@ -65,6 +66,29 @@ pub struct ChatDeps<'deps, Config, Client, Counter> {
     pub max_event_bytes: usize,
     pub max_error_body_bytes: usize,
 }
+// The request facts every step after prepare reads; the provider's own prepare consumes the rest of its request
+pub struct CallFacts<'call> {
+    pub model: &'call str,
+    pub messages: Vec<Json>,
+    pub litellm_params: IndexMap<String, Json>,
+    pub api_base: &'call str,
+    pub timeout: Duration,
+    pub style: CallStyle,
+    pub now: i64,
+    pub disable_add_prefix_to_prompt: bool,
+    pub model_response: ResponseEnvelope,
+    pub sync_stream: SyncStream,
+}
+// The sync wrapper's provider, and whether make_sync_call receives the caller's speed and reverse map.
+pub struct SyncStream {
+    pub custom_llm_provider: &'static str,
+    pub names: SyncStreamNames,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncStreamNames {
+    FromParams,
+    Omitted,
+}
 pub enum ChatOutcome<ClientFailure, Counter> {
     Reply(Box<ResponseEnvelope>),
     Stream(Box<WrappedStream<ClientFailure, Counter>>),
@@ -91,35 +115,27 @@ where
             return Ok(ChatOutcome::Embedding);
         }
         let prepared = prepare::prepare(&call, &mut deps).await?;
-        if prepared.options.stream {
-            let messages = Json::List(call.messages);
-            let facts = StreamFacts {
-                model: call.model,
-                api_base: call.api_base,
-                messages: &messages,
-                data: prepared.body,
-                headers: prepared.header_map,
-                timeout: call.timeout,
-                json_mode: prepared.options.json_mode,
-                optional_params: &prepared.optional_params,
-                litellm_params: &call.litellm_params,
-            };
-            let build = StreamBuild {
-                ids: deps.ids,
-                counter: deps.counter,
-                max_event_bytes: deps.max_event_bytes,
-                max_error_body_bytes: deps.max_error_body_bytes,
-            };
-            return open_stream(
-                deps.clients,
-                deps.stream_logger,
-                build,
-                facts,
-                call.style == CallStyle::Async,
-            )
-            .await;
-        }
-        send::buffered(call, prepared, deps).await
+        finish(CallFacts::from(call), prepared, deps).await
     }
     .boxed_local()
+}
+
+impl<'call> From<ChatCall<'call>> for CallFacts<'call> {
+    fn from(call: ChatCall<'call>) -> Self {
+        Self {
+            model: call.model,
+            messages: call.messages,
+            litellm_params: call.litellm_params,
+            api_base: call.api_base,
+            timeout: call.timeout,
+            style: call.style,
+            now: call.now,
+            disable_add_prefix_to_prompt: call.disable_add_prefix_to_prompt,
+            model_response: call.model_response,
+            sync_stream: SyncStream {
+                custom_llm_provider: "anthropic",
+                names: SyncStreamNames::FromParams,
+            },
+        }
+    }
 }

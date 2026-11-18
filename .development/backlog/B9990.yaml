@@ -1,0 +1,13 @@
+id: B9990
+milestone: M3 providers
+title: Anthropic chat on the proxy routes
+status: todo
+depends_on: [B9986, B9988]
+file: tasks/B9990-anthropic-proxy-routes.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,20 @@
+kind: helper
+name: model-deprecation-nonmapping-metadata
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      openai/raw: {deprecation_date: "2026-05-10", litellm_provider: openai}
+      openai/base: {deprecation_date: "2026-05-20", litellm_provider: base}
+    deployments:
+      - model_name: info-string
+        litellm_params: {model: openai/raw}
+        model_info: not a mapping
+      - model_name: params-string
+        litellm_params: not a mapping
+        model_info: {deprecation_date: "2026-05-10"}
+      - model_name: params-list
+        litellm_params: [1, 2]
+        model_info: {base_model: openai/base}
+env: {}
+compare: {ignore: []}
