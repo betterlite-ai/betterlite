@@ -1,0 +1,25 @@
+kind: helper
+name: model-catalog-lookup-candidate-early-sequence
+call:
+  model_catalog_lookup:
+    function: get_candidate_model_ids_for_route
+    model_list:
+      - model_name: openai/*
+        litellm_params:
+          model: openai/*
+        model_info:
+          id: w1
+      - model_name: openai/*
+        litellm_params:
+          model: openai/gpt-*
+        model_info:
+          id: w2
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: openai
+    stale_index: false
+    arguments:
+      model_name: openai/foo
+      team_id: null
+env: {}
+compare: {ignore: []}

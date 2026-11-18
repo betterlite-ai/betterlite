@@ -1,0 +1,10 @@
+kind: helper
+name: default-global-threshold
+call:
+  b3808:
+    function: build_routes
+    custom_routes:
+      - route_name: inline_route
+        utterances: ["one text"]
+env: {}
+compare: {ignore: []}

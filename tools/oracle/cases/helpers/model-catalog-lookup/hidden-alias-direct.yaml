@@ -1,0 +1,40 @@
+kind: helper
+name: model-catalog-lookup-hidden-alias-direct
+call:
+  model_catalog_lookup:
+    function: get_model_list_from_model_alias
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+    model_group_alias:
+      assistant:
+        model: gpt-4o
+        hidden: true
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: assistant
+calls:
+  - model_catalog_lookup:
+      function: get_model_list_from_model_alias
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+      model_group_alias:
+        assistant:
+          model: gpt-4o
+          hidden: true
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: null
+env: {}
+compare: {ignore: []}

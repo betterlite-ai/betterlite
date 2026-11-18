@@ -1,0 +1,29 @@
+kind: helper
+name: model-catalog-lookup-candidate-alias-group-first
+call:
+  model_catalog_lookup:
+    function: get_candidate_model_ids_for_route
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: b
+    model_group_alias:
+      sonnet: chat
+    routing_groups:
+      - group_name: chat
+        models: [gpt-4o, internal]
+        routing_strategy: simple-shuffle
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: sonnet
+      team_id: null
+env: {}
+compare: {ignore: []}

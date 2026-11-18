@@ -1,0 +1,19 @@
+kind: helper
+name: model-catalog-lookup-unknown-id
+call:
+  model_catalog_lookup:
+    function: get_deployment
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_id: nope
+env: {}
+compare: {ignore: []}
