@@ -134,22 +134,34 @@ def required(value: str | None, what: str) -> str:
 
 def deployment_dict(deployment: DeploymentInput) -> dict[str, object]:
     params: dict[str, object] = {"model": deployment.model}
-    for field, value in (
-        ("input_cost_per_token", deployment.input_cost_per_token),
-        ("output_cost_per_token", deployment.output_cost_per_token),
-        ("tpm", deployment.params_tpm),
-        ("rpm", deployment.params_rpm),
-    ):
-        if value is not None:
-            params[field] = value
+    params.update(
+        {
+            field: value
+            for field, value in (
+                ("input_cost_per_token", deployment.input_cost_per_token),
+                ("output_cost_per_token", deployment.output_cost_per_token),
+                ("tpm", deployment.params_tpm),
+                ("rpm", deployment.params_rpm),
+            )
+            if value is not None
+        }
+    )
     info: dict[str, object] = {"id": deployment.id}
-    for field, value in (("tpm", deployment.info_tpm), ("rpm", deployment.info_rpm)):
-        if value is not None:
-            info[field] = value
+    info.update(
+        {
+            field: value
+            for field, value in (("tpm", deployment.info_tpm), ("rpm", deployment.info_rpm))
+            if value is not None
+        }
+    )
     entry: dict[str, object] = {"model_info": info, "litellm_params": params}
-    for field, value in (("tpm", deployment.tpm), ("rpm", deployment.rpm)):
-        if value is not None:
-            entry[field] = value
+    entry.update(
+        {
+            field: value
+            for field, value in (("tpm", deployment.tpm), ("rpm", deployment.rpm))
+            if value is not None
+        }
+    )
     return entry
 
 

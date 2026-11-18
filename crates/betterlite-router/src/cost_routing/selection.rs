@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 
-use super::costs::{Catalog, ModelCosts, truthy};
+use super::costs::{Catalog, ModelCosts, usable};
 use super::error::CostRoutingError;
 use super::window::WindowUsage;
 
@@ -24,6 +24,7 @@ pub struct Selection<'request> {
     pub input_tokens: i64,
 }
 
+#[derive(Clone, Copy)]
 struct Limits {
     tpm: Option<Decimal>,
     rpm: Option<Decimal>,
@@ -45,7 +46,9 @@ pub(super) fn select(
         else {
             continue;
         };
-        let deployment = &request.deployments[index];
+        let Some(deployment) = request.deployments.get(index) else {
+            continue;
+        };
         let name = deployment.id().unwrap_or_default();
         let limits = limits(deployment, name)?;
         let cost = cost(costs, deployment, name)?;
@@ -56,7 +59,7 @@ pub(super) fn select(
         candidates.push((index, cost));
     }
     // sorted() is stable, so equal costs keep the map's first-observation order
-    candidates.sort_by(|left, right| left.1.cmp(&right.1));
+    candidates.sort_by_key(|candidate| candidate.1);
     Ok(candidates.first().map(|(index, _cost)| *index))
 }
 
@@ -80,7 +83,7 @@ fn limit(
     ]
     .into_iter()
     .flatten()
-    .find(|value| truthy(value));
+    .find(|value| usable(value));
     chosen.map(|value| amount(value, field, name)).transpose()
 }
 
@@ -116,7 +119,7 @@ fn rate(
     field: &'static str,
     name: &str,
 ) -> Result<Decimal, CostRoutingError> {
-    let configured = custom.filter(|value| truthy(value));
+    let configured = custom.filter(|value| usable(value));
     let catalog = entry.and_then(|catalog| catalog.price(field));
     match configured.or(catalog) {
         None | Some(Json::Null) => Ok(DEFAULT_COST_PER_TOKEN),

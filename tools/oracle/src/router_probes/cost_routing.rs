@@ -4,7 +4,7 @@ mod steps;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
@@ -143,12 +143,6 @@ pub(super) struct ProbeCosts<'input> {
     entries: &'input BTreeMap<String, JsonObject>,
 }
 
-impl<'input> ProbeCosts<'input> {
-    pub(super) const fn new(entries: &'input BTreeMap<String, JsonObject>) -> Self {
-        Self { entries }
-    }
-}
-
 impl ModelCosts for ProbeCosts<'_> {
     fn entry(&self, model: &str) -> Option<Catalog<'_>> {
         self.entries.get(model).map(Catalog::plain)
@@ -183,7 +177,9 @@ async fn run_scenario(input: &Input) -> Result<Output, ScenarioError> {
     for deployment in &input.deployments {
         deployments.push(build_deployment(&input.model_group, deployment)?);
     }
-    let costs = ProbeCosts::new(&input.model_cost);
+    let costs = ProbeCosts {
+        entries: &input.model_cost,
+    };
     let text = ProbeText::new().map_err(|message| ScenarioError::Tokenizer { message })?;
     let context = Context {
         group: &input.model_group,
@@ -215,7 +211,7 @@ fn open_router(
         None::<Arc<NoSharedStore>>,
     ));
     Ok(CostRouter::new(
-        WindowCounters::new(counters, values),
+        WindowCounters { counters, values },
         io_clock(clock),
     ))
 }
@@ -256,10 +252,6 @@ fn insert(map: &mut JsonObject, field: &str, value: Option<&Json>) {
     if let Some(value) = value {
         map.insert(field.to_owned(), value.clone());
     }
-}
-
-pub(super) fn now(clock: &Arc<AtomicU64>) -> SystemTime {
-    UNIX_EPOCH + Duration::from_millis(clock.load(Ordering::SeqCst))
 }
 
 fn io_clock(clock: &Arc<AtomicU64>) -> IoClock {

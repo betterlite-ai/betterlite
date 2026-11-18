@@ -13,9 +13,7 @@ use crate::cost_routing::selection::Selection;
 use crate::cost_routing::service::{
     CostRouter, MAX_DEPLOYMENTS_PER_GROUP, MAX_GROUPS, SuccessEvent,
 };
-use crate::cost_routing::window::CostWindows;
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::routing_value_store::{RouteKey, RouteValue};
 
 const INPUT_COST: &str = "input_cost_per_token";
 const OUTPUT_COST: &str = "output_cost_per_token";
@@ -156,7 +154,7 @@ fn limited(limit: &str, value: &str) -> DeploymentSpec {
     spec("a", MODEL, &[(limit, number(value))], &[], &[])
 }
 
-fn rejected(costs: &ProbeCosts<'_>, pool: &[DeploymentSpec]) -> CostRoutingError {
+fn rejected(costs: &ProbeCosts, pool: &[DeploymentSpec]) -> CostRoutingError {
     router_at(MINUTE_MILLIS)
         .select(costs, &selection(pool, 0))
         .unwrap_err()

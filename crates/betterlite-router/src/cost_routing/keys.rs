@@ -10,7 +10,7 @@ pub fn minute_label(now: SystemTime) -> String {
         .map_or(0, |elapsed| elapsed.as_secs());
     let moment = i64::try_from(seconds)
         .ok()
-        .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
+        .and_then(|epoch| DateTime::<Utc>::from_timestamp(epoch, 0))
         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
     moment.format("%Y-%m-%d-%H-%M").to_string()
 }

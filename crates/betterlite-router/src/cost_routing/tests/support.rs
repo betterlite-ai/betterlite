@@ -165,7 +165,7 @@ impl CostWindows for FakeWindows {
                 deployment_id.to_owned(),
                 minute.to_owned(),
             ))
-            .or_default();
+            .or_insert(WindowUsage::ZERO);
         entry.tokens = entry.tokens.saturating_add(tokens);
         entry.requests = entry.requests.saturating_add(1);
     }
@@ -251,7 +251,10 @@ pub(super) fn real_router(
     ));
     (
         CostRouter::new(
-            WindowCounters::new(counters, Arc::clone(&values)),
+            WindowCounters {
+                counters,
+                values: Arc::clone(&values),
+            },
             clock.io_clock(),
         ),
         values,

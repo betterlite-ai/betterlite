@@ -1,3 +1,6 @@
+use std::sync::atomic::Ordering;
+use std::time::{Duration, UNIX_EPOCH};
+
 use betterlite_router::cost_routing::error::CostRoutingError;
 use betterlite_router::cost_routing::keys::minute_label;
 use betterlite_router::cost_routing::selection::Selection;
@@ -7,7 +10,7 @@ use betterlite_router::routing_value_store::StoreError;
 use betterlite_tokenizer::count::error::CountError;
 use thiserror::Error;
 
-use super::{Context, Found, Observation, Step, StepKind, now};
+use super::{Context, Found, Observation, Step, StepKind};
 
 // the adapter's own failures, each holding the error it came from until the probe boundary renders it
 #[derive(Debug, Error)]
@@ -96,7 +99,8 @@ async fn select(
 }
 
 fn state(index: usize, context: &Context<'_>) -> Observation {
-    let minute = minute_label(now(context.clock));
+    let now = UNIX_EPOCH + Duration::from_millis(context.clock.load(Ordering::SeqCst));
+    let minute = minute_label(now);
     let entries = context
         .router
         .entries(context.group, &minute)

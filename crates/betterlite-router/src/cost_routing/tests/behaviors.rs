@@ -27,6 +27,7 @@ enum Behavior {
     SumsInputAndOutput,
     ZeroOverrideFallsBackToCatalog,
     UnknownModelCostsTen,
+    UnknownModelTiesEvenlyPriced,
     NullCatalogPriceTakesFive,
     CatalogEntryFromUnpricedSibling,
     CatalogEntryKeepsItsOwnFields,
@@ -53,6 +54,7 @@ enum Behavior {
 #[case::sums_input_and_output(Behavior::SumsInputAndOutput)]
 #[case::zero_override_falls_back_to_catalog(Behavior::ZeroOverrideFallsBackToCatalog)]
 #[case::unknown_model_costs_ten(Behavior::UnknownModelCostsTen)]
+#[case::unknown_model_ties_evenly_priced(Behavior::UnknownModelTiesEvenlyPriced)]
 #[case::null_catalog_price_takes_five(Behavior::NullCatalogPriceTakesFive)]
 #[case::catalog_entry_from_unpriced_sibling(Behavior::CatalogEntryFromUnpricedSibling)]
 #[case::catalog_entry_keeps_its_own_fields(Behavior::CatalogEntryKeepsItsOwnFields)]
@@ -79,6 +81,7 @@ async fn cost_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::SumsInputAndOutput => sums_input_and_output(),
         Behavior::ZeroOverrideFallsBackToCatalog => zero_override_falls_back_to_catalog(),
         Behavior::UnknownModelCostsTen => unknown_model_costs_ten(),
+        Behavior::UnknownModelTiesEvenlyPriced => unknown_model_ties_evenly_priced(),
         Behavior::NullCatalogPriceTakesFive => null_catalog_price_takes_five(),
         Behavior::CatalogEntryFromUnpricedSibling => catalog_entry_from_unpriced_sibling(),
         Behavior::CatalogEntryKeepsItsOwnFields => catalog_entry_keeps_its_own_fields(),
@@ -121,7 +124,7 @@ fn priced(id: &str, model: &str, input: &str, output: &str) -> DeploymentSpec {
     )
 }
 
-fn catalog(model: &str, input: &str, output: &str) -> (&str, JsonObject) {
+fn catalog<'model>(model: &'model str, input: &str, output: &str) -> (&'model str, JsonObject) {
     (
         model,
         object(&[(INPUT_COST, number(input)), (OUTPUT_COST, number(output))]),
@@ -270,6 +273,31 @@ fn unknown_model_costs_ten() {
     // the 5.0 default puts the unknown model at 10.0, just over the known model's 9.9
     let costs = ProbeCosts::new(&[catalog("openai/known", "4.95", "4.95")]);
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// a catalog entry at exactly 5.0 a side ties the unknown model's default, so the first pool entry wins either way round
+fn unknown_model_ties_evenly_priced() {
+    let costs = ProbeCosts::new(&[catalog("openai/known", "5", "5")]);
+    let forward = [
+        spec("a", "openai/unknown", &[], &[], &[]),
+        spec("b", "openai/known", &[], &[], &[]),
+    ];
+    assert_eq!(
+        router_at(MINUTE_MILLIS)
+            .0
+            .select(&costs, &selection(&forward, 0)),
+        Ok(Some(0))
+    );
+    let reversed = [
+        spec("b", "openai/known", &[], &[], &[]),
+        spec("a", "openai/unknown", &[], &[], &[]),
+    ];
+    assert_eq!(
+        router_at(MINUTE_MILLIS)
+            .0
+            .select(&costs, &selection(&reversed, 0)),
+        Ok(Some(0))
+    );
 }
 
 // a null catalog rate takes the declared default rather than failing the route

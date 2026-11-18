@@ -73,31 +73,51 @@ async fn selected(
     select(&context, &mut random).await
 }
 
+// a request fact set with only the token estimate filled in
+fn request_facts(input_token_count: Option<usize>) -> RequestFacts {
+    RequestFacts {
+        messages: None,
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
+        target_order: None,
+        input_token_count,
+        compaction_pending: false,
+    }
+}
+
 #[tokio::test]
 async fn cheapest_custom_price_wins() {
     let deployments = [priced("a", "0.3", "0.3"), priced("b", "0.01", "0.02")];
-    let facts = RequestFacts::default();
-    assert_eq!(selected(&deployments, &facts).await, Ok(1));
+    let facts = request_facts(None);
+    assert_eq!(selected(&deployments, &facts).await.unwrap(), 1);
 }
 
 #[tokio::test]
 async fn tpm_limit_screens_the_cheapest_deployment() {
     let deployments = [
-        spec("a", &[(INPUT_COST, number("0.01")), (TPM, number("100"))]),
+        spec(
+            "a",
+            &[
+                (INPUT_COST, number("0.01")),
+                (OUTPUT_COST, number("0.01")),
+                (TPM, number("100")),
+            ],
+        ),
         priced("b", "0.3", "0.3"),
     ];
-    let facts = RequestFacts {
-        input_token_count: Some(101),
-        ..RequestFacts::default()
-    };
-    assert_eq!(selected(&deployments, &facts).await, Ok(1));
+    // a costs 0.02 against b's 0.6, but the request's 101-token estimate passes a's 100-token minute
+    let facts = request_facts(Some(101));
+    assert_eq!(selected(&deployments, &facts).await.unwrap(), 1);
 }
 
 #[tokio::test]
 async fn equal_prices_keep_the_pool_order() {
     let deployments = [priced("a", "0.1", "0.1"), priced("b", "0.1", "0.1")];
-    let facts = RequestFacts::default();
-    assert_eq!(selected(&deployments, &facts).await, Ok(0));
+    let facts = request_facts(None);
+    assert_eq!(selected(&deployments, &facts).await.unwrap(), 0);
 }
 
 // a selection with nothing left answers the pool length, which the pipeline turns into its no-deployment error
@@ -107,17 +127,14 @@ async fn every_deployment_full_answers_past_the_pool() {
         spec("a", &[(TPM, number("1"))]),
         spec("b", &[(TPM, number("1"))]),
     ];
-    let facts = RequestFacts {
-        input_token_count: Some(10),
-        ..RequestFacts::default()
-    };
-    assert_eq!(selected(&deployments, &facts).await, Ok(2));
+    let facts = request_facts(Some(10));
+    assert_eq!(selected(&deployments, &facts).await.unwrap(), 2);
 }
 
 #[tokio::test]
 async fn empty_pool_answers_the_first_index() {
-    let facts = RequestFacts::default();
-    assert_eq!(selected(&[], &facts).await, Ok(0));
+    let facts = request_facts(None);
+    assert_eq!(selected(&[], &facts).await.unwrap(), 0);
 }
 
 #[tokio::test]

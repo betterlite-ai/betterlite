@@ -15,4 +15,28 @@ probes:
           - {id: c, model: openai/partial}
         steps:
           - {kind: select, now_millis: 1795003200000}
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost:
+          openai/even: {input_cost_per_token: 5.0, output_cost_per_token: 5.0}
+        deployments:
+          - {id: a, model: openai/unknown}
+          - {id: b, model: openai/even}
+        steps:
+          - {kind: select, now_millis: 1795003200000}
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost:
+          openai/even: {input_cost_per_token: 5.0, output_cost_per_token: 5.0}
+        deployments:
+          - {id: b, model: openai/even}
+          - {id: a, model: openai/unknown}
+        steps:
+          - {kind: select, now_millis: 1795003200000}
 compare: {ignore: []}

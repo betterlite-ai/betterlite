@@ -36,15 +36,8 @@ pub trait CostWindows: Send + Sync {
 
 // B304's router counters hold each window as a spend value that expires with the minute.
 pub struct WindowCounters<S: DeltaStore + 'static> {
-    counters: Arc<RouterCounters<S>>,
-    values: Arc<RoutingValueStore>,
-}
-
-impl<S: DeltaStore + 'static> WindowCounters<S> {
-    #[must_use]
-    pub fn new(counters: Arc<RouterCounters<S>>, values: Arc<RoutingValueStore>) -> Self {
-        Self { counters, values }
-    }
+    pub counters: Arc<RouterCounters<S>>,
+    pub values: Arc<RoutingValueStore>,
 }
 
 #[async_trait]
@@ -92,10 +85,12 @@ fn amount(values: &RoutingValueStore, key: &str) -> i64 {
     match values.get(&route_key) {
         Ok(StoreRead::Value(RouteValue::Spend(value))) => value.to_i64().unwrap_or_default(),
         Ok(StoreRead::Value(RouteValue::Counter(value))) => value,
-        Ok(StoreRead::Value(
-            RouteValue::Pin(_) | RouteValue::SchedulerTuple(_) | RouteValue::Members(_),
-        ))
-        | Ok(StoreRead::Missing) => 0,
+        Ok(
+            StoreRead::Value(
+                RouteValue::Pin(_) | RouteValue::SchedulerTuple(_) | RouteValue::Members(_),
+            )
+            | StoreRead::Missing,
+        ) => 0,
         Err(error) => {
             tracing::warn!(%error, key, "a cost window value could not be read");
             0

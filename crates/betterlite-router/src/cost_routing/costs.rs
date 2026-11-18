@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry as MapEntry;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -30,7 +29,7 @@ impl<'info> Catalog<'info> {
     #[must_use]
     pub fn price(&self, field: &str) -> Option<&'info Json> {
         let position = PRICE_FIELDS.iter().position(|known| *known == field)?;
-        if self.mirrored[position] {
+        if *self.mirrored.get(position)? {
             return None;
         }
         self.info.get(field)
@@ -66,16 +65,12 @@ impl<'spec> DeploymentCosts<'spec> {
                 info: &deployment.model_info,
                 mirrored,
             };
-            match entries.entry(model.as_str()) {
-                MapEntry::Vacant(slot) => {
-                    slot.insert((borrowed, candidate));
-                }
-                // the deployment that overwrote the fewest catalog fields stands in for the catalog itself
-                MapEntry::Occupied(mut slot) => {
-                    if borrowed < slot.get().0 {
-                        slot.insert((borrowed, candidate));
-                    }
-                }
+            // the deployment that overwrote the fewest catalog fields stands in for the catalog itself
+            let stands_in = entries
+                .get(model.as_str())
+                .is_none_or(|current| borrowed < current.0);
+            if stands_in {
+                entries.insert(model.as_str(), (borrowed, candidate));
             }
         }
         Self { entries }
@@ -88,8 +83,8 @@ impl ModelCosts for DeploymentCosts<'_> {
     }
 }
 
-// Python truthiness, since the pinned selector's `or` and `if` chains read the raw values.
-pub(super) fn truthy(value: &Json) -> bool {
+// The pinned `or` and `if` chains read a falsey value as missing: null, false, zero, and an empty string, list or object.
+pub(super) fn usable(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
