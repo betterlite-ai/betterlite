@@ -14,8 +14,8 @@ use betterlite_server::model_reload::verdict::raise_if_reload_degraded_serving a
 
 use super::support::{Database, FakeRouter, Strategies};
 use super::{
-    Call, ClearCacheCall, Input, LiveInput, MappingCall, ObligationInput, OutcomeInput, RaiseCall,
-    VerdictCall, WrittenInput,
+    Call, ClearCacheCall, Input, LiveInput, ObligationInput, OutcomeInput, RaiseCall, VerdictCall,
+    WrittenInput,
 };
 
 pub(super) async fn answer(input: &Input) -> HelperResult {
@@ -32,16 +32,13 @@ pub(super) async fn answer(input: &Input) -> HelperResult {
 
 async fn answer_call(tagged: &Call, environment: Option<&str>) -> Value {
     match tagged {
-        Call::ModelInfoAsMapping(call) => mapping_answer(call),
+        Call::ModelInfoAsMapping(call) => {
+            model_info_as_mapping(&call.model_info).map_or(json!(null), |found| json!(found))
+        }
         Call::ReloadServingVerdict(call) => verdict_answer(call, environment),
         Call::RaiseIfReloadDegradedServing(call) => raise_answer(call, environment),
         Call::ClearCache(call) => clear_cache_answer(call).await,
     }
-}
-
-fn mapping_answer(call: &MappingCall) -> Value {
-    let mapping = model_info_as_mapping(&call.model_info);
-    mapping.map_or(json!(null), |found| json!(found))
 }
 
 fn verdict_answer(call: &VerdictCall, environment: Option<&str>) -> Value {
