@@ -53,6 +53,21 @@ fn serialize_tool_calls_drop_caller_nulls() {
 }
 
 #[test]
+fn serialize_tools_shape_known_type_with_bad_values() {
+    let chunk = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_bad", "created_at": 26, "output": [], "tools": [{"type": "web_search", "filters": {"allowed_domains": "nope", "extra_null": null}, "extra_null": null}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_bad","created_at":26,"output":[],"#,
+            r#""tools":[{"type":"web_search","filters":{"allowed_domains":"nope"}}]}}"#
+        )
+    );
+}
+
+#[test]
 fn serialize_tools_keep_unmatched_list() {
     let chunk = typed_chunk(
         ChunkKind::Event,
