@@ -1,10 +1,11 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use crate::proxy_request_contracts::user::NewUserRequest;
-use crate::proxy_request_contracts::{ContractError, missing_field, require_object};
-use crate::user_contracts::wire::{check_count, reject_unknown_fields, wrong_type};
+use crate::proxy_request_contracts::{ContractError, require_object};
+use crate::user_contracts::wire::{check_count, reject_unknown_fields};
 
 pub const MAX_BULK_NEW_USERS: usize = 500;
 
@@ -72,6 +73,13 @@ impl BulkNewUserItem {
     }
 }
 
+// The wrapper is a typed wire record; each row stays a /user/new record so its inherited validators run.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkNewUserWire {
+    users: Vec<JsonValue>,
+}
+
 #[derive(Debug, Clone)]
 pub struct BulkNewUserRequest {
     pub users: Vec<BulkNewUserItem>,
@@ -79,25 +87,15 @@ pub struct BulkNewUserRequest {
 
 impl BulkNewUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let fields = require_object(value)?;
-        reject_unknown_fields(&fields, &["users"])?;
-        let Some(found) = fields.get("users") else {
-            return Err(missing_field("users"));
-        };
-        let JsonData::Array(items) = found else {
-            return Err(wrong_type("users"));
-        };
-        let mut users = Vec::with_capacity(items.len());
-        for item in items {
-            let document: JsonValue = serde_json::to_value(item)?;
-            users.push(BulkNewUserItem::from_value(&document)?);
-        }
+        let wire: BulkNewUserWire = serde_json::from_value(value.clone())?;
+        let rows = wire.users.iter().map(BulkNewUserItem::from_value);
+        let users = rows.collect::<Result<Vec<_>, _>>()?;
         check_count("users", users.len(), MAX_BULK_NEW_USERS)?;
         Ok(Self { users })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserCreateResult {
     #[serde(default)]
     pub user_id: Option<String>,
@@ -106,8 +104,11 @@ pub struct UserCreateResult {
     pub success: bool,
     #[serde(default)]
     pub teams: Option<Vec<String>>,
-    #[serde(default)]
-    pub key: Option<String>,
+    #[serde(
+        default,
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<crate::key_fields::values::ExposedSecret>>>::serialize"
+    )]
+    pub key: Option<SecretString>,
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -119,7 +120,7 @@ pub struct BulkNewUserMeta {
     pub failed: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BulkNewUserResponse {
     pub data: Vec<UserCreateResult>,
     pub meta: BulkNewUserMeta,

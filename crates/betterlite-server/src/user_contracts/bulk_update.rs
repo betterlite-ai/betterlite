@@ -1,15 +1,31 @@
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use serde::{Deserialize, Serialize};
 
+use crate::proxy_request_contracts::ContractError;
 use crate::proxy_request_contracts::user::{UpdateUserFields, UpdateUserRequest};
-use crate::proxy_request_contracts::{ContractError, Fields, require_object};
 use crate::user_contracts::wire::wrong_type;
 
 const SELECTION_MISSING: &str = "Must specify either 'users' for individual updates or 'all_users=True' with 'user_updates' for bulk updates";
 const SELECTION_CONFLICT: &str =
     "Cannot specify both 'users' and 'all_users=True'. Choose one approach.";
+
+// The wire record is a typed serde view; the model fields keep pydantic's absent, null and value states.
+#[derive(Deserialize)]
+struct BulkUpdateUserWire {
+    #[serde(default)]
+    users: Option<Vec<JsonValue>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    all_users: Option<Option<bool>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    user_updates: Option<Option<JsonValue>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct BulkUpdateUserRequest {
@@ -20,14 +36,29 @@ pub struct BulkUpdateUserRequest {
 
 impl BulkUpdateUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let fields = require_object(value)?;
+        let wire: BulkUpdateUserWire = serde_json::from_value(value.clone())?;
+        let supplied_updates = wire.user_updates.is_some();
+        let users = match wire.users {
+            Some(items) => Some(
+                items
+                    .iter()
+                    .map(UpdateUserRequest::from_value)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            None => None,
+        };
+        let user_updates = match wire.user_updates {
+            Some(Some(value @ JsonValue::Object(_))) => Some(UpdateUserFields::from_value(&value)?),
+            Some(Some(_)) => return Err(wrong_type("user_updates")),
+            Some(None) | None => None,
+        };
         let request = Self {
-            users: decode_users(&fields)?,
-            all_users: decode_all_users(&fields)?,
-            user_updates: decode_user_updates(&fields)?,
+            users,
+            all_users: wire.all_users.unwrap_or(Some(false)),
+            user_updates,
         };
         // pydantic's field validator runs only for a supplied user_updates, explicit null included
-        if fields.contains_key("user_updates") {
+        if supplied_updates {
             request.check_selection()?;
         }
         Ok(request)
@@ -43,47 +74,6 @@ impl BulkUpdateUserRequest {
             return Err(ContractError::from(SELECTION_CONFLICT));
         }
         Ok(())
-    }
-}
-
-fn decode_users(fields: &Fields) -> Result<Option<Vec<UpdateUserRequest>>, ContractError> {
-    let Some(found) = fields.get("users") else {
-        return Ok(None);
-    };
-    let JsonData::Array(items) = found else {
-        if matches!(found, JsonData::Null) {
-            return Ok(None);
-        }
-        return Err(wrong_type("users"));
-    };
-    let mut users = Vec::with_capacity(items.len());
-    for item in items {
-        let document: JsonValue = serde_json::to_value(item)?;
-        users.push(UpdateUserRequest::from_value(&document)?);
-    }
-    Ok(Some(users))
-}
-
-fn decode_all_users(fields: &Fields) -> Result<Option<bool>, ContractError> {
-    match fields.get("all_users") {
-        None => Ok(Some(false)),
-        Some(JsonData::Null) => Ok(None),
-        Some(JsonData::Bool(flag)) => Ok(Some(*flag)),
-        Some(_) => Err(wrong_type("all_users")),
-    }
-}
-
-fn decode_user_updates(fields: &Fields) -> Result<Option<UpdateUserFields>, ContractError> {
-    let Some(found) = fields.get("user_updates") else {
-        return Ok(None);
-    };
-    match found {
-        JsonData::Null => Ok(None),
-        JsonData::Object(_) => {
-            let document: JsonValue = serde_json::to_value(found)?;
-            Ok(Some(UpdateUserFields::from_value(&document)?))
-        }
-        _ => Err(wrong_type("user_updates")),
     }
 }
 
