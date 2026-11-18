@@ -7,12 +7,16 @@ description: >-
   owners of their routes. Route ordering must keep the content suffix ahead of generic catch-all ids.
 
   Preserve MIT behavior without the managed_files hook. Requirements run before raw-cloud role
-  checking; provider hints precede common pre-call logic and an additional B1103 authenticated-data
+  checking; provider hints (read with B2400's get_custom_llm_provider_from_request_headers, _query and
+  _body accessors in betterlite-server api::proxy_endpoint_support, with the route applying the
+  precedence) precede common pre-call logic and an additional B1103 authenticated-data
   preparation. Then B1020 model routing precedes legacy managed-ID handling, with B1028 executing
   deletes. No managed repository, ownership filter or storage backend is called on this reachable
   path. Successful model-routed delete returns the provider's id without re-encoding it.
 
   Add B900 HTTP scenarios with mock provider, master key sk-test and B1139 ordinary/admin keys.
+  A seeded key passes auth through B755's VirtualKeyValidation stage (betterlite-auth
+  auth_key_validation, registered in B732's server state).
   The family integration case uploads, retrieves, downloads, lists and deletes a native file through
   the composed routes, checking actual upstream effects. Native tests are in
   api::managed_file_routes::tests in server/core; no helper oracle or new decoder. Complete handler

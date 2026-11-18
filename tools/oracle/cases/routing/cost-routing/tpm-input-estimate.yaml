@@ -1,0 +1,15 @@
+kind: probe
+name: cost-routing-tpm-input-estimate
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost: {}
+        deployments:
+          - {id: a, model: openai/probe, input_cost_per_token: 0.125, output_cost_per_token: 0.125, info_tpm: 1}
+          - {id: b, model: openai/probe, input_cost_per_token: 0.5, output_cost_per_token: 0.5}
+        steps:
+          - {kind: select, now_millis: 1795003200000, input: "hello world"}
+compare: {ignore: []}
