@@ -26,16 +26,16 @@ use crate::cost::usage::{BillingUsage, ResponseKind};
 struct Policy;
 
 impl ModelResolver for Policy {
-    type Failure = Infallible;
-    fn resolve_model(&self, _model: &str) -> Result<ResolvedModel, Infallible> {
-        panic!("explicit model and provider avoid resolution")
+    type Failure = &'static str;
+    fn resolve_model(&self, _model: &str) -> Result<ResolvedModel, &'static str> {
+        Err("explicit model and provider avoid resolution")
     }
 }
 
 impl ImagePricePolicy for Policy {
     type Error = Infallible;
     fn image_cost(&self, _route: &ImageRoute<'_>) -> Result<Decimal, Infallible> {
-        panic!("a Responses token charge is not an image charge")
+        Ok(Decimal::ZERO)
     }
 }
 
