@@ -145,6 +145,8 @@ impl ChoiceEvent {
                 refusal: delta.refusal,
                 tool_calls: delta.tool_calls.map(number_calls),
                 function_call: delta.function_call,
+                reasoning_content: None,
+                thinking_blocks: None,
             },
             // StreamingChoices maps a truthy stop reason and stores None for an empty one
             finish_reason: self

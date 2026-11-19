@@ -23,7 +23,7 @@ use crate::openai_base_config::Headers;
 type ChatIdentity =
     fn(&HostedSettings, Option<&str>, Option<&SecretString>) -> (String, Option<SecretString>);
 
-fn loaded(entries: &[(&str, &str)]) -> Sections {
+fn loaded(entries: &[(&str, &str)]) -> Box<Sections> {
     let lookup: BTreeMap<String, String> = entries
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
