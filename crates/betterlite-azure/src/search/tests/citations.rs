@@ -90,7 +90,10 @@ fn start_index_boundaries() {
         vec![expect_result("", "https://x.example", text)]
     );
     let long = format!("{}([l](https://l.example))", "y".repeat(350));
-    let negative_zero = indexed(&long, &json_value("-0"));
+    let quoted = serde_json::to_string(&long).unwrap();
+    let negative_zero = envelope(&format!(
+        r#"[{{"type":"message","content":[{{"type":"output_text","text":{quoted},"annotations":[{{"type":"url_citation","url":"https://x.example","start_index":-0}}]}}]}}]"#,
+    ));
     assert_eq!(
         results(&negative_zero),
         vec![expect_result("", "https://x.example", &"y".repeat(300))]
