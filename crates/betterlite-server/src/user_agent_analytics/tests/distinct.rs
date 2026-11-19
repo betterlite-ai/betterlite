@@ -5,7 +5,7 @@ use betterlite_db::postgres_store::errors::DbError;
 
 use crate::user_agent_analytics::error::AnalyticsError;
 use crate::user_agent_analytics::rows::DistinctTagRow;
-use crate::user_agent_analytics::store::UserAgentAnalyticsStore;
+use crate::user_agent_analytics::store::UserAgentAnalyticsStore as _;
 use crate::user_agent_analytics::tests::support::DistinctBody;
 use crate::user_agent_analytics::tests::support::DistinctTagBody;
 use crate::user_agent_analytics::tests::support::FakeStore;
