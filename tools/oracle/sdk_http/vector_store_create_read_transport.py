@@ -32,92 +32,40 @@ CreateWork = VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCr
 ListWork = JsonValue | Coroutine[object, object, JsonValue]
 
 CreateCall = Callable[
-    [
-        VectorStoreParams,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [VectorStoreParams, BaseVectorStoreConfig, str, GenericLiteLLMParams, Logging,
+     dict[str, object] | None, dict[str, object] | None, float | httpx.Timeout | None],
     CreateWork,
 ]
 
 AsyncCreateCall = Callable[
-    [
-        VectorStoreParams,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [VectorStoreParams, BaseVectorStoreConfig, str, GenericLiteLLMParams, Logging,
+     dict[str, object] | None, dict[str, object] | None, float | httpx.Timeout | None],
     Coroutine[object, object, VectorStoreCreateResponse],
 ]
 
 RetrieveCall = Callable[
-    [
-        str,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [str, BaseVectorStoreConfig, str, GenericLiteLLMParams, Logging, dict[str, object] | None,
+     dict[str, object] | None, float | httpx.Timeout | None],
     CreateWork,
 ]
 
 AsyncRetrieveCall = Callable[
-    [
-        str,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [str, BaseVectorStoreConfig, str, GenericLiteLLMParams, Logging, dict[str, object] | None,
+     dict[str, object] | None, float | httpx.Timeout | None],
     Coroutine[object, object, VectorStoreCreateResponse],
 ]
 
 ListCall = Callable[
-    [
-        str | None,
-        str | None,
-        int | None,
-        str | None,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [str | None, str | None, int | None, str | None, BaseVectorStoreConfig, str,
+     GenericLiteLLMParams, Logging, dict[str, object] | None, dict[str, object] | None,
+     float | httpx.Timeout | None],
     ListWork,
 ]
 
 AsyncListCall = Callable[
-    [
-        str | None,
-        str | None,
-        int | None,
-        str | None,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
+    [str | None, str | None, int | None, str | None, BaseVectorStoreConfig, str,
+     GenericLiteLLMParams, Logging, dict[str, object] | None, dict[str, object] | None,
+     float | httpx.Timeout | None],
     Coroutine[object, object, JsonValue],
 ]
 
@@ -167,7 +115,9 @@ class TransportValue(BaseModel):
 
 
 class TransportEnvelope(BaseModel):
-    vector_store_create_read_transport: TransportValue
+    model_config = ConfigDict(populate_by_name=True)
+
+    store_transport: TransportValue = Field(alias="vector_store_create_read_transport")
 
 
 class Handlers(Protocol):
@@ -251,89 +201,49 @@ def execute(
         if call.mode == "sync":
             return JSON.validate_python(
                 HANDLER.vector_store_create_handler(
-                    optional,
-                    config,
-                    "openai",
-                    litellm_params,
-                    logging_obj,
-                    extra_headers,
-                    extra_body,
-                    timeout,
+                    optional, config, "openai", litellm_params, logging_obj,
+                    extra_headers, extra_body, timeout,
                 )
             )
         return JSON.validate_python(
             asyncio.run(
                 HANDLER.async_vector_store_create_handler(
-                    optional,
-                    config,
-                    "openai",
-                    litellm_params,
-                    logging_obj,
-                    extra_headers,
-                    extra_body,
-                    timeout,
+                    optional, config, "openai", litellm_params, logging_obj,
+                    extra_headers, extra_body, timeout,
                 )
             )
         )
     if call.operation == "retrieve":
-        vector_store_id = call.vector_store_id or ""
+        vector_store_id = call.vector_store_id
+        if vector_store_id is None:
+            raise ValueError("a retrieve call needs a vector store id")
         if call.mode == "sync":
             return JSON.validate_python(
                 HANDLER.vector_store_retrieve_handler(
-                    vector_store_id,
-                    config,
-                    "openai",
-                    litellm_params,
-                    logging_obj,
-                    extra_headers,
-                    extra_body,
-                    timeout,
+                    vector_store_id, config, "openai", litellm_params, logging_obj,
+                    extra_headers, extra_body, timeout,
                 )
             )
         return JSON.validate_python(
             asyncio.run(
                 HANDLER.async_vector_store_retrieve_handler(
-                    vector_store_id,
-                    config,
-                    "openai",
-                    litellm_params,
-                    logging_obj,
-                    extra_headers,
-                    extra_body,
-                    timeout,
+                    vector_store_id, config, "openai", litellm_params, logging_obj,
+                    extra_headers, extra_body, timeout,
                 )
             )
         )
     if call.mode == "sync":
         return JSON.validate_python(
             HANDLER.vector_store_list_handler(
-                call.after,
-                call.before,
-                call.limit,
-                call.order,
-                config,
-                "openai",
-                litellm_params,
-                logging_obj,
-                extra_headers,
-                extra_body,
-                timeout,
+                call.after, call.before, call.limit, call.order, config, "openai", litellm_params,
+                logging_obj, extra_headers, extra_body, timeout,
             )
         )
     return JSON.validate_python(
         asyncio.run(
             HANDLER.async_vector_store_list_handler(
-                call.after,
-                call.before,
-                call.limit,
-                call.order,
-                config,
-                "openai",
-                litellm_params,
-                logging_obj,
-                extra_headers,
-                extra_body,
-                timeout,
+                call.after, call.before, call.limit, call.order, config, "openai", litellm_params,
+                logging_obj, extra_headers, extra_body, timeout,
             )
         )
     )
@@ -342,11 +252,9 @@ def execute(
 class CreateReadTransportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    vector_store_create_read_transport: TransportCall
+    store_transport: TransportCall = Field(alias="vector_store_create_read_transport")
 
     def serialize(self, api_base: str) -> str:
-        outcome = run_transport(self.vector_store_create_read_transport, api_base)
+        outcome = run_transport(self.store_transport, api_base)
         value = TransportValue(value=outcome)
-        return TransportEnvelope(vector_store_create_read_transport=value).model_dump_json(
-            by_alias=True
-        )
+        return TransportEnvelope(store_transport=value).model_dump_json(by_alias=True)

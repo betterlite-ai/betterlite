@@ -12,7 +12,7 @@ use crate::api::vector_store_http_create_read::service::{
     CreateCall, CreateReadCall, CreateReadTarget, ListCall, ListQuery, RetrieveCall,
 };
 use crate::api::vector_store_http_write::config::WriteParams;
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest};
 
 const STORE: &str = r#"{"id":"vs_a","object":"vector_store"}"#;
 
@@ -48,13 +48,28 @@ const fn retrieve_call(target: CreateReadTarget<'_>) -> CreateReadCall<'_> {
 
 const fn list_call<'call>(
     target: CreateReadTarget<'call>,
-    query: ListQuery<'call>,
+    after: Option<&'call str>,
+    before: Option<&'call str>,
+    limit: Option<i64>,
+    order: Option<&'call str>,
 ) -> CreateReadCall<'call> {
     CreateReadCall::List(ListCall {
         target,
-        query,
+        query: ListQuery {
+            after,
+            before,
+            limit,
+            order,
+        },
         extra_body: None,
     })
+}
+
+fn check_request_headers(request: &WriteRequest) {
+    assert_eq!(header(request, "authorization"), "Bearer sk-p");
+    assert_eq!(header(request, "content-type"), "application/json");
+    assert_eq!(header(request, "openai-beta"), "assistants=v1");
+    assert_eq!(header(request, "x-trace"), "t");
 }
 
 // The provider key and content type win over the caller's, the caller's beta header stays, and the caller's other headers ride along
@@ -83,18 +98,15 @@ async fn create_read_header_and_logging() {
     run(&mut fixture, &deps, ClientKind::Sync, &retrieve, &events)
         .await
         .expect("the retrieve succeeds");
-    let list = list_call(with_headers(&params, &caller), ListQuery::default());
+    let list = list_call(with_headers(&params, &caller), None, None, None, None);
     run(&mut fixture, &deps, ClientKind::Sync, &list, &events)
         .await
         .expect("the list succeeds");
     let requests = wire.requests();
     assert_eq!(requests.len(), 3);
-    for request in &requests {
-        assert_eq!(header(request, "authorization"), "Bearer sk-p");
-        assert_eq!(header(request, "content-type"), "application/json");
-        assert_eq!(header(request, "openai-beta"), "assistants=v1");
-        assert_eq!(header(request, "x-trace"), "t");
-    }
+    check_request_headers(&requests[0]);
+    check_request_headers(&requests[1]);
+    check_request_headers(&requests[2]);
 }
 
 // An absent header map and an empty one both leave the provider's own beta value in place
@@ -125,7 +137,7 @@ async fn absent_and_empty_headers_use_the_provider_defaults() {
         &mut fixture,
         &deps,
         ClientKind::Sync,
-        &list_call(with_headers(&params, &empty), ListQuery::default()),
+        &list_call(with_headers(&params, &empty), None, None, None, None),
         &events,
     )
     .await
@@ -187,17 +199,17 @@ async fn list_logs_its_query_map() {
     let deps = deps(&config, &source, None);
     let params = params("http://mock.test/v1");
     let mut fixture = Fixture::new("vector_store_list");
-    let query = ListQuery {
-        after: Some(""),
-        before: Some("vs_z"),
-        limit: Some(0),
-        order: Some("asc"),
-    };
     run(
         &mut fixture,
         &deps,
         ClientKind::Sync,
-        &list_call(target(&params), query),
+        &list_call(
+            target(&params),
+            Some(""),
+            Some("vs_z"),
+            Some(0),
+            Some("asc"),
+        ),
         &events,
     )
     .await

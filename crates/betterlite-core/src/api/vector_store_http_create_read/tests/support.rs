@@ -297,12 +297,9 @@ impl RecordingConfig {
     }
 
     pub(crate) fn refusing(base: &str, events: &Events) -> Self {
-        Self {
-            base: base.to_owned(),
-            refuse_create: true,
-            events: events.clone(),
-            errors: Mutex::default(),
-        }
+        let mut config = Self::new(base, events);
+        config.refuse_create = true;
+        config
     }
 
     pub(crate) fn errors(&self) -> Vec<(String, u16, HeaderMap)> {

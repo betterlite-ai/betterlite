@@ -18,7 +18,7 @@ use crate::api::vector_store_http_create_read::service::{
     CreateCall, CreateReadCall, CreateReadDeps, ListCall, ListQuery, Operation, RetrieveCall,
 };
 use crate::api::vector_store_http_write::config::WriteParams;
-use crate::api::vector_store_http_write::error::WriteError;
+use crate::api::vector_store_http_write::error::{BaseLlmException, WriteError};
 use crate::api::vector_store_http_write::service::ClientKind;
 
 const STORE: &str = r#"{"id":"vs_a","object":"vector_store"}"#;
@@ -53,42 +53,22 @@ fn call_for<'call>(
     }
 }
 
-fn check_create_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
+// A status outside 2xx reaches the POST and the GET as the provider's own error, with the headers the reply carried
+fn check_status_failure<'result>(
+    result: &'result Result<Json, CreateReadError>,
+    config: &RecordingConfig,
+) -> &'result BaseLlmException {
     let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
-        panic!("a status of 429 on the POST is a provider error");
+        panic!("a status of 429 is a provider error");
     };
     assert_eq!(error.status_code, 429);
     assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, "slow");
-    assert_eq!(
-        error.headers.get("retry-after"),
-        Some(&Json::Text("3".to_owned()))
-    );
-    assert_eq!(
-        error.headers.get("content-length"),
-        Some(&Json::Text("4".to_owned()))
-    );
-    assert_eq!(config.errors().len(), 1);
-}
-
-fn check_retrieve_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
-    let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
-        panic!("the converter refuses the body at the response status");
-    };
-    assert_eq!(error.status_code, 429);
-    assert!(!error.status_code_is_synthesized);
-    // the GET raises no status error, so the converter's parse error is the message, not the body text
-    assert_eq!(
-        error.message,
-        serde_json::from_str::<Json>("slow")
-            .expect_err("slow is not a JSON value")
-            .to_string()
-    );
     assert_eq!(
         error.headers.get("retry-after"),
         Some(&Json::Text("3".to_owned()))
     );
     assert_eq!(config.errors().len(), 1);
+    error
 }
 
 fn check_list_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
@@ -119,8 +99,25 @@ async fn create_read_failures(#[case] operation: Operation) {
     let mut fixture = Fixture::new("vector_store_failure");
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     match operation {
-        Operation::Create => check_create_failure(&result, &config),
-        Operation::Retrieve => check_retrieve_failure(&result, &config),
+        Operation::Create => {
+            let error = check_status_failure(&result, &config);
+            // the POST raises for the status before its converter reads the body, so the body text is the message
+            assert_eq!(error.message, "slow");
+            assert_eq!(
+                error.headers.get("content-length"),
+                Some(&Json::Text("4".to_owned()))
+            );
+        }
+        Operation::Retrieve => {
+            let error = check_status_failure(&result, &config);
+            // the GET raises no status error, so the converter's parse error is the message, not the body text
+            assert_eq!(
+                error.message,
+                serde_json::from_str::<Json>("slow")
+                    .expect_err("slow is not a JSON value")
+                    .to_string()
+            );
+        }
         Operation::List => check_list_failure(&result, &config),
     }
     assert_eq!(wire.requests().len(), 1);

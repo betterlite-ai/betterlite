@@ -44,7 +44,10 @@ pub(super) async fn execute(
         api_key: None,
         ssl_verify: None,
     };
-    let optional = create_params(call)?;
+    // The five optional fields as the production CreateParams, through the JSON their names describe
+    let encoded = serde_json::to_value(&call.optional_params).map_err(SdkHttpError::Serialize)?;
+    let optional: CreateParams = serde_json::from_value(encoded)
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     let read = read_call(call, &params, &optional)?;
     let deps = CreateReadDeps {
         config: &provider,
@@ -56,12 +59,6 @@ pub(super) async fn execute(
     Ok(SdkResult::VectorStoreCreateReadTransport {
         value: Box::new(answer),
     })
-}
-
-// The five optional fields as the production CreateParams, through the JSON their names describe
-fn create_params(call: &Call) -> Result<CreateParams, SdkHttpError> {
-    let encoded = serde_json::to_value(&call.optional_params).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(encoded).map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
 fn read_call<'call>(

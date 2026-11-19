@@ -48,6 +48,15 @@ pub(super) fn validated_headers(
     provider.validate_environment(caller_headers, target.params)
 }
 
+// A failed parse names the text it was handed, and the base travels on beside the URL for the pre-call log
+fn parsed_url(api_base: String, text: &str) -> Result<(String, Url), CreateReadError> {
+    let url = Url::parse(text).map_err(|source| WriteError::RequestUrl {
+        url: text.to_owned(),
+        source,
+    })?;
+    Ok((api_base, url))
+}
+
 pub(super) fn create_endpoint(
     provider: &dyn WriteConfig,
     call: &CreateCall<'_>,
@@ -58,11 +67,8 @@ pub(super) fn create_endpoint(
     let request = create_request(call.optional_params, &api_base);
     let body: IndexMap<String, Json> =
         serde_json::from_value(request.body).map_err(WriteError::Encode)?;
-    let url = Url::parse(&request.url).map_err(|source| WriteError::RequestUrl {
-        url: request.url,
-        source,
-    })?;
-    Ok((api_base, url, body))
+    let (base, url) = parsed_url(api_base, &request.url)?;
+    Ok((base, url, body))
 }
 
 pub(super) fn retrieve_endpoint(
@@ -76,8 +82,7 @@ pub(super) fn retrieve_endpoint(
         encode_segment(call.vector_store_id, "vector_store_id").map_err(WriteError::Segment)?;
     // the literal slash plus one encoded id lands after any query string, exactly as LiteLLM's f-string does
     let text = format!("{api_base}/{encoded}");
-    let url = Url::parse(&text).map_err(|source| WriteError::RequestUrl { url: text, source })?;
-    Ok((api_base, url))
+    parsed_url(api_base, &text)
 }
 
 pub(super) fn list_endpoint(
