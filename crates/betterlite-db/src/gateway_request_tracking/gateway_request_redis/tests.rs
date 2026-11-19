@@ -87,9 +87,7 @@ async fn push_reports_a_list_failure() {
         GatewayRequestRedisError::List { operation, .. } => {
             assert_eq!(operation, "async_rpush");
         }
-        other @ (GatewayRequestRedisError::Entry(_)
-        | GatewayRequestRedisError::Encode(_)
-        | GatewayRequestRedisError::Decode(_)) => panic!("unexpected error: {other}"),
+        other @ GatewayRequestRedisError::Encode(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -128,6 +126,33 @@ async fn pop_stops_at_the_first_short_batch() {
     let popped = buffer.pop().await.expect("the pop succeeds");
     assert_eq!(popped.len(), 3);
     assert_eq!(list.take_calls(), vec![2, 2]);
+}
+
+#[tokio::test]
+async fn a_later_take_failure_keeps_the_entries_already_popped() {
+    let (logs, _guard) = captured_logs();
+    let list = Arc::new(FakeList::with_entries(&[
+        r#"[["2026-01-05","api","/v1/a",1,0]]"#,
+        r#"[["2026-01-05","api","/v1/b",2,0]]"#,
+        r#"[["2026-01-05","api","/v1/c",4,0]]"#,
+    ]));
+    list.fail_take_after(2);
+    let buffer = buffer_with(Arc::clone(&list), Arc::new(FakeLease::granting()), 1);
+    let popped = buffer.pop().await.expect("the drain keeps what it popped");
+    assert_eq!(
+        popped.get(&key("2026-01-05", "api", "/v1/a")).copied(),
+        Some(counts(1, 0))
+    );
+    assert_eq!(
+        popped.get(&key("2026-01-05", "api", "/v1/b")).copied(),
+        Some(counts(2, 0))
+    );
+    assert_eq!(popped.len(), 2);
+    assert_eq!(
+        list.queued(),
+        vec![r#"[["2026-01-05","api","/v1/c",4,0]]"#.to_owned()]
+    );
+    assert!(logs.text().contains("Redis drain stopped after 2 entries"));
 }
 
 #[tokio::test]
@@ -179,22 +204,47 @@ async fn pop_reports_a_list_failure() {
         GatewayRequestRedisError::List { operation, .. } => {
             assert_eq!(operation, "async_lpop");
         }
-        other @ (GatewayRequestRedisError::Entry(_)
-        | GatewayRequestRedisError::Encode(_)
-        | GatewayRequestRedisError::Decode(_)) => panic!("unexpected error: {other}"),
+        other @ GatewayRequestRedisError::Encode(_) => panic!("unexpected error: {other}"),
     }
 }
 
 #[tokio::test]
-async fn pop_reports_an_entry_that_is_not_json() {
-    let list = Arc::new(FakeList::with_entries(&["not a row list"]));
+async fn an_entry_that_is_not_a_row_list_is_dropped_alone() {
+    let (logs, _guard) = captured_logs();
+    let list = Arc::new(FakeList::with_entries(&[
+        "not a row list",
+        r#"[["2026-01-05","api","/v1/chat",2,1]]"#,
+    ]));
     let buffer = buffer_with(
         Arc::clone(&list),
         Arc::new(FakeLease::granting()),
         MAX_REDIS_BUFFER_DEQUEUE_COUNT,
     );
-    let error = buffer.pop().await.expect_err("the pop fails");
-    assert!(matches!(error, GatewayRequestRedisError::Decode(_)));
+    let popped = buffer.pop().await.expect("the bad entry is dropped");
+    assert_eq!(
+        popped.get(&key("2026-01-05", "api", "/v1/chat")).copied(),
+        Some(counts(2, 1))
+    );
+    assert_eq!(popped.len(), 1);
+    assert!(list.queued().is_empty());
+    assert!(
+        logs.text()
+            .contains("dropped a buffered entry that is not a row list")
+    );
+}
+
+#[test]
+fn a_byte_entry_that_is_not_utf8_is_dropped_alone() {
+    let (logs, _guard) = captured_logs();
+    assert_eq!(
+        super::adapters::decode_text(b"a row list".to_vec()),
+        Some("a row list".to_owned())
+    );
+    assert_eq!(super::adapters::decode_text(vec![0xff, 0xfe]), None);
+    assert!(
+        logs.text()
+            .contains("dropped a buffered entry that is not UTF-8")
+    );
 }
 
 #[tokio::test]
@@ -257,6 +307,29 @@ async fn the_leader_commits_the_buffered_rows() {
     assert_eq!(database.last_parameters(), 5);
     assert_eq!(lease.calls(), vec![GATEWAY_REQUESTS_JOB_NAME.to_owned()]);
     assert!(list.queued().is_empty());
+}
+
+#[tokio::test]
+async fn the_leader_commits_what_it_popped_before_a_take_failure() {
+    let list = Arc::new(FakeList::with_entries(&[
+        r#"[["2026-01-05","api","/v1/a",1,0]]"#,
+        r#"[["2026-01-05","api","/v1/b",2,0]]"#,
+        r#"[["2026-01-05","api","/v1/c",4,0]]"#,
+    ]));
+    list.fail_take_after(2);
+    let database = FakeDatabase::default();
+    let buffer = buffer_with(Arc::clone(&list), Arc::new(FakeLease::granting()), 1);
+    let leftover = buffer
+        .commit_if_leader(&database)
+        .await
+        .expect("the leader commits what it drained");
+    assert!(leftover.is_empty());
+    assert_eq!(database.calls(), 1);
+    assert_eq!(database.last_parameters(), 10);
+    assert_eq!(
+        list.queued(),
+        vec![r#"[["2026-01-05","api","/v1/c",4,0]]"#.to_owned()]
+    );
 }
 
 #[tokio::test]
