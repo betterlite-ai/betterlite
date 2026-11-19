@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
-use betterlite_server::mcp::backfills::log::{
-    FlowBackfillEvent, FlowBackfillLog, IssuerBackfillEvent, IssuerBackfillLog,
-};
+use betterlite_server::mcp::backfills::log::{BackfillEvent, BackfillLog};
 use betterlite_server::mcp::oauth_caches::per_user::PerUserTokenBackend;
 use betterlite_server::mcp::outbound_credentials::WallClock;
 use betterlite_server::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
@@ -220,6 +218,11 @@ impl FakeBackend {
             .insert(key.to_owned(), value.to_owned());
     }
 
+    pub(super) fn seed_token(&self, key: &str, token: &str) {
+        let codec = codec();
+        self.seed(key, &(codec.encrypt)(token));
+    }
+
     pub(super) fn entry(&self, key: &str) -> Option<String> {
         self.entries
             .lock()
@@ -282,10 +285,6 @@ pub(super) fn authorization(headers: &[(String, String)]) -> Option<String> {
 
 pub(super) struct SilentLog;
 
-impl FlowBackfillLog for SilentLog {
-    fn flow_event(&self, _event: FlowBackfillEvent<'_>) {}
-}
-
-impl IssuerBackfillLog for SilentLog {
-    fn issuer_event(&self, _event: IssuerBackfillEvent<'_>) {}
+impl BackfillLog for SilentLog {
+    fn event(&self, _event: BackfillEvent<'_>) {}
 }

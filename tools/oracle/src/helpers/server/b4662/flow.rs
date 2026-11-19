@@ -96,27 +96,12 @@ impl FakeFlowTable {
     fn row_views(&self) -> Vec<Value> {
         let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         rows.sort_by(|left, right| left.row.server_id.cmp(&right.row.server_id));
-        rows.iter()
-            .map(|state| {
-                json!({
-                    "server_id": state.row.server_id,
-                    "oauth2_flow": state.flow.map(flow_name),
-                    "updated_by": state.updated_by,
-                })
-            })
-            .collect()
+        rows.iter().map(row_view).collect()
     }
 
     fn stamp_views(&self) -> Vec<Value> {
         let stamps = self.stamps.lock().unwrap_or_else(PoisonError::into_inner);
-        stamps
-            .iter()
-            .map(|stamp| {
-                let mut ids = stamp.server_ids.clone();
-                ids.sort();
-                json!({"flow": flow_name(stamp.flow), "server_ids": ids})
-            })
-            .collect()
+        stamps.iter().map(stamp_view).collect()
     }
 
     fn ambiguous(&self) -> Vec<String> {
@@ -174,6 +159,20 @@ impl FlowBackfillTable for FakeFlowTable {
             });
         Ok(())
     }
+}
+
+fn row_view(state: &FlowState) -> Value {
+    json!({
+        "server_id": state.row.server_id,
+        "oauth2_flow": state.flow.map(flow_name),
+        "updated_by": state.updated_by,
+    })
+}
+
+fn stamp_view(stamp: &StampCall) -> Value {
+    let mut ids = stamp.server_ids.clone();
+    ids.sort();
+    json!({"flow": flow_name(stamp.flow), "server_ids": ids})
 }
 
 pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>> {
