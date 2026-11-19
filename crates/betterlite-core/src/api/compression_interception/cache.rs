@@ -45,6 +45,7 @@ impl CompressionCache {
         while entries.len() > MAX_ENTRIES {
             entries.shift_remove_index(0);
         }
+        drop(entries);
     }
 
     pub fn prune(&self) {
