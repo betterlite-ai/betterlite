@@ -43,7 +43,7 @@ pub(crate) fn logging_answer(case: &Case, mirror: bool) -> Value {
         logging_hook(&fixture.slot, case.call_id.as_deref(), targets);
     }
     let mirror_headers = mirror.then_some(response_headers);
-    fixture.record(Some(slp_headers), mirror_headers)
+    fixture.record(slp_headers.as_ref(), mirror_headers.as_ref())
 }
 
 pub(crate) fn success_event_answer(case: &Case) -> HelperResult {
@@ -131,10 +131,10 @@ pub(crate) fn success_hook_answer(case: &Case) -> HelperResult {
     };
     let settle = fixture.settlement();
     runtime.block_on(settle.post_call_success_hook(&hook, headers.as_mut()));
-    Ok(fixture.record(None, headers))
+    Ok(fixture.record(None, headers.as_ref()))
 }
 
-fn failure_hook<'case>(case: &'case Case, fixture: &'case Fixture) -> FailureHook<'case> {
+const fn failure_hook<'case>(case: &'case Case, fixture: &'case Fixture) -> FailureHook<'case> {
     FailureHook {
         stash: &fixture.slot,
         combined_usage: case.usage.as_ref(),

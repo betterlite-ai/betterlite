@@ -154,7 +154,7 @@ pub(crate) struct FakeBatchStore {
 }
 
 impl FakeBatchStore {
-    pub(crate) fn new(popped: Option<ReservationRecord>) -> Self {
+    pub(crate) const fn new(popped: Option<ReservationRecord>) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             popped,

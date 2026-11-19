@@ -48,7 +48,7 @@ async fn applies_the_combined_refund_and_each_project_side_on_its_own_path() {
             )],
             vec![(
                 "{project:p2}:tokens".to_owned(),
-                (-280.0_f64).to_bits(),
+                (-290.0_f64).to_bits(),
                 Some(WINDOW),
             )],
         ]

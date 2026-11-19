@@ -12,8 +12,8 @@ use betterlite_rate_limit::concurrency_gauges::ConcurrencyGauges;
 use betterlite_rate_limit::concurrency_gauges::cache::GaugeCache;
 use betterlite_rate_limit::fail_closed::FailClosedPolicy;
 use betterlite_rate_limit::limiter_records::{
-    LimiterClock, ModelGroupResolver, RateLimitResponse, ReservationAwareIncrement,
-    ReservationWindowIdentity,
+    LimiterClock, ModelGroupResolver, ParallelSlotAcquisition, RateLimitResponse,
+    ReservationAwareIncrement, ReservationWindowIdentity,
 };
 use betterlite_rate_limit::model_descriptors::ModelDescriptorBuilder;
 use betterlite_rate_limit::post_call_settlement::settlement::PostCallSettlement;
@@ -114,9 +114,9 @@ fn install_stash(case: &Case) -> RequestStashSlot {
 }
 
 fn popped_record(tokens: Option<i64>) -> Option<ReservationRecord> {
-    let tokens = tokens?;
+    let popped_tokens = tokens?;
     Some(ReservationRecord {
-        tokens,
+        tokens: popped_tokens,
         scopes: Vec::new(),
         backend: CoreBackend::Redis,
         owner: "worker".to_owned(),
@@ -138,6 +138,23 @@ fn adjustments(counters: Arc<RecordingCounters>, usage: Arc<FakeUsage>) -> Token
         token_increment_script: None,
         guarded_token_script: None,
     }
+}
+
+fn recorded_stash(
+    slot: &RequestStashSlot,
+) -> (Option<ParallelSlotAcquisition>, bool, Option<i64>, usize) {
+    slot.get().map_or((None, false, None, 0), |stash| {
+        let state = lock(&stash.state);
+        (
+            state.parallel_slot.clone(),
+            state.reservation_released,
+            state
+                .batch_enqueued_reservation
+                .as_ref()
+                .map(|reservation| reservation.tokens),
+            state.batch_tpd_refund_ops.len(),
+        )
+    })
 }
 
 pub(crate) struct NoModels;
@@ -207,24 +224,10 @@ impl Fixture {
 
     pub(crate) fn record(
         &self,
-        slp_headers: Option<AdditionalHeaders>,
-        response_headers: Option<AdditionalHeaders>,
+        slp_headers: Option<&AdditionalHeaders>,
+        response_headers: Option<&AdditionalHeaders>,
     ) -> Value {
-        let (parallel_slot, released, batch_tokens, tpd_ops) = match self.slot.get() {
-            Some(stash) => {
-                let state = lock(&stash.state);
-                (
-                    state.parallel_slot.clone(),
-                    state.reservation_released,
-                    state
-                        .batch_enqueued_reservation
-                        .as_ref()
-                        .map(|reservation| reservation.tokens),
-                    state.batch_tpd_refund_ops.len(),
-                )
-            }
-            None => (None, false, None, 0),
-        };
+        let (parallel_slot, released, batch_tokens, tpd_ops) = recorded_stash(&self.slot);
         let gauge_reads: Vec<Value> = lock(&self.gauges.reads).clone();
         let gauge_writes: Vec<Value> = lock(&self.gauges.writes).clone();
         let increments: Vec<Value> = lock(&self.usage.increments)
