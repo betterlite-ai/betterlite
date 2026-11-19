@@ -1,6 +1,6 @@
 use std::io;
+use std::iter;
 use std::sync::{Arc, PoisonError};
-use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -98,8 +98,7 @@ impl Scenario {
         }
         let clock = Clock::new();
         if let Some(first) = input.steps.first() {
-            *clock.seconds.lock().unwrap_or_else(PoisonError::into_inner) =
-                Duration::from_millis(first.now_millis).as_secs_f64();
+            clock.set(first.now_millis);
         }
         let clock_source: Arc<dyn Fn() -> f64 + Send + Sync> = {
             let seconds = Arc::clone(&clock.seconds);
@@ -123,7 +122,9 @@ impl Scenario {
             clock,
             tiers,
             store: ScenarioStore::new(pairs, input.counters.clone()),
-            requests: (0..count).map(|_| RequestReads::default()).collect(),
+            requests: iter::repeat_with(RequestReads::<RouteValue>::default)
+                .take(count)
+                .collect(),
         })
     }
 
@@ -132,12 +133,7 @@ impl Scenario {
         step: &Step,
         random: &mut InjectedRandom<'_>,
     ) -> Result<StepOutput, ScenarioError> {
-        *self
-            .clock
-            .seconds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) =
-            Duration::from_millis(step.now_millis).as_secs_f64();
+        self.clock.set(step.now_millis);
         match step.kind {
             StepKind::Arm => {
                 let armed = self.arm(step)?;

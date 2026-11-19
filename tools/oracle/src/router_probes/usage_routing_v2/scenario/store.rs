@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_router::routing_read_batch::local::{
     DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_MAX_LAST_READS, DEFAULT_MAX_LOCAL_ENTRIES,
@@ -27,6 +28,11 @@ impl Clock {
             seconds: Arc::new(Mutex::new(0.0)),
         }
     }
+
+    pub(super) fn set(&self, millis: u64) {
+        *self.seconds.lock().unwrap_or_else(PoisonError::into_inner) =
+            Duration::from_millis(millis).as_secs_f64();
+    }
 }
 
 pub(super) struct StoreState {
@@ -42,7 +48,7 @@ pub(super) struct ScenarioStore {
 }
 
 impl ScenarioStore {
-    pub(super) fn new(
+    pub(super) const fn new(
         pairs: Vec<(String, String)>,
         counters: BTreeMap<String, CounterInput>,
     ) -> Self {
@@ -74,17 +80,13 @@ impl ScenarioStore {
     // the counter the deployment of this exact <id>:<model>:<tpm|rpm>:<HH-MM> key holds
     fn find(&self, raw: &str) -> Option<i64> {
         let (_, minute) = raw.rsplit_once(':')?;
-        for (id, model) in &self.pairs {
-            let Some(counter) = self.counters.get(id) else {
-                continue;
-            };
-            for (field, value) in [("tpm", counter.tpm), ("rpm", counter.rpm)] {
-                if format!("{id}:{model}:{field}:{minute}") == raw {
-                    return value;
-                }
-            }
-        }
-        None
+        self.pairs.iter().find_map(|(id, model)| {
+            let counter = self.counters.get(id)?;
+            [("tpm", counter.tpm), ("rpm", counter.rpm)]
+                .into_iter()
+                .find(|(field, _)| format!("{id}:{model}:{field}:{minute}") == raw)
+                .and_then(|(_, value)| value)
+        })
     }
 }
 
