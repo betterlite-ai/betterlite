@@ -20,26 +20,13 @@ DEFAULT_URL: Final = "https://res.services.ai.azure.com/providers/mistral/azure/
 START: Final = datetime(2026, 1, 1, tzinfo=UTC)
 EMPTY: Final[dict[str, JsonValue]] = {}
 AZURE_VARS: Final = (
-    "AZURE_AI_API_BASE",
-    "AZURE_AI_API_KEY",
-    "AZURE_AD_TOKEN",
-    "AZURE_TENANT_ID",
-    "AZURE_CLIENT_ID",
-    "AZURE_CLIENT_SECRET",
-    "AZURE_USERNAME",
-    "AZURE_PASSWORD",
-    "AZURE_SCOPE",
+    "AZURE_AI_API_BASE", "AZURE_AI_API_KEY", "AZURE_AD_TOKEN", "AZURE_TENANT_ID", "AZURE_CLIENT_ID",
+    "AZURE_CLIENT_SECRET", "AZURE_USERNAME", "AZURE_PASSWORD", "AZURE_SCOPE",
 )
 KINDS: Final[dict[str, str]] = {
-    "NoneType": "none",
-    "dict": "standard",
-    "OCRResponse": "ocr",
-    "RerankResponse": "relay",
-    "ImageResponse": "relay",
-    "EmbeddingResponse": "relay",
-    "ResponseCompletedEvent": "terminal",
-    "ResponseIncompleteEvent": "terminal",
-    "ResponseFailedEvent": "terminal",
+    "NoneType": "none", "dict": "standard", "OCRResponse": "ocr", "RerankResponse": "relay",
+    "ImageResponse": "relay", "EmbeddingResponse": "relay", "ResponseCompletedEvent": "terminal",
+    "ResponseIncompleteEvent": "terminal", "ResponseFailedEvent": "terminal",
 }
 
 JSON: Final = TypeAdapter(JsonValue)
