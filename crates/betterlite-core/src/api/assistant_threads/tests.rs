@@ -797,6 +797,26 @@ async fn an_unsupported_provider_is_a_bad_request() {
 }
 
 #[tokio::test]
+async fn an_unsupported_provider_on_get_names_the_get_facade() {
+    let harness = Harness::new();
+    let mut kwargs = BTreeMap::new();
+    let error = harness
+        .threads()
+        .get_thread(GetThreadCall {
+            custom_llm_provider: String::from("anthropic"),
+            thread_id: String::from("thread_a"),
+            client: None,
+            kwargs: &mut kwargs,
+        })
+        .await
+        .expect_err("anthropic is unsupported");
+    assert_eq!(
+        error.to_string(),
+        "LiteLLM doesn't support anthropic for 'get_thread'. Only 'openai' is supported."
+    );
+}
+
+#[tokio::test]
 async fn a_provider_404_keeps_the_sdk_fields_synchronously() {
     let harness = Harness::new();
     harness.recorder.queue(404, TYPED_404);
