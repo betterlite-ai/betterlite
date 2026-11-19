@@ -26,13 +26,18 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
     response
 }
 
-// An httpx.HTTPStatusError carries the masked response: its text and its headers less the two content headers
+// An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
         ToOwned::to_owned,
     );
-    let headers = error_headers(&reply.headers);
+    let mut headers = error_headers(&reply.headers);
+    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
+    if !reply.body.is_empty() {
+        let length = reply.body.len().to_string();
+        headers.insert("content-length".to_owned(), Json::Text(length));
+    }
     FailureFacts {
         response_status: Some(i64::from(reply.status)),
         status: Some(Json::Number(Number::from(reply.status))),

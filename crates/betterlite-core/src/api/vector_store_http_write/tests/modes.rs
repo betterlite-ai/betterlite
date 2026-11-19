@@ -167,7 +167,11 @@ async fn logging_order(bench: &mut Bench) {
     .await
     .expect("the update succeeds");
     assert_eq!(bench.events.recorded(), ["log", "send"]);
-    assert!(bench.fixture.logged("complete_input_dict").is_some());
+    assert_eq!(
+        bench.fixture.logged("complete_input_dict"),
+        Some(&json("{}"))
+    );
+    assert_eq!(bench.fixture.input(), Some(&json(r#""""#)));
     let delete = WriteCall::Delete(DeleteCall {
         target: target("vs_a", &write_params, None, None),
         extra_body: None,
@@ -183,4 +187,5 @@ async fn logging_order(bench: &mut Bench) {
     .expect("the delete succeeds");
     assert_eq!(bench.events.recorded(), ["log", "send", "log", "send"]);
     assert!(bench.fixture.logged("complete_input_dict").is_none());
+    assert_eq!(bench.fixture.input(), Some(&json(r#""""#)));
 }

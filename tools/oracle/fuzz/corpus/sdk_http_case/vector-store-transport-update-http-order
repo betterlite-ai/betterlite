@@ -8,8 +8,11 @@ call:
     vector_store_id: vs/a
     optional_params:
       name: notes
+      file_ids: [file_a, file_b]
+      expires_after: {anchor: last_active_at, days: 7}
+      chunking_strategy: {type: static, static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}}
       metadata: {keep: "yes", hidden_params: secret}
-    extra_body: {metadata: {count: 2}, name: replacement}
+    extra_body: {metadata: {count: 2}, name: replacement, client_tag: ticket-7}
 upstream:
   - status: 200
     headers: {content-type: application/json}

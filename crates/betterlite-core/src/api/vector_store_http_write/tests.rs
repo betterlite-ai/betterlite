@@ -19,6 +19,7 @@ use serde_json::Number;
 use self::support::{
     Events, Fixture, IMPATIENT, ProxiedSource, RecordingConfig, Reply, Source, Wire, body_bytes,
     body_json, caller_headers, extra_body, openai_config, openai_settings, params, update_params,
+    write_deps,
 };
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
@@ -83,7 +84,7 @@ async fn update_http_order(#[case] mode: ClientKind) {
     let params = params("http://mock.test/v1");
     let mut fixture = Fixture::new("vector_store_update");
     let optional = update_params(
-        r#"{"name":"notes","metadata":{"keep":"yes","hidden_params":"secret","count":2}}"#,
+        r#"{"name":"notes","file_ids":["file_a","file_b"],"expires_after":{"anchor":"last_active_at","days":7},"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"metadata":{"keep":"yes","hidden_params":"secret","count":2}}"#,
     );
     {
         let call = WriteCall::Update(UpdateCall {
@@ -116,7 +117,8 @@ async fn update_http_order(#[case] mode: ClientKind) {
             .await
             .expect("the capped update succeeds");
     };
-    let extra = extra_body(r#"{"metadata":{"count":2},"name":"replacement"}"#);
+    let extra =
+        extra_body(r#"{"metadata":{"count":2},"name":"replacement","client_tag":"ticket-7"}"#);
     {
         let call = WriteCall::Update(UpdateCall {
             target: target("vs/a", &params, None, None),
@@ -133,7 +135,9 @@ async fn update_http_order(#[case] mode: ClientKind) {
     assert_eq!(requests[0].url.path(), "/v1/vector_stores/vs%2Fa");
     assert_eq!(
         body_json(&requests[0]),
-        json(r#"{"name":"notes","metadata":{"keep":"yes"}}"#)
+        json(
+            r#"{"name":"notes","file_ids":["file_a","file_b"],"expires_after":{"anchor":"last_active_at","days":7},"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"metadata":{"keep":"yes"}}"#
+        )
     );
     let Json::Object(capped_body) = body_json(&requests[1]) else {
         panic!("the body is an object");
@@ -146,7 +150,9 @@ async fn update_http_order(#[case] mode: ClientKind) {
     assert_eq!(metadata.keys().last().map(String::as_str), Some("k16"));
     assert_eq!(
         body_json(&requests[2]),
-        json(r#"{"name":"replacement","metadata":{"count":2}}"#)
+        json(
+            r#"{"name":"replacement","file_ids":["file_a","file_b"],"expires_after":{"anchor":"last_active_at","days":7},"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"metadata":{"count":2},"client_tag":"ticket-7"}"#
+        )
     );
 }
 
@@ -266,6 +272,7 @@ async fn delete_http_ignores_body(#[case] case: DeleteCase) {
 #[derive(Debug, Clone, Copy)]
 enum FailureCase {
     Http400,
+    Http400EmptyBody,
     Http429,
     ClosedTransport,
     NoStatus,
@@ -286,6 +293,7 @@ enum FailureCase {
 
 #[rstest]
 #[case::http_400(FailureCase::Http400)]
+#[case::http_400_empty_body(FailureCase::Http400EmptyBody)]
 #[case::http_429(FailureCase::Http429)]
 #[case::closed_transport(FailureCase::ClosedTransport)]
 #[case::no_status(FailureCase::NoStatus)]
@@ -347,6 +355,7 @@ async fn transport_failure(#[case] case: FailureCase) {
             assert_eq!(
                 error.headers,
                 HeaderMap::from([
+                    ("content-length".to_owned(), Json::Text("9".to_owned()),),
                     (
                         "content-type".to_owned(),
                         Json::Text("text/plain".to_owned()),
@@ -719,6 +728,41 @@ async fn transport_failure(#[case] case: FailureCase) {
             assert_eq!(error.message, r#"{"id":"vs_a"}"#);
             assert_eq!(wire.requests().len(), 1);
         }
+        FailureCase::Http400EmptyBody => {
+            let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
+            let events = Events::new();
+            let wire = Wire::replying(Reply::json(400, ""), &events);
+            let source = Source::new(wire.clone());
+            let deps = WriteDeps {
+                config: &config,
+                source: &source,
+                supplied: None,
+            };
+            let params = params("http://mock.test/v1");
+            let optional = UpdateParams::default();
+            let mut fixture = Fixture::new("vector_store_update");
+            let call = WriteCall::Update(UpdateCall {
+                target: target("vs_a", &params, None, None),
+                optional_params: &optional,
+                extra_body: None,
+            });
+            let result = run(
+                &mut fixture,
+                &deps,
+                ClientKind::Asynchronous,
+                &call,
+                &events,
+            )
+            .await;
+            let Err(WriteError::Provider(error)) = result else {
+                panic!("a 400 is a provider error");
+            };
+            assert_eq!(error.status_code, 400);
+            assert!(!error.status_code_is_synthesized);
+            assert_eq!(error.message, "");
+            assert!(error.headers.is_empty());
+            assert_eq!(wire.requests().len(), 1);
+        }
         FailureCase::MalformedReply => {
             let settings = openai_settings();
             let config = openai_config(&settings, "sk-provider");
@@ -899,4 +943,71 @@ async fn execution_mode(#[case] case: modes::ModeCase) {
 #[tokio::test]
 async fn write_argument_defaults(#[case] case: defaults::DefaultsCase) {
     defaults::write_argument_defaults_case(case).await;
+}
+
+// LiteLLM builds the URL string, logs the pre-call and only the send rejects it; betterlite fails before logging
+#[tokio::test]
+async fn invalid_api_base_fails_before_the_pre_call() {
+    let config = RecordingConfig::new("not a url");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, CREATED), &events);
+    let source = Source::new(wire.clone());
+    let deps = write_deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let optional = UpdateParams::default();
+    let mut fixture = Fixture::new("vector_store_update");
+    let call = WriteCall::Update(UpdateCall {
+        target: target("vs_a", &params, None, None),
+        optional_params: &optional,
+        extra_body: None,
+    });
+    let Err(WriteError::RequestUrl { url, .. }) =
+        run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await
+    else {
+        panic!("an api_base that is not a URL fails the request URL");
+    };
+    assert_eq!(url, "not a url/vs_a");
+    assert!(fixture.input().is_none());
+    assert!(events.recorded().is_empty());
+    assert!(wire.requests().is_empty());
+}
+
+// LiteLLM hands the header strings to httpx inside the send; betterlite rejects them after the pre-call and sends nothing
+#[tokio::test]
+async fn invalid_extra_headers_fail_after_the_pre_call() {
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, CREATED), &events);
+    let source = Source::new(wire.clone());
+    let deps = write_deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let optional = UpdateParams::default();
+    let mut fixture = Fixture::new("vector_store_update");
+    let bad_name = caller_headers(&[("bad name", "ok")]);
+    let call = WriteCall::Update(UpdateCall {
+        target: target("vs_a", &params, Some(&bad_name), None),
+        optional_params: &optional,
+        extra_body: None,
+    });
+    let Err(WriteError::HeaderName { name, .. }) =
+        run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await
+    else {
+        panic!("a header name HTTP cannot carry fails the header name");
+    };
+    assert_eq!(name, "bad name");
+    let bad_value = caller_headers(&[("X-Trace", "bad\nvalue")]);
+    let call = WriteCall::Update(UpdateCall {
+        target: target("vs_a", &params, Some(&bad_value), None),
+        optional_params: &optional,
+        extra_body: None,
+    });
+    let Err(WriteError::HeaderValue { name, .. }) =
+        run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await
+    else {
+        panic!("a header value HTTP cannot carry fails the header value");
+    };
+    assert_eq!(name, "X-Trace");
+    assert_eq!(events.recorded(), ["log", "log"]);
+    assert!(fixture.input().is_some());
+    assert!(wire.requests().is_empty());
 }
