@@ -7,7 +7,7 @@ use crate::finops::mavvrik::support::{EngineCall, Recorder, build, environment};
 
 #[tokio::test]
 async fn the_run_reads_the_marker_from_the_destination_before_any_window() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = MetricsMarker::Epoch(1_709_942_400);
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)
@@ -31,7 +31,7 @@ async fn the_run_reads_the_marker_from_the_destination_before_any_window() {
 
 #[tokio::test]
 async fn a_failing_marker_read_stops_the_run_before_any_window() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.fail = true;
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)

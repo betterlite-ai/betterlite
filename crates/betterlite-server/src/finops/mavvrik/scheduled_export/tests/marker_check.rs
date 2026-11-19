@@ -18,7 +18,7 @@ async fn the_marker_decides_whether_missed_dates_are_exported(
     #[case] marker: MetricsMarker,
     #[case] windows: usize,
 ) {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = marker;
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)
@@ -33,7 +33,7 @@ async fn the_marker_decides_whether_missed_dates_are_exported(
 #[case::blank_text(MetricsMarker::Text(String::from("  ")))]
 #[tokio::test]
 async fn an_empty_marker_always_catches_the_whole_window_up(#[case] marker: MetricsMarker) {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = marker;
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)

@@ -18,7 +18,7 @@ async fn a_marker_before_the_seven_day_window_warns_where_the_export_starts(
     #[case] warns: bool,
 ) {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = MetricsMarker::Text(date.to_owned());
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)

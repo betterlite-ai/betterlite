@@ -24,7 +24,7 @@ async fn a_day_without_rows_is_still_delivered_empty() {
         .export_window(&window(), None)
         .await
         .expect("the fake export succeeds");
-    assert_eq!(recorder.delivered(), vec![Vec::new()]);
+    assert_eq!(recorder.delivered(), vec![Vec::<u8>::new()]);
     assert_eq!(
         recorder.windows(),
         vec![(day("2024-03-09"), day("2024-03-10"))]
@@ -42,7 +42,7 @@ async fn a_day_without_rows_is_still_delivered_empty() {
 #[tokio::test]
 async fn rows_that_normalize_to_nothing_are_delivered_empty() {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.rows = usage_rows(2);
     recorder.payload = Some(Vec::new());
     let logger = build(&environment(&[]), &recorder, None);
@@ -50,7 +50,7 @@ async fn rows_that_normalize_to_nothing_are_delivered_empty() {
         .export_window(&window(), None)
         .await
         .expect("the fake export succeeds");
-    assert_eq!(recorder.delivered(), vec![Vec::new()]);
+    assert_eq!(recorder.delivered(), vec![Vec::<u8>::new()]);
     assert!(
         recorder
             .calls()
@@ -62,7 +62,7 @@ async fn rows_that_normalize_to_nothing_are_delivered_empty() {
 
 #[tokio::test]
 async fn a_non_empty_export_reaches_the_destination_with_its_window_and_filename() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.rows = usage_rows(2);
     let logger = build(&environment(&[]), &recorder, None);
     logger
@@ -73,15 +73,18 @@ async fn a_non_empty_export_reaches_the_destination_with_its_window_and_filename
     let delivered = recorder
         .calls()
         .into_iter()
-        .find_map(|call| match call {
-            EngineCall::Deliver {
+        .find_map(|call| {
+            let EngineCall::Deliver {
                 start,
                 end,
                 frequency,
                 filename,
                 ..
-            } => Some((start, end, frequency, filename)),
-            _ => None,
+            } = call
+            else {
+                return None;
+            };
+            Some((start, end, frequency, filename))
         })
         .expect("the export delivers once");
     assert_eq!(

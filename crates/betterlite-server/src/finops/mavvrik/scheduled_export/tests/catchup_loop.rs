@@ -11,7 +11,7 @@ use crate::finops::mavvrik::support::{
 #[tokio::test]
 async fn every_missed_date_gets_its_own_window_ending_at_its_midnight() {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = MetricsMarker::Text(String::from("2024-03-05"));
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)
@@ -39,7 +39,7 @@ async fn every_missed_date_gets_its_own_window_ending_at_its_midnight() {
 
 #[tokio::test]
 async fn a_catch_up_window_never_ends_after_now() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = MetricsMarker::Text(String::from("2024-03-05T12:00:00Z"));
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)

@@ -11,7 +11,7 @@ use crate::finops::mavvrik::support::{PodLockCall, Recorder, build, environment,
 
 #[tokio::test]
 async fn the_lock_is_released_when_the_export_fails() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.fail = true;
     let (lock, port) = pod_lock(true, Some(true));
     let logger = build(&environment(&[]), &recorder, Some(port));
@@ -29,7 +29,7 @@ async fn the_lock_is_released_when_the_export_fails() {
 
 #[tokio::test]
 async fn a_cancelled_export_still_releases_the_lock() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     let started = Arc::new(Notify::new());
     recorder.gate = Some(Arc::clone(&started));
     let (lock, port) = pod_lock(true, Some(true));

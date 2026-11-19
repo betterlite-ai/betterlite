@@ -19,7 +19,7 @@ fn window() -> FocusTimeWindow {
 #[tokio::test]
 async fn reaching_the_configured_cap_warns_and_names_the_cap_and_the_window() {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.rows = usage_rows(3);
     let logger = build(
         &environment(&[("MAVVRIK_FOCUS_MAX_ROWS", "3")]),
@@ -32,14 +32,14 @@ async fn reaching_the_configured_cap_warns_and_names_the_cap_and_the_window() {
         .expect("the fake export succeeds");
     assert_eq!(recorder.limits(), vec![3]);
     assert!(logs.has_at(Level::WARN, "row cap reached (3 rows)"));
-    assert!(logs.has_at(Level::WARN, "2024-03-09→2024-03-10"));
+    assert!(logs.has_at(Level::WARN, "2024-03-09\u{2192}2024-03-10"));
     assert!(logs.has_at(Level::WARN, "Increase MAVVRIK_FOCUS_MAX_ROWS"));
 }
 
 #[tokio::test]
 async fn one_row_below_the_configured_cap_is_not_a_warning() {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.rows = usage_rows(2);
     let logger = build(
         &environment(&[("MAVVRIK_FOCUS_MAX_ROWS", "3")]),
@@ -65,7 +65,7 @@ async fn an_explicit_limit_replaces_the_configured_cap(
     #[case] warns: bool,
 ) {
     let (logs, _guard) = capture_logs();
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.rows = usage_rows(rows);
     let logger = build(
         &environment(&[("MAVVRIK_FOCUS_MAX_ROWS", "3")]),

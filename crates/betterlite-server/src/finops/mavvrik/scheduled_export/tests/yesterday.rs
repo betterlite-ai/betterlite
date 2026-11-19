@@ -7,7 +7,7 @@ use crate::finops::mavvrik::support::{FIXED_NOW, Recorder, at, build, day, envir
 
 #[tokio::test]
 async fn yesterday_is_the_last_window_and_ends_at_now() {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = MetricsMarker::Text(String::from("2024-03-07"));
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)

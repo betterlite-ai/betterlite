@@ -18,7 +18,7 @@ async fn the_first_exported_date_is_the_day_after_the_marker_or_the_window_start
     #[case] marker: MetricsMarker,
     #[case] first: &str,
 ) {
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder::new();
     recorder.marker = marker;
     let logger = build(&environment(&[]), &recorder, None);
     run_scheduled_export(&logger)
