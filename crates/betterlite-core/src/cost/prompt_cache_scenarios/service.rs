@@ -55,3 +55,5 @@ impl MinimumCacheTokens for PromptCacheMinimum<'_> {
         i64::try_from(minimum).unwrap_or(i64::MAX)
     }
 }
+
+mod tests;

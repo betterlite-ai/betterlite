@@ -165,6 +165,35 @@ async fn a_fresh_exact_observation_is_warm() {
 }
 
 #[tokio::test]
+async fn an_exact_observation_equal_to_the_total_is_a_full_cache_hit() {
+    let fixture = Fixture::new();
+    let fingerprint = prefix(BODY).fingerprint;
+    fixture.seed(&fingerprint, LARGE_TOTAL, FRESH_UNTIL);
+    let arm = fixture
+        .predict(BODY, &counts(LARGE_TOTAL, LARGE_TOTAL))
+        .await;
+    assert_eq!(arm.cache_state, CacheState::Warm);
+    let estimate = arm.estimate.expect("an estimate");
+    assert_eq!(estimate.tokens.cache_read_input_tokens, LARGE_TOTAL);
+    assert_eq!(estimate.tokens.uncached_input_tokens, 0);
+    assert_eq!(estimate.tokens.total_tokens(), LARGE_TOTAL);
+}
+
+#[tokio::test]
+async fn a_prefix_equal_to_the_minimum_is_not_disabled() {
+    let mut fixture = Fixture::new();
+    fixture.minimum = FakeMinimum {
+        tokens: SMALL_PREFIX,
+    };
+    let arm = fixture
+        .predict(BODY, &counts(LARGE_TOTAL, SMALL_PREFIX))
+        .await;
+    assert_eq!(arm.cache_state, CacheState::Unknown);
+    assert_eq!(arm.reason.as_deref(), Some("no_compatible_observation"));
+    assert!(arm.estimate.is_some());
+}
+
+#[tokio::test]
 async fn a_fresh_lookback_observation_is_partial() {
     let fixture = Fixture::new();
     let prefix = prefix(MULTI_BODY);
