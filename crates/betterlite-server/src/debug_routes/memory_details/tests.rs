@@ -23,6 +23,17 @@ fn reads_explicit_values() {
 }
 
 #[test]
+fn reads_the_last_repeated_value() {
+    let uri = "/debug/memory/details?top_n=1&top_n=3"
+        .parse::<Uri>()
+        .expect("a URI");
+    assert_eq!(
+        super::parse(&uri).expect("a repeated value parses"),
+        (3_i64, true)
+    );
+}
+
+#[test]
 fn reads_an_explicit_true_process_flag() {
     let uri = "/debug/memory/details?include_process_info=yes"
         .parse::<Uri>()
