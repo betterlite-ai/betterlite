@@ -1,0 +1,40 @@
+kind: helper
+name: messages-chat-transform-required-request-fields
+call:
+  messages_chat_transform:
+    operation: input_params
+    kwargs:
+      messages:
+      - role: user
+        content: hi
+    custom_llm_provider: null
+calls:
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: ''
+      messages:
+      - role: user
+        content: hi
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages: []
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: convenience
+    kwargs:
+      model: ''
+      messages:
+      - role: user
+        content: hi
+    custom_llm_provider: null
+env: {}
+compare: {ignore: []}
