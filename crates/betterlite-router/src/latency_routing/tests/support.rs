@@ -66,8 +66,9 @@ impl Spec {
         }
     }
 
-    // a deployment whose stored windows and current-minute counters the case names
+    // a deployment whose stored windows and counters the case names, under the minute it picks
     pub(super) const fn stored(
+        at: &'static str,
         id: &'static str,
         latency: &'static [f64],
         ttft: &'static [f64],
@@ -76,25 +77,12 @@ impl Spec {
         Self {
             id,
             limits: &[],
-            at: MINUTE,
+            at,
             stored: true,
             latency,
             ttft,
             used,
         }
-    }
-
-    // the same, with its windows recorded under another minute's bucket
-    pub(super) const fn stored_at(
-        at: &'static str,
-        id: &'static str,
-        latency: &'static [f64],
-        ttft: &'static [f64],
-        used: (i64, i64),
-    ) -> Self {
-        let mut spec = Self::stored(id, latency, ttft, used);
-        spec.at = at;
-        spec
     }
 
     fn deployment(&self) -> DeploymentSpec {
