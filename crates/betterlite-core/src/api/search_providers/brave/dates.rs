@@ -1,4 +1,5 @@
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use num_traits::cast::cast;
 
 mod fuzzy;
 
@@ -133,8 +134,8 @@ fn unix_date(text: &str) -> Option<NaiveDate> {
     } else {
         value
     };
-    // Rust has no checked float-to-integer conversion, and an out-of-range value fails the parse
-    let whole: i64 = format!("{:.0}", seconds.floor()).parse().ok()?;
+    // a float outside i64's range has no whole value, and the cast reports it as None
+    let whole: i64 = cast::<f64, i64>(seconds.floor())?;
     let moment = DateTime::<Utc>::from_timestamp(whole, 0)?;
     let date = moment.date_naive();
     // datetime.fromtimestamp refuses a year outside 1..=9999, and chrono reads it anyway
