@@ -29,4 +29,13 @@ deviations:
       Byte decoding belongs to B517's wire records, which name the mismatched reply with a typed error; the class
       and the failure stay the same, only the message text is betterlite's own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L73-L74
+  - what: >-
+      A batch call whose client builder cannot build an SDK for lack of an api_key, ad token or provider reports
+      the not-initialized ValueError, where LiteLLM's AsyncAzureOpenAI or AzureOpenAI constructor raises
+      OpenAIError("Missing credentials. Please pass one of ...") before the handler's None check is reached.
+    why: >-
+      The Azure client builder owns credential resolution (B531); it reports an SDK it cannot build as None, and
+      the batch handler keeps LiteLLM's not-initialized message for that case. A caller sees a different error
+      class and message for the same missing credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L586-L591
 kept_bugs: []
