@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::credentials::CredentialValues;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::rag::document::ingest::RAGIngestOCROptions;
@@ -134,12 +136,14 @@ impl CredentialLookup for FakeCredentials {
         &self,
         credential_name: &str,
     ) -> Result<CredentialValues, CredentialLookupError> {
-        match &self.values {
-            Some(values) => Ok(values.clone()),
-            None => Err(CredentialLookupError::NotFound {
-                credential_name: credential_name.to_owned(),
-            }),
-        }
+        self.values.as_ref().map_or_else(
+            || {
+                Err(CredentialLookupError::NotFound {
+                    credential_name: credential_name.to_owned(),
+                })
+            },
+            |values| Ok(values.clone()),
+        )
     }
 }
 
@@ -193,9 +197,9 @@ impl Harness {
             options,
             router,
             IngestionPorts {
-                ocr: self.ocr.clone(),
-                uploader: self.fetch.clone(),
-                credentials: self.credentials.clone(),
+                ocr: Arc::clone(&self.ocr),
+                uploader: Arc::clone(&self.fetch),
+                credentials: Arc::clone(&self.credentials),
             },
         )
         .expect("the state builds")
@@ -218,7 +222,7 @@ fn init_generates_a_prefixed_uuid_id() {
     let state = Harness::default().state(IngestionOptions::default());
     let suffix = state.ingest_id.strip_prefix("ingest_").expect("the prefix");
     assert_eq!(suffix.len(), 36);
-    assert!(uuid::Uuid::parse_str(suffix).is_ok());
+    uuid::Uuid::parse_str(suffix).unwrap();
 }
 
 #[test]
@@ -284,13 +288,14 @@ fn init_keeps_a_configured_chunking_strategy() {
 
 #[test]
 fn init_leaves_supports_existing_file_id_false() {
-    assert!(!IngestionState::SUPPORTS_EXISTING_FILE_ID);
+    let supported = IngestionState::SUPPORTS_EXISTING_FILE_ID;
+    assert!(!supported);
 }
 
 #[test]
 fn init_rejects_an_unknown_ingest_option() {
     let parsed = serde_json::from_str::<IngestionOptions>(r#"{"unexpected_option": "docs"}"#);
-    assert!(parsed.is_err());
+    parsed.expect_err("an unknown option is rejected");
 }
 
 #[test]
@@ -474,7 +479,7 @@ fn credential_empty_values_skip_the_merge_and_removal() {
 fn credential_name_must_be_a_string() {
     let parsed = serde_json::from_str(r#"{"vector_store": {"litellm_credential_name": 5}}"#)
         .expect("the options parse");
-    let error = IngestionState::new(
+    let error = match IngestionState::new(
         parsed,
         None,
         IngestionPorts {
@@ -482,9 +487,10 @@ fn credential_name_must_be_a_string() {
             uploader: Arc::new(FakeFetch::default()),
             credentials: Arc::new(FakeCredentials::default()),
         },
-    )
-    .err()
-    .expect("the name is rejected");
+    ) {
+        Ok(_) => panic!("the name is rejected"),
+        Err(error) => error,
+    };
     assert!(matches!(
         error,
         IngestionSetupError::InvalidField {
@@ -558,8 +564,7 @@ async fn upload_precedence_rejects_an_absent_source() {
     let error = state
         .upload(None, None, None)
         .await
-        .err()
-        .expect("the source is required");
+        .expect_err("the source is required");
     assert!(matches!(error, UploadError::MissingSource));
 }
 
@@ -610,8 +615,7 @@ async fn upload_fetch_reports_a_failed_status() {
     let error = state
         .upload(None, Some("https://host/missing.txt"), None)
         .await
-        .err()
-        .expect("the status fails the upload");
+        .expect_err("the status fails the upload");
     assert!(matches!(error, UploadError::HttpStatus { status: 404 }));
 }
 
@@ -641,8 +645,7 @@ async fn upload_fetch_propagates_a_port_error() {
     let error = state
         .upload(None, Some("https://host/file.txt"), None)
         .await
-        .err()
-        .expect("the fetch fails");
+        .expect_err("the fetch fails");
     assert!(matches!(error, UploadError::Fetch(_)));
 }
 
@@ -706,7 +709,7 @@ async fn upload_fetch_refuses_a_body_over_the_download_bound() {
         socket.write_all(headers.as_bytes()).await.unwrap();
     };
     let (result, ()) = tokio::join!(fetch.fetch(&url), serving);
-    let error = result.err().expect("the body is refused");
+    let error = result.expect_err("the body is refused");
     assert!(matches!(error, UrlFetchError::Read(_)));
 }
 
@@ -716,8 +719,7 @@ async fn upload_fetch_refuses_a_blocked_address() {
     let error = fetch
         .fetch("http://127.0.0.1:9/file.txt")
         .await
-        .err()
-        .expect("the address is blocked");
+        .expect_err("the address is blocked");
     assert!(matches!(error, UrlFetchError::Request(_)));
 }
 
@@ -828,7 +830,7 @@ async fn ocr_prefers_the_router_operation() {
     let routed = Arc::new(FakeOcr::returning(vec!["router".to_owned()]));
     let state = harness.routed(
         serde_json::from_str(r#"{"ocr": {}}"#).expect("the options parse"),
-        Some(routed.clone()),
+        Some(Arc::clone(&routed)),
     );
     let text = state
         .ocr(Some(b"x"), Some("text/plain"))
@@ -871,8 +873,7 @@ async fn ocr_propagates_the_operation_error() {
     let error = state
         .ocr(Some(b"x"), Some("text/plain"))
         .await
-        .err()
-        .expect("the OCR fails");
+        .expect_err("the OCR fails");
     assert_eq!(
         error,
         OcrError::Failed {
@@ -1003,8 +1004,7 @@ fn chunk_config_rejects_a_non_positive_size(#[case] size: i64) {
     let state = Harness::default().state(parsed);
     let error = state
         .chunk(Some("text"), None, false)
-        .err()
-        .expect("the size is rejected");
+        .expect_err("the size is rejected");
     assert!(matches!(error, ChunkError::Configuration(_)));
 }
 
@@ -1016,8 +1016,7 @@ fn chunk_config_rejects_a_negative_overlap() {
     let state = Harness::default().state(parsed);
     let error = state
         .chunk(Some("text"), None, false)
-        .err()
-        .expect("the overlap is rejected");
+        .expect_err("the overlap is rejected");
     assert!(matches!(error, ChunkError::Configuration(_)));
 }
 
@@ -1033,8 +1032,7 @@ fn chunk_config_rejects_an_overlap_at_or_above_the_size(#[case] overlap: i64) {
     let state = Harness::default().state(parsed);
     let error = state
         .chunk(Some("text"), None, false)
-        .err()
-        .expect("the overlap is rejected");
+        .expect_err("the overlap is rejected");
     assert!(matches!(error, ChunkError::Configuration(_)));
 }
 
@@ -1072,8 +1070,7 @@ fn chunk_config_wrong_types_are_rejected(#[case] strategy: &str) {
     let state = Harness::default().state(parsed);
     let error = state
         .chunk(Some("text"), None, false)
-        .err()
-        .expect("the types are rejected");
+        .expect_err("the types are rejected");
     assert!(matches!(error, ChunkError::Strategy(_)));
 }
 
@@ -1151,15 +1148,11 @@ async fn store_contract_propagates_the_provider_error() {
             existing_file_id: Some("fail"),
         })
         .await
-        .err()
-        .expect("the store fails");
+        .expect_err("the store fails");
     assert!(matches!(error, StoreFailure::Refused));
 }
 
 fn sample_pdf() -> Vec<u8> {
-    use base64::Engine as _;
     let encoded = "JVBERi0xLjQKJenpCjEgMCBvYmoKPDwgL1R5cGUgL0NhdGFsb2cgL1BhZ2VzIDIgMCBSID4+CmVuZG9iagoyIDAgb2JqCjw8IC9UeXBlIC9QYWdlcyAvS2lkcyBbMyAwIFJdIC9Db3VudCAxID4+CmVuZG9iagozIDAgb2JqCjw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNCAwIFIgPj4gPj4gL01lZGlhQm94IFswIDAgNjEyIDc5Ml0gL0NvbnRlbnRzIDUgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKNSAwIG9iago8PCAvTGVuZ3RoIDQyID4+CnN0cmVhbQpCVCAvRjEgMTIgVGYgMTAwIDcwMCBUZCAoSGVsbG8gUERGKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxMyAwMDAwMCBuIAowMDAwMDAwMDYyIDAwMDAwIG4gCjAwMDAwMDAxMTkgMDAwMDAgbiAKMDAwMDAwMDI0NSAwMDAwMCBuIAowMDAwMDAwMzE1IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNDA2CiUlRU9GCg==";
-    base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .expect("the fixture decodes")
+    BASE64.decode(encoded).expect("the fixture decodes")
 }

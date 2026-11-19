@@ -28,6 +28,10 @@ pub struct IngestionPorts {
     pub credentials: Arc<dyn credentials::CredentialLookup>,
 }
 
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "the ingest id and the resolved configs are read by callers while the router, OCR operation and URL fetcher stay internal"
+)]
 pub struct IngestionState {
     pub ingest_id: String,
     pub ingest_name: Option<String>,
@@ -157,15 +161,15 @@ impl IngestionState {
         file_content: Option<&[u8]>,
         ocr_was_used: bool,
     ) -> Result<Vec<String>, ChunkError> {
-        let text_to_chunk = match text {
+        let source = match text {
             Some(value) => Some(value.to_owned()),
             None if ocr_was_used => None,
             None => file_content.and_then(chunk::decode_file_content),
         };
-        let Some(text_to_chunk) = text_to_chunk.filter(|value| !value.is_empty()) else {
+        let Some(resolved_text) = source.filter(|value| !value.is_empty()) else {
             return Ok(Vec::new());
         };
         let plan = chunk::ChunkPlan::from_strategy(&self.chunking_strategy)?;
-        chunk::split(&text_to_chunk, plan)
+        chunk::split(&resolved_text, plan)
     }
 }
