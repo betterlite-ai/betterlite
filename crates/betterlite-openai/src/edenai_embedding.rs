@@ -38,7 +38,7 @@ impl EdenAiEmbeddingError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
-            Self::MissingKey(error) => error.status_code(),
+            Self::MissingKey(error) => error.status_code,
             Self::Encode { .. } | Self::Reply { .. } => 500,
         }
     }

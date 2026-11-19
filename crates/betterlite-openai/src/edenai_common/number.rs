@@ -1,8 +1,7 @@
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rust_decimal::Decimal;
 
-// Python's float grammar minus the spellings Decimal cannot hold: an optional sign, digits with an optional
-// fraction, and an optional exponent; anything else is no cost
+// Python's float grammar minus the spellings Decimal cannot hold; anything else is no cost
 pub(super) fn cost_decimal(text: &str) -> Option<Decimal> {
     let trimmed = text.trim();
     let (sign, rest) = match trimmed.strip_prefix('-') {

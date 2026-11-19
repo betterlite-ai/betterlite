@@ -71,8 +71,11 @@ pub(super) fn chunk_value(chunk: &Value) -> Result<Value, Box<HelperError>> {
 }
 
 pub(super) fn embedding_reply_value(body: &str) -> Result<Value, Box<HelperError>> {
-    let reply = embedding_transform_response(body.as_bytes()).or_value_error()?;
-    Ok(json!({"cost": hidden_cost(&reply.hidden_params)}))
+    Ok(json!({"cost": hidden_cost(
+        &embedding_transform_response(body.as_bytes())
+            .or_value_error()?
+            .hidden_params
+    )}))
 }
 
 pub(super) fn responses_reply_value(body: &str) -> Result<Value, Box<HelperError>> {

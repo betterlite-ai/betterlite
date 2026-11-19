@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::FromStr as _;
 
 use betterlite_anthropic::api::messages_errors::wire::ResponseRecord;
 use betterlite_config::loader::EnvironmentLookup;
@@ -9,13 +10,12 @@ use betterlite_models::json_provider_registry::{
     BaseClass, Constraints, ProviderConfig, ProviderDescriptor,
 };
 use betterlite_openai::edenai_common::{
-    EDENAI_API_BASE, EDENAI_COST_HEADER, EdenAiEnv, MissingApiKey, cost_number, cost_value,
-    require_api_key,
+    EDENAI_API_BASE, EDENAI_COST_HEADER, EdenAiEnv, MissingApiKey, cost_value, require_api_key,
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use thiserror::Error;
 
 use crate::api::anthropic_beta_filter::Headers;
@@ -66,7 +66,7 @@ impl EdenAiMessagesError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::MissingKey(error) => Some(error.status_code()),
+            Self::MissingKey(error) => Some(error.status_code),
             Self::Policy(
                 JsonMessagesPolicyError::BaseRequired | JsonMessagesPolicyError::Beta(_),
             ) => None,
@@ -129,7 +129,7 @@ pub struct ReplyInput<'request> {
 pub fn transform_response(input: ReplyInput<'_>) -> Result<ResponseRecord, EdenAiMessagesError> {
     let record = decode_messages_response(input.body, input.status, input.limits)?;
     if let Some(cost) = reply_cost(&record)
-        && let Some(number) = cost_number(cost)
+        && let Some(number) = Number::from_str(&cost.normalize().to_string()).ok()
     {
         input
             .state

@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::str::FromStr as _;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -7,8 +8,7 @@ use betterlite_models::call_helpers::headers::{HeaderSource, process_response_he
 use betterlite_models::decisions::{HiddenParams, Json as HiddenJson};
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
-use secrecy::SecretString;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -21,8 +21,8 @@ use crate::compatible_wire::{
     CompatibleWireError, LogInput, ReplyOptions, transform_response as openai_transform_response,
 };
 use crate::edenai_common::{
-    EdenAiEnv, EdenAiError, PROVIDER, catalog_reply_error, cost_number, parse_model_catalog,
-    reported_cost, reported_cost_from_bytes, resolve_api_base, resolve_api_key, set_response_cost,
+    EdenAiEnv, EdenAiError, PROVIDER, catalog_reply_error, parse_model_catalog, reported_cost,
+    reported_cost_from_bytes, resolve_api_base, set_response_cost,
 };
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
@@ -92,18 +92,6 @@ where
         }
     }
     params
-}
-
-// LiteLLM's static get_api_key: the explicit key, then EDENAI_API_KEY
-#[must_use]
-pub fn get_api_key(api_key: Option<&SecretString>, env: &EdenAiEnv) -> Option<SecretString> {
-    resolve_api_key(api_key, env)
-}
-
-// LiteLLM's static get_api_base: the explicit base, then EDENAI_API_BASE, then the default
-#[must_use]
-pub fn get_api_base(api_base: Option<&str>, env: &EdenAiEnv) -> String {
-    resolve_api_base(api_base, env)
 }
 
 // the OpenAI request with include_usage forced into stream_options, and only on a stream
@@ -193,7 +181,7 @@ pub fn chunk_parser(
     let mut parsed = stream::chunk_parser(chunk, identifier, clock)?;
     let cost = reported_cost(chunk);
     if let (Some(cost), Some(Value::Object(usage))) = (cost, parsed.usage.as_mut())
-        && let Some(number) = cost_number(cost)
+        && let Some(number) = Number::from_str(&cost.normalize().to_string()).ok()
     {
         usage.insert(String::from("cost"), Value::Number(number));
     }
@@ -225,6 +213,7 @@ pub fn get_models(reply: &CatalogReply<'_>) -> Result<Vec<String>, EdenAiError> 
 
 // LiteLLM formats the unmodified resolved base with "/models"; the GET sends no Authorization header
 #[must_use]
+// ast-grep-ignore: no-one-line-functions - the task names the URL get_models builds and the caller sends the GET
 pub fn models_url(api_base: Option<&str>, env: &EdenAiEnv) -> String {
     format!("{}/models", resolve_api_base(api_base, env))
 }

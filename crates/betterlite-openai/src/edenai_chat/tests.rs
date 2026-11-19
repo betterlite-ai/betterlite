@@ -25,14 +25,13 @@ use uuid::Uuid;
 
 use super::{
     CatalogReply, ChatReply, EdenAiChatError, ReasoningLookup, ReplyRequest, TransformInput,
-    chunk_parser, get_api_base, get_api_key, get_models, models_url, supported_params,
-    transform_request, transform_response,
+    chunk_parser, get_models, models_url, supported_params, transform_request, transform_response,
 };
 use crate::chat::{ChatMessage, MessageContent, Role};
 use crate::chat_choices::stream::StreamError;
 use crate::chat_content::{Mode, RefuseDownloads};
 use crate::compatible_wire::{LogInput, ReplyOptions};
-use crate::edenai_common::{EDENAI_API_BASE, EdenAiEnv, RESPONSE_COST_HEADER};
+use crate::edenai_common::{EdenAiEnv, RESPONSE_COST_HEADER};
 use crate::openai_base_config::{CatalogCapabilities, Headers};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -274,35 +273,6 @@ fn environment(api_key: Option<&str>, api_base: Option<&str>) -> EdenAiEnv {
         api_base: api_base.map(str::to_owned),
         global_api_key: None,
     }
-}
-
-#[test]
-fn get_api_key_reads_the_explicit_key_then_the_environment() {
-    let environment = environment(Some("environment"), None);
-    assert_eq!(
-        get_api_key(Some(&key("explicit")), &environment),
-        Some(key("explicit"))
-    );
-    assert_eq!(get_api_key(None, &environment), Some(key("environment")));
-    assert_eq!(get_api_key(None, &environment(None, None)), None);
-}
-
-#[rstest]
-#[case::default_base(None, None, EDENAI_API_BASE)]
-#[case::explicit_base(Some("https://proxy.example/v3"), None, "https://proxy.example/v3")]
-#[case::explicit_wins(
-    Some("https://proxy.example/v3"),
-    Some("https://gateway.example/v3"),
-    "https://proxy.example/v3"
-)]
-#[case::environment_base(None, Some("https://gateway.example/v3"), "https://gateway.example/v3")]
-fn get_api_base_resolves_the_explicit_then_the_environment_then_the_default(
-    #[case] api_base: Option<&str>,
-    #[case] environment_base: Option<&str>,
-    #[case] expected: &str,
-) {
-    let environment = environment(None, environment_base);
-    assert_eq!(get_api_base(api_base, &environment), expected);
 }
 
 fn log_input() -> LogInput {

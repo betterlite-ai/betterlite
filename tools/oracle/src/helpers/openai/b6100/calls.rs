@@ -20,13 +20,13 @@ use betterlite_openai::edenai_responses::{
 };
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::Object;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::input::{Call, CatalogCase, ChatParams, ChatRequest, EmbeddingPlan};
-use super::ops::{MODEL, env_with, key};
+use super::ops::{MODEL, env_with};
 
 struct FixedReasoning(bool);
 
@@ -40,10 +40,10 @@ impl ReasoningLookup for FixedReasoning {
 
 pub(super) fn credentials_value(case: &Call) -> Result<Value, Box<HelperError>> {
     let env = env_with(&case.environment, case.global_api_key.as_deref());
-    let explicit = case.api_key.as_deref().map(key);
+    let explicit = case.api_key.clone().map(SecretString::from);
     let required = match require_api_key(explicit.as_ref(), MODEL, &env) {
         Ok(found) => json!({"key": found.expose_secret(), "status": null}),
-        Err(error) => json!({"key": null, "status": error.status_code()}),
+        Err(error) => json!({"key": null, "status": error.status_code}),
     };
     Ok(json!({
         "api_base": resolve_api_base(case.api_base.as_deref(), &env),
@@ -96,7 +96,7 @@ pub(super) fn catalog_value(case: &CatalogCase) -> Result<Value, Box<HelperError
 
 pub(super) fn embedding_plan_value(case: &EmbeddingPlan) -> Result<Value, Box<HelperError>> {
     let env = env_with(&case.environment, case.global_api_key.as_deref());
-    let explicit = case.api_key.as_deref().map(key);
+    let explicit = case.api_key.clone().map(SecretString::from);
     let plan = plan_embedding(&EmbeddingInput {
         model: &case.model,
         input: &case.input,
@@ -118,7 +118,7 @@ pub(super) fn embedding_plan_value(case: &EmbeddingPlan) -> Result<Value, Box<He
 
 pub(super) fn prepare_value(case: &Call) -> Result<Value, Box<HelperError>> {
     let env = env_with(&case.environment, case.global_api_key.as_deref());
-    let explicit = case.api_key.as_deref().map(key);
+    let explicit = case.api_key.clone().map(SecretString::from);
     let prepared = prepare(PrepareInput {
         headers: case.headers.clone(),
         api_key: explicit.as_ref(),
@@ -133,13 +133,13 @@ pub(super) fn prepare_value(case: &Call) -> Result<Value, Box<HelperError>> {
             "should_fake_stream": SHOULD_FAKE_STREAM,
             "supports_native_websocket": SUPPORTS_NATIVE_WEBSOCKET,
         })),
-        Err(error) => Ok(json!({"status": error.status_code()})),
+        Err(error) => Ok(json!({"status": error.status_code})),
     }
 }
 
 pub(super) fn messages_environment_value(case: &Call) -> Result<Value, Box<HelperError>> {
     let env = env_with(&case.environment, case.global_api_key.as_deref());
-    let explicit = case.api_key.as_deref().map(key);
+    let explicit = case.api_key.clone().map(SecretString::from);
     let lookup = case.environment.clone();
     let optional = Object::new();
     let policy = JsonMessagesPolicy {
@@ -159,7 +159,7 @@ pub(super) fn messages_environment_value(case: &Call) -> Result<Value, Box<Helpe
     );
     let headers = match validated {
         Ok(found) => found,
-        Err(error) => return Ok(json!({"status": error.status_code()})),
+        Err(error) => return Ok(json!({"status": error.status_code})),
     };
     let url = policy
         .complete_url(&MessagesCredentials {

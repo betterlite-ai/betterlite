@@ -215,7 +215,7 @@ fn prepare_without_a_key_is_the_missing_key_error() {
         env: &env,
     })
     .unwrap_err();
-    assert_eq!(error.status_code(), 401);
+    assert_eq!(error.status_code, 401);
     assert_eq!(
         error.to_string(),
         "Missing Eden AI API key: set EDENAI_API_KEY or pass api_key"

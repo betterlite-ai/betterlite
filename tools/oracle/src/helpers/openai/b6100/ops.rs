@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use betterlite_openai::edenai_common::{
     EdenAiEnv, reported_cost, reported_cost_from_bytes, reported_cost_from_headers,
 };
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -30,7 +29,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         let steps: Vec<Option<f64>> = input
             .costs
             .iter()
-            .map(|payload| money(reported_cost(payload)))
+            .map(|payload| reported_cost(payload).and_then(|value| value.to_f64()))
             .collect();
         return Ok(json!({"steps": steps}));
     }
@@ -38,7 +37,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         let steps: Vec<Option<f64>> = input
             .cost_bodies
             .iter()
-            .map(|text| money(reported_cost_from_bytes(text.as_bytes())))
+            .map(|text| reported_cost_from_bytes(text.as_bytes()).and_then(|value| value.to_f64()))
             .collect();
         return Ok(json!({"steps": steps}));
     }
@@ -46,7 +45,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         let steps: Vec<Option<f64>> = input
             .cost_headers
             .iter()
-            .map(|headers| money(reported_cost_from_headers(headers)))
+            .map(|headers| reported_cost_from_headers(headers).and_then(|value| value.to_f64()))
             .collect();
         return Ok(json!({"steps": steps}));
     }
@@ -130,19 +129,14 @@ fn report_text(
     Ok(values)
 }
 
-pub(super) fn key(text: &str) -> SecretString {
-    SecretString::from(text.to_owned())
-}
-
-fn money(cost: Option<Decimal>) -> Option<f64> {
-    cost.and_then(|value| value.to_f64())
-}
-
 // the caller fills api_key and api_base from the environment and litellm.api_key from the call
 pub(super) fn env_with(environment: &BTreeMap<String, String>, global: Option<&str>) -> EdenAiEnv {
     EdenAiEnv {
-        api_key: environment.get(API_KEY_ENV).map(String::as_str).map(key),
+        api_key: environment
+            .get(API_KEY_ENV)
+            .cloned()
+            .map(SecretString::from),
         api_base: environment.get(API_BASE_ENV).cloned(),
-        global_api_key: global.map(key),
+        global_api_key: global.map(str::to_owned).map(SecretString::from),
     }
 }
