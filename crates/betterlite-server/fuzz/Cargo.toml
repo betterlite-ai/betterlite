@@ -348,3 +348,10 @@ path = "fuzz_targets/team_request_contracts.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "team_admin_object"
+path = "fuzz_targets/team_admin_object.rs"
+test = false
+doc = false
+bench = false
