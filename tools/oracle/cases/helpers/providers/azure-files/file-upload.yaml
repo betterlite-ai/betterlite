@@ -1,0 +1,19 @@
+kind: helper
+name: file-upload
+call:
+  azure_files:
+    steps:
+    - action: create
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      content: file-bytes
+      create_purpose: batch
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "file-1", "object": "file", "bytes": 5, "created_at": 1700000000, "filename": "notes.txt", "purpose": "batch", "status": "processed"}'}
+    - action: create
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      is_async: true
+      content: file-bytes
+      create_purpose: assistants
+      expires_after: 3600
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "file-1", "object": "file", "bytes": 5, "created_at": 1700000000, "filename": "notes.txt", "purpose": "batch", "status": "processed"}'}
+env: {}
+compare: {ignore: []}

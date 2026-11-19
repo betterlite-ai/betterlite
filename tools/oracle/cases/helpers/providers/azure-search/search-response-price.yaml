@@ -1,0 +1,34 @@
+kind: helper
+name: search-response-price
+call:
+  azure_search:
+    price:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://one.example","title":"One"},{"type":"url_citation","url":"https://two.example","title":"Two"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://one.example","title":"One"},{"type":"url_citation","url":"https://two.example","title":"Two"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: ""}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://one.example","title":"One"},{"type":"url_citation","url":"https://two.example","title":"Two"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          optional_params: {max_results: 1}
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://one.example","title":"One"},{"type":"url_citation","url":"https://two.example","title":"Two"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "incomplete"}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://one.example","title":"One"}]}]}]}
+env: {}
+compare:
+  ignore: []

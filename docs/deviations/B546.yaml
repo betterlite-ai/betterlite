@@ -1,0 +1,9 @@
+task: B546
+deviations:
+  - what: "A positive max_results larger than i64::MAX is read as invalid, so a bing_grounding request sends no count and the reply gets no cap, where LiteLLM accepts any positive JSON integer and forwards it"
+    why: "max_results is stored as an i64 count and used as a slice bound, so a value no i64 can hold is read as absent instead of overflowing; every value the Foundry API and a slice can use stays byte-identical"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L181-L188"
+kept_bugs:
+  - what: "A reply with a non-2xx HTTP status whose body still decodes as a Responses envelope is reported as a successful search, because only the body decides the outcome; the status is used only when the body does not match the schema"
+    why: "LiteLLM's POST search path never calls raise_for_status and transform_search_response ignores raw_response.status_code, and the named-case contract makes a body with status failed a 502 whatever the HTTP status, so a setup that hits this today sees an empty successful search and betterlite keeps that observation"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L378-L405"

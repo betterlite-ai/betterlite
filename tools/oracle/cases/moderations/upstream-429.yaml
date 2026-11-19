@@ -1,0 +1,28 @@
+name: moderations-upstream-429
+config: |
+  model_list:
+    - model_name: guard-429
+      litellm_params: {model: openai/omni-moderation-latest, api_base: "{{upstream}}/v1", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/moderations
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-moderation-429}
+  body: {model: guard-429, input: Sample text goes here}
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

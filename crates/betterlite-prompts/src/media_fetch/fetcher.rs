@@ -88,9 +88,11 @@ where
     }
 
     pub async fn fetch_all(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
-        let mut fetches = stream::iter(urls.iter().enumerate())
-            .map(|(index, url)| async move { (index, self.convert(url).await) })
-            .buffer_unordered(MAX_CONCURRENT_MEDIA_FETCHES);
+        let mut pending = Vec::with_capacity(urls.len());
+        for (index, url) in urls.iter().enumerate() {
+            pending.push(async move { (index, self.convert(url).await) });
+        }
+        let mut fetches = stream::iter(pending).buffer_unordered(MAX_CONCURRENT_MEDIA_FETCHES);
         let mut results = Vec::with_capacity(urls.len());
         while let Some((index, result)) = fetches.next().await {
             results.push((index, result?));
