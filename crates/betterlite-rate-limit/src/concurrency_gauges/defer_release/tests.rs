@@ -2,15 +2,17 @@
 
 use std::sync::Arc;
 
+use betterlite_redis::batch::result::Settled;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
-use crate::concurrency_gauges::batch::ReleaseBatchSource;
 use crate::concurrency_gauges::tests::support::{
-    CacheWrite, FixedBatchSource, FixedClock, LogCapture, PlannedScript, RecordingCache,
-    RecordingReleaseBatch, acquisition, batch_failure, gauges_with, int_values, key_list, registry,
+    CacheWrite, FixedClock, LogCapture, PlannedScript, RecordingCache, RecordingReleaseBatch,
+    acquisition, batch_failure, gauges_with, int_values, key_list, registry,
 };
 use crate::concurrency_gauges::{ConcurrencyGauges, PARALLEL_SLOT_TTL};
+use crate::limiter_records::ScriptReply;
 use crate::rate_limit_window_store::CounterScript;
+use crate::token_adjustments::store::PostCallScriptBatch;
 
 use super::defer_slot_release;
 
@@ -24,8 +26,10 @@ fn deferring_gauges(
     let handle = PlannedScript::new("release", vec![int_values(&[0])]);
     let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.release_script = Some(script);
-    let source: Arc<dyn ReleaseBatchSource> = Arc::new(FixedBatchSource { batch });
-    gauges.release_batch = Some(source);
+    if let Some(batch) = &batch {
+        let shared: Arc<dyn PostCallScriptBatch> = Arc::<RecordingReleaseBatch>::clone(batch);
+        gauges.release_batch = Some(shared);
+    }
     (gauges, handle)
 }
 
@@ -78,7 +82,7 @@ async fn the_batch_registration_covers_every_gauge() {
 }
 
 #[tokio::test]
-async fn no_batch_source_registers_nothing() {
+async fn no_batch_registers_nothing() {
     let cache = RecordingCache::new();
     cache.seed("g1", registry(&[("slot-a", NOW)]));
     let (gauges, script) = deferring_gauges(Arc::clone(&cache), None);
@@ -94,10 +98,8 @@ async fn no_release_script_registers_nothing() {
     cache.seed("g1", registry(&[("slot-a", NOW)]));
     let batch = RecordingReleaseBatch::new();
     let mut gauges = gauges_with(Arc::clone(&cache), FixedClock::at(NOW));
-    let source: Arc<dyn ReleaseBatchSource> = Arc::new(FixedBatchSource {
-        batch: Some(Arc::clone(&batch)),
-    });
-    gauges.release_batch = Some(source);
+    let shared: Arc<dyn PostCallScriptBatch> = Arc::<RecordingReleaseBatch>::clone(&batch);
+    gauges.release_batch = Some(shared);
     let deferred = defer_slot_release(&gauges, &acquisition("slot-a", &["g1"])).await;
     assert!(!deferred);
     assert!(batch.registrations().is_empty());
@@ -137,7 +139,8 @@ async fn batch_failure_logs_without_raising() {
     let registrations = batch.registrations();
     let registration = registrations.first().expect("one registration");
     let capture = LogCapture::start();
-    registration.hook.settled(Some(&batch_failure()));
+    let failure: Settled<ScriptReply> = Err(Arc::new(batch_failure()));
+    (registration.hook)(&failure);
     assert_eq!(
         capture
             .text()
@@ -145,7 +148,8 @@ async fn batch_failure_logs_without_raising() {
             .count(),
         1
     );
-    registration.hook.settled(None);
+    let success: Settled<ScriptReply> = Ok(ScriptReply::Array(Vec::new()));
+    (registration.hook)(&success);
     assert_eq!(
         capture
             .text()

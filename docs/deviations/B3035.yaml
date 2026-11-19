@@ -24,8 +24,8 @@ deviations:
   - what: Whole-number text counts accept surrounding whitespace but not Python's underscore digit separators ("1_000").
     why: The counts come from ZCARD through the Redis protocol, which never writes underscores; the trim is kept because int() strips whitespace and a proxied value may carry it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1766
-  - what: The deferred release registers with a ReleaseBatch seam (ReleaseBatchSource, ReleaseBatch, ReleaseSettledHook) rather than the concrete active_post_call_redis_batch pipeline object.
-    why: The batch lifecycle belongs to B4331 and is not reachable from this crate; the seam carries the script, keys, per-key slot ids and the settled callback, so a failed pipeline logs LiteLLM's message and the local release keeps the slot usable.
+  - what: The deferred release registers through the crate's PostCallScriptBatch trait with a SettledHook<ScriptReply>, the seam token_adjustments/deferred.rs already uses, rather than the concrete active_post_call_redis_batch pipeline object.
+    why: The batch lifecycle belongs to B4331 and is not reachable from this crate; the shared seam carries the script, keys, per-key slot ids and the settled callback, so a failed pipeline logs LiteLLM's message and the local release keeps the slot usable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1966-L1982
   - what: A gauge status carries descriptor_value as null and a gauge-only response carries reservation_windows as null, where LiteLLM's status dict has no descriptor_value key and its gauge response has no reservation_windows key.
     why: RateLimitStatus and RateLimitResponse are shared with the windowed paths, where descriptor_value and reservation_windows are set; the gauge path leaves them unset, and a JSON client reading the fields gets null instead of a missing key.

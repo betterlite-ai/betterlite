@@ -1,4 +1,3 @@
-pub mod batch;
 pub mod cache;
 pub mod lua_scripts;
 
@@ -28,8 +27,8 @@ use crate::limiter_records::{
 };
 use crate::rate_limit_window_store::CounterScript;
 use crate::request_stash::RequestStash;
+use crate::token_adjustments::store::PostCallScriptBatch;
 
-use batch::ReleaseBatchSource;
 use cache::GaugeCache;
 
 // LiteLLM enforces max_parallel_requests as a slot registry whose PARALLEL_REQUEST_SLOT_TTL_SECONDS is 3600
@@ -41,7 +40,7 @@ pub struct ConcurrencyGauges {
     pub acquire_script: Option<Arc<dyn CounterScript>>,
     pub release_script: Option<Arc<dyn CounterScript>>,
     pub count_script: Option<Arc<dyn CounterScript>>,
-    pub release_batch: Option<Arc<dyn ReleaseBatchSource>>,
+    pub release_batch: Option<Arc<dyn PostCallScriptBatch>>,
     pub fail_closed: FailClosedPolicy,
     // LiteLLM's _check_and_increment_lock, held across the reads and writes of one local gauge pass
     pub check_and_increment_lock: Mutex<()>,

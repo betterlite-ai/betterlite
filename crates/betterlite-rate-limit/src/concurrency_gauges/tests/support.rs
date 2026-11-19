@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_redis::batch::error::BatchError;
+use betterlite_redis::batch::result::SettledHook;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_counters::RedisCountersError;
 use tokio::sync::Mutex as AsyncMutex;
@@ -13,7 +14,6 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
 use crate::concurrency_gauges::ConcurrencyGauges;
-use crate::concurrency_gauges::batch::{ReleaseBatch, ReleaseBatchSource, ReleaseSettledHook};
 use crate::concurrency_gauges::cache::{GaugeCache, GaugeCacheValue};
 use crate::fail_closed::FailClosedPolicy;
 use crate::limiter_records::{
@@ -21,6 +21,7 @@ use crate::limiter_records::{
 };
 use crate::rate_limit_window_store::{CounterScript, ScriptCall};
 use crate::request_stash::{RequestStash, StashState};
+use crate::token_adjustments::store::PostCallScriptBatch;
 
 pub(crate) fn key_list(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
@@ -289,7 +290,7 @@ pub(crate) struct ReleaseRegistration {
     pub(crate) source: String,
     pub(crate) keys: Vec<String>,
     pub(crate) args: Vec<RedisScalar>,
-    pub(crate) hook: Arc<dyn ReleaseSettledHook>,
+    pub(crate) hook: SettledHook<ScriptReply>,
 }
 
 pub(crate) struct RecordingReleaseBatch {
@@ -320,13 +321,13 @@ impl RecordingReleaseBatch {
     }
 }
 
-impl ReleaseBatch for RecordingReleaseBatch {
-    fn register_release(
+impl PostCallScriptBatch for RecordingReleaseBatch {
+    fn script_on_settled(
         &self,
         script: Arc<dyn CounterScript>,
         keys: &[String],
         args: &[RedisScalar],
-        hook: Arc<dyn ReleaseSettledHook>,
+        hook: SettledHook<ScriptReply>,
     ) {
         self.registrations
             .lock()
@@ -337,18 +338,6 @@ impl ReleaseBatch for RecordingReleaseBatch {
                 args: args.to_vec(),
                 hook,
             });
-    }
-}
-
-pub(crate) struct FixedBatchSource {
-    pub(crate) batch: Option<Arc<RecordingReleaseBatch>>,
-}
-
-impl ReleaseBatchSource for FixedBatchSource {
-    fn active_release_batch(&self) -> Option<Arc<dyn ReleaseBatch>> {
-        let batch = self.batch.as_ref()?;
-        let shared: Arc<dyn ReleaseBatch> = Arc::<RecordingReleaseBatch>::clone(batch);
-        Some(shared)
     }
 }
 

@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
-use crate::concurrency_gauges::batch::ReleaseBatchSource;
 use crate::concurrency_gauges::tests::support::{
-    CacheWrite, FixedBatchSource, FixedClock, PlannedScript, RecordingCache, RecordingReleaseBatch,
-    acquisition, empty_stash, gauges_with, int_counter, int_values, key_list, registry, stash_with,
+    CacheWrite, FixedClock, PlannedScript, RecordingCache, RecordingReleaseBatch, acquisition,
+    empty_stash, gauges_with, int_counter, int_values, key_list, registry, stash_with,
 };
 use crate::concurrency_gauges::{ConcurrencyGauges, PARALLEL_SLOT_TTL};
 use crate::rate_limit_window_store::CounterScript;
+use crate::token_adjustments::store::PostCallScriptBatch;
 
 const NOW: f64 = 1_700_000_000.0;
 
@@ -22,8 +22,10 @@ fn stash_gauges(
     let handle = PlannedScript::new("release", vec![int_values(&[1])]);
     let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.release_script = Some(script);
-    let source: Arc<dyn ReleaseBatchSource> = Arc::new(FixedBatchSource { batch });
-    gauges.release_batch = Some(source);
+    if let Some(batch) = &batch {
+        let shared: Arc<dyn PostCallScriptBatch> = Arc::<RecordingReleaseBatch>::clone(batch);
+        gauges.release_batch = Some(shared);
+    }
     (gauges, handle)
 }
 
