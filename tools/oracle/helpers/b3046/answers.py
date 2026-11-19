@@ -10,6 +10,7 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
 from litellm.types.utils import EmbeddingResponse, Usage
 from pydantic import JsonValue, TypeAdapter
 
+from .fakes import FakeBatchStore, HiddenResponse, RecordingCache
 from .inputs import (
     CallbackArguments,
     Case,
@@ -19,14 +20,7 @@ from .inputs import (
     LoggingPayload,
     ResponseInput,
 )
-from .operations import (
-    FakeBatchStore,
-    HiddenResponse,
-    Limiter,
-    RecordingCache,
-    install_stash,
-    make_limiter,
-)
+from .operations import Limiter, install_stash, make_limiter
 
 
 class Record(TypedDict):
