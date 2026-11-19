@@ -18,14 +18,17 @@ pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesS
     else {
         return;
     };
-    if !enabled(state) || !item_event(event) {
-        return;
-    }
-    if let Some(Target::Extra(extra)) = slot_target(event) {
-        wrap_slot(extra.get_mut("encrypted_content"), model_id);
+    if enabled(state)
+        && item_event(event)
+        && let Some(Target::Extra(extra)) = slot_target(event)
+        && let Some(Json::Text(text)) = extra.get_mut("encrypted_content")
+        && !text.is_empty()
+    {
+        *text = wrap_encrypted_content(text.as_str(), model_id);
     }
 }
 
+#[must_use]
 pub fn request_metadata(state: &ResponsesStreamBaseState) -> AffinityMetadata {
     let model_id = state.hidden_params.model_id.clone();
     AffinityMetadata {
@@ -45,16 +48,6 @@ fn item_event(event: &ResponsesAPIStreamingResponse) -> bool {
             "response.output_item.added" | "response.output_item.done"
         ),
     }
-}
-
-fn wrap_slot(slot: Option<&mut Json>, model_id: &str) {
-    let Some(Json::Text(text)) = slot else {
-        return;
-    };
-    if text.is_empty() {
-        return;
-    }
-    *text = wrap_encrypted_content(text.as_str(), model_id);
 }
 
 fn enabled(state: &ResponsesStreamBaseState) -> bool {

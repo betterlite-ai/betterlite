@@ -43,24 +43,28 @@ pub fn slot_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Target<'
     }
 }
 
-fn known_target(event: &mut KnownResponseEvent) -> Option<Target<'_>> {
-    match event {
-        KnownResponseEvent::OutputItemAdded(record) => match &mut record.item {
+const fn known_target(event: &mut KnownResponseEvent) -> Option<Target<'_>> {
+    if let KnownResponseEvent::OutputItemAdded(record) = event {
+        return match &mut record.item {
             RequiredNullable::Value(extra) => Some(Target::Extra(extra)),
             RequiredNullable::Null => None,
-        },
-        KnownResponseEvent::OutputItemDone(record) => Some(Target::Extra(&mut record.item)),
-        KnownResponseEvent::OutputTextAnnotationAdded(record) => {
-            Some(Target::Extra(&mut record.annotation))
-        }
-        KnownResponseEvent::ContentPartDone(record) => match &mut record.part {
+        };
+    }
+    if let KnownResponseEvent::OutputItemDone(record) = event {
+        return Some(Target::Extra(&mut record.item));
+    }
+    if let KnownResponseEvent::OutputTextAnnotationAdded(record) = event {
+        return Some(Target::Extra(&mut record.annotation));
+    }
+    if let KnownResponseEvent::ContentPartDone(record) = event {
+        return match &mut record.part {
             ContentPartDonePart::OutputText { annotations, .. } => {
                 Some(Target::Extras(annotations))
             }
             ContentPartDonePart::Refusal { .. } | ContentPartDonePart::ReasoningText { .. } => None,
-        },
-        _ => None,
+        };
     }
+    None
 }
 
 fn generic_target(record: &mut GenericEvent) -> Option<Target<'_>> {
@@ -83,7 +87,7 @@ fn generic_target(record: &mut GenericEvent) -> Option<Target<'_>> {
 }
 
 // a pydantic event model answers getattr("response") from its allowed extras, so any variant may carry one
-fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
+const fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
     match event {
         KnownResponseEvent::ResponseCreated(_)
         | KnownResponseEvent::ResponseInProgress(_)

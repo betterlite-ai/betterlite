@@ -6,7 +6,7 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use super::record::{ResponseTarget, response_target};
 use super::terminal::{self, EstimatedUsage, Terminal};
 use super::{
-    JsonShape, ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
+    JsonShape as _, ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
     decode_responses_stream_value, deltas, identity,
 };
 use crate::api::response_id_traversal::response_id;
@@ -23,8 +23,8 @@ const SSE_DONE: &str = "[DONE]";
 impl<Transform, Tokenization, Calculator>
     ResponsesEventProcessor<'_, '_, Transform, Tokenization, Calculator>
 where
-    Transform: ResponsesEventTransform,
-    Tokenization: UsageTokenization,
+    Transform: ResponsesEventTransform + Sync,
+    Tokenization: UsageTokenization + Sync,
     Calculator: ResponsesCostCalculator + Sync,
 {
     pub async fn process(
@@ -42,10 +42,11 @@ where
             return Ok(None);
         }
         let start_missing = logging
-            .read(&mut |state| state.completion_start_time.is_none())
+            .read(&mut |snapshot| snapshot.completion_start_time.is_none())
             .unwrap_or(false);
         if start_missing {
-            logging.edit(&mut |state| update_completion_start_time(state, self.hooks.clock.now()));
+            let now = self.hooks.clock.now();
+            logging.edit(&mut |snapshot| update_completion_start_time(snapshot, now));
         }
         match self.handle_payload(payload, state, callback).await {
             Ok(event) => Ok(event),

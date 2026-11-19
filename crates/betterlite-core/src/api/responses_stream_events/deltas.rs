@@ -8,18 +8,17 @@ use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 // only these delta events feed the generated text or arguments, in the order the stream delivered them
 pub fn accumulate(event: &ResponsesAPIStreamingResponse, state: &mut ResponsesStreamBaseState) {
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => match known.as_ref() {
-            KnownResponseEvent::OutputTextDelta(record) => {
+        ResponsesAPIStreamingResponse::Known(known) => {
+            if let KnownResponseEvent::OutputTextDelta(record) = known.as_ref() {
                 state.generated_content.push_str(&record.delta);
             }
-            KnownResponseEvent::FunctionCallArgumentsDelta(function) => {
+            if let KnownResponseEvent::FunctionCallArgumentsDelta(function) = known.as_ref() {
                 state.generated_tool_arguments.push_str(&function.delta);
             }
-            KnownResponseEvent::McpCallArgumentsDelta(mcp) => {
+            if let KnownResponseEvent::McpCallArgumentsDelta(mcp) = known.as_ref() {
                 state.generated_tool_arguments.push_str(&mcp.delta);
             }
-            _ => {}
-        },
+        }
         ResponsesAPIStreamingResponse::Generic(record) => {
             let delta = match record.r#type.as_str() {
                 "response.output_text.delta" => &mut state.generated_content,

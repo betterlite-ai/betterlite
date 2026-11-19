@@ -19,10 +19,7 @@ pub struct EstimatedUsage<'estimate, Tokenization> {
     pub request: EstimateRequest<'estimate>,
 }
 
-impl<Tokenization> UsageEstimate for EstimatedUsage<'_, Tokenization>
-where
-    Tokenization: UsageTokenization,
-{
+impl<Tokenization: UsageTokenization> UsageEstimate for EstimatedUsage<'_, Tokenization> {
     fn estimate(&self) -> Option<ResponseApiUsage> {
         estimate_usage_safely(self.tokenization, &self.request)
     }
@@ -39,12 +36,17 @@ impl Terminal {
     #[must_use]
     pub fn of(event: &ResponsesAPIStreamingResponse) -> Option<Self> {
         match event {
-            ResponsesAPIStreamingResponse::Known(known) => match known.as_ref() {
-                KnownResponseEvent::ResponseFailed(_) => Some(Self::Failed),
-                KnownResponseEvent::ResponseCompleted(_)
-                | KnownResponseEvent::ResponseIncomplete(_) => Some(Self::Billed),
-                _ => None,
-            },
+            ResponsesAPIStreamingResponse::Known(known) => {
+                if matches!(known.as_ref(), KnownResponseEvent::ResponseFailed(_)) {
+                    return Some(Self::Failed);
+                }
+                matches!(
+                    known.as_ref(),
+                    KnownResponseEvent::ResponseCompleted(_)
+                        | KnownResponseEvent::ResponseIncomplete(_)
+                )
+                .then_some(Self::Billed)
+            }
             ResponsesAPIStreamingResponse::Generic(record) => match record.r#type.as_str() {
                 "response.failed" => Some(Self::Failed),
                 "response.completed" | "response.incomplete" => Some(Self::Billed),
