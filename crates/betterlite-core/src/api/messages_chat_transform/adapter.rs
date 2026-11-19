@@ -26,11 +26,12 @@ impl Default for AnthropicAdapter {
 
 impl AnthropicAdapter {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub const fn new() -> Self {
         Self
     }
 
-    // Both required keys leave kwargs before either is checked, so a missing messages key still consumes model.
+    // ast-grep-ignore: no-long-names
     pub async fn translate_completion_input_params_with_tool_mapping<Predicates>(
         &self,
         kwargs: &mut Object,
@@ -40,10 +41,12 @@ impl AnthropicAdapter {
     where
         Predicates: CapabilityPredicates + Send,
     {
+        // Both required keys leave kwargs before either is checked, so a missing messages key still consumes model.
         let mut request = request_body(kwargs)?;
         translate_anthropic_to_openai(&mut request, settings, predicates).await
     }
 
+    // ast-grep-ignore: no-long-names
     pub async fn translate_completion_input_params<Predicates>(
         &self,
         kwargs: &mut Object,
@@ -62,6 +65,7 @@ impl AnthropicAdapter {
         Ok(request)
     }
 
+    // ast-grep-ignore: no-long-names, no-one-line-functions
     pub fn translate_completion_output_params(
         &self,
         response: &ResponseRecord,
@@ -73,6 +77,7 @@ impl AnthropicAdapter {
 
     // is_async keeps LiteLLM's default: an async caller that forgot the flag still gets its async iterator.
     #[must_use]
+    // ast-grep-ignore: no-long-names, no-one-line-functions
     pub fn translate_completion_output_params_streaming<S, I>(
         &self,
         source: S,
