@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::{Duration, Instant};
 
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_http::url_path::encode_segment;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -24,6 +24,7 @@ use super::error::{ClientError, WriteError, handle_error};
 use super::params::UpdateParams;
 
 mod facts;
+mod proxied;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientKind {
@@ -58,27 +59,6 @@ pub trait WriteTransport: Send + Sync {
         &self,
         request: WriteRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-impl WriteTransport for ProxiedClient {
-    fn default_timeout(&self) -> Duration {
-        self.limits.read_timeout
-    }
-
-    async fn send(&self, request: WriteRequest) -> Result<UpstreamResponse, TransportError> {
-        let deadline = request.timeout.unwrap_or(self.limits.read_timeout);
-        self.send_following(OutboundRequest {
-            method: request.method,
-            url: request.url,
-            query: Vec::new(),
-            headers: request.headers,
-            body: request.body,
-            deadline,
-        })
-        .await?
-        .buffered(self.limits.body_bytes)
-        .await
-    }
 }
 
 pub trait ClientSource: Send + Sync {
@@ -287,7 +267,7 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
     let reply = reply.map_err(|error| {
         WriteError::Provider(handle_error(
             &facts::transport_facts(&error, &sent),
-            Some(config as &dyn WriteConfig),
+            Some(config),
         ))
     })?;
     if reply.status < 400 {
@@ -300,6 +280,6 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
     }
     Err(WriteError::Provider(handle_error(
         &facts::status_facts(&reply),
-        Some(config as &dyn WriteConfig),
+        Some(config),
     )))
 }
