@@ -9,7 +9,7 @@ use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_vertex::model_garden::{ModelGardenTargetInput, model_garden_target};
 use betterlite_vertex::model_policy::error::VertexAiError;
 use betterlite_vertex::model_urls::error::VertexUrlError;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
@@ -54,7 +54,7 @@ pub fn completion<'call>(
     client: &'call ProxiedClient,
     state: &'call mut LoggingState,
     env: &'call PrePostEnv<'_>,
-) -> LocalBoxFuture<'call, Result<CompatibleChatOutcome, VertexAiError>> {
+) -> BoxFuture<'call, Result<CompatibleChatOutcome, VertexAiError>> {
     Box::pin(async move {
         compatible_call(call, client, state, env)
             .await
@@ -71,7 +71,7 @@ fn compatible_call<'call>(
     client: &'call ProxiedClient,
     state: &'call mut LoggingState,
     env: &'call PrePostEnv<'_>,
-) -> LocalBoxFuture<'call, Result<CompatibleChatOutcome, CallError>> {
+) -> BoxFuture<'call, Result<CompatibleChatOutcome, CallError>> {
     Box::pin(async move {
         let target = model_garden_target(&ModelGardenTargetInput {
             model: call.model,
