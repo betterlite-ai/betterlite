@@ -115,41 +115,14 @@ class Input(TypedDict):
     calls: list[Call]
 
 
-def _instant(text: str) -> datetime:
-    return datetime.fromisoformat(text)
-
-
 def _json_value(value: object) -> JsonValue:
     if isinstance(value, datetime):
         return _JSON.validate_json(_DATETIME.dump_json(value))
     return _JSON.validate_python(value)
 
 
-def _alias_answer(call: AliasCall) -> JsonValue:
-    with (
-        patch.object(litellm, "key_alias_pattern", call["pattern"]),
-        patch.object(litellm, "enable_key_alias_format_validation", call["enabled"]),
-    ):
-        _validate_key_alias_format(call["alias"])
-    return None
-
-
-def _model_budget_answer(call: ModelBudgetCall) -> JsonValue:
-    validate_model_max_budget(call["budgets"])
-    return None
-
-
-def _json_column_answer(call: JsonColumnCall) -> JsonValue:
-    return _JSON.validate_python(_decode_json_string_column(call["column"], call["value"]))
-
-
-def _verification_row_answer(call: VerificationRowCall) -> JsonValue:
-    token = _verification_token_from_row(call["row"])
-    return _JSON.validate_json(token.model_dump_json())
-
-
 def _rotation_answer(call: RotationCall) -> JsonValue:
-    FrozenClock.fixed = _instant(call["now"])
+    FrozenClock.fixed = datetime.fromisoformat(call["now"])
     data: dict[str, JsonValue] = dict(call["data"])
     settings = KeyManagementSettings(store_virtual_keys=call["store_virtual_keys"])
     with (
@@ -185,20 +158,43 @@ def _regenerate_answer(call: RegenerateCall) -> JsonValue:
     return _JSON.validate_json(patch_request.model_dump_json())
 
 
-def _key_type_answer(call: KeyTypeCall) -> JsonValue:
-    data = GenerateKeyRequest.model_validate(call["request"])
-    handled: dict[str, JsonValue] = handle_key_type(data, call["columns"])
-    return _JSON.validate_python(handled)
-
-
 def _budget_windows_answer(call: BudgetWindowsCall) -> JsonValue:
-    FrozenClock.fixed = _instant(call["now"])
+    FrozenClock.fixed = datetime.fromisoformat(call["now"])
     data = GenerateKeyRequest.model_validate({"budget_limits": call["budget_limits"]})
     with patch.object(timezone_utils, "datetime", FrozenClock):
         windows = _generate_budget_windows(data.budget_limits)
     if windows is None:
         return None
     return _JSON.validate_python([dict(window) for window in windows])
+
+
+def _alias_answer(call: AliasCall) -> JsonValue:
+    with (
+        patch.object(litellm, "key_alias_pattern", call["pattern"]),
+        patch.object(litellm, "enable_key_alias_format_validation", call["enabled"]),
+    ):
+        _validate_key_alias_format(call["alias"])
+    return None
+
+
+def _model_budget_answer(call: ModelBudgetCall) -> JsonValue:
+    validate_model_max_budget(call["budgets"])
+    return None
+
+
+def _json_column_answer(call: JsonColumnCall) -> JsonValue:
+    return _JSON.validate_python(_decode_json_string_column(call["column"], call["value"]))
+
+
+def _verification_row_answer(call: VerificationRowCall) -> JsonValue:
+    token = _verification_token_from_row(call["row"])
+    return _JSON.validate_json(token.model_dump_json())
+
+
+def _key_type_answer(call: KeyTypeCall) -> JsonValue:
+    data = GenerateKeyRequest.model_validate(call["request"])
+    handled: dict[str, JsonValue] = handle_key_type(data, call["columns"])
+    return _JSON.validate_python(handled)
 
 
 def answer(call: Call) -> JsonValue:

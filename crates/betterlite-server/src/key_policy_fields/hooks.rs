@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_pyhost::call_error::CallError;
@@ -44,15 +42,10 @@ impl HookPolicyError {
     // only the denial is an HTTPException; every other failure reaches the caller as itself
     #[must_use]
     pub const fn status_code(&self) -> Option<StatusCode> {
-        match self {
-            Self::Denied { .. } => Some(StatusCode::FORBIDDEN),
-            Self::NotCoroutine { .. }
-            | Self::Call(_)
-            | Self::Decode(_)
-            | Self::ResultNotAnObject
-            | Self::DecisionNotBool { .. }
-            | Self::MessageNotString { .. } => None,
+        if matches!(self, Self::Denied { .. }) {
+            return Some(StatusCode::FORBIDDEN);
         }
+        None
     }
 }
 
@@ -103,14 +96,7 @@ async fn evaluate(hook: &LoadedHook, argument: JsonValue) -> Result<(), HookPoli
     let decision = match fields.get("decision") {
         None | Some(JsonValue::Null) => true,
         Some(JsonValue::Bool(flag)) => *flag,
-        Some(
-            JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        ) => {
-            return Err(HookPolicyError::DecisionNotBool { field: "decision" });
-        }
+        Some(_) => return Err(HookPolicyError::DecisionNotBool { field: "decision" }),
     };
     if decision {
         return Ok(());
@@ -118,19 +104,14 @@ async fn evaluate(hook: &LoadedHook, argument: JsonValue) -> Result<(), HookPoli
     let message = match fields.get("message") {
         None | Some(JsonValue::Null) => DEFAULT_DENIAL.to_owned(),
         Some(JsonValue::String(text)) => text.clone(),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => {
-            return Err(HookPolicyError::MessageNotString { field: "message" });
-        }
+        Some(_) => return Err(HookPolicyError::MessageNotString { field: "message" }),
     };
     Err(HookPolicyError::Denied { message })
 }
 
 // the hook receives the request model's JSON dump, defaults filled, as the pydantic object would print
 fn request_payload(data: &UpdateKeyRequest) -> Result<JsonValue, HookPolicyError> {
-    let resolved = data.project()?.resolved;
-    serde_json::to_value(JsonData::Object(resolved))
+    serde_json::to_value(data.project()?.resolved)
         .map_err(|source| HookPolicyError::Decode(DecodeError::Document(source)))
 }
 
@@ -144,12 +125,10 @@ fn policy_payload(request: &CustomKeyPolicyRequest) -> Result<JsonValue, HookPol
         PolicyRequestBody::Update(inner) => inner.project()?.resolved,
         PolicyRequestBody::Regenerate(inner) => inner.project()?.resolved,
     };
-    let fields = JsonData::Object(BTreeMap::from([
-        ("operation".to_owned(), to_json(&request.operation)?),
-        ("existing_key".to_owned(), existing_key),
-        ("effective_key".to_owned(), to_json(&request.effective_key)?),
-        ("request".to_owned(), JsonData::Object(body)),
-    ]));
-    serde_json::to_value(fields)
-        .map_err(|source| HookPolicyError::Decode(DecodeError::Document(source)))
+    Ok(serde_json::json!({
+        "operation": &request.operation,
+        "existing_key": existing_key,
+        "effective_key": &request.effective_key,
+        "request": body,
+    }))
 }

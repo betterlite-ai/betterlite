@@ -27,35 +27,22 @@ pub async fn enforce_unique_key_alias(
         return Ok(());
     };
     let excluded = existing_key_token.filter(|token| !token.is_empty());
-    if !alias_exists(store, alias, excluded).await? {
-        return Ok(());
-    }
-    let message = format!(
-        "Key with alias '{alias}' already exists. Unique key aliases across all keys are required."
+    let sql = format!(
+        r#"SELECT 1 FROM "{KEY_TABLE}" WHERE key_alias = $1 AND ($2::text IS NULL OR NOT token = $2) LIMIT 1"#
     );
-    Err(AliasUniquenessError::Duplicate(bad_request_for_alias(
-        message,
-    )))
-}
-
-async fn alias_exists(
-    store: &PostgresStore,
-    alias: &str,
-    excluded_token: Option<&str>,
-) -> Result<bool, DbError> {
-    let client = store.session().await?;
-    let sql = if excluded_token.is_some() {
-        format!(r#"SELECT 1 FROM "{KEY_TABLE}" WHERE key_alias = $1 AND NOT token = $2 LIMIT 1"#)
-    } else {
-        format!(r#"SELECT 1 FROM "{KEY_TABLE}" WHERE key_alias = $1 LIMIT 1"#)
-    };
-    let parameters: Vec<&(dyn ToSql + Sync)> = match excluded_token {
-        Some(token) => vec![&alias, &token],
-        None => vec![&alias],
-    };
-    let row = client
+    let parameters: Vec<&(dyn ToSql + Sync)> = vec![&alias, &excluded];
+    let row = store
+        .session()
+        .await?
         .query_opt(sql.as_str(), &parameters)
         .await
         .map_err(backend)?;
-    Ok(row.is_some())
+    if row.is_none() {
+        return Ok(());
+    }
+    Err(AliasUniquenessError::Duplicate(bad_request_for_alias(
+        format!(
+            "Key with alias '{alias}' already exists. Unique key aliases across all keys are required."
+        ),
+    )))
 }

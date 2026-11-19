@@ -17,11 +17,9 @@ pub fn validate_key_alias_format(
     if raise_if_unsafe_secret_name(alias).is_err() {
         return Err(bad_request_for_alias(INVALID_ALIAS_MESSAGE.to_owned()));
     }
-    let Some(rule) = rule else {
-        return Ok(());
-    };
-    if rule.accepts(alias) {
-        return Ok(());
+    match rule {
+        None => Ok(()),
+        Some(rule) if rule.accepts(alias) => Ok(()),
+        Some(rule) => Err(bad_request_for_alias(rule.message())),
     }
-    Err(bad_request_for_alias(rule.message()))
 }

@@ -24,12 +24,9 @@ pub fn regenerate_as_update_request(
     let supplied = data.project()?.supplied;
     let mut patch = BTreeMap::new();
     for (field, value) in supplied {
-        if field == "key" || NON_UPDATE_FIELDS.contains(&field.as_str()) {
-            continue;
-        }
         let empty_duration =
             EMPTY_DURATIONS.contains(&field.as_str()) && value == JsonData::String(String::new());
-        if empty_duration {
+        if field == "key" || NON_UPDATE_FIELDS.contains(&field.as_str()) || empty_duration {
             continue;
         }
         patch.insert(field, value);

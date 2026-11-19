@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_config::sections::key_policy_fields::{Settings, parse_key_alias_pattern};
@@ -108,7 +109,21 @@ fn answer(call: &Call) -> Result<Option<Value>, CallFailed> {
             pattern,
             enabled,
             alias,
-        } => alias_answer(pattern.clone(), *enabled, alias.as_deref()),
+        } => {
+            let compiled = match pattern.clone() {
+                Some(source) => {
+                    parse_key_alias_pattern(Value::String(source)).map_err(|_| CallFailed)?
+                }
+                None => None,
+            };
+            let settings = Settings {
+                alias_format_validation: *enabled,
+                alias_pattern: compiled,
+            };
+            validate_key_alias_format(alias.as_deref(), settings.alias_rule().as_ref())
+                .map_err(|_| CallFailed)?;
+            Ok(None)
+        }
         Call::Rotation {
             data,
             auto_rotate,
@@ -116,43 +131,91 @@ fn answer(call: &Call) -> Result<Option<Value>, CallFailed> {
             existing_alias,
             store_virtual_keys,
             now,
-        } => rotation_answer(
-            data.clone(),
-            *auto_rotate,
-            rotation_interval.as_deref(),
-            existing_alias.as_deref(),
-            *store_virtual_keys,
-            now,
-        ),
+        } => {
+            let mut data = data.clone();
+            let clock = clock_at(now)?;
+            set_key_rotation_fields(
+                &mut data,
+                *auto_rotate,
+                rotation_interval.as_deref(),
+                existing_alias.as_deref(),
+                *store_virtual_keys,
+                clock,
+            )
+            .map_err(|_| CallFailed)?;
+            Ok(Some(serde_json::to_value(&data).map_err(|_| CallFailed)?))
+        }
         Call::EffectivePolicy {
             operation,
             existing,
             patch,
             request,
-        } => policy_answer(*operation, existing, patch, request),
+        } => {
+            let existing = verification_token_from_row(existing).map_err(|_| CallFailed)?;
+            let typed = TypedValue {
+                json: serde_json::from_value(request.clone()).map_err(|_| CallFailed)?,
+            };
+            let body = match operation {
+                PolicyOperation::Update => PolicyRequestBody::Update(
+                    UpdateKeyRequest::read(&typed).map_err(|_| CallFailed)?,
+                ),
+                PolicyOperation::Regenerate => PolicyRequestBody::Regenerate(
+                    RegenerateKeyRequest::read(&typed).map_err(|_| CallFailed)?,
+                ),
+                PolicyOperation::Generate => return Err(CallFailed),
+            };
+            let resolved = match &body {
+                PolicyRequestBody::Update(inner) => inner.project(),
+                PolicyRequestBody::Regenerate(inner) => inner.project(),
+                PolicyRequestBody::Generate(inner) => inner.project(),
+            }
+            .map_err(|_| CallFailed)?
+            .resolved;
+            let record = update_policy_request(*operation, &existing, patch, body)
+                .map_err(|_| CallFailed)?;
+            Ok(Some(json!({
+                "operation": record.operation,
+                "existing_key": record.existing_key,
+                "effective_key": record.effective_key,
+                "request": resolved,
+            })))
+        }
         Call::ModelBudget { budgets } => {
-            validate_model_max_budget(budgets.as_ref()).map_err(|_source| CallFailed)?;
+            validate_model_max_budget(budgets.as_ref()).map_err(|_| CallFailed)?;
             Ok(None)
         }
         Call::JsonColumn { column, value } => {
             let decoded = decode_json_string_column(column, value).map_err(|_| CallFailed)?;
-            value_of(&decoded).map(Some)
+            Ok(Some(
+                serde_json::to_value(&decoded).map_err(|_| CallFailed)?,
+            ))
         }
         Call::VerificationRow { row } => {
             let token = verification_token_from_row(row).map_err(|_| CallFailed)?;
-            value_of(&token).map(Some)
+            Ok(Some(serde_json::to_value(&token).map_err(|_| CallFailed)?))
         }
         Call::KeyType { request, columns } => {
-            let request = GenerateKeyRequest::read(&typed(request)?).map_err(|_| CallFailed)?;
+            let request = GenerateKeyRequest::read(&TypedValue {
+                json: serde_json::from_value(request.clone()).map_err(|_| CallFailed)?,
+            })
+            .map_err(|_| CallFailed)?;
             let handled = handle_key_type(resolved_key_type(&request), columns.clone());
-            value_of(&handled).map(Some)
+            Ok(Some(
+                serde_json::to_value(&handled).map_err(|_| CallFailed)?,
+            ))
         }
         Call::Regenerate { key, body } => {
-            let request = RegenerateKeyRequest::read(&typed(body)?).map_err(|_| CallFailed)?;
+            let request = RegenerateKeyRequest::read(&TypedValue {
+                json: serde_json::from_value(body.clone()).map_err(|_| CallFailed)?,
+            })
+            .map_err(|_| CallFailed)?;
             let patch = regenerate_as_update_request(key, &request).map_err(|_| CallFailed)?;
             match patch {
                 Some(update) => {
-                    value_of(&update.project().map_err(|_| CallFailed)?.resolved).map(Some)
+                    let resolved = update.project().map_err(|_| CallFailed)?.resolved;
+                    Ok(Some(
+                        serde_json::to_value(&resolved).map_err(|_| CallFailed)?,
+                    ))
                 }
                 None => Ok(Some(Value::Null)),
             }
@@ -161,93 +224,18 @@ fn answer(call: &Call) -> Result<Option<Value>, CallFailed> {
             let clock = clock_at(now)?;
             let windows =
                 generate_budget_windows(budget_limits.as_deref(), clock).map_err(|_| CallFailed)?;
-            value_of(&windows).map(Some)
+            Ok(Some(
+                serde_json::to_value(&windows).map_err(|_| CallFailed)?,
+            ))
         }
     }
 }
 
-fn alias_answer(
-    pattern: Option<String>,
-    enabled: bool,
-    alias: Option<&str>,
-) -> Result<Option<Value>, CallFailed> {
-    let compiled = pattern
-        .map(|source| parse_key_alias_pattern(Value::String(source)))
-        .transpose()
-        .map_err(|_| CallFailed)?
-        .flatten();
-    let settings = Settings {
-        alias_format_validation: enabled,
-        alias_pattern: compiled,
-    };
-    validate_key_alias_format(alias, settings.alias_rule().as_ref()).map_err(|_| CallFailed)?;
-    Ok(None)
-}
-
-fn rotation_answer(
-    mut data: Row,
-    auto_rotate: bool,
-    rotation_interval: Option<&str>,
-    existing_alias: Option<&str>,
-    store_virtual_keys: bool,
-    now: &str,
-) -> Result<Option<Value>, CallFailed> {
-    let clock = clock_at(now)?;
-    set_key_rotation_fields(
-        &mut data,
-        auto_rotate,
-        rotation_interval,
-        existing_alias,
-        store_virtual_keys,
-        clock,
-    )
-    .map_err(|_| CallFailed)?;
-    value_of(&data).map(Some)
-}
-
-fn policy_answer(
-    operation: PolicyOperation,
-    existing: &Row,
-    patch: &Row,
-    request: &Value,
-) -> Result<Option<Value>, CallFailed> {
-    let existing = verification_token_from_row(existing).map_err(|_| CallFailed)?;
-    let body = match operation {
-        PolicyOperation::Update => PolicyRequestBody::Update(
-            UpdateKeyRequest::read(&typed(request)?).map_err(|_| CallFailed)?,
-        ),
-        PolicyOperation::Regenerate => PolicyRequestBody::Regenerate(
-            RegenerateKeyRequest::read(&typed(request)?).map_err(|_| CallFailed)?,
-        ),
-        PolicyOperation::Generate => return Err(CallFailed),
-    };
-    let resolved = match &body {
-        PolicyRequestBody::Update(inner) => inner.project(),
-        PolicyRequestBody::Regenerate(inner) => inner.project(),
-        PolicyRequestBody::Generate(inner) => inner.project(),
-    }
-    .map_err(|_| CallFailed)?
-    .resolved;
-    let record =
-        update_policy_request(operation, &existing, patch, body).map_err(|_| CallFailed)?;
-    Ok(Some(json!({
-        "operation": record.operation,
-        "existing_key": record.existing_key,
-        "effective_key": record.effective_key,
-        "request": resolved,
-    })))
-}
-
-fn typed(value: &Value) -> Result<TypedValue, CallFailed> {
-    let json = serde_json::from_value(value.clone()).map_err(|_| CallFailed)?;
-    Ok(TypedValue { json })
-}
-
 // the oracle always runs the default UTC reset policy; the case freezes the request time
 fn clock_at(now: &str) -> Result<KeyClock<'static>, CallFailed> {
-    static SETTINGS: std::sync::OnceLock<BudgetResetSettings> = std::sync::OnceLock::new();
-    static DATABASE: std::sync::OnceLock<TimeZoneDatabase> = std::sync::OnceLock::new();
-    let parsed: DateTime<Utc> = DateTime::parse_from_rfc3339(now)
+    static SETTINGS: OnceLock<BudgetResetSettings> = OnceLock::new();
+    static DATABASE: OnceLock<TimeZoneDatabase> = OnceLock::new();
+    let parsed = DateTime::parse_from_rfc3339(now)
         .map_err(|_| CallFailed)?
         .with_timezone(&Utc);
     Ok(KeyClock {
@@ -255,11 +243,4 @@ fn clock_at(now: &str) -> Result<KeyClock<'static>, CallFailed> {
         reset: SETTINGS.get_or_init(BudgetResetSettings::default),
         database: DATABASE.get_or_init(TimeZoneDatabase::from_env),
     })
-}
-
-fn value_of<T>(value: &T) -> Result<Value, CallFailed>
-where
-    T: serde::Serialize + ?Sized,
-{
-    serde_json::to_value(value).map_err(|_| CallFailed)
 }

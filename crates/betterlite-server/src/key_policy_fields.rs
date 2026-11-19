@@ -54,7 +54,8 @@ pub fn zulu_datetime(instant: DateTime<Utc>) -> String {
 // a Python datetime holds microseconds, so a request time with finer digits is cut to them first
 #[must_use]
 pub fn microsecond_precision(instant: DateTime<Utc>) -> DateTime<Utc> {
-    let nanoseconds = instant.timestamp_subsec_micros().saturating_mul(1_000);
+    let micros = instant.timestamp_subsec_micros();
+    let nanoseconds = micros.saturating_mul(1_000);
     DateTime::from_timestamp(instant.timestamp(), nanoseconds).unwrap_or(instant)
 }
 

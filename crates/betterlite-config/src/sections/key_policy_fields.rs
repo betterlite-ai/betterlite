@@ -86,15 +86,11 @@ fn accepts_builtin(alias: &str) -> bool {
     let Some(last) = characters.next_back() else {
         return false;
     };
-    is_alias_endpoint(first) && is_alias_endpoint(last) && characters.all(is_alias_interior)
-}
-
-const fn is_alias_endpoint(character: char) -> bool {
-    character.is_ascii_alphanumeric()
-}
-
-const fn is_alias_interior(character: char) -> bool {
-    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '/' | '.' | '@')
+    first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '/' | '.' | '@')
+        })
 }
 
 #[derive(Debug, Clone, Default)]
@@ -117,26 +113,20 @@ impl Settings {
 
 // an absent or null pattern leaves the rule unset; a string must compile, and the whole match span is anchored
 pub fn parse_key_alias_pattern(value: JsonValue) -> Result<Option<AliasPattern>, ConfigError> {
-    let JsonValue::String(source) = value else {
-        return match value {
-            JsonValue::Null => Ok(None),
-            JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_) => Err(ConfigError::InvalidScalar {
-                path: ALIAS_PATTERN_PATH.to_owned(),
-                value: false,
-            }),
-        };
+    let invalid = || ConfigError::InvalidScalar {
+        path: ALIAS_PATTERN_PATH.to_owned(),
+        value: false,
     };
-    let compiled = Regex::new(&format!(r"\A(?:{source})\z"));
-    match compiled {
+    let source = match value {
+        JsonValue::Null => return Ok(None),
+        JsonValue::String(source) => source,
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            return Err(invalid());
+        }
+    };
+    match Regex::new(&format!(r"\A(?:{source})\z")) {
         Ok(regex) => Ok(Some(AliasPattern { source, regex })),
-        Err(_invalid) => Err(ConfigError::InvalidScalar {
-            path: ALIAS_PATTERN_PATH.to_owned(),
-            value: false,
-        }),
+        Err(_invalid) => Err(invalid()),
     }
 }
 
@@ -158,6 +148,10 @@ fn format_validation<L>(value: Option<JsonValue>, lookup: &L) -> Result<bool, Co
 where
     L: EnvironmentLookup,
 {
+    let invalid = || ConfigError::InvalidScalar {
+        path: VALIDATION_PATH.to_owned(),
+        value: false,
+    };
     let Some(value) = value else {
         return Ok(false);
     };
@@ -166,21 +160,13 @@ where
         JsonValue::Bool(flag) => Ok(flag),
         JsonValue::String(text) => {
             let Some(variable) = text.strip_prefix(ENV_PREFIX) else {
-                return Err(ConfigError::InvalidScalar {
-                    path: VALIDATION_PATH.to_owned(),
-                    value: false,
-                });
+                return Err(invalid());
             };
             let variable = variable.to_owned();
             let resolved = resolve_string(text, VALIDATION_PATH, lookup)?;
             Ok(betterlite_env::flag(&variable, &resolved)?.unwrap_or(false))
         }
-        JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ConfigError::InvalidScalar {
-                path: VALIDATION_PATH.to_owned(),
-                value: false,
-            })
-        }
+        JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => Err(invalid()),
     }
 }
 

@@ -14,11 +14,8 @@ pub fn handle_key_type(
         columns.remove("key_type");
         return columns;
     };
-    columns.insert(
-        "key_type".to_owned(),
-        JsonData::String(key_type_text(key_type).to_owned()),
-    );
-    let preset = preset_routes(key_type);
+    let (text, preset) = key_type_parts(key_type);
+    columns.insert("key_type".to_owned(), JsonData::String(text.to_owned()));
     if let Some(route) = preset {
         columns.insert(
             "allowed_routes".to_owned(),
@@ -28,20 +25,11 @@ pub fn handle_key_type(
     columns
 }
 
-const fn key_type_text(key_type: LiteLLMKeyType) -> &'static str {
+const fn key_type_parts(key_type: LiteLLMKeyType) -> (&'static str, Option<&'static str>) {
     match key_type {
-        LiteLLMKeyType::LlmApi => "llm_api",
-        LiteLLMKeyType::Management => "management",
-        LiteLLMKeyType::ReadOnly => "read_only",
-        LiteLLMKeyType::Default => "default",
-    }
-}
-
-const fn preset_routes(key_type: LiteLLMKeyType) -> Option<&'static str> {
-    match key_type {
-        LiteLLMKeyType::LlmApi => Some("llm_api_routes"),
-        LiteLLMKeyType::Management => Some("management_routes"),
-        LiteLLMKeyType::ReadOnly => Some("info_routes"),
-        LiteLLMKeyType::Default => None,
+        LiteLLMKeyType::LlmApi => ("llm_api", Some("llm_api_routes")),
+        LiteLLMKeyType::Management => ("management", Some("management_routes")),
+        LiteLLMKeyType::ReadOnly => ("read_only", Some("info_routes")),
+        LiteLLMKeyType::Default => ("default", None),
     }
 }
