@@ -1090,7 +1090,12 @@ name = "betterlite-anthropic-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-anthropic",
+ "betterlite-logging",
+ "betterlite-models",
+ "http 1.5.0",
  "libfuzzer-sys",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -3421,6 +3426,7 @@ name = "betterlite-oracle-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
@@ -3938,6 +3944,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
+ "aws-smithy-async",
  "base64 0.23.1",
  "betterlite-a2a",
  "betterlite-anthropic",
@@ -4444,6 +4451,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-a2a",
  "betterlite-analytics",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",

@@ -1,0 +1,26 @@
+kind: helper
+name: azure-assistant-definitions-assistants-beta-default
+call:
+  azure_assistant_definitions:
+    list_assistants:
+      - api_key: sk-fixture
+        api_base: https://example.test
+      - api_key: sk-fixture
+        api_base: https://example.test/
+      - api_key: sk-fixture
+        api_base: https://example.test/openai/deployments/dep
+calls:
+  - azure_assistant_definitions:
+      create_assistant:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          environment: {AZURE_API_VERSION: "2024-06-01"}
+          data: {model: gpt-4o}
+  - azure_assistant_definitions:
+      delete_assistant:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+          assistant_id: asst_1
+env: {}
+compare: {ignore: []}
