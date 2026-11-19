@@ -1,0 +1,1 @@
+{"id": "e1", "path": "/a", "target": "https://a", "headers": {"x-key": "value"}, "default_query_params": {"region": "eu"}, "include_subpath": true, "cost_per_request": 0.25, "timeout": 5, "auth": false, "guardrails": {"pii": null, "word_list": {}}, "methods": ["GET", "POST"]}

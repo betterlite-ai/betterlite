@@ -71,7 +71,7 @@ description: >-
   failing and a passing validation, a test_routing call against saved and unsaved configs, the
   create, both edit bodies, a delete and the member-managed edit by a team member.
 
-  Use B860's Postgres fixture with B5076's bootstrap, store_model_in_db true and mock upstream
+  Use B860's Postgres fixture with B9942's bootstrap, store_model_in_db true and mock upstream
   deployments for every tier model so no case reaches a provider. Compare status, error
   type/param/code and the stable bodies the forms read. Coverage audit: no on-disk case sends
   any of these bodies; the owners' planned cases (B1215 create-minimal, B379 and B349 config
