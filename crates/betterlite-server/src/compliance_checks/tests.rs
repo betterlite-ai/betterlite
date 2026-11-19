@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -18,6 +20,7 @@ use super::decode::decode_compliance_request;
 use super::error::{ComplianceError, Issue, LocPart};
 use super::model::{ComplianceRequest, GuardrailMode, GuardrailStatus};
 use super::router;
+use crate::routes;
 use crate::routes::tests::state_for;
 
 const GENERAL: &str = "general_settings:\n  master_key: oracle-master\n";
@@ -558,6 +561,33 @@ async fn a_non_object_body_is_rejected_instead_of_failing_inside_auth() {
         text,
         r#"{"detail":[{"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from"}]}"#
     );
+}
+
+#[tokio::test]
+async fn the_application_mounts_both_routes_behind_the_key_check() {
+    let loaded = config();
+    let application = routes::router(
+        state_for(&loaded),
+        Arc::new(AtomicBool::new(false)),
+        Router::new(),
+        Router::new(),
+    );
+    let authorized = Request::post("/compliance/eu-ai-act")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, "Bearer oracle-master")
+        .body(Body::from(
+            r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t"}"#,
+        ))
+        .unwrap();
+    let response = application.clone().oneshot(authorized).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let anonymous = Request::post("/compliance/gdpr")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"request_id":"r"}"#))
+        .unwrap();
+    let response = application.oneshot(anonymous).await.unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[rstest]
