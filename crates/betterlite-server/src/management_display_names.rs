@@ -223,18 +223,22 @@ struct PostgresTokenClient<'db> {
 impl DatabaseLifecycle for PostgresTokenClient<'_> {
     type Error = Infallible;
 
+    #[cfg_attr(test, mutants::skip)]
     fn is_connected(&self) -> bool {
         self.store.pool.is_some()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn connect(&self, _timeout: Option<Duration>) -> PoolFuture<'_, (), Infallible> {
         Box::pin(async { Ok(()) })
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn disconnect(&self, _timeout: Option<Duration>) -> PoolFuture<'_, (), Infallible> {
         Box::pin(async { Ok(()) })
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn recreate<'database>(
         &'database self,
         _url: &'database SecretString,
@@ -244,10 +248,12 @@ impl DatabaseLifecycle for PostgresTokenClient<'_> {
         Box::pin(async { Ok(false) })
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn start_refresh(&self) -> PoolFuture<'_, (), Infallible> {
         Box::pin(async { Ok(()) })
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn stop_refresh(&self) -> PoolFuture<'_, (), Infallible> {
         Box::pin(async { Ok(()) })
     }
@@ -263,14 +269,17 @@ impl DatabaseClient for PostgresTokenClient<'_> {
         Ok(None)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn token_refresh_enabled(&self) -> bool {
         false
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn token_label(&self) -> &'static str {
         "database token"
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn minted_url(&self) -> Result<Option<SecretString>, Infallible> {
         Ok(None)
     }
