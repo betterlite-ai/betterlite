@@ -27,7 +27,8 @@ async fn sdk_input_sends_the_event_bytes_and_refuses_after_close() {
         sender: Mutex::new(Some(sender)),
     };
     input.send(Json::Text("hello".to_owned())).await.unwrap();
-    let InputEvent::Chunk(part) = receiver.recv().await.unwrap().unwrap() else {
+    let queued = receiver.try_recv().expect("the send queues the chunk");
+    let InputEvent::Chunk(part) = queued.unwrap() else {
         panic!("the request direction carries chunks");
     };
     let bytes = part
