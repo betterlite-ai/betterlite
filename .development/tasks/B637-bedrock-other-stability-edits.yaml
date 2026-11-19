@@ -119,7 +119,7 @@ references:
     BedrockStabilityImageEditConfig.use_multipart_form_data, BedrockStabilityImageEditConfig.get_complete_url, BedrockStabilityImageEditConfig.validate_environment.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L177-L183
-  why: Exact five-entry size mapping, reused from the native Stability type owner B046.
+  why: Exact five-entry size mapping, reused from B1522, the native Stability type owner (StabilityImageGenerationRequest, on main).
 dod:
 - text: 'stability_edit_model_selection: A truthy lowercased model qualifies only if it contains stability. and
     one of upscale,outpaint,inpaint,erase,remove-background,search-recolor,search-replace,control-sketch,control-structure,style-guide,style-transfer.

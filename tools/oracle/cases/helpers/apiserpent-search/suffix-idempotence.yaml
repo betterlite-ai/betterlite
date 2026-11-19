@@ -1,0 +1,54 @@
+kind: helper
+name: apiserpent-suffix-idempotence
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: "https://proxy.test/api/search/quick"
+    environment: {}
+    headers: {}
+    reply: null
+calls:
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: "https://proxy.test/api/search/quick/"
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {deep: true}
+      api_key: "caller-key"
+      api_base: "https://proxy.test/api/search"
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {deep: true}
+      api_key: "caller-key"
+      api_base: "https://proxy.test/api/search/quick"
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {APISERPENT_API_BASE: "https://env.test/"}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: "/"
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}

@@ -22,9 +22,10 @@ description: >-
   is the same flag read for _get_transaction_buffer_redis_cache, so B8374 builds the standalone Redis from REDIS_* env only when
   it is true.
 
-  Setup steps: `init_jwt_auth(settings, ...)` builds B053's JWT settings from general_settings.litellm_jwtauth, resolving each
-  string value that starts with "os.environ/" through the secret lookup and leaving the rest as is, or the defaults when the
-  key is absent, then updates the JWT handler with the database and auth cache and binds the agent lookup. `attach_router_to_detectors`
+  Setup steps: `init_jwt_auth(settings, ...)` takes the JWT settings from B869's config.sections.jwt_settings:
+  general_settings.litellm_jwtauth with each "os.environ/" string value resolved through the secret lookup, or the defaults when
+  the key is absent. It then updates the JWT handler with the database and auth cache through B760's update_environment and
+  binds the agent lookup through B760's bind_agent_lookup. `attach_router_to_detectors`
   hands the router to every registered B3703 prompt injection detector. `seed_proxy_budget(...)` ports _add_proxy_budget_to_db
   and _upsert_proxy_budget_with_reset_at_backfill: with litellm.max_budget above 0 and a database, budget_duration must be
   set or startup fails with "budget_duration not set on Proxy. budget_duration is required to use max_budget."; then, as a

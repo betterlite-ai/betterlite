@@ -3,9 +3,9 @@ title: Verify MCP tool testing, policy editing and network settings requests
 description: >-
   Add HTTP cases for the MCP tool drawer, connection test, ToolDetail and network/rules
   settings. The budget is about 650 lines of transcripts; no backend handler or dashboard
-  function changes ownership. B136 supplies the real MCP mock protocol fixture, including
-  initialize/notifications and dynamic JSON-RPC ids under /__mcp_fixture/. Use its
-  $mcp_request_id response marker instead of assuming the SDK's next integer id.
+  function changes ownership. B9943 supplies the MCP mock's id correlation for requests
+  under /__mcp_fixture/; script initialize, the initialized notification and each call, and
+  use its $mcp_request_id response marker instead of assuming the SDK's next integer id.
 
   Tool request audit. GET /mcp-rest/tools/list?server_id=<id> reads tools[].name,description,
   inputSchema,annotations and error/status data. The edit form adds
@@ -117,7 +117,7 @@ oracle_cases:
   - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
 deviations: []
 out_of_scope:
-  - Every tool decoder, executor and policy/report function stays with B4727/B4728/B4729/B062/B1607; B136 owns the MCP protocol fixture.
+  - Every tool decoder, executor and policy/report function stays with B4727/B4728/B4729/B062/B1607; B9943 owns the MCP mock's id correlation.
   - B9090 retains ToolDetail, its tests, MCP tool components, useTestMCPConnection and all settings components; B9761 tests their credential-management endpoints.
   - B8595/B8675 own config persistence and B782/B813 the shared picker APIs; route fixes discovered by cases must be returned to those owners.
 pitfalls:
