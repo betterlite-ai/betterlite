@@ -221,7 +221,7 @@ def file_step(step: Step, client: SdkClient | None, *, is_async: bool) -> JsonVa
             "expires_after": expires_after,
         }
         created = API.create_file(
-            _is_async=is_async, create_file_data=data, api_base=args["api_base"],
+            _is_async=is_async, create_file_data=data, api_base=args["api_base"],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96
             api_key=args["api_key"], api_version=args["api_version"], client=client,
             timeout=args["timeout"], max_retries=args["max_retries"], litellm_params=params,
         )
