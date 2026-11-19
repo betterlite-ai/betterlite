@@ -3,7 +3,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import ClassVar, Final, Literal
+from typing import ClassVar, Final, Literal, Protocol
 from unittest.mock import patch
 
 from litellm.caching.dual_cache import DualCache
@@ -77,6 +77,31 @@ class Returned(BaseModel):
 
 
 RETURNED: Final = TypeAdapter(Returned)
+
+
+# the handler members the scenario calls, typed so an unannotated LiteLLM return stays out of the probe
+class Handler(Protocol):
+    def usage_counter_keys(
+        self, healthy_deployments: list[dict[str, JsonValue]], /
+    ) -> tuple[list[str], list[str]]: ...
+
+    def get_available_deployments(
+        self,
+        model_group: str,
+        healthy_deployments: list[dict[str, JsonValue]],
+        messages: list[dict[str, str]] | None = None,
+        request_input: str | list[object] | None = None,
+        /,
+    ) -> dict[str, object] | None: ...
+
+    async def async_get_available_deployments(
+        self,
+        model_group: str,
+        healthy_deployments: list[dict[str, JsonValue]],
+        messages: list[dict[str, str]] | None = None,
+        request_input: str | list[object] | None = None,
+        /,
+    ) -> dict[str, object] | None: ...
 
 
 class UsageRoutingV2(Operation):
@@ -157,7 +182,7 @@ class Context:
     healthy: list[dict[str, JsonValue]]
     cache: DualCache
     store: FakeStore
-    handler: LowestTPMLoggingHandler_v2
+    handler: Handler
     tokens: FixedTokens
     prefetches: dict[int, PrefetchedUsage] = field(default_factory=dict)
 
@@ -194,7 +219,7 @@ def store_values(operation: UsageRoutingV2) -> dict[str, int]:
     return values
 
 
-def selected_id(picked: dict[str, JsonValue] | None) -> str | None:
+def selected_id(picked: Mapping[str, object] | None) -> str | None:
     if picked is None:
         return None
     return RETURNED.validate_python(picked).model_info.id
@@ -233,7 +258,7 @@ async def select_async(step: Step, context: Context) -> StepOutput:
     prefetched = context.prefetches.pop(step.request, None)
     try:
         with PrefetchedUsage.scoped(prefetched):
-            picked: dict[str, JsonValue] | None = await context.handler.async_get_available_deployments(
+            picked = await context.handler.async_get_available_deployments(
                 context.group, context.healthy, None, None
             )
     except RateLimitError as error:
@@ -244,7 +269,7 @@ async def select_async(step: Step, context: Context) -> StepOutput:
 def select_sync(step: Step, context: Context) -> StepOutput:
     context.tokens.tokens = step.input_tokens
     try:
-        picked: dict[str, JsonValue] | None = context.handler.get_available_deployments(
+        picked = context.handler.get_available_deployments(
             context.group, context.healthy, None, None
         )
     except ValueError as error:
