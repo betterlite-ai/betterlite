@@ -18,7 +18,7 @@ use crate::api::compression_interception::engine::{
 };
 use crate::api::compression_interception::hook::CompressionInterception;
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
-use crate::api::compression_retrieval_loop::CompressionRetrievalLoop;
+use crate::api::compression_retrieval_loop::CompressionRetrievalLoop as _;
 use crate::api::compression_retrieval_loop::plan::RetrievalLoopRequest;
 
 pub(super) const MODEL: &str = "claude-sonnet-4";

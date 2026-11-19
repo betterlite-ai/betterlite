@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
 
-use super::CompressionRetrievalLoop;
+use super::CompressionRetrievalLoop as _;
 use super::gate::extract_retrieval_blocks;
 use super::plan::{RetrievalLoopError, followup_kwargs, retrieval_content};
 use support::{
@@ -395,7 +395,9 @@ fn plan_defaults_a_missing_id_name_and_input() {
             ]),
         ),
     ]);
-    assert_eq!(followups(&built)[1], assistant);
+    let appended = followups(&built);
+    assert_eq!(appended.len(), 2);
+    assert_eq!(appended[0], assistant);
     let expected = vec![
         tool_result(text("call-1"), "No retrieval key provided."),
         tool_result(text("call-2"), "No retrieval key provided."),
