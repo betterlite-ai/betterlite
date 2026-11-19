@@ -6,7 +6,7 @@ use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
 
 pub const MANAGED_FILE_ID_PREFIX: &str = "litellm_proxy";
 
-pub fn validate_managed_upload(
+pub const fn validate_managed_upload(
     require_managed_files: bool,
     target_model_names: &[String],
     model: Option<&str>,
@@ -33,26 +33,22 @@ pub async fn validate_managed_id(
     if !require_managed_files {
         return Ok(());
     }
-    let Some(resource_id) = resource_id.filter(|id| !id.is_empty()) else {
+    let Some(id) = resource_id.filter(|candidate| !candidate.is_empty()) else {
         return Ok(());
     };
-    if is_base64_encoded_unified_id(resource_id, MANAGED_FILE_ID_PREFIX).is_none() {
+    if is_base64_encoded_unified_id(id, MANAGED_FILE_ID_PREFIX).is_none() {
         return Err(FileUploadOptionsError::RawProviderId {
             kind: resource_kind,
         });
     }
-    let Some(checker) = checker else {
+    let Some(access_checker) = checker else {
         return Err(FileUploadOptionsError::OwnershipCheckUnavailable);
     };
     let allowed = match resource_kind {
-        ResourceKind::File => {
-            checker
-                .can_call_unified_file_id(resource_id, principal)
-                .await
-        }
+        ResourceKind::File => access_checker.can_call_unified_file_id(id, principal).await,
         ResourceKind::Batch | ResourceKind::FineTuningJob => {
-            checker
-                .can_call_unified_object_id(resource_id, principal)
+            access_checker
+                .can_call_unified_object_id(id, principal)
                 .await
         }
     };

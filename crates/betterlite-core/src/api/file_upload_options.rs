@@ -74,13 +74,11 @@ pub fn extract_file_creation_params(
     target_model_names_form: Option<&Json>,
     target_storage_form: Option<&str>,
 ) -> Result<FileCreationParams, FileUploadOptionsError> {
-    let read_body;
-    let body = if let Some(body) = request_body {
-        body
-    } else {
-        read_body = request.read_body.request_body().unwrap_or_default();
-        &read_body
-    };
+    let read_body = request_body
+        .is_none()
+        .then(|| request.read_body.request_body().unwrap_or_default())
+        .unwrap_or_default();
+    let body = request_body.unwrap_or(&read_body);
     let target_storage = extract_target_storage_simple(target_storage_form);
     let mut target_model_names = simple_model_names(target_model_names_form)?;
     if target_model_names.is_empty() {
@@ -140,7 +138,7 @@ fn list_model_names(values: &[Json]) -> Result<Vec<String>, FileUploadOptionsErr
         .iter()
         .filter_map(|value| match value {
             Json::Text(text) if !text.is_empty() => Some(strip_space(text).to_owned()),
-            Json::Number(number) if number.as_f64().is_none_or(|number| number != 0.0_f64) => {
+            Json::Number(number) if number.as_f64().is_none_or(|parsed| parsed != 0.0_f64) => {
                 Some(number.to_string())
             }
             Json::Null
@@ -190,8 +188,8 @@ fn extract_model_param(
         if text.is_none() && !value.is_null() {
             return Err(FileUploadOptionsError::ModelNotText);
         }
-        if let Some(text) = text.filter(|text| !text.is_empty()) {
-            return Ok(Some(text.to_owned()));
+        if let Some(body_model) = text.filter(|candidate| !candidate.is_empty()) {
+            return Ok(Some(body_model.to_owned()));
         }
     }
     if let Some(model) = request

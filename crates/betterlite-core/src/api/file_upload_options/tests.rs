@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::{
@@ -154,13 +155,13 @@ fn principal() -> Principal {
 
 struct RecordingChecker {
     allowed: bool,
-    file_id: Cell<Option<String>>,
-    object_id: Cell<Option<String>>,
+    file_id: Mutex<Option<String>>,
+    object_id: Mutex<Option<String>>,
 }
 
 impl RecordingChecker {
-    fn record(&self, target: &Cell<Option<String>>, id: &str) -> bool {
-        target.set(Some(id.to_owned()));
+    fn record(&self, target: &Mutex<Option<String>>, id: &str) -> bool {
+        *target.lock().unwrap() = Some(id.to_owned());
         self.allowed
     }
 }
@@ -179,8 +180,8 @@ impl ManagedResourceAccessChecker for RecordingChecker {
 fn recording(allowed: bool) -> RecordingChecker {
     RecordingChecker {
         allowed,
-        file_id: Cell::new(None),
-        object_id: Cell::new(None),
+        file_id: Mutex::new(None),
+        object_id: Mutex::new(None),
     }
 }
 
@@ -423,8 +424,11 @@ fn managed_id_checker_contract() {
         &user,
     ));
     assert!(file_outcome.is_ok());
-    assert_eq!(permit_files.file_id.take(), Some(ENCODED_ID.to_owned()));
-    assert_eq!(permit_files.object_id.take(), None);
+    assert_eq!(
+        permit_files.file_id.lock().unwrap().take(),
+        Some(ENCODED_ID.to_owned())
+    );
+    assert_eq!(permit_files.object_id.lock().unwrap().take(), None);
 
     let deny_job = recording(false);
     let job_outcome = runtime.block_on(validate_managed_id(
@@ -443,8 +447,11 @@ fn managed_id_checker_contract() {
             "The caller does not have access to this managed fine-tuning job id.".to_owned()
         ))
     );
-    assert_eq!(deny_job.object_id.take(), Some(ENCODED_ID.to_owned()));
-    assert_eq!(deny_job.file_id.take(), None);
+    assert_eq!(
+        deny_job.object_id.lock().unwrap().take(),
+        Some(ENCODED_ID.to_owned())
+    );
+    assert_eq!(deny_job.file_id.lock().unwrap().take(), None);
 
     let deny_batch = recording(false);
     let batch_outcome = runtime.block_on(validate_managed_id(
