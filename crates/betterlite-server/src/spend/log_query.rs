@@ -180,25 +180,17 @@ fn decode_spend_bounds(
     issues: &mut Vec<QueryIssue>,
 ) -> SpendBounds {
     SpendBounds {
-        minimum_inclusive: decode_money(
-            values.get(MIN_SPEND_PARAM).map(String::as_str),
-            MIN_SPEND_PARAM,
-            issues,
-        ),
-        maximum_inclusive: decode_money(
-            values.get(MAX_SPEND_PARAM).map(String::as_str),
-            MAX_SPEND_PARAM,
-            issues,
-        ),
+        minimum_inclusive: decode_money(values, MIN_SPEND_PARAM, issues),
+        maximum_inclusive: decode_money(values, MAX_SPEND_PARAM, issues),
     }
 }
 
 fn decode_money(
-    raw: Option<&str>,
+    values: &BTreeMap<String, String>,
     name: &'static str,
     issues: &mut Vec<QueryIssue>,
 ) -> Option<Decimal> {
-    let text = raw?;
+    let text = values.get(name)?;
     match scalars::money(text) {
         Ok(value) => Some(value),
         Err(issue) => {
@@ -208,53 +200,70 @@ fn decode_money(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IntegerBound {
+    name: &'static str,
+    minimum: i64,
+    maximum: Option<i64>,
+    fallback: i64,
+}
+
+const PAGE_BOUND: IntegerBound = IntegerBound {
+    name: PAGE_PARAM,
+    minimum: DEFAULT_PAGE,
+    maximum: None,
+    fallback: DEFAULT_PAGE,
+};
+
+const PAGE_SIZE_BOUND: IntegerBound = IntegerBound {
+    name: PAGE_SIZE_PARAM,
+    minimum: DEFAULT_PAGE,
+    maximum: Some(MAX_PAGE_SIZE),
+    fallback: DEFAULT_PAGE_SIZE,
+};
+
 fn decode_page(values: &BTreeMap<String, String>, issues: &mut Vec<QueryIssue>) -> PageQuery {
     PageQuery {
-        page: decode_page_number(values.get(PAGE_PARAM).map(String::as_str), issues),
-        page_size: decode_page_size(values.get(PAGE_SIZE_PARAM).map(String::as_str), issues),
+        page: decode_bounded_integer(values, PAGE_BOUND, issues),
+        page_size: decode_bounded_integer(values, PAGE_SIZE_BOUND, issues),
         session_cursor: values.get(SESSION_CURSOR_PARAM).cloned(),
     }
 }
 
-fn decode_page_number(raw: Option<&str>, issues: &mut Vec<QueryIssue>) -> i64 {
-    let Some(text) = raw else {
-        return DEFAULT_PAGE;
+fn decode_bounded_integer(
+    values: &BTreeMap<String, String>,
+    bound: IntegerBound,
+    issues: &mut Vec<QueryIssue>,
+) -> i64 {
+    let Some(text) = values.get(bound.name) else {
+        return bound.fallback;
     };
-    match scalars::integer(text) {
-        IntegerText::Value(value) if value >= DEFAULT_PAGE => value,
-        IntegerText::Value(_) => {
-            issues.push(QueryIssue::below_minimum(PAGE_PARAM, DEFAULT_PAGE));
-            DEFAULT_PAGE
-        }
-        IntegerText::AboveSignedRange | IntegerText::NotAnInteger => {
-            issues.push(QueryIssue::parsing(PAGE_PARAM, NumericIssue::NotAnInteger));
-            DEFAULT_PAGE
-        }
-    }
-}
-
-fn decode_page_size(raw: Option<&str>, issues: &mut Vec<QueryIssue>) -> i64 {
-    let Some(text) = raw else {
-        return DEFAULT_PAGE_SIZE;
-    };
-    match scalars::integer(text) {
-        IntegerText::Value(value) if (DEFAULT_PAGE..=MAX_PAGE_SIZE).contains(&value) => value,
-        IntegerText::Value(value) if value < DEFAULT_PAGE => {
-            issues.push(QueryIssue::below_minimum(PAGE_SIZE_PARAM, DEFAULT_PAGE));
-            DEFAULT_PAGE_SIZE
-        }
-        IntegerText::Value(_) | IntegerText::AboveSignedRange => {
-            issues.push(QueryIssue::above_maximum(PAGE_SIZE_PARAM, MAX_PAGE_SIZE));
-            DEFAULT_PAGE_SIZE
+    let value = match scalars::integer(text) {
+        IntegerText::Value(value) => value,
+        IntegerText::AboveSignedRange => {
+            let issue = match bound.maximum {
+                Some(maximum) => QueryIssue::above_maximum(bound.name, maximum),
+                None => QueryIssue::parsing(bound.name, NumericIssue::NotAnInteger),
+            };
+            issues.push(issue);
+            return bound.fallback;
         }
         IntegerText::NotAnInteger => {
-            issues.push(QueryIssue::parsing(
-                PAGE_SIZE_PARAM,
-                NumericIssue::NotAnInteger,
-            ));
-            DEFAULT_PAGE_SIZE
+            issues.push(QueryIssue::parsing(bound.name, NumericIssue::NotAnInteger));
+            return bound.fallback;
         }
+    };
+    if value < bound.minimum {
+        issues.push(QueryIssue::below_minimum(bound.name, bound.minimum));
+        return bound.fallback;
     }
+    if let Some(maximum) = bound.maximum
+        && value > maximum
+    {
+        issues.push(QueryIssue::above_maximum(bound.name, maximum));
+        return bound.fallback;
+    }
+    value
 }
 
 fn decode_flags(
@@ -263,13 +272,7 @@ fn decode_flags(
     issues: &mut Vec<QueryIssue>,
 ) -> QueryFlags {
     match read_query(raw_query, FLAG_PARAMS) {
-        Ok((_, [used_client_oauth_token, exclude, group])) => QueryFlags {
-            used_client_oauth_token: values
-                .contains_key(USED_CLIENT_OAUTH_TOKEN_PARAM)
-                .then_some(used_client_oauth_token),
-            exclude_internal_health_checks: exclude,
-            group_by_session: group,
-        },
+        Ok((_, flags)) => query_flags(values, flags),
         Err(ModelError::InvalidFlags(names)) => {
             for name in names {
                 issues.push(QueryIssue::parsing(name, NumericIssue::NotABoolean));
@@ -277,5 +280,20 @@ fn decode_flags(
             QueryFlags::default()
         }
         Err(ModelError::Detail(_, _) | ModelError::Unsupported(_)) => QueryFlags::default(),
+    }
+}
+
+fn query_flags(values: &BTreeMap<String, String>, flags: [bool; 3]) -> QueryFlags {
+    let [
+        used_client_oauth_token,
+        exclude_internal_health_checks,
+        group_by_session,
+    ] = flags;
+    QueryFlags {
+        used_client_oauth_token: values
+            .contains_key(USED_CLIENT_OAUTH_TOKEN_PARAM)
+            .then_some(used_client_oauth_token),
+        exclude_internal_health_checks,
+        group_by_session,
     }
 }

@@ -95,19 +95,6 @@ impl SortColumn {
             _ => None,
         }
     }
-
-    #[must_use]
-    pub const fn token(self) -> &'static str {
-        match self {
-            Self::Spend => "spend",
-            Self::TotalTokens => "total_tokens",
-            Self::StartTime => "startTime",
-            Self::EndTime => "endTime",
-            Self::RequestDurationMs => "request_duration_ms",
-            Self::Model => "model",
-            Self::TtftMs => "ttft_ms",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

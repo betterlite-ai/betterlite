@@ -21,9 +21,21 @@ use super::{SpendLogQuery, decode_spend_log_query};
 mod prepare;
 
 const DATES: &str = "start_date=2024-01-02&end_date=2024-01-03";
+const PAGE_MINIMUM: &str = "Input should be greater than or equal to 1";
+const NOT_AN_INTEGER: &str =
+    "Input should be a valid integer, unable to parse string as an integer";
 
 fn decode(raw: &str) -> SpendLogQuery {
     decode_spend_log_query(Some(raw))
+}
+
+fn assert_single_issue(query: &SpendLogQuery, kind: &str, parameter: &str, msg: &str) {
+    let mut issues = query.framework_issues().unwrap().issues;
+    assert_eq!(issues.len(), 1);
+    let issue = issues.remove(0);
+    assert_eq!(issue.kind, kind);
+    assert_eq!(issue.loc, ["query", parameter]);
+    assert_eq!(issue.msg, msg);
 }
 
 fn utc(text: &str) -> DateTime<Utc> {
@@ -120,11 +132,7 @@ fn decoding_reads_pages(#[case] raw: &str, #[case] page: i64, #[case] page_size:
 fn page_below_one_reports_greater_than_equal(#[case] raw: &str) {
     let query = decode(raw);
     assert_eq!(query.page.page, 1);
-    let issues = query.framework_issues().unwrap().issues;
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].kind, "greater_than_equal");
-    assert_eq!(issues[0].loc, ["query", "page"]);
-    assert_eq!(issues[0].msg, "Input should be greater than or equal to 1");
+    assert_single_issue(&query, "greater_than_equal", "page", PAGE_MINIMUM);
 }
 
 #[rstest]
@@ -139,14 +147,7 @@ fn page_below_one_reports_greater_than_equal(#[case] raw: &str) {
 fn page_rejects_text(#[case] raw: &str) {
     let query = decode(raw);
     assert_eq!(query.page.page, 1);
-    let issues = query.framework_issues().unwrap().issues;
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].kind, "int_parsing");
-    assert_eq!(issues[0].loc, ["query", "page"]);
-    assert_eq!(
-        issues[0].msg,
-        "Input should be a valid integer, unable to parse string as an integer"
-    );
+    assert_single_issue(&query, "int_parsing", "page", NOT_AN_INTEGER);
 }
 
 #[test]
@@ -202,11 +203,7 @@ fn page_above_the_signed_range_reports_int_parsing() {
 fn page_size_issues_match_fastapi(#[case] raw: &str, #[case] kind: &str, #[case] msg: &str) {
     let query = decode(raw);
     assert_eq!(query.page.page_size, 50);
-    let issues = query.framework_issues().unwrap().issues;
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].kind, kind);
-    assert_eq!(issues[0].loc, ["query", "page_size"]);
-    assert_eq!(issues[0].msg, msg);
+    assert_single_issue(&query, kind, "page_size", msg);
 }
 
 #[test]
@@ -300,11 +297,7 @@ fn money_rejects_text_and_values_decimal_cannot_hold(
 ) {
     let query = decode(&format!("max_spend={raw}"));
     assert_eq!(query.spend.maximum_inclusive, None);
-    let issues = query.framework_issues().unwrap().issues;
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].kind, kind);
-    assert_eq!(issues[0].loc, ["query", "max_spend"]);
-    assert_eq!(issues[0].msg, msg);
+    assert_single_issue(&query, kind, "max_spend", msg);
 }
 
 #[rstest]
@@ -368,17 +361,17 @@ async fn framework_issues_render_fastapi_422_detail() {
 }
 
 #[rstest]
-#[case::spend("spend")]
-#[case::total_tokens("total_tokens")]
-#[case::start_time("startTime")]
-#[case::end_time("endTime")]
-#[case::request_duration("request_duration_ms")]
-#[case::model("model")]
-#[case::ttft("ttft_ms")]
-fn sort_by_accepts_every_documented_field(#[case] sort_by: &str) {
+#[case::spend("spend", SortColumn::Spend)]
+#[case::total_tokens("total_tokens", SortColumn::TotalTokens)]
+#[case::start_time("startTime", SortColumn::StartTime)]
+#[case::end_time("endTime", SortColumn::EndTime)]
+#[case::request_duration("request_duration_ms", SortColumn::RequestDurationMs)]
+#[case::model("model", SortColumn::Model)]
+#[case::ttft("ttft_ms", SortColumn::TtftMs)]
+fn sort_by_accepts_every_documented_field(#[case] sort_by: &str, #[case] expected: SortColumn) {
     let raw = format!("sort_by={sort_by}");
     let choices = decode(&raw).choices().unwrap();
-    assert_eq!(choices.sort_column.token(), sort_by);
+    assert_eq!(choices.sort_column, expected);
 }
 
 #[test]
