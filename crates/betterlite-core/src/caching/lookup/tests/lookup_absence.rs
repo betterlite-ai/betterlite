@@ -43,7 +43,7 @@ async fn a_disabled_async_lookup_returns_none() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -76,7 +76,7 @@ async fn an_async_lookup_without_a_cache_returns_none() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -110,7 +110,7 @@ async fn an_async_miss_returns_an_empty_response() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -145,7 +145,7 @@ async fn a_sync_miss_reads_synchronously() {
     let mut logging = fixture.hit_logging();
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -186,7 +186,7 @@ async fn a_sync_detail_hit_is_returned_unconverted() {
     logging.state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -234,7 +234,7 @@ async fn an_async_list_hit_is_returned_as_stored() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -277,7 +277,7 @@ async fn a_sync_list_hit_is_logged_as_stored() {
     logging.state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -318,7 +318,7 @@ async fn an_old_format_embedding_entry_is_a_miss() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -357,7 +357,7 @@ async fn an_s3_partial_embedding_hit_returns_the_stored_entries() {
     services.cache_type = LiteLlmCacheType::S3;
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,

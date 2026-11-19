@@ -6,19 +6,20 @@ use async_trait::async_trait;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::DualCacheSettings;
 use betterlite_cache::handler::call_types::call_type_name;
+use betterlite_cache::handler::retrieve::CacheSource;
 use betterlite_cache::handler::state::{CachingHandler, HandlerDependencies, OriginalFunction};
 use betterlite_config::sections::logging_privacy::Settings;
-use betterlite_core::caching::hit_callbacks::job::OwnedSuccessHandler;
+use betterlite_core::caching::hit_callbacks::job::{CacheHitSuccessJob, OwnedSuccessHandler};
 use betterlite_core::caching::lookup::error::TokenCountError;
 use betterlite_core::caching::lookup::hit::HitLogging;
-use betterlite_core::caching::lookup::services::ResponseTokens;
+use betterlite_core::caching::lookup::services::{LookupServices, ResponseTokens};
 use betterlite_logging::exporter_options::redaction::ResponseStamp;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::registry::CallbackRegistry;
-use betterlite_logging::worker::WorkerSettings;
+use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -28,6 +29,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 
+use super::cache::Silent;
 use super::input::Scenario;
 use super::record::{Assembler, FixedClock, Logged, SnapshotBuilder};
 
@@ -181,4 +183,25 @@ impl ResponseTokens for Tokens {
     async fn count_response_tokens(&self, _text: &str) -> Result<i64, TokenCountError> {
         Ok(0)
     }
+}
+
+pub(crate) fn scenario_services<'a>(
+    scenario: &Scenario,
+    cache: Option<&'a CacheSource<'a, Silent, Silent>>,
+    context: &'a ResolutionContext<'a>,
+    worker: &'a LoggingWorker<CacheHitSuccessJob>,
+    tokens: &'a Tokens,
+) -> Result<LookupServices<'a, Silent, Silent>, Box<HelperError>> {
+    Ok(LookupServices {
+        cache,
+        cache_type: scenario.cache_type,
+        supported_call_types: scenario.supported_call_types.as_deref(),
+        resolution: context,
+        worker,
+        tokens,
+        perf: Arc::new(|| Duration::ZERO),
+        wall: Arc::new(FixedClock {
+            now: DateTime::parse_from_rfc3339(FIXED_TIME).or_value_error()?,
+        }),
+    })
 }

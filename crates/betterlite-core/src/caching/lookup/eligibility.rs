@@ -4,25 +4,20 @@ use betterlite_cache::handler::call_types::call_type_supported;
 use betterlite_cache::handler::kwargs::request_control;
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 
-const CACHING_KWARG: &str = "caching";
-
 // LiteLLM's outer condition: false means _async_get_cache returned None and the caller runs the call itself
 pub fn async_cache_enabled(kwargs: &KeyObject, cache_present: bool) -> Result<bool, HandlerError> {
-    let caching = match kwargs.get(CACHING_KWARG) {
+    let caching = match kwargs.get("caching") {
         None | Some(KeyValue::Null) => None,
         Some(KeyValue::Bool(flag)) => Some(*flag),
         Some(_) => {
             return Err(HandlerError::FieldType {
-                field: CACHING_KWARG,
+                field: "caching",
                 expected: "a boolean",
             });
         }
     };
     // absent or null takes the cache's presence, an explicit value is used as given
-    let enabled = match caching {
-        None => cache_present,
-        Some(flag) => flag,
-    };
+    let enabled = caching.unwrap_or(cache_present);
     if !enabled {
         return Ok(false);
     }
@@ -37,8 +32,5 @@ pub fn cache_supports_call(
     original_function: &str,
     supported_call_types: Option<&[CachingSupportedCallType]>,
 ) -> bool {
-    if !cache_present {
-        return false;
-    }
-    call_type_supported(original_function, supported_call_types)
+    cache_present && call_type_supported(original_function, supported_call_types)
 }

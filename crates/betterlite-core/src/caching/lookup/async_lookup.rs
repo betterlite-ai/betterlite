@@ -1,3 +1,4 @@
+use betterlite_cache::cache_key::value::KeyObject;
 use betterlite_cache::handler::retrieve::{Retrieval, retrieve_from_cache};
 use betterlite_cache::handler::state::CachingHandler;
 use betterlite_cache::replay::{
@@ -25,10 +26,19 @@ pub struct AsyncLookup<Result> {
     pub logging: Option<HitLogging>,
 }
 
+impl<Result> AsyncLookup<Result> {
+    const fn new(response: Option<LookupResponse<Result>>, logging: HitLogging) -> Self {
+        Self {
+            response,
+            logging: Some(logging),
+        }
+    }
+}
+
 // LiteLLM's _async_get_cache: the eligibility checks run before any expensive operation
 pub async fn async_get_cache<L, C, Conv>(
     handler: &mut CachingHandler,
-    request: CacheLookup,
+    request: &CacheLookup,
     logging: HitLogging,
     services: &LookupServices<'_, L, C>,
     conversions: &Conv,
@@ -40,21 +50,40 @@ where
     Conv::Response: HitResponse,
 {
     if !async_cache_enabled(&request.kwargs, services.cache.is_some())? {
-        return Ok(AsyncLookup {
-            response: None,
-            logging: Some(logging),
-        });
+        return Ok(AsyncLookup::new(None, logging));
     }
     if !cache_supports_call(
         services.cache.is_some(),
         &handler.original_function.name,
         services.supported_call_types,
     ) {
-        return Ok(AsyncLookup {
-            response: Some(LookupResponse::default()),
-            logging: Some(logging),
-        });
+        return Ok(AsyncLookup::new(Some(LookupResponse::default()), logging));
     }
+    let (kwargs, retrieval, timing) = async_fetch(handler, request, services).await?;
+    let mut pass = HitPass {
+        handler,
+        request,
+        kwargs: &kwargs,
+        services,
+        conversions,
+    };
+    match retrieval {
+        Retrieval::Miss => Ok(AsyncLookup::new(None, logging)),
+        Retrieval::Embeddings(entries) => partial_embedding_hit(&mut pass, &entries, logging).await,
+        // a cached list is never a single response, so LiteLLM hands it back as it was stored
+        Retrieval::Hit(value @ CacheValue::Array(_)) => Ok(AsyncLookup::new(
+            Some(LookupResponse::cached(Replayed::Unchanged(value))),
+            logging,
+        )),
+        Retrieval::Hit(value) => async_hit(&pass, value, timing, logging),
+    }
+}
+
+async fn async_fetch(
+    handler: &mut CachingHandler,
+    request: &CacheLookup,
+    services: &LookupServices<'_, impl LoggerSink + Send + Sync, impl ConsoleSink + Send + Sync>,
+) -> Result<(KeyObject, Retrieval, CacheTiming), LookupError> {
     let started = (services.perf)();
     let mut kwargs = request.kwargs.clone();
     add_parent_otel_span(&mut kwargs);
@@ -66,36 +95,23 @@ where
         &request.args,
     )
     .await?;
-    let timing = CacheTiming {
-        started,
-        finished: (services.perf)(),
-    };
-    let mut pass = HitPass {
-        handler,
-        request: &request,
-        kwargs: &kwargs,
-        services,
-        conversions,
-    };
-    let value = match retrieval {
-        Retrieval::Miss => {
-            return Ok(AsyncLookup {
-                response: Some(LookupResponse::default()),
-                logging: Some(logging),
-            });
-        }
-        Retrieval::Embeddings(entries) => {
-            return partial_embedding_hit(&mut pass, entries, logging).await;
-        }
-        // a cached list is never a single response, so LiteLLM hands it back as it was stored
-        Retrieval::Hit(value @ CacheValue::Array(_)) => {
-            return Ok(AsyncLookup {
-                response: Some(LookupResponse::cached(Replayed::Unchanged(value))),
-                logging: Some(logging),
-            });
-        }
-        Retrieval::Hit(value) => value,
-    };
+    let finished = (services.perf)();
+    Ok((kwargs, retrieval, CacheTiming { started, finished }))
+}
+
+// A full hit: convert the stored value, record the hit's context and log the converted result
+fn async_hit<L, C, Conv>(
+    pass: &HitPass<'_, L, C, Conv>,
+    value: CacheValue,
+    timing: CacheTiming,
+    logging: HitLogging,
+) -> Result<AsyncLookup<ReplayedBy<Conv>>, LookupError>
+where
+    L: LoggerSink,
+    C: ConsoleSink,
+    Conv: ReplayConversions + Sync,
+    Conv::Response: HitResponse,
+{
     let end_time = pass.services.wall.now();
     let record = hit_record(
         pass.services.resolution,

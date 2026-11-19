@@ -54,7 +54,7 @@ async fn a_partial_embedding_hit_merges_the_cached_positions() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -126,7 +126,7 @@ async fn a_full_embedding_hit_logs_the_merged_usage_once() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -215,7 +215,7 @@ async fn every_cached_prompt_token_count_skips_the_counter() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -263,7 +263,7 @@ async fn an_old_format_entry_is_treated_as_uncached() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        embedding_lookup(request_kwargs),
+        &embedding_lookup(request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,

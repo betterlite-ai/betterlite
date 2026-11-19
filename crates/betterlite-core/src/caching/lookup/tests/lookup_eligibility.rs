@@ -87,7 +87,7 @@ async fn the_async_gate_decides_whether_the_cache_is_read(
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -134,17 +134,16 @@ async fn a_malformed_cache_control_is_refused(
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
     );
-    let error = match async_get_cache(
+    let Err(error) = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
     )
     .await
-    {
-        Ok(_outcome) => panic!("the malformed control is refused"),
-        Err(error) => error,
+    else {
+        panic!("the malformed control is refused");
     };
     let LookupError::Request {
         source: HandlerError::FieldType { field: refused, .. },
@@ -179,7 +178,7 @@ async fn an_async_no_cache_control_returns_no_response() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -213,7 +212,7 @@ async fn an_unsupported_call_type_never_reads_the_cache() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -254,7 +253,7 @@ async fn the_sync_gate_reads_only_for_a_supported_call(
     let mut logging = fixture.hit_logging();
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -288,7 +287,7 @@ async fn a_sync_lookup_ignores_the_caching_switch() {
     let mut logging = fixture.hit_logging();
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -322,7 +321,7 @@ async fn a_sync_no_cache_control_does_not_stop_the_lookup() {
     let mut logging = fixture.hit_logging();
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -350,7 +349,7 @@ async fn a_sync_lookup_without_a_cache_returns_an_empty_response() {
     let mut logging = fixture.hit_logging();
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,

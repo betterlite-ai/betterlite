@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use betterlite_cache::embedding_merge::cached::{
     CacheHitServices, CachedLookup, CompleteHit, process_cached_embeddings,
 };
-use betterlite_cache::embedding_merge::response::CachedEmbeddingResponse;
+use betterlite_cache::embedding_merge::response::{CachedEmbeddingResponse, Embedding};
+use betterlite_cache::embedding_merge::usage::Usage;
 use betterlite_cache::handler::embedding::input_items;
 use betterlite_cache::replay::{ReplayConversions, Replayed, ReplayedBy};
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::embedding::{CachedEmbedding, EmbeddingPayload};
-use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::logging_success::types::SuccessResult;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
@@ -26,14 +26,14 @@ use crate::caching::hit_callbacks::job::CacheHitSuccessJob;
 use super::async_lookup::AsyncLookup;
 use super::error::{HitError, LookupError};
 use super::hit::{HitLogging, HitPass, HitTimes, log_hit_async, resolve_provider};
-use super::json::kwargs_json;
+use super::json::{cache_value_of, kwargs_json};
 use super::response::LookupResponse;
 use super::services::ResponseTokens;
 
 // LiteLLM's _process_async_embedding_cached_response, minus the S3 cache, which has no bulk writes
 pub async fn partial_embedding_hit<L, C, Conv>(
     pass: &mut HitPass<'_, L, C, Conv>,
-    entries: Vec<Option<CachedEmbedding>>,
+    entries: &[Option<CachedEmbedding>],
     logging: HitLogging,
 ) -> Result<AsyncLookup<ReplayedBy<Conv>>, LookupError>
 where
@@ -42,17 +42,14 @@ where
     Conv: ReplayConversions + Sync,
 {
     if pass.services.cache_type == LiteLlmCacheType::S3 {
-        let raw =
-            serde_json::to_value(&entries).map_err(|source| LookupError::Render { source })?;
-        let raw: CacheValue =
-            serde_json::from_value(raw).map_err(|source| LookupError::Render { source })?;
+        let raw = cache_value_of(entries)?;
         return Ok(AsyncLookup {
             response: Some(LookupResponse::cached(Replayed::Unchanged(raw))),
             logging: Some(logging),
         });
     }
     let lookup = CachedLookup {
-        cached_result: &entries,
+        cached_result: entries,
         kwargs: &mut pass.handler.request_kwargs,
         model: &pass.request.model,
         start_time: pass.request.start_time.with_timezone(&Utc),
@@ -134,72 +131,65 @@ impl CacheHitServices for EmbeddingHitServices<'_> {
 }
 // The merged response as LiteLLM's EmbeddingResponse dict, which the hit's callbacks log
 fn embedding_json(response: &CachedEmbeddingResponse) -> Json {
-    let data = response
-        .data
+    let model = response.model.clone().map_or(Json::Null, Json::Text);
+    let headers = response
+        .response_headers
+        .as_ref()
+        .map_or(Json::Null, |headers| Json::Object(headers.clone()));
+    let hidden = Json::Object(response.hidden_params.clone());
+    Json::Object(IndexMap::from([
+        ("model".to_owned(), model),
+        ("data".to_owned(), embedding_data(&response.data)),
+        ("usage".to_owned(), embedding_usage(response.usage.as_ref())),
+        ("hidden_params".to_owned(), hidden),
+        ("response_headers".to_owned(), headers),
+    ]))
+}
+
+fn embedding_data(slots: &[Option<Embedding>]) -> Json {
+    let items = slots
         .iter()
-        .map(|slot| match slot {
-            None => Json::Null,
-            Some(item) => Json::Object(IndexMap::from([
-                (
-                    "embedding".to_owned(),
-                    match &item.embedding {
-                        EmbeddingPayload::Vector(values) => {
-                            Json::List(values.iter().cloned().map(Json::Number).collect())
-                        }
-                        EmbeddingPayload::Text(text) => Json::Text(text.clone()),
-                    },
-                ),
-                ("index".to_owned(), Json::Number(Number::from(item.index))),
-                ("object".to_owned(), Json::Text("embedding".to_owned())),
-            ])),
-        })
-        .collect();
+        .map(|slot| slot.as_ref().map_or(Json::Null, embedding_item));
+    Json::List(items.collect())
+}
+
+fn embedding_item(item: &Embedding) -> Json {
     Json::Object(IndexMap::from([
         (
-            "model".to_owned(),
-            response
-                .model
-                .as_ref()
-                .map_or(Json::Null, |model| Json::Text(model.clone())),
-        ),
-        ("data".to_owned(), Json::List(data)),
-        (
-            "usage".to_owned(),
-            match &response.usage {
-                None => Json::Null,
-                Some(usage) => Json::Object(IndexMap::from([
-                    (
-                        "prompt_tokens".to_owned(),
-                        Json::Number(Number::from(usage.prompt_tokens)),
-                    ),
-                    (
-                        "completion_tokens".to_owned(),
-                        Json::Number(Number::from(usage.completion_tokens)),
-                    ),
-                    (
-                        "total_tokens".to_owned(),
-                        Json::Number(Number::from(usage.total_tokens)),
-                    ),
-                    (
-                        "prompt_tokens_details".to_owned(),
-                        usage
-                            .prompt_tokens_details
-                            .as_ref()
-                            .map_or(Json::Null, |details| Json::Object(details.clone())),
-                    ),
-                ])),
+            "embedding".to_owned(),
+            match &item.embedding {
+                EmbeddingPayload::Vector(values) => {
+                    Json::List(values.iter().cloned().map(Json::Number).collect())
+                }
+                EmbeddingPayload::Text(text) => Json::Text(text.clone()),
             },
         ),
+        ("index".to_owned(), Json::Number(Number::from(item.index))),
+        ("object".to_owned(), Json::Text("embedding".to_owned())),
+    ]))
+}
+
+fn embedding_usage(usage: Option<&Usage>) -> Json {
+    let Some(usage) = usage else {
+        return Json::Null;
+    };
+    let details = usage.prompt_tokens_details.clone();
+    Json::Object(IndexMap::from([
         (
-            "hidden_params".to_owned(),
-            Json::Object(response.hidden_params.clone()),
+            "prompt_tokens".to_owned(),
+            Json::Number(Number::from(usage.prompt_tokens)),
         ),
         (
-            "response_headers".to_owned(),
-            response
-                .response_headers
-                .as_ref()
-                .map_or(Json::Null, |headers| Json::Object(headers.clone())),
+            "completion_tokens".to_owned(),
+            Json::Number(Number::from(usage.completion_tokens)),
+        ),
+        (
+            "total_tokens".to_owned(),
+            Json::Number(Number::from(usage.total_tokens)),
+        ),
+        (
+            "prompt_tokens_details".to_owned(),
+            details.map_or(Json::Null, Json::Object),
         ),
     ]))
 }

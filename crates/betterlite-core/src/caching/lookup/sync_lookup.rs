@@ -15,6 +15,7 @@ use super::error::{HitError, LookupError};
 use super::hit::{
     HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record, log_hit_sync,
 };
+use super::json::cache_value_of;
 use super::request::{CacheLookup, replay_request};
 use super::response::LookupResponse;
 use super::services::LookupServices;
@@ -22,7 +23,7 @@ use super::services::LookupServices;
 // LiteLLM's _sync_get_cache: only the call type gates the read, and Unsupported makes it the backend's own synchronous read
 pub async fn sync_get_cache<L, C, Conv>(
     handler: &mut CachingHandler,
-    request: CacheLookup,
+    request: &CacheLookup,
     logging: &mut HitLogging,
     services: &LookupServices<'_, L, C>,
     conversions: &Conv,
@@ -52,31 +53,28 @@ where
         &request.args,
     )
     .await?;
-    let mut pass = HitPass {
+    let pass = HitPass {
         handler,
-        request: &request,
+        request,
         kwargs: &request.kwargs,
         services,
         conversions,
     };
     match retrieval {
         Retrieval::Miss => Ok(LookupResponse::default()),
-        Retrieval::Embeddings(entries) => {
-            let raw =
-                serde_json::to_value(&entries).map_err(|source| LookupError::Render { source })?;
-            let raw: CacheValue =
-                serde_json::from_value(raw).map_err(|source| LookupError::Render { source })?;
-            Ok(LookupResponse::cached(Replayed::Unchanged(raw)))
-        }
+        Retrieval::Embeddings(entries) => Ok(LookupResponse::cached(Replayed::Unchanged(
+            cache_value_of(&entries)?,
+        ))),
         // a cached error keeps its detail instead of being converted into a response
         Retrieval::Hit(value) if matches!(&value, CacheValue::Object(fields) if fields.contains_key("detail")) => {
             Ok(LookupResponse::cached(Replayed::Unchanged(value)))
         }
-        Retrieval::Hit(value) => sync_hit(&mut pass, value, logging),
+        Retrieval::Hit(value) => sync_hit(&pass, value, logging),
     }
 }
+
 fn sync_hit<L, C, Conv>(
-    pass: &mut HitPass<'_, L, C, Conv>,
+    pass: &HitPass<'_, L, C, Conv>,
     value: CacheValue,
     logging: &mut HitLogging,
 ) -> Result<LookupResponse<ReplayedBy<Conv>>, LookupError>

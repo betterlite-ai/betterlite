@@ -23,7 +23,7 @@ impl<Result> Default for LookupResponse<Result> {
 }
 impl<Result> LookupResponse<Result> {
     #[must_use]
-    pub fn cached(result: Result) -> Self {
+    pub const fn cached(result: Result) -> Self {
         Self {
             cached_result: Some(result),
             final_embedding_response: None,
@@ -33,7 +33,7 @@ impl<Result> LookupResponse<Result> {
     }
 
     #[must_use]
-    pub fn merged(
+    pub const fn merged(
         response: Option<CachedEmbeddingResponse>,
         all_cached: bool,
         uncached: Vec<KeyValue>,

@@ -12,53 +12,63 @@ use serde_json::{Value, json};
 
 use super::record::{HelperResponse, Logged};
 
+struct Cached {
+    rendered: &'static str,
+    raw: Value,
+    cache_hit: Option<bool>,
+    cache_key: Option<String>,
+}
+
+fn cached_report(result: Option<&Replayed<HelperResponse>>) -> Result<Cached, Box<HelperError>> {
+    Ok(match result {
+        None => Cached {
+            rendered: "none",
+            raw: Value::Null,
+            cache_hit: None,
+            cache_key: None,
+        },
+        Some(Replayed::Unchanged(value)) => Cached {
+            rendered: "raw",
+            raw: serde_json::to_value(cache_value_json(value)).or_value_error()?,
+            cache_hit: None,
+            cache_key: None,
+        },
+        Some(Replayed::Response(_, converted))
+        | Some(Replayed::Transcription(converted))
+        | Some(Replayed::Responses(converted))
+        | Some(Replayed::Stream(converted))
+        | Some(Replayed::ResponsesStream(converted))
+        | Some(Replayed::MessagesStream(converted)) => Cached {
+            rendered: "converted",
+            raw: Value::Null,
+            cache_hit: Some(converted.cache_hit),
+            cache_key: converted.stamp.clone().flatten(),
+        },
+    })
+}
+
 pub(crate) fn lookup_report(
     response: Option<&LookupResponse<Replayed<HelperResponse>>>,
     returned: bool,
     logged: &Logged,
 ) -> Result<Value, Box<HelperError>> {
-    let mut rendered = "none";
-    let mut raw_value = Value::Null;
-    let mut hit_flag: Option<bool> = None;
-    let mut stamped_key: Option<String> = None;
-    let mut embedding_value = Value::Null;
-    let mut every_cached = false;
+    let cached = cached_report(response.and_then(|response| response.cached_result.as_ref()))?;
+    let embedding = response
+        .and_then(|response| response.final_embedding_response.as_ref())
+        .map_or(Value::Null, embedding_report);
+    let all_cached = response.is_some_and(|response| response.all_embeddings_cached);
     let mut uncached = Value::Null;
-    if let Some(response) = response {
-        if let Some(result) = &response.cached_result {
-            match result {
-                Replayed::Unchanged(value) => {
-                    rendered = "raw";
-                    raw_value = serde_json::to_value(cache_value_json(value)).or_value_error()?;
-                }
-                Replayed::Response(_, converted)
-                | Replayed::Transcription(converted)
-                | Replayed::Responses(converted)
-                | Replayed::Stream(converted)
-                | Replayed::ResponsesStream(converted)
-                | Replayed::MessagesStream(converted) => {
-                    rendered = "converted";
-                    hit_flag = Some(converted.cache_hit);
-                    stamped_key = converted.stamp.clone().flatten();
-                }
-            }
-        }
-        if let Some(reply) = &response.final_embedding_response {
-            embedding_value = embedding_report(reply);
-        }
-        every_cached = response.all_embeddings_cached;
-        if let Some(items) = &response.embedding_uncached_input {
-            uncached = uncached_report(items)?;
-        }
+    if let Some(items) = response.and_then(|response| response.embedding_uncached_input.as_ref()) {
+        uncached = uncached_report(items)?;
     }
     Ok(json!({
         "returned": returned,
-        "cached": rendered,
-        "raw": raw_value,
-        "cache_hit": hit_flag,
-        "cache_key": stamped_key,
-        "embedding": embedding_value,
-        "all_cached": every_cached,
+        "cached": cached.rendered,
+        "raw": cached.raw,
+        "cache_hit": cached.cache_hit,
+        "cache_key": cached.cache_key,
+        "embedding": embedding,
+        "all_cached": all_cached,
         "uncached_input": uncached,
         "logging": logging_report(logged),
     }))

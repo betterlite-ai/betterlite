@@ -42,7 +42,7 @@ async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -109,7 +109,7 @@ async fn a_sync_hit_records_the_provider_prefixed_model_without_a_duration() {
     logging.state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
     let response = sync_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Completion, request_kwargs),
+        &lookup(CachingSupportedCallType::Completion, request_kwargs),
         &mut logging,
         &services,
         &fixture.conversions,
@@ -183,7 +183,7 @@ async fn a_request_cache_key_reaches_the_context_and_the_stamp() {
     );
     let outcome = async_get_cache(
         &mut handler,
-        lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
         fixture.hit_logging(),
         &services,
         &fixture.conversions,
@@ -291,14 +291,12 @@ fn the_hit_kind_sets_the_async_and_embedding_flags() {
 #[case::custom_provider("custom_llm_provider")]
 #[case::api_base("api_base")]
 #[case::api_key("api_key")]
-#[test]
 fn a_provider_field_of_the_wrong_type_is_refused(#[case] field: &'static str) {
     let fixture = Fixture::new();
     let resolution = fixture.resolution.context();
     let request = super::support::kwargs(&[(field, KeyValue::Bool(true))]);
-    let error = match resolve_provider(&resolution, MODEL, &request) {
-        Ok(_provider) => panic!("the provider field is refused"),
-        Err(error) => error,
+    let Err(error) = resolve_provider(&resolution, MODEL, &request) else {
+        panic!("the provider field is refused");
     };
     assert!(matches!(
         error,

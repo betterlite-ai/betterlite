@@ -141,11 +141,8 @@ impl HitRecord {
 // LiteLLM's (cache_check_end_time - cache_check_start_time) * 1000, in milliseconds
 #[must_use]
 pub fn cache_duration(timing: CacheTiming) -> f64 {
-    timing
-        .finished
-        .saturating_sub(timing.started)
-        .as_secs_f64()
-        .mul(1000.0_f64)
+    let elapsed = timing.finished.saturating_sub(timing.started);
+    elapsed.as_secs_f64().mul(1000.0_f64)
 }
 
 pub fn hit_record(
@@ -186,7 +183,7 @@ pub fn log_converted_hit<Response>(
     replayed: &mut Replayed<Response>,
     hit: &CacheHitContext<'_>,
     times: HitTimes,
-    logging: HitLogging,
+    mut logging: HitLogging,
     worker: &LoggingWorker<CacheHitSuccessJob>,
 ) -> Result<Option<HitLogging>, HitError>
 where

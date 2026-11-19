@@ -680,7 +680,8 @@ impl Fixture {
         let sink = CallbackSink::Logger(handle);
         let registration = registry.register(identity, sink, CallbackList::Callbacks);
         assert_ne!(registration, Registration::SkippedCapacity);
-        let counter: Arc<dyn CallbackFailureCounter + Send + Sync> = Arc::clone(&self.counter);
+        let counter = Arc::clone(&self.counter);
+        let failure_counter: Arc<dyn CallbackFailureCounter + Send + Sync> = counter;
         OwnedSuccessHandler {
             registry: Arc::new(registry),
             payload_builder: Arc::new(FakeBuilder {
@@ -692,7 +693,7 @@ impl Fixture {
             clock: Arc::new(FixedClock {
                 now: time("2024-01-01T00:00:02+00:00"),
             }),
-            failure_counters: vec![counter],
+            failure_counters: vec![failure_counter],
             excluded_fields: Vec::new(),
             known_callback: Arc::new(|_name: &str| false),
             stamp: ResponseStamp {
