@@ -1,5 +1,11 @@
 #![cfg(test)]
 
+mod multipart;
+mod non_streaming;
+mod request_data;
+mod vertex_setup;
+mod websocket;
+
 use super::{
     CUSTOM_BODY_STATE_KEY, ENDPOINT_MARKER, EndpointType, MODEL_INFO_STATE_KEY,
     PassthroughLogPayload, RAW_BODY_STATE_KEY, get_endpoint_type,
