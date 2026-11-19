@@ -50,14 +50,14 @@ pub(super) async fn respond(
     let Some(store) = state.store.as_deref() else {
         return db_not_connected();
     };
-    let raw_query = raw_query.as_deref().unwrap_or_default();
+    let query = raw_query.as_deref().unwrap_or_default();
     match report {
         AnalyticsReport::Distinct => distinct(store).await,
         AnalyticsReport::Daily => {
-            active_users(&state, store, raw_query, ActiveUsersReport::Daily).await
+            active_users(&state, store, query, ActiveUsersReport::Daily).await
         }
         AnalyticsReport::Weekly => {
-            active_users(&state, store, raw_query, ActiveUsersReport::Weekly).await
+            active_users(&state, store, query, ActiveUsersReport::Weekly).await
         }
     }
 }

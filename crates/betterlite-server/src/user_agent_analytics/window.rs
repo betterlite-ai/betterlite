@@ -74,7 +74,7 @@ pub(super) fn weekly_result(
     };
     let offset = u64::try_from(week_offset)
         .map_err(|_negative| AnalyticsError::WeekOffset { week_offset })?;
-    let weeks = offset
+    let period_days = offset
         .checked_mul(WEEK_DAYS)
         .ok_or(AnalyticsError::WeekOffset { week_offset })?;
     let number = MAX_WEEKS
@@ -82,7 +82,7 @@ pub(super) fn weekly_result(
         .ok_or(AnalyticsError::WeekOffset { week_offset })?;
     let period_end = window
         .end_day
-        .checked_sub_days(Days::new(weeks))
+        .checked_sub_days(Days::new(period_days))
         .ok_or(AnalyticsError::Window)?;
     let period_start = period_end
         .checked_sub_days(Days::new(PERIOD_START_DAYS))
