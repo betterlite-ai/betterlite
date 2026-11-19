@@ -40,20 +40,20 @@ fn other_error() -> Result<&'static str, FakeError> {
     Err(FakeError::Other)
 }
 
-struct FakeAttempt {
+struct FakeAttempt<E> {
     calls: AtomicUsize,
-    results: Mutex<VecDeque<Result<&'static str, FakeError>>>,
+    results: Mutex<VecDeque<Result<&'static str, E>>>,
 }
 
-impl FakeAttempt {
-    fn new(results: Vec<Result<&'static str, FakeError>>) -> Self {
+impl<E> FakeAttempt<E> {
+    fn new(results: Vec<Result<&'static str, E>>) -> Self {
         Self {
             calls: AtomicUsize::new(0),
             results: Mutex::new(VecDeque::from(results)),
         }
     }
 
-    fn next_result(&self) -> Result<&'static str, FakeError> {
+    fn next_result(&self) -> Result<&'static str, E> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.results.lock().unwrap().pop_front().unwrap()
     }
@@ -135,6 +135,23 @@ async fn retry_asks_the_read_through_with_the_model_text(#[case] model: &str) {
     assert_eq!(result, Ok("second"));
     assert_eq!(attempt.calls(), 2);
     assert_eq!(recorded(&keys), vec![model.to_owned()]);
+}
+
+#[tokio::test]
+async fn retry_treats_a_proxy_not_found_error_as_the_cause() {
+    let attempt = FakeAttempt::new(vec![
+        Err(ProxyModelNotFoundError::new("acompletion", MODEL, true)),
+        Ok("second"),
+    ]);
+    let keys = Arc::new(Mutex::new(Vec::new()));
+    let read_through = RegistryReadThrough::new(FakeResync::new(true, &keys));
+    let result = route_with_read_through(Some(MODEL), Some(&read_through), async || {
+        attempt.next_result()
+    })
+    .await;
+    assert_eq!(result, Ok("second"));
+    assert_eq!(attempt.calls(), 2);
+    assert_eq!(recorded(&keys), vec![MODEL.to_owned()]);
 }
 
 #[tokio::test]
