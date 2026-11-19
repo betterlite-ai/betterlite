@@ -55,14 +55,14 @@ impl SpendCache for DerivedCache {
 #[path = "tests/fallbacks.rs"]
 mod fallbacks;
 
-struct Catalog {
+struct ResolutionFixture {
     model_catalog: Arc<ModelCatalog>,
     known: BTreeSet<String>,
     custom: BTreeSet<String>,
     environment: BTreeMap<String, String>,
 }
 
-impl Catalog {
+impl ResolutionFixture {
     fn new() -> Self {
         Self {
             model_catalog: BundledCatalog::default().get(),
@@ -438,7 +438,7 @@ fn prompt_shaped_failures_placeholder_unless_the_group_is_configured() {
         routing_groups: &groups,
         inferred_provider: &inferred,
     };
-    let fixture = Catalog::new();
+    let fixture = ResolutionFixture::new();
     let resolution = fixture.context();
     let attribution = SpendAttributionSettings::default();
     let recognized = BTreeSet::from(["tell me a story".to_owned()]);
@@ -814,7 +814,7 @@ fn a_single_group_provider_is_inferred() {
         routing_groups: &groups,
         inferred_provider: &inferred,
     };
-    let fixture = Catalog::new();
+    let fixture = ResolutionFixture::new();
     let resolution = fixture.context();
     let attribution = SpendAttributionSettings::default();
     let recognized = BTreeSet::new();
