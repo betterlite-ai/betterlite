@@ -160,6 +160,7 @@ pub(crate) fn workspace_id_required() {
     let records = Records::empty();
     let mut case = request_case();
     case.optional_params = json_map(json!({"workspace_id": "request-workspace"}));
+    case.caller_headers = headers(json!({"anthropic-workspace-id": "caller-workspace"}));
     case.deployment.workspace_id = Some("deployment-workspace".to_owned());
     case.global.workspace_id = Some("global-workspace".to_owned());
     case.environment.anthropic_aws_workspace_id = Some(SecretString::from("environment-workspace"));
