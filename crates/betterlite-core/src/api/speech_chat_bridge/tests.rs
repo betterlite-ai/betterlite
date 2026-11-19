@@ -665,6 +665,7 @@ fn missing_audio_fails() {
         Call::valid().arguments(),
     );
     assert!(matches!(error, SpeechTransformError::MissingAudio));
+    assert_eq!(error.error_fields(), None);
     assert_eq!(error.to_string(), "No audio part found in the response");
 }
 
