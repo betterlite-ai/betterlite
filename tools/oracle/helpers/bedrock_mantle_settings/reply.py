@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import httpx
@@ -11,8 +10,7 @@ from litellm.types.utils import CostResponseTypes
 from pydantic import JsonValue
 from typing_extensions import override
 
-from .models import REPLY_PAYLOAD
-from .support import JSON
+from .support import JSON, REPLY_PAYLOAD
 
 
 class RecordingPassthrough(BedrockPassthroughConfig):
@@ -26,7 +24,7 @@ class RecordingPassthrough(BedrockPassthroughConfig):
         model: str,
         custom_llm_provider: str,
         httpx_response: httpx.Response,
-        request_data: Mapping[str, JsonValue],
+        request_data: dict[str, JsonValue],
         logging_obj: Logging,
         endpoint: str,
     ) -> CostResponseTypes | None:
@@ -59,11 +57,12 @@ def reply_cases(payload: JsonValue) -> JsonValue:
     results: list[JsonValue] = []
     for case in parsed["cases"]:
         config = RecordingMantlePassthrough()
-        _ = config.logging_non_streaming_response(
+        request_data: dict[str, JsonValue] = {"stream": False}
+        _ = config.logging_non_streaming_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L53-L71
             model="fixture-model",
             custom_llm_provider=case["custom_llm_provider"],
             httpx_response=httpx.Response(200),
-            request_data={"stream": False},
+            request_data=request_data,
             logging_obj=logging_obj,
             endpoint=case["endpoint"],
         )

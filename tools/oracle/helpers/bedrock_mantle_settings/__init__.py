@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import redirect_stdout
 from typing import Final
 
+import litellm
 from pydantic import JsonValue
 
 from .auth import sign_cases
@@ -16,6 +17,8 @@ from .reply import reply_cases
 
 # LiteLLM reads LITELLM_RUST per call; false pins the Python fallback the oracle compares against.
 os.environ["LITELLM_RUST"] = "false"
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 HANDLERS: Final[dict[str, Callable[[JsonValue], JsonValue]]] = {
     "standalone_mantle_base": base_cases,

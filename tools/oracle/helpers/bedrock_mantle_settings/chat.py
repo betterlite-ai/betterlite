@@ -3,8 +3,7 @@ from typing import Literal, cast
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
 from pydantic import JsonValue
 
-from .models import CHAT_PAYLOAD, ChatCase
-from .support import JSON, LITELLM, environment
+from .support import CHAT_PAYLOAD, JSON, LITELLM, ChatCase, environment
 from .views import ChatApi
 
 

@@ -24,7 +24,7 @@ fn helper_seeds_select_bedrock_mantle_settings() {
         .map(|path| fs::read_to_string(path).unwrap())
         .collect();
     assert!(!seeds.is_empty());
-    for source in &seeds {
+    assert!(seeds.iter().all(|source| {
         let case: HelperCase = serde_saphyr::from_str(source).unwrap();
         validate_helper(Path::new("<helper>"), &case).unwrap();
         assert_eq!(case.call.operation, "bedrock_mantle_settings");
@@ -34,5 +34,6 @@ fn helper_seeds_select_bedrock_mantle_settings() {
             .count();
         assert_eq!(named, 1, "a seed names exactly one operation variant");
         <Op as Helper>::check(&case.call.input).unwrap();
-    }
+        true
+    }));
 }

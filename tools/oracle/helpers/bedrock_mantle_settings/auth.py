@@ -4,8 +4,7 @@ from typing import cast
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
 from pydantic import JsonValue
 
-from .models import SIGN_PAYLOAD
-from .support import AUTH_MODULE, JSON, FixedCredentials, FrozenClock, environment
+from .support import AUTH_MODULE, JSON, SIGN_PAYLOAD, FixedCredentials, FrozenClock, environment
 from .views import ChatApi
 
 

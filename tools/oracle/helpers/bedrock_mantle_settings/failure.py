@@ -3,12 +3,13 @@ from typing import cast
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
 from pydantic import JsonValue
 
-from .models import FAILURE_PAYLOAD, FailureKind
 from .support import (
     AUTH_FAILURE_MESSAGE,
     AUTH_MODULE,
     EXCEPTIONS,
+    FAILURE_PAYLOAD,
     FailingCredentials,
+    FailureKind,
     FrozenClock,
     environment,
     region_params,

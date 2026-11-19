@@ -5,8 +5,7 @@ from litellm.llms.bedrock_mantle.passthrough.transformation import (
 )
 from pydantic import JsonValue
 
-from .models import PASSTHROUGH_PAYLOAD, PassthroughCase
-from .support import environment, region_params
+from .support import PASSTHROUGH_PAYLOAD, PassthroughCase, environment, region_params
 from .views import PassthroughApi
 
 

@@ -6,8 +6,7 @@ from litellm.llms.bedrock_mantle.common_utils import resolve_mantle_region
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 
-from .models import BASE_PAYLOAD, BaseCase
-from .support import LITELLM, environment
+from .support import BASE_PAYLOAD, LITELLM, BaseCase, environment
 from .views import ChatApi
 
 

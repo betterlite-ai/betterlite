@@ -5,8 +5,7 @@ from litellm.llms.bedrock_mantle.messages.transformation import (
 )
 from pydantic import JsonValue
 
-from .models import MESSAGE_PAYLOAD
-from .support import environment, region_params
+from .support import MESSAGE_PAYLOAD, environment, region_params
 from .views import MessagesApi
 
 

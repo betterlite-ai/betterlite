@@ -32,7 +32,7 @@ class ChatApi(Protocol):
 
     def get_config(self) -> dict[str, JsonValue]: ...
 
-    def _get_openai_compatible_provider_info(  # ast-grep-ignore: no-long-names
+    def _get_openai_compatible_provider_info(
         self,
         api_base: str | None,
         api_key: str | None,
@@ -92,6 +92,7 @@ class MessagesApi(Protocol):
         model: str,
         optional_params: Mapping[str, JsonValue],
         litellm_params: Mapping[str, JsonValue],
+        *,
         stream: bool | None = None,
     ) -> str: ...
 

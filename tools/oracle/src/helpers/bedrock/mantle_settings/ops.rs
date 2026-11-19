@@ -171,11 +171,6 @@ fn auth_cases(cases: &[SignCase]) -> HelperResult {
     Ok(json!({"results": results}))
 }
 
-fn chat_headers(config: &MantleChatConfig, case: &ChatCase) -> BTreeMap<String, String> {
-    let api_key = case.api_key.as_deref().map(SecretString::from);
-    config.validate_environment(api_key.as_ref(), &case.headers, case.project_id.as_deref())
-}
-
 fn error_probe(config: &MantleChatConfig, probe: &ErrorProbe) -> Result<Value, Box<HelperError>> {
     let pairs: Vec<(String, String)> = probe
         .headers
@@ -210,8 +205,14 @@ fn chat_cases(catalog: &Catalog, cases: &[ChatCase]) -> HelperResult {
         let mut policy = Policy::new(case.reasoning);
         let params =
             runtime.block_on(config.supported_params(&case.model, &capabilities, &mut policy));
+        let api_key = case.api_key.as_deref().map(SecretString::from);
+        let headers = config.validate_environment(
+            api_key.as_ref(),
+            &case.headers,
+            case.project_id.as_deref(),
+        );
         results.push(json!({
-            "headers": chat_headers(&config, case),
+            "headers": headers,
             "params": params,
             "requests": policy.seen.take(),
             "error": error_probe(&config, &case.error)?,
