@@ -121,6 +121,15 @@ fn the_order_comes_from_the_attribution_not_the_deployment() {
 }
 
 #[test]
+fn an_empty_served_id_reads_no_narrowing() {
+    let deployments = FixtureDeployments::new(&[("", r#"{"access_groups":["a"]}"#)]);
+    assert_eq!(
+        served_model_access_groups(Some(&deployments), Some("")),
+        None
+    );
+}
+
+#[test]
 fn nothing_attributed_debits_nothing() {
     let deployments = FixtureDeployments::new(&[("dep-1", r#"{"access_groups":["a"]}"#)]);
     let attributed: Vec<String> = Vec::new();
