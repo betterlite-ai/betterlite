@@ -135,6 +135,21 @@ fn sync_responses_call_retries_through_the_retry_entry() {
 }
 
 #[tokio::test]
+async fn async_responses_call_retries_through_the_retry_entry() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("aresponses", api_error("boom"))
+        .with_retry(response(value(r#"{"retried":true}"#)));
+    let request = request(r#"{"model":"gpt-4o","input":"hi","num_retries":1}"#);
+    let outcome = fixture
+        .wrapper
+        .call(&stub, request, WrapperOptions::default())
+        .await
+        .expect("the retry entry answers");
+    assert_eq!(outcome, response(value(r#"{"retried":true}"#)));
+    assert_eq!(stub.retry_count(), 1);
+}
+
+#[tokio::test]
 async fn async_failure_retries_and_swallows_a_failed_retry() {
     let mut fixture = fixture();
     let stub = Stub::failing("acompletion", api_error("boom")).with_failed_retry(plain("broken"));

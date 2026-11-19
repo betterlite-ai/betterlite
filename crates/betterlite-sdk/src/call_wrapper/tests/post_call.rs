@@ -1,11 +1,16 @@
 use betterlite_core::schema::SchemaLimits;
 
 use super::support::NoRules;
+use super::support::Stub;
+use super::support::chat_request;
+use super::support::fixture;
 use super::support::request;
+use super::support::response;
 use super::support::value;
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::class_name;
 use crate::call_wrapper::post_call::{self, PostCallInput, Validation};
+use crate::call_wrapper::state::WrapperOptions;
 
 const MISMATCHED: &str = r#"{"choices":[{"message":{"content":"{\"answer\":1}"}}]}"#;
 const SCHEMA: &str =
@@ -40,4 +45,19 @@ fn a_response_format_schema_mismatch_is_a_validation_error() {
 fn an_enforced_response_schema_mismatch_is_a_validation_error() {
     let class = validation_error(false);
     assert_eq!(class, "JSONSchemaValidationError");
+}
+
+#[tokio::test]
+async fn async_call_validates_the_response_format() {
+    let mut fixture = fixture();
+    let stub = Stub::responding("acompletion", response(value(MISMATCHED)));
+    let request = chat_request(
+        r#"{"enable_json_schema_validation":true,"response_format":{"json_schema":{"schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}}}}"#,
+    );
+    let error = fixture
+        .wrapper
+        .call(&stub, request, WrapperOptions::default())
+        .await
+        .expect_err("the schema mismatch fails the call");
+    assert_eq!(class_name(&error.class), "JSONSchemaValidationError");
 }

@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use super::support::Stub;
+use super::support::api_error;
 use super::support::chat_request;
 use super::support::context_window;
 use super::support::fixture;
@@ -56,6 +57,30 @@ fn sync_context_window_model_outside_the_map_surfaces() {
     let error =
         run_sync(&mut fixture, &stub, request).expect_err("an unmapped model has no fallback");
     assert_eq!(error.to_string(), "too long");
+    assert_eq!(stub.call_count(), 1);
+}
+
+#[test]
+fn sync_responses_context_window_error_does_not_fall_back() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("responses", context_window("too long"));
+    let request = request(
+        r#"{"model":"gpt-4o","input":"hi","context_window_fallback_dict":{"gpt-4o":"gpt-4o-mini"}}"#,
+    );
+    let error = run_sync(&mut fixture, &stub, request)
+        .expect_err("the responses path has no context fallback");
+    assert_eq!(error.to_string(), "too long");
+    assert_eq!(stub.call_count(), 1);
+}
+
+#[test]
+fn sync_api_error_with_a_context_map_does_not_fall_back() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("completion", api_error("boom"));
+    let request = chat_request(r#"{"context_window_fallback_dict":{"gpt-4o":"gpt-4o-mini"}}"#);
+    let error =
+        run_sync(&mut fixture, &stub, request).expect_err("a non-context error has no fallback");
+    assert_eq!(error.to_string(), "boom");
     assert_eq!(stub.call_count(), 1);
 }
 
