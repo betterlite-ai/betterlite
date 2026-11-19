@@ -115,9 +115,10 @@ fn require_api_key_without_any_key_is_the_missing_key_authentication_error() {
         error,
         MissingApiKey {
             model: String::from("gpt-4o"),
+            status_code: 401,
         }
     );
-    assert_eq!(error.status_code(), 401);
+    assert_eq!(error.status_code, 401);
     assert!(matches!(error.class(), ErrorClass::Authentication(_)));
     assert_eq!(
         error.to_string(),
@@ -147,7 +148,7 @@ fn authorized_headers_replaces_an_authorization_spelled_in_another_case() {
 #[test]
 fn authorized_headers_without_a_key_is_the_missing_key_error() {
     let error = authorized_headers(&Headers::new(), None, "m", &env(None, None, None)).unwrap_err();
-    assert_eq!(error.status_code(), 401);
+    assert_eq!(error.status_code, 401);
 }
 
 #[rstest]
