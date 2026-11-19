@@ -84,7 +84,7 @@ pub enum WindowedAdmissionError {
     Reply(#[from] CounterReplyError),
     #[error(transparent)]
     Counter(#[from] CounterValueError),
-    #[error("the pipelined rate limiter batch failed: {0}")]
+    #[error(transparent)]
     Batch(Arc<BatchError>),
     #[error(
         "the windowed check got {keys} keys and {values} values, which are not window/counter pairs"
