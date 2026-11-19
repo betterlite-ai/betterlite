@@ -72,10 +72,7 @@ class PlainTarget(Protocol):
 
 
 NORMALIZE: Final = cast(Normalizer, MessagesHandler._normalize_reasoning_effort)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L431
-ROUTE: Final = cast(
-    Router,
-    MessagesHandler._route_openai_thinking_to_responses_api_if_needed,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L323
-)
+ROUTE: Final = cast(Router, MessagesHandler._route_openai_thinking_to_responses_api_if_needed)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L323
 PLAIN: Final = cast(PlainTarget, MessagesHandler._plain_effort_for_chat_target)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L388
 
 
