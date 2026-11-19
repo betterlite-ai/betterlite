@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::loader::EnvironmentLookup;
 use indexmap::IndexMap;
+use opentelemetry::trace::TracerProvider as _;
+use secrecy::ExposeSecret as _;
 
 use crate::otel::integrations::arize_settings::ArizeConfig;
 use crate::otel::legacy_lifecycle::error::LegacyLifecycleError;
@@ -12,10 +14,10 @@ use crate::otel::legacy_lifecycle::lifecycle::{
 };
 use crate::otel::legacy_lifecycle::state::request_key;
 use crate::otel::legacy_lifecycle::tracer::{DynamicOtel, dynamic_params};
-use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
+use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
-use crate::otel::presets::arize::{arize_dynamic_headers, arize_headers};
+use crate::otel::presets::arize::arize_dynamic_headers;
 use crate::otel_provider_assembly::legacy_otel_init::LegacyOtel;
 
 mod tests;
@@ -41,7 +43,10 @@ pub struct ArizeSampling {
 
 impl Default for ArizeSampling {
     fn default() -> Self {
-        Self::new(system_draw)
+        Self {
+            draw: Box::new(system_draw),
+            decisions: Mutex::new(IndexMap::new()),
+        }
     }
 }
 
@@ -54,17 +59,6 @@ fn system_draw() -> f64 {
 }
 
 impl ArizeSampling {
-    #[must_use]
-    pub fn new<D>(draw: D) -> Self
-    where
-        D: Fn() -> f64 + Send + Sync + 'static,
-    {
-        Self {
-            draw: Box::new(draw),
-            decisions: Mutex::new(IndexMap::new()),
-        }
-    }
-
     fn sampled(
         &self,
         kwargs: &MetadataMap,
@@ -168,7 +162,27 @@ pub fn otel_config(environment: &BTreeMap<String, String>) -> OpenTelemetryConfi
     let mut config = OpenTelemetryConfig::from_env(environment);
     config.exporter = Exporter::Named(arize.protocol.exporter_kind().to_owned());
     config.endpoint = Some(arize.endpoint.clone());
-    config.headers = arize_headers(environment, &arize);
+    // litellm_logging's registration writes space_id={space_key or space_id},api_key={api_key}
+    let mut pieces = Vec::new();
+    if let Some(space) = arize.space_key.as_ref().or(arize.space_id.as_ref()) {
+        pieces.push(format!("space_id={space}"));
+    }
+    if let Some(api_key) = &arize.api_key {
+        pieces.push(format!("api_key={}", api_key.expose_secret()));
+    }
+    config.headers = if pieces.is_empty() {
+        environment
+            .get("OTEL_EXPORTER_OTLP_TRACES_HEADERS")
+            .filter(|value| !value.is_empty())
+            .cloned()
+    } else {
+        Some(pieces.join(","))
+    };
+    // litellm_logging builds this config by hand, so the environment's signal switches leave both off
+    config.signals = Signals {
+        enable_metrics: false,
+        enable_events: false,
+    };
     if let Some(project) = arize.project_name {
         config.service_name = project;
         // __post_init__ then reads OTEL_MODEL_ID before falling back to the project name
@@ -206,8 +220,13 @@ pub fn health_check(environment: &dyn EnvironmentLookup) -> ArizeHealth {
 }
 
 #[must_use]
-pub fn arize_lifecycle(otel: LegacyOtel, mut options: LegacyLifecycleOptions) -> LegacyLifecycle {
+pub fn arize_lifecycle(
+    mut otel: LegacyOtel,
+    mut options: LegacyLifecycleOptions,
+) -> LegacyLifecycle {
     options.dynamic = Arc::new(ArizeDynamicOtel);
+    // ArizeLogger._init_tracing names its tracer "litellm" whatever OTEL_TRACER_NAME says
+    otel.tracer = otel.tracer_provider.tracer("litellm");
     let mut lifecycle = LegacyLifecycle::from_otel(otel, options);
     lifecycle.export_gate = Some(Arc::new(ArizeSampling::default()));
     lifecycle

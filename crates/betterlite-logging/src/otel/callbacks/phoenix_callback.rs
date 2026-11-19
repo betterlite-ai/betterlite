@@ -18,7 +18,7 @@ use crate::otel::legacy_lifecycle::lifecycle::{
 };
 use crate::otel::legacy_lifecycle::tracer::{TracerRouter, tracer_for_request};
 use crate::otel::legacy_lifecycle::{context, parent, recording};
-use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
+use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::legacy_policy::span_time::to_ns;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -106,15 +106,6 @@ fn env_project_name(environment: &BTreeMap<String, String>) -> Option<String> {
 // every span of one request goes to the tracer of its resolved project
 pub struct PhoenixProjects {
     environment: BTreeMap<String, String>,
-}
-
-impl PhoenixProjects {
-    #[must_use]
-    pub fn new(environment: &BTreeMap<String, String>) -> Self {
-        Self {
-            environment: environment.clone(),
-        }
-    }
 }
 
 impl TracerRouter for PhoenixProjects {
@@ -250,6 +241,11 @@ pub fn otel_config(
     config.headers = phoenix
         .otlp_auth_headers
         .map(|header| header.expose_secret().to_owned());
+    // litellm_logging builds this config by hand, so the environment's signal switches leave both off
+    config.signals = Signals {
+        enable_metrics: false,
+        enable_events: false,
+    };
     // ArizePhoenixLogger._init_tracing builds private per-project providers instead of the global one
     config.skip_set_global = true;
     config.normalize(environment);
@@ -286,6 +282,8 @@ pub fn phoenix_lifecycle(
 ) -> LegacyLifecycle {
     options.use_request_span = true;
     let mut lifecycle = LegacyLifecycle::from_otel(otel, options);
-    lifecycle.tracer_router = Some(Arc::new(PhoenixProjects::new(environment)));
+    lifecycle.tracer_router = Some(Arc::new(PhoenixProjects {
+        environment: environment.clone(),
+    }));
     lifecycle
 }

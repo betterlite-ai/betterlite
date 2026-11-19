@@ -212,6 +212,16 @@ fn with_proxy(kwargs: &mut MetadataMap) {
     );
 }
 
+fn with_guardrail(kwargs: &mut MetadataMap, entry: &str) {
+    let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object") else {
+        panic!("standard_logging_object must be an object");
+    };
+    payload.insert(
+        "guardrail_information".to_owned(),
+        serde_json::from_str(entry).expect("guardrail entry"),
+    );
+}
+
 fn with_traceparent(kwargs: &mut MetadataMap, traceparent: &str) {
     let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
         panic!("litellm_params must be an object");
@@ -290,6 +300,7 @@ fn phoenix_coexists_with_the_primary_otel_registration() {
         callbacks.first(),
         Some(ServiceCallback::OpenTelemetry(entry)) if entry.callback_name.as_deref() == Some("otel")
     ));
+    drop(callbacks);
 }
 
 // ArizePhoenixLogger._init_tracing builds private providers and never takes the process global
@@ -675,19 +686,10 @@ fn phoenix_closes_the_parent_when_the_lifecycle_errors() {
     let lifecycle = rig.phoenix();
     let mut kwargs = base_kwargs("call-error");
     with_proxy(&mut kwargs);
-    {
-        let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object")
-        else {
-            panic!("standard_logging_object must be an object");
-        };
-        payload.insert(
-            "guardrail_information".to_owned(),
-            serde_json::from_str(
-                r#"[{"guardrail_name": "pii", "guardrail_mode": "pre_call", "start_time": "not-a-clock"}]"#,
-            )
-            .expect("guardrail entry"),
-        );
-    }
+    with_guardrail(
+        &mut kwargs,
+        r#"[{"guardrail_name": "pii", "guardrail_mode": "pre_call", "start_time": "not-a-clock"}]"#,
+    );
     assert!(handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).is_err());
     assert!(names(&rig.spans()).contains(&PROXY_PARENT_SPAN_NAME.to_owned()));
 }
@@ -703,25 +705,16 @@ fn phoenix_routes_the_guardrail_to_the_project_provider() {
         "phoenix_project_name",
         "guard-project",
     );
-    {
-        let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object")
-        else {
-            panic!("standard_logging_object must be an object");
-        };
-        payload.insert(
-            "guardrail_information".to_owned(),
-            serde_json::from_str(
-                r#"[{
-                    "guardrail_name": "pii",
-                    "guardrail_mode": "pre_call",
-                    "guardrail_status": "success",
-                    "start_time": 1704067200.5,
-                    "end_time": 1704067200.75
-                }]"#,
-            )
-            .expect("guardrail entry"),
-        );
-    }
+    with_guardrail(
+        &mut kwargs,
+        r#"[{
+            "guardrail_name": "pii",
+            "guardrail_mode": "pre_call",
+            "guardrail_status": "success",
+            "start_time": 1704067200.5,
+            "end_time": 1704067200.75
+        }]"#,
+    );
     handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).expect("the guardrail call");
     assert_eq!(
         project_names(&lifecycle.tracer_cache),
@@ -816,6 +809,17 @@ fn phoenix_otel_config_points_at_the_configured_endpoint() {
         config.headers.as_deref(),
         Some("Authorization=Bearer api-key")
     );
+}
+
+#[test]
+fn phoenix_otel_config_ignores_the_signal_switches() {
+    let env = env_map(&[
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "true"),
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS", "true"),
+    ]);
+    let config = otel_config(&env).expect("the phoenix config");
+    assert!(!config.signals.enable_metrics);
+    assert!(!config.signals.enable_events);
 }
 
 #[test]

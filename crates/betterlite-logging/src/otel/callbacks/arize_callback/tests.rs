@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use opentelemetry::trace::Status;
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
@@ -16,6 +17,7 @@ use super::{
     health_check, otel_config, system_draw,
 };
 use crate::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
+use crate::otel::legacy_lifecycle::error::LegacyLifecycleError;
 use crate::otel::legacy_lifecycle::lifecycle::{
     DEFAULT_HANDLER_CLASS_NAME, ExportGate as _, LegacyLifecycle, LegacyLifecycleOptions,
     LifecycleCall, LifecycleEvent,
@@ -178,7 +180,17 @@ fn call(kwargs: &MetadataMap) -> LifecycleCall<'_> {
 }
 
 fn gate_with(draw: f64) -> ArizeSampling {
-    ArizeSampling::new(move || draw)
+    sampling_with(move || draw)
+}
+
+fn sampling_with<D>(draw: D) -> ArizeSampling
+where
+    D: Fn() -> f64 + Send + Sync + 'static,
+{
+    ArizeSampling {
+        draw: Box::new(draw),
+        decisions: Mutex::new(IndexMap::new()),
+    }
 }
 
 fn attribute(spans: &[SpanData], name: &str) -> Option<String> {
@@ -255,6 +267,7 @@ fn arize_coexists_with_the_primary_otel_registration() {
         callbacks.first(),
         Some(ServiceCallback::OpenTelemetry(entry)) if entry.callback_name.as_deref() == Some("otel")
     ));
+    drop(callbacks);
 }
 
 #[test]
@@ -355,9 +368,9 @@ fn arize_exports_when_no_rate_is_configured() {
 fn arize_zero_rate_never_draws() {
     let draws = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&draws);
-    let sampling = ArizeSampling::new(move || {
+    let sampling = sampling_with(move || {
         counter.fetch_add(1, Ordering::SeqCst);
-        0.0
+        0.0_f64
     });
     let kwargs = dynamic_kwargs("call-zero", r#"{"arize_success_sampling_rate": 0.0}"#);
     assert!(
@@ -372,9 +385,9 @@ fn arize_zero_rate_never_draws() {
 fn arize_caches_the_decision_per_request() {
     let draws = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&draws);
-    let sampling = ArizeSampling::new(move || {
+    let sampling = sampling_with(move || {
         counter.fetch_add(1, Ordering::SeqCst);
-        0.9
+        0.9_f64
     });
     let kwargs = dynamic_kwargs("call-cached", r#"{"arize_success_sampling_rate": 0.5}"#);
     assert!(
@@ -413,9 +426,9 @@ fn arize_success_and_error_decisions_are_separate() {
 fn arize_keeps_both_decisions_of_a_request() {
     let draws = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&draws);
-    let sampling = ArizeSampling::new(move || {
+    let sampling = sampling_with(move || {
         counter.fetch_add(1, Ordering::SeqCst);
-        0.9
+        0.9_f64
     });
     let kwargs = dynamic_kwargs(
         "call-both-decisions",
@@ -452,7 +465,7 @@ fn draws(count: usize) -> (f64, f64, bool) {
         let draw = system_draw();
         low = low.min(draw);
         high = high.max(draw);
-        nonzero = nonzero || draw > 0.0;
+        nonzero = nonzero || draw > 0.0_f64;
     }
     (low, high, nonzero)
 }
@@ -460,14 +473,14 @@ fn draws(count: usize) -> (f64, f64, bool) {
 #[test]
 fn arize_default_draw_stays_inside_the_unit_interval() {
     let (low, high, nonzero) = draws(64);
-    assert!(low >= 0.0, "the lowest draw {low} is below zero");
-    assert!(high < 1.0, "the highest draw {high} reaches one");
+    assert!(low >= 0.0_f64, "the lowest draw {low} is below zero");
+    assert!(high < 1.0_f64, "the highest draw {high} reaches one");
     assert!(nonzero, "every draw was exactly zero");
 }
 
 #[rstest]
-#[case::above_one(1.5)]
-#[case::below_zero(-0.5)]
+#[case::above_one(1.5_f64)]
+#[case::below_zero(-0.5_f64)]
 fn arize_out_of_range_rate_still_exports(#[case] rate: f64) {
     let sampling = gate_with(1.0);
     let mut kwargs = base_kwargs("call-range");
@@ -483,11 +496,29 @@ fn arize_out_of_range_rate_still_exports(#[case] rate: f64) {
 fn arize_wrong_rate_type_is_an_error() {
     let sampling = gate_with(0.0);
     let kwargs = dynamic_kwargs("call-type", r#"{"arize_success_sampling_rate": "0.5"}"#);
-    assert!(
-        sampling
-            .should_export(&kwargs, LifecycleEvent::Success)
-            .is_err()
-    );
+    let error = sampling
+        .should_export(&kwargs, LifecycleEvent::Success)
+        .expect_err("a string rate is not a number");
+    assert!(matches!(
+        error,
+        LegacyLifecycleError::SamplingRate {
+            field: SUCCESS_RATE_VAR
+        }
+    ));
+}
+
+// ArizeLogger._init_tracing names its tracer "litellm" whatever OTEL_TRACER_NAME says
+#[test]
+fn arize_exports_under_the_litellm_scope_name() {
+    let mut rig = Rig::new();
+    rig.env
+        .insert("OTEL_TRACER_NAME".to_owned(), "configured-name".to_owned());
+    let lifecycle = rig.arize();
+    lifecycle
+        .handle(&call(&base_kwargs("call-scope")), LifecycleEvent::Success)
+        .expect("the arize trace");
+    let spans = rig.spans();
+    assert_eq!(spans[0].instrumentation_scope.name(), "litellm");
 }
 
 #[test]
@@ -604,6 +635,41 @@ fn arize_otel_config_points_at_the_configured_endpoint() {
     );
     assert_eq!(config.service_name, "project");
     assert_eq!(config.model_id, "project");
+}
+
+#[test]
+fn arize_otel_config_prefers_the_space_key_over_the_space_id() {
+    let config = otel_config(&env_map(&[
+        ("ARIZE_SPACE_ID", "space-id"),
+        ("ARIZE_SPACE_KEY", "space-key"),
+        ("ARIZE_API_KEY", "api-key"),
+    ]));
+    assert_eq!(
+        config.headers.as_deref(),
+        Some("space_id=space-key,api_key=api-key")
+    );
+}
+
+#[test]
+fn arize_otel_config_keeps_the_traces_header_without_credentials() {
+    let config = otel_config(&env_map(&[(
+        "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+        "space_id=env-space,api_key=env-key",
+    )]));
+    assert_eq!(
+        config.headers.as_deref(),
+        Some("space_id=env-space,api_key=env-key")
+    );
+}
+
+#[test]
+fn arize_otel_config_ignores_the_signal_switches() {
+    let config = otel_config(&env_map(&[
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "true"),
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS", "true"),
+    ]));
+    assert!(!config.signals.enable_metrics);
+    assert!(!config.signals.enable_events);
 }
 
 #[test]

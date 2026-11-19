@@ -80,6 +80,17 @@ deviations:
       it stamps the status, records the exception and ends the span before returning the error. Covered by
       phoenix_closes_the_parent_when_the_lifecycle_errors.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L334-L384
+  - what: Arize's registration header carries only the credentials that are set. LiteLLM writes "space_id={space_key or space_id},api_key={api_key}" unconditionally, so a missing space or api key becomes the literal text "None".
+    why: >-
+      The word None travels as the credential and every export fails authentication, so no working
+      setup can rely on it; betterlite writes the pairs it has and leaves the caller's
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS in place when neither credential exists. A setup with both
+      credentials, which the health check requires, gets the same "space_id=<space key or space
+      id>,api_key=<api key>" string in the same order. Covered by
+      arize_otel_config_prefers_the_space_key_over_the_space_id,
+      arize_otel_config_keeps_the_traces_header_without_credentials and
+      arize_otel_config_defaults_the_grpc_endpoint_and_the_service_name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4730-L4732
 kept_bugs:
   - what: An empty PHOENIX_API_KEY still produces the header "Authorization=Bearer " and sends it, because LiteLLM tests "is not None" rather than truthiness.
     why: >-
