@@ -369,3 +369,10 @@ path = "fuzz_targets/cost_estimate_request.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_estimate"
+path = "fuzz_targets/spend_estimate.rs"
+test = false
+doc = false
+bench = false

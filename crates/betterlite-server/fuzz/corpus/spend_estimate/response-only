@@ -1,0 +1,1 @@
+{"completion_response":{"id":"x","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}}
