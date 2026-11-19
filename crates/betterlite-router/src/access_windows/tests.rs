@@ -732,6 +732,38 @@ fn an_admin_pool_without_a_named_team_keeps_only_shared() {
     assert_eq!(ids(&kept), ["open"]);
 }
 
+// LiteLLM's admin arm also matches a team's public model name, not only the deployment's own model name.
+fn an_admin_pool_named_by_its_public_name_is_kept() {
+    let deployments = vec![
+        spec(
+            "internal",
+            "a",
+            &[
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("public")),
+            ],
+        ),
+        spec(
+            "internal",
+            "b",
+            &[
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("public")),
+            ],
+        ),
+    ];
+    let kept = filter_team_based_models(
+        deployments,
+        Authority {
+            team_id: None,
+            proxy_admin: true,
+        },
+        "public",
+    )
+    .unwrap();
+    assert_eq!(ids(&kept), ["a", "b"]);
+}
+
 fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
     let deployments = vec![
         spec("other", "a", &[("team_id", text("t1"))]),
@@ -772,6 +804,9 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
 )]
 #[case::an_admin_pool_without_a_named_team_keeps_only_shared(
     an_admin_pool_without_a_named_team_keeps_only_shared
+)]
+#[case::an_admin_pool_named_by_its_public_name_is_kept(
+    an_admin_pool_named_by_its_public_name_is_kept
 )]
 fn access_windows_behaviors(#[case] run: fn()) {
     run();
