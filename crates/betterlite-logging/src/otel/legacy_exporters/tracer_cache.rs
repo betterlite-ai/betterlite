@@ -120,12 +120,11 @@ fn cached_provider<K, F>(
     providers: &Mutex<IndexMap<K, CachedProvider>>,
     key: K,
     max_providers: usize,
-    owns_exporter: bool,
     build: F,
 ) -> Result<SdkTracer, LegacyExporterError>
 where
     K: Eq + Hash,
-    F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>,
+    F: FnOnce() -> Result<CachedProvider, LegacyExporterError>,
 {
     let mut entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(cached) = entries.shift_remove(&key) {
@@ -135,10 +134,7 @@ where
     }
     drop(entries);
     // Exporter construction can block on DNS or TLS, so it runs without the cache lock.
-    let fresh = CachedProvider {
-        provider: build()?,
-        owns_exporter,
-    };
+    let fresh = build()?;
     let mut cache_entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
     let racing = cache_entries.shift_remove(&key);
     let (tracer, dropped) = if let Some(raced) = racing {
@@ -259,14 +255,12 @@ impl DynamicTracerCache {
     where
         F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>,
     {
-        cached_provider(
-            self,
-            &self.entries,
-            key,
-            self.max_providers,
-            owns_exporter,
-            build,
-        )
+        cached_provider(self, &self.entries, key, self.max_providers, move || {
+            Ok(CachedProvider {
+                provider: build()?,
+                owns_exporter,
+            })
+        })
     }
 
     fn dispose(&self, dropped: CachedProvider) {

@@ -9,7 +9,7 @@ use crate::otel::legacy_exporters::error::LegacyExporterError;
 use crate::otel::legacy_exporters::selection::span_processor_plan;
 use crate::otel::legacy_policy::config::Exporter;
 
-use super::{DynamicTracerCache, cached_provider};
+use super::{CachedProvider, DynamicTracerCache, cached_provider};
 
 // Arize Phoenix's _MAX_PROJECT_PROVIDERS
 pub const MAX_PROJECT_PROVIDERS: usize = 64;
@@ -41,8 +41,12 @@ pub(crate) fn tracer_for(
         &cache.projects,
         project.to_owned(),
         MAX_PROJECT_PROVIDERS,
-        owns_exporter,
-        || project_provider(cache, attributes),
+        || {
+            Ok(CachedProvider {
+                provider: project_provider(cache, attributes)?,
+                owns_exporter,
+            })
+        },
     )
 }
 
