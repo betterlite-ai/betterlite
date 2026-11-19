@@ -1,0 +1,18 @@
+task: B8310
+deviations:
+  - what: The chat and embedding cases drive hosted_platform_dispatch through the b8310 helper operation instead of POSTing to the booted proxy.
+    why: No route reaches these arms yet. Provider::from_slug maps only openai, aiohttp_openai, azure, azure_ai, anthropic, bedrock, vertex_ai, gemini, xai, mistral and codestral; every other slug, fireworks_ai, together_ai, groq and cloudflare included, answers UnavailableAdapter (crates/betterlite-provider/src/provider.rs:150-165). A proxy request for these models therefore never reaches hosted_platform_dispatch, and the helper is the only seam that can run the real dispatch functions next to LiteLLM's public entry point. The route wiring belongs to B2230 and B5360.
+    link: ""
+  - what: The cases compare the request URL, the Authorization and caller headers, and the request body without model, messages and stream; they do not compare the reply. The fireworks embedding case compares the resolved URL and Authorization header only.
+    why: The reply transforms belong to the provider configs of B5831, B5832, B5833 and B5836 and to the shared HTTP and embedding handlers, and the arm only resolves the values it hands them. Reply ids are random and usage comes from each side's tokenizer, so comparing them would compare transforms this task does not own. The embedding arm's body is built by B044's shared OpenAI embedding handler, so only the resolved request the arm produces is visible here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1853-L1957
+  - what: Perplexity embeddings, Responses, search and decisions fail with "perplexity {operation} support is not built yet"; LiteLLM serves them. Perplexity chat works.
+    why: B5834 is deferred until the core is done (Max, 11-19), and a request must not reach another provider's branch instead. B5834 removes this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7335-L7348
+kept_bugs:
+  - what: litellm.api_base never selects Groq's base for a public completion call; the passed base, GROQ_API_BASE and the https://api.groq.com/openai/v1 default decide it, and the arm's own litellm.api_base branch cannot be reached.
+    why: get_llm_provider runs GroqChatConfig._get_openai_compatible_provider_info before _complete_groq and always returns a non-empty base, so the arm always receives one. Deployments that set GROQ_API_BASE or rely on the public default depend on the environment and the default winning over the global.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L161-L167
+  - what: FIREWORKS_AI_API_KEY beats litellm.api_key for Fireworks chat and embedding calls, so the arms' litellm.api_key fallback is unreachable whenever the environment variable is set.
+    why: get_llm_provider resolves the Fireworks key from the environment before the arm runs, so the arm always receives a key when one of FIREWORKS_API_KEY, FIREWORKS_AI_API_KEY, FIREWORKSAI_API_KEY or FIREWORKS_AI_TOKEN is set. Deployments that export the variable depend on it winning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L778-L788
