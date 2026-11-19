@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::messages_chat_options::context::OptionsContext;
@@ -59,7 +59,7 @@ impl Parameters {
         let calls = self
             .calls
             .into_inner()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(PoisonError::into_inner);
         calls
             .into_iter()
             .map(|call| json!({ "model": call.model, "provider": call.provider }))
@@ -75,14 +75,13 @@ impl SupportedParameterSource for Parameters {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Result<Option<Vec<String>>, Infallible> {
-        let mut calls = self
-            .calls
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        calls.push(ProbeCall {
-            model: model.to_owned(),
-            provider: custom_llm_provider.map(str::to_owned),
-        });
+        {
+            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+            calls.push(ProbeCall {
+                model: model.to_owned(),
+                provider: custom_llm_provider.map(str::to_owned),
+            });
+        }
         Ok(self.declared.clone())
     }
 }

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
 use betterlite_models::projections::reasoning_effort::ThinkingBudgetThresholds;
@@ -44,10 +44,7 @@ impl Declared {
     }
 
     fn calls(&self) -> Vec<(String, Option<String>)> {
-        let probes = self
-            .probes
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let probes = self.probes.lock().unwrap_or_else(PoisonError::into_inner);
         probes.clone()
     }
 }
@@ -60,11 +57,10 @@ impl SupportedParameterSource for Declared {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Result<Option<Vec<String>>, Infallible> {
-        let mut probes = self
-            .probes
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        probes.push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
+        {
+            let mut probes = self.probes.lock().unwrap_or_else(PoisonError::into_inner);
+            probes.push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
+        }
         Ok(self.names.clone())
     }
 }
