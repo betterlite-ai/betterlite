@@ -150,11 +150,8 @@ pub(super) fn seed_tier(
 }
 
 pub(super) fn at(millis: u64) -> Result<DateTime<Utc>, ScenarioError> {
-    match i64::try_from(millis)
+    i64::try_from(millis)
         .ok()
         .and_then(DateTime::from_timestamp_millis)
-    {
-        Some(instant) => Ok(instant),
-        None => Err(ScenarioError::Time { millis }),
-    }
+        .ok_or(ScenarioError::Time { millis })
 }
