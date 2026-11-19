@@ -1,0 +1,37 @@
+kind: helper
+name: native-messages-hosts-tencent-chat-base-conversion
+call:
+  native_messages_hosts:
+    calls:
+      - function: url
+        host: tencent
+        api_bases:
+          - null
+          - "https://tokenhub.test/v1/chat/completions"
+          - "https://tokenhub.test/v1/chat/completions/"
+          - "https://tokenhub.test/v1"
+          - "https://tokenhub.test/anthropic/v1/messages"
+          - "https://tokenhub.test/v2"
+        environment: {}
+      - function: url
+        host: tencent
+        api_bases: [null]
+        environment:
+          TENCENT_ANTHROPIC_API_BASE: "https://anthropic.tokenhub.test"
+      - function: url
+        host: tencent
+        api_bases: [null]
+        environment:
+          TENCENT_API_BASE: "https://chat.tokenhub.test"
+      - function: environment
+        host: tencent
+        api_base: "https://tokenhub.test/v1"
+        headers: {}
+        optional_params:
+          compaction: {}
+        messages: []
+        explicit_api_key: "tencent-key"
+        global_api_key: null
+        environment: {}
+env: {}
+compare: {ignore: []}

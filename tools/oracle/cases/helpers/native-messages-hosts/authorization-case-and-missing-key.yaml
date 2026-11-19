@@ -1,0 +1,137 @@
+kind: helper
+name: native-messages-hosts-authorization-case-and-missing-key
+call:
+  native_messages_hosts:
+    calls:
+      - function: environment
+        host: tencent
+        api_base: null
+        headers: {}
+        optional_params: {}
+        messages: []
+        explicit_api_key: null
+        global_api_key: null
+        environment: {}
+calls:
+  - native_messages_hosts:
+      calls:
+        - function: environment
+          host: minimax
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
+  - native_messages_hosts:
+      calls:
+        - function: environment
+          host: tencent
+          api_base: null
+          headers:
+            Authorization: "Bearer supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: minimax
+          api_base: null
+          headers:
+            X-Api-Key: "supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: tencent
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment:
+            ANTHROPIC_API_KEY: "anthropic-env-key"
+        - function: environment
+          host: tencent
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: "sk-ant-oat01-token"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers:
+            Authorization: "Bearer supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: "explicit-key"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers:
+            authorization: "Bearer supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: "explicit-key"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers:
+            X-Api-Key: "supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: "explicit-key"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment:
+            DEEPSEEK_API_KEY: "env-key"
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: "global-key"
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: ""
+          global_api_key: null
+          environment:
+            DEEPSEEK_API_KEY: "env-key"
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
+env: {}
+compare: {ignore: []}
