@@ -1,0 +1,14 @@
+kind: probe
+name: model-rate-limits-success-usage-update
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_rate_limits:
+        now_millis: 1700000000000
+        deployment: {id: dep-a, model: openai/gpt-4o, model_name: gpt-4o, tpm: 5}
+        local: {tpm: 0}
+        steps:
+          - {kind: success, model_id: dep-a, model: openai/gpt-4o, total_tokens: 5}
+          - {kind: check}
+compare: {ignore: []}
