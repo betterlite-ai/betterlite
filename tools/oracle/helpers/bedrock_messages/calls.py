@@ -122,5 +122,5 @@ def error_class(call: ErrorClass) -> JsonValue:
 
 def constructor(call: Constructor) -> JsonValue:
     kwargs = call.get("kwargs")
-    MessagesConfig(**{} if kwargs is None else kwargs)  # type: ignore[no-untyped-call]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L99-L101
+    MessagesConfig(**{} if kwargs is None else kwargs)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L99-L101
     return {"created": True}
