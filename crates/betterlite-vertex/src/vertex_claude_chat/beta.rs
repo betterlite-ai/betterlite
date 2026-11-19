@@ -155,7 +155,7 @@ pub(crate) fn add_context_management_betas(
         PromptJson::Object(fields) => match fields.get(EDITS) {
             None | Some(PromptJson::Null) => return Ok(()),
             Some(PromptJson::List(edits)) => edits.as_slice(),
-            Some(_) => return Err(BetaHeaderError::EditsNotList.into()),
+            Some(_) => return Err(ContextManagementError::from(BetaHeaderError::EditsNotList)),
         },
         PromptJson::Bool(_) | PromptJson::Number(_) | PromptJson::Text(_) | PromptJson::List(_) => {
             return Err(ContextManagementError::NotObject);
