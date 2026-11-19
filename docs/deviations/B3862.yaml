@@ -5,7 +5,8 @@ deviations:
       LiteLLM's flush_tracer_providers docstring says not to flush on LRU eviction, so every span a
       batch exporter still held for the evicted project is lost once more than 64 projects are seen.
       betterlite drains that queue on a worker, away from the request path. Covered by
-      phoenix_keeps_the_last_sixty_four_project_providers and phoenix_moves_a_hit_to_the_end_of_the_lru.
+      phoenix_flushes_an_evicted_project_provider, phoenix_keeps_the_last_sixty_four_project_providers
+      and phoenix_moves_a_hit_to_the_end_of_the_lru.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L172-L175
   - what: Phoenix guardrail spans are parented to the request span. LiteLLM's _handle_phoenix_trace passes its own context to _create_guardrail_span, so the guardrail hangs off the proxy parent span or the incoming traceparent instead.
     why: >-

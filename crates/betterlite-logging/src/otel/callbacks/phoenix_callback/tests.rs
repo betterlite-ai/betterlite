@@ -400,6 +400,17 @@ fn phoenix_keeps_the_last_sixty_four_project_providers() {
     assert_eq!(lifecycle.tracer_cache.join_shutdowns(), 0);
 }
 
+// a project provider with an exporter of its own is flushed and shut down after its eviction
+#[test]
+fn phoenix_flushes_an_evicted_project_provider() {
+    let rig = Rig::new();
+    let env = env_map(&[("PHOENIX_COLLECTOR_ENDPOINT", "http://phoenix.test:6006")]);
+    let config = otel_config(&env).expect("the phoenix config");
+    let lifecycle = phoenix_lifecycle(rig.init_with(config), rig.options(), &BTreeMap::new());
+    fill_projects(&lifecycle.tracer_cache, MAX_PROJECT_PROVIDERS + 1);
+    assert_eq!(lifecycle.tracer_cache.join_shutdowns(), 1);
+}
+
 #[test]
 fn phoenix_moves_a_hit_to_the_end_of_the_lru() {
     let rig = Rig::new();
