@@ -13,6 +13,11 @@ struct TurnAnswer {
     record: Option<TurnView>,
 }
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the turn view.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(transparent)]
+struct Flag(bool);
+
 #[derive(Debug, Serialize)]
 struct TurnView {
     api_key: String,
@@ -25,10 +30,10 @@ struct TurnView {
     spend: String,
     saved_spend: String,
     classifier_cost: String,
-    covered: bool,
-    cache_hit: bool,
+    covered: Flag,
+    cache_hit: Flag,
     cache_ttl_seconds: Option<i64>,
-    cache_touched: bool,
+    cache_touched: Flag,
     tier: Option<String>,
     baseline_model: Option<String>,
     savings_estimated_turns: i64,
@@ -72,10 +77,10 @@ fn turn_view(record: AutoRouterTurnTransaction) -> TurnView {
         spend: format!("{:.10}", record.spend),
         saved_spend: format!("{:.10}", record.saved_spend),
         classifier_cost: format!("{:.10}", record.classifier_cost),
-        covered: record.covered.0,
-        cache_hit: record.cache_hit.0,
+        covered: Flag(record.covered.0),
+        cache_hit: Flag(record.cache_hit.0),
         cache_ttl_seconds: record.cache_ttl_seconds,
-        cache_touched: record.cache_touched.0,
+        cache_touched: Flag(record.cache_touched.0),
         tier: record.tier,
         baseline_model: record.baseline_model,
         savings_estimated_turns: record.savings_estimated_turns,
