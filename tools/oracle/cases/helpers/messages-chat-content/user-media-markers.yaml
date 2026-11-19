@@ -1,0 +1,78 @@
+kind: helper
+name: messages-chat-content-user-media-markers
+call:
+  messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: text
+        text: hi
+        cache_control:
+          type: ephemeral
+        prompt_cache_breakpoint: false
+      - type: image
+        source:
+          type: base64
+          media_type: image/jpeg
+          data: YWJj
+        cache_control:
+          type: ephemeral
+        prompt_cache_breakpoint: false
+      - type: document
+        source:
+          type: base64
+          media_type: application/pdf
+          data: YWJj
+        cache_control:
+          type: ephemeral
+        prompt_cache_breakpoint: false
+      - type: image
+        source:
+          type: url
+          url: https://example.test/cat.png
+      - type: image
+        source:
+          type: nope
+      - type: document
+        source:
+          type: base64
+          media_type: application/pdf
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+calls:
+- messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: text
+        text: hi
+        cache_control:
+          type: ephemeral
+      - type: image
+        source:
+          type: base64
+          media_type: image/jpeg
+          data: YWJj
+        cache_control:
+          type: ephemeral
+    model: gemini-2.0-flash
+    custom_llm_provider: gemini
+    preserve_midturn_system: false
+    supported: []
+- messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: text
+        text: hi
+        cache_control:
+          type: ephemeral
+        prompt_cache_breakpoint: false
+    model: gpt-4o
+    custom_llm_provider: openai
+    preserve_midturn_system: false
+    supported: []
+env: {}
+compare: {ignore: []}
