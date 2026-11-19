@@ -1,5 +1,10 @@
+from collections.abc import Callable, Mapping
+from functools import partial
+from typing import TypeVar
+
 import litellm
 from litellm.llms.sail.common_utils import (
+    CompletionWindow,
     chat_request_for_sail,
     completion_window_for_service_tier,
     extra_body_for_sail,
@@ -20,56 +25,55 @@ from .contracts import (
     WindowStep,
 )
 
+_Body = TypeVar("_Body")
+
+
+def failure_record(error: BaseException) -> JsonValue:
+    failure = Failure.model_validate(error, from_attributes=True)
+    return {"ok": False, "value": None, "status": failure.status_code}
+
+
+def window_record(call: Callable[[], CompletionWindow | None]) -> JsonValue:
+    try:
+        window = call()
+    except UNSUPPORTED as error:
+        return failure_record(error)
+    return {"ok": True, "value": window, "status": None}
+
+
+def body_record(call: Callable[[], Mapping[str, _Body]]) -> JsonValue:
+    try:
+        body = call()
+    except UNSUPPORTED as error:
+        return failure_record(error)
+    return {"ok": True, "value": OBJECT.validate_python(json_body(body)), "status": None}
+
 
 def window_value(step: WindowStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
-    try:
-        window = completion_window_for_service_tier(
-            step["service_tier"], model=model, drop_params=step["drop_params"]
-        )
-    except UNSUPPORTED as error:
-        failure = Failure.model_validate(error, from_attributes=True)
-        return {"ok": False, "value": None, "status": failure.status_code}
-    return {"ok": True, "value": window, "status": None}
+    tier = step["service_tier"]
+    call = partial(completion_window_for_service_tier, tier, model=model, drop_params=step["drop_params"])
+    return window_record(call)
 
 
 def chat_request_value(step: ChatRequestStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
-    try:
-        request = chat_request_for_sail(
-            step["request"], model=model, drop_params=step["drop_params"]
-        )
-    except UNSUPPORTED as error:
-        failure = Failure.model_validate(error, from_attributes=True)
-        return {"ok": False, "value": None, "status": failure.status_code}
-    return {"ok": True, "value": OBJECT.validate_python(json_body(request)), "status": None}
+    call = partial(chat_request_for_sail, step["request"], model=model, drop_params=step["drop_params"])
+    return body_record(call)
 
 
 def extra_body_value(step: ExtraBodyStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
-    try:
-        extra_body = extra_body_for_sail(
-            step["extra_body"],
-            step["request_metadata"],
-            model=model,
-            drop_params=step["drop_params"],
-        )
-    except UNSUPPORTED as error:
-        failure = Failure.model_validate(error, from_attributes=True)
-        return {"ok": False, "value": None, "status": failure.status_code}
-    return {"ok": True, "value": OBJECT.validate_python(json_body(extra_body)), "status": None}
+    metadata = step["request_metadata"]
+    call = partial(extra_body_for_sail, step["extra_body"], metadata, model=model, drop_params=step["drop_params"])
+    return body_record(call)
 
 
 def responses_params_value(step: ResponsesParamsStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
-    try:
-        params = responses_params_with_completion_window(
-            step["params"], model=model, drop_params=step["drop_params"]
-        )
-    except UNSUPPORTED as error:
-        failure = Failure.model_validate(error, from_attributes=True)
-        return {"ok": False, "value": None, "status": failure.status_code}
-    return {"ok": True, "value": OBJECT.validate_python(json_body(params)), "status": None}
+    params = step["params"]
+    call = partial(responses_params_with_completion_window, params, model=model, drop_params=step["drop_params"])
+    return body_record(call)
 
 
 def supported_value(step: SupportedStep) -> JsonValue:
