@@ -37,14 +37,19 @@ pub(crate) const LONG_SALT_KEY_HEX: &str =
 pub(crate) const EMPTY_SALT_KEY_HEX: &str =
     "823db77a72224b45f13a2e82695e9f328beab0c39e5c4c736e83086be12e38c0";
 
-pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
+fn auth_context(
+    subject: &str,
+    roles: Vec<Role>,
+    user: Option<UserIdentity>,
+    source_key: SourceKey,
+) -> AuthContext {
     AuthContext {
         principal: Principal {
             principal_type: PrincipalType::ServiceAccount,
             subject: subject.to_owned(),
             issuer: None,
             audience: Vec::new(),
-            user: None,
+            user,
             organization: None,
             teams: Vec::new(),
             project: None,
@@ -54,9 +59,13 @@ pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
             auth_method: AuthMethod::ApiKey,
             credential_ref: CredentialRef::default(),
             network: NetworkContext::default(),
-            source_key: SourceKey::default(),
+            source_key,
         },
     }
+}
+
+pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
+    auth_context(subject, roles, None, SourceKey::default())
 }
 
 pub(crate) fn master_key() -> AuthContext {
@@ -64,15 +73,14 @@ pub(crate) fn master_key() -> AuthContext {
 }
 
 pub(crate) fn user_caller(subject: &str, roles: Vec<Role>, user_id: &str) -> AuthContext {
-    let mut context = caller(subject, roles);
-    context.principal.user = Some(UserIdentity {
+    let user = UserIdentity {
         id: user_id.to_owned(),
         external_id: None,
         user_name: None,
         email: None,
         display_name: None,
-    });
-    context
+    };
+    auth_context(subject, roles, Some(user), SourceKey::default())
 }
 
 pub(crate) fn key_caller(fields: &str) -> AuthContext {
@@ -80,25 +88,7 @@ pub(crate) fn key_caller(fields: &str) -> AuthContext {
         serde_json::from_str(fields).expect("the key fields decode");
     let key =
         UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key fixture constructs");
-    AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::ServiceAccount,
-            subject: "key-owner".to_owned(),
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey(Some(key)),
-        },
-    }
+    auth_context("key-owner", Vec::new(), None, SourceKey(Some(key)))
 }
 
 pub(crate) fn settings(json: &str) -> JsonObject {
