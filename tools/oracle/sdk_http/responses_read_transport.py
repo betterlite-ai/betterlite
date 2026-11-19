@@ -197,17 +197,30 @@ def run_transport(run: TransportRun, api_base: str) -> RunOutcome:
 
 def execute(run: TransportRun, config: BaseResponsesAPIConfig, api_base: str) -> RunOutcome:
     prepared = prepared_run(run, config, api_base)
-    if run.operation == "retrieve":
-        return RunOutcome(retrieved=retrieve(prepared))
-    return RunOutcome(result=input_items(prepared))
-
-
-def retrieve(prepared: Prepared) -> Retrieved:
-    run = prepared.run
+    if run.operation == "input_items":
+        arguments = (
+            run.response_id,
+            prepared.config,
+            prepared.params,
+            prepared.logging_obj,
+            "openai",
+            run.query.after,
+            run.query.before,
+            run.query.include,
+            run.query.limit,
+            run.query.order,
+            OBJECTS.validate_python(prepared.extra_headers),
+            prepared.timeout,
+        )
+        if run.mode == "sync":
+            listed = HANDLER.list_responses_input_items(*arguments)
+        else:
+            listed = asyncio.run(HANDLER.async_list_responses_input_items(*arguments))
+        return RunOutcome(result=JSON.validate_python(listed))
     extra_headers = OBJECTS.validate_python(prepared.extra_headers)
     extra_body = OBJECTS.validate_python(prepared.extra_body)
     if run.mode == "sync":
-        work = HANDLER.get_responses(
+        fetched = HANDLER.get_responses(
             run.response_id,
             prepared.config,
             prepared.params,
@@ -218,7 +231,7 @@ def retrieve(prepared: Prepared) -> Retrieved:
             prepared.timeout,
         )
     else:
-        work = asyncio.run(
+        fetched = asyncio.run(
             HANDLER.async_get_responses(
                 run.response_id,
                 prepared.config,
@@ -230,30 +243,7 @@ def retrieve(prepared: Prepared) -> Retrieved:
                 prepared.timeout,
             )
         )
-    return Retrieved.model_validate(work)
-
-
-def input_items(prepared: Prepared) -> JsonValue:
-    run = prepared.run
-    arguments = (
-        run.response_id,
-        prepared.config,
-        prepared.params,
-        prepared.logging_obj,
-        "openai",
-        run.query.after,
-        run.query.before,
-        run.query.include,
-        run.query.limit,
-        run.query.order,
-        OBJECTS.validate_python(prepared.extra_headers),
-        prepared.timeout,
-    )
-    if run.mode == "sync":
-        work = HANDLER.list_responses_input_items(*arguments)
-    else:
-        work = asyncio.run(HANDLER.async_list_responses_input_items(*arguments))
-    return JSON.validate_python(work)
+    return RunOutcome(retrieved=Retrieved.model_validate(fetched))
 
 
 class ResponsesReadTransportRequest(BaseModel):
