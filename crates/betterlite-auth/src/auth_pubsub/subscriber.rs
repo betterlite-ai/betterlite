@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::mem;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -58,6 +59,18 @@ enum Attempt<S> {
     Stop,
 }
 
+// resolves the pending operation unless the shutdown signal ends it first
+async fn unless_stopped<T, F>(shutdown: &mut watch::Receiver<bool>, operation: F) -> Option<T>
+where
+    F: Future<Output = T> + Send,
+    T: Send,
+{
+    match select(Box::pin(shutdown.changed()), Box::pin(operation)).await {
+        Either::Left((_stopped, _operation)) => None,
+        Either::Right((done, _changed)) => Some(done),
+    }
+}
+
 impl<E, C, T> CacheInvalidationSubscriber<E, C, T>
 where
     E: AuthPubSub + 'static,
@@ -116,14 +129,8 @@ where
         backoff: &mut Duration,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Attempt<E::Subscription> {
-        let subscribed = match select(
-            Box::pin(shutdown.changed()),
-            Box::pin(self.endpoint.subscribe()),
-        )
-        .await
-        {
-            Either::Left((_stopped, _subscribe)) => return Attempt::Stop,
-            Either::Right((outcome, _changed)) => outcome,
+        let Some(subscribed) = unless_stopped(shutdown, self.endpoint.subscribe()).await else {
+            return Attempt::Stop;
         };
         match subscribed {
             Ok(subscription) => Attempt::Subscribed(subscription),
@@ -150,15 +157,9 @@ where
             "auth cache invalidation subscriber redis error: {message}; reconnecting in {:.0}s",
             backoff.as_secs_f64()
         );
-        let stopped = match select(
-            Box::pin(shutdown.changed()),
-            Box::pin(self.clock.sleep(*backoff)),
-        )
-        .await
-        {
-            Either::Left((_stopped, _slept)) => true,
-            Either::Right(((), _changed)) => false,
-        };
+        let stopped = unless_stopped(shutdown, self.clock.sleep(*backoff))
+            .await
+            .is_none();
         *backoff = backoff.saturating_mul(2).min(BACKOFF_MAX);
         stopped
     }
@@ -169,14 +170,10 @@ where
         shutdown: &mut watch::Receiver<bool>,
     ) -> Option<Failure> {
         loop {
-            let outcome = match select(
-                Box::pin(shutdown.changed()),
-                Box::pin(subscription.next_message(POLL_TIMEOUT)),
-            )
-            .await
-            {
-                Either::Left((_stopped, _message)) => return None,
-                Either::Right((outcome, _changed)) => outcome,
+            let Some(outcome) =
+                unless_stopped(shutdown, subscription.next_message(POLL_TIMEOUT)).await
+            else {
+                return None;
             };
             let received = match outcome {
                 Ok(None) => continue,

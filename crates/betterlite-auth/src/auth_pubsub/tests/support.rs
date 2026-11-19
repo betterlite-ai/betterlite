@@ -179,6 +179,18 @@ impl ScriptedEndpoint {
     }
 }
 
+fn resolved<T>(
+    probe: &Probe,
+    event: Entry,
+    outcome: Result<T, TransportError>,
+) -> impl Future<Output = Result<T, TransportError>> + Send
+where
+    T: Send,
+{
+    probe.record(event);
+    ready(outcome)
+}
+
 impl AuthPubSub for ScriptedEndpoint {
     type Subscription = ScriptedSubscription;
 
@@ -214,24 +226,26 @@ impl AuthPubSub for ScriptedEndpoint {
     }
 
     fn subscribe(&self) -> impl Future<Output = Result<Self::Subscription, TransportError>> + Send {
-        self.probe.record(Entry::Subscribe);
         let session = lock(&self.sessions).pop_front();
-        ready(match session {
+        let close = self.close;
+        let probe = Arc::clone(&self.probe);
+        let outcome = match session {
             None => Err(TransportError::Connection(scripted_failure(
                 "the scripted sessions ran out",
             ))),
             Some(Session::Failure) => {
-                self.probe.record(Entry::SubscribeFailed);
+                probe.record(Entry::SubscribeFailed);
                 Err(TransportError::Connection(scripted_failure(
                     "the scripted subscribe failed",
                 )))
             }
             Some(Session::Serving(steps)) => Ok(ScriptedSubscription {
-                probe: Arc::clone(&self.probe),
+                probe,
                 steps: Mutex::new(VecDeque::from(steps)),
-                close: self.close,
+                close,
             }),
-        })
+        };
+        resolved(&self.probe, Entry::Subscribe, outcome)
     }
 }
 
@@ -272,16 +286,20 @@ impl AuthPubSubSubscription for ScriptedSubscription {
     }
 
     fn close(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
-        self.probe.record(Entry::Close);
-        ready(match self.close {
-            CloseMode::Accept => Ok(()),
+        let failure = match self.close {
+            CloseMode::Accept => None,
             CloseMode::Fail => {
                 self.probe.record(Entry::CloseFailed);
-                Err(TransportError::Connection(scripted_failure(
+                Some(TransportError::Connection(scripted_failure(
                     "the scripted close failed",
                 )))
             }
-        })
+        };
+        resolved(
+            &self.probe,
+            Entry::Close,
+            failure.map_or(Ok::<(), TransportError>(()), Err),
+        )
     }
 }
 
