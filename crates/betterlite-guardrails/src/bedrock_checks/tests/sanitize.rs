@@ -35,9 +35,7 @@ fn logging_copy_strips_every_pii_location_offset() {
     assert_eq!(entry.type_name.as_deref(), Some("EMAIL"));
     assert_eq!(entry.confidence_score, Number::from_f64(0.9));
     let json = as_json(&sanitized);
-    for key in LOCATION_KEYS {
-        assert!(!json.contains(key));
-    }
+    assert!(LOCATION_KEYS.iter().all(|key| !json.contains(key)));
 }
 
 #[test]
@@ -64,9 +62,7 @@ fn logging_copy_strips_location_keys_held_as_extras() {
     let entry = pii_entry(&sanitized);
     assert!(entry.extra.is_empty());
     let json = as_json(&sanitized);
-    for key in LOCATION_KEYS {
-        assert!(!json.contains(key));
-    }
+    assert!(LOCATION_KEYS.iter().all(|key| !json.contains(key)));
 }
 
 #[test]

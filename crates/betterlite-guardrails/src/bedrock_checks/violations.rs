@@ -5,8 +5,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde_json::Number;
 
 use crate::bedrock_records::{
-    ChecksPiiEntry, ChecksResponse, ChecksScoreEntry, ChecksScoreResult, ChecksSensitiveResult,
-    ChecksViolation,
+    ChecksResponse, ChecksScoreResult, ChecksSensitiveResult, ChecksViolation,
 };
 use crate::guardrail_records::record::{GuardrailStatus, GuardrailTracingDetail};
 
@@ -70,30 +69,55 @@ fn collect_scores(
         return;
     };
     for entry in entries {
-        if let Some(violation) = score_violation(check, entry, threshold) {
-            violations.push(violation);
-        }
+        push_scored(
+            violations,
+            check,
+            ScoreKind::Severity,
+            entry.severity_score.as_ref(),
+            threshold,
+            entry.category.clone(),
+            None,
+        );
     }
 }
 
-fn score_violation(
+#[derive(Debug, Clone, Copy)]
+enum ScoreKind {
+    Severity,
+    Confidence,
+}
+
+fn push_scored(
+    violations: &mut Vec<ChecksViolation>,
     check: &str,
-    entry: &ChecksScoreEntry,
+    kind: ScoreKind,
+    score: Option<&Number>,
     threshold: ConfidenceThreshold,
-) -> Option<ChecksViolation> {
-    let score = entry.severity_score.as_ref().and_then(Number::as_f64)?;
+    category: Option<String>,
+    type_name: Option<String>,
+) {
+    let Some(score) = score.and_then(Number::as_f64) else {
+        return;
+    };
     if score < threshold.0 {
-        return None;
+        return;
     }
-    Some(ChecksViolation {
+    let Some(score) = Number::from_f64(score) else {
+        return;
+    };
+    let (severity_score, confidence_score) = match kind {
+        ScoreKind::Severity => (Some(score), None),
+        ScoreKind::Confidence => (None, Some(score)),
+    };
+    violations.push(ChecksViolation {
         check: Some(check.to_owned()),
-        category: entry.category.clone(),
-        type_name: None,
-        severity_score: Some(Number::from_f64(score)?),
-        confidence_score: None,
+        category,
+        type_name,
+        severity_score,
+        confidence_score,
         truncated: None,
         extra: BTreeMap::new(),
-    })
+    });
 }
 
 // a truncated result counts as a violation: the detections it dropped were never scored
@@ -124,30 +148,16 @@ fn collect_sensitive(
         return;
     };
     for entry in entries {
-        if let Some(violation) = pii_violation(check, entry, threshold) {
-            violations.push(violation);
-        }
+        push_scored(
+            violations,
+            check,
+            ScoreKind::Confidence,
+            entry.confidence_score.as_ref(),
+            threshold,
+            None,
+            entry.type_name.clone(),
+        );
     }
-}
-
-fn pii_violation(
-    check: &str,
-    entry: &ChecksPiiEntry,
-    threshold: ConfidenceThreshold,
-) -> Option<ChecksViolation> {
-    let score = entry.confidence_score.as_ref().and_then(Number::as_f64)?;
-    if score < threshold.0 {
-        return None;
-    }
-    Some(ChecksViolation {
-        check: Some(check.to_owned()),
-        category: None,
-        type_name: entry.type_name.clone(),
-        severity_score: None,
-        confidence_score: Some(Number::from_f64(score)?),
-        truncated: None,
-        extra: BTreeMap::new(),
-    })
 }
 
 // LiteLLM's _get_invoke_checks_status

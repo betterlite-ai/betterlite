@@ -49,7 +49,11 @@ fn as_floats(response: &mut ChecksResponse) {
         .and_then(|sensitive| sensitive.results.as_mut());
     if let Some(entries) = entries {
         for entry in entries {
-            entry.confidence_score = entry.confidence_score.as_ref().and_then(float);
+            entry.confidence_score = entry
+                .confidence_score
+                .as_ref()
+                .and_then(Number::as_f64)
+                .and_then(Number::from_f64);
         }
     }
 }
@@ -59,10 +63,10 @@ fn float_scores(result: &mut ChecksScoreResult) {
         return;
     };
     for entry in entries {
-        entry.severity_score = entry.severity_score.as_ref().and_then(float);
+        entry.severity_score = entry
+            .severity_score
+            .as_ref()
+            .and_then(Number::as_f64)
+            .and_then(Number::from_f64);
     }
-}
-
-fn float(number: &Number) -> Option<Number> {
-    number.as_f64().and_then(Number::from_f64)
 }

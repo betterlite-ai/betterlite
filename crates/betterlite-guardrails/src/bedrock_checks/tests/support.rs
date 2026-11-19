@@ -367,25 +367,32 @@ pub(crate) fn field(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> Gua
     fields.get(key).expect("the record field").clone()
 }
 
-pub(crate) fn score_violation(check: &str, category: &str, score: f64) -> ChecksViolation {
-    ChecksViolation {
-        check: Some(check.to_owned()),
-        category: Some(category.to_owned()),
-        type_name: None,
-        severity_score: Number::from_f64(score),
-        confidence_score: None,
-        truncated: None,
-        extra: BTreeMap::new(),
-    }
+pub(crate) enum Label<'a> {
+    Category(&'a str),
+    TypeName(&'a str),
 }
 
-pub(crate) fn pii_violation(type_name: &str, score: f64) -> ChecksViolation {
+pub(crate) fn scored(check: &str, label: Label<'_>, score: f64) -> ChecksViolation {
+    let (category, type_name, severity_score, confidence_score) = match label {
+        Label::Category(category) => (
+            Some(category.to_owned()),
+            None,
+            Number::from_f64(score),
+            None,
+        ),
+        Label::TypeName(type_name) => (
+            None,
+            Some(type_name.to_owned()),
+            None,
+            Number::from_f64(score),
+        ),
+    };
     ChecksViolation {
-        check: Some("sensitiveInformation".to_owned()),
-        category: None,
-        type_name: Some(type_name.to_owned()),
-        severity_score: None,
-        confidence_score: Number::from_f64(score),
+        check: Some(check.to_owned()),
+        category,
+        type_name,
+        severity_score,
+        confidence_score,
         truncated: None,
         extra: BTreeMap::new(),
     }

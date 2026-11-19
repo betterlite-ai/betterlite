@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use indexmap::IndexMap;
-use serde::Serialize;
 
 use super::record::write_record;
 use super::{ChecksError, ChecksInvocation, RecordOutcome, RecordTimes};
@@ -25,7 +24,7 @@ pub(super) fn decide(
 ) -> Result<Response, GuardrailFailure> {
     let response = match serde_json::from_slice::<ChecksResponse>(body) {
         Ok(response) => response,
-        Err(source) => return Err(unparseable(invocation, event_type, times, &source)),
+        Err(source) => return Err(unparsable(invocation, event_type, times, &source)),
     };
     let empty = BTreeMap::new();
     let configured = invocation.guardrail.checks.as_ref().unwrap_or(&empty);
@@ -36,7 +35,8 @@ pub(super) fn decide(
     };
     let found = violations::collect(Some(&response), configured, thresholds);
     let sanitized = sanitize::for_logging(&response);
-    let logged = to_guardrail_value(&sanitized)?;
+    let encoded = serde_json::to_value(&sanitized).map_err(ChecksError::Encode)?;
+    let logged = serde_json::from_value(encoded).map_err(ChecksError::Encode)?;
     let status = violations::status(!found.is_empty());
     let tracing_detail = (!found.is_empty()).then(|| violations::tracing_detail(&found));
     write_record(
@@ -60,7 +60,7 @@ pub(super) fn decide(
     ))
 }
 
-fn unparseable(
+fn unparsable(
     invocation: &mut ChecksInvocation<'_>,
     event_type: GuardrailEventHooks,
     times: RecordTimes,
@@ -87,12 +87,4 @@ fn unparseable(
         status: 500,
         detail,
     }
-}
-
-fn to_guardrail_value<T>(value: &T) -> Result<GuardrailValue, ChecksError>
-where
-    T: Serialize,
-{
-    let encoded = serde_json::to_value(value).map_err(ChecksError::Encode)?;
-    serde_json::from_value(encoded).map_err(ChecksError::Encode)
 }

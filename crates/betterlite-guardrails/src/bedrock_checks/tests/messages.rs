@@ -19,9 +19,11 @@ fn input_messages_retag_every_role_as_user() {
     );
     let checks = build(Source::Input, Some(&wire), None);
     assert_eq!(checks.len(), 3);
-    for message in &checks {
-        assert_eq!(message.role, Some(Role::User));
-    }
+    assert!(
+        checks
+            .iter()
+            .all(|message| message.role == Some(Role::User))
+    );
     assert_eq!(blocks(&checks[0]), vec!["rules".to_owned()]);
     assert_eq!(blocks(&checks[1]), vec!["earlier".to_owned()]);
     assert_eq!(blocks(&checks[2]), vec!["hi".to_owned()]);
@@ -74,9 +76,11 @@ fn messages_split_after_ten_content_blocks_without_truncation() {
     assert_eq!(blocks(&checks[0])[9], "block-9");
     assert_eq!(blocks(&checks[1])[0], "block-10");
     assert_eq!(blocks(&checks[2])[2], "block-22");
-    for message in &checks {
-        assert_eq!(message.role, Some(Role::User));
-    }
+    assert!(
+        checks
+            .iter()
+            .all(|message| message.role == Some(Role::User))
+    );
 }
 
 #[test]

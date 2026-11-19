@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::support::{
-    checks_named, checks_response, pii_violation, score_violation, thresholds, truncated_violation,
+    Label, checks_named, checks_response, scored, thresholds, truncated_violation,
 };
 use crate::bedrock_checks::violations::{collect, status, tracing_detail};
 use crate::bedrock_records::ChecksViolation;
@@ -199,8 +199,8 @@ fn status_is_intervened_only_over_the_threshold() {
 #[test]
 fn tracing_detail_collects_categories_and_the_action() {
     let found = vec![
-        score_violation("contentFilter", "VIOLENCE", 0.9),
-        pii_violation("EMAIL", 0.8),
+        scored("contentFilter", Label::Category("VIOLENCE"), 0.9),
+        scored("sensitiveInformation", Label::TypeName("EMAIL"), 0.8),
     ];
     let detail = tracing_detail(&found);
     assert_eq!(
@@ -225,7 +225,7 @@ fn tracing_detail_falls_back_to_the_type_and_skips_empty_labels() {
             truncated: None,
             extra: BTreeMap::new(),
         },
-        score_violation("contentFilter", "", 0.9),
+        scored("contentFilter", Label::Category(""), 0.9),
     ];
     let detail = tracing_detail(&found);
     assert_eq!(
