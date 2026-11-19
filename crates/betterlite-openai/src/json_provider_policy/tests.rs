@@ -184,6 +184,8 @@ fn identity_prefers_the_explicit_base_then_the_declared_environment() {
     let (base, key) = policy.resolve_provider_info(None, None, &environment(&[(KEY_ENV, "")]));
     assert_eq!(base, "https://descriptor.invalid/v1");
     assert!(key.is_none());
+    let (base, _) = policy.resolve_provider_info(None, None, &environment(&[(BASE_ENV, "")]));
+    assert_eq!(base, "https://descriptor.invalid/v1");
 }
 
 #[test]
