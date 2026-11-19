@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-messages-native-body
+call:
+  bedrock_messages:
+    function: transform
+    model_cost:
+      bedrock/fixture-plain: {litellm_provider: bedrock, mode: chat}
+      fixture-plain: {litellm_provider: bedrock, mode: chat}
+    calls:
+      - model: fixture-plain
+        messages:
+          - {role: system, content: be nice}
+          - {role: user, content: hi}
+          - {role: assistant, content: [{type: text, text: hello}]}
+          - {role: user, content: [{type: tool_result, tool_use_id: t1, content: ok}]}
+        optional_params:
+          max_tokens: 1024
+          temperature: 0.2
+          stop_sequences: [END]
+          top_p: 0.9
+          metadata: {user_id: u1}
+          stream: true
+          mystery: 5
+          anthropic_version: custom-version
+        headers: {x-custom: keep}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

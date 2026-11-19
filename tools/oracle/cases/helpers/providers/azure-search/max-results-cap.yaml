@@ -1,0 +1,44 @@
+kind: helper
+name: max-results-cap
+call:
+  azure_search:
+    cap:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 2}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 10}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          query: q
+          optional_params: {max_results: 2}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          query: q
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 3}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim one","annotations":[{"type":"url_citation","url":"https://a.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim two","annotations":[{"type":"url_citation","url":"https://b.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"claim three","annotations":[{"type":"url_citation","url":"https://c.example"}]}]}]}
+env: {}
+compare:
+  ignore: []

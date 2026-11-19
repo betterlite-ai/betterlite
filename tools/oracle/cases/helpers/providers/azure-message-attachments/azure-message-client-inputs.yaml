@@ -1,0 +1,52 @@
+kind: helper
+name: azure-message-attachments-client-inputs
+call:
+  azure_message_attachments:
+    append_message:
+      - api_key: arg-key
+        api_base: https://arg.test
+        api_version: "2024-05-01"
+        azure_ad_token: method-token
+        timeout: 5
+        max_retries: 9
+        params: {azure_ad_token: params-token, timeout: 30, max_retries: 4}
+        data: {role: user, content: hi}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: true
+        data: {role: user, content: hi}
+      - supplied: {kind: sync}
+        data: {role: user, content: hi}
+      - environment: {AZURE_OPENAI_API_KEY: sk-env, AZURE_OPENAI_ENDPOINT: "https://env.test/"}
+        data: {role: user, content: hi}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        params: {azure_ad_token: static-token}
+        data: {role: user, content: hi}
+calls:
+  - azure_message_attachments:
+      append_message:
+        - supplied: {kind: async}
+          flag: true
+          data: {role: user, content: hi}
+  - azure_message_attachments:
+      list_messages:
+        - supplied: {kind: async}
+          flag: true
+  - azure_message_attachments:
+      append_message:
+        - api_base: https://example.test
+          data: {role: user, content: hi}
+  - azure_message_attachments:
+      append_message:
+        - api_key: sk-fixture
+          data: {role: user, content: hi}
+  - azure_message_attachments:
+      append_message:
+        - api_key: ""
+          api_base: https://example.test
+          params: {azure_ad_token: params-token}
+          data: {role: user, content: hi}
+env: {}
+compare: {ignore: []}

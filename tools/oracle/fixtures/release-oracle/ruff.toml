@@ -1,0 +1,4 @@
+extend = "../../../../ruff.toml"
+
+[lint.per-file-ignores]
+"startup.py" = ["INP001"] # the startup hook imports this file through PYTHONPATH, so its directory is not a package

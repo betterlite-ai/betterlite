@@ -1,0 +1,13 @@
+kind: helper
+name: azure-search-reply-seed
+call:
+  azure_search:
+    reply:
+      scenarios:
+        - environment: {}
+          status: 200
+          body: |
+            {"output": []}
+env: {}
+compare:
+  ignore: []

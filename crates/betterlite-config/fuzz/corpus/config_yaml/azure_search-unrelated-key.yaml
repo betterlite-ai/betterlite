@@ -1,0 +1,2 @@
+litellm_settings:
+  azure_search_unrelated_key: 1
