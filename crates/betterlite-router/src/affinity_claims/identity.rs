@@ -11,7 +11,7 @@ use crate::routing_value_store::RouteKey;
 pub const CACHE_KEY_PREFIX: &str = "deployment_affinity:v1";
 pub const USER_ID_AFFINITY_PREFIX: &str = "user_id:";
 pub const SESSION_ID_GENERATED_KEY: &str = "litellm_session_id_generated";
-pub const SESSION_DEPLOYMENT_AFFINITY_TTL_KEY: &str = "_session_deployment_affinity_ttl";
+pub const SESSION_TTL_MARKER_KEY: &str = "_session_deployment_affinity_ttl";
 pub const LOG_VALUE_KEEP: usize = 8;
 
 const UNSCOPED_CALLER: &str = "unscoped";
@@ -19,8 +19,10 @@ const UNSCOPED_CALLER: &str = "unscoped";
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct AffinityKey(pub(crate) RouteKey);
 
-impl AffinityKey {
-    pub fn parse(raw: &str) -> Result<Self, AffinityError> {
+impl TryFrom<&str> for AffinityKey {
+    type Error = AffinityError;
+
+    fn try_from(raw: &str) -> Result<Self, Self::Error> {
         let key = RouteKey::parse(raw)?;
         Ok(Self(key))
     }
@@ -53,7 +55,7 @@ pub fn hash_user_key(user_key: &str) -> String {
 pub fn affinity_cache_key(model_group: &str, user_key: &str) -> Result<AffinityKey, AffinityError> {
     let hashed_user_key = hash_user_key(user_key);
     let raw = format!("{CACHE_KEY_PREFIX}:{model_group}:{hashed_user_key}");
-    AffinityKey::parse(&raw)
+    AffinityKey::try_from(raw.as_str())
 }
 
 pub fn session_affinity_cache_key(
@@ -66,7 +68,7 @@ pub fn session_affinity_cache_key(
         None => UNSCOPED_CALLER.to_owned(),
     };
     let raw = format!("{CACHE_KEY_PREFIX}:session:{model_group}:{hashed_user_key}:{session_id}");
-    AffinityKey::parse(&raw)
+    AffinityKey::try_from(raw.as_str())
 }
 
 fn metadata_dicts(request_kwargs: &JsonObject) -> Vec<&IndexMap<String, Json>> {
@@ -157,12 +159,12 @@ pub fn marker_session_affinity_ttl(
     request_kwargs: &JsonObject,
 ) -> Result<Option<u32>, AffinityError> {
     for metadata in metadata_dicts(request_kwargs) {
-        let Some(value) = metadata.get(SESSION_DEPLOYMENT_AFFINITY_TTL_KEY) else {
+        let Some(value) = metadata.get(SESSION_TTL_MARKER_KEY) else {
             continue;
         };
         if let Some(ttl) = positive_integer(value) {
             let seconds = u32::try_from(ttl).map_err(|_error| AffinityError::TtlOutOfRange {
-                field: SESSION_DEPLOYMENT_AFFINITY_TTL_KEY,
+                field: SESSION_TTL_MARKER_KEY,
             })?;
             return Ok(Some(seconds));
         }
@@ -205,7 +207,7 @@ pub fn effective_flags(
 }
 
 #[must_use]
-pub fn model_map_key_from_litellm_model_name(litellm_model_name: &str) -> Option<String> {
+pub fn model_map_key_from_model_name(litellm_model_name: &str) -> Option<String> {
     if litellm_model_name.is_empty() {
         return None;
     }
@@ -236,7 +238,7 @@ pub fn model_map_key_from_deployment(deployment: &DeploymentSpec) -> Option<Stri
     if let Some(Json::Text(litellm_model_name)) = deployment.litellm_params.get("model")
         && !litellm_model_name.is_empty()
     {
-        return model_map_key_from_litellm_model_name(litellm_model_name);
+        return model_map_key_from_model_name(litellm_model_name);
     }
     None
 }
@@ -269,10 +271,8 @@ pub fn find_deployment_by_model_id<'a>(
     deployments: &'a [DeploymentSpec],
     model_id: &str,
 ) -> Option<&'a DeploymentSpec> {
-    for deployment in deployments {
-        if deployment.id() == Some(model_id) {
-            return Some(deployment);
-        }
-    }
-    None
+    let index = deployments
+        .iter()
+        .position(|deployment| deployment.id() == Some(model_id))?;
+    deployments.get(index)
 }

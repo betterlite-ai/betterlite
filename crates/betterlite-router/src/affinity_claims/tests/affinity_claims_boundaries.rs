@@ -107,10 +107,18 @@ fn exact_matching_needs_the_same_field_set() {
 #[test]
 fn an_affinity_key_is_capped_at_the_shared_key_limit() {
     let at_limit = "k".repeat(1024);
-    assert_eq!(AffinityKey::parse(&at_limit).unwrap().as_ref().len(), 1024);
+    assert_eq!(
+        AffinityKey::try_from(at_limit.as_str())
+            .unwrap()
+            .as_ref()
+            .len(),
+        1024
+    );
     let over = "k".repeat(1025);
     assert_eq!(
-        AffinityKey::parse(&over).unwrap_err().to_string(),
+        AffinityKey::try_from(over.as_str())
+            .unwrap_err()
+            .to_string(),
         "a route key of 1025 bytes is past the 1024-byte limit"
     );
 }

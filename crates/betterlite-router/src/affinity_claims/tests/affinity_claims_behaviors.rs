@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use serde_json::Number;
 
 use super::support::{
     TestClock, deployment, flags, key, local_pins, metadata, pin, runtime, shared_store,
@@ -7,10 +8,9 @@ use super::support::{
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::identity::{
     affinity_cache_key, effective_flags, find_deployment_by_model_id, hash_user_key,
-    marker_session_affinity_ttl, model_map_key_from_deployment,
-    model_map_key_from_litellm_model_name, session_affinity_cache_key,
-    session_id_from_request_kwargs, shorten_for_logs, stable_model_map_key,
-    user_key_from_request_kwargs,
+    marker_session_affinity_ttl, model_map_key_from_deployment, model_map_key_from_model_name,
+    session_affinity_cache_key, session_id_from_request_kwargs, shorten_for_logs,
+    stable_model_map_key, user_key_from_request_kwargs,
 };
 use crate::affinity_claims::pin::StoredPin;
 use crate::affinity_claims::shared::SharedFallback;
@@ -119,14 +119,14 @@ fn the_session_marker_ttl_takes_the_first_positive_integer() {
         "litellm_metadata".to_owned(),
         Json::Object(metadata(&[(
             "_session_deployment_affinity_ttl",
-            Json::Number(0.into()),
+            Json::Number(Number::from(0_u8)),
         )])),
     );
     kwargs.insert(
         "metadata".to_owned(),
         Json::Object(metadata(&[(
             "_session_deployment_affinity_ttl",
-            Json::Number(45.into()),
+            Json::Number(Number::from(45_u8)),
         )])),
     );
     assert_eq!(marker_session_affinity_ttl(&kwargs).unwrap(), Some(45));
@@ -150,18 +150,15 @@ fn an_explicit_group_entry_replaces_the_instance_flags() {
 #[test]
 fn the_model_map_key_strips_the_provider_but_never_an_azure_deployment() {
     assert_eq!(
-        model_map_key_from_litellm_model_name("openai/gpt-4o"),
+        model_map_key_from_model_name("openai/gpt-4o"),
         Some("gpt-4o".to_owned())
     );
+    assert_eq!(model_map_key_from_model_name("azure/deployment-a"), None);
     assert_eq!(
-        model_map_key_from_litellm_model_name("azure/deployment-a"),
-        None
-    );
-    assert_eq!(
-        model_map_key_from_litellm_model_name("gpt-4o"),
+        model_map_key_from_model_name("gpt-4o"),
         Some("gpt-4o".to_owned())
     );
-    assert_eq!(model_map_key_from_litellm_model_name(""), None);
+    assert_eq!(model_map_key_from_model_name(""), None);
 }
 
 #[test]

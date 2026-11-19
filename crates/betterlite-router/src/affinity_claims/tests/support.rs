@@ -65,7 +65,7 @@ pub fn pin_fields(fields: &[(&str, &str)]) -> AffinityPin {
 }
 
 pub fn key(raw: &str) -> AffinityKey {
-    AffinityKey::parse(raw).unwrap()
+    AffinityKey::try_from(raw).unwrap()
 }
 
 pub fn metadata(fields: &[(&str, Json)]) -> JsonObject {

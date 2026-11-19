@@ -64,10 +64,14 @@ pub(super) async fn claim(
 }
 
 async fn read(store: &RoutingStateStore, key: &AffinityKey) -> Result<StoreRead, SharedFallback> {
-    match store.get(&key.0).await {
-        Ok(observed) if observed.warning.is_none() => Ok(observed.value),
-        _ => Err(SharedFallback::Unavailable),
+    let observed = store
+        .get(&key.0)
+        .await
+        .map_err(|_error| SharedFallback::Unavailable)?;
+    if observed.warning.is_some() {
+        return Err(SharedFallback::Unavailable);
     }
+    Ok(observed.value)
 }
 
 fn evaluate(

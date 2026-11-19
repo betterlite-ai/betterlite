@@ -3,7 +3,6 @@ pub mod identity;
 pub mod local;
 pub mod pin;
 pub mod shared;
-#[cfg(test)]
 mod tests;
 
 use self::error::AffinityError;
