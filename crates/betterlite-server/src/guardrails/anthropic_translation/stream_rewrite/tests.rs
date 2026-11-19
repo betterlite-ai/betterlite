@@ -136,6 +136,17 @@ fn text_rewrite_keeps_an_indented_data_line_unrewritten() {
 }
 
 #[test]
+fn text_rewrite_trims_the_python_whitespace_before_the_payload() {
+    let padded = "data: \u{1c}{\"delta\": {\"type\": \"text_delta\", \"text\": \"old\"}, \"index\": 0, \"type\": \"content_block_delta\"}";
+    let mut chunks = vec![bytes(padded)];
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
+    assert_eq!(
+        text_of(&chunks[0]),
+        "data: {\"delta\": {\"text\": \"new\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
+    );
+}
+
+#[test]
 fn tool_rewrite_lands_the_nth_call_on_the_nth_block() {
     let mut chunks = vec![bytes(TOOL_STREAM)];
     let pre = [
