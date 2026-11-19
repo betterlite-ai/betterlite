@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -203,8 +204,8 @@ async fn garden_call_appends_one_chat_path_to_a_publisher_target() {
     assert!(request.starts_with(
         "POST /v1/projects/proj/locations/us-central1/endpoints/openapi/chat/completions HTTP/1.1"
     ));
-    let (_, body) = request.split_once("\r\n\r\n").unwrap();
-    let body: ChatRequest = serde_json::from_str(body).unwrap();
+    let (_, payload) = request.split_once("\r\n\r\n").unwrap();
+    let body: ChatRequest = serde_json::from_str(payload).unwrap();
     assert_eq!(body.messages, messages());
     assert_eq!(request.matches("/chat/completions").count(), 1);
     assert!(request.contains(r#""model": "meta/llama-3.3-70b-instruct-maas""#));
@@ -325,7 +326,7 @@ async fn garden_call_bounds_the_request_with_the_caller_timeout() {
     let mut holder = JoinSet::new();
     holder.spawn(async move {
         let (_stream, _) = listener.accept().await.unwrap();
-        std::future::pending::<()>().await;
+        pending::<()>().await;
     });
     let result = timeout(
         EXCHANGE_TIMEOUT,
