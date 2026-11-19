@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use crate::release_info::bullets::{ReleaseCounts, count_release_bullets};
+use crate::release_info::bullets::{ReleaseCounts, count_release_bullets, release_lines};
 
 const NONE: ReleaseCounts = ReleaseCounts {
     new_features: 0,
@@ -98,4 +98,15 @@ const OTHER: ReleaseCounts = ReleaseCounts {
 #[case::unbulleted_first_contribution("@ann made their first contribution", NONE)]
 fn counts_each_bullet_once(#[case] body: &str, #[case] expected: ReleaseCounts) {
     assert_eq!(count_release_bullets(body), expected);
+}
+
+// Python's str.splitlines keeps no trailing empty line and pairs a carriage return with the feed that follows it
+#[test]
+fn splits_lines_the_way_python_does() {
+    assert_eq!(release_lines("a\nb\r\nc\rd"), ["a", "b", "c", "d"]);
+    assert_eq!(release_lines("a\n"), ["a"]);
+    assert_eq!(release_lines("a\r\n"), ["a"]);
+    assert_eq!(release_lines("a\r"), ["a"]);
+    assert_eq!(release_lines("\n"), [""]);
+    assert!(release_lines("").is_empty());
 }

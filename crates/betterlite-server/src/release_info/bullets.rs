@@ -146,7 +146,7 @@ const fn line_boundary(character: char) -> bool {
     )
 }
 
-fn release_lines(body: &str) -> Vec<&str> {
+pub(super) fn release_lines(body: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut after_carriage_return = false;
