@@ -1,0 +1,13 @@
+name: auth-resource-grants-search-tool-allowlist
+config: |
+  model_list:
+    - {model_name: search-allowed-model, litellm_params: {model: openai/search-allowed-upstream}}
+    - {model_name: search-other-model, litellm_params: {model: openai/search-other-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

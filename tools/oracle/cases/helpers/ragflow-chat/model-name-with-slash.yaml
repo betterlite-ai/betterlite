@@ -1,0 +1,17 @@
+kind: helper
+name: ragflow-chat-model-name-with-slash
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: request
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat/abc/openai/gpt-4o', messages: [{role: user, content: hi}], options: {}, stored: null}
+      - {model: 'ragflow/agent/abc/glm-4', messages: [{role: user, content: hi}], options: {}, stored: null}
+      - {model: 'ragflow/chat/abc/gpt-4o', messages: [{role: user, content: hi}], options: {}, stored: 'stored-model'}
+      - {model: 'other/chat', messages: [{role: user, content: hi}], options: {}, stored: null}
+      - {model: 'ragflow/chat/abc/openai/gpt-4o', messages: [{role: user, content: hi}], options: {stream: true, max_retries: 3}, stored: null}
+      - {model: 'ragflow/chat/abc/openai/gpt-4o', messages: [{role: user, content: hi}], options: {model: other/model}, stored: null}
+      - {model: 'ragflow/chat/abc/m', messages: [{role: user, content: hi}], options: {messages: [{role: user, content: replaced}]}, stored: null}

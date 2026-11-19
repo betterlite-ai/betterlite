@@ -1,0 +1,21 @@
+kind: helper
+name: cost-estimate-values-zero-period-count-is-null
+call:
+  cost_estimate_values:
+    model_list:
+      - model_name: period-quote
+        litellm_params:
+          model: claude-haiku-4-5-20251001
+          custom_llm_provider: anthropic
+          input_cost_per_token: 0.5
+          output_cost_per_token: 1.5
+    request:
+      model: period-quote
+      input_tokens: 8
+      output_tokens: 4
+      cache_read_input_tokens: 2
+      cache_creation_input_tokens: 2
+      num_requests_per_day: 0
+      num_requests_per_month: 4
+env: {}
+compare: {ignore: []}

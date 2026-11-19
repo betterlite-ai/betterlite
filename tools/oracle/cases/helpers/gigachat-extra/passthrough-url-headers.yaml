@@ -1,0 +1,43 @@
+kind: helper
+name: gigachat-passthrough-url-headers
+call:
+  b8178:
+    steps:
+      - kind: passthrough_url
+        api_base: null
+        env_base: https://env.test/api
+        endpoint: /v1/chat/completions
+      - kind: passthrough_url
+        api_base: https://api.test/v1
+        env_base: https://env.test/api
+        endpoint: v1/embeddings
+      - kind: passthrough_url
+        api_base: null
+        env_base: https://env.test/api
+        endpoint: v1/chat/completions
+      - kind: passthrough_headers
+        headers: {X-Trace: abc, Accept: text/plain}
+        token: tok-pass
+      - kind: passthrough_headers
+        headers: {Authorization: Bearer caller, accept: text/html}
+        token: tok-pass
+      - kind: passthrough_key
+        api_key: given
+        env_key: env-key
+      - kind: passthrough_key
+        api_key: null
+        env_key: env-key
+      - kind: passthrough_key
+        api_key: ''
+        env_key: env-key
+      - kind: passthrough_streaming
+        request_data: {stream: true}
+      - kind: passthrough_streaming
+        request_data: {stream: false}
+      - kind: passthrough_streaming
+        request_data: {}
+env:
+  GIGACHAT_ACCESS_TOKEN: tok-pass
+  GIGACHAT_API_BASE: https://env.test/api
+  GIGACHAT_API_KEY: env-key
+compare: {ignore: []}

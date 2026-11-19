@@ -1,0 +1,11 @@
+kind: helper
+name: request-form dispatch seed
+call:
+  request_form:
+    operation: request_body_dispatch
+    method: POST
+    content_type: application/json
+    body: '{"x":1}'
+env: {}
+compare:
+  ignore: []

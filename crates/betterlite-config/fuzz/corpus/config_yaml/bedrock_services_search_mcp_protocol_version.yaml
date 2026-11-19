@@ -1,0 +1,7 @@
+# AGENTCORE_MCP_PROTOCOL_VERSION overrides the 2025-03-26 MCP revision sent with every call.
+model_list:
+  - model_name: agentcore-search
+    litellm_params:
+      api_base: https://gateway-abc123.gateway.bedrock-agentcore.eu-west-1.amazonaws.com/mcp
+litellm_settings:
+  tool_name: web-search-tool___WebSearch

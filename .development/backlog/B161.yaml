@@ -1,7 +1,7 @@
 id: B161
 milestone: M12 python
 title: Python files, batches, fine-tuning, vector stores, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime and passthrough functions
-status: todo
+status: blocked
 depends_on: [B7870, B7871, B7872, B7873, B7874, B7875, B7876, B7877, B7878, B7879, B7880, B7881, B7882, B7883, B7884, B7885, B7886, B7887, B7888, B7889, B7890, B7891]
 file: tasks/B161-python-resource-surface.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

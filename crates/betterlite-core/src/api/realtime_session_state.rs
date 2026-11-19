@@ -11,12 +11,11 @@ use std::fmt;
 
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_models::decisions::Json;
+use betterlite_openai::realtime::normalizer::RealtimeEventNormalizer;
 use indexmap::IndexMap;
 
 use super::realtime_contracts::events::AudioTranscriptionUsage;
-use super::realtime_contracts::transport::{
-    ClientWebSocket, RealtimeBackend, RealtimeEventNormalizer,
-};
+use super::realtime_contracts::transport::{ClientWebSocket, RealtimeBackend};
 use error::SessionStateError;
 use logging::{RealtimeLogging, RealtimeSuccessQueue, SessionInput, record_details};
 use state::{ResponseAssembly, SessionFlag, SessionSetup};

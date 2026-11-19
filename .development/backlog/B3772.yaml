@@ -1,7 +1,7 @@
 id: B3772
 milestone: M6 guardrails
 title: Gray Swan monitoring transport and request context
-status: todo
+status: done
 depends_on: [B192, B207, B3660, B3661, B3662, B3664, B3665, B3666, B1687]
 file: tasks/B3772-grayswan-monitoring.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2489

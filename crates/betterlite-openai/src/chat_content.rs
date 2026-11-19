@@ -51,7 +51,7 @@ pub struct MissingFileError {
 }
 
 // The failed-download seam B5083's Fetcher fills; this module never opens a request path or a local file
-pub trait UrlDownloader {
+pub trait UrlDownloader: Send + Sync {
     fn download(&self, url: &str) -> Result<String, ImageFetchError>;
 }
 

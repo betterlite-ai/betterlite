@@ -1,0 +1,5 @@
+kind: helper
+name: azure-message-attachments-seed-list-messages
+call: {azure_message_attachments: {list_messages: [{api_key: sk-seed, api_base: "https://example.test", api_version: "2024-02-01"}]}}
+env: {}
+compare: {ignore: []}

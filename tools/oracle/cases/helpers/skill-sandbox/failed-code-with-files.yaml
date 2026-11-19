@@ -1,0 +1,15 @@
+kind: helper
+name: failed_code_with_files
+call:
+  skill_sandbox:
+    code: "raise RuntimeError('boom')\n"
+    files:
+      main.py: "print('hello')\n"
+    requirements: null
+    image: "ghcr.io/example/sandbox:1"
+    execution: {exit_code: 1, stdout: null, stderr: "Traceback (most recent call last):\nRuntimeError: boom\n"}
+    listing: {exit_code: 0, stdout: '["/sandbox/chart.png"]', stderr: null}
+    runtime_files:
+      /sandbox/chart.png: "png-bytes"
+env: {}
+compare: {ignore: []}

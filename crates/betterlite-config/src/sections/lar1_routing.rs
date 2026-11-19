@@ -6,6 +6,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
+use crate::types::RoutingStrategy;
 
 mod tests;
 
@@ -18,6 +19,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawRouter {
+    #[serde(default)]
+    routing_strategy: Option<RoutingStrategy>,
     #[serde(default)]
     routing_strategy_args: Option<RawArgs>,
 }
@@ -61,6 +64,10 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        // apply_lar1_routing_strategy reads routing_strategy_args only when the strategy is lar1
+        if self.router_settings.routing_strategy != Some(RoutingStrategy::Lar1) {
+            return Ok(Settings::default());
+        }
         let Some(args) = self.router_settings.routing_strategy_args else {
             return Ok(Settings::default());
         };

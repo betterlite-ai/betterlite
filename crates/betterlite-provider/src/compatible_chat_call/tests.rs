@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod send;
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::io::Error as IoError;
@@ -703,7 +705,7 @@ async fn an_async_fake_stream_is_dropped_and_reads_lines() {
     );
 }
 
-// the logging env holds sinks that are not Sync, so the exchange runs on a runtime the sync test blocks on
+// the exchange runs on a runtime the sync test blocks on
 #[rstest]
 #[case::rejected(201)]
 #[case::accepted(200)]
