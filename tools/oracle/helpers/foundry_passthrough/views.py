@@ -1,4 +1,9 @@
+from typing import Final
+
+from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import BaseModel, ConfigDict, JsonValue
+
+STARTED: Final = "allm_passthrough_route"
 
 
 class PageView(BaseModel):
@@ -32,3 +37,8 @@ class LoggingView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     call_type: str
+
+
+def call_type_of(logging_obj: Logging) -> str | None:
+    call_type = LoggingView.model_validate(logging_obj).call_type
+    return None if call_type == STARTED else call_type
