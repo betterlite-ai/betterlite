@@ -1,7 +1,10 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
+
+use crate::spend_metadata::{as_text, optional_field, optional_text_field};
 
 use super::{
     CostTrackingService, END_USER_ID_FIELD, EndUserCostTrackingSettings,
@@ -124,5 +127,51 @@ fn a_non_string_id_names_the_field(#[case] encoded: &str) {
         &settings(None, None),
     )
     .expect_err("a non-string id is out of type");
+    assert!(error.to_string().contains(END_USER_ID_FIELD));
+}
+
+// The end-user id is read through these declared-field helpers, so their presence rules are pinned here.
+#[rstest]
+#[case::absent(None, None)]
+#[case::null(Some(Json::Null), None)]
+#[case::text(Some(Json::Text("user".to_owned())), Some("user"))]
+fn a_declared_field_converts_a_value_and_defaults_absence_and_null(
+    #[case] value: Option<Json>,
+    #[case] expected: Option<&str>,
+) {
+    let converted =
+        optional_field(value.as_ref(), END_USER_ID_FIELD, as_text).expect("a declared field");
+    assert_eq!(converted, expected);
+}
+
+#[test]
+fn a_declared_field_names_the_field_its_converter_rejects() {
+    let error = optional_field(Some(&Json::Bool(true)), END_USER_ID_FIELD, as_text)
+        .expect_err("a boolean is not text");
+    assert!(error.to_string().contains(END_USER_ID_FIELD));
+}
+
+#[rstest]
+#[case::absent(None, None)]
+#[case::null(Some(Json::Null), None)]
+#[case::text(Some(Json::Text("user".to_owned())), Some("user"))]
+#[case::empty(Some(Json::Text(String::new())), Some(""))]
+fn a_declared_string_field_reads_text_and_leaves_absence_and_null_unset(
+    #[case] value: Option<Json>,
+    #[case] expected: Option<&str>,
+) {
+    let resolved =
+        optional_text_field(value.as_ref(), END_USER_ID_FIELD).expect("a declared string field");
+    assert_eq!(resolved, expected);
+}
+
+#[rstest]
+#[case::boolean(Json::Bool(false))]
+#[case::number(Json::Number(7.into()))]
+#[case::list(Json::List(Vec::new()))]
+#[case::object(Json::Object(JsonObject::new()))]
+fn a_declared_string_field_names_the_field_for_another_type(#[case] value: Json) {
+    let error = optional_text_field(Some(&value), END_USER_ID_FIELD)
+        .expect_err("a non-string id is out of type");
     assert!(error.to_string().contains(END_USER_ID_FIELD));
 }
