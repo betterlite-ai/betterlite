@@ -8,6 +8,8 @@ from litellm.llms.openai_like.dynamic_config import create_responses_config_clas
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
 from litellm.llms.openai_like.messages.transformation import (
     JSONProviderAnthropicMessagesConfig as JSONMessagesConfig,
+)
+from litellm.llms.openai_like.messages.transformation import (
     OpenAILikeAnthropicMessagesConfig as NativeMessagesConfig,
 )
 from litellm.llms.openai_like.responses.transformation import OpenAILikeResponsesConfig
@@ -74,9 +76,14 @@ def provider_for(model: str, descriptor: JsonObject | None) -> SimpleProviderCon
 
 
 def messages_environment(config: NativeMessagesConfig, call: Call) -> JsonValue:
-    merged, _ = config.validate_anthropic_messages_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L34-L64
-        headers=dict(call["headers"]), model=call["model"].split("/", 1)[1],
-        messages=call["messages"], optional_params=dict(call["optional_params"]),
+    headers: dict[str, str] | None = call.get("headers")
+    messages: list[JsonObject] | None = call.get("messages")
+    optional_params: JsonObject | None = call.get("optional_params")
+    if headers is None or messages is None or optional_params is None:
+        raise ValueError("a messages header call needs headers, messages and params")
+    merged, _ = config.validate_anthropic_messages_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L34-L64
+        headers=headers, model=call["model"].split("/", 1)[1],
+        messages=messages, optional_params=optional_params,
         litellm_params=EMPTY, api_key=call.get("api_key"), api_base=call.get("api_base"),
     )
     return JSON_OBJECT.validate_python(merged)
@@ -95,7 +102,7 @@ def json_messages_headers(call: Call) -> JsonValue:
 
 def generic_messages_url(call: Call) -> JsonValue:
     config = NativeMessagesConfig()
-    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
+    return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
         optional_params=EMPTY, litellm_params=EMPTY,
@@ -104,7 +111,7 @@ def generic_messages_url(call: Call) -> JsonValue:
 
 def json_messages_url(call: Call) -> JsonValue:
     config = JSON_MESSAGES(provider_for(call["model"], call.get("descriptor")))
-    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
+    return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
         optional_params=EMPTY, litellm_params=EMPTY,
@@ -112,20 +119,30 @@ def json_messages_url(call: Call) -> JsonValue:
 
 
 def generic_messages_transform(call: Call) -> JsonValue:
-    body = cast(JsonObject, NativeMessagesConfig().transform_anthropic_messages_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
-        model=call["model"].split("/", 1)[1], messages=call["messages"],
-        anthropic_messages_optional_request_params=dict(call["optional_params"]),
-        litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
+    messages: list[JsonObject] | None = call.get("messages")
+    optional_params: JsonObject | None = call.get("optional_params")
+    if messages is None or optional_params is None:
+        raise ValueError("a messages transform call needs messages and optional_params")
+    headers: JsonObject = {}
+    body = cast(JsonObject, NativeMessagesConfig().transform_anthropic_messages_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
+        model=call["model"].split("/", 1)[1], messages=messages,
+        anthropic_messages_optional_request_params=optional_params,
+        litellm_params=GenericLiteLLMParams(), headers=headers,
     ))
     return JSON_OBJECT.validate_json(json.dumps(body))
 
 
 def json_messages_transform(call: Call) -> JsonValue:
     provider = provider_for(call["model"], call.get("descriptor"))
-    body = cast(JsonObject, JSON_MESSAGES(provider).transform_anthropic_messages_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
-        model=call["model"].split("/", 1)[1], messages=call["messages"],
-        anthropic_messages_optional_request_params=dict(call["optional_params"]),
-        litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
+    messages: list[JsonObject] | None = call.get("messages")
+    optional_params: JsonObject | None = call.get("optional_params")
+    if messages is None or optional_params is None:
+        raise ValueError("a messages transform call needs messages and optional_params")
+    headers: JsonObject = {}
+    body = cast(JsonObject, JSON_MESSAGES(provider).transform_anthropic_messages_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
+        model=call["model"].split("/", 1)[1], messages=messages,
+        anthropic_messages_optional_request_params=optional_params,
+        litellm_params=GenericLiteLLMParams(), headers=headers,
     ))
     return JSON_OBJECT.validate_json(json.dumps(body))
 
@@ -137,12 +154,15 @@ def responses_config(call: Call) -> OpenAILikeResponsesConfig:
 
 def responses_url(call: Call) -> JsonValue:
     config = responses_config(call)
-    return config.get_complete_url(api_base=call.get("api_base"), litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
+    return config.get_complete_url(api_base=call.get("api_base"), litellm_params=EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
 
 
 def responses_headers(call: Call) -> JsonValue:
-    merged = cast(JsonObject, responses_config(call).validate_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
-        headers=dict(call["headers"]),
+    headers: dict[str, str] | None = call.get("headers")
+    if headers is None:
+        raise ValueError("a responses header call needs headers")
+    merged = cast(JsonObject, responses_config(call).validate_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
+        headers=headers,
         model=call["model"].split("/", 1)[1],
         litellm_params=GenericLiteLLMParams(api_key=call.get("api_key")),
     ))
@@ -150,33 +170,45 @@ def responses_headers(call: Call) -> JsonValue:
 
 
 def responses_transform(call: Call) -> JsonValue:
-    body = cast(JsonObject, responses_config(call).transform_responses_api_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L228-L244
-        model=call["model"].split("/", 1)[1], input=call["input"],
-        response_api_optional_request_params=dict(call["params"]),
-        litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
+    prompt: str | None = call.get("input")
+    params: JsonObject | None = call.get("params")
+    if prompt is None or params is None:
+        raise ValueError("a responses transform call needs input and params")
+    headers: JsonObject = {}
+    body = cast(JsonObject, responses_config(call).transform_responses_api_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L228-L244
+        model=call["model"].split("/", 1)[1], input=prompt,
+        response_api_optional_request_params=params,
+        litellm_params=GenericLiteLLMParams(), headers=headers,
     ))
     return JSON_OBJECT.validate_json(json.dumps(body))
 
 
 def responses_cache(call: Call) -> JsonObject:
     slug = call["model"].split("/", 1)[0]
-    first = create_responses_config_class(SimpleProviderConfig(slug=slug, data=call["first"]))
-    second = create_responses_config_class(SimpleProviderConfig(slug=slug, data=call["second"]))
-    first_url = first().get_complete_url(api_base=None, litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
-    second_url = second().get_complete_url(api_base=None, litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
-    return {"first": first_url, "second": second_url, "cached": first is second}
+    first: JsonObject | None = call.get("first")
+    second: JsonObject | None = call.get("second")
+    if first is None or second is None:
+        raise ValueError(f"{slug} needs two descriptors to compare the cache")
+    first_class = create_responses_config_class(SimpleProviderConfig(slug=slug, data=first))
+    second_class = create_responses_config_class(SimpleProviderConfig(slug=slug, data=second))
+    first_url = first_class().get_complete_url(api_base=None, litellm_params=EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
+    second_url = second_class().get_complete_url(api_base=None, litellm_params=EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
+    return {"first": first_url, "second": second_url, "cached": first_class is second_class}
 
 
 def generic_responses_url(call: Call) -> JsonValue:
     config = GENERIC_RESPONSES()
-    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
+    return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
         api_base=call.get("api_base"), litellm_params=EMPTY
     )
 
 
 def generic_responses_headers(call: Call) -> JsonValue:
-    merged = cast(JsonObject, GENERIC_RESPONSES().validate_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
-        headers=dict(call["headers"]),
+    headers: dict[str, str] | None = call.get("headers")
+    if headers is None:
+        raise ValueError("a responses header call needs headers")
+    merged = cast(JsonObject, GENERIC_RESPONSES().validate_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
+        headers=headers,
         model=call["model"].split("/", 1)[1],
         litellm_params=GenericLiteLLMParams(api_key=call.get("api_key")),
     ))

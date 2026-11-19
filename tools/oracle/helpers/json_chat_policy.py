@@ -50,7 +50,7 @@ class CollapseMessages(Protocol):
 # the documented entry point for a generated JSON provider config, typed through the protocol above
 FACTORY: Final[ChatFactory] = create_config_class
 # AllMessageValues carries Any, so the case's plain dicts go through a protocol instead
-COLLAPSE: Final[CollapseMessages] = cast(CollapseMessages, collapse_messages)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L82
+COLLAPSE: Final[CollapseMessages] = cast(CollapseMessages, collapse_messages)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L82
 
 CallKind: TypeAlias = Literal["identity", "supported", "params", "url", "messages"]
 
@@ -90,22 +90,26 @@ def identity_value(call: Call) -> JsonObject:
 
 
 def supported_value(call: Call) -> JsonValue:
-    config = FACTORY(provider_for(call["model"], None))()
+    config: ChatConfig = FACTORY(provider_for(call["model"], None))()
     return list(config.get_supported_openai_params(call["model"].split("/", 1)[1]))
 
 
 def params_value(call: Call) -> JsonValue:
-    config = FACTORY(provider_for(call["model"], call.get("descriptor")))()
+    config: ChatConfig = FACTORY(provider_for(call["model"], call.get("descriptor")))()
+    non_default: JsonObject | None = call.get("non_default")
+    optional: JsonObject | None = call.get("optional")
+    if non_default is None or optional is None:
+        raise ValueError("a params call needs non_default and optional")
     return config.map_openai_params(
-        non_default_params=call["non_default"],
-        optional_params=call["optional"],
+        non_default_params=non_default,
+        optional_params=optional,
         model=call["model"].split("/", 1)[1],
         drop_params=False,
     )
 
 
 def url_value(call: Call) -> JsonValue:
-    config = FACTORY(provider_for(call["model"], None))()
+    config: ChatConfig = FACTORY(provider_for(call["model"], None))()
     return config.get_complete_url(
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
@@ -114,7 +118,10 @@ def url_value(call: Call) -> JsonValue:
 
 
 def messages_value(call: Call) -> JsonValue:
-    collapsed = COLLAPSE(call["messages"])
+    messages: list[JsonObject] | None = call.get("messages")
+    if messages is None:
+        raise ValueError("a messages call needs messages")
+    collapsed = COLLAPSE(messages)
     return MESSAGES.validate_python(collapsed)
 
 
