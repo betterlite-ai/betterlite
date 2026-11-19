@@ -192,3 +192,10 @@ path = "fuzz_targets/openai_costs_page.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "custom_output"
+path = "fuzz_targets/custom_output.rs"
+test = false
+doc = false
+bench = false

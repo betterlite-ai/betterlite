@@ -158,6 +158,9 @@ impl Provider {
             "vertex_ai" | "vertex_ai_beta" => Ok(Self::VertexAi(VertexAi)),
             "gemini" => Ok(Self::Gemini(Gemini)),
             "xai" | "mistral" | "codestral" => Ok(Self::XaiMistral(XaiMistral)),
+            "litellm_proxy" => Ok(Self::Legacy(Legacy::LitellmProxy)),
+            "aleph_alpha" => Ok(Self::Legacy(Legacy::AlephAlpha)),
+            "custom" => Ok(Self::Legacy(Legacy::Custom)),
             other => Err(OperationError::UnavailableAdapter {
                 provider: other.to_owned(),
             }),

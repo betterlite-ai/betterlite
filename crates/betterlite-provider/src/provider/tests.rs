@@ -93,7 +93,6 @@ fn client() -> ProxiedClient {
 #[case::xai_mistral(Provider::XaiMistral(XaiMistral), "xai_mistral")]
 #[case::embedding_rerank(Provider::EmbeddingRerank(EmbeddingRerank), "embedding_rerank")]
 #[case::compatible(Provider::Compatible(Compatible), "compatible")]
-#[case::legacy(Provider::Legacy(Legacy), "legacy")]
 #[case::self_hosted(Provider::SelfHosted(SelfHosted), "self_hosted")]
 #[case::subscription(Provider::Subscription(Subscription), "subscription")]
 #[case::media(Provider::MediaProviders(MediaProviders), "media_providers")]
@@ -133,6 +132,38 @@ async fn provider_framework_tests_behavior(#[case] provider: Provider, #[case] n
         Err(error) => error,
     };
     assert!(matches!(decoded, OperationError::UnavailableAdapter { .. }));
+}
+
+#[rstest]
+#[case::litellm_proxy("litellm_proxy", Legacy::LitellmProxy)]
+#[case::aleph_alpha("aleph_alpha", Legacy::AlephAlpha)]
+#[case::custom("custom", Legacy::Custom)]
+fn legacy_slugs_select_a_legacy_provider(#[case] slug: &str, #[case] legacy: Legacy) {
+    assert_eq!(Provider::from_slug(slug).unwrap(), Provider::Legacy(legacy));
+    assert_eq!(Provider::from_slug(slug).unwrap().name(), "legacy");
+}
+
+#[test]
+fn a_proxy_deployment_keeps_the_nested_model_without_the_proxy_prefix() {
+    let chat = listed(
+        "litellm_proxy/gemini/gemini-1.5-pro",
+        "https://proxy.example",
+    );
+    assert_eq!(
+        Provider::from_deployment(&chat).unwrap(),
+        Provider::Legacy(Legacy::LitellmProxy)
+    );
+    assert_eq!(Deployment::from_chat(&chat).model, "gemini/gemini-1.5-pro");
+}
+
+#[test]
+fn a_custom_deployment_strips_its_prefix() {
+    let chat = listed("custom/my-model", "https://custom.example/generate");
+    assert_eq!(
+        Provider::from_deployment(&chat).unwrap(),
+        Provider::Legacy(Legacy::Custom)
+    );
+    assert_eq!(Deployment::from_chat(&chat).model, "my-model");
 }
 
 mod foreign_operation;
