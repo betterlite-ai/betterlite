@@ -32,10 +32,10 @@ pub(super) fn resolve_timeout(
         };
         return resolve_fine_tuning_timeout(None, &input.provider, Some(phases));
     }
-    let Some(value) = timeout.and_then(AssistantTimeout::value) else {
-        return request_timeout(None, input.params.request_timeout).map(FineTuningTimeout::Seconds);
-    };
-    resolve_fine_tuning_timeout(Some(&value), &input.provider, None)
+    timeout.and_then(AssistantTimeout::value).map_or_else(
+        || request_timeout(None, input.params.request_timeout).map(FineTuningTimeout::Seconds),
+        |value| resolve_fine_tuning_timeout(Some(&value), &input.provider, None),
+    )
 }
 
 // The OpenAI SDK applies one read timeout, so a structured timeout contributes its read phase.
