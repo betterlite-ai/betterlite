@@ -1,0 +1,23 @@
+kind: sdk_http
+name: image-generation-http-send-failure
+call:
+  image_generation_http:
+    model: image-model
+    prompt: cat
+    mode: sync
+    timeout_seconds: 5
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "2"}
+    body: slow
+compare:
+  upstream_headers: [content-type, x]
+  ignore:
+    - pointer: /image_generation_http/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
+    - pointer: /image_generation_http/value/effects/validation/litellm_params/api_base
+      why: each side answers from its own mock, so the injected base differs while the rest of the map is the call's
+    - pointer: /image_generation_http/value/effects/url/api_base
+      why: each side answers from its own mock, so the base the handler hands the URL builder differs
+    - pointer: /image_generation_http/value/effects/pre_call/api_base
+      why: each side answers from its own mock, so the complete URL the pre-call logs differs

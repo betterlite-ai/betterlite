@@ -1,0 +1,31 @@
+kind: sdk_http
+name: image-generation-http-json-transport
+call:
+  image_generation_http:
+    model: image-model
+    prompt: cat
+    mode: sync
+    api_key: direct
+    litellm_params: {api_key: stored}
+    optional_params:
+      extra_headers: {x: option}
+    extra_headers: {x: explicit}
+    extra_body: {ignored: true}
+    fake_stream: true
+    litellm_metadata: {tag: t}
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: img_1}
+    body: {created: 1, data: [{b64_json: YQ==}]}
+compare:
+  upstream_headers: [content-type, x]
+  ignore:
+    - pointer: /image_generation_http/value/effects/validation/litellm_params/api_base
+      why: each side answers from its own mock, so the injected base differs while the rest of the map is the call's
+    - pointer: /image_generation_http/value/effects/url/api_base
+      why: each side answers from its own mock, so the base the handler hands the URL builder differs
+    - pointer: /image_generation_http/value/effects/pre_call/api_base
+      why: each side answers from its own mock, so the complete URL the pre-call logs differs
+    - pointer: /image_generation_http/value/provider_headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
