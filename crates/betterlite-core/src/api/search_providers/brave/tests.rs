@@ -54,6 +54,13 @@ fn json(source: &str) -> JsonValue {
     serde_json::from_str(source).unwrap()
 }
 
+fn section(name: &str, prefix: &str, count: usize) -> String {
+    let items: Vec<String> = (0..count)
+        .map(|index| format!(r#"{{"title": "{prefix}{index}", "url": "u"}}"#))
+        .collect();
+    format!(r#""{name}": {{"results": [{}]}}"#, items.join(","))
+}
+
 fn query(value: &str) -> SearchQuery {
     SearchQuery::Single(value.to_owned())
 }
@@ -463,6 +470,21 @@ fn brave_search_reply_filters_sections_case_insensitively_and_keeps_duplicates()
 }
 
 #[test]
+fn brave_search_reply_reads_the_first_of_a_repeated_result_filter() {
+    let body = r#"{
+        "web": {"results": [{"title": "w", "url": "u"}]},
+        "news": {"results": [{"title": "n", "url": "u"}]}
+    }"#;
+    let url = format!("{BRAVE_API_BASE}?result_filter=news&result_filter=web");
+
+    let response =
+        super::reply::decode_brave_search(body.as_bytes(), Some(url.as_str()), today()).unwrap();
+
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(response.results[0].title, "n");
+}
+
+#[test]
 fn brave_search_reply_selects_every_section_for_an_unsupported_filter() {
     let config = config(&[]);
     let params = options(&[("result_filter", text("images"))]);
@@ -474,12 +496,12 @@ fn brave_search_reply_selects_every_section_for_an_unsupported_filter() {
 }
 
 #[rstest]
-#[case::absent(None, 4)]
+#[case::absent(None, 20)]
 #[case::zero(Some(0), 1)]
 #[case::one(Some(1), 1)]
 #[case::given(Some(3), 3)]
-#[case::at_the_limit(Some(20), 4)]
-#[case::above_the_limit(Some(99), 4)]
+#[case::at_the_limit(Some(20), 20)]
+#[case::above_the_limit(Some(99), 20)]
 fn brave_search_reply_clamps_the_count_across_sections(
     #[case] max_results: Option<i64>,
     #[case] expected: usize,
@@ -489,14 +511,32 @@ fn brave_search_reply_clamps_the_count_across_sections(
         Some(value) => options(&[("max_results", number(value))]),
         None => Object::new(),
     };
-    let body = r#"{
-        "web": {"results": [{"title": "w1", "url": "u"}, {"title": "w2", "url": "u"}]},
-        "news": {"results": [{"title": "n1", "url": "u"}, {"title": "n2", "url": "u"}]}
-    }"#;
+    let body = format!(
+        "{{{}, {}}}",
+        section("web", "w", 21),
+        section("news", "n", 2)
+    );
 
-    let response = answer(&config, "q", &params, body).unwrap();
+    let response = answer(&config, "q", &params, &body).unwrap();
 
     assert_eq!(response.results.len(), expected);
+}
+
+#[test]
+fn brave_search_reply_clamps_a_count_above_the_limit_to_twenty() {
+    let config = config(&[]);
+    let params = options(&[("count", number(99))]);
+    let body = format!(
+        "{{{}, {}}}",
+        section("web", "w", 21),
+        section("news", "n", 2)
+    );
+    let url = request_url(&config, "q", &params);
+
+    let response = answer(&config, "q", &params, &body).unwrap();
+
+    assert!(url.contains("count=99"));
+    assert_eq!(response.results.len(), 20);
 }
 
 #[test]
@@ -623,12 +663,16 @@ fn brave_search_reply_rejects_a_count_that_is_not_an_integer() {
 #[case::above_the_threshold(r#""100000000001""#, Some("1973-03-03"))]
 #[case::at_the_threshold(r#""100000000000""#, Some("5138-11-16"))]
 #[case::negative_milliseconds(r#""-100000000001""#, Some("1966-10-31"))]
+#[case::negative_threshold(r#""-100000000000""#, None)]
+#[case::year_ten_thousand_milliseconds(r#""253402300800000""#, None)]
 #[case::negative_fraction(r#""-1.5""#, Some("1969-12-31"))]
 #[case::negative_zero(r#""-0.0""#, Some("1970-01-01"))]
 #[case::string_zero(r#""0""#, Some("1970-01-01"))]
 #[case::numeric_zero("0", None)]
 #[case::numeric_zero_float("0.0", None)]
 #[case::integer_timestamp("1700000000", Some("2023-11-14"))]
+#[case::negative_threshold_number("-100000000000", None)]
+#[case::year_ten_thousand_number("253402300800000", None)]
 #[case::float_timestamp("1700000000000", Some("2023-11-14"))]
 #[case::fraction_seconds("1.5", Some("1970-01-01"))]
 #[case::negative_integer("-1", Some("1969-12-31"))]
@@ -655,6 +699,10 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::offset_east("2024-03-05T23:30:00+05:00", Some("2024-03-05"))]
 #[case::utf_offset("2024-03-05T10:00:00.123456Z", Some("2024-03-05"))]
 #[case::weekday_prefix("Thu, 05 Mar 2024 23:30:00 +0000", Some("2024-03-05"))]
+#[case::abbreviated_thursday("Thurs", None)]
+#[case::word_starting_like_june("Junk", None)]
+#[case::clock_after_at("Mar 5, 2024 at 3 PM", Some("2024-03-05"))]
+#[case::clock_after_space("Mar 5 3 PM", Some("2024-03-05"))]
 #[case::month_name("Mar 5, 2024", Some("2024-03-05"))]
 #[case::ordinal("March 5th, 2024 at 10:30 AM", Some("2024-03-05"))]
 #[case::month_first_dash("Jan-05-2024", Some("2024-01-05"))]
@@ -759,10 +807,15 @@ fn replays_the_brave_search_corpus(#[files("fuzz/corpus/brave_search/*")] path: 
 #[test]
 fn brave_search_config_remembers_the_last_url() {
     let config = config(&[]);
-    let params = Object::new();
+    let news = options(&[("result_filter", text("news"))]);
+    let web = options(&[("result_filter", text("web"))]);
+    let body = r#"{
+        "web": {"results": [{"title": "w", "url": "u"}]},
+        "news": {"results": [{"title": "n", "url": "u"}]}
+    }"#;
 
-    let url = request_url(&config, "one", &params);
-    let body = r#"{"web": {"results": [{"title": "w", "url": "u"}]}}"#;
+    let first = request_url(&config, "one", &news);
+    let second = request_url(&config, "two", &web);
     let response = config
         .transform_search_response(&ProviderResponse {
             status_code: 200,
@@ -771,11 +824,14 @@ fn brave_search_config_remembers_the_last_url() {
         })
         .unwrap();
 
+    assert_ne!(first, second);
     assert_eq!(response.results.len(), 1);
-    assert!(url.starts_with(BRAVE_API_BASE));
+    assert_eq!(response.results[0].title, "w");
 }
 
 #[test]
 fn brave_search_config_reads_the_day_from_the_clock_when_none_is_given() {
-    assert!(super::now_date() >= NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+    let config = BraveSearchConfig::load(&environment(&[]), None);
+
+    assert!(config.today >= NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
 }
