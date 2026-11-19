@@ -1,0 +1,14 @@
+kind: sdk_http
+name: storage-targets-before-write
+env: {}
+call:
+  file_storage_service:
+    operation: factory
+    backend_type: other
+    target_model_names: [m]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

@@ -71,8 +71,8 @@ struct ListState {
     entries: VecDeque<String>,
     pushed: Vec<String>,
     take_calls: Vec<usize>,
-    fail_take: bool,
     push_budget: Option<usize>,
+    take_budget: Option<usize>,
 }
 
 #[derive(Default)]
@@ -90,8 +90,8 @@ impl FakeList {
             entries: entries.iter().map(|entry| (*entry).to_owned()).collect(),
             pushed: Vec::new(),
             take_calls: Vec::new(),
-            fail_take: false,
             push_budget: None,
+            take_budget: None,
         };
         Self {
             state: Mutex::new(state),
@@ -110,10 +110,14 @@ impl FakeList {
     }
 
     pub(crate) fn fail_take(&self) {
+        self.fail_take_after(0);
+    }
+
+    pub(crate) fn fail_take_after(&self, successes: usize) {
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .fail_take = true;
+            .take_budget = Some(successes);
     }
 
     pub(crate) fn pushed(&self) -> Vec<String> {
@@ -159,8 +163,11 @@ impl FakeList {
     fn take_blocking(&self, count: usize) -> Result<Vec<String>, GatewayRequestRedisError> {
         let mut state = self.lock();
         state.take_calls.push(count);
-        if state.fail_take {
-            return Err(list_failure("async_lpop"));
+        if let Some(remaining) = state.take_budget {
+            if remaining == 0 {
+                return Err(list_failure("async_lpop"));
+            }
+            state.take_budget = Some(remaining.saturating_sub(1));
         }
         let available = count.min(state.entries.len());
         Ok(state.entries.drain(..available).collect())
