@@ -25,10 +25,8 @@ fn dec(value: &str) -> Decimal {
 }
 
 fn scenario(tariff: Option<&PriceRecord>, tokens: &CacheTokenBuckets) -> Option<Decimal> {
-    let records: Vec<(&str, PriceRecord)> = match tariff {
-        Some(chosen) => vec![(DEPLOYMENT_ID, chosen.clone())],
-        None => Vec::new(),
-    };
+    let records: Vec<(&str, PriceRecord)> =
+        tariff.map_or_else(Vec::new, |chosen| vec![(DEPLOYMENT_ID, chosen.clone())]);
     let prices = Prices::new(Lookup::new(&records));
     let environment = prices.environment();
     let request = ScenarioRequest {

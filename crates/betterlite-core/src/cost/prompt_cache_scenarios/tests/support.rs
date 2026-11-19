@@ -39,11 +39,11 @@ pub(crate) fn record(fields: &[(&str, Scalar)]) -> PriceRecord {
 }
 
 pub(crate) fn without(tariff: &PriceRecord, keys: &[&str]) -> PriceRecord {
-    let mut tariff = tariff.clone();
+    let mut trimmed = tariff.clone();
     for key in keys {
-        tariff.remove(*key);
+        trimmed.remove(*key);
     }
-    tariff
+    trimmed
 }
 
 // Scalar carries no PartialEq, so a record compares through its debug text instead.

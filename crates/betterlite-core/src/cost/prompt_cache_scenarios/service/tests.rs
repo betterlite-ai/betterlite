@@ -2,8 +2,8 @@
 
 use std::str::FromStr as _;
 
-use betterlite_anthropic::cache_aware_routing::services::CacheCostService;
-use betterlite_anthropic::cache_aware_routing::services::MinimumCacheTokens;
+use betterlite_anthropic::cache_aware_routing::services::CacheCostService as _;
+use betterlite_anthropic::cache_aware_routing::services::MinimumCacheTokens as _;
 use betterlite_anthropic::cache_aware_routing::services::ScenarioRequest;
 use betterlite_models::catalog::BundledCatalog;
 use rstest::rstest;
