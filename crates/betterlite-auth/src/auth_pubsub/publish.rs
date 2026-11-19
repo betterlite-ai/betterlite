@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::Semaphore;
@@ -27,7 +28,7 @@ impl Default for PublishTasks {
 
 impl PublishTasks {
     pub async fn shutdown(&self) {
-        let mut pending = std::mem::take(&mut *lock(&self.pending));
+        let mut pending = mem::take(&mut *lock(&self.pending));
         pending.abort_all();
         while pending.join_next().await.is_some() {}
     }
@@ -44,41 +45,48 @@ pub async fn publish_invalidation<E>(
         return;
     };
     let cache_key = invalidation.cache_key.clone();
-    {
-        let mut pending = lock(&tasks.pending);
-        while pending.try_join_next().is_some() {}
-        if pending.len() >= MAX_PENDING_PUBLISHES {
-            drop(pending);
-            warn!(
-                subject = cache_key.as_str(),
-                pending = MAX_PENDING_PUBLISHES,
-                "auth cache invalidation publish for {cache_key} dropped: {MAX_PENDING_PUBLISHES} publishes already waiting on redis; other workers keep their cached copy until its TTL expires"
-            );
-            return;
-        }
-        let message = message::encode(invalidation);
-        let owner = Arc::clone(target);
-        let in_flight = Arc::clone(&tasks.in_flight);
-        pending.spawn(async move {
-            let permit = in_flight.acquire().await;
-            let Ok(_held) = permit else {
-                warn!(
-                    subject = cache_key.as_str(),
-                    "auth cache invalidation publish for {cache_key} found the in-flight limit closed"
-                );
-                return;
-            };
-            if let Err(error) = owner.publish(&message).await {
-                let reason = error.message();
-                warn!(
-                    subject = cache_key.as_str(),
-                    error = reason.as_str(),
-                    "auth cache invalidation publish for {cache_key} failed: {reason}"
-                );
-            }
-        });
+    let mut pending = lock(&tasks.pending);
+    while pending.try_join_next().is_some() {}
+    if pending.len() >= MAX_PENDING_PUBLISHES {
+        drop(pending);
+        warn!(
+            subject = cache_key.as_str(),
+            pending = MAX_PENDING_PUBLISHES,
+            "auth cache invalidation publish for {cache_key} dropped: {MAX_PENDING_PUBLISHES} publishes already waiting on redis; other workers keep their cached copy until its TTL expires"
+        );
+        return;
     }
+    let message = message::encode(invalidation);
+    let owner = Arc::clone(target);
+    let in_flight = Arc::clone(&tasks.in_flight);
+    pending.spawn(publish_message(owner, message, cache_key, in_flight));
+    drop(pending);
     yield_now().await;
+}
+
+async fn publish_message<E>(
+    endpoint: Arc<E>,
+    message: String,
+    cache_key: String,
+    in_flight: Arc<Semaphore>,
+) where
+    E: AuthPubSub + 'static,
+{
+    let Ok(_permit) = in_flight.acquire().await else {
+        warn!(
+            subject = cache_key.as_str(),
+            "auth cache invalidation publish for {cache_key} found the in-flight limit closed"
+        );
+        return;
+    };
+    if let Err(error) = endpoint.publish(&message).await {
+        let reason = error.message();
+        warn!(
+            subject = cache_key.as_str(),
+            error = reason.as_str(),
+            "auth cache invalidation publish for {cache_key} failed: {reason}"
+        );
+    }
 }
 
 pub async fn evict_and_broadcast<E>(

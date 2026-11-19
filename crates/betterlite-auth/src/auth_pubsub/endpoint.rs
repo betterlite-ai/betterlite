@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -96,15 +96,15 @@ impl AuthPubSubSubscription for RedisAuthSubscription {
             return Ok(None);
         };
         let message = subscription.next_message(timeout).await?;
-        Ok(message.map(|message| PubSubMessage {
-            data: Some(message.payload),
+        Ok(message.map(|payload| PubSubMessage {
+            data: Some(payload.payload),
         }))
     }
 
     // dropping a live subscription needs one to exist, so no unit test reaches this assignment
     #[cfg_attr(test, mutants::skip)]
-    async fn close(&mut self) -> Result<(), TransportError> {
+    fn close(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
         self.subscription = None;
-        Ok(())
+        ready(Ok(()))
     }
 }

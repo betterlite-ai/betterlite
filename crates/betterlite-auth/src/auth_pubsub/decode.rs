@@ -17,7 +17,7 @@ pub enum JsonValue {
     Bool(bool),
     Number(f64),
     Text(String),
-    List(Vec<JsonValue>),
+    List(Vec<Self>),
     Object(TypedValue),
 }
 
@@ -45,9 +45,8 @@ pub fn decode_invalidation(bytes: &[u8]) -> Result<TypedValue, DecodeError> {
 }
 
 fn repaired_text(bytes: &[u8]) -> Cow<'_, str> {
-    match str::from_utf8(bytes) {
-        Ok(text) => Cow::Borrowed(text),
-        Err(_) => {
+    str::from_utf8(bytes).map_or_else(
+        |_| {
             let mut repaired = String::with_capacity(bytes.len());
             for chunk in bytes.utf8_chunks() {
                 repaired.push_str(chunk.valid());
@@ -56,6 +55,7 @@ fn repaired_text(bytes: &[u8]) -> Cow<'_, str> {
                 }
             }
             Cow::Owned(repaired)
-        }
-    }
+        },
+        Cow::Borrowed,
+    )
 }

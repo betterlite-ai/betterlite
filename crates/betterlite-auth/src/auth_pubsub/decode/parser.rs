@@ -26,7 +26,7 @@ struct Parser<'text> {
 }
 
 impl Parser<'_> {
-    fn failure(&self) -> DecodeError {
+    const fn failure(&self) -> DecodeError {
         if self.too_deep {
             DecodeError::TooDeep {
                 limit: MAX_MESSAGE_DEPTH,
@@ -252,7 +252,7 @@ impl Parser<'_> {
 
     fn hex4(&mut self) -> Option<u32> {
         let mut value = 0_u32;
-        for _ in 0..4 {
+        for _ in 0_u32..4_u32 {
             let unit = self.next_unit()?;
             value = value.saturating_mul(16).saturating_add(hex_digit(unit)?);
         }

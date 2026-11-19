@@ -1,9 +1,10 @@
+use std::mem;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_context::local_ttl_cache::CacheValue;
-use tokio::select;
+use futures_util::future::{Either, select};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
@@ -75,16 +76,11 @@ where
     }
 
     pub async fn stop(&self) {
-        let mut tasks = {
-            let mut session = lock(&self.session);
-            let Some(sender) = session.stop.take() else {
-                return;
-            };
-            let tasks = std::mem::take(&mut session.tasks);
-            let _sent = sender.send(true);
-            tasks
+        let Some((sender, mut tasks)) = take_session(&self.session) else {
+            return;
         };
         // the signal ends the loop at its next await, and joining lets it close the pubsub first
+        let _sent = sender.send(true);
         while tasks.join_next().await.is_some() {}
     }
 
@@ -120,10 +116,14 @@ where
         backoff: &mut Duration,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Attempt<E::Subscription> {
-        let subscribed = select! {
-            biased;
-            _ = shutdown.changed() => return Attempt::Stop,
-            outcome = self.endpoint.subscribe() => outcome,
+        let subscribed = match select(
+            Box::pin(shutdown.changed()),
+            Box::pin(self.endpoint.subscribe()),
+        )
+        .await
+        {
+            Either::Left((_stopped, _subscribe)) => return Attempt::Stop,
+            Either::Right((outcome, _changed)) => outcome,
         };
         match subscribed {
             Ok(subscription) => Attempt::Subscribed(subscription),
@@ -150,10 +150,14 @@ where
             "auth cache invalidation subscriber redis error: {message}; reconnecting in {:.0}s",
             backoff.as_secs_f64()
         );
-        let stopped = select! {
-            biased;
-            _ = shutdown.changed() => true,
-            () = self.clock.sleep(*backoff) => false,
+        let stopped = match select(
+            Box::pin(shutdown.changed()),
+            Box::pin(self.clock.sleep(*backoff)),
+        )
+        .await
+        {
+            Either::Left((_stopped, _slept)) => true,
+            Either::Right(((), _changed)) => false,
         };
         *backoff = backoff.saturating_mul(2).min(BACKOFF_MAX);
         stopped
@@ -165,10 +169,14 @@ where
         shutdown: &mut watch::Receiver<bool>,
     ) -> Option<Failure> {
         loop {
-            let outcome = select! {
-                biased;
-                _ = shutdown.changed() => return None,
-                outcome = subscription.next_message(POLL_TIMEOUT) => outcome,
+            let outcome = match select(
+                Box::pin(shutdown.changed()),
+                Box::pin(subscription.next_message(POLL_TIMEOUT)),
+            )
+            .await
+            {
+                Either::Left((_stopped, _message)) => return None,
+                Either::Right((outcome, _changed)) => outcome,
             };
             let received = match outcome {
                 Ok(None) => continue,
@@ -247,6 +255,12 @@ where
             cache_key: cache_key.to_owned(),
             source,
         })
+}
+
+fn take_session(session: &Mutex<Session>) -> Option<(watch::Sender<bool>, JoinSet<()>)> {
+    let mut guard = lock(session);
+    let sender = guard.stop.take()?;
+    Some((sender, mem::take(&mut guard.tasks)))
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

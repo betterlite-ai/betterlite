@@ -37,7 +37,7 @@ pub fn read(value: &TypedValue) -> Option<Invalidation> {
     })
 }
 
-fn number_or_none(value: Option<&JsonValue>) -> Option<f64> {
+const fn number_or_none(value: Option<&JsonValue>) -> Option<f64> {
     let Some(JsonValue::Number(number)) = value else {
         return None;
     };
