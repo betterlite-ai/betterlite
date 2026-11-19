@@ -92,10 +92,11 @@ fn pass_new_state_starts_empty() {
     let tokens = &state.vertex_tokens;
     assert!(format!("{tokens:?}").contains("records: 0"));
     assert!(tokens.leased_identities().is_empty());
-    let routes = state.routes.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(routes.table.order().is_empty());
-    assert!(routes.endpoints.is_empty());
-    assert!(routes.registry.registrations.is_empty());
+    let pass_through = state.routes.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(pass_through.table.order().is_empty());
+    assert!(pass_through.endpoints.is_empty());
+    assert!(pass_through.registry.registrations.is_empty());
+    drop(pass_through);
 }
 
 #[test]
@@ -145,6 +146,7 @@ fn pass_vertex_default_config_written_through_one_clone_is_seen_through_another(
         .unwrap();
     let router = reader.read().unwrap_or_else(PoisonError::into_inner);
     assert!(router.get_vertex_credentials(None, None).is_some());
+    drop(router);
 }
 
 #[test]

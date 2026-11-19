@@ -23,7 +23,7 @@ pub struct BootRegistries {
 impl BootRegistries {
     #[must_use]
     // ast-grep-ignore: no-one-line-functions - B8613 builds the registry set through this fixed name
-    pub fn new(agents: Arc<AgentRegistry>) -> Self {
+    pub const fn new(agents: Arc<AgentRegistry>) -> Self {
         Self { agents }
     }
 }
