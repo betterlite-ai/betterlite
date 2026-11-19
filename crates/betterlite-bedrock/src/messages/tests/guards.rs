@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::ready;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -133,7 +134,7 @@ fn resolution_failure_is_clean() {
         .expect_err("credential resolution fails");
     let message = error.to_string();
     assert_eq!(message, "the AWS credential lookup failed");
-    let cause = std::error::Error::source(&error).expect("the lookup error stays the source");
+    let cause = Error::source(&error).expect("the lookup error stays the source");
     assert_eq!(
         cause.to_string(),
         "the STS assume role response has no credentials"

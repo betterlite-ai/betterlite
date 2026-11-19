@@ -107,8 +107,7 @@ where
     sources: &'sources mut TransformSources<'context, 'environment, Source, Transport, Lookup>,
 }
 
-impl<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
-    Pipeline<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
+impl<Source, Transport, Lookup> Pipeline<'_, '_, '_, '_, Source, Transport, Lookup>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,

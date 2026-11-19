@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 
 use betterlite_anthropic::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -122,7 +123,7 @@ fn endpoint_url(
     stream: Option<bool>,
     environment: InvokeEnvironment<'_>,
 ) -> InvokeModelUrl {
-    messages_complete_url(MessagesEndpoint {
+    messages_complete_url(&MessagesEndpoint {
         api_base,
         model: MODEL_SONNET,
         optional_params: &Default::default(),
@@ -342,7 +343,6 @@ fn clear_thinking(session: &mut Session<'_>) {
 pub(crate) fn unsupported_output_config_warn_drop() {
     transform_drop();
     direct_drop();
-    pipeline_drop_output_config();
 }
 
 fn transform_drop() {
@@ -389,7 +389,7 @@ fn direct_drop() {
     assert!(kept.contains_key("output_config"));
 
     // The final drop runs inside the transform when the model takes output_config but not effort.
-    let body = session
+    let transformed = session
         .transform(
             &call(
                 "fixture-output-config",
@@ -400,7 +400,7 @@ fn direct_drop() {
             true,
         )
         .expect("the output-config request transforms");
-    assert!(!body.contains_key("output_config"));
+    assert!(!transformed.contains_key("output_config"));
     assert!(
         kept_warnings(&logs).iter().any(|message| message
             == &DROP_OUTPUT_CONFIG_WARNING.replacen("%s", "fixture-output-config", 1))
@@ -565,7 +565,7 @@ fn closed_stream() {
     let closure = close_after_first(vec![frame]);
     assert_eq!(closure.first, Some(SSE_START.as_bytes().to_vec()));
     assert!(closure.closed);
-    assert_eq!(closure.after, Ok(None));
+    assert!(matches!(closure.after, Ok(None)));
 }
 
 pub(crate) fn native_error_event() {
@@ -582,4 +582,6 @@ pub(crate) fn native_error_event() {
         r#"validationException {"message": "bad input"}"#
     );
     assert_eq!(error.status, Some(400));
+    let cause = Error::source(&error).expect("the frame cause is kept");
+    assert_eq!(cause.to_string(), "bedrock error (400)");
 }

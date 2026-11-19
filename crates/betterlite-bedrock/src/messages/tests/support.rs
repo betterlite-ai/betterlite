@@ -36,6 +36,7 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
@@ -374,8 +375,8 @@ pub(super) enum TestFrame<'payload> {
     Failure(&'payload str, &'payload [u8]),
 }
 
-pub(super) fn test_frame(frame: TestFrame<'_>) -> Vec<u8> {
-    let (name, value, message_type, payload) = match frame {
+pub(super) fn test_frame(template: TestFrame<'_>) -> Vec<u8> {
+    let (name, value, message_type, payload) = match template {
         TestFrame::Chunk(body) => (
             ":event-type",
             "chunk",
@@ -398,7 +399,7 @@ pub(super) fn test_frame(frame: TestFrame<'_>) -> Vec<u8> {
 }
 
 pub(super) fn chunks(pieces: Vec<Vec<u8>>) -> Chunks {
-    futures_util::stream::iter(pieces.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed()
+    stream::iter(pieces.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed()
 }
 
 pub(super) fn stream_all(

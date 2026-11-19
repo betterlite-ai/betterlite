@@ -30,7 +30,7 @@ pub struct MessagesEndpoint<'request> {
 }
 
 // AmazonInvokeConfig.get_complete_url behind the messages config: the provider picks the invoke-with-response-stream suffix and the endpoint keeps its proxy and base distinctions.
-pub fn messages_complete_url(request: MessagesEndpoint<'_>) -> Result<InvokeModelUrl, UrlError> {
+pub fn messages_complete_url(request: &MessagesEndpoint<'_>) -> Result<InvokeModelUrl, UrlError> {
     invoke_model_url(CompleteUrl {
         api_base: request.api_base,
         model: request.model,
