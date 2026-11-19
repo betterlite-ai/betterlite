@@ -1,0 +1,23 @@
+kind: probe
+name: usage-routing-minute-rollover
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        deployments:
+          - {id: dep-a}
+          - {id: dep-b}
+        steps:
+          # 2023-11-14T22:13:20Z, the minute both window keys label 22-13
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: async_success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 40}
+          # the last millisecond of that minute still reads its window, 40 tokens beats 100
+          - {kind: select, now_millis: 1700000039999}
+          # the first millisecond of 22-14 is a cold window, so the pool's first deployment returns
+          - {kind: select, now_millis: 1700000040000}
+          - {kind: observe, now_millis: 1700000040000}
+          # the 22-13 window is still there when a later request lands back in its minute
+          - {kind: select, now_millis: 1700000039999}
+          - {kind: select, now_millis: 1700000040000}
