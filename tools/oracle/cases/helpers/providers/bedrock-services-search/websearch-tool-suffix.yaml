@@ -1,0 +1,38 @@
+kind: helper
+name: websearch-tool-suffix
+call:
+  bedrock_services_search:
+    scenario: websearch_tool_suffix
+    runs:
+      - query: hello
+        optional_params: {}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {}
+        configured_tool_name: custom-target___WebSearch
+      - query: hello
+        optional_params: {tool_name: packages___WebSearch}
+        configured_tool_name: custom-target___WebSearch
+      - query: hello
+        optional_params: {tool_name: ''}
+        configured_tool_name: custom-target___WebSearch
+      - query: hello
+        optional_params: {tool_name: null}
+        configured_tool_name: custom-target___WebSearch
+      - query: hello
+        optional_params: {tool_name: ___WebSearch}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {tool_name: web-search-tool}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {tool_name: a___WebSearchb}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {}
+        configured_tool_name: custom-target
+      - query: hello
+        optional_params: {tool_name: web-search-tool___websearch}
+        configured_tool_name: null
+env: {}
+compare: {ignore: []}

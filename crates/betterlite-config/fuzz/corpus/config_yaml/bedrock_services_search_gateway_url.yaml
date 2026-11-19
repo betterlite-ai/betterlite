@@ -1,0 +1,8 @@
+# AGENTCORE_GATEWAY_URL is the environment fallback for a deployment's api_base.
+model_list:
+  - model_name: agentcore-search
+    litellm_params:
+      api_base: https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+      tool_name: web-search-tool___WebSearch
+litellm_settings:
+  api_base: https://global-gateway.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp

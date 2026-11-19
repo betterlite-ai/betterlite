@@ -1,0 +1,31 @@
+kind: helper
+name: collect-window-size-fallback
+call:
+  b3036:
+    function: collect
+    descriptors:
+      - key: api-key
+        value: own
+        rate_limit:
+          requests_per_unit: 1
+          tokens_per_unit: null
+          max_parallel_requests: null
+          window_size: 30
+      - key: api-key
+        value: zero
+        rate_limit:
+          requests_per_unit: 1
+          tokens_per_unit: null
+          max_parallel_requests: null
+          window_size: 0
+      - key: api-key
+        value: absent
+        rate_limit:
+          requests_per_unit: 1
+          tokens_per_unit: null
+          max_parallel_requests: null
+          window_size: null
+    skip_tpm_check: false
+    window_size: 45
+env: {}
+compare: {ignore: []}
