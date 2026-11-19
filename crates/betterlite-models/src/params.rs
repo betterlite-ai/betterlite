@@ -172,17 +172,33 @@ pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping
             model: model.to_owned(),
         });
     };
-    mapping::reject_nested_drop_paths(&request.policy.additional_drop_params)?;
-    let mut state = mapping::MappingState::new(&supported, request.policy);
-    for (name, value) in mapping::typed_parameters(request.parameters)? {
+    map_listed_parameters(
+        &supported,
+        model,
+        request.capabilities.call_type,
+        request.parameters,
+        request.policy,
+    )
+}
+
+pub fn map_listed_parameters(
+    supported: &[&'static str],
+    model: &str,
+    call_type: CallType,
+    parameters: &ChatParameters,
+    policy: &ParameterPolicy,
+) -> Result<ParameterMapping, ParameterError> {
+    mapping::reject_nested_drop_paths(&policy.additional_drop_params)?;
+    let mut state = mapping::MappingState::new(supported, policy);
+    for (name, value) in mapping::typed_parameters(parameters)? {
         state.place(name, value, false);
     }
-    for (name, value) in &request.parameters.passthrough {
+    for (name, value) in &parameters.passthrough {
         if name == "extra_body" {
-            state.extra_body(value, request.capabilities.call_type)?;
+            state.extra_body(value, call_type)?;
             continue;
         }
-        match classify_parameter(name, request.capabilities.call_type) {
+        match classify_parameter(name, call_type) {
             ParameterClass::Reserved => {
                 return Err(ParameterError::ReservedParameter { name: name.clone() });
             }

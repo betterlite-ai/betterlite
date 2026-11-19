@@ -1,4 +1,3 @@
-use std::string::FromUtf8Error;
 use std::sync::Arc;
 
 use betterlite_redis::list_operations::error::RedisListOperationsError;
@@ -29,12 +28,8 @@ pub enum GatewayRequestRedisError {
         #[source]
         source: RedisListOperationsError,
     },
-    #[error("a buffered entry is not UTF-8")]
-    Entry(#[source] FromUtf8Error),
     #[error("the buffered snapshot could not be written as JSON")]
     Encode(#[source] serde_json::Error),
-    #[error("a buffered row is not valid JSON")]
-    Decode(#[source] serde_json::Error),
 }
 
 pub type ListFuture<'call, Value> = BoxFuture<'call, Result<Value, GatewayRequestRedisError>>;
@@ -82,21 +77,10 @@ impl GatewayRequestRedisBuffer {
     }
 
     pub async fn pop(&self) -> Result<GatewayRequestSnapshot, GatewayRequestRedisError> {
-        let count = self.dequeue_count.max(1);
-        let mut entries: Vec<String> = Vec::new();
-        loop {
-            let batch = self.list.take(count).await?;
-            let short = batch.len() < count;
-            entries.extend(batch);
-            if short {
-                break;
-            }
-        }
+        let entries = self.drain().await?;
         let mut rows: Vec<BufferedRow> = Vec::new();
         for entry in &entries {
-            let parsed: Vec<BufferedRow> =
-                serde_json::from_str(entry).map_err(GatewayRequestRedisError::Decode)?;
-            rows.extend(parsed);
+            rows.extend(decode_row_list(entry));
         }
         Ok(fold_counts(rows.into_iter().map(|row| {
             let (date, category, route, successful_requests, failed_requests) = row;
@@ -112,6 +96,30 @@ impl GatewayRequestRedisBuffer {
                 },
             )
         })))
+    }
+
+    async fn drain(&self) -> Result<Vec<String>, GatewayRequestRedisError> {
+        let count = self.dequeue_count.max(1);
+        let mut entries: Vec<String> = Vec::new();
+        loop {
+            let batch = match self.list.take(count).await {
+                Ok(batch) => batch,
+                Err(error) if entries.is_empty() => return Err(error),
+                Err(error) => {
+                    tracing::warn!(
+                        "Gateway request tracking - Redis drain stopped after {} entries, the rest stay in Redis for the next flush: {error}",
+                        entries.len()
+                    );
+                    break;
+                }
+            };
+            let short = batch.len() < count;
+            entries.extend(batch);
+            if short {
+                break;
+            }
+        }
+        Ok(entries)
     }
 
     pub async fn commit_if_leader<Database>(
@@ -146,5 +154,17 @@ impl GatewayRequestRedisBuffer {
             return snapshot.clone();
         }
         GatewayRequestSnapshot::new()
+    }
+}
+
+fn decode_row_list(entry: &str) -> Vec<BufferedRow> {
+    match serde_json::from_str(entry) {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(
+                "Gateway request tracking - dropped a buffered entry that is not a row list: {error}"
+            );
+            Vec::new()
+        }
     }
 }

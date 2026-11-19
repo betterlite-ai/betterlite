@@ -1,0 +1,14 @@
+kind: helper
+name: gemini-chunks-later-model-unset
+call:
+  b3640:
+    operation: gemini_chunks
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/url-model:streamGenerateContent
+    body: {}
+    request_body: null
+    lines:
+      - 'data: {"responseId":"r1","modelVersion":"served-model","candidates":[{"content":{"parts":[{"text":"he"}],"role":"model"},"index":0}]}'
+      - 'data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"llo"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}'
+    model: given-model
+env: {}
+compare: {ignore: []}

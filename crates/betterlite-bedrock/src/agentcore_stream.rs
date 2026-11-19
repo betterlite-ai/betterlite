@@ -162,6 +162,8 @@ fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
                 refusal: None,
                 tool_calls: None,
                 function_call: None,
+                reasoning_content: None,
+                thinking_blocks: None,
             },
             None,
             None,
