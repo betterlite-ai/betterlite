@@ -15,7 +15,6 @@ use crate::bedrock_decisions::exceptions::{
 };
 use crate::bedrock_decisions::logging::{AttemptLog, log_attempt, log_failure, log_success};
 use crate::bedrock_decisions::tracing::{Pricing, tracing_detail};
-use crate::bedrock_decisions::value::json_to_value;
 use crate::bedrock_records::Usage;
 use crate::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use crate::guardrail_records::record::{GuardrailStatus, GuardrailTracingDetail};
@@ -203,7 +202,7 @@ fn tracing_detail_is_empty_without_an_integer_counter() {
         catalog: &prices,
         aws_region_name: None,
     };
-    let null_usage = response(r#"{"action":"NONE","usage":{"wordPolicyUnits":null}}"#);
+    let null_usage = response(r#"{"usage":{"wordPolicyUnits":null}}"#);
     assert_eq!(
         tracing_detail(&null_usage, &pricing).expect("tracing detail resolves"),
         GuardrailTracingDetail::default()
@@ -254,10 +253,10 @@ fn http_exception_reports_output_text_and_redacted_assessments() {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
     assert_eq!(status, 400);
-    let expected = json_to_value(&json(
+    let expected = json(
         r#"{"error":"Violated guardrail policy","bedrock_guardrail_response":"Request blocked: secret","guardrailIdentifier":"gr-1","guardrailVersion":"3","assessments":[{"policy":"wordPolicy","matches":[{"category":"customWords","match":"[REDACTED]","action":"BLOCKED"}]},{"policy":"sensitiveInformationPolicy","matches":[{"category":"regexes","name":"account","regex":"[REDACTED]","match":"[REDACTED]","action":"BLOCKED"}]}]}"#,
-    ));
-    assert_eq!(GuardrailValue::Object(detail), expected);
+    );
+    assert_eq!(as_json(&detail), expected);
 }
 
 #[test]
@@ -275,10 +274,9 @@ fn http_exception_omits_unknown_and_empty_guardrail_identity() {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
     assert_eq!(status, 400);
-    let expected = json_to_value(&json(
-        r#"{"error":"Violated guardrail policy","bedrock_guardrail_response":"blocked"}"#,
-    ));
-    assert_eq!(GuardrailValue::Object(detail), expected);
+    let expected =
+        json(r#"{"error":"Violated guardrail policy","bedrock_guardrail_response":"blocked"}"#);
+    assert_eq!(as_json(&detail), expected);
     let empty = BlockedGuardrail {
         identifier: Some(""),
         version: Some(""),
@@ -293,7 +291,7 @@ fn http_exception_omits_unknown_and_empty_guardrail_identity() {
     else {
         panic!("an empty identifier or version is left out of the detail");
     };
-    assert_eq!(GuardrailValue::Object(empty_detail), expected);
+    assert_eq!(as_json(&empty_detail), expected);
 }
 
 #[test]

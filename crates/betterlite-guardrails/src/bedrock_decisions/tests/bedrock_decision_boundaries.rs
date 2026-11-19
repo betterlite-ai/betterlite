@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
-use super::{DiscardSink, base, call_log, catalog, context, empty_request_data, json, response};
+use super::{
+    DiscardSink, as_json, base, call_log, catalog, context, empty_request_data, json, response,
+};
 use crate::bedrock_decisions::error::BedrockDecisionError;
 use crate::bedrock_decisions::exceptions::{
     BlockedGuardrail, blocked_guardrail_failure, body_has_exception, merged_response_status,
     payload_has_exception, response_has_exception, response_status,
 };
 use crate::bedrock_decisions::logging::log_failure;
-use crate::bedrock_decisions::value::json_to_value;
 use crate::bedrock_records::Usage;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_records::record::GuardrailStatus;
@@ -142,10 +142,9 @@ fn http_exception_omits_assessments_without_a_blocked_action() {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
     assert_eq!(status, 400);
-    let expected = json_to_value(&json(
-        r#"{"error":"Violated guardrail policy","bedrock_guardrail_response":"masked"}"#,
-    ));
-    assert_eq!(GuardrailValue::Object(detail), expected);
+    let expected =
+        json(r#"{"error":"Violated guardrail policy","bedrock_guardrail_response":"masked"}"#);
+    assert_eq!(as_json(&detail), expected);
 }
 
 #[test]
