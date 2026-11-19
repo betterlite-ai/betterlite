@@ -19,7 +19,7 @@ fn no_response_cost_returns_no_keys() {
 
 #[test]
 fn the_user_and_the_global_spend_come_first() {
-    let keys = cache_read_keys(Some("user-1"), None, None, None, Some(Decimal::from(1)));
+    let keys = cache_read_keys(Some("user-1"), None, None, None, Some(Decimal::from(1_i32)));
     assert_eq!(keys, ["user-1", GLOBAL_PROXY_SPEND_CACHE_KEY]);
 }
 
@@ -30,7 +30,7 @@ fn no_user_means_no_user_and_no_global_key() {
         Some("end-1"),
         Some("team-1"),
         None,
-        Some(Decimal::from(1)),
+        Some(Decimal::from(1_i32)),
     );
     assert_eq!(keys, ["end_user_id:end-1", "team_id:team-1"]);
 }
@@ -42,7 +42,7 @@ fn end_user_and_team_follow_the_user_keys() {
         Some("end-1"),
         Some("team-1"),
         None,
-        Some(Decimal::from(1)),
+        Some(Decimal::from(1_i32)),
     );
     assert_eq!(
         keys,
@@ -60,11 +60,11 @@ fn tags_keep_only_non_empty_text_in_order() {
     let tags = [
         Json::Text("qa".to_owned()),
         Json::Text(String::new()),
-        Json::Number(serde_json::Number::from(7)),
+        Json::Number(serde_json::Number::from(7_i32)),
         Json::Null,
         Json::Text("prod".to_owned()),
     ];
-    let keys = cache_read_keys(None, None, None, Some(&tags), Some(Decimal::from(1)));
+    let keys = cache_read_keys(None, None, None, Some(&tags), Some(Decimal::from(1_i32)));
     assert_eq!(keys, ["tag:qa", "tag:prod"]);
 }
 

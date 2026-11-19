@@ -12,8 +12,8 @@ async fn the_proxy_alerts_port_sends_the_projected_alert_through_slack() {
     let slack = Arc::new(RecordingSlack::default());
     let alerts = proxy_alerts(Arc::clone(&slack));
     let info = CallInfo {
-        spend: Decimal::from(1400),
-        max_budget: Some(Decimal::from(2000)),
+        spend: Decimal::from(1400_i32),
+        max_budget: Some(Decimal::from(2000_i32)),
         soft_budget: None,
         token: Some("cached-token".to_owned()),
         customer_id: None,
@@ -24,7 +24,7 @@ async fn the_proxy_alerts_port_sends_the_projected_alert_through_slack() {
         user_email: None,
         key_alias: Some("alias".to_owned()),
         projected_exceeded_date: Some("2024-06-21".to_owned()),
-        projected_spend: Some(Decimal::from(2900)),
+        projected_spend: Some(Decimal::from(2900_i32)),
         event_group: EntityType::Key,
         alert_emails: None,
         max_budget_alert_emails: None,

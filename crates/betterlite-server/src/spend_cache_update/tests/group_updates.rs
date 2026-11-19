@@ -10,10 +10,11 @@ use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
+use serde::de::DeserializeOwned;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 
-use super::super::{UpdateDeps, UpdateInput, update_spend_cache};
+use super::super::{UpdateInput, update_spend_cache};
 use super::support::{
     FakeCache, FakeState, RecordingAlerts, WriteCall, capture_logs, json_from, update_deps, written,
 };
@@ -43,6 +44,22 @@ fn entry<'write>(write: &'write WriteCall, key: &str) -> &'write Json {
     &found.1
 }
 
+fn decode<Model>(write: &WriteCall, key: &str) -> Model
+where
+    Model: DeserializeOwned,
+{
+    payload::decode::<Model>(entry(write, key))
+        .expect("the object decodes")
+        .expect("the object is present")
+}
+
+fn write(writes: &[WriteCall], local_only: bool) -> &WriteCall {
+    writes
+        .iter()
+        .find(|write| write.local_only == local_only)
+        .expect("the queued write")
+}
+
 fn group_fixtures() -> BTreeMap<String, Json> {
     BTreeMap::from([
         ("user-1".to_owned(), user_fixture()),
@@ -65,7 +82,7 @@ fn user_cost_input() -> UpdateInput {
         user_id: Some("user-1".to_owned()),
         end_user_id: None,
         team_id: None,
-        response_cost: Some(Decimal::from(5)),
+        response_cost: Some(Decimal::from(5_i32)),
         span: None,
         tags: None,
     }
@@ -79,36 +96,18 @@ fn all_groups_input() -> UpdateInput {
     input
 }
 
-fn run_deps(cache: &Arc<FakeCache>, tasks: &TaskTracker) -> (Arc<RecordingAlerts>, UpdateDeps) {
-    let alerts = Arc::new(RecordingAlerts::default());
-    let deps = update_deps(Arc::clone(cache), Arc::clone(&alerts), tasks);
-    (alerts, deps)
-}
-
-#[tokio::test]
-async fn every_object_group_adds_the_cost_and_the_global_spend_is_written_apart() {
-    let cache = FakeCache::new(all_groups_state());
+async fn run_update(cache: &Arc<FakeCache>, input: &UpdateInput) {
     let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
-    update_spend_cache(&all_groups_input(), &deps)
+    let alerts = Arc::new(RecordingAlerts::default());
+    let deps = update_deps(Arc::clone(cache), alerts, &tasks);
+    update_spend_cache(input, &deps)
         .await
         .expect("the update runs");
     tasks.close();
     tasks.wait().await;
-    let state = cache.state();
-    assert_eq!(state.writes.len(), 2);
-    let objects = state
-        .writes
-        .iter()
-        .find(|write| write.local_only)
-        .expect("the object write is local only");
-    let global = state
-        .writes
-        .iter()
-        .find(|write| !write.local_only)
-        .expect("the global write reaches redis");
-    assert_eq!(objects.ttl.to_bits(), 33.0_f64.to_bits());
-    assert_eq!(global.ttl.to_bits(), 33.0_f64.to_bits());
+}
+
+fn assert_object_groups(objects: &WriteCall) {
     let queues: Vec<&str> = objects
         .entries
         .iter()
@@ -118,22 +117,29 @@ async fn every_object_group_adds_the_cost_and_the_global_spend_is_written_apart(
         queues,
         ["user-1", "end_user_id:end-1", "team_id:team-1", "tag:qa"]
     );
-    let user = payload::decode::<LiteLLMUserTable>(entry(objects, "user-1"))
-        .expect("the user decodes")
-        .expect("the user is present");
-    assert_eq!(user.spend, Decimal::from(6));
-    let end_user = payload::decode::<LiteLLMEndUserTable>(entry(objects, "end_user_id:end-1"))
-        .expect("the end user decodes")
-        .expect("the end user is present");
-    assert_eq!(end_user.spend, Decimal::from(7));
-    let team = payload::decode::<LiteLLMTeamTableCachedObj>(entry(objects, "team_id:team-1"))
-        .expect("the team decodes")
-        .expect("the team is present");
-    assert_eq!(team.team.fields.spend, Some(Decimal::from(8)));
-    let tag = payload::decode::<TagTable>(entry(objects, "tag:qa"))
-        .expect("the tag decodes")
-        .expect("the tag is present");
-    assert_eq!(tag.spend, Decimal::from(9));
+    let user: LiteLLMUserTable = decode(objects, "user-1");
+    assert_eq!(user.spend, Decimal::from(6_i32));
+    let end_user: LiteLLMEndUserTable = decode(objects, "end_user_id:end-1");
+    assert_eq!(end_user.spend, Decimal::from(7_i32));
+    let team: LiteLLMTeamTableCachedObj = decode(objects, "team_id:team-1");
+    assert_eq!(team.team.fields.spend, Some(Decimal::from(8_i32)));
+    let tag: TagTable = decode(objects, "tag:qa");
+    assert_eq!(tag.spend, Decimal::from(9_i32));
+}
+
+#[tokio::test]
+async fn every_object_group_adds_the_cost_and_the_global_spend_is_written_apart() {
+    let cache = FakeCache::new(all_groups_state());
+    run_update(&cache, &all_groups_input()).await;
+    let state = cache.state();
+    let writes = state.writes.clone();
+    drop(state);
+    assert_eq!(writes.len(), 2);
+    let objects = write(&writes, true);
+    let global = write(&writes, false);
+    assert_eq!(objects.ttl.to_bits(), 33.0_f64.to_bits());
+    assert_eq!(global.ttl.to_bits(), 33.0_f64.to_bits());
+    assert_object_groups(objects);
     assert_eq!(
         entry(global, GLOBAL_PROXY_SPEND_CACHE_KEY),
         &json_from("15")
@@ -146,13 +152,7 @@ async fn a_missing_user_row_leaves_the_global_spend_alone() {
         GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned(),
         json_from("10"),
     )])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
-    update_spend_cache(&user_cost_input(), &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &user_cost_input()).await;
     assert!(cache.state().writes.is_empty());
 }
 
@@ -165,17 +165,12 @@ async fn a_text_global_spend_is_not_replaced() {
             json_from(r#""10""#),
         ),
     ])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
-    update_spend_cache(&user_cost_input(), &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &user_cost_input()).await;
     let state = cache.state();
     assert_eq!(state.writes.len(), 1);
     assert!(state.writes[0].local_only);
     assert_eq!(state.writes[0].entries.len(), 1);
+    drop(state);
 }
 
 #[tokio::test]
@@ -184,17 +179,12 @@ async fn a_boolean_global_spend_is_not_replaced() {
         ("user-1".to_owned(), user_fixture()),
         (GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned(), json_from("true")),
     ])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
-    update_spend_cache(&user_cost_input(), &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &user_cost_input()).await;
     let state = cache.state();
     assert_eq!(state.writes.len(), 1);
     assert!(state.writes[0].local_only);
     assert_eq!(state.writes[0].entries.len(), 1);
+    drop(state);
 }
 
 #[tokio::test]
@@ -207,13 +197,7 @@ async fn objects_that_do_not_decode_are_skipped() {
         ("team_id:team-1".to_owned(), undecodable.clone()),
         ("tag:qa".to_owned(), undecodable),
     ])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
-    update_spend_cache(&all_groups_input(), &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &all_groups_input()).await;
     assert!(cache.state().writes.is_empty());
 }
 
@@ -222,33 +206,26 @@ async fn empty_and_non_text_tags_are_skipped() {
     let cache = FakeCache::new(
         FakeState::new().with_cached(BTreeMap::from([("tag:qa".to_owned(), tag_fixture())])),
     );
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let input = UpdateInput {
         token: None,
         user_id: None,
         end_user_id: None,
         team_id: None,
-        response_cost: Some(Decimal::from(5)),
+        response_cost: Some(Decimal::from(5_i32)),
         span: None,
         tags: Some(vec![
             Json::Text(String::new()),
-            Json::Number(serde_json::Number::from(7)),
+            Json::Number(serde_json::Number::from(7_i32)),
             Json::Text("qa".to_owned()),
         ]),
     };
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     let state = cache.state();
     assert_eq!(state.writes.len(), 1);
     assert_eq!(state.writes[0].entries.len(), 1);
-    let tag = payload::decode::<TagTable>(entry(&state.writes[0], "tag:qa"))
-        .expect("the tag decodes")
-        .expect("the tag is present");
-    assert_eq!(tag.spend, Decimal::from(9));
+    let tag: TagTable = decode(&state.writes[0], "tag:qa");
+    drop(state);
+    assert_eq!(tag.spend, Decimal::from(9_i32));
 }
 
 #[tokio::test]
@@ -257,68 +234,52 @@ async fn a_null_tag_spend_is_skipped() {
         "tag:qa".to_owned(),
         json_from(r#"{"tag_name":"qa","models":[],"spend":null}"#),
     )])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let input = UpdateInput {
         token: None,
         user_id: None,
         end_user_id: None,
         team_id: None,
-        response_cost: Some(Decimal::from(5)),
+        response_cost: Some(Decimal::from(5_i32)),
         span: None,
         tags: Some(vec![Json::Text("qa".to_owned())]),
     };
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     assert!(cache.state().writes.is_empty());
 }
 
 #[tokio::test]
 async fn no_user_id_leaves_the_global_spend_alone() {
     let cache = FakeCache::new(all_groups_state());
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let input = UpdateInput {
         token: None,
         user_id: None,
         end_user_id: Some("end-1".to_owned()),
         team_id: None,
-        response_cost: Some(Decimal::from(5)),
+        response_cost: Some(Decimal::from(5_i32)),
         span: None,
         tags: None,
     };
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     let state = cache.state();
     assert_eq!(state.reads, [vec!["end_user_id:end-1".to_owned()]]);
     assert_eq!(state.writes.len(), 1);
     assert!(state.writes[0].local_only);
     assert_eq!(state.writes[0].entries.len(), 1);
     assert_eq!(state.writes[0].entries[0].0, "end_user_id:end-1");
+    drop(state);
 }
 
 #[tokio::test]
 async fn a_request_without_a_cost_reads_and_updates_nothing() {
     let cache = FakeCache::new(all_groups_state());
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let mut input = all_groups_input();
     input.response_cost = None;
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     let state = cache.state();
     assert!(state.reads.is_empty());
     assert!(state.declared.is_empty());
     assert!(state.writes.is_empty());
+    drop(state);
 }
 
 #[tokio::test]
@@ -331,8 +292,6 @@ async fn a_user_arithmetic_failure_warns_and_the_other_groups_still_run() {
             json_from(r#"{"tag_name":"qa","models":[],"spend":-100}"#),
         ),
     ])));
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let input = UpdateInput {
         token: None,
         user_id: Some("user-1".to_owned()),
@@ -343,11 +302,7 @@ async fn a_user_arithmetic_failure_warns_and_the_other_groups_still_run() {
         tags: Some(vec![Json::Text("qa".to_owned())]),
     };
     let (log, _guard) = capture_logs(Level::WARN);
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     let text = written(&log);
     assert!(text.contains("Spend tracking - failed to update user spend in cache."));
     let state = cache.state();
@@ -360,38 +315,22 @@ async fn a_user_arithmetic_failure_warns_and_the_other_groups_still_run() {
             .iter()
             .all(|(key, _value)| key == "tag:qa")
     );
+    drop(state);
 }
 
 #[tokio::test]
 async fn a_parent_otel_span_does_not_change_the_spend_update() {
     let cache = FakeCache::new(all_groups_state());
-    let tasks = TaskTracker::new();
-    let (_alerts, deps) = run_deps(&cache, &tasks);
     let mut input = all_groups_input();
     input.span = Some(ParentOtelSpan::Opaque);
-    update_spend_cache(&input, &deps)
-        .await
-        .expect("the update runs");
-    tasks.close();
-    tasks.wait().await;
+    run_update(&cache, &input).await;
     let state = cache.state();
-    assert_eq!(state.writes.len(), 2);
-    let objects = state
-        .writes
-        .iter()
-        .find(|write| write.local_only)
-        .expect("the object write is local only");
-    let global = state
-        .writes
-        .iter()
-        .find(|write| !write.local_only)
-        .expect("the global write reaches redis");
-    let user = payload::decode::<LiteLLMUserTable>(entry(objects, "user-1"))
-        .expect("the user decodes")
-        .expect("the user is present");
-    assert_eq!(user.spend, Decimal::from(6));
+    let writes = state.writes.clone();
+    drop(state);
+    assert_eq!(writes.len(), 2);
+    assert_object_groups(write(&writes, true));
     assert_eq!(
-        entry(global, GLOBAL_PROXY_SPEND_CACHE_KEY),
+        entry(write(&writes, false), GLOBAL_PROXY_SPEND_CACHE_KEY),
         &json_from("15")
     );
 }
