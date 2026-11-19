@@ -5,8 +5,6 @@ use std::path::Path;
 use crate::error::GateError;
 use crate::git::git;
 
-mod tests;
-
 pub(crate) struct Facts {
     pub(crate) base: String,
     pub(crate) tree: Tree,
