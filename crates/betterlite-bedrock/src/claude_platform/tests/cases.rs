@@ -208,6 +208,7 @@ pub(crate) fn workspace_id_required() {
         Some("second-environment")
     );
     case.environment.anthropic_workspace_id = None;
+    case.environment.anthropic_aws_workspace_id = Some(SecretString::from("environment-workspace"));
 
     // An empty request selector is falsy, so the environment answers instead.
     case.optional_params = json_map(json!({"workspace_id": ""}));
@@ -307,7 +308,8 @@ pub(crate) fn chat_platform_headers() {
     let chat = case
         .chat_headers(&records)
         .expect("an empty environment key resolves to none");
-    assert!(header(&chat.values, "x-api-key").is_none());
+    // The builder inserts no key, so the caller's exact x-api-key header survives the merge.
+    assert_eq!(header(&chat.values, "x-api-key"), Some("caller-key"));
 
     // A file block in the caller's messages turns on the file betas.
     let mut case = request_case();
@@ -378,7 +380,7 @@ pub(crate) fn native_platform_headers() {
         beta_set(&native.headers),
         expected_betas(&[
             "alpha",
-            "compact-2026-01-12",
+            "compact-2026-09-04",
             "fast-mode-2026-02-01",
             "structured-outputs-2025-11-13",
         ])
@@ -386,6 +388,7 @@ pub(crate) fn native_platform_headers() {
 
     // An absent key and an absent version or content type take their defaults.
     case.caller_headers = headers(json!({}));
+    case.api_key = None;
     case.api_base = None;
     case.environment.anthropic_aws_api_key = Some(SecretString::from("environment-key"));
     let native = case
@@ -526,34 +529,17 @@ pub(crate) fn platform_body(route: BodyRoute) {
 }
 
 fn anthropic_stream() -> Vec<TransportChunk> {
-    let events = [
-        (
-            "message_start",
-            r#"{"type":"message_start","message":{"id":"msg_1","role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":3,"output_tokens":0}}}"#,
-        ),
-        (
-            "content_block_start",
-            r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
-        ),
-        (
-            "content_block_delta",
-            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#,
-        ),
-        (
-            "content_block_stop",
-            r#"{"type":"content_block_stop","index":0}"#,
-        ),
-        (
-            "message_delta",
-            r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#,
-        ),
-        ("message_stop", r#"{"type":"message_stop"}"#),
+    let lines = [
+        r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":3,"output_tokens":0}}}"#,
+        r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+        r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#,
+        r#"data: {"type":"content_block_stop","index":0}"#,
+        r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#,
+        r#"data: {"type":"message_stop"}"#,
     ];
     let mut chunks = Vec::new();
-    for (event, data) in events {
-        chunks.push(TransportChunk::Text(format!("event: {event}")));
-        chunks.push(TransportChunk::Text(format!("data: {data}")));
-        chunks.push(TransportChunk::Text(String::new()));
+    for line in lines {
+        chunks.push(TransportChunk::Text(String::from(line)));
     }
     chunks
 }
@@ -562,29 +548,21 @@ fn anthropic_stream() -> Vec<TransportChunk> {
 pub(crate) fn native_anthropic_stream() {
     let ids = FixedIds::new(STREAM_ID);
     let recorded = stream_chunks(anthropic_stream(), Some(false), &ids);
-    assert!(!recorded.is_empty(), "the stream produced no chunks");
     let expected_id = format!("chatcmpl-{STREAM_ID}");
-    for value in &recorded {
+    // One event per data line; end_turn arrives on message_delta, not on message_stop.
+    let contents = ["", "", "hello", "", "", ""];
+    let finishes = [None, None, None, None, Some("stop"), None];
+    assert_eq!(recorded.len(), contents.len(), "{recorded:?}");
+    for (index, value) in recorded.iter().enumerate() {
         assert_eq!(value["id"].as_str(), Some(expected_id.as_str()), "{value}");
+        assert_eq!(
+            value["model"].as_str(),
+            Some("claude-sonnet-4-5"),
+            "{value}"
+        );
+        assert_eq!(value["content"].as_str(), Some(contents[index]), "{value}");
+        assert_eq!(value["finish_reason"].as_str(), finishes[index], "{value}");
     }
-    assert!(
-        recorded
-            .iter()
-            .any(|value| value["content"].as_str() == Some("hello")),
-        "{recorded:?}"
-    );
-    assert!(
-        recorded
-            .iter()
-            .any(|value| value["model"].as_str() == Some("claude-sonnet-4-5")),
-        "{recorded:?}"
-    );
-    assert!(
-        recorded
-            .iter()
-            .any(|value| value["finish_reason"].is_string()),
-        "{recorded:?}"
-    );
 
     let plain = get_model_response_iterator(
         empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
