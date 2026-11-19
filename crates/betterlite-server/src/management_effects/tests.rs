@@ -5,6 +5,7 @@ use std::future::Future;
 use std::future::ready;
 use std::sync::Arc;
 
+use betterlite_auth::auth_cache::WriteOptions;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
 use betterlite_models::decisions::Json;
@@ -20,6 +21,7 @@ use super::eviction::{
     delete_api_key_from_cache, delete_customer_id_from_cache, delete_team_id_from_cache,
     delete_user_id_from_cache,
 };
+use super::fixtures::auth_cache::memory_auth_cache;
 use super::fixtures::cache::FakeCacheError;
 use super::fixtures::clock::{end_instant, start_instant};
 use super::fixtures::harness::{
@@ -502,6 +504,27 @@ fn direct_eviction_error_propagates() {
             key: "t1".to_owned()
         }
     );
+}
+
+#[test]
+fn auth_cache_tier_delete_evicts() {
+    let cache = memory_auth_cache();
+    let value = Json::Text("stored".to_owned());
+    cache
+        .set(
+            Some("sk-live"),
+            &value,
+            WriteOptions {
+                ttl: None,
+                local_only: true,
+                refresh_ttl: false,
+            },
+        )
+        .expect("the memory tier stores the value");
+    assert!(cache.get("sk-live", true).is_some());
+    delete_api_key_from_cache(&cache, Some(&ManagementData::UpdateKey("sk-live")))
+        .expect("the delete reaches the tier");
+    assert!(cache.get("sk-live", true).is_none());
 }
 
 #[tokio::test]
