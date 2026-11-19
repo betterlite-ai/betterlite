@@ -7,15 +7,16 @@ use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_
 use betterlite_prompts::media::parts::INLINE_EVERY_REMOTE_URL;
 use betterlite_prompts::message_content::Message;
 
+use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::claude_invoke::error::ClaudeInvokeError;
-use crate::claude_invoke::request::{ClaudeInvokeRequest, TransfomSources};
+use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources};
 
 use super::request::transform_request;
 
 // AmazonMantleConfig.async_transform_request: B183 inlines every remote part first, then the synchronous method runs.
 pub async fn async_transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransfomSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
+    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
 ) -> Result<Object, ClaudeInvokeError<Blocks::Failure>>
 where
     Source: DynamicMetadataSource,
