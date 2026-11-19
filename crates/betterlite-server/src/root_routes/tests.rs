@@ -197,6 +197,19 @@ async fn state_serializes_every_snapshot_field() {
     assert_eq!(second.samples, 4);
 }
 
+#[tokio::test]
+async fn state_serializes_model_costs_as_json_numbers() {
+    let (root_state, _fake_routers) = route_state(vec![vec![detailed_snapshot()]]);
+    let reply = get(
+        root_state,
+        Some(&caller("master_key", &[])),
+        ADAPTIVE_ROUTER_STATE_PATH,
+    )
+    .await;
+    let raw = String::from_utf8(reply.body).expect("the body is UTF-8");
+    assert!(raw.contains(r#""model_costs":{"fast":0.000003,"slow":0.000015}"#));
+}
+
 fn snapshot(router_name: &str, models: &[&str]) -> StateSnapshot {
     StateSnapshot {
         router_name: router_name.to_owned(),
