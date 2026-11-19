@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 use serde::Deserialize;
 
+use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, resolve_fine_tuning_timeout,
 };
@@ -47,7 +48,6 @@ impl ThreadTimeoutValue {
     }
 }
 
-// the resolved timeout the facade keeps: a number of seconds or the pieces of an httpx.Timeout
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum ThreadTimeout {
     Seconds(f64),
@@ -167,5 +167,20 @@ fn parse_text(text: &str) -> Result<f64, TimeoutError> {
         Ok(seconds)
     } else {
         Err(TimeoutError::NonFinite)
+    }
+}
+
+// absent extra_body pops nothing, an explicit null reads AZURE_AD_TOKEN, and the body's token is popped and wins
+pub(super) fn facade_azure_token(
+    resources: &ResourceSdkSettings,
+    params: &ThreadParams,
+) -> Option<SecretString> {
+    match &params.extra_body {
+        None => None,
+        Some(None) => resources.azure_ad_token.clone(),
+        Some(Some(body)) => match body.get("azure_ad_token") {
+            Some(Json::Text(token)) => Some(SecretString::from(token.clone())),
+            Some(_) | None => None,
+        },
     }
 }

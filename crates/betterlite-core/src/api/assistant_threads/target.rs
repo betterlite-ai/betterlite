@@ -146,21 +146,6 @@ const fn client_kind(flag: Option<bool>) -> ClientKind {
     }
 }
 
-// absent extra_body pops nothing, an explicit null reads AZURE_AD_TOKEN, and the body's token is popped and wins
-fn facade_azure_token(
-    resources: &ResourceSdkSettings,
-    params: &ThreadParams,
-) -> Option<SecretString> {
-    match &params.extra_body {
-        None => None,
-        Some(None) => resources.azure_ad_token.clone(),
-        Some(Some(body)) => match body.get("azure_ad_token") {
-            Some(Json::Text(token)) => Some(SecretString::from(token.clone())),
-            Some(_) | None => None,
-        },
-    }
-}
-
 impl<'deps, T> AssistantThreads<'deps, T>
 where
     T: AssistantsTransport,
@@ -243,7 +228,7 @@ where
     where
         'deps: 'call,
     {
-        let token = facade_azure_token(self.resources, &resolved.params);
+        let token = super::params::facade_azure_token(self.resources, &resolved.params);
         match client {
             Some(SuppliedClient::Openai(supplied)) if supplied.kind == ClientKind::Async => {
                 return Ok(Target::Openai(supplied));
