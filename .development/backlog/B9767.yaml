@@ -2,7 +2,7 @@ id: B9767
 milestone: M10 admin ui
 title: Mount the existing agent-card discovery route for the dashboard form
 status: todo
-depends_on: [B8202, B5082, B172, B173, B8610, B052, B860, B5076]
+depends_on: [B8202, B5082, B172, B173, B8610, B052, B860, B9942]
 file: tasks/B9767-agent-discovery-mount.yaml
 covers:
   - "litellm/proxy/a2a/endpoints.py"

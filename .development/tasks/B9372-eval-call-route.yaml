@@ -64,7 +64,7 @@ deviations:
     why: LiteLLM builds a throwaway Router per request and then calls an eval method the Router doesn't have; betterlite has no per-request router, and the outcome a valid config gets is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L38-L50
 out_of_scope:
-  - "The rest of _route_request_single_attempt that every route type runs (the required-param check, the shared aiohttp session, the mock-testing param gate, enable_tag_filtering removal) and the model registry read-through retry around it: B004 and B014, as B7430 records; the read-through itself is B8231."
+  - "The rest of _route_request_single_attempt that every route type runs (the required-param check, the shared aiohttp session, the mock-testing param gate, enable_tag_filtering removal): B9800 builds these steps in the server's messages_call module and leaves out the aiohttp session. The model registry read-through retry around the attempt is B9949's route_with_read_through, and the read-through itself is B8231's."
   - "The eleven SDK operations prepare feeds: B3421 to B3425. The routes that call prepare: B3426, B3427, B3428 and B096."
   - "get_deployment_credentials and _is_deployment_blocked: B2306. The model-name index: B844. The shared router handles and RouteViews: B8611. BlockedModels: B8692. ProxyModelNotFoundError and route_endpoint: B9964."
 pitfalls:

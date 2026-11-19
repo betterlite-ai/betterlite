@@ -2,7 +2,7 @@ id: B9690
 milestone: M10 admin ui
 title: Deployed model table, detail, credential, health and price page requests
 status: todo
-depends_on: [B860, B5076, B850, B851, B835, B838, B1601, B9987, B4445, B4446, B8540, B8586, B8676, B2341, B825, B8595, B8675, B077]
+depends_on: [B860, B9942, B850, B851, B835, B838, B1601, B9987, B4445, B4446, B8540, B8586, B8676, B2341, B825, B8595, B8675, B077]
 file: tasks/B9690-dashboard-model-table-requests.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/{*.*,utils/**}"

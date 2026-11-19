@@ -1,10 +1,11 @@
+mod attempt;
 mod clients;
 mod filters;
 
 use betterlite_models::deployment_filters::get_order_filtered_deployments;
 use rand::Rng;
 
-use self::clients::acquire_client;
+use self::attempt::attempt;
 use self::filters::{pre_call_pool, static_pool};
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::lookup::CatalogResolver;
@@ -13,17 +14,13 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::candidates::{CandidateSet, deployment_ids, without_blocked};
 use crate::router_core::error::RoutingError;
-use crate::router_core::route::{
-    ResolvedRoute, RouteContext, RouteRequest, no_deployment_error, stage_single,
-};
+use crate::router_core::route::{ResolvedRoute, RouteContext, RouteRequest, no_deployment_error};
 use crate::static_eligibility::filter::{EligibilityInput, EligibilityServices, eligible};
 use crate::strategy::{self, Strategy, StrategyContext};
 use crate::strategy_dispatch::groups::RoutingScope;
 use crate::strategy_dispatch::override_resolution::{override_pre_call_target, resolve};
 use crate::strategy_dispatch::service::StrategyDispatch;
-use crate::strategy_dispatch::types::{
-    RequestBindings, Resolution, RoutingRequest, StrategyOverride,
-};
+use crate::strategy_dispatch::types::{RequestBindings, RoutingRequest, StrategyOverride};
 
 // The strategy state one route resolves against: B395's dispatch, the request's override and the groups in scope.
 pub struct StrategyRoute<'route> {
@@ -191,7 +188,7 @@ where
         };
         return attempt(context, resolved, deployment, None).await;
     }
-    let pick = select_index(context, dispatch, &resolved.resolution, &set, random).await?;
+    let pick = select_index(context, dispatch, &resolved, &set, random).await?;
     let Some((strategy, index)) = pick else {
         return Err(no_deployment_error(context, &resolved));
     };
@@ -246,44 +243,23 @@ async fn narrowed_pool(
 async fn select_index<R>(
     context: &RouteContext<'_>,
     dispatch: &mut StrategyDispatch,
-    resolution: &Resolution,
+    resolved: &ResolvedRoute,
     set: &CandidateSet,
     random: &mut R,
 ) -> Result<Option<(Strategy, usize)>, RoutingError>
 where
     R: Rng + Send,
 {
-    let Some(strategy) = Strategy::of(resolution.strategy) else {
+    let Some(strategy) = Strategy::of(resolved.resolution.strategy) else {
         return Ok(None);
     };
     let strategy_context = StrategyContext {
         deployments: &set.deployments,
+        model_group: &resolved.group,
         route: context,
         dispatch,
-        resolution,
+        resolution: &resolved.resolution,
     };
     let index = strategy::select(strategy, strategy_context, random).await?;
     Ok(Some((strategy, index)))
-}
-
-// async_routing_strategy_pre_call_checks: the deployment a strategy picked passes the router's checks before it is called
-async fn attempt(
-    context: &RouteContext<'_>,
-    resolved: ResolvedRoute,
-    picked: DeploymentSpec,
-    strategy: Option<Strategy>,
-) -> Result<AttemptResult, RoutingError> {
-    let Some(deployment) = stage_single(context, RouteStage::ModelRateLimits, picked).await? else {
-        return Err(no_deployment_error(context, &resolved));
-    };
-    let client = acquire_client(context, &resolved.group, &deployment);
-    Ok(AttemptResult {
-        group: resolved.group,
-        deployment,
-        aliases: resolved.aliases,
-        strategy,
-        client,
-        override_pre_call: resolved.override_pre_call,
-        bindings: resolved.bindings,
-    })
 }

@@ -32,7 +32,10 @@ description: >-
   built here with SharedAgents::new over the registry B8613 made, `db` and `proxy_config`). `jwt_signer:
   Arc<JwtSignerSlot>` (B8254). `general_settings: Arc<ProxySettingsStore>` (B8612, built here over `db`,
   `proxy_config`, `plugins` and `config_overlay`). `proxy_logging: Arc<ProxyLogging>` (B8399). `router: Arc<RouterHandle>` and
-  `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle). `mcp_registry:
+  `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle).
+  `model_read_through: Option<Arc<dyn ModelReadThrough>>` (B9949's trait): the B9948 instance from B8613's Started.
+  The routes read it through the model_read_through state slot: B9947 made that slot answer None, and this task changes
+  its Slot::new in state/model_read_through.rs to clone this field. `mcp_registry:
   Arc<McpRegistry>`, `credentials: Arc<CredentialRegistry>` (B1601's one registry, so B097, B7171 and B2306 share it
   and a credential added through POST /credentials is seen by all), `vector_stores: Arc<VectorStores>` and `pass_through: Arc<PassThroughState>` (B8614; the
   pass-through credential router, Vertex token state and route table that startup, B8384 and B8640 share).
@@ -180,6 +183,7 @@ scope:
     - crates/betterlite-server/src/app/admin.rs
     - crates/betterlite-server/src/app/edge.rs
     - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/model_read_through.rs
     - crates/betterlite-server/src/state/health.rs
     - crates/betterlite-server/src/cost_service/tests.rs
     - crates/betterlite-server/src/routes.rs

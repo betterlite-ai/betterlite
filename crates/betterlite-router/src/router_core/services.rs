@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
+use crate::least_busy::LeastBusy;
 use crate::model_rate_limits::service::ModelRateLimits;
 use crate::prompt_affinity::service::PromptAffinity;
 use crate::routing_groups::group::RoutingGroup;
@@ -62,6 +65,12 @@ pub trait RouteServices: Send + Sync {
     // get_routing_group: the routing group a model name calls, absent when the name is no callable group
     #[must_use]
     fn routing_group(&self, _model: &str) -> Option<&RoutingGroup> {
+        None
+    }
+
+    // Router.cache's in-flight counters, which the least-busy strategy reads and every attempt updates
+    #[must_use]
+    fn least_busy(&self) -> Option<Arc<LeastBusy>> {
         None
     }
 }

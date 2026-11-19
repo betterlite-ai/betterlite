@@ -252,6 +252,24 @@ pub(super) async fn strategy_unbuilt(strategy: RoutingStrategy, entry: &'static 
     assert_eq!(error.unbuilt_entry(), Some(entry));
 }
 
+// a router that keeps no counters holds no call in flight, so every deployment weighs zero and the first wins
+pub(super) async fn least_busy_without_counters() {
+    let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &NoServices,
+        RoutingStrategy::LeastBusy,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(result.strategy, Some(Strategy::LeastBusy));
+    assert!(result.least_busy.is_none());
+}
+
 pub(super) async fn no_deployment_rate_limit() {
     let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
     let mut setup = RequestSetup::new("gpt-4o");

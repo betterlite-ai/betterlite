@@ -1,0 +1,26 @@
+task: B2212
+deviations:
+  - what: >-
+      A reply body is decoded as UTF-8, and the body and its text blocks are parsed as standard JSON. LiteLLM's
+      plain JSON path hands the response bytes to json.loads, and Python's json.loads accepts UTF-16 and UTF-32
+      bodies that carry a byte-order mark, the NaN and Infinity constants and lone UTF-16 surrogate escapes; its SSE
+      path decodes the text through httpx with the response charset and replacement characters. A body that is not
+      UTF-8, a body holding one of those constants or escapes, and JSON nested beyond betterlite's parser recursion
+      limit fail here with a parse error, and a text block in one of those forms contributes no results where
+      LiteLLM parses the block.
+    why: >-
+      betterlite's JSON is standard JSON (docs/compatibility.md). A gateway that sends a non-UTF-8 or non-standard
+      body breaks its own JSON contract, and the nesting limit is the parser's, so no working setup depends on these
+      bodies parsing.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L428-L430
+  - what: >-
+      A plain JSON body that is not an object returns SearchReplyError::NotObject here. LiteLLM's first access,
+      response_json.get("error") on a list or a scalar, raises AttributeError, so the failure category differs while
+      both reject the reply.
+    why: >-
+      A non-object reply is malformed for a JSON-RPC endpoint, and a typed parse error carries the failure without
+      the crash that no working gateway reply can rely on.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L377
+kept_bugs: []
