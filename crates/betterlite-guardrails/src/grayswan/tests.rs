@@ -90,16 +90,10 @@ fn plain_message(role: &str, content: &str) -> GuardrailValue {
 }
 
 fn field<'row>(row: &'row GuardrailValue, key: &str) -> Option<&'row GuardrailValue> {
-    match row {
-        GuardrailValue::Object(fields) => fields.get(key),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => None,
-    }
+    let GuardrailValue::Object(fields) = row else {
+        return None;
+    };
+    fields.get(key)
 }
 
 fn text_field(row: &GuardrailValue, key: &str) -> Option<String> {

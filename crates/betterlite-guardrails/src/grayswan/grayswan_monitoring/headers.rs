@@ -73,17 +73,10 @@ fn nested_object<'data>(
 }
 
 fn non_empty_object(value: &GuardrailValue) -> Option<&BTreeMap<String, GuardrailValue>> {
-    match value {
-        GuardrailValue::Object(fields) if !fields.is_empty() => Some(fields),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => None,
-    }
+    let GuardrailValue::Object(fields) = value else {
+        return None;
+    };
+    (!fields.is_empty()).then_some(fields)
 }
 
 fn is_forwarded_name(key: &str) -> bool {
