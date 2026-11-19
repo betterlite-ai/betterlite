@@ -13,13 +13,13 @@ use betterlite_openai::fine_tuning::job::{
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Map, Number};
+use serde_json::{Map, Number, from_str};
 use thiserror::Error;
 
 use super::{
     AzureFineTuningCancel, FineTuningCancel, FineTuningCancelCall, FineTuningCancelDispatch,
     FineTuningCancelError, FineTuningCancelTarget, FineTuningCancelValues,
-    FineTuningOptionalParams, OpenAiFineTuningCancel, OptionalTimeout,
+    FineTuningOptionalParams, OpenAiFineTuningCancel, OptionalTimeout, resolve_timeout,
 };
 use crate::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
 
@@ -290,6 +290,66 @@ async fn cancel_defaults_to_openai_and_keeps_a_null_provider_unsupported() {
     assert!(recorded_calls(&calls).is_empty());
 }
 
+#[test]
+fn a_body_with_only_the_job_id_decodes_to_the_openai_default() {
+    let decoded: FineTuningCancelCall =
+        from_str(r#"{"fine_tuning_job_id": "ftjob-1"}"#).expect("the body names only the job");
+    assert_eq!(decoded.fine_tuning_job_id, "ftjob-1");
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert!(decoded.extra_headers.is_none());
+    assert!(decoded.extra_body.is_none());
+    assert!(decoded.params.api_base.is_none());
+    assert!(decoded.params.api_key.is_none());
+    assert!(decoded.params.api_version.is_none());
+    assert!(decoded.params.organization.is_none());
+    assert!(decoded.params.timeout.is_none());
+    assert!(decoded.params.request_timeout.is_none());
+    assert!(decoded.params.max_retries.is_none());
+    assert!(decoded.params.azure_ad_token.is_none());
+    assert!(decoded.acancel_fine_tuning_job.is_none());
+}
+
+#[tokio::test]
+async fn a_null_provider_decodes_to_none_and_stays_unsupported() {
+    let decoded: FineTuningCancelCall =
+        from_str(r#"{"fine_tuning_job_id": "ftjob-1", "custom_llm_provider": null}"#)
+            .expect("the body names a null provider");
+    assert!(decoded.custom_llm_provider.is_none());
+    let (dispatch, calls) = scripted();
+    let service = FineTuningCancel {
+        dispatch,
+        settings: base_settings(),
+    };
+    let error = service
+        .run(&decoded)
+        .await
+        .expect_err("a null provider is unsupported");
+    assert!(matches!(
+        error,
+        FineTuningCancelError::Unsupported { ref provider } if provider == "None"
+    ));
+    assert!(recorded_calls(&calls).is_empty());
+}
+
+#[test]
+fn a_body_without_the_job_id_fails_to_decode() {
+    let Err(error) = from_str::<FineTuningCancelCall>(r#"{"custom_llm_provider": "openai"}"#)
+    else {
+        panic!("the job id is required");
+    };
+    assert!(error.to_string().contains("fine_tuning_job_id"), "{error}");
+}
+
+#[test]
+fn a_body_with_a_field_the_call_does_not_read_fails_to_decode() {
+    let Err(error) = from_str::<FineTuningCancelCall>(
+        r#"{"fine_tuning_job_id": "ftjob-1", "model": "gpt-4o-mini"}"#,
+    ) else {
+        panic!("the call reads no model");
+    };
+    assert!(error.to_string().contains("unknown field"), "{error}");
+}
+
 #[rstest]
 #[case::openai("openai")]
 #[case::azure("azure")]
@@ -519,7 +579,6 @@ const STRUCTURED: StructuredTimeout = StructuredTimeout {
 #[rstest]
 #[case::openai(Some("openai"), FineTuningTimeout::Structured(STRUCTURED))]
 #[case::azure(Some("azure"), FineTuningTimeout::Structured(STRUCTURED))]
-#[case::vertex_ai(Some("vertex_ai"), FineTuningTimeout::Seconds(30.0_f64))]
 #[tokio::test]
 async fn cancel_keeps_the_structured_timeout_only_where_the_provider_declares_it(
     #[case] provider: Option<&str>,
@@ -536,8 +595,25 @@ async fn cancel_keeps_the_structured_timeout_only_where_the_provider_declares_it
     assert_eq!(values(&entry).timeout, expected);
 }
 
-#[tokio::test]
-async fn cancel_defaults_the_phases_read_timeout_when_the_provider_drops_them() {
+// vertex_ai declares no httpx timeout support, so its phases resolve before the provider is rejected
+#[test]
+fn cancel_drops_the_phases_for_a_provider_that_declares_no_httpx_timeout() {
+    let mut params = base_params();
+    params.timeout = Some(OptionalTimeout::Phases(TimeoutPhases {
+        connect: Some(1.0_f64),
+        read: Some(30.0_f64),
+        write: Some(2.0_f64),
+        pool: Some(3.0_f64),
+    }));
+    let request = call(Some("vertex_ai"), params);
+    assert_eq!(
+        resolve_timeout(&request, Some("vertex_ai")).expect("the phases resolve"),
+        FineTuningTimeout::Seconds(30.0_f64)
+    );
+}
+
+#[test]
+fn cancel_defaults_the_phases_read_timeout_when_the_provider_drops_them() {
     let mut params = base_params();
     params.timeout = Some(OptionalTimeout::Phases(TimeoutPhases {
         connect: Some(1.0_f64),
@@ -545,9 +621,9 @@ async fn cancel_defaults_the_phases_read_timeout_when_the_provider_drops_them() 
         write: None,
         pool: None,
     }));
-    let entry = first_call(base_settings(), call(Some("vertex_ai"), params)).await;
+    let request = call(Some("vertex_ai"), params);
     assert_eq!(
-        values(&entry).timeout,
+        resolve_timeout(&request, Some("vertex_ai")).expect("the phases resolve"),
         FineTuningTimeout::Seconds(600.0_f64)
     );
 }

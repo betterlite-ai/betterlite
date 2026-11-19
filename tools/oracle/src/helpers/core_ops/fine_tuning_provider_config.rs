@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::api::fine_tuning_provider_config::{
-    fine_tuning_config_for, set_fine_tuning_config,
+    FineTuningConfigError, fine_tuning_config_for, set_fine_tuning_config,
 };
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
@@ -36,6 +36,24 @@ enum Action {
 
 pub(crate) struct Op;
 
+// the class LiteLLM's own failure carries; a non-map entry fails on its .get
+fn config_error(error: FineTuningConfigError) -> Box<HelperError> {
+    let class = match &error {
+        FineTuningConfigError::NotAProviderMap { .. } => "AttributeError",
+        FineTuningConfigError::Unset
+        | FineTuningConfigError::NotAList
+        | FineTuningConfigError::Environment(_) => "ValueError",
+    };
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: error.to_string(),
+    })
+}
+
 impl Helper for Op {
     type Input = CaseInput;
 
@@ -46,7 +64,7 @@ impl Helper for Op {
             match step.action {
                 Action::Set => {
                     current = set_fine_tuning_config(current, step.config.as_ref(), &input.env)
-                        .or_value_error()?;
+                        .map_err(config_error)?;
                     results.push(Json::Null);
                 }
                 Action::Get => {
@@ -60,8 +78,8 @@ impl Helper for Op {
                             message: "'provider'".to_owned(),
                         }));
                     };
-                    let found =
-                        fine_tuning_config_for(current.as_deref(), provider).or_value_error()?;
+                    let found = fine_tuning_config_for(current.as_deref(), provider)
+                        .map_err(config_error)?;
                     results.push(found.unwrap_or(Json::Null));
                 }
             }

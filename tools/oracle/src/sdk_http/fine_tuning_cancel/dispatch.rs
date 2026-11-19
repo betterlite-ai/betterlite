@@ -56,9 +56,10 @@ impl FineTuningCancelDispatch for HttpDispatch {
         &self,
         target: FineTuningCancelTarget<'_>,
     ) -> Result<FineTuneJob, CancelFailure> {
-        let (request, is_azure) = match &target {
-            FineTuningCancelTarget::OpenAi(openai) => (openai_request(openai)?, false),
-            FineTuningCancelTarget::Azure(azure) => (azure_request(azure)?, true),
+        // matching by value drops the target before the await, since its openai branch borrows the SDK client
+        let (request, is_azure) = match target {
+            FineTuningCancelTarget::OpenAi(openai) => (openai_request(&openai)?, false),
+            FineTuningCancelTarget::Azure(azure) => (azure_request(&azure)?, true),
         };
         let response = self
             .client

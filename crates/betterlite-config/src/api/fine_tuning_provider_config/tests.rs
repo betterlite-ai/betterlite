@@ -219,9 +219,9 @@ fn a_null_set_keeps_the_existing_configuration() {
     let kept = set_fine_tuning_config(Some(existing.clone()), Some(&Json::Null), &environment)
         .expect("a null set keeps the list");
     assert_eq!(kept.as_ref(), Some(&existing));
-    let kept =
+    let unchanged =
         set_fine_tuning_config(kept, None, &environment).expect("an absent set keeps the list");
-    assert_eq!(kept, Some(existing));
+    assert_eq!(unchanged, Some(existing));
 }
 
 #[test]

@@ -80,23 +80,29 @@ where
     };
     let mut settings = Vec::with_capacity(items.len());
     for item in items {
-        settings.push(match item {
-            Json::Object(entries) => {
-                let mut resolved = entries.clone();
-                for value in resolved.values_mut() {
-                    if let Json::Text(text) = value
-                        && text.starts_with("os.environ/")
-                    {
-                        *value =
-                            Json::Text(resolve_string(text.clone(), FINETUNE_SETTINGS, lookup)?);
-                    }
-                }
-                Json::Object(resolved)
-            }
-            other => other.clone(),
-        });
+        settings.push(resolve_setting(item, lookup)?);
     }
     Ok(Some(settings))
+}
+
+// one finetune_settings entry: a map has its shallow os.environ/ strings resolved, anything else is kept
+fn resolve_setting<L>(item: &Json, lookup: &L) -> Result<Json, FineTuningConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Json::Object(entries) = item else {
+        return Ok(item.clone());
+    };
+    let mut resolved = entries.clone();
+    for value in resolved.values_mut() {
+        let Json::Text(text) = value else {
+            continue;
+        };
+        if text.starts_with("os.environ/") {
+            *value = Json::Text(resolve_string(text.clone(), FINETUNE_SETTINGS, lookup)?);
+        }
+    }
+    Ok(Json::Object(resolved))
 }
 
 // fine_tuning_config_for: the whole first entry whose custom_llm_provider matches

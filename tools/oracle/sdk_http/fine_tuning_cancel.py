@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from collections.abc import Coroutine
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
 import openai
@@ -11,6 +11,16 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 ModelResult: TypeAlias = pydantic.BaseModel | Coroutine[object, object, pydantic.BaseModel]
+CallValue: TypeAlias = str | int | float | dict[str, str] | None
+
+
+class Cancels(Protocol):
+    def cancel_fine_tuning_job(self, **kwargs: CallValue) -> ModelResult: ...
+
+    def acancel_fine_tuning_job(self, **kwargs: CallValue) -> ModelResult: ...
+
+
+CANCELS = cast(Cancels, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L334-L481
 
 
 class CallKwargs(TypedDict):
@@ -95,10 +105,8 @@ def call_kwargs(run: Run, api_base: str) -> CallKwargs:
 def called(run: Run, api_base: str) -> ModelResult:
     kwargs = call_kwargs(run, api_base)
     if run.asynchronous:
-        pending: ModelResult = litellm.acancel_fine_tuning_job(**kwargs)
-        return pending
-    answer: ModelResult = litellm.cancel_fine_tuning_job(**kwargs)
-    return answer
+        return CANCELS.acancel_fine_tuning_job(**kwargs)
+    return CANCELS.cancel_fine_tuning_job(**kwargs)
 
 
 def settle(result: ModelResult) -> JsonValue:
