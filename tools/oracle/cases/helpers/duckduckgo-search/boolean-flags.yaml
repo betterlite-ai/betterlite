@@ -1,0 +1,19 @@
+kind: helper
+name: duckduckgo-search-boolean-flags
+call:
+  duckduckgo_search:
+    environment: {DUCKDUCKGO_API_BASE: "https://instant.example"}
+    calls:
+      - kind: request
+        query: flags
+        optional_params: {pretty: false, no_redirect: true, no_html: false, skip_disambig: true}
+      - kind: url
+        api_base: null
+        query: flags
+        optional_params: {pretty: false, no_redirect: true, no_html: false, skip_disambig: true}
+      - kind: url
+        api_base: null
+        query: mixed
+        optional_params: {pretty: 0, no_redirect: true}
+env: {}
+compare: {ignore: []}
