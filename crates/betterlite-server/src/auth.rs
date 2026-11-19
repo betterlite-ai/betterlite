@@ -68,6 +68,7 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, denial_response,
     rule_for_request as grant_rule_for_request,
 };
+use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
@@ -96,20 +97,13 @@ pub(crate) async fn authenticate(
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let Ok(input) = stage_input(*backend, &request, authenticated.as_ref(), &resolver) else {
-            return authentication_error(&AuthenticationFailure::Missing);
+        let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver).await {
+            Ok(input) => input,
+            Err(failure) => return stage_failure_response(&failure),
         };
         match dispatch(*backend, &input, master_key) {
             Ok(context) => authenticated = Some(context),
-            Err(StageFailure::Authentication(failure)) => {
-                return authentication_error(&failure);
-            }
-            Err(StageFailure::ModelAccess(rejection)) => {
-                return rejection_response(&rejection);
-            }
-            Err(StageFailure::ResourceGrants(exception)) => {
-                return denial_response(&exception);
-            }
+            Err(failure) => return stage_failure_response(&failure),
         }
     }
     if let Some(context) = authenticated {
@@ -118,12 +112,22 @@ pub(crate) async fn authenticate(
     next.run(request).await
 }
 
-fn stage_input(
+fn stage_failure_response(failure: &StageFailure) -> Response {
+    match failure {
+        StageFailure::Authentication(failure) => authentication_error(failure),
+        StageFailure::ModelAccess(rejection) => rejection_response(rejection),
+        StageFailure::ResourceGrants(exception) | StageFailure::TagBudgets(exception) => {
+            denial_response(exception)
+        }
+    }
+}
+
+async fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
-) -> Result<StageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
@@ -138,7 +142,7 @@ fn stage_input(
                 Ok(requested) => requested,
                 Err(error) => {
                     tracing::debug!(error = %error, "the request model stage failed");
-                    return Err(AuthenticationFailure::Missing);
+                    return Err(AuthenticationFailure::Missing.into());
                 }
             };
             let rule = rule_for_request(request);
@@ -152,8 +156,30 @@ fn stage_input(
                 },
             )))
         }
-        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
+        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        // the batch reads are asynchronous, so this stage resolves its rows while its input is assembled
+        AuthBackend::AuthTagBudgets => {
+            let stage = tag_budget_stage_input(request, authenticated)?;
+            auth_tag_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::TagBudgets)?;
+            Ok(StageInput::AuthTagBudgets(Box::new(stage)))
+        }
     }
+}
+
+fn tag_budget_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<TagBudgetStageInput, AuthenticationFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    Ok(TagBudgetStageInput {
+        context,
+        rule: auth_tag_budgets::rule_for_request(request),
+        database: auth_tag_budgets::database_for_request(request),
+    })
 }
 
 fn resource_grant_stage_input(
