@@ -109,7 +109,7 @@ fn project(error: &FineTuningCreateError<SendError>) -> Failure {
             sdk_failure(source)
         }
         FineTuningCreateError::Timeout(_)
-        | FineTuningCreateError::Data { .. }
+        | FineTuningCreateError::Data(_)
         | FineTuningCreateError::Dispatch(_) => exception_failure(&error.to_string()),
     }
 }

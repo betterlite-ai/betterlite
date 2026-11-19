@@ -764,7 +764,7 @@ async fn unrepresentable_integration() {
     let mut call = base_call("openai");
     call.integrations = Some(vec![text("slack")]);
     let (outcome, calls) = ran(settings(), &call).await;
-    assert!(matches!(outcome, Err(FineTuningCreateError::Data { .. })));
+    assert!(matches!(outcome, Err(FineTuningCreateError::Data(_))));
     assert!(calls.is_empty());
 }
 

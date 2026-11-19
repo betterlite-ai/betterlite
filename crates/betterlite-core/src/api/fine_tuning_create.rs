@@ -76,10 +76,7 @@ where
     #[error(transparent)]
     Timeout(#[from] TimeoutError),
     #[error("the fine-tuning job data is not a valid record")]
-    Data {
-        #[source]
-        source: serde_json::Error,
-    },
+    Data(#[source] serde_json::Error),
     #[error("LiteLLM doesn't support {provider} for 'create_batch'. Only 'openai' is supported.")]
     Unsupported { provider: String },
     #[error(transparent)]
@@ -101,7 +98,7 @@ where
                 method: UNSUPPORTED_REQUEST_METHOD,
                 url: UNSUPPORTED_REQUEST_URL,
             }),
-            Self::Timeout(_) | Self::Data { .. } | Self::Dispatch(_) => None,
+            Self::Timeout(_) | Self::Data(_) | Self::Dispatch(_) => None,
         }
     }
 }

@@ -5,33 +5,67 @@ use crate::api::resource_sdk_settings::timeout::{
     resolve_fine_tuning_timeout,
 };
 use betterlite_models::decisions::Json;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 // the kwargs create_fine_tuning_job reads through GenericLiteLLMParams and get_litellm_params
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CreateParams {
     pub api_base: Option<String>,
+    #[serde(
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
     pub api_key: Option<SecretString>,
     pub api_version: Option<String>,
     pub organization: Option<String>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
+    #[serde(
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
     pub vertex_credentials: Option<SecretString>,
     // the Azure-only root parameter the extra-body helper copies into extra_body
     #[serde(rename = "trainingType")]
     pub training_type: Option<Json>,
+    #[serde(serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<Json>>>::serialize")]
     pub timeout: Option<CreateTimeout>,
     pub request_timeout: Option<f64>,
     pub max_retries: Option<i64>,
 }
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CreateTimeout {
     Plain(TimeoutValue),
     Structured(StructuredTimeout),
+}
+// serde's adapter builds this non-Debug value only while the case wire form is written
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ExposedSecret(String);
+impl From<&SecretString> for ExposedSecret {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
+}
+// the case wire form writes the timeout the way the source resolves it, a structured one as its read
+impl From<&CreateTimeout> for Json {
+    fn from(timeout: &CreateTimeout) -> Self {
+        timeout_json(timeout)
+    }
+}
+fn timeout_json(timeout: &CreateTimeout) -> Json {
+    match timeout {
+        CreateTimeout::Plain(TimeoutValue::Number(seconds)) => {
+            Number::from_f64(*seconds).map_or(Json::Null, Json::Number)
+        }
+        CreateTimeout::Plain(TimeoutValue::String(text)) => Json::Text(text.clone()),
+        CreateTimeout::Structured(structured) => {
+            Number::from_f64(structured.read.unwrap_or(600.0)).map_or(Json::Null, Json::Number)
+        }
+    }
 }
 impl From<&CreateParams> for ResourceSdkRequestOptions {
     fn from(params: &CreateParams) -> Self {
