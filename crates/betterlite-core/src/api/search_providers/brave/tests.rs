@@ -774,3 +774,8 @@ fn brave_search_config_remembers_the_last_url() {
     assert_eq!(response.results.len(), 1);
     assert!(url.starts_with(BRAVE_API_BASE));
 }
+
+#[test]
+fn brave_search_config_reads_the_day_from_the_clock_when_none_is_given() {
+    assert!(super::now_date() >= NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+}
