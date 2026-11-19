@@ -1,0 +1,31 @@
+kind: helper
+name: call-wrapper-success
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+    outcomes:
+      - {kind: response, value: {id: chat-1, object: chat.completion, choices: []}}
+    observe: {values: [model], present: [litellm_call_id]}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: response, value: {id: chat-1, object: chat.completion, choices: []}}
+      observe: {values: [model], present: [litellm_call_id]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        acompletion: true
+      outcomes:
+        - {kind: response, value: {id: chat-1, object: chat.completion, choices: []}}
+      observe: {values: [model], present: [litellm_call_id]}
+env: {}
+compare: {ignore: []}

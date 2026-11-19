@@ -1,0 +1,30 @@
+kind: helper
+name: call-wrapper-budget-stop
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+    outcomes:
+      - {kind: response, value: {id: chat-1}}
+    budget: {max_budget: 2.5, current_cost: 3.5}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: response, value: {id: chat-1}}
+      budget: {max_budget: 2.5, current_cost: 3.5}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: response, value: {id: chat-1}}
+      budget: {max_budget: 2.5, current_cost: 2.5}
+env: {}
+compare: {ignore: []}

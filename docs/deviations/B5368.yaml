@@ -1,0 +1,36 @@
+task: B5368
+deviations:
+  - what: >-
+      A generic `CallWrapper` over a `CallTarget` trait replaces the Python decorator, and `BudgetState` with `max_budget`
+      and `current_cost` as `Decimal` replaces `litellm.max_budget` and `litellm._current_cost`.
+    why: Rust has no runtime decorator over any function, and the inject-dependencies rule bars the module-level counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674-L1687
+  - what: >-
+      The retry branches call the target's own retry entry, where LiteLLM calls `litellm.completion_with_retries` or
+      `litellm.acompletion_with_retries` by name.
+    why: The wrapper has no global function table to look an SDK function up in; the function task owns its retry loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1923-L1929
+  - what: >-
+      The async retry request carries `num_retries` and `retry_strategy` but not `original_function`, which LiteLLM stamps
+      with the decorated callable before awaiting its retry function.
+    why: A Python callable has no JSON representation, and the target's retry entry already is the function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2231-L2233
+  - what: >-
+      A used `retry_policy` is reset to an empty object in the request, where LiteLLM stores a fresh `RetryPolicy()`
+      pydantic instance, and an empty policy object is read as no policy.
+    why: Request values are JSON; the fresh policy has every field unset, so a later read behaves the same, and a
+      pydantic object cannot cross the oracle's wire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L15-L30
+  - what: >-
+      The async success log is handed to an injected `SuccessLogScheduler`, where LiteLLM enqueues it on
+      `GLOBAL_LOGGING_WORKER` with `asyncio.create_task`, and the deferred slot holds the job itself rather than the
+      closure that would enqueue it.
+    why: The logging worker is B191's and comes in through the wrapper's dependencies, and the task that drains the
+      deferred slot owns when it runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1371-L1408
+  - what: >-
+      A failure logging callback cannot replace the error the wrapper raises: `CallLogging` has no error channel, while
+      LiteLLM re-raises an exception thrown by `failure_handler` or `async_failure_handler`.
+    why: Logging failures belong to the logger implementations (B250 and B251) and their own error policy; the wrapper's
+      ports carry the call's failure only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2214-L2227

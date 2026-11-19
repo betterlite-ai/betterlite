@@ -1,0 +1,60 @@
+kind: helper
+name: call-wrapper-retry-policy
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      num_retries: 3
+      retry_policy: {BadRequestErrorRetries: 1}
+    outcomes:
+      - {kind: error, error_class: BadRequestError, message: bad}
+      - {kind: response, value: {id: chat-1}}
+    observe: {values: [num_retries, retry_strategy]}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        num_retries: 3
+        retry_policy: {BadRequestErrorRetries: 1}
+      outcomes:
+        - {kind: error, error_class: BadRequestError, message: bad}
+        - {kind: response, value: {id: chat-1}}
+      observe: {values: [num_retries, retry_strategy]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        num_retries: 3
+        retry_policy: {BadRequestErrorRetries: 1}
+      outcomes:
+        - {kind: error, error_class: APIError, message: boom}
+        - {kind: response, value: {id: chat-1}}
+      observe: {values: [num_retries]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: error, error_class: APIError, message: boom}
+        - {kind: response, value: {id: chat-1}}
+      retry: {num_retries: 2}
+      observe: {values: [num_retries]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        num_retries: 3
+        metadata: {model_group: gpt-4o}
+      outcomes:
+        - {kind: error, error_class: APIError, message: boom}
+        - {kind: response, value: {id: chat-1}}
+      observe: {values: [num_retries]}
+env: {}
+compare: {ignore: []}

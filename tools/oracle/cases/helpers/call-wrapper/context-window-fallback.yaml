@@ -1,0 +1,43 @@
+kind: helper
+name: call-wrapper-context-window-fallback
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      context_window_fallback_dict: {gpt-4o: gpt-4o-mini}
+    outcomes:
+      - {kind: error, error_class: ContextWindowExceededError, message: too long}
+      - {kind: response, value: {model: gpt-4o-mini}}
+    observe: {values: [model]}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        context_window_fallback_dict: {gpt-4o: gpt-4o-mini}
+      outcomes:
+        - {kind: error, error_class: ContextWindowExceededError, message: too long}
+        - {kind: response, value: {model: gpt-4o-mini}}
+      observe: {values: [model]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: error, error_class: ContextWindowExceededError, message: too long}
+      observe: {values: [model]}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        context_window_fallback_dict: {gpt-4: gpt-4o-mini}
+      outcomes:
+        - {kind: error, error_class: ContextWindowExceededError, message: too long}
+      observe: {values: [model]}
+env: {}
+compare: {ignore: []}

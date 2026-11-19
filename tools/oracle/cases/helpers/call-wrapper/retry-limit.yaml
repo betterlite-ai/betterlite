@@ -1,0 +1,33 @@
+kind: helper
+name: call-wrapper-retry-limit
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      metadata: {request_retry_count: 2}
+    outcomes:
+      - {kind: response, value: {id: chat-1}}
+    retry: {num_retries_per_request: 2}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        metadata: {request_retry_count: 2}
+      outcomes:
+        - {kind: response, value: {id: chat-1}}
+      retry: {num_retries_per_request: 2}
+  - b5368:
+      mode: sync
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+        metadata: {request_retry_count: 1}
+      outcomes:
+        - {kind: response, value: {id: chat-1}}
+      retry: {num_retries_per_request: 2}
+env: {}
+compare: {ignore: []}

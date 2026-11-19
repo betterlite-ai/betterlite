@@ -1,0 +1,45 @@
+kind: helper
+name: call-wrapper-cache-hit
+call:
+  b5368:
+    mode: sync
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+    outcomes:
+      - {kind: response, value: {id: chat-1}}
+    cache:
+      hit:
+        id: chat-cached
+        object: chat.completion
+        created: 1700000000
+        model: gpt-4o
+        choices:
+          - index: 0
+            message: {role: assistant, content: cached}
+            finish_reason: stop
+        usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+calls:
+  - b5368:
+      mode: async
+      request:
+        model: gpt-4o
+        messages: [{role: user, content: hi}]
+      outcomes:
+        - {kind: response, value: {id: chat-1}}
+      cache:
+        hit:
+          id: chat-cached
+          object: chat.completion
+          created: 1700000000
+          model: gpt-4o
+          choices:
+            - index: 0
+              message: {role: assistant, content: cached}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+env: {}
+compare:
+  ignore:
+    - pointer: /result
+      why: LiteLLM turns the stored dict into a ModelResponse and serializes that back with pydantic's defaults, while betterlite returns the stored response unchanged; the stub count and the empty seen list prove the hit.
