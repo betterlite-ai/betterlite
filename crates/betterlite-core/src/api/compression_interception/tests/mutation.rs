@@ -137,7 +137,7 @@ async fn a_missing_call_id_is_generated() {
     };
     assert!(!call_id.is_empty());
     assert_eq!(
-        harness.interception.get_cache(Some(call_id)),
+        harness.interception.get_cache(Some(call_id.as_str())),
         content(&[("key", "value")])
     );
 }
@@ -161,7 +161,7 @@ async fn a_falsy_call_id_is_replaced(#[case] call_id: Json) {
     };
     assert!(!replaced.is_empty());
     assert_eq!(
-        harness.interception.get_cache(Some(replaced)),
+        harness.interception.get_cache(Some(replaced.as_str())),
         content(&[("key", "value")])
     );
 }

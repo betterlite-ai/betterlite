@@ -12,7 +12,7 @@ fn a_stored_entry_carries_its_content_and_creation_time() {
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
     let entry = cache.entry(CALL_ID).expect("the entry is stored");
     assert_eq!(entry.content, content(&[("key", "value")]));
-    assert_eq!(entry.created_at, 100.0);
+    assert_eq!(entry.created_at.to_bits(), 100.0_f64.to_bits());
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn storing_the_same_call_again_replaces_the_content_and_the_time() {
     cache.store(CALL_ID.to_owned(), content(&[("key", "second")]));
     let entry = cache.entry(CALL_ID).expect("the entry is stored");
     assert_eq!(entry.content, content(&[("key", "second")]));
-    assert_eq!(entry.created_at, 200.0);
+    assert_eq!(entry.created_at.to_bits(), 200.0_f64.to_bits());
 }
 
 #[test]
