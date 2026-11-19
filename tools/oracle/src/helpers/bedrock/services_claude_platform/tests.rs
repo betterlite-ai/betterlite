@@ -28,13 +28,11 @@ fn helper_seeds_select_bedrock_services_claude_platform() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no claude platform helper seeds");
-    for (path, seed) in &seeds {
+    assert!(seeds.iter().all(|(path, seed)| {
         validate_helper(Path::new(path), seed)
             .map_err(|error| error.to_string())
-            .unwrap();
-        assert_eq!(seed.call.operation, OPERATION);
-        serde_json::from_value::<Input>(seed.call.input.clone())
-            .map_err(|error| error.to_string())
-            .unwrap();
-    }
+            .is_ok()
+            && seed.call.operation == OPERATION
+            && serde_json::from_value::<Input>(seed.call.input.clone()).is_ok()
+    }));
 }

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-use betterlite_bedrock::claude_platform::error::{ChatValidationError, NativeHeaderError};
-use betterlite_bedrock::claude_platform::{AUTHENTICATION_PROVIDER, WORKSPACE_HEADER};
+use betterlite_bedrock::claude_platform::AUTHENTICATION_PROVIDER;
 use betterlite_bedrock::claude_platform_inputs::body::PlatformWarning;
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
@@ -76,10 +75,6 @@ fn system_texts(body: Option<&Map<String, Value>>) -> Vec<String> {
     texts
 }
 
-fn removed(fields: Option<&Map<String, Value>>, key: &str) -> bool {
-    fields.is_none_or(|entries| !entries.contains_key(key))
-}
-
 // The fields the cases pin: the model, the token budget, the filtered keys, the system text and the billing marker.
 pub(super) fn body_view(
     body: &Value,
@@ -91,9 +86,10 @@ pub(super) fn body_view(
     json!({
         "model": fields.and_then(|entries| entries.get("model")).cloned().unwrap_or(Value::Null),
         "max_tokens": fields.and_then(|entries| entries.get("max_tokens")).cloned().unwrap_or(Value::Null),
-        "workspace_removed": removed(fields, "workspace_id"),
-        "context_removed": removed(fields, "context_management"),
-        "override_removed": removed(fields, "claude_platform_unsupported_params"),
+        "workspace_removed": fields.is_none_or(|entries| !entries.contains_key("workspace_id")),
+        "context_removed": fields.is_none_or(|entries| !entries.contains_key("context_management")),
+        "override_removed": fields
+            .is_none_or(|entries| !entries.contains_key("claude_platform_unsupported_params")),
         "system_texts": system_texts(fields),
         "billing": encoded.contains(BILLING_MARKER),
         "beta": beta_view(headers),
@@ -101,38 +97,12 @@ pub(super) fn body_view(
     })
 }
 
-pub(super) fn workspace_view(headers: &IndexMap<String, String>) -> Value {
-    json!({"workspace": headers.get(WORKSPACE_HEADER)})
-}
-
-pub(super) fn chat_failure(error: &ChatValidationError) -> Value {
-    let (model, message) = match error {
-        ChatValidationError::Workspace(workspace) => {
-            (workspace.model().map(str::to_owned), workspace.to_string())
-        }
-        ChatValidationError::Features(source) => (None, source.to_string()),
-        ChatValidationError::Json(source) => (None, source.to_string()),
-    };
+// Both validations raise the same AuthenticationError shape, so one view renders either failure.
+pub(super) fn failure_view(status: Option<u16>, model: &str, message: &str) -> Value {
     json!({
-        "status": error.status_code(),
+        "status": status,
         "provider": AUTHENTICATION_PROVIDER,
-        "model": model.unwrap_or_default(),
-        "message": message,
-    })
-}
-
-pub(super) fn native_header_failure(error: &NativeHeaderError) -> Value {
-    let (model, message) = match error {
-        NativeHeaderError::Workspace(workspace) => {
-            (workspace.model().map(str::to_owned), workspace.to_string())
-        }
-        NativeHeaderError::Beta(source) => (None, source.to_string()),
-        NativeHeaderError::Json(source) => (None, source.to_string()),
-    };
-    json!({
-        "status": error.status_code(),
-        "provider": AUTHENTICATION_PROVIDER,
-        "model": model.unwrap_or_default(),
+        "model": model,
         "message": message,
     })
 }

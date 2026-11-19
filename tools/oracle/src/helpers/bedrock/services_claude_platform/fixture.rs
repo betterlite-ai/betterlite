@@ -135,6 +135,22 @@ impl Fixture {
         }
     }
 
+    fn parts(
+        &self,
+    ) -> (
+        CatalogSources<'_>,
+        ModelCostKeys,
+        NoDynamicMetadata,
+        ResolutionContext<'_>,
+    ) {
+        (
+            self.catalogs(),
+            ModelCostKeys::default(),
+            NoDynamicMetadata,
+            self.resolution(),
+        )
+    }
+
     pub(super) fn chat_headers(
         &self,
         model: &str,
@@ -144,11 +160,12 @@ impl Fixture {
         api_key: Option<&SecretString>,
         platform: &PlatformInputsCase,
     ) -> Result<AnthropicHeaders, ChatValidationError> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
+        let sources = HeaderSources {
+            environment: &mut environment,
+            catalogs: &catalogs,
+        };
         self.runtime.block_on(validate_chat(
             &ChatHeadersRequest {
                 model,
@@ -158,10 +175,7 @@ impl Fixture {
                 api_key,
                 workspace: platform.sources(),
             },
-            &mut HeaderSources {
-                environment: &mut environment,
-                catalogs: &catalogs,
-            },
+            &mut sources,
         ))
     }
 
@@ -173,10 +187,7 @@ impl Fixture {
         litellm_params: IndexMap<String, Json>,
         headers: IndexMap<String, String>,
     ) -> Result<ChatPrepared, RequestError<NoFileError>> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
         let fetcher = RefusingFetcher;
         let blocks = NoFileBlocks;
@@ -241,10 +252,7 @@ impl Fixture {
         optional_params: IndexMap<String, PromptJson>,
         litellm_params: IndexMap<String, Json>,
     ) -> Result<NativePrepared, NativeTransformError> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
         self.runtime.block_on(native_transform(
             &NativeRequest {
