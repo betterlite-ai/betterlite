@@ -63,6 +63,7 @@ fn required(params: &mut JsonObject) {
 #[test]
 fn registry_config_records() {
     config_records_keep_every_field();
+    config_records_keep_string_metadata();
     config_records_accept_missing_names_and_empty_values();
     config_records_reject_missing_ids();
     config_records_reject_missing_providers();
@@ -93,7 +94,9 @@ fn config_records_keep_every_field() {
     assert_eq!(store.created_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.updated_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.is_config, Some(true));
+}
 
+fn config_records_keep_string_metadata() {
     let mut raw_metadata = JsonObject::new();
     required(&mut raw_metadata);
     raw_metadata.insert("vector_store_metadata".to_owned(), text("raw"));
@@ -639,7 +642,8 @@ fn named_credentials_read_the_accessor() {
         "cred".to_owned(),
         params(&[("api_key", text("secret-value"))]),
     )])));
-    let credentials: Arc<dyn VectorStoreCredentials> = accessor.clone();
+    let credentials: Arc<dyn VectorStoreCredentials> =
+        Arc::<support::RecordingCredentials>::clone(&accessor);
     let registry = registry_with_credentials(vec![named_store("vs_cred", "cred")], credentials);
     assert_eq!(
         registry.credentials_for_vector_store("vs_cred"),
@@ -661,7 +665,8 @@ fn named_credentials_read_the_accessor() {
 
 fn named_credentials_skip_empty_and_inline_names() {
     let empty_accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::new()));
-    let empty_credentials: Arc<dyn VectorStoreCredentials> = empty_accessor.clone();
+    let empty_credentials: Arc<dyn VectorStoreCredentials> =
+        Arc::<support::RecordingCredentials>::clone(&empty_accessor);
     let empty_registry = registry_with_credentials(
         vec![
             named_store("vs_empty", ""),
