@@ -1,0 +1,12 @@
+task: B9944
+deviations:
+  - what: >-
+      A Generation request that has no model key at all (not an empty one) plans the model-not-found route, so the
+      client gets the ProxyModelNotFoundError with an empty model name and the /videos path.
+    why: >-
+      LiteLLM indexes data["model"] directly from the team-mapping step onward, so a missing key raises an uncaught
+      KeyError and the proxy answers 500. A missing model is a bad request, not a server fault, and no working setup
+      relies on the 500; betterlite reports it as the same not-found error every other unmatched model gets, with the
+      empty name the request carried.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L638-L647
+kept_bugs: []
