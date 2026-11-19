@@ -166,6 +166,11 @@ fn real_cache_memory_roundtrip() {
         memory.get("prefetch-key"),
         Some(CacheValue::Text("row".to_owned()))
     );
+    // every ordinary_memory call hands back the cache's own partition
+    assert_eq!(
+        PrefetchCache::ordinary_memory(&cache).get("prefetch-key"),
+        Some(CacheValue::Text("row".to_owned()))
+    );
 }
 
 #[tokio::test]
