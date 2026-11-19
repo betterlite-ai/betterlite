@@ -73,21 +73,29 @@ pub async fn spend_report_for_time_range(
     };
     let start = utc_midnight(start_date, "start_date")?;
     let end = utc_midnight(end_date, "end_date")?;
-    let teams = match source.totals(SpendTotals::Teams, start, end).await {
-        Ok(rows) => rows,
-        Err(error) => return logged_failure(error),
+    let Some(teams) = rows(source, SpendTotals::Teams, start, end).await else {
+        return Ok(None);
     };
-    let tags = match source.totals(SpendTotals::Tags, start, end).await {
-        Ok(rows) => rows,
-        Err(error) => return logged_failure(error),
+    let Some(tags) = rows(source, SpendTotals::Tags, start, end).await else {
+        return Ok(None);
     };
     Ok(Some((teams, tags)))
 }
 
 // the source logs the exception and answers None, as the report caller expects a missing pair
-fn logged_failure(error: ReportError) -> Result<Option<SpendReport>, ReportDateError> {
-    tracing::error!(error = %error, "Exception in _get_daily_spend_reports");
-    Ok(None)
+async fn rows(
+    source: &dyn SpendReportSource,
+    totals: SpendTotals,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Option<Vec<SpendRow>> {
+    match source.totals(totals, start, end).await {
+        Ok(rows) => Some(rows),
+        Err(error) => {
+            tracing::error!(error = %error, "Exception in _get_daily_spend_reports");
+            None
+        }
+    }
 }
 
 // strptime("%Y-%m-%d") with timezone.utc, which Prisma binds as an explicit +00:00 timestamp
