@@ -104,13 +104,7 @@ where
     }
 }
 
-// LiteLLM reads the actor straight off the key; the key's serde form carries exactly these three fields
-fn read_actor(user_api_key_dict: &UserAPIKeyAuth) -> Result<ManagementActor, serde_json::Error> {
-    serde_json::from_value(serde_json::to_value(user_api_key_dict)?)
-}
-
-// LiteLLM's `user_id or "Unknown"` and `user_role or "Unknown"` for an absent actor; an explicit
-// empty string is used as given, since docs/compatibility.md does not copy Python truthiness
+// an absent actor reads "Unknown"; an explicit "" is used as given, since truthiness is not copied
 fn key_event(actor: &ManagementActor, request_kwargs: JsonObject) -> VirtualKeyEvent {
     VirtualKeyEvent {
         created_by_user_id: actor
@@ -142,7 +136,10 @@ where
     let Some(alert_type) = management_event_alert(function_name) else {
         return Ok(());
     };
-    let actor = read_actor(user_api_key_dict).map_err(ManagementAlertError::Actor)?;
+    let key_fields =
+        serde_json::to_value(user_api_key_dict).map_err(ManagementAlertError::Actor)?;
+    let actor: ManagementActor =
+        serde_json::from_value(key_fields).map_err(ManagementAlertError::Actor)?;
     let event_name = displayed_event_name(alert_type);
     let key_event = key_event(&actor, request_kwargs);
     transport

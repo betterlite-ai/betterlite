@@ -2,6 +2,7 @@
 
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use serde_json::json;
 
 use crate::alerting::model_alerts::key_event::KeyEventAlerts;
@@ -14,48 +15,35 @@ use crate::management_payload::tests::support::{
     json_value, key_fixture,
 };
 
-const MAPPINGS: [(&str, AlertType, &str); 9] = [
-    (
-        "generate_key_fn",
-        AlertType::NewVirtualKeyCreated,
-        "New Virtual Key Created",
-    ),
-    (
-        "update_key_fn",
-        AlertType::VirtualKeyUpdated,
-        "Virtual Key Updated",
-    ),
-    (
-        "delete_key_fn",
-        AlertType::VirtualKeyDeleted,
-        "Virtual Key Deleted",
-    ),
-    ("new_team", AlertType::NewTeamCreated, "New Team Created"),
-    ("update_team", AlertType::TeamUpdated, "Team Updated"),
-    ("delete_team", AlertType::TeamDeleted, "Team Deleted"),
-    (
-        "new_user",
-        AlertType::NewInternalUserCreated,
-        "New Internal User Created",
-    ),
-    (
-        "user_update",
-        AlertType::InternalUserUpdated,
-        "Internal User Updated",
-    ),
-    (
-        "delete_user",
-        AlertType::InternalUserDeleted,
-        "Internal User Deleted",
-    ),
-];
+#[rstest]
+#[case::generate_key(
+    "generate_key_fn",
+    AlertType::NewVirtualKeyCreated,
+    "New Virtual Key Created"
+)]
+#[case::update_key("update_key_fn", AlertType::VirtualKeyUpdated, "Virtual Key Updated")]
+#[case::delete_key("delete_key_fn", AlertType::VirtualKeyDeleted, "Virtual Key Deleted")]
+#[case::new_team("new_team", AlertType::NewTeamCreated, "New Team Created")]
+#[case::update_team("update_team", AlertType::TeamUpdated, "Team Updated")]
+#[case::delete_team("delete_team", AlertType::TeamDeleted, "Team Deleted")]
+#[case::new_user(
+    "new_user",
+    AlertType::NewInternalUserCreated,
+    "New Internal User Created"
+)]
+#[case::user_update("user_update", AlertType::InternalUserUpdated, "Internal User Updated")]
+#[case::delete_user("delete_user", AlertType::InternalUserDeleted, "Internal User Deleted")]
+fn nine_alert_mappings(
+    #[case] function_name: &str,
+    #[case] alert_type: AlertType,
+    #[case] event_name: &str,
+) {
+    assert_eq!(management_event_alert(function_name), Some(alert_type));
+    assert_eq!(displayed_event_name(alert_type), event_name);
+}
 
 #[test]
-fn nine_alert_mappings() {
-    for (function_name, alert_type, event_name) in MAPPINGS {
-        assert_eq!(management_event_alert(function_name), Some(alert_type));
-        assert_eq!(displayed_event_name(alert_type), event_name);
-    }
+fn unknown_function_has_no_alert() {
     assert_eq!(management_event_alert("generate_key"), None);
 }
 
@@ -78,34 +66,27 @@ async fn absent_logger_sink_unknown_function() {
     assert!(transport.alerts.entries().is_empty());
 }
 
+#[rstest]
+#[case::absent("{}", "Unknown", None)]
+#[case::nulled(r#"{"user_id": null, "user_role": null}"#, "Unknown", None)]
+// an explicit empty user id and alias are used as given, not read as unknown
+#[case::explicit_empty(r#"{"user_id": "", "key_alias": ""}"#, "", Some(""))]
 #[tokio::test]
-async fn unknown_actor_defaults() {
+async fn unknown_actor_defaults(
+    #[case] fields: &str,
+    #[case] expected_id: &str,
+    #[case] expected_alias: Option<&str>,
+) {
     let transport = RecordingAlertTransport::default();
-    let absent = key_fixture("{}");
-    let nulled = key_fixture(r#"{"user_id": null, "user_role": null}"#);
-    for key in [&absent, &nulled] {
-        let sent =
-            send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), key)
-                .await;
-        assert!(sent.is_ok());
-    }
-    let sent = transport.alerts.entries();
-    assert_eq!(sent.len(), 2);
-    for alert in &sent {
-        assert_eq!(alert.created_by_user_id, "Unknown");
-        assert_eq!(alert.created_by_user_role, "Unknown");
-        assert_eq!(alert.created_by_key_alias, None);
-    }
-    // an explicit empty user id and alias are used as given, not read as unknown
-    let empty = key_fixture(r#"{"user_id": "", "key_alias": ""}"#);
+    let key = key_fixture(fields);
     let sent =
-        send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), &empty)
-            .await;
+        send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), &key).await;
     assert!(sent.is_ok());
     let sent = transport.alerts.entries();
-    assert_eq!(sent[2].created_by_user_id, "");
-    assert_eq!(sent[2].created_by_user_role, "Unknown");
-    assert_eq!(sent[2].created_by_key_alias.as_deref(), Some(""));
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].created_by_user_id, expected_id);
+    assert_eq!(sent[0].created_by_user_role, "Unknown");
+    assert_eq!(sent[0].created_by_key_alias.as_deref(), expected_alias);
 }
 
 #[tokio::test]

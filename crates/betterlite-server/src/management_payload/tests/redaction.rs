@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use betterlite_db::managed_resource_rows::mcp::{McpEnvVar, McpEnvVarScope, McpServerTable};
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use serde_json::json;
 
 use crate::management_payload::redaction::{
@@ -189,17 +191,14 @@ fn model_copy_without_env_vars() {
     assert!(redact_model_env_vars(&bare).env_vars.is_none());
 }
 
-#[test]
-fn arbitrary_object_unchanged() {
-    for value in [
-        json_value(json!(null)),
-        json_value(json!(true)),
-        json_value(json!(12)),
-        json_value(json!("text")),
-        json_value(json!(["env_vars", {"name": "A", "value": "secret"}])),
-    ] {
-        assert_eq!(redact_record_env_vars(&value), value);
-    }
+#[rstest]
+#[case::null(json_value(json!(null)))]
+#[case::boolean(json_value(json!(true)))]
+#[case::number(json_value(json!(12)))]
+#[case::text(json_value(json!("text")))]
+#[case::list(json_value(json!(["env_vars", {"name": "A", "value": "secret"}])))]
+fn arbitrary_object_unchanged(#[case] value: Json) {
+    assert_eq!(redact_record_env_vars(&value), value);
 }
 
 #[test]

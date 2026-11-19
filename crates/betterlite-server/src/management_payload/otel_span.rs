@@ -73,13 +73,13 @@ where
 pub trait ManagementSpanTransport: Send + Sync {
     type Error: StdError + Send + Sync + 'static;
 
-    async fn management_endpoint_success_hook(
+    async fn success_hook(
         &self,
         payload: &ManagementPayload,
         parent_otel_span: Option<&LiveSpan>,
     ) -> Result<(), Self::Error>;
 
-    async fn management_endpoint_failure_hook(
+    async fn failure_hook(
         &self,
         payload: &ManagementPayload,
         parent_otel_span: Option<&LiveSpan>,
@@ -87,7 +87,7 @@ pub trait ManagementSpanTransport: Send + Sync {
 }
 
 // LiteLLM's _emit_management_endpoint_otel_span: a missing logger and the V2 span mode both skip every step
-pub async fn emit_management_endpoint_otel_span<Transport>(
+pub async fn emit_management_span<Transport>(
     deps: ManagementSpanDeps<'_, Transport>,
     call: ManagementSpanCall<'_>,
 ) -> Result<(), ManagementSpanError<Transport::Error>>
@@ -121,13 +121,9 @@ where
     Transport: ManagementSpanTransport,
 {
     let sent = if failed {
-        transport
-            .management_endpoint_failure_hook(payload, parent)
-            .await
+        transport.failure_hook(payload, parent).await
     } else {
-        transport
-            .management_endpoint_success_hook(payload, parent)
-            .await
+        transport.success_hook(payload, parent).await
     };
     sent.map_err(ManagementSpanError::Span)
 }
@@ -171,8 +167,6 @@ where
     let route = get_request_route(&request.route);
     let body = read_request_body(&request.body, body_settings, limits)
         .map_err(ManagementSpanError::Body)?;
-    // the parsed body is a JSON tree already, so the serde round-trip only projects it onto the
-    // span's value type
     let tree = serde_json::to_value(body.body).map_err(ManagementSpanError::RequestData)?;
     let fields =
         serde_json::from_value::<MetadataMap>(tree).map_err(ManagementSpanError::RequestData)?;

@@ -54,8 +54,7 @@ fn env_var_projection(
     ]))
 }
 
-// LiteLLM's _redact_record_env_vars on a dict record: a shallow copy whose env values are blanked.
-// The record aliases the response that is also returned to the route caller, so it is copied, never changed.
+// LiteLLM's _redact_record_env_vars copies the dict record and blanks env values, never the caller's
 #[must_use]
 pub fn redact_record_env_vars(record: &Json) -> Json {
     let Some(mapping) = object_mapping(record) else {
@@ -92,8 +91,7 @@ fn redacted_model_env_var(entry: &McpEnvVar) -> McpEnvVar {
     }
 }
 
-// LiteLLM's _redact_env_var_values: the top-level env_vars and one items list, with no recursion into
-// either, so a slot that is not a list keeps the value it carried
+// LiteLLM's _redact_env_var_values reaches the top-level env_vars and one items level, not deeper
 pub fn redact_env_var_values(response: &mut JsonObject) {
     if let Some(entries) = response.get("env_vars").and_then(object_list) {
         let redacted: Vec<Json> = entries.iter().map(redacted_env_var).collect();

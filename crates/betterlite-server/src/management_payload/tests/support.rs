@@ -27,7 +27,7 @@ use crate::alerting::model_alerts::key_event::VirtualKeyEvent;
 use crate::management_payload::alerts::ManagementAlertTransport;
 use crate::management_payload::otel_span::{
     ManagementHttpRequest, ManagementSpanCall, ManagementSpanDeps, ManagementSpanError,
-    ManagementSpanTransport, emit_management_endpoint_otel_span,
+    ManagementSpanTransport, emit_management_span,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -186,7 +186,7 @@ impl RecordingSpanTransport {
 impl ManagementSpanTransport for RecordingSpanTransport {
     type Error = FakeTransportError;
 
-    async fn management_endpoint_success_hook(
+    async fn success_hook(
         &self,
         payload: &ManagementPayload,
         parent_otel_span: Option<&LiveSpan>,
@@ -194,7 +194,7 @@ impl ManagementSpanTransport for RecordingSpanTransport {
         self.record(SpanHook::Success, payload, parent_otel_span)
     }
 
-    async fn management_endpoint_failure_hook(
+    async fn failure_hook(
         &self,
         payload: &ManagementPayload,
         parent_otel_span: Option<&LiveSpan>,
@@ -214,7 +214,8 @@ impl SpanHarness {
     pub(crate) fn failing() -> Self {
         Self {
             transport: RecordingSpanTransport::failing(),
-            ..Self::default()
+            settings: RequestBodySettings::default(),
+            limits: ApiLimits::default(),
         }
     }
 
@@ -237,7 +238,7 @@ impl SpanHarness {
         call: ManagementSpanCall<'_>,
         otel_v2_enabled: bool,
     ) -> Result<(), ManagementSpanError<FakeTransportError>> {
-        emit_management_endpoint_otel_span(
+        emit_management_span(
             ManagementSpanDeps {
                 transport: Some(&self.transport),
                 otel_v2_enabled,
@@ -255,7 +256,7 @@ pub(crate) async fn emit_without_transport(
 ) -> Result<(), ManagementSpanError<FakeTransportError>> {
     let settings = RequestBodySettings::default();
     let limits = ApiLimits::default();
-    emit_management_endpoint_otel_span::<RecordingSpanTransport>(
+    emit_management_span::<RecordingSpanTransport>(
         ManagementSpanDeps {
             transport: None,
             otel_v2_enabled: false,
@@ -293,8 +294,11 @@ pub(crate) fn json_request<'path>(path: &'path str, body: &str) -> ManagementHtt
             method: "POST".to_owned(),
             route_path: path.to_owned(),
             headers: BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]),
+            query_params: BTreeMap::new(),
             body: body.as_bytes().to_vec(),
-            ..RequestBodyInput::default()
+            client_requested_model: None,
+            cached_body: None,
+            form_fields: None,
         },
     }
 }
@@ -310,8 +314,23 @@ pub(crate) fn end_time() -> DateTime<Utc> {
 pub(crate) fn exception() -> ExceptionFacts {
     ExceptionFacts {
         class_name: "ProxyException".to_owned(),
+        class: None,
         message: Some("boom".to_owned()),
-        ..ExceptionFacts::default()
+        code: None,
+        status_code: None,
+        response_status_code: None,
+        llm_provider: None,
+        category: None,
+        rate_limit_type: None,
+        budget_entity_type: None,
+        budget_entity_id: None,
+        budget_limit: None,
+        budget_spend: None,
+        proxy_type: None,
+        headers: None,
+        response_headers: None,
+        litellm_response_headers: None,
+        traceback_lines: Vec::new(),
     }
 }
 
@@ -321,12 +340,18 @@ pub(crate) fn key_fixture(fields: &str) -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key fixture constructs")
 }
 
-pub(crate) fn json_value(value: impl Serialize) -> Json {
+pub(crate) fn json_value<Value>(value: Value) -> Json
+where
+    Value: Serialize,
+{
     let tree = serde_json::to_value(value).expect("the value serializes");
     serde_json::from_value(tree).expect("the value is JSON")
 }
 
-pub(crate) fn json_object(value: impl Serialize) -> JsonObject {
+pub(crate) fn json_object<Value>(value: Value) -> JsonObject
+where
+    Value: Serialize,
+{
     let Json::Object(fields) = json_value(value) else {
         panic!("the fixture is a JSON object");
     };

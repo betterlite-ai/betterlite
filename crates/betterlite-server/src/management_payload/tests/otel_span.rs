@@ -3,8 +3,10 @@
 use betterlite_core::api::request_body::RequestBodyError;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
 use betterlite_logging::otel::v2_callback::live_span::LiveSpan;
+use betterlite_models::decisions::Json;
 use opentelemetry::trace::{Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use rstest::rstest;
 use serde_json::json;
 
 use crate::management_payload::otel_span::ManagementSpanError;
@@ -113,22 +115,20 @@ async fn top_level_credential_fields_only() {
     );
 }
 
+#[rstest]
+#[case::text_result(json_value(json!("not a mapping")))]
+#[case::list_result(json_value(json!([["key", 1]])))]
 #[tokio::test]
-async fn response_conversion_failure_silent() {
+async fn response_conversion_failure_silent(#[case] value: Json) {
     let harness = SpanHarness::default();
-    for value in [json!("not a mapping"), json!([["key", 1]])] {
-        let result = json_value(value);
-        harness
-            .emit(span_call("generate_key_fn", Some(&result), None))
-            .await
-            .expect("a non-mapping result is silent");
-    }
+    harness
+        .emit(span_call("generate_key_fn", Some(&value), None))
+        .await
+        .expect("a non-mapping result is silent");
     let sent = harness.transport.spans.entries();
-    assert_eq!(sent.len(), 2);
-    for span in sent {
-        assert_eq!(span.hook, SpanHook::Success);
-        assert_eq!(span.response, None);
-    }
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].hook, SpanHook::Success);
+    assert_eq!(sent[0].response, None);
 }
 
 #[tokio::test]
@@ -183,10 +183,10 @@ async fn timestamps_and_optional_parent_preserved() {
         .expect("the orphan span is sent");
     let sent = harness.transport.spans.entries();
     assert_eq!(sent.len(), 2);
-    for span in &sent {
-        assert_eq!(span.start_time, SpanTime::DateTime(start_time()));
-        assert_eq!(span.end_time, SpanTime::DateTime(end_time()));
-    }
+    assert_eq!(sent[0].start_time, SpanTime::DateTime(start_time()));
+    assert_eq!(sent[0].end_time, SpanTime::DateTime(end_time()));
+    assert_eq!(sent[1].start_time, SpanTime::DateTime(start_time()));
+    assert_eq!(sent[1].end_time, SpanTime::DateTime(end_time()));
     assert_eq!(sent[0].parent, Some(parent.context.clone()));
     assert_eq!(sent[1].parent, None);
 }
