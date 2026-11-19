@@ -1,7 +1,7 @@
 id: B8355
 milestone: M12 python
 title: Router endpoint methods in the Python crate
-status: todo
+status: blocked
 depends_on: [B014, B5369, B5659, B6022, B8352, B8353, B8354]
 file: tasks/B8355-router-endpoint-methods.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B162
 split_from: B162
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python Router parity waits on the Python layer"
 pr: null

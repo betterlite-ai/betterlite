@@ -1,0 +1,18 @@
+task: B3075
+deviations:
+  - what: is_cloudzero_setup_in_config and is_vantage_setup_in_config take the configured callback names as a slice and, for Vantage, the VantageLoggers store, instead of reading the global litellm.callbacks list.
+    why: betterlite has no module-level state; the configured names come from the callback_settings config section and the live Vantage instances from B3067's store, both supplied by the composition root, so the two checks read the same two sources the LiteLLM list mixes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L287-L294
+  - what: A config value that is the JSON string "null" reads as unconfigured, where LiteLLM loads it into None and then fails on settings.get with a 500 because its only None check is on the raw param_value.
+    why: The ConfigRepository port decodes a stored JSON string before the settings layer sees it, so JSON null and the string "null" arrive as the same value, and no working setup stores that string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L107-L120
+  - what: The getters return typed CloudZeroSettings and VantageSettings values with the fields the declared response types read, instead of the stored mapping, so a stored key no declared type names is dropped on read.
+    why: betterlite reads rows into typed values at the boundary, and CloudZeroSettingsView and VantageSettingsView only expose api_key, connection_id, timezone, integration_token and base_url.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L113-L144
+  - what: A failed setup check logs through tracing with the error attached instead of verbose_proxy_logger.error with the exception text.
+    why: betterlite logs through tracing rather than the litellm logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L282-L284
+  - what: A stored param_value that is neither a mapping nor the JSON text of one reads as a typed SettingsRowError instead of LiteLLM's dict(value) call on it, which accepts an empty array or an array of pairs and raises on every other value.
+    why: The row type LiteLLM declares is str | Mapping[str, str] | None, and a value outside it is reported as an error that names the config row rather than half-converted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L45-L46
+kept_bugs: []

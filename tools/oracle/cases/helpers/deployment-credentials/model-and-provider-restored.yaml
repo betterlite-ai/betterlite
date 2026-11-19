@@ -1,0 +1,52 @@
+kind: helper
+name: deployment-credentials-model-and-provider-restored
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: "openai/*"
+        litellm_params:
+          model: "openai/*"
+          api_key: sk-wildcard
+          litellm_credential_name: creds
+        model_info:
+          id: w1
+    credentials:
+      - credential_name: creds
+        credential_values:
+          model: record/model
+          custom_llm_provider: record-provider
+    arguments:
+      model_id: openai/gpt-4o-mini
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: claude-model
+          litellm_params:
+            model: anthropic/claude-3
+            api_key: sk-anthropic
+            custom_llm_provider: anthropic
+            litellm_credential_name: creds
+          model_info:
+            id: a1
+      credentials:
+        - credential_name: creds
+          credential_values:
+            custom_llm_provider: record-provider
+            model: record/model
+      arguments:
+        model_id: a1
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: gpt-4o
+            api_key: sk-unprefixed
+          model_info:
+            id: u1
+      arguments:
+        model_id: u1
+env: {}
+compare: {ignore: []}

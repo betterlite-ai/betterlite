@@ -254,8 +254,8 @@ pub(super) fn locked(
 }
 
 // A registered instance that is not VantageLogger itself, standing in for a subclass of the source's class.
-pub(super) struct FakeVantageLogger {
-    pub(super) trigger: ScheduleTrigger,
+pub(crate) struct FakeVantageLogger {
+    pub(crate) trigger: ScheduleTrigger,
 }
 
 impl VantageExportLogger for FakeVantageLogger {

@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock_services_claude_platform_workspace_id_required
+call:
+  bedrock_services_claude_platform:
+    workspace_id_required:
+      model: claude-sonnet-4-5
+      cases:
+        - optional_params: {workspace_id: request-workspace}
+          deployment: {workspace_id: deployment-workspace}
+          environment: {ANTHROPIC_AWS_WORKSPACE_ID: environment-workspace}
+        - {}
+env: {}
+compare: {ignore: []}

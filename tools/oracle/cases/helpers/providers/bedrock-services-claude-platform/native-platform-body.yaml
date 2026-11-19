@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-services-claude-platform-native-platform-body
+call:
+  bedrock_services_claude_platform:
+    native_platform_body:
+      model: claude_platform/claude-sonnet-4-5
+      messages:
+        - {role: system, content: [{type: text, text: 'x-anthropic-billing-header: 5f1a'}]}
+        - {role: user, content: hi}
+      optional_params:
+        max_tokens: 32
+        claude_platform_unsupported_params: 5
+        context_management: {edits: []}
+env: {}
+compare: {ignore: []}

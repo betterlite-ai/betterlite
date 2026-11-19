@@ -4,41 +4,38 @@ use crate::anthropic_dispatch::native::{Failure, Reply, legacy::Reply as LegacyR
 use crate::anthropic_dispatch::operations::Outcome;
 use betterlite_anthropic::anthropic_http_stream::error::StreamFailure;
 use betterlite_anthropic::chat_call::ChatOutcome;
-use futures_util::future::LocalBoxFuture;
 use std::convert::Infallible;
 use tokio::time::timeout;
 
 type NativeOutcome =
     Result<Outcome<Reply<StreamFailure>>, DispatchError<Failure<StreamFailure, Infallible>>>;
 
-pub(super) fn observe(outcome: NativeOutcome) -> LocalBoxFuture<'static, Observed> {
-    Box::pin(async move {
-        let mut observed = Observed::default();
-        match outcome {
-            Ok(Outcome::Completion(Reply::Messages(ChatOutcome::Reply(reply)))) => {
-                observed.posts = 1;
-                observed
-                    .content
-                    .clone_from(&reply.choices[0].message.content);
-                observed.tool_name.clone_from(
-                    &reply.choices[0].message.tool_calls.as_ref().unwrap()[0]
-                        .function
-                        .name,
-                );
-            }
-            Ok(Outcome::Completion(Reply::Legacy(reply))) => return legacy(reply).await,
-            Err(DispatchError::Completion(Failure::Chat(error))) => {
-                observed.status = error.status_code();
-            }
-            Err(DispatchError::Completion(Failure::Prepare(error))) => {
-                observed.status = error.status_code();
-                observed.preparation_error = Some(error);
-            }
-            Err(DispatchError::Completion(Failure::Config)) => {}
-            _ => panic!("unexpected native outcome"),
+pub(super) async fn observe(outcome: NativeOutcome) -> Observed {
+    let mut observed = Observed::default();
+    match outcome {
+        Ok(Outcome::Completion(Reply::Messages(ChatOutcome::Reply(reply)))) => {
+            observed.posts = 1;
+            observed
+                .content
+                .clone_from(&reply.choices[0].message.content);
+            observed.tool_name.clone_from(
+                &reply.choices[0].message.tool_calls.as_ref().unwrap()[0]
+                    .function
+                    .name,
+            );
         }
-        observed
-    })
+        Ok(Outcome::Completion(Reply::Legacy(reply))) => return legacy(reply).await,
+        Err(DispatchError::Completion(Failure::Chat(error))) => {
+            observed.status = error.status_code();
+        }
+        Err(DispatchError::Completion(Failure::Prepare(error))) => {
+            observed.status = error.status_code();
+            observed.preparation_error = Some(error);
+        }
+        Err(DispatchError::Completion(Failure::Config)) => {}
+        _ => panic!("unexpected native outcome"),
+    }
+    observed
 }
 
 async fn legacy(reply: LegacyReply) -> Observed {

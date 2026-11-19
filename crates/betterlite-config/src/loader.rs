@@ -22,7 +22,7 @@ use crate::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust, RouterS
 mod deployment;
 pub mod startup;
 use deployment::convert_deployment;
-pub trait EnvironmentLookup {
+pub trait EnvironmentLookup: Send + Sync {
     fn lookup(&self, name: &str) -> Option<String>;
     fn system_home(&self) -> Option<PathBuf> {
         None
