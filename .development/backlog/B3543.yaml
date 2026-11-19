@@ -1,7 +1,7 @@
 id: B3543
 milestone: M5 api families
 title: Compression interception settings and request cache
-status: todo
+status: done
 depends_on: [B3542, B002, B189, B198, B2401, B9952]
 file: tasks/B3543-compression-interception-state.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/integrations/compression_interception.py"
 parent: B100
 split_from: B100
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2563

@@ -1,0 +1,24 @@
+# The task lists this case by this path; betterlite's config cannot declare deployment prices yet
+# (docs/deviations/B1651.yaml), so the case proves an alias resolves to its deployment's model.
+name: cost-estimate-alias-resolves-to-the-deployment
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: gpt-4o-mini-deployment
+      litellm_params: {model: openai/gpt-4o-mini}
+  router_settings:
+    model_group_alias:
+      quote-alias: gpt-4o-mini-deployment
+env: {}
+request:
+  method: POST
+  path: /cost/estimate
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: quote-alias, input_tokens: 1024, output_tokens: 256}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

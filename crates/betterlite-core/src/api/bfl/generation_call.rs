@@ -120,7 +120,7 @@ where
     }
 }
 
-// LiteLLM records the pre-call before the POST, and its logger sinks are not Sync, so the record is written outside the async operation
+// LiteLLM records the pre-call before the POST
 pub fn prepare_call(
     call: &GenerationCall<'_>,
     log: &mut LogContext<'_, '_>,

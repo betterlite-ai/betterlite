@@ -459,7 +459,7 @@ pub(super) fn logging_state(redactor: &Redactor) -> LoggingState {
     .expect("the logging fixture builds")
 }
 
-pub(super) type Logger<'env> = &'env dyn Fn(&Json) -> Result<(), PrePostError>;
+pub(super) type Logger<'env> = &'env (dyn Fn(&Json) -> Result<(), PrePostError> + Sync);
 
 pub(super) fn prepost_env<'env>(
     state: &LoggingState,

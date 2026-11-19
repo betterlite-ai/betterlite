@@ -1,0 +1,14 @@
+kind: helper
+name: release-bullets-scopes-breaking-markers-and-case
+call:
+  release_bullets:
+    body: |
+      * feat: add a dashboard banner
+      * Feat(ui): add a second banner
+      * FIX(core)!: stop a crash on startup
+      * fix!: stop a silent failure
+      * feat(): add an empty scope bullet
+      * chore(ci): bump the workflow runner
+      * docs: describe the release endpoint
+env: {}
+compare: {ignore: []}

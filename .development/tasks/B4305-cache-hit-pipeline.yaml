@@ -16,6 +16,7 @@ scope:
   paths:
     - crates/betterlite-core/src/caching/lookup.rs
     - crates/betterlite-core/src/caching/lookup/**
+    - crates/betterlite-cache/src/write_completion/request.rs
     - tools/oracle/cases/caching/async-cache-lookup.yaml
     - tools/oracle/cases/caching/sync-cache-lookup.yaml
     - tools/oracle/cases/caching/cache-error-detail.yaml
