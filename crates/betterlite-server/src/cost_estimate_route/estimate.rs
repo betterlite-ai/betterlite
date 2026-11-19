@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -13,24 +12,21 @@ use betterlite_core::cost::special::replicate::ReplicateStamps;
 use betterlite_core::cost::special::request::{ImageParts, LoggingView, TranscriptionDuration};
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
 use betterlite_core::routes::CallType;
-use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::billed_tokens::BilledTokenRates;
 use betterlite_models::decisions::Json;
-use betterlite_models::price_lookup::PriceLookup;
-use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::tool_fees::billing::BuiltInToolParams;
 use betterlite_models::tool_signals::response::{OtherView, ToolBillingResponse};
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::deployments::{DeploymentSet, ResolvedCostModel, unresolvable};
 use super::error::EstimateError;
+use super::lines::{Capture, CostLines};
+use super::response::{reported_provider, response_for};
 use crate::cost_service::{Call, CostService};
-use crate::key_fields::values::Amount;
 use crate::proxy_request_contracts::cost_estimate::{CostEstimateRequest, CostEstimateResponse};
 
 pub(crate) async fn estimate(
@@ -92,7 +88,7 @@ async fn called_lines(
                 request.model, resolved.model
             ),
         })?;
-    Ok((capture.lines(total), capture.rates))
+    Ok(capture.finish(total))
 }
 
 // The usage _usage_for_estimate builds: cache counts are details within the prompt, the reasoning split is within the completion.
@@ -244,126 +240,5 @@ fn tool_inputs() -> ToolInputs {
         response: ToolBillingResponse::Other(OtherView { usage: None }),
         params: BuiltInToolParams::default(),
         google_maps_requests: None,
-    }
-}
-
-// The logging object's own breakdown fields the endpoint reads back.
-#[derive(Default)]
-struct Capture {
-    input: Option<Decimal>,
-    output: Option<Decimal>,
-    margin: Option<Decimal>,
-    cache_read: Option<Decimal>,
-    cache_creation: Option<Decimal>,
-    reasoning: Option<Decimal>,
-    rates: Option<BilledTokenRates>,
-}
-
-impl Capture {
-    fn lines(&self, total: Decimal) -> CostLines {
-        CostLines {
-            total,
-            input: self.input.unwrap_or_default(),
-            output: self.output.unwrap_or_default(),
-            margin: self.margin.unwrap_or_default(),
-            cache_read: self.cache_read.unwrap_or_default(),
-            cache_creation: self.cache_creation.unwrap_or_default(),
-            reasoning: self.reasoning.unwrap_or_default(),
-        }
-    }
-}
-
-impl CostBreakdownTarget for Capture {
-    type Failure = Infallible;
-
-    fn set_cost_breakdown(&mut self, input: &CostBreakdownInput) -> Result<(), Infallible> {
-        self.input = Some(input.input_cost);
-        self.output = Some(input.output_cost);
-        self.margin = input.margin_total_amount;
-        self.cache_read = input.cache_read_cost;
-        self.cache_creation = input.cache_creation_cost;
-        self.reasoning = input.reasoning_cost;
-        self.rates = input.billed_token_rates;
-        Ok(())
-    }
-}
-
-struct CostLines {
-    total: Decimal,
-    input: Decimal,
-    output: Decimal,
-    margin: Decimal,
-    cache_read: Decimal,
-    cache_creation: Decimal,
-    reasoning: Decimal,
-}
-
-impl CostLines {
-    // CostLines.times: a falsy count answers none, a present one scales every line.
-    fn times(&self, count: Option<i64>) -> Option<Self> {
-        let factor = Decimal::from(count.filter(|count| *count != 0)?);
-        Some(Self {
-            total: self.total.saturating_mul(factor),
-            input: self.input.saturating_mul(factor),
-            output: self.output.saturating_mul(factor),
-            margin: self.margin.saturating_mul(factor),
-            cache_read: self.cache_read.saturating_mul(factor),
-            cache_creation: self.cache_creation.saturating_mul(factor),
-            reasoning: self.reasoning.saturating_mul(factor),
-        })
-    }
-}
-
-// The provider the response names: the backend's own declaration first, then the deployment's.
-fn reported_provider(
-    service: &CostService<ProviderFormulas>,
-    resolved: &ResolvedCostModel,
-) -> Option<String> {
-    let record = service
-        .lookup
-        .effective_model_info(&resolved.model, resolved.provider.as_deref());
-    if let Some(Scalar::Text(provider)) = record
-        .as_ref()
-        .and_then(|found| found.get("litellm_provider"))
-    {
-        return Some(provider.clone());
-    }
-    resolved.provider.clone()
-}
-
-#[rustfmt::skip]
-fn response_for(
-    request: &CostEstimateRequest,
-    lines: &CostLines,
-    rates: Option<BilledTokenRates>,
-    provider: Option<String>,
-) -> CostEstimateResponse {
-    let daily = lines.times(request.num_requests_per_day);
-    let monthly = lines.times(request.num_requests_per_month);
-    CostEstimateResponse {
-        model: request.model.clone(), input_tokens: request.input_tokens, output_tokens: request.output_tokens,
-        cache_read_input_tokens: request.cache_read_input_tokens, cache_creation_input_tokens: request.cache_creation_input_tokens,
-        reasoning_tokens: request.reasoning_tokens, num_requests_per_day: request.num_requests_per_day,
-        num_requests_per_month: request.num_requests_per_month,
-        cost_per_request: Amount(lines.total), input_cost_per_request: Amount(lines.input),
-        output_cost_per_request: Amount(lines.output), margin_cost_per_request: Amount(lines.margin),
-        cache_read_cost_per_request: Amount(lines.cache_read), cache_creation_cost: Amount(lines.cache_creation),
-        reasoning_cost_per_request: Amount(lines.reasoning),
-        daily_cost: daily.as_ref().map(|found| Amount(found.total)), daily_input_cost: daily.as_ref().map(|found| Amount(found.input)),
-        daily_output_cost: daily.as_ref().map(|found| Amount(found.output)), daily_margin_cost: daily.as_ref().map(|found| Amount(found.margin)),
-        daily_cache_read_cost: daily.as_ref().map(|found| Amount(found.cache_read)),
-        daily_cache_creation_cost: daily.as_ref().map(|found| Amount(found.cache_creation)),
-        daily_reasoning_cost: daily.as_ref().map(|found| Amount(found.reasoning)),
-        monthly_cost: monthly.as_ref().map(|found| Amount(found.total)), monthly_input_cost: monthly.as_ref().map(|found| Amount(found.input)),
-        monthly_output_cost: monthly.as_ref().map(|found| Amount(found.output)), monthly_margin_cost: monthly.as_ref().map(|found| Amount(found.margin)),
-        monthly_cache_read_cost: monthly.as_ref().map(|found| Amount(found.cache_read)),
-        monthly_cache_creation_cost: monthly.as_ref().map(|found| Amount(found.cache_creation)),
-        monthly_reasoning_cost: monthly.as_ref().map(|found| Amount(found.reasoning)),
-        input_cost_per_token: rates.as_ref().map(|found| Amount(found.input_cost_per_token)),
-        output_cost_per_token: rates.as_ref().map(|found| Amount(found.output_cost_per_token)),
-        cache_read_input_token_cost: rates.as_ref().map(|found| Amount(found.cache_read_input_token_cost)),
-        cache_creation_token_cost: rates.as_ref().map(|found| Amount(found.cache_write)),
-        output_reasoning_token_cost: rates.as_ref().map(|found| Amount(found.reasoning)),
-        provider,
     }
 }

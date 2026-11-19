@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_config::sections::settings::JsonValue;
 
 use super::error::{EstimateError, Issue};
@@ -19,7 +21,7 @@ pub fn decode_cost_estimate_request(bytes: &[u8]) -> Result<CostEstimateRequest,
             msg: REQUIRED.to_owned(),
         }]));
     }
-    let value = std::str::from_utf8(bytes)
+    let value = str::from_utf8(bytes)
         .ok()
         .and_then(|text| serde_json::from_str::<JsonValue>(text).ok());
     let Some(value) = value else {
