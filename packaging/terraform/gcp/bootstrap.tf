@@ -1,6 +1,6 @@
-# GCP needs no separate IAM bootstrap step, so the migration is the only post-store work here. It runs
-# gcloud from the machine that applies, and a non-zero exit fails the apply before the service is created.
 resource "terraform_data" "migration" {
+  # GCP needs no separate IAM bootstrap step, so the migration is the only post-store work here. It runs
+  # gcloud on the machine that applies, and a non-zero exit fails the apply before the service is created.
   count = var.create_runtime ? 1 : 0
 
   triggers_replace = {
