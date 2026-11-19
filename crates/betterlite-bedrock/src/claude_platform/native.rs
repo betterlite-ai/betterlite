@@ -65,7 +65,7 @@ impl fmt::Debug for NativeHeaders {
 pub fn validate_environment(
     request: &NativeHeadersRequest<'_>,
 ) -> Result<NativeHeaders, NativeHeaderError> {
-    let optional_params = convert::contract_params(request.optional_params);
+    let optional_params: IndexMap<String, Json> = convert::mapped(request.optional_params)?;
     let contract: ParamMap = convert::mapped(&optional_params)?;
     let workspace = require_workspace(request.model, &contract, request.workspace)?;
     let (filtered, _warnings) =
@@ -133,7 +133,7 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let optional_params = convert::contract_params(&request.optional_params);
+    let optional_params: IndexMap<String, Json> = convert::mapped(&request.optional_params)?;
     let (filtered, warnings) =
         convert::filtered_params(&optional_params, &request.litellm_params, true, true)?;
     let filtered_params: IndexMap<String, PromptJson> = convert::mapped(&filtered)?;
