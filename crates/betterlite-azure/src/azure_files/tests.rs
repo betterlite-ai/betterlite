@@ -441,25 +441,31 @@ async fn perform(
 fn file_operation(step: &Step) -> Option<Operation<'_>> {
     match step.action {
         Action::Client => None,
-        Action::Create => Some(Operation::Create(
-            step.data.as_ref().expect("a create step carries data"),
-        )),
-        Action::Content => Some(Operation::Content(
-            step.content
-                .as_ref()
-                .expect("a content step carries a request"),
-        )),
-        Action::Retrieve => Some(Operation::Retrieve(
-            step.file_id
-                .as_deref()
-                .expect("a retrieve step carries a file id"),
-        )),
+        Action::Create => {
+            let Some(data) = step.data.as_ref() else {
+                panic!("a create step carries data");
+            };
+            Some(Operation::Create(data))
+        }
+        Action::Content => {
+            let Some(content) = step.content.as_ref() else {
+                panic!("a content step carries a request");
+            };
+            Some(Operation::Content(content))
+        }
+        Action::Retrieve => {
+            let Some(file_id) = step.file_id.as_deref() else {
+                panic!("a retrieve step carries a file id");
+            };
+            Some(Operation::Retrieve(file_id))
+        }
         Action::List => Some(Operation::List(step.purpose.as_deref())),
-        Action::Delete => Some(Operation::Delete(
-            step.file_id
-                .as_deref()
-                .expect("a delete step carries a file id"),
-        )),
+        Action::Delete => {
+            let Some(file_id) = step.file_id.as_deref() else {
+                panic!("a delete step carries a file id");
+            };
+            Some(Operation::Delete(file_id))
+        }
     }
 }
 
@@ -606,7 +612,7 @@ fn only_call(observation: &Observation) -> &OutboundRequest {
 }
 
 fn header<'request>(request: &'request OutboundRequest, name: &str) -> Option<&'request str> {
-    Some(request.headers.get(name)?.to_str().ok()?)
+    request.headers.get(name)?.to_str().ok()
 }
 
 fn part_view(request: &OutboundRequest) -> Vec<(String, Option<String>, Option<String>, String)> {

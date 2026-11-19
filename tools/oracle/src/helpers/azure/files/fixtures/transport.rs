@@ -13,16 +13,30 @@ use super::super::input::Reply;
 pub(crate) type Log = Arc<Mutex<Vec<OutboundRequest>>>;
 
 pub(crate) struct Recorded {
-    reply: UpstreamResponse,
+    status: u16,
+    headers: HeaderMap,
+    body: Vec<u8>,
     calls: Log,
 }
 
 impl Recorded {
     pub(crate) fn new(reply: Option<&Reply>, calls: Log) -> Result<Self, Box<HelperError>> {
+        let planned = response(reply)?;
         Ok(Self {
-            reply: response(reply)?,
+            status: planned.status,
+            headers: planned.headers,
+            body: planned.body,
             calls,
         })
+    }
+
+    // the SDK may send more than one request, so every call gets its own reply
+    fn reply(&self) -> UpstreamResponse {
+        UpstreamResponse {
+            status: self.status,
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+        }
     }
 }
 
@@ -31,7 +45,7 @@ impl FileTransport for Recorded {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(answer(&self.calls, request, Ok(self.reply.clone())))
+        ready(answer(&self.calls, request, Ok(self.reply())))
     }
 
     fn send_stream(
