@@ -6,7 +6,7 @@ use http::Method;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::multipart::{is_multipart, make_multipart_http_request};
+use super::multipart::make_multipart_http_request;
 use super::upstream::UpstreamTarget;
 
 #[derive(Debug, Error)]
@@ -30,7 +30,7 @@ pub struct NonStreamingRequest<'request> {
     pub boundary: String,
 }
 
-// LiteLLM's non_streaming_http_request_handler: GET wins over multipart, and a multipart call is only forwarded when the caller decoded the form
+// LiteLLM's non_streaming_http_request_handler: GET wins, and the caller's forward_multipart already carries is_multipart(request)
 pub async fn non_streaming_request_handler(
     client: &ProxiedClient,
     request: NonStreamingRequest<'_>,
@@ -44,7 +44,7 @@ pub async fn non_streaming_request_handler(
     } = request;
     let body = if target.method == Method::GET {
         RequestBody::Empty
-    } else if is_multipart(&target.headers) && forward_multipart {
+    } else if forward_multipart {
         let decoded_form = form.ok_or(NonStreamingError::UndecodedForm)?;
         let outbound = make_multipart_http_request(target, decoded_form, &boundary);
         return client

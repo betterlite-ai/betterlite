@@ -258,6 +258,37 @@ async fn a_post_without_any_body_sends_nothing() {
 }
 
 #[tokio::test]
+async fn a_multipart_request_without_forwarded_headers_is_still_forwarded() {
+    let (url, seen, _server) = upstream().await;
+    let form = FormParts {
+        items: vec![text("meta", "v1")],
+    };
+    let request = NonStreamingRequest {
+        target: target(Method::POST, url, HeaderMap::new()),
+        parsed_body: None,
+        form: Some(&form),
+        forward_multipart: true,
+        boundary: "rebuilt".to_owned(),
+    };
+    let status = call(&client(), request).await;
+    assert_eq!(status, 200);
+    let captured = seen.0.lock().unwrap();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        header_text(&captured[0].headers, "content-type").as_deref(),
+        Some("multipart/form-data; boundary=rebuilt")
+    );
+    let expected = concat!(
+        "--rebuilt\r\n",
+        "Content-Disposition: form-data; name=\"meta\"\r\n",
+        "\r\n",
+        "v1\r\n",
+        "--rebuilt--\r\n",
+    );
+    assert_eq!(captured[0].body, expected.as_bytes());
+}
+
+#[tokio::test]
 async fn a_multipart_request_without_its_form_is_rejected() {
     let (url, seen, _server) = upstream().await;
     let headers = multipart_headers("multipart/form-data");
