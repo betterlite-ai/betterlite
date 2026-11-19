@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
@@ -223,6 +224,29 @@ async fn issues_and_verifies_through_the_environment() {
         assert_eq!(claim.plugin, PLUGIN);
     })
     .await;
+}
+
+#[tokio::test]
+async fn falls_back_to_the_empty_salt_when_the_variable_is_unset() {
+    temp_env::async_with_vars([(SALT_VARIABLE, None::<&str>)], async {
+        let token = issue_plugin_session_claim(PLUGIN, Some("u1"), Some("proxy_admin")).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let key = python_key(EMPTY_SALT_KEY_HEX);
+        let plaintext = fernet::open(&key, &token, CLAIM_TTL_SECONDS, now).unwrap();
+        let claim: Claim = serde_json::from_slice(&plaintext).unwrap();
+        assert_eq!(claim.plugin, PLUGIN);
+        assert_eq!(claim.user_id, "u1");
+    })
+    .await;
+}
+
+#[test]
+fn the_claim_material_debug_hides_the_salt() {
+    let salt = SecretString::from(SALT);
+    let printed = format!("{:?}", material(&salt, CLAIM_TIMESTAMP));
+    assert!(!printed.contains(SALT), "{printed}");
 }
 
 #[rstest]
