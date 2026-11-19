@@ -41,7 +41,7 @@ fn json_columns_only() {
 
 #[test]
 fn malformed_column_json() {
-    let error = decode_json_string_column("budget_limits", &super::json("[")).unwrap_err();
+    let error = decode_json_string_column("budget_limits", &super::json(r#""[""#)).unwrap_err();
     assert!(matches!(&error, ColumnError::Json(column, ..) if column == "budget_limits"));
     let bytes = decode_json_column_bytes("router_settings", &[0xff, 0xfe]).unwrap_err();
     assert!(matches!(&bytes, ColumnError::Utf8(column, ..) if column == "router_settings"));

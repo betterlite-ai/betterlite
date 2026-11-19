@@ -60,7 +60,7 @@ async def update_broken(data):
 async def generate_hook(data):
     return {}
 
-async def policy_sync(data):
+def policy_sync(data):
     return {}
 "#;
 

@@ -34,9 +34,9 @@ pub fn decode_json_string_column(column: &str, value: &JsonData) -> Result<JsonD
 
 // the fuzz target and its corpus replay hand over the bytes a stored column holds, invalid UTF-8 included
 pub fn decode_json_column_bytes(column: &str, bytes: &[u8]) -> Result<JsonData, ColumnError> {
-    from_utf8(bytes)
-        .map_err(|source| ColumnError::Utf8(column.to_owned(), source))
-        .and_then(|text| decode_json_string_column(column, &JsonData::String(text.to_owned())))
+    let text = from_utf8(bytes).map_err(|source| ColumnError::Utf8(column.to_owned(), source))?;
+    let stored = JsonData::String(text.to_owned());
+    decode_json_string_column(column, &stored)
 }
 
 // a row naming organization_id keeps it, even when null; only a row without that key falls back to org_id

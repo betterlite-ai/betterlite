@@ -109,19 +109,28 @@ fn generate_clock_expiry_and_rotation() {
 }
 
 #[rstest]
-#[case::rotation_off(r#"{"auto_rotate":false,"rotation_interval":"30m"}"#)]
-#[case::interval_missing(r#"{"auto_rotate":true}"#)]
-#[case::interval_empty(r#"{"auto_rotate":true,"rotation_interval":""}"#)]
-#[case::no_timing_fields(r#"{"key_alias":"alias"}"#)]
-fn generate_without_rotation_keeps_timing_fields_empty(#[case] document: &str) {
+#[case::rotation_off(
+    r#"{"auto_rotate":false,"rotation_interval":"30m"}"#,
+    Some("30m"),
+    false
+)]
+#[case::interval_missing(r#"{"auto_rotate":true}"#, None, true)]
+#[case::interval_empty(r#"{"auto_rotate":true,"rotation_interval":""}"#, Some(""), true)]
+#[case::no_timing_fields(r#"{"key_alias":"alias"}"#, None, false)]
+fn generate_without_rotation_keeps_timing_fields_empty(
+    #[case] document: &str,
+    #[case] interval: Option<&str>,
+    #[case] auto_rotate: bool,
+) {
     let fixture = fixture();
     let token = effective_key_for_generate(&generate_request(document), fixture.clock(), &cipher())
         .unwrap();
     assert!(token.expires.is_none());
     assert!(token.budget_reset_at.is_none());
     assert!(token.key_rotation_at.is_none());
-    assert!(token.rotation_interval.is_none());
-    assert_eq!(token.auto_rotate.0, Some(PydanticBool(false)));
+    // the supplied rotation fields still pass through, only the schedule stays unset
+    assert_eq!(token.rotation_interval.as_deref(), interval);
+    assert_eq!(token.auto_rotate.0, Some(PydanticBool(auto_rotate)));
 }
 
 #[test]
