@@ -115,15 +115,12 @@ pub(super) fn outbound<T>(
     })
 }
 
-// The SDK appends the path to the base URL's raw path and keeps its query, which api-version then overrides.
+// The SDK joins the tail onto the raw base path and query with one slash, and keeps a fragment at the end.
 fn target<T>(client: &AzureAssistantsClient<'_, T>, tail: &str) -> Result<Url, AssistantsRunError> {
-    let cut = client
-        .base_url
-        .find(|letter: char| letter == '?' || letter == '#')
-        .unwrap_or(client.base_url.len());
-    let (head, rest) = client.base_url.split_at(cut);
+    let at = client.base_url.find('#').unwrap_or(client.base_url.len());
+    let (head, fragment) = client.base_url.split_at(at);
     let slash = if head.ends_with('/') { "" } else { "/" };
-    let joined = format!("{head}{slash}{tail}{rest}");
+    let joined = format!("{head}{slash}{tail}{fragment}");
     let mut url = Url::parse(&joined)
         .map_err(|source| AssistantsRunError::Runs(ThreadRunsError::BaseUrl(source)))?;
     let query = merge_version(url.query(), client.api_version.as_str());

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -27,6 +28,23 @@ pub(super) async fn check() {
     returns_a_supplied_client_as_is().await;
     drops_the_facade_only_arguments().await;
     builds_from_the_litellm_params().await;
+    prefers_the_provider_token().await;
+}
+
+// A token source answers before the api-key is sent, as the SDK asks its token provider first.
+async fn prefers_the_provider_token() {
+    let mut fixture = Fixture::new();
+    fixture.provider = Some(support::provider(Arc::new(support::FixedToken("ad-token"))));
+    let recorder = Recorder::start();
+    recorder.queue_poll(200, CREATED);
+    recorder.queue_poll(200, COMPLETED);
+    support::polled(&recorder, &fixture, &run_request()).await;
+    let seen = recorder.requests();
+    assert_eq!(
+        seen[0].headers.get("authorization").map(String::as_str),
+        Some("Bearer ad-token")
+    );
+    assert_eq!(seen[0].headers.get("api-key"), None);
 }
 
 fn expected_kind(arun_thread: Option<bool>) -> ClientKind {

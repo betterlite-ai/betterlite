@@ -16,6 +16,28 @@ pub(super) async fn check() {
     preserves_terminal_results().await;
     passes_sdk_errors_through().await;
     keeps_the_callers_deadline_per_request().await;
+    merges_a_base_url_query().await;
+}
+
+// The SDK joins the tail onto the raw URL, so a base query keeps the tail in its last value and api-version wins.
+async fn merges_a_base_url_query() {
+    let recorder = Recorder::start();
+    recorder.queue_poll(200, CREATED);
+    recorder.queue_poll(200, COMPLETED);
+    let mut fixture = support::Fixture::new();
+    fixture.api_base = Some(String::from(
+        "https://example.test/openai/deployments/dep?api-version=old&empty=",
+    ));
+    support::polled(&recorder, &fixture, &run_request()).await;
+    let seen = recorder.requests();
+    assert_eq!(
+        seen[0].url,
+        "https://example.test/openai/deployments/dep?api-version=2024-02-01&empty=%2Fthreads%2Fthread_1%2Fruns"
+    );
+    assert_eq!(
+        seen[1].url,
+        "https://example.test/openai/deployments/dep?api-version=2024-02-01&empty=%2Fthreads%2Fthread_1%2Fruns%2Frun_1"
+    );
 }
 
 async fn overrides_the_assistant_defaults() {
