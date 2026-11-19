@@ -1,0 +1,27 @@
+task: B389
+deviations:
+  - what: The "{model_group}_map" samples live in the service's own process-local cache. LiteLLM writes that map through the handler's DualCache, which reaches Redis whenever the router has a Redis cache, so several proxy instances share one map.
+    why: B304's route value enum is closed and typed for its own counters, and this task may not change it. The local cache keeps LiteLLM's InMemoryCache bounds (200 keys, 1024 KiB per entry, the configured ttl from each write, and a write that lands while the entry is alive keeps its running deadline), so within one process every sample the callbacks record is read back unchanged; only another process's samples are missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L172-L174
+  - what: A callback's read, update and write of a model group's map are one critical section. LiteLLM awaits the cache read and then awaits the write, so two callbacks for the same model group can interleave and the later write replaces the earlier callback's sample.
+    why: The lost update is a data race a working proxy hits whenever two requests to one model group finish together. Betterlite holds one mutex from the read to the write, so every success and every timeout penalty stays in the window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L318-L322
+  - what: The per-minute bucket key is formatted in UTC from one clock read. LiteLLM formats datetime.now() in the host's local timezone and reads the date, hour and minute separately, so its bucket text differs by the host's UTC offset and a callback that crosses a minute boundary can write a key mixing two instants.
+    why: Betterlite formats the bucket from one read of an injected unix-second clock and the cache deadlines come from the same injected clock, so the bucket is independent of the host timezone and one callback writes one instant. The bucket is only read back by the same handler, so the routing decision sees the same minute on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L278-L280
+  - what: A model group whose "{model_group}_map" key exceeds 1024 bytes is an error. LiteLLM passes any length as a cache key.
+    why: Betterlite route keys are bounded at 1024 bytes, and a model group name long enough to pass that cannot be routed to anyway.
+    link: ""
+  - what: Betterlite stores a model group's map only while its JSON text fits 1024 KiB and drops an update that does not, leaving the previous map in the cache. LiteLLM measures InMemoryCache's item limit with sys.getsizeof, which for a dict counts only the dictionary's own table and not the deployments and minute buckets it references, so it accepts a map whose JSON is many times the limit while the dict header stays under it.
+    why: The map travels through the shared LocalTtlCache as JSON, and that cache charges the text it stores. The two sides store the same map until the JSON text passes 1024 KiB, which takes thousands of deployments or minute buckets; past that betterlite keeps the previous map while LiteLLM keeps the new one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L61-L95
+  - what: A max_latency_list_size above the signed 64-bit range is a config error. LiteLLM's RoutingArgs declares the field as a Python int with no bound and then slices the window with it.
+    why: Betterlite carries the window length as an i64 like every other count in the router state, so a value no i64 can hold is refused at config load instead of silently becoming a different number. Every value an i64 holds behaves the same on both sides, including the zero and negative lengths LiteLLM's own slice breaks on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L30
+  - what: A minute bucket whose tpm or rpm would pass the signed 64-bit range is an error that drops the whole update, so the cache keeps the previous map. LiteLLM's counters are Python ints and keep growing.
+    why: The per-minute counters are i64 in betterlite's stored map, and the overflow is reported instead of wrapping or saturating. Reaching the bound takes a single minute that spends more than 9.2e18 tokens, which no working setup does; every counter below the bound is written exactly as LiteLLM writes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L165-L170
+kept_bugs:
+  - what: A max_latency_list_size of zero or below records nothing at all. LiteLLM's window slice of a fresh deployment raises KeyError, the callback's except swallows it, and neither the latency sample, the first-token sample nor the tpm/rpm counters reach the cache. Betterlite returns before it reads the map, with the same empty result.
+    why: A working setup that declares the field as zero or below has always kept every deployment's window empty, and the router then scores every deployment 0.0. Copying the empty window keeps that routing; a one-sample window would change it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L330-L333

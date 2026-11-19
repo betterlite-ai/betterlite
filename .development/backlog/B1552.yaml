@@ -1,14 +1,14 @@
 id: B1552
 milestone: M3 providers
 title: Map APISerpent quick and deep GET searches
-status: todo
+status: done
 depends_on: [B002, B3274, B171]
 file: tasks/B1552-apiserpent-search.yaml
 covers:
   - "litellm/llms/apiserpent/search/**"
 parent: B048
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2470

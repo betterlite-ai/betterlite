@@ -18,7 +18,7 @@ use crate::payload::deps::{PayloadSettings, PayloadSources};
 use crate::payload::error::{PayloadError, guardrail_information};
 
 mod costs;
-mod error_info;
+pub(crate) mod error_info;
 mod identifiers;
 mod inputs;
 mod proxy_request;
