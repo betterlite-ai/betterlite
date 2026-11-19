@@ -7,6 +7,8 @@ use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::vertex_claude_chat::output::{OUTPUT_CONFIG, sanitize_output_params};
 
@@ -43,7 +45,11 @@ where
 }
 
 // LiteLLM's Vertex body overrides after the parent normalization: the version moves into the body, the model name leaves it, and an absent output_config has nothing to sanitize.
-pub async fn apply<Sanitize>(body: &mut Object, model: &str, sanitizer: &mut Sanitize)
+pub async fn apply<Sanitize>(
+    body: &mut Object,
+    model: &str,
+    sanitizer: &mut Sanitize,
+) -> Result<(), BodyError>
 where
     Sanitize: OutputSanitizer + Send,
 {
@@ -53,46 +59,27 @@ where
     );
     body.shift_remove(MODEL_FIELD);
     if !body.contains_key(OUTPUT_CONFIG) {
-        return;
+        return Ok(());
     }
-    let mut contract = to_contract_object(body);
+    let mut contract: IndexMap<String, ContractJson> = convert(body)?;
     sanitizer.sanitize(&mut contract, model).await;
-    *body = from_contract_object(&contract);
+    *body = convert(&contract)?;
+    Ok(())
 }
 
-// betterlite-models and betterlite-prompts each declare the same untagged JSON enum, and B1333's policy takes the former.
-fn to_contract_object(object: &Object) -> IndexMap<String, ContractJson> {
-    object
-        .iter()
-        .map(|(key, value)| (key.clone(), to_contract_json(value)))
-        .collect()
+#[derive(Debug, thiserror::Error)]
+pub enum BodyError {
+    #[error("the request body does not convert between the JSON shapes: {0}")]
+    Conversion(#[from] serde_json::Error),
 }
 
-fn to_contract_json(value: &Json) -> ContractJson {
-    match value {
-        Json::Null => ContractJson::Null,
-        Json::Bool(flag) => ContractJson::Bool(*flag),
-        Json::Number(number) => ContractJson::Number(number.clone()),
-        Json::Text(text) => ContractJson::Text(text.clone()),
-        Json::List(items) => ContractJson::List(items.iter().map(to_contract_json).collect()),
-        Json::Object(fields) => ContractJson::Object(to_contract_object(fields)),
-    }
-}
-
-fn from_contract_object(object: &IndexMap<String, ContractJson>) -> Object {
-    object
-        .iter()
-        .map(|(key, value)| (key.clone(), from_contract_json(value)))
-        .collect()
-}
-
-fn from_contract_json(value: &ContractJson) -> Json {
-    match value {
-        ContractJson::Null => Json::Null,
-        ContractJson::Bool(flag) => Json::Bool(*flag),
-        ContractJson::Number(number) => Json::Number(number.clone()),
-        ContractJson::Text(text) => Json::Text(text.clone()),
-        ContractJson::List(items) => Json::List(items.iter().map(from_contract_json).collect()),
-        ContractJson::Object(fields) => Json::Object(from_contract_object(fields)),
-    }
+// betterlite-models and betterlite-prompts each declare the same untagged JSON enum, so serde carries the body between them, as the native transform's own bridge does.
+fn convert<From, To>(value: &From) -> Result<To, BodyError>
+where
+    From: Serialize + ?Sized,
+    To: DeserializeOwned,
+{
+    serde_json::to_string(value)
+        .and_then(|encoded| serde_json::from_str(&encoded))
+        .map_err(BodyError::from)
 }

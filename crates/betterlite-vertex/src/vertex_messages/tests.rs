@@ -6,6 +6,7 @@ use std::future::{Future, ready};
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -112,7 +113,11 @@ fn header<'headers>(headers: &'headers AnthropicHeaders, name: &str) -> Option<&
 fn deployment() -> VertexParams<'static> {
     VertexParams {
         project: Some("deployment-project"),
-        ..Default::default()
+        ai_project: None,
+        location: None,
+        ai_location: None,
+        credentials: None,
+        ai_credentials: None,
     }
 }
 
@@ -351,8 +356,12 @@ fn the_url_uses_the_resolved_region(
     #[case] resolved: &str,
 ) {
     let settings = VertexSettings {
+        project: None,
         location: location.map(str::to_owned),
-        ..Default::default()
+        credentials: None,
+        adc: AdcEnvironment::default(),
+        // the config's DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS
+        default_video_duration_seconds: 8,
     };
     let outcome = validated(
         &AnthropicHeaders::default(),
@@ -360,7 +369,11 @@ fn the_url_uses_the_resolved_region(
         &settings,
         VertexParams {
             project,
-            ..Default::default()
+            ai_project: None,
+            location: None,
+            ai_location: None,
+            credentials: None,
+            ai_credentials: None,
         },
         None,
     );
@@ -456,7 +469,7 @@ fn version_in_body() {
         r#"{"model":"claude-sonnet-4-6","max_tokens":16,"messages":[],"output_config":{"effort":"high"}}"#,
     );
     let mut sanitizer = Recording::default();
-    block_on(apply(&mut body, MODEL, &mut sanitizer));
+    block_on(apply(&mut body, MODEL, &mut sanitizer)).expect("the body converts");
     assert_eq!(
         body.get(ANTHROPIC_VERSION_FIELD),
         Some(&Json::Text("vertex-2023-10-16".to_owned()))
@@ -475,7 +488,7 @@ fn an_absent_output_config_skips_the_sanitizer() {
     let mut body = object(r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":8}"#);
     let messages = body.get("messages").cloned();
     let mut sanitizer = Recording::default();
-    block_on(apply(&mut body, MODEL, &mut sanitizer));
+    block_on(apply(&mut body, MODEL, &mut sanitizer)).expect("the body converts");
     assert_eq!(sanitizer.calls, 0);
     assert_eq!(
         body.get(ANTHROPIC_VERSION_FIELD),
@@ -489,7 +502,7 @@ fn the_conversion_keeps_every_json_shape() {
     let mut body = object(
         r#"{"output_config":{"effort":"high","nested":{"flag":true,"none":null,"count":7,"text":"x","list":[1,false,null,"y",{"deep":[]}]}}}"#,
     );
-    block_on(apply(&mut body, MODEL, &mut KeepOutputConfig));
+    block_on(apply(&mut body, MODEL, &mut KeepOutputConfig)).expect("the body converts");
     assert_eq!(
         body.get(OUTPUT_CONFIG),
         Some(&json(
@@ -502,7 +515,7 @@ fn the_conversion_keeps_every_json_shape() {
 fn a_missing_model_is_not_an_error() {
     let mut body = object(r#"{"messages":[],"output_config":{}}"#);
     let mut sanitizer = Recording::default();
-    block_on(apply(&mut body, MODEL, &mut sanitizer));
+    block_on(apply(&mut body, MODEL, &mut sanitizer)).expect("the body converts");
     assert_eq!(
         body.get(ANTHROPIC_VERSION_FIELD),
         Some(&Json::Text("vertex-2023-10-16".to_owned()))

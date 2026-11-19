@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::future::{Future, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
@@ -18,7 +17,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
-use betterlite_vertex::vertex_messages::body::{self, OutputSanitizer};
+use betterlite_vertex::vertex_messages::body::{self, BodyError, OutputSanitizer};
 use betterlite_vertex::vertex_messages::environment::{
     Environment, EnvironmentRequest, get_complete_url, validate_environment,
 };
@@ -137,17 +136,14 @@ impl OutputSanitizer for NoSanitizer {
 struct VertexOverrides;
 
 impl VertexMessagesOverrides for VertexOverrides {
-    type Error = Infallible;
+    type Error = BodyError;
 
     fn apply<'body>(
         &'body mut self,
         body: &'body mut Object,
         model: &'body str,
-    ) -> impl Future<Output = Result<(), Infallible>> + Send + 'body {
-        async move {
-            body::apply(body, model, &mut NoSanitizer).await;
-            Ok(())
-        }
+    ) -> impl Future<Output = Result<(), BodyError>> + Send + 'body {
+        async move { body::apply(body, model, &mut NoSanitizer).await }
     }
 }
 
@@ -184,8 +180,11 @@ async fn environment_answer(input: &Input) -> Result<Environment, Box<HelperErro
             optional_params: &input.optional_params,
             params: VertexParams {
                 project: input.vertex_project.as_deref(),
+                ai_project: None,
                 location: input.vertex_location.as_deref(),
-                ..VertexParams::default()
+                ai_location: None,
+                credentials: None,
+                ai_credentials: None,
             },
             settings: &settings,
             catalog: &catalog,
