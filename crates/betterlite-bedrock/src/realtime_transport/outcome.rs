@@ -18,18 +18,18 @@ where
     // The client direction's exception wins over the provider direction's, as the source reports it first
     if let Err(error) = client {
         return Some(match error {
-            ClientForwardError::Send(error) => stream_failure(error),
-            ClientForwardError::Ack(AckError::Stream(error)) => stream_failure(error),
-            ClientForwardError::Input(error) => named_failure("InputError", &error),
-            ClientForwardError::Ack(error) => named_failure("AckError", &error),
+            ClientForwardError::Send(inner) => stream_failure(inner),
+            ClientForwardError::Ack(AckError::Stream(inner)) => stream_failure(inner),
+            ClientForwardError::Input(inner) => named_failure("InputError", &inner),
+            ClientForwardError::Ack(inner) => named_failure("AckError", &inner),
             ClientForwardError::Encode { source } => named_failure("EncodeError", &source),
         });
     }
     match provider {
         Err(error) => Some(match error {
-            ProviderForwardError::Stream(error) => stream_failure(error),
+            ProviderForwardError::Stream(inner) => stream_failure(inner),
             ProviderForwardError::Utf8 { source } => named_failure("UnicodeDecodeError", &source),
-            ProviderForwardError::Transform(error) => named_failure("EventError", &error),
+            ProviderForwardError::Transform(inner) => named_failure("EventError", &inner),
         }),
         Ok(_) => None,
     }
@@ -44,13 +44,13 @@ where
         .as_ref()
         .and_then(|error| error.provider_class_name().map(str::to_owned))
         .unwrap_or_else(|| "RuntimeError".to_owned());
-    let message = source
+    let text = source
         .as_ref()
         .and_then(|error| error.provider_message().map(str::to_owned))
         .unwrap_or(message);
     ProviderFailure {
         class_name,
-        message,
+        message: text,
         source,
     }
 }

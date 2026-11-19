@@ -1,3 +1,4 @@
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use aws_smithy_runtime_api::client::http::{
@@ -75,7 +76,7 @@ impl HttpConnector for RecordingConnector {
             .unwrap_or_else(PoisonError::into_inner)
             .push((uri, headers));
         HttpConnectorFuture::new(async move {
-            Err(ConnectorError::io(Box::new(std::io::Error::other(
+            Err(ConnectorError::io(Box::new(IoError::other(
                 "the fixture connector refuses every exchange",
             ))))
         })
@@ -193,45 +194,45 @@ fn assert_signed_headers(headers: &[(String, String)]) {
     );
 }
 
+fn identity_options(
+    access: &'static str,
+    secret: &'static str,
+    token: &'static str,
+    region: &'static str,
+) -> Options<'static> {
+    Options {
+        model: MODEL,
+        pending: None,
+        committed: false,
+        committed_failure: None,
+        api_base: None,
+        endpoint: None,
+        region: Some(region),
+        region_inputs: RegionInputs::default(),
+        auth: auth(access, secret, Some(token)),
+        logged_types: LoggedEventTypes::Default,
+    }
+}
+
 pub(super) async fn credential_identity_isolation() {
     let mut fixture = Fixture::new();
     fixture.credentials = FakeCredentials::echoing();
     let first = fixture
-        .run(Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some(REGION),
-            region_inputs: RegionInputs::default(),
-            auth: auth(
-                "AKIDFIRSTIDENTITY",
-                "first-identity-secret",
-                Some("first-identity-token"),
-            ),
-            logged_types: LoggedEventTypes::Default,
-        })
+        .run(identity_options(
+            "AKIDFIRSTIDENTITY",
+            "first-identity-secret",
+            "first-identity-token",
+            REGION,
+        ))
         .await;
     assert!(first.outcome.is_ok(), "{:?}", first.outcome);
     let second = fixture
-        .run(Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some("eu-west-2"),
-            region_inputs: RegionInputs::default(),
-            auth: auth(
-                "AKIDSECONDIDENTITY",
-                "second-identity-secret",
-                Some("second-identity-token"),
-            ),
-            logged_types: LoggedEventTypes::Default,
-        })
+        .run(identity_options(
+            "AKIDSECONDIDENTITY",
+            "second-identity-secret",
+            "second-identity-token",
+            "eu-west-2",
+        ))
         .await;
     assert!(second.outcome.is_ok(), "{:?}", second.outcome);
     let calls = fixture.credentials.calls();

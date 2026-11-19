@@ -22,6 +22,7 @@ pub(super) async fn bidirectional_runtime_target() {
     committed_scope_rejects_before_preparation().await;
     region_selection().await;
     endpoint_precedence().await;
+    default_endpoint_is_regional().await;
     model_id_is_passed_through().await;
 }
 
@@ -252,9 +253,11 @@ async fn endpoint_precedence() {
         .await;
         assert_eq!(config.endpoint_uri, expected);
     }
+}
 
+async fn default_endpoint_is_regional() {
     let mut fixture = Fixture::new();
-    let config = config_for(&mut fixture, Options::default()).await;
+    let config = config_for(&mut fixture, region_options(REGION)).await;
     assert_eq!(
         config.endpoint_uri,
         "https://bedrock-runtime.us-east-1.amazonaws.com"
@@ -340,12 +343,10 @@ async fn pending_update_suppresses_the_created_event() {
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let events = fixture.client.sent_events();
-    assert!(
-        events
-            .iter()
-            .all(|event| event_type(event) != Some("session.created")),
-        "{events:?}"
-    );
+    let created = events
+        .iter()
+        .filter(|event| event_type(event) == Some("session.created"));
+    assert_eq!(created.count(), 0, "{events:?}");
     assert_eq!(event_type(&events[0]), Some("session.updated"));
     assert_eq!(result.scope.session_committed, Json::Bool(true));
     let sent = fixture.runtime.stream().sent();
@@ -420,9 +421,9 @@ async fn initial_failures_escape_and_close() {
 
     let mut created = Fixture::new();
     created.client = ScriptedClient::scripted(Vec::new()).failing_send(0);
-    let result = created.run(Options::default()).await;
+    let send_result = created.run(Options::default()).await;
     assert!(matches!(
-        result.outcome.unwrap_err(),
+        send_result.outcome.unwrap_err(),
         RealtimeTransportError::Client(_)
     ));
     assert_eq!(created.client.sends().len(), 1);
@@ -437,23 +438,29 @@ pub(super) async fn credential_failure() {
     source_errors_propagate().await;
 }
 
+fn auth_options(auth: AuthParams) -> Options<'static> {
+    Options {
+        model: MODEL,
+        pending: None,
+        committed: false,
+        committed_failure: None,
+        api_base: None,
+        endpoint: None,
+        region: Some(REGION),
+        region_inputs: RegionInputs::default(),
+        auth,
+        logged_types: LoggedEventTypes::Default,
+    }
+}
+
 async fn auth_params_reach_the_resolver() {
     let mut fixture = Fixture::new();
-    let result = fixture
-        .run(Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some(REGION),
-            region_inputs: RegionInputs::default(),
-            auth: full_auth(),
-            logged_types: LoggedEventTypes::Default,
-        })
-        .await;
+    let result = fixture.run(auth_options(full_auth())).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
+    assert_resolved_auth(&fixture);
+}
+
+fn assert_resolved_auth(fixture: &Fixture) {
     let calls = fixture.credentials.calls();
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
@@ -482,20 +489,7 @@ async fn auth_params_reach_the_resolver() {
 
 async fn resolved_credentials_reach_the_sdk() {
     let mut fixture = Fixture::new();
-    let result = fixture
-        .run(Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some(REGION),
-            region_inputs: RegionInputs::default(),
-            auth: full_auth(),
-            logged_types: LoggedEventTypes::Default,
-        })
-        .await;
+    let result = fixture.run(auth_options(full_auth())).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let config = fixture.last_config();
     assert_eq!(
@@ -528,20 +522,7 @@ async fn absent_credentials_answer_401() {
 async fn source_errors_propagate() {
     let mut fixture = Fixture::new();
     fixture.credentials = FakeCredentials::failing(CredentialError::Auth(AuthError::SessionTags));
-    let result = fixture
-        .run(Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some(REGION),
-            region_inputs: RegionInputs::default(),
-            auth: full_auth(),
-            logged_types: LoggedEventTypes::Default,
-        })
-        .await;
+    let result = fixture.run(auth_options(full_auth())).await;
     let error = result.outcome.unwrap_err();
     assert!(matches!(error, RealtimeTransportError::Credential(_)));
     assert_eq!(error.status_code(), None);
@@ -574,13 +555,13 @@ async fn leftover_usage_is_logged() {
         record.get("type"),
         Some(&Json::Text("response.done".to_owned()))
     );
-    let total =
-        record_field(record, &["response", "usage", "total_tokens"]).and_then(
-            |value| match value {
-                Json::Number(number) => number.as_i64(),
-                _ => None,
-            },
-        );
+    let total = record_field(record, &["response", "usage", "total_tokens"]).and_then(|value| {
+        if let Json::Number(number) = value {
+            number.as_i64()
+        } else {
+            None
+        }
+    });
     assert_eq!(total, Some(14), "the leftover usage delta is logged");
     assert_eq!(
         fixture.logging.detail(SUCCESS_LOGGED_KEY),
@@ -766,8 +747,8 @@ async fn close_failure_is_suppressed() {
             "the invoke failed",
             FakeError::new("SdkError", "the stream never opened"),
         ));
-    let result = failed.run(Options::default()).await;
-    let error = result.outcome.unwrap_err();
+    let failed_result = failed.run(Options::default()).await;
+    let error = failed_result.outcome.unwrap_err();
     assert!(matches!(error, RealtimeTransportError::Stream(_)));
 }
 

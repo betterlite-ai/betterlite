@@ -1,6 +1,7 @@
-use std::io;
+use std::io::{self, Error as IoError};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 #[derive(Clone, Default)]
@@ -22,7 +23,7 @@ impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?
+            .map_err(|error| IoError::other(error.to_string()))?
             .extend_from_slice(buf);
         Ok(buf.len())
     }
@@ -37,7 +38,7 @@ pub(super) fn capture() -> (Captured, DefaultGuard) {
     let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(Level::DEBUG)
         .with_ansi(false)
         .finish();
     (captured, set_default(subscriber))

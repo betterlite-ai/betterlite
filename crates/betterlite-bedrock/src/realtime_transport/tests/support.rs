@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::future::pending;
 use std::io;
+use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -292,7 +293,7 @@ impl RealtimeCredentials for FakeCredentials {
             .unwrap_or_else(PoisonError::into_inner);
         match &mut *mode {
             ResolveMode::Fixed(outcome) => {
-                std::mem::replace(outcome, Err(CredentialError::MissingCredentials))
+                mem::replace(outcome, Err(CredentialError::MissingCredentials))
             }
             ResolveMode::Echo => match (&settings.access_key_id, &settings.secret_access_key) {
                 (Some(access), Some(secret)) => Ok(Some(Credentials {
@@ -550,9 +551,9 @@ impl BedrockInputStream for ScriptedInput {
     async fn send(&self, event: Json) -> Result<(), StreamError<FakeError>> {
         let index = {
             let mut sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
-            let index = sent.len();
+            let position = sent.len();
             sent.push(event);
-            index
+            position
         };
         if self.send_failures.contains(&index) {
             return Err(stream_error(
@@ -770,9 +771,9 @@ impl RealtimeClientWebSocket for ScriptedClient {
                 .sent
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            let index = sent.len();
+            let position = sent.len();
             sent.push(data);
-            index
+            position
         };
         if self.state.send_failure == Some(index) {
             return Err(ClientError {

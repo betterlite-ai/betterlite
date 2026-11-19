@@ -6,9 +6,10 @@ use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
-use aws_sdk_bedrockruntime::Client;
+use aws_credential_types::Credentials as SdkCredentials;
 use aws_sdk_bedrockruntime::config::retry::RetryConfig;
 use aws_sdk_bedrockruntime::config::{BehaviorVersion, Region};
+use aws_sdk_bedrockruntime::{Client, Config};
 use aws_smithy_runtime_api::client::http::{HttpClient, SharedHttpClient};
 use secrecy::ExposeSecret as _;
 
@@ -66,8 +67,8 @@ impl SdkRuntime {
         }
     }
 
-    pub(crate) fn config(&self, config: &RuntimeConfig) -> aws_sdk_bedrockruntime::Config {
-        let credentials = aws_credential_types::Credentials::new(
+    pub(crate) fn config(&self, config: &RuntimeConfig) -> Config {
+        let credentials = SdkCredentials::new(
             config.credentials.access_key_id.expose_secret(),
             config.credentials.secret_access_key.expose_secret(),
             config
@@ -78,7 +79,7 @@ impl SdkRuntime {
             None,
             "betterlite-realtime",
         );
-        aws_sdk_bedrockruntime::Config::builder()
+        Config::builder()
             .behavior_version(BehaviorVersion::latest())
             .region(Region::new(config.region.clone()))
             .credentials_provider(credentials)
@@ -142,10 +143,10 @@ impl RealtimeClient for SdkRuntimeClient {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let Some(client) = client else {
+        let Some(open) = client else {
             return Err(error::closed_stream());
         };
-        let stream = SdkStream::open(&client, model_id).await?;
+        let stream = SdkStream::open(&open, model_id).await?;
         Ok(Box::new(stream))
     }
 }

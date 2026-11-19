@@ -1,5 +1,5 @@
 use std::error::Error as StdError;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::Mutex;
 
@@ -135,16 +135,12 @@ async fn settle<A, B, T, U>(
         Either::Right((outcome, _pending)) => *provider_outcome = Some(outcome),
     }
     if client_outcome.is_none() {
-        if let Either::Left((outcome, _ready)) =
-            select(client.as_mut(), std::future::ready(())).await
-        {
+        if let Either::Left((outcome, _ready)) = select(client.as_mut(), ready(())).await {
             *client_outcome = Some(outcome);
         }
     }
     if provider_outcome.is_none() {
-        if let Either::Left((outcome, _ready)) =
-            select(provider.as_mut(), std::future::ready(())).await
-        {
+        if let Either::Left((outcome, _ready)) = select(provider.as_mut(), ready(())).await {
             *provider_outcome = Some(outcome);
         }
     }

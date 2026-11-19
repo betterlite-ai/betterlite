@@ -107,11 +107,10 @@ impl BedrockInputStream for SdkInput {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let Some(sender) = sender else {
+        let Some(open) = sender else {
             return Err(closed_stream());
         };
-        sender
-            .send(Ok(InputEvent::Chunk(part)))
+        open.send(Ok(InputEvent::Chunk(part)))
             .await
             .map_err(|_closed| closed_stream())
     }
@@ -174,13 +173,14 @@ struct SdkOutputChunk {
 
 impl SdkOutputChunk {
     fn new(event: OutputEvent) -> Self {
-        match event {
-            OutputEvent::Chunk(part) => Self {
+        if let OutputEvent::Chunk(part) = event {
+            Self {
                 part: Some(SdkPayloadPart {
                     bytes: part.bytes.map(Blob::into_inner),
                 }),
-            },
-            _ => Self { part: None },
+            }
+        } else {
+            Self { part: None }
         }
     }
 }
