@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-services-claude-platform-chat-platform-body
+call:
+  bedrock_services_claude_platform:
+    chat_platform_body:
+      model: claude_platform/claude-sonnet-4-5
+      messages:
+        - {role: system, content: [{type: text, text: 'x-anthropic-billing-header: 5f1a'}]}
+        - {role: system, content: You are a helpful assistant.}
+        - {role: user, content: hi}
+      optional_params:
+        max_tokens: 64
+        workspace_id: request-workspace
+        context_management: {edits: [{type: compact_20260112}]}
+      headers: {}
+env: {}
+compare: {ignore: []}

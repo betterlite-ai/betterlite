@@ -36,9 +36,9 @@ use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use betterlite_tokenizer::engine::error::EngineError;
 use chrono::{DateTime, Utc};
-use futures_util::future::LocalBoxFuture;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::str::Utf8Error;
 use std::sync::Arc;
 use std::time::Duration;
@@ -170,15 +170,14 @@ pub fn polling(env: &dyn EnvironmentLookup) -> Result<ReplicatePolling, HubDispa
     )
     .map_err(|source| HubDispatchError::Environment { source })
 }
-// the logging env is not Sync, so the call future stays on the caller's task as shared_embedding's does
 pub fn dispatch<'call>(
     selection: &ConfigSelection<ChatConfigTag>,
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<Option<HubCompletion>, HubDispatchError>> {
+) -> impl Future<Output = Result<Option<HubCompletion>, HubDispatchError>> + Send + 'call {
     let provider = select(selection.tag);
-    Box::pin(async move {
+    async move {
         match provider {
             None => Ok(None),
             Some(HubProvider::HuggingFace) => {
@@ -193,5 +192,5 @@ pub fn dispatch<'call>(
                 predibase::complete(call, deps, log).await?,
             )))),
         }
-    })
+    }
 }

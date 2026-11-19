@@ -22,7 +22,7 @@ pub struct LogRecord {
     pub fields: IndexMap<String, Json>,
 }
 
-pub trait LogSink {
+pub trait LogSink: Send + Sync {
     fn emit(&self, record: LogRecord);
 }
 
@@ -38,7 +38,7 @@ pub struct GlobalFlags {
     pub turn_off_message_logging: bool,
 }
 
-pub type LoggerFn<'hook> = &'hook dyn Fn(&Json) -> Result<(), PrePostError>;
+pub type LoggerFn<'hook> = &'hook (dyn Fn(&Json) -> Result<(), PrePostError> + Sync);
 
 pub struct PrePostEnv<'env> {
     pub debug: DebugSettings,

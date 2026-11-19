@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-messages-constructor-seed
+call:
+  bedrock_messages:
+    function: constructor
+    kwargs: {}
+env: {}
+compare: {ignore: []}

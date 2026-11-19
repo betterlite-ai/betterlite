@@ -10,7 +10,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Json as PromptJson;
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -65,35 +64,33 @@ async fn serve_once(listener: &TcpListener, status: &str, body: &str) -> String 
 }
 
 // opens a Predibase stream against a local server that answers with the given status
-fn predibase_stream(status: &str, acompletion: bool) -> LocalBoxFuture<'_, Exchange> {
-    Box::pin(async move {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let client = client();
-        let pooled = Pooled { client: &client };
-        let services = Services::new(Vec::new(), Vec::new(), Vec::new());
-        let globals = empty_globals();
-        let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
-        let deps = DispatchDeps {
-            post: &pooled,
-            ..services.deps(&globals, &env)
-        };
-        let (mut state, log_env) = services.logging();
-        let mut log = CallLogging {
-            state: &mut state,
-            env: &log_env,
-        };
-        let mut messages = vec![user_message()];
-        let stream = PromptJson::Bool(true);
-        let tenant = PromptJson::Text(String::from("tenant-1"));
-        let mut options = object(&[("stream", stream), ("tenant_id", tenant)]);
-        let mut call = chat_context("m", &mut messages, &mut options, Some(base.as_str()));
-        call.acompletion = acompletion;
-        let opened = (ChatConfigTag::Predibase, &mut call).run(&deps, &mut log);
-        let exchange = async { tokio::join!(serve_once(&listener, status, "boom"), opened) };
-        let (request, outcome) = timeout(EXCHANGE_TIMEOUT, exchange).await.unwrap();
-        (request, outcome, state)
-    })
+async fn predibase_stream(status: &str, acompletion: bool) -> Exchange {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let client = client();
+    let pooled = Pooled { client: &client };
+    let services = Services::new(Vec::new(), Vec::new(), Vec::new());
+    let globals = empty_globals();
+    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
+    let deps = DispatchDeps {
+        post: &pooled,
+        ..services.deps(&globals, &env)
+    };
+    let (mut state, log_env) = services.logging();
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &log_env,
+    };
+    let mut messages = vec![user_message()];
+    let stream = PromptJson::Bool(true);
+    let tenant = PromptJson::Text(String::from("tenant-1"));
+    let mut options = object(&[("stream", stream), ("tenant_id", tenant)]);
+    let mut call = chat_context("m", &mut messages, &mut options, Some(base.as_str()));
+    call.acompletion = acompletion;
+    let opened = (ChatConfigTag::Predibase, &mut call).run(&deps, &mut log);
+    let exchange = async { tokio::join!(serve_once(&listener, status, "boom"), opened) };
+    let (request, outcome) = timeout(EXCHANGE_TIMEOUT, exchange).await.unwrap();
+    (request, outcome, state)
 }
 
 #[tokio::test]

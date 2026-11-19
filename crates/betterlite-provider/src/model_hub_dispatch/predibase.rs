@@ -8,7 +8,6 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
@@ -159,39 +158,36 @@ fn log_pre_call(
     Ok(())
 }
 
-// the logging env is not Sync, so the call future stays on the caller's task
-pub fn complete<'call>(
+pub async fn complete<'call>(
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<Completion, HubDispatchError>> {
-    Box::pin(async move {
-        let endpoint = endpoint(call, deps)?;
-        let data = request_body(call, deps, &endpoint.options).await?;
-        log_pre_call(call, log, &endpoint, &data)?;
-        let encoded = encoded_body(&data, endpoint.stream && call.acompletion)?;
-        let request = WireRequest {
-            method: Method::POST,
-            url: &endpoint.url,
-            query: &[],
-            headers: &endpoint.headers,
-            body: Some(encoded.as_bytes()),
-            deadline: deps.timeout,
-        };
-        if !endpoint.stream {
-            let response = deps.post.post(&request).await?;
-            checked_reply(call, log, &response, &data)?;
-            return transformed(call, deps, &response, &data).await;
-        }
-        let response = deps.post.post_stream(&request).await?;
-        if response.response.status() != 200 {
-            return Err(stream_error(response).await);
-        }
-        if call.acompletion {
-            log_opened_stream(log, call.messages, Some(RawBody::Text(encoded)))?;
-        }
-        Ok(Completion::Stream(Box::new(response)))
-    })
+) -> Result<Completion, HubDispatchError> {
+    let endpoint = endpoint(call, deps)?;
+    let data = request_body(call, deps, &endpoint.options).await?;
+    log_pre_call(call, log, &endpoint, &data)?;
+    let encoded = encoded_body(&data, endpoint.stream && call.acompletion)?;
+    let request = WireRequest {
+        method: Method::POST,
+        url: &endpoint.url,
+        query: &[],
+        headers: &endpoint.headers,
+        body: Some(encoded.as_bytes()),
+        deadline: deps.timeout,
+    };
+    if !endpoint.stream {
+        let response = deps.post.post(&request).await?;
+        checked_reply(call, log, &response, &data)?;
+        return transformed(call, deps, &response, &data).await;
+    }
+    let response = deps.post.post_stream(&request).await?;
+    if response.response.status() != 200 {
+        return Err(stream_error(response).await);
+    }
+    if call.acompletion {
+        log_opened_stream(log, call.messages, Some(RawBody::Text(encoded)))?;
+    }
+    Ok(Completion::Stream(Box::new(response)))
 }
 
 // call_error raises before LiteLLM logs the post_call, which carries the request body

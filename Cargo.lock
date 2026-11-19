@@ -436,6 +436,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-bedrockruntime"
+version = "1.145.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aed4de4a98241f9dd95ddad4223755b7afc3327d0a148a2a29286c95ef64db5e"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-eventstream",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.5.0",
+ "http-body-util",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-kms"
 version = "1.120.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -951,6 +980,8 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-router",
+ "betterlite-secret-managers",
  "betterlite-server",
  "chrono",
  "clap",
@@ -959,6 +990,7 @@ dependencies = [
  "rand 0.10.3",
  "regex",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -1071,6 +1103,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1236,10 +1269,12 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-credential-types",
+ "aws-sdk-bedrockruntime",
  "aws-sdk-sts",
  "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
+ "aws-smithy-http",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
@@ -1595,6 +1630,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-cache",
+ "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
  "betterlite-cost",
@@ -1613,6 +1649,7 @@ dependencies = [
  "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-pyhost",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-semantic",
@@ -1634,6 +1671,7 @@ dependencies = [
  "mutants",
  "num-traits",
  "percent-encoding",
+ "pyo3",
  "regex",
  "rmcp",
  "rstest",
@@ -2083,6 +2121,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "http-body 1.1.0",
  "idna",
  "indexmap 2.14.2",
  "ipnet",
@@ -2524,7 +2563,9 @@ dependencies = [
  "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
+ "betterlite-auth",
  "betterlite-cli",
+ "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4270,6 +4311,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -10166,7 +10208,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a253edfdea34032da21af84e16fcc94f4c7a6ba237f9f3bc2dbf43cea8535c44"
 dependencies = [
  "annotate-snippets",
- "base64 0.22.1",
+ "base64 0.23.1",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",
@@ -10793,7 +10835,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

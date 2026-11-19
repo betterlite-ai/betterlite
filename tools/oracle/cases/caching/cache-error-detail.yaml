@@ -1,0 +1,48 @@
+kind: helper
+name: caching-cache-error-detail
+call:
+  b4305:
+    scenarios:
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+          detail: the deployment is gone
+          code: 404
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+          other: field
+          detail: null
+env: {}
+compare:
+  ignore: []

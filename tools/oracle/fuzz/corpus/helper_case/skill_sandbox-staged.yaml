@@ -1,0 +1,11 @@
+kind: helper
+name: skill_sandbox_staged
+call:
+  skill_sandbox:
+    code: "print('hello')\n"
+    files:
+      main.py: "print('hello')\n"
+    image: null
+    execution: {exit_code: 0, stdout: "hello\n", stderr: null}
+env: {}
+compare: {ignore: []}
