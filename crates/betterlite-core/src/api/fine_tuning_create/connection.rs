@@ -97,7 +97,7 @@ pub fn resolve_timeout(call: &CreateFineTuningJobCall) -> Result<FineTuningTimeo
         )?)),
     }
 }
-fn is_unset(value: &TimeoutValue) -> bool {
+const fn is_unset(value: &TimeoutValue) -> bool {
     match value {
         TimeoutValue::Number(seconds) => *seconds == 0.0,
         TimeoutValue::String(text) => text.is_empty(),
