@@ -24,9 +24,9 @@ pub struct SpendCalculateRequest {
 pub fn decode_spend_estimate(bytes: &[u8]) -> Result<SpendCalculateRequest, EstimateError> {
     let fields = parse_body(bytes)?;
     let mut issues = Vec::new();
-    let model = narrow_model(fields.get("model"), &mut issues);
-    let messages = narrow_messages(fields.get("messages"), &mut issues);
-    let completion_response = narrow_response(fields.get("completion_response"), &mut issues);
+    let model = narrow(&fields, "model", &mut issues);
+    let messages = narrow(&fields, "messages", &mut issues);
+    let completion_response = narrow(&fields, "completion_response", &mut issues);
     if !issues.is_empty() {
         return Err(EstimateError::Request(issues));
     }
@@ -61,35 +61,66 @@ fn parse_body(bytes: &[u8]) -> Result<IndexMap<String, Json>, EstimateError> {
     Ok(fields)
 }
 
-fn narrow_model(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<String> {
-    match field {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(text)) => Some(text.clone()),
-        Some(_) => {
-            issues.push(field_issue("string_type", "model", STRING));
-            None
+// The type each optional field declares, with the issue pydantic reports when a value doesn't fit it
+trait FieldValue: Sized {
+    const KIND: &'static str;
+    const MESSAGE: &'static str;
+
+    fn from_json(value: &Json) -> Option<Self>;
+}
+
+impl FieldValue for String {
+    const KIND: &'static str = "string_type";
+    const MESSAGE: &'static str = STRING;
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            Json::Text(text) => Some(text.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         }
     }
 }
 
-fn narrow_messages(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<Vec<Json>> {
-    match field {
-        None | Some(Json::Null) => None,
-        Some(Json::List(items)) => Some(items.clone()),
-        Some(_) => {
-            issues.push(field_issue("list_type", "messages", LIST));
-            None
+impl FieldValue for Vec<Json> {
+    const KIND: &'static str = "list_type";
+    const MESSAGE: &'static str = LIST;
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            Json::List(items) => Some(items.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
         }
     }
 }
 
-fn narrow_response(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<Json> {
-    match field {
+impl FieldValue for Json {
+    const KIND: &'static str = "dict_type";
+    const MESSAGE: &'static str = DICTIONARY;
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            object @ Json::Object(_) => Some(object.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        }
+    }
+}
+
+fn narrow<T>(
+    fields: &IndexMap<String, Json>,
+    name: &'static str,
+    issues: &mut Vec<Issue>,
+) -> Option<T>
+where
+    T: FieldValue,
+{
+    match fields.get(name) {
         None | Some(Json::Null) => None,
-        Some(object @ Json::Object(_)) => Some(object.clone()),
-        Some(_) => {
-            issues.push(field_issue("dict_type", "completion_response", DICTIONARY));
-            None
+        Some(value) => {
+            let Some(narrowed) = T::from_json(value) else {
+                issues.push(field_issue(T::KIND, name, T::MESSAGE));
+                return None;
+            };
+            Some(narrowed)
         }
     }
 }
