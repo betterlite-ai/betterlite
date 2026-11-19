@@ -2,10 +2,9 @@
 
 use betterlite_server::plugin_routes::config::PluginRegistry;
 use libfuzzer_sys::fuzz_target;
-use serde_json::{Map, Value};
 
 fuzz_target!(|text: &str| {
-    let Ok(settings) = serde_json::from_str::<Map<String, Value>>(text) else {
+    let Ok(settings) = serde_json::from_str(text) else {
         return;
     };
     let registry = PluginRegistry::default();
