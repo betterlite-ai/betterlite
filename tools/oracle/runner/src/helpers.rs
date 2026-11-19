@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::fs;
 use std::io::{self, Write as _};
 use std::iter;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use betterlite_oracle_helper_api::group::Group;
@@ -213,6 +215,48 @@ pub fn sync_litellm(root: &Path) -> Result<(), HelperRunError> {
     } else {
         Err(HelperRunError::ProcessSyncExited(status))
     }
+}
+
+// Prisma writes client.py only when generate runs, so its presence is the record that the client exists
+pub fn generate_prisma_client(root: &Path) -> Result<(), HelperRunError> {
+    let project = root.join("tools/oracle/litellm");
+    let library = project.join(".venv/lib");
+    let Some(python) = python_folder(&library) else {
+        return Err(HelperRunError::PrismaMissing { path: library });
+    };
+    let site_packages = python.join("site-packages");
+    if site_packages.join("prisma/client.py").is_file() {
+        return Ok(());
+    }
+    let schema = site_packages.join("litellm/proxy/schema.prisma");
+    if !schema.is_file() {
+        return Err(HelperRunError::PrismaMissing { path: schema });
+    }
+    let status = Command::new("uv")
+        .args(["run", "--locked", "prisma", "generate", "--schema"])
+        .arg(&schema)
+        .current_dir(&project)
+        .status()
+        .map_err(HelperRunError::PrismaGenerate)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(HelperRunError::PrismaGenerateExited(status))
+    }
+}
+
+fn python_folder(library: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(library).ok()?;
+    let mut folders = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| name.starts_with("python3."))
+        });
+    let folder = folders.next()?;
+    folders.next().is_none().then_some(folder)
 }
 
 mod answers;

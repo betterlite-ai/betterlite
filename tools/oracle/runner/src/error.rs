@@ -50,6 +50,12 @@ pub enum HelperRunError {
     ProcessSync(#[source] io::Error),
     #[error("LiteLLM environment synchronization exited with {0}")]
     ProcessSyncExited(ExitStatus),
+    #[error("Prisma needs {path}, which is missing")]
+    PrismaMissing { path: PathBuf },
+    #[error("cannot run prisma generate: {0}")]
+    PrismaGenerate(#[source] io::Error),
+    #[error("prisma generate exited with {0}")]
+    PrismaGenerateExited(ExitStatus),
     #[error("cannot write progress: {0}")]
     Output(#[source] io::Error),
     #[error("filesystem error at {path}: {source}")]

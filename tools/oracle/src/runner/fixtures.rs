@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use betterlite_oracle_runner::helpers::{generate_prisma_client, sync_litellm};
 use betterlite_postgres_fixture::connection::{
     DatabaseNameGenerator, PostgresFixture, RandomDatabaseName,
 };
@@ -58,6 +61,10 @@ fn provision_pair<G>(
 where
     G: DatabaseNameGenerator,
 {
+    // the fixture's gateways run from the synced venv, and LiteLLM's Prisma client must exist before it boots
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    sync_litellm(&root)?;
+    generate_prisma_client(&root)?;
     let first = PostgresFixture::provision_with_generator_sync(configured_url, database, generator)
         .map_err(OracleError::DatabaseFixture)?;
     let second =

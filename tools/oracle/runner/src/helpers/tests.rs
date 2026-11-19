@@ -264,3 +264,11 @@ fn litellm_sync_reports_a_missing_project() {
         .unwrap_err();
     assert!(matches!(error, HelperRunError::ProcessSync(_)));
 }
+
+#[test]
+fn prisma_generate_reports_a_missing_schema() {
+    let error =
+        super::generate_prisma_client(Path::new("/definitely-missing-betterlite-oracle-project"))
+            .unwrap_err();
+    assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
+}
