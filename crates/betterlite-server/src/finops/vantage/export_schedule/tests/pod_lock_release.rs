@@ -63,6 +63,34 @@ async fn an_unsupported_frequency_still_releases_the_vantage_lock() {
 }
 
 #[tokio::test]
+async fn draining_waits_for_the_release_task() {
+    let recorder = Recorder::new(false);
+    let logger = Arc::new(support::build(
+        &support::environment(&[]),
+        support::params(),
+        &recorder,
+        None,
+    ));
+    let release = Arc::new(Notify::new());
+    logger.tasks.spawn({
+        let release = Arc::clone(&release);
+        async move { release.notified().await }
+    });
+    let waiting = TaskTracker::new();
+    let drain = waiting.spawn({
+        let logger = Arc::clone(&logger);
+        async move { logger.drain().await }
+    });
+    tokio::task::yield_now().await;
+    assert!(!drain.is_finished(), "the drain waits for the release task");
+    release.notify_one();
+    timeout(Duration::from_secs(10), drain)
+        .await
+        .expect("the drain finishes")
+        .expect("the drain task is not cancelled");
+}
+
+#[tokio::test]
 async fn a_cancelled_export_still_releases_the_vantage_lock() {
     let started = Arc::new(Notify::new());
     let recorder = Recorder::paused(Arc::clone(&started));

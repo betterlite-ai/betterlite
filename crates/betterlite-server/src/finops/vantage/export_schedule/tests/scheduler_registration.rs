@@ -8,10 +8,12 @@ use crate::finops::vantage::error::VantageInitError;
 use crate::finops::vantage::export::VantageExportLogger;
 use crate::finops::vantage::export_schedule::init_vantage_background_job;
 use crate::finops::vantage::store::{VantageCallbackList, VantageLoggers};
-use crate::finops::vantage::support::{self, Recorder, RecordingScheduler};
+use crate::finops::vantage::support::{
+    self, ExportCall, FIXED_NOW, Recorder, RecordingScheduler, at,
+};
 
-#[test]
-fn the_interval_frequency_registers_an_interval_job() {
+#[tokio::test]
+async fn the_interval_frequency_registers_an_interval_job() {
     let recorder = Recorder::new(false);
     let mut params = support::params();
     params.frequency = Some("interval".to_owned());
@@ -26,6 +28,20 @@ fn the_interval_frequency_registers_an_interval_job() {
     assert_eq!(jobs.len(), 1);
     assert!(Arc::ptr_eq(&jobs[0].0, &registered));
     assert_eq!(jobs[0].1, ScheduleTrigger::Interval { seconds: 90 });
+    jobs[0]
+        .0
+        .initialize_focus_export_job()
+        .await
+        .expect("the registered job exports");
+    assert_eq!(
+        recorder.calls(),
+        vec![ExportCall::Window {
+            start: at("2024-03-10T13:45:53.123456Z"),
+            end: at(FIXED_NOW),
+            frequency: "interval".to_owned(),
+            limit: None,
+        }]
+    );
 }
 
 #[test]

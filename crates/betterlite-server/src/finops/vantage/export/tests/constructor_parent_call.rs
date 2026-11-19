@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::finops::vantage::support::{self, Recorder};
+use crate::finops::vantage::error::VantageExportError;
+use crate::finops::vantage::export::VantageExportLogger;
+use crate::finops::vantage::support::{self, ExportCall, FIXED_NOW, Recorder, at};
 
 #[test]
 fn the_parent_runs_as_vantage_in_csv_with_the_vantage_prefix() {
@@ -46,6 +48,31 @@ fn the_cron_offset_parameter_overrides_the_focus_environment() {
     params.cron_offset_minute = Some(9);
     let logger = support::build(&environment, params, &Recorder::new(false), None);
     assert_eq!(logger.focus.cron_offset_minute, 9);
+}
+
+#[tokio::test]
+async fn the_export_operation_is_the_parent_export_behind_the_dyn_trait() {
+    let recorder = Recorder::new(false);
+    let logger = support::build(&BTreeMap::new(), support::params(), &recorder, None);
+    let export: &dyn VantageExportLogger = &logger;
+    export
+        .export_usage_data(None, None, None)
+        .await
+        .expect("the fake export succeeds");
+    assert_eq!(recorder.calls(), vec![ExportCall::All { limit: None }]);
+}
+
+#[tokio::test]
+async fn an_unpaired_window_is_refused_before_the_engine_runs() {
+    let recorder = Recorder::new(false);
+    let logger = support::build(&BTreeMap::new(), support::params(), &recorder, None);
+    let export: &dyn VantageExportLogger = &logger;
+    let error = export
+        .export_usage_data(None, Some(at(FIXED_NOW)), None)
+        .await
+        .expect_err("one bound alone is refused");
+    assert!(matches!(error, VantageExportError::UnpairedBounds));
+    assert!(recorder.calls().is_empty());
 }
 
 #[test]
