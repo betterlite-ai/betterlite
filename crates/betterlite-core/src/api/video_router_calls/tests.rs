@@ -420,26 +420,25 @@ fn plan_known_model_recognized_and_listed_is_router() {
     );
 }
 
-#[test]
-fn plan_known_model_admin_public_name_is_router() {
+#[rstest]
+#[case::admin(true, VideoRoute::Router { model: "shared-video".to_owned(), specific_deployment: false })]
+#[case::not_admin(false, VideoRoute::NotFound { model: "shared-video".to_owned() })]
+fn plan_known_model_public_name_needs_the_admin_flag(
+    #[case] is_proxy_admin_without_team: bool,
+    #[case] expected: VideoRoute,
+) {
     let view = FakeView {
         team_public: vec!["shared-video"],
         ..empty_view()
     };
     let route = plan_video_route(
         &VideoRouteInput {
-            is_proxy_admin_without_team: true,
-            ..input(VideoCallKind::Status, Some("shared-video"))
+            is_proxy_admin_without_team,
+            ..input(VideoCallKind::Generation, Some("shared-video"))
         },
         Some(&view),
     );
-    assert_eq!(
-        route,
-        VideoRoute::Router {
-            model: "shared-video".to_owned(),
-            specific_deployment: false
-        }
-    );
+    assert_eq!(route, expected);
 }
 
 #[test]
