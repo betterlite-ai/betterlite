@@ -18,7 +18,7 @@ use super::ScenarioError;
 
 // the clock the local read tier and the window keys run on, which a step moves
 pub(super) struct Clock {
-    seconds: Arc<Mutex<f64>>,
+    pub(super) seconds: Arc<Mutex<f64>>,
 }
 
 impl Clock {
@@ -26,15 +26,6 @@ impl Clock {
         Self {
             seconds: Arc::new(Mutex::new(0.0)),
         }
-    }
-
-    pub(super) fn set_millis(&self, millis: u64) {
-        *self.seconds.lock().unwrap_or_else(PoisonError::into_inner) = millis as f64 / 1_000.0;
-    }
-
-    pub(super) fn source(&self) -> Arc<dyn Fn() -> f64 + Send + Sync> {
-        let shared = Arc::clone(&self.seconds);
-        Arc::new(move || *shared.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
@@ -159,6 +150,11 @@ pub(super) fn seed_tier(
 }
 
 pub(super) fn at(millis: u64) -> Result<DateTime<Utc>, ScenarioError> {
-    let timestamp = i64::try_from(millis).map_err(|_| ScenarioError::Time { millis })?;
-    DateTime::from_timestamp_millis(timestamp).ok_or(ScenarioError::Time { millis })
+    match i64::try_from(millis)
+        .ok()
+        .and_then(DateTime::from_timestamp_millis)
+    {
+        Some(instant) => Ok(instant),
+        None => Err(ScenarioError::Time { millis }),
+    }
 }

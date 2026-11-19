@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_error::rate_limit::RateLimitCategory;
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -17,7 +15,12 @@ pub struct DeploymentLoad {
 }
 
 // The litellm.RateLimitError async_get_available_deployments raises once every deployment is past a limit.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error(
+    "No deployments available for selected model. Passed model={}. Deployments={}",
+    .model,
+    deployments_text(.deployments)
+)]
 pub struct NoDeploymentAvailable {
     pub model: String,
     pub deployments: Vec<DeploymentLoad>,
@@ -31,56 +34,40 @@ impl NoDeploymentAvailable {
     pub const CATEGORY: RateLimitCategory = RateLimitCategory::VendorRateLimit;
 }
 
-// A counter the pinned dict prints as None, and a limit it prints as float("inf") when the deployment sets none.
-struct Counted(Option<i64>);
-
-impl fmt::Display for Counted {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(value) => value.fmt(formatter),
-            None => formatter.write_str("None"),
+// The Python dict repr of the raised error: a None counter prints None and a missing limit prints inf.
+fn deployments_text(loads: &[DeploymentLoad]) -> String {
+    let mut text = String::from("{");
+    for (position, load) in loads.iter().enumerate() {
+        if position > 0 {
+            text.push_str(", ");
         }
-    }
-}
-
-struct Limited(Option<Decimal>);
-
-impl fmt::Display for Limited {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(value) => value.fmt(formatter),
-            None => formatter.write_str("inf"),
+        text.push('\'');
+        text.push_str(&load.id);
+        text.push_str("': {'current_tpm': ");
+        match load.current_tpm {
+            Some(count) => text.push_str(&count.to_string()),
+            None => text.push_str("None"),
         }
-    }
-}
-
-impl fmt::Display for NoDeploymentAvailable {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "No deployments available for selected model. Passed model={}. Deployments=",
-            self.model
-        )?;
-        formatter.write_str("{")?;
-        for (position, load) in self.deployments.iter().enumerate() {
-            if position > 0 {
-                formatter.write_str(", ")?;
-            }
-            write!(
-                formatter,
-                "'{}': {{'current_tpm': {}, 'tpm_limit': {}, 'current_rpm': {}, 'rpm_limit': {}}}",
-                load.id,
-                Counted(load.current_tpm),
-                Limited(load.tpm_limit),
-                Counted(load.current_rpm),
-                Limited(load.rpm_limit),
-            )?;
+        text.push_str(", 'tpm_limit': ");
+        match load.tpm_limit {
+            Some(limit) => text.push_str(&limit.to_string()),
+            None => text.push_str("inf"),
         }
-        formatter.write_str("}")
+        text.push_str(", 'current_rpm': ");
+        match load.current_rpm {
+            Some(count) => text.push_str(&count.to_string()),
+            None => text.push_str("None"),
+        }
+        text.push_str(", 'rpm_limit': ");
+        match load.rpm_limit {
+            Some(limit) => text.push_str(&limit.to_string()),
+            None => text.push_str("inf"),
+        }
+        text.push('}');
     }
+    text.push('}');
+    text
 }
-
-impl std::error::Error for NoDeploymentAvailable {}
 
 // usage_counter_keys builds its key from the deployment id, which the store rejects only past its key limit.
 #[derive(Debug, Error)]
@@ -93,8 +80,7 @@ pub enum KeyError {
     },
 }
 
-// _return_potential_deployments adds the usage to the limit, so LiteLLM fails the whole selection with a TypeError
-// when a limit is not a number; betterlite names the deployment and the field instead.
+// _return_potential_deployments adds the usage to the limit, so a limit that is not a number names its field here.
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum LimitError {
     #[error("deployment {deployment} has a {field} limit that is not a number")]

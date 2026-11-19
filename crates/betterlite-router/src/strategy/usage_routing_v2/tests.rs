@@ -17,8 +17,7 @@ use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
 
 use super::select;
 
-// A sampled rng that answers the same u32 draw each time: 1 is the first index every range accepts and u32::MAX is
-// its last.
+// A sampled rng that answers the same u32 draw each time: 1 is the first index a range accepts and u32::MAX its last.
 struct Fixed(u32);
 
 impl rand::TryRng for Fixed {
@@ -57,6 +56,21 @@ fn deployment(id: &str, params: &[(&str, Json)]) -> DeploymentSpec {
         generate,
     )
     .expect("the test deployment is valid")
+}
+
+// a request fact set with only the token estimate filled in
+fn request_facts(input_token_count: Option<usize>) -> RequestFacts {
+    RequestFacts {
+        messages: None,
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
+        target_order: None,
+        input_token_count,
+        compaction_pending: false,
+    }
 }
 
 async fn pick(
@@ -99,15 +113,9 @@ async fn the_request_tokens_screen_a_cold_deployment() {
         "a",
         &[("tpm", Json::Number(serde_json::Number::from(5)))],
     )];
-    let roomy = RequestFacts {
-        input_token_count: Some(5),
-        ..RequestFacts::default()
-    };
+    let roomy = request_facts(Some(5));
     assert_eq!(pick(&pool, &roomy, &mut Fixed(0)).await.unwrap(), 0);
-    let over = RequestFacts {
-        input_token_count: Some(6),
-        ..RequestFacts::default()
-    };
+    let over = request_facts(Some(6));
     assert_eq!(pick(&pool, &over, &mut Fixed(0)).await.unwrap(), 1);
 }
 

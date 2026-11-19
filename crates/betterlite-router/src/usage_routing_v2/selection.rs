@@ -64,8 +64,7 @@ pub struct Selection<'pool> {
     pub rpm: Option<&'pool [Option<RouteValue>]>,
 }
 
-// One deployment id's row of the pinned counter dicts: a repeated id keeps its first position and its last
-// deployment and value, which is what building the dicts from the key lists does.
+// One id's row of the pinned counter dicts: a repeated id keeps its first position and its last deployment.
 struct Row<'pool> {
     id: &'pool str,
     index: usize,
@@ -81,8 +80,7 @@ struct Limits {
 }
 
 impl Selection<'_> {
-    // _common_checks_available_deployment: the deployment with the lowest absolute tpm among those under their own
-    // limits, and one of the tied ones by the caller's randomness.
+    // _common_checks_available_deployment: lowest absolute tpm under the limits, ties by the caller's randomness.
     pub fn choose<R>(&self, random: &mut R) -> Result<Option<usize>, LimitError>
     where
         R: Rng,
@@ -110,7 +108,8 @@ impl Selection<'_> {
         if candidates.is_empty() {
             return Ok(None);
         }
-        Ok(Some(candidates[random.random_range(0..candidates.len())]))
+        let index = random.random_range(0..candidates.len());
+        Ok(candidates.get(index).copied())
     }
 
     // The dict async_get_available_deployments reports in its RateLimitError, in first-observation order.
@@ -173,8 +172,7 @@ impl Selection<'_> {
     }
 }
 
-// The pinned `or` chain: the deployment's own limit, then litellm_params, then model_info, and float("inf") when
-// none is set. An explicit zero is used as given, and a value of another type is an error that names the field.
+// The pinned `or` chain: own limit, litellm_params, model_info, then inf; an explicit zero is used as given.
 fn limit(deployment: &DeploymentSpec, field: &'static str) -> Result<Option<Decimal>, LimitError> {
     for source in [
         &deployment.extra,

@@ -12,8 +12,7 @@ use crate::routing_value_store::RouteValue;
 use super::error::SelectionError;
 use super::selection::{CounterKeys, Selection};
 
-// async_get_available_deployments and get_available_deployments: one pool, the counters read for it and the
-// request's token estimate.
+// async_get_available_deployments and get_available_deployments: one pool, its counters and the request's tokens.
 pub struct UsageRoutingV2<'request> {
     pub group: &'request str,
     pub deployments: &'request [DeploymentSpec],
@@ -22,8 +21,7 @@ pub struct UsageRoutingV2<'request> {
 }
 
 impl UsageRoutingV2<'_> {
-    // async_get_available_deployments: the tpm and the rpm windows of the whole pool in one batch read, taken
-    // from the request's prefetched usage when its healthy-deployment read already fetched them.
+    // async_get_available_deployments: the pool's tpm and rpm windows in one batch read, or the request's prefetch.
     pub async fn select_async<S, R>(
         &self,
         store: &S,
@@ -67,12 +65,11 @@ impl UsageRoutingV2<'_> {
         };
         match selection.choose(random)? {
             Some(index) => Ok(index),
-            None => Err(selection.no_deployment()?.into()),
+            None => Err(SelectionError::NoDeployment(selection.no_deployment()?)),
         }
     }
 
-    // get_available_deployments: the sync facade reads the tpm windows and then the rpm windows separately, which
-    // here is the two reads of the local tier this process holds, the only cache a sync caller can reach.
+    // get_available_deployments: the tpm windows then the rpm windows, read from the local tier a sync caller reaches.
     pub fn select_now<R>(
         &self,
         tier: Option<&LocalTier<RouteValue>>,
@@ -93,7 +90,7 @@ impl UsageRoutingV2<'_> {
         };
         match selection.choose(random)? {
             Some(index) => Ok(index),
-            None => Err(selection.no_deployment()?.into()),
+            None => Err(SelectionError::NoDeployment(selection.no_deployment()?)),
         }
     }
 }

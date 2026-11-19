@@ -123,8 +123,7 @@ pub(super) fn selection<'pool>(
     }
 }
 
-// A sampled rng that answers the same u32 draw each time: 1 is the first index every range accepts and
-// u32::MAX is its last.
+// A sampled rng that answers the same u32 draw each time: 1 is the first index a range accepts and u32::MAX its last.
 pub(super) struct FixedRng(pub(super) u32);
 
 impl rand::TryRng for FixedRng {

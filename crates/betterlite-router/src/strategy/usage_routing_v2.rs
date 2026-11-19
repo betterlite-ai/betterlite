@@ -8,8 +8,7 @@ use crate::usage_routing_v2::selection::Selection;
 
 mod tests;
 
-// A route carries no counter store, so this arm answers what the pinned selector answers to a cache that holds no
-// window value: every deployment counts as unused and the limits leave only the cold pool.
+// A route carries no counter store: every deployment counts as unused and only the limits screen the cold pool.
 pub(super) fn select<R>(
     context: &StrategyContext<'_>,
     random: &mut R,

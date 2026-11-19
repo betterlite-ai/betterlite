@@ -176,15 +176,18 @@ fn the_limit_folds_from_the_deployment_first() {
 
 fn the_limit_folds_through_litellm_params() {
     let pool = [
-        deployment("a", &[("tpm", number(100))], &[("tpm", number(1))], &[]),
+        deployment("a", &[("rpm", number(2))], &[("rpm", number(100))], &[]),
         plain("b"),
     ];
-    let tpm = values(&[Some(5), Some(9)]);
-    let rpm = values(&[None, None]);
-    let picked = selection(&pool, Some(&tpm), Some(&rpm), 0)
-        .choose(&mut first())
-        .unwrap();
-    assert_eq!(picked, Some(0));
+    let tpm = values(&[None, None]);
+    let rpm = values(&[Some(1), None]);
+    // the litellm_params rpm of 2 screens a out; the model_info 100 would have admitted it
+    assert_eq!(
+        selection(&pool, Some(&tpm), Some(&rpm), 0)
+            .choose(&mut first())
+            .unwrap(),
+        Some(1)
+    );
 }
 
 fn a_null_limit_falls_through() {

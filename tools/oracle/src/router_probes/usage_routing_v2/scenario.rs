@@ -1,5 +1,6 @@
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -98,12 +99,17 @@ impl Scenario {
         }
         let clock = Clock::new();
         if let Some(first) = input.steps.first() {
-            clock.set_millis(first.now_millis);
+            *clock.seconds.lock().unwrap_or_else(PoisonError::into_inner) =
+                Duration::from_millis(first.now_millis).as_secs_f64();
         }
-        let usage = new_tier(clock.source());
+        let clock_source: Arc<dyn Fn() -> f64 + Send + Sync> = {
+            let seconds = Arc::clone(&clock.seconds);
+            Arc::new(move || *seconds.lock().unwrap_or_else(PoisonError::into_inner))
+        };
+        let usage = new_tier(Arc::clone(&clock_source));
         seed_tier(&usage, &input.local)?;
         let tiers = ReadTiers {
-            cooldown: Arc::new(new_tier(clock.source())),
+            cooldown: Arc::new(new_tier(clock_source)),
             usage: Some(Arc::new(usage)),
         };
         let count = input
@@ -127,7 +133,12 @@ impl Scenario {
         step: &Step,
         random: &mut InjectedRandom<'_>,
     ) -> Result<StepOutput, ScenarioError> {
-        self.clock.set_millis(step.now_millis);
+        *self
+            .clock
+            .seconds
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            Duration::from_millis(step.now_millis).as_secs_f64();
         match step.kind {
             StepKind::Arm => {
                 let armed = self.arm(step)?;
@@ -175,12 +186,7 @@ impl Scenario {
         step: &Step,
         random: &mut InjectedRandom<'_>,
     ) -> Result<StepOutput, ScenarioError> {
-        let selection = UsageRoutingV2 {
-            group: &self.group,
-            deployments: &self.deployments,
-            input_tokens: step.input_tokens,
-            now: at(step.now_millis)?,
-        };
+        let selection = usage(&self.group, &self.deployments, step)?;
         let request = self
             .requests
             .get_mut(step.request)
@@ -199,12 +205,7 @@ impl Scenario {
         random: &mut InjectedRandom<'_>,
     ) -> Result<StepOutput, ScenarioError> {
         let tier = self.tiers.usage.clone().ok_or(ScenarioError::NoUsageTier)?;
-        let selection = UsageRoutingV2 {
-            group: &self.group,
-            deployments: &self.deployments,
-            input_tokens: step.input_tokens,
-            now: at(step.now_millis)?,
-        };
+        let selection = usage(&self.group, &self.deployments, step)?;
         self.observation(
             StepKind::SelectSync,
             selection.select_now(Some(tier.as_ref()), random),
@@ -237,6 +238,20 @@ impl Scenario {
             Err(SelectionError::Limit(source)) => Err(ScenarioError::Limit { source }),
         }
     }
+}
+
+// the selection one step makes: the pool, the request's token estimate and the step's time
+fn usage<'model>(
+    group: &'model str,
+    deployments: &'model [DeploymentSpec],
+    step: &Step,
+) -> Result<UsageRoutingV2<'model>, ScenarioError> {
+    Ok(UsageRoutingV2 {
+        group,
+        deployments,
+        input_tokens: step.input_tokens,
+        now: at(step.now_millis)?,
+    })
 }
 
 fn shape(reported: &NoDeploymentAvailable) -> ErrorShape {
