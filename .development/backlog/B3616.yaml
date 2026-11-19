@@ -1,14 +1,14 @@
 id: B3616
 milestone: M5 api families
 title: Pass-through configured route registration
-status: todo
+status: done
 depends_on: [B3614, B002, B198]
 file: tasks/B3616-passthrough-route-registration.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
 parent: B102
 split_from: B102
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2471

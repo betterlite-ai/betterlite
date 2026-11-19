@@ -89,6 +89,8 @@ pub(crate) struct Progress {
     pub(crate) red: Vec<Red>,
     #[serde(default)]
     pub(crate) reported_done: bool,
+    #[serde(default)]
+    pub(crate) parity_earlier: Option<EarlierReview>,
 }
 
 impl Progress {
@@ -128,6 +130,7 @@ impl Progress {
                 starts: Vec::new(),
                 red: Vec::new(),
                 reported_done: false,
+                parity_earlier: None,
             }),
             Err(source) => Err(GateError::Read { path, source }),
         }
