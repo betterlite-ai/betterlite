@@ -24,6 +24,17 @@ description: >-
   and a scim_list_query fuzz target covers the request decoder; name its replay test
   replays_the_scim_list_query_corpus. The 142 owned function lines plus the team predicate
   type budget 210 implementation, 180 tests and 230 query/HTTP/oracle fixtures, capped 700.
+
+  B9941 mounts scim_router and leaves crates/betterlite-server/src/scim_directory_reads.rs as a stub routes function
+  that scim_router already merges, so fill only scim_directory_reads.rs and scim_directory_reads/** and leave scim.rs
+  and routes.rs as they are. The four GET routes keep the full /scim/v2 prefix and LiteLLM's {user_id} and
+  {group_id} names, because B1638, B1639, B1640 and B064 add their methods to the same two resource paths. Seed
+  distinct created_at values, members_with_roles (a member with no user row included) and user teams through
+  B9941's `scim:` block under `database: seed:`. LiteLLM opens the case database through B9942's Prisma client.
+  The handlers read it through B8610's shared.db: Shared holds no database handle on main, so a booted betterlite
+  cannot read a seeded row before B8610. The auth sub-cases of missing-resource-invalid-page-and-auth need B052,
+  because main's master-key stage never looks a key up in Postgres, while LiteLLM with a database answers an unknown
+  key with 401 "Invalid proxy server token passed".
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
