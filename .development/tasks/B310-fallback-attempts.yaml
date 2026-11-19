@@ -1,6 +1,6 @@
 id: B310
 title: Execute authorized fallback attempts
-description: 'Compose B309 plans with the B017 retry executor and B052 access checks and B3008 budget rechecks.
+description: 'Compose B309 plans with the B017 retry executor and B748 fallback access checks (RouterFallbackAccessCheck) and B3008 budget rechecks.
   Recheck access and budget on every target before contacting a provider, preserve provider-scoped resources,
   and move capacity and reservation ownership between attempts. Emit B398 success/failure fallback events
   and the retry/fallback headers, including optional redacted error details. Expose the same engine to
