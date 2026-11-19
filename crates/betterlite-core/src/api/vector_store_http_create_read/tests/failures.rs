@@ -53,6 +53,44 @@ fn call_for<'call>(
     }
 }
 
+fn check_create_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
+    let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
+        panic!("a status of 429 on the POST is a provider error");
+    };
+    assert_eq!(error.status_code, 429);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, "slow");
+    assert_eq!(
+        error.headers.get("retry-after"),
+        Some(&Json::Text("3".to_owned()))
+    );
+    assert_eq!(
+        error.headers.get("content-length"),
+        Some(&Json::Text("4".to_owned()))
+    );
+    assert_eq!(config.errors().len(), 1);
+}
+
+fn check_retrieve_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
+    let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
+        panic!("the converter refuses the body at the response status");
+    };
+    assert_eq!(error.status_code, 429);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(
+        error.headers.get("retry-after"),
+        Some(&Json::Text("3".to_owned()))
+    );
+    assert_eq!(config.errors().len(), 1);
+}
+
+fn check_list_failure(result: &Result<Json, CreateReadError>, config: &RecordingConfig) {
+    let Err(CreateReadError::Write(WriteError::Reply(_))) = result else {
+        panic!("a body that is not JSON is a reply error for the list");
+    };
+    assert!(config.errors().is_empty());
+}
+
 // One send per call, and the answer differs by handler: the POST raises, the GET hands the body to its converter, and list parses it itself
 #[rstest]
 #[case::create(Operation::Create)]
@@ -74,41 +112,9 @@ async fn create_read_failures(#[case] operation: Operation) {
     let mut fixture = Fixture::new("vector_store_failure");
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     match operation {
-        Operation::Create => {
-            let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
-                panic!("a status of 429 on the POST is a provider error");
-            };
-            assert_eq!(error.status_code, 429);
-            assert!(!error.status_code_is_synthesized);
-            assert_eq!(error.message, "slow");
-            assert_eq!(
-                error.headers.get("retry-after"),
-                Some(&Json::Text("3".to_owned()))
-            );
-            assert_eq!(
-                error.headers.get("content-length"),
-                Some(&Json::Text("4".to_owned()))
-            );
-            assert_eq!(config.errors().len(), 1);
-        }
-        Operation::Retrieve => {
-            let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
-                panic!("the converter refuses the body at the response status");
-            };
-            assert_eq!(error.status_code, 429);
-            assert!(!error.status_code_is_synthesized);
-            assert_eq!(
-                error.headers.get("retry-after"),
-                Some(&Json::Text("3".to_owned()))
-            );
-            assert_eq!(config.errors().len(), 1);
-        }
-        Operation::List => {
-            let Err(CreateReadError::Write(WriteError::Reply(_))) = result else {
-                panic!("a body that is not JSON is a reply error for the list");
-            };
-            assert!(config.errors().is_empty());
-        }
+        Operation::Create => check_create_failure(&result, &config),
+        Operation::Retrieve => check_retrieve_failure(&result, &config),
+        Operation::List => check_list_failure(&result, &config),
     }
     assert_eq!(wire.requests().len(), 1);
 }
@@ -140,6 +146,28 @@ async fn transport_failure_is_a_synthesized_500(#[case] operation: Operation) {
     );
     assert!(error.headers.is_empty());
     assert_eq!(wire.requests().len(), 1);
+}
+
+fn check_timeout_message(mode: ClientKind, message: &str) {
+    match mode {
+        ClientKind::Sync => assert_eq!(
+            message,
+            "litellm.Timeout: Connection timed out after None seconds."
+        ),
+        ClientKind::Asynchronous => {
+            assert!(message.starts_with(
+                "litellm.Timeout: Connection timed out. Timeout passed=0.1, time taken="
+            ));
+            assert!(message.ends_with(" seconds"));
+            assert!(!message.contains("time taken=0.000"));
+            let elapsed = message
+                .split("time taken=")
+                .nth(1)
+                .expect("the message carries the elapsed time")
+                .trim_end_matches(" seconds");
+            assert_eq!(elapsed.split('.').nth(1).map(str::len), Some(3));
+        }
+    }
 }
 
 // The POST handlers wrap a timeout into litellm.Timeout with 408; the sync one never passed a timeout, so its message says None
@@ -181,26 +209,7 @@ async fn create_timeout_is_a_408(#[case] mode: ClientKind) {
     assert_eq!(error.status_code, 408);
     assert!(!error.status_code_is_synthesized);
     assert!(error.headers.is_empty());
-    match mode {
-        ClientKind::Sync => assert_eq!(
-            error.message,
-            "litellm.Timeout: Connection timed out after None seconds."
-        ),
-        ClientKind::Asynchronous => {
-            assert!(error.message.starts_with(
-                "litellm.Timeout: Connection timed out. Timeout passed=0.1, time taken="
-            ));
-            assert!(error.message.ends_with(" seconds"));
-            assert!(!error.message.contains("time taken=0.000"));
-            let elapsed = error
-                .message
-                .split("time taken=")
-                .nth(1)
-                .expect("the message carries the elapsed time")
-                .trim_end_matches(" seconds");
-            assert_eq!(elapsed.split('.').nth(1).map(str::len), Some(3));
-        }
-    }
+    check_timeout_message(mode, &error.message);
 }
 
 // The GET handlers catch the raw timeout, which _handle_error reads as a synthesized 500 with the exception's own text

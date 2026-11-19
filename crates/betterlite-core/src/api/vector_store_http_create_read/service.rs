@@ -70,6 +70,7 @@ pub struct RetrieveCall<'call> {
 }
 
 // The four list fields, each left out of both the logged map and the query when it is None
+#[derive(Default)]
 pub struct ListQuery<'call> {
     pub after: Option<&'call str>,
     pub before: Option<&'call str>,
@@ -274,16 +275,24 @@ where
             Some(provider),
         )))
     })?;
-    // httpx raises for every status outside 2xx, redirects included, so only a create reads a 3xx as an answer
+    decode(provider, operation, &answer)
+}
+
+// httpx raises for every status outside 2xx, redirects included, so only a create reads a 3xx as an answer
+fn decode(
+    provider: &dyn WriteConfig,
+    operation: Operation,
+    answer: &UpstreamResponse,
+) -> Result<Json, CreateReadError> {
     if operation == Operation::Create && !(200..300).contains(&answer.status) {
         return Err(CreateReadError::Write(WriteError::Provider(handle_error(
-            &facts::status_facts(&answer),
+            &facts::status_facts(answer),
             Some(provider),
         ))));
     }
     match operation {
         Operation::Create | Operation::Retrieve => provider
-            .transform_create_response(&facts::http_response(&answer))
+            .transform_create_response(&facts::http_response(answer))
             .map_err(|error| CreateReadError::Write(WriteError::Provider(error))),
         Operation::List => serde_json::from_slice(&answer.body)
             .map_err(|source| CreateReadError::Write(WriteError::Reply(source))),
