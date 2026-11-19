@@ -89,7 +89,7 @@ pub(super) async fn team_refresh(
     let stored = store.entry(&key);
     let alias_present = alias_key
         .as_ref()
-        .is_some_and(|key| lock(&store.entries).contains_key(key));
+        .is_some_and(|candidate| lock(&store.entries).contains_key(candidate));
     let stored_timestamp = number(&stored.0, "last_refreshed_at");
     Ok(json!({
         "team_id_and_alias_keys": {
