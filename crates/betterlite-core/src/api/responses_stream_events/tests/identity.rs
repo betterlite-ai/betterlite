@@ -182,6 +182,39 @@ async fn part_events_encode_annotation_containers(#[case] payload: &str) {
     assert_eq!(decoded.response_id, Some("c".to_owned()));
 }
 
+// LiteLLM's annotation encoder only walks a list, so an annotations object comes through as it arrived
+#[tokio::test]
+async fn part_annotations_that_are_not_a_list_stay_unchanged() {
+    let mut rig = Rig::new(Some(TransformMode::Direct));
+    rig.state = model_state("deployment_a");
+    let payload = r#"{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"hi","annotations":{"container_id":"c"}}}"#;
+    let event = rig
+        .process(payload)
+        .await
+        .expect("the part is processed")
+        .expect("the part is handed on");
+    let parsed: Json = serde_json::from_str(payload).expect("the fixture parses");
+    assert_eq!(
+        at(&event_json(&event), &["part", "annotations"]),
+        at(&parsed, &["part", "annotations"])
+    );
+}
+
+// LiteLLM reads an item's container through getattr, which a list does not answer, so the list stays raw
+#[tokio::test]
+async fn item_values_that_are_not_objects_stay_unchanged() {
+    let mut rig = Rig::new(Some(TransformMode::Direct));
+    rig.state = model_state("deployment_a");
+    let payload = r#"{"type":"response.output_item.added","output_index":0,"item":[{"type":"message","container_id":"c"}]}"#;
+    let event = rig
+        .process(payload)
+        .await
+        .expect("the item is processed")
+        .expect("the item is handed on");
+    let parsed: Json = serde_json::from_str(payload).expect("the fixture parses");
+    assert_eq!(at(&event_json(&event), &["item"]), at(&parsed, &["item"]));
+}
+
 #[tokio::test]
 async fn refusal_parts_leave_their_payload_unchanged() {
     let mut rig = Rig::new(Some(TransformMode::Direct));
