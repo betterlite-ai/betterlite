@@ -61,7 +61,7 @@ fn keys_follow_the_python_or_chain(
         environment: environment.as_ref(),
         global: global.as_ref(),
     });
-    let resolved = resolved.as_ref().map(|key| key.expose_secret().as_str());
+    let resolved = resolved.as_ref().map(ExposeSecret::expose_secret);
     assert_eq!(resolved, expected);
 }
 
