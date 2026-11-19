@@ -91,10 +91,10 @@ async fn ask(
     });
     let mut state = ServerState::new(&config, Arc::new(executor), shared);
     state.model_read_through.read_through = read_through;
-    let state = Arc::new(state);
-    let router = chat_routes_with_call_id(Arc::clone(&state.executor), false)
+    let shared_state = Arc::new(state);
+    let router = chat_routes_with_call_id(Arc::clone(&shared_state.executor), false)
         .expect("routes")
-        .layer(Extension(Arc::clone(&state)));
+        .layer(Extension(Arc::clone(&shared_state)));
     let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
@@ -145,7 +145,7 @@ async fn unknown_model_answers_litellm_text_on_an_engines_path() {
 #[tokio::test]
 async fn unknown_model_retries_once_when_the_read_through_answers() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/chat/completions",
         r#"{"model":"nope","messages":[]}"#,
@@ -160,7 +160,7 @@ async fn unknown_model_retries_once_when_the_read_through_answers() {
 #[tokio::test]
 async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
     let recorder = RecordingReadThrough::new(false);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/chat/completions",
         r#"{"model":"nope","messages":[]}"#,
@@ -175,7 +175,7 @@ async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
 #[tokio::test]
 async fn unknown_model_without_a_model_never_asks_the_read_through() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask("/v1/chat/completions", r#"{"messages":[]}"#, Some(port)).await;
     assert_eq!(status, 400);
     assert_eq!(reply.error.message, litellm_text("None"));

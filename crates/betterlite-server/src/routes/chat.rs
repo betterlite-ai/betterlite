@@ -20,22 +20,23 @@ use betterlite_core::operation::chat::{ChatCall, ChatRequest as DispatchChatRequ
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::normalize::{ErrorFacts, Normalizer, class::Class, provider::provider_facts};
-use betterlite_openai::chat::ChatRequest;
+use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::{ChatRequest, RequestError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
+use crate::route_read_through::route_with_read_through;
+use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::failure;
 use crate::server::render::{FailureShape, plain_failure};
 use crate::state::ServerState;
 
-use self::failure::{
-    chat_failure, internal_failure, not_found_failure, parse_chat_request, routed_deployment,
-};
+use self::failure::{chat_failure, internal_failure, not_found_failure};
 use headers::success_headers;
 
 // LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
@@ -132,6 +133,20 @@ pub(crate) struct CallContext<'id> {
     pub(crate) errors: &'id ErrorLayer,
 }
 
+fn parse_chat_request(body: &Bytes, call: &mut CallContext<'_>) -> Result<ChatRequest, ChatError> {
+    let request = match ChatRequest::parse(body) {
+        Ok(request) => request,
+        Err(source) => {
+            if let RequestError::Body { source: json } = &source {
+                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
+                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
+            }
+            return Err(ChatError::from(source));
+        }
+    };
+    Ok(request)
+}
+
 async fn chat_completion(
     State(state): State<ChatRouteState>,
     path_model: Option<Path<String>>,
@@ -169,6 +184,30 @@ async fn chat_completion(
     };
     let has_content = first_message_has_content(&body);
     execute_chat(&state, &request, has_content, &deployment, &call).await
+}
+
+async fn routed_deployment(
+    state: &ChatRouteState,
+    model: Option<&str>,
+    server: Option<Extension<Arc<ServerState>>>,
+) -> Result<ChatDeployment, ProxyModelNotFoundError> {
+    let model_text = model.map(str::to_owned);
+    let read_through = server
+        .and_then(|Extension(server_state)| server_state.model_read_through.read_through.clone());
+    let executor = Arc::clone(&state.executor);
+    // the AsyncFn bound cannot prove Send for a captured reference, so the attempt owns its reads
+    let attempt = move || {
+        let shared_executor = Arc::clone(&executor);
+        let shared_model = model_text.clone();
+        async move {
+            let text = shared_model.as_deref().unwrap_or("None");
+            let route = route_endpoint("acompletion").unwrap_or("acompletion");
+            let deployment = pick_deployment(&shared_executor, text)
+                .map_err(|_error| ProxyModelNotFoundError::new(route, text, true))?;
+            Ok(deployment.clone())
+        }
+    };
+    route_with_read_through(model, read_through.as_deref(), attempt).await
 }
 
 async fn execute_chat(
