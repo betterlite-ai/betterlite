@@ -1,10 +1,20 @@
 import asyncio
 
+import litellm
 from pydantic import JsonValue
 
 from b5368 import stubs
-from b5368.spec import Answer, ErrorReport, Input
-from b5368.stubs import ASYNC_CLIENT, RECORDER, SYNC_CLIENT, install_state
+from b5368.stubs import (
+    ASYNC_CLIENT,
+    RECORDER,
+    SYNC_CLIENT,
+    Answer,
+    ErrorReport,
+    Input,
+    install_state,
+)
+
+litellm.suppress_debug_info = True
 
 
 def prepare(input_value: Input) -> dict[str, JsonValue]:

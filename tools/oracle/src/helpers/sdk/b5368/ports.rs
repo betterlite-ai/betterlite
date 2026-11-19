@@ -178,7 +178,10 @@ impl CacheHandler for ScriptedCache {
     ) -> Result<Option<CacheOutcome>, CallError> {
         Ok(Some(CacheOutcome {
             cached: self.hit.clone().map(CallOutcome::Response),
-            ..CacheOutcome::default()
+            final_embedding: None,
+            all_embeddings_cached: false,
+            uncached_input: None,
+            preset_cache_key: None,
         }))
     }
 

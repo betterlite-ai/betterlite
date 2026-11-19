@@ -33,6 +33,15 @@ async fn raw_request_returns_the_captured_dict() {
 }
 
 #[tokio::test]
+async fn raw_request_with_a_non_object_capture_returns_the_error_form() {
+    let fixture = fixture();
+    let stub = Stub::new("completion").with_capture(Json::Text(String::from("captured")));
+    let source = request(r#"{"model":"gpt-4o","messages":[]}"#);
+    let returned = fixture.wrapper.return_raw_request(&stub, source).await;
+    assert_eq!(returned, error_object(""));
+}
+
+#[tokio::test]
 async fn raw_request_returns_an_empty_error_when_nothing_was_captured() {
     let fixture = fixture();
     let stub = Stub::new("completion");

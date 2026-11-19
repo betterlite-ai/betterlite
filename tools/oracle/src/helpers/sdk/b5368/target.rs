@@ -33,7 +33,7 @@ impl Target {
         };
         Self {
             name,
-            steps: Mutex::new(input.outcomes.clone().into()),
+            steps: Mutex::new(VecDeque::from(input.outcomes.clone())),
             calls: AtomicU64::new(0),
             seen: Mutex::new(Vec::new()),
             values: input.observe.values.clone(),

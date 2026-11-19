@@ -70,17 +70,6 @@ pub(super) fn raw_logging<E>(wrapper: &CallWrapper<E>, request: &RequestMap) -> 
     Some(RawLogging { state, correlation })
 }
 
-// LiteLLM's providers set raw_request_typed_dict to a dict; anything else falls through to the error form
-fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null | Json::Number(_) => false,
-        Json::Bool(value) => *value,
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
-}
-
 fn failure_text(error: &CallError) -> String {
     if error.kind == CallErrorKind::RawRequestCaptured {
         return RAW_REQUEST_CAPTURED.to_owned();
@@ -117,7 +106,8 @@ pub(super) async fn capture(
             .get("raw_request_typed_dict")
             .cloned()
     };
-    if let Some(value) = captured.filter(is_truthy) {
+    // the logging state only ever holds the dict form here; any other type is not a captured request
+    if let Some(value @ Json::Object(_)) = captured {
         return value;
     }
     let message = failure.as_ref().map_or_else(String::new, failure_text);

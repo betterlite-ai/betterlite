@@ -1,8 +1,7 @@
-use std::fmt;
-
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
 use betterlite_router::fallback_observations::error_info::family_fields;
+use thiserror::Error;
 
 use crate::call_setup::credentials::CredentialError;
 use crate::call_setup::function_setup::CallSetupError;
@@ -17,7 +16,8 @@ pub enum CallErrorKind {
     RawRequestCaptured,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
+#[error("{}", family_fields(.class).message)]
 pub struct CallError {
     pub class: ErrorClass,
     pub kind: CallErrorKind,
@@ -25,14 +25,6 @@ pub struct CallError {
     pub num_retries: Option<i64>,
     pub timeout: Option<Json>,
 }
-
-impl fmt::Display for CallError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&family_fields(&self.class).message)
-    }
-}
-
-impl std::error::Error for CallError {}
 
 impl From<ErrorClass> for CallError {
     fn from(class: ErrorClass) -> Self {
