@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::controls::json_value::JsonValue;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::skip_serializing_none;
@@ -76,6 +78,28 @@ pub struct Delta {
     pub refusal: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
     pub function_call: Option<Function>,
+    pub reasoning_content: Option<String>,
+    pub thinking_blocks: Option<Vec<ThinkingBlock>>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThinkingBlock {
+    #[serde(rename = "type")]
+    pub kind: ThinkingKind,
+    pub thinking: Option<String>,
+    pub signature: Option<String>,
+    pub data: Option<String>,
+    // LiteLLM declares an open dict, ChatCompletionCachedContent or None, and the open arm covers the typed one.
+    pub cache_control: Option<IndexMap<String, JsonValue>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingKind {
+    Thinking,
+    RedactedThinking,
 }
 
 #[skip_serializing_none]

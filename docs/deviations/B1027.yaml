@@ -1,0 +1,17 @@
+task: B1027
+deviations:
+  - what: >-
+      Storage-only uploads work, but target_model_names returns 400 invalid_request_error with
+      param=target_model_names and code="400" before a write, even with a database.
+    why: >-
+      Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files
+      (decision 2026-10-31).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L74-L82
+kept_bugs:
+  - what: >-
+      The target_model_names refusal says this proxy has no database configured although the condition is a
+      missing managed_files hook, so a proxy with a database connected reads the same message.
+    why: >-
+      Open-source LiteLLM raises that exact message from the identical condition and a working setup can match
+      on it, so betterlite keeps the wording and the param.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L74-L82

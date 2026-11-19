@@ -6,6 +6,7 @@ pub mod discovery_skills;
 pub mod error;
 pub mod finops;
 pub mod fixtures;
+pub mod scim;
 pub mod search_tools;
 pub mod seed;
 mod seed_sql;
