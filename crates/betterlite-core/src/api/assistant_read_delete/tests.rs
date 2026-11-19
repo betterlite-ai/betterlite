@@ -5,6 +5,8 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_http::proxy::UpstreamResponse;
@@ -957,4 +959,20 @@ async fn the_async_entry_forces_the_flag_even_when_the_caller_falses_it() {
         .await
         .unwrap();
     assert_eq!(recorder.requests().len(), 1);
+}
+
+// an OIDC assertion reaches sources.oidc in credentials/selection.rs, and these dispatches configure none
+#[test]
+fn no_sources_name_the_missing_credential_source() {
+    let error = NoSources
+        .oidc(&OidcExchangeInput {
+            azure_ad_token: SecretString::from("assertion"),
+            azure_client_id: Some("client".to_owned()),
+            azure_tenant_id: Some("tenant".to_owned()),
+            scope: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.class, "ValueError");
+    assert_eq!(error.status, None);
+    assert_eq!(error.message, "no oidc credential source is configured");
 }
