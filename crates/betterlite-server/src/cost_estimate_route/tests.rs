@@ -523,6 +523,22 @@ fn falls_back_to_the_custom_input_rate_for_cache_tokens() {
 }
 
 #[test]
+fn keeps_a_configured_cache_rate_when_the_model_is_unknown() {
+    let response = helper_quote(
+        r#"[{"model_name":"cache-priced","litellm_params":{"model":"self-hosted",
+            "custom_llm_provider":"openai","input_cost_per_token":0.5,"output_cost_per_token":1.5,
+            "cache_read_input_token_cost":0.25}}]"#,
+        r#"{"model":"cache-priced","input_tokens":8,"output_tokens":4,
+            "cache_read_input_tokens":2}"#,
+    );
+    assert_eq!(response.cost_per_request.0, dec("9.5"));
+    assert_eq!(response.input_cost_per_request.0, dec("3.5"));
+    assert_eq!(response.output_cost_per_request.0, dec("6"));
+    assert_eq!(response.cache_read_cost_per_request.0, dec("0.5"));
+    assert_eq!(response.cache_read_input_token_cost.unwrap().0, dec("0.25"));
+}
+
+#[test]
 fn falls_back_to_the_backend_cache_rates() {
     let response = helper_quote(
         r#"[{"model_name":"period-quote","litellm_params":{"model":"claude-haiku-4-5-20251001",

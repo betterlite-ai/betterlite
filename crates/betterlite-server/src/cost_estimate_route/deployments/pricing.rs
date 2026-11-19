@@ -61,11 +61,13 @@ fn cache_price(
     builtin: Option<&PriceRecord>,
     key: &str,
 ) -> Option<Decimal> {
-    let builtin_rate = match builtin?.get(key)? {
+    if let Some(price) = configured_price(params, info, key) {
+        return Some(price);
+    }
+    match builtin?.get(key)? {
         Scalar::Number(number) => parse_decimal_lexeme(&number.to_string()).ok(),
         Scalar::Null | Scalar::Bool(_) | Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_) => {
             None
         }
-    };
-    configured_price(params, info, key).or(builtin_rate)
+    }
 }
