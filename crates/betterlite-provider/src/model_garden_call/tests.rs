@@ -21,6 +21,7 @@ use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_vertex::model_policy::error::VertexAiError;
 use chrono::DateTime;
+use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -166,21 +167,23 @@ impl Fixture {
     }
 }
 
-async fn answer(
-    call: &ModelGardenCall<'_>,
-    listener: &TcpListener,
+fn answer<'call>(
+    call: &'call ModelGardenCall<'_>,
+    listener: &'call TcpListener,
     status: u16,
-    reply: &[u8],
-) -> (String, Result<CompatibleChatOutcome, VertexAiError>) {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) = logging(&redactor);
-    timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(listener, status, reply), async {
-            completion(call, &client(), &mut state, &env).await
+    reply: &'call [u8],
+) -> LocalBoxFuture<'call, (String, Result<CompatibleChatOutcome, VertexAiError>)> {
+    Box::pin(async move {
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+        let (mut state, env) = logging(&redactor);
+        timeout(EXCHANGE_TIMEOUT, async {
+            tokio::join!(serve(listener, status, reply), async {
+                completion(call, &client(), &mut state, &env).await
+            })
         })
+        .await
+        .unwrap()
     })
-    .await
-    .unwrap()
 }
 
 #[tokio::test]
