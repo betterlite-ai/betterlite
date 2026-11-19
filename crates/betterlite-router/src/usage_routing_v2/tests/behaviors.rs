@@ -240,6 +240,18 @@ fn a_repeated_id_keeps_its_place_and_its_last_deployment() {
             .unwrap(),
         Some(2)
     );
+    // the pinned deployment_dict[id] overwrites in place: the first place keeps the last deployment's data
+    let reported = selection(&pool, Some(&tpm), Some(&rpm), 0)
+        .no_deployment()
+        .unwrap();
+    let ids: Vec<&str> = reported
+        .deployments
+        .iter()
+        .map(|load| load.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["a", "b"]);
+    assert_eq!(reported.deployments[0].current_tpm, Some(8));
+    assert_eq!(reported.deployments[0].tpm_limit, Some(Decimal::ONE));
 }
 
 // LiteLLM splits a counter key on ':' to find its deployment, so an id holding one loses its counter there.
