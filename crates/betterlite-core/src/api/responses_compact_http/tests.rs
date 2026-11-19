@@ -379,6 +379,8 @@ async fn compact_transport_errors() {
         };
         assert_eq!(stage, Stage::Response);
         assert_eq!(failure.to_string(), "{not json");
+        let error = CompactError::Step { stage, source: failure };
+        assert_eq!(error.to_string(), "response transform failed: {not json");
         assert_eq!(wire.requests().len(), 1);
         assert!(config.errors().is_empty());
     }
