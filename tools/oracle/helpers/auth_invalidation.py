@@ -68,43 +68,41 @@ def build_cache(call: Input) -> UserApiKeyCache:
     )
 
 
-def stored_payload(memory: CacheView, key: str) -> dict[str, JsonValue]:
-    return OBJECTS.validate_python(memory.cache_dict.get(key))
+def entry(memory: CacheView, key: str) -> tuple[dict[str, JsonValue], float]:
+    payload = OBJECTS.validate_python(memory.cache_dict.get(key))
+    ttl = FLOATS.validate_python(memory.ttl_dict.get(key)) - CLOCK_NOW
+    return payload, ttl
 
 
-def ttl_seconds(memory: CacheView, key: str) -> float:
-    return FLOATS.validate_python(memory.ttl_dict.get(key)) - CLOCK_NOW
-
-
-def present(memory: CacheView, key: str) -> bool:
-    return memory.cache_dict.get(key) is not None
+async def management_write(
+    cache: UserApiKeyCache,
+    team: LiteLLM_TeamTableCachedObj,
+    logging: ProxyLogging | None,
+) -> tuple[dict[str, JsonValue], float]:
+    key = f"team_id:{team.team_id}"
+    await _cache_management_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2771-L2789
+        key=key,
+        value=team,
+        user_api_key_cache=cache,
+        proxy_logging_obj=logging,
+        model_type=LiteLLM_TeamTableCachedObj,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2771-L2789
+    )
+    memory: CacheView = cache.in_memory_cache_for(key)
+    return entry(memory, key)
 
 
 async def management_report(call: Input) -> JsonValue:
     cache = build_cache(call)
     team = TEAMS.validate_python(call["team"])
+    first, ttl = await management_write(cache, team, None)
+    second, _ = await management_write(
+        cache, team, ProxyLogging(user_api_key_cache=cache)
+    )
     key = f"team_id:{team.team_id}"
-    await _cache_management_object(
-        key=key,
-        value=team,
-        user_api_key_cache=cache,
-        proxy_logging_obj=None,
-        model_type=LiteLLM_TeamTableCachedObj,
-    )
-    first = stored_payload(cache.in_memory_cache_for(key), key)
-    await _cache_management_object(
-        key=key,
-        value=team,
-        user_api_key_cache=cache,
-        proxy_logging_obj=ProxyLogging(user_api_key_cache=cache),
-        model_type=LiteLLM_TeamTableCachedObj,
-    )
-    second = stored_payload(cache.in_memory_cache_for(key), key)
-    memory = cache.in_memory_cache_for(key)
     return {
         "management_model_type_and_ttl": {
             "key": key,
-            "ttl": ttl_seconds(memory, key),
+            "ttl": ttl,
             "team_id": first.get("team_id"),
             "team_alias": first.get("team_alias"),
         },
@@ -117,25 +115,27 @@ async def team_refresh_report(call: Input) -> JsonValue:
     team = TEAMS.validate_python(call["team"])
     alias = team.team_alias
     alias_key: str | None = None
+    alias_present = False
     if alias:
         alias_key = f"team_alias:{alias}"
         cache.set_cache(alias_key, call["stale_alias"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L160
     was_none = team.last_refreshed_at is None
-    await _cache_team_object(
+    await _cache_team_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2792-L2846
         team_id=call["team_id"],
         team_table=team,
         user_api_key_cache=cache,
         proxy_logging_obj=None,
     )
     key = f"team_id:{call['team_id']}"
-    stored = stored_payload(cache.in_memory_cache_for(key), key)
-    alias_present = alias_key is not None and present(
-        cache.in_memory_cache_for(alias_key), alias_key
-    )
+    memory: CacheView = cache.in_memory_cache_for(key)
+    stored, ttl = entry(memory, key)
+    if alias_key is not None:
+        alias_memory: CacheView = cache.in_memory_cache_for(alias_key)
+        alias_present = alias_key in alias_memory.cache_dict
     return {
         "team_id_and_alias_keys": {
             "team_key": key,
-            "team_key_ttl": ttl_seconds(cache.in_memory_cache_for(key), key),
+            "team_key_ttl": ttl,
             "alias_key": alias_key,
             "alias_present": alias_present,
         },
@@ -153,30 +153,30 @@ async def key_refresh_report(call: Input) -> JsonValue:
     cache = build_cache(call)
     key = API_KEYS.validate_python(call["auth"])
     hashed = call["hashed_token"]
-    await _cache_key_object(
+    await _cache_key_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3022-L3044
         hashed_token=hashed,
         user_api_key_obj=key,
         user_api_key_cache=cache,
         proxy_logging_obj=None,
     )
-    memory = cache.in_memory_cache_for(hashed)
-    stored = stored_payload(memory, hashed)
+    memory: CacheView = cache.in_memory_cache_for(hashed)
+    stored, ttl = entry(memory, hashed)
     wire = KEY_WIRES.validate_json(key.model_dump_json())
-    original_timestamp = wire.get("last_refreshed_at")
     candidate = call["rehash_candidate"]
+    candidate_memory: CacheView = cache.in_memory_cache_for(candidate)
     return {
         "key_timestamp_and_request_field_copy": {
-            "stored_ttl": ttl_seconds(memory, hashed),
+            "stored_ttl": ttl,
             "stored_request_route_is_null": stored.get("request_route") is None,
             "stored_has_timestamp": stored.get("last_refreshed_at") is not None,
         },
         "key_hash_not_recomputed": {
-            "supplied_key_present": present(memory, hashed),
-            "rehash_key_present": present(cache.in_memory_cache_for(candidate), candidate),
+            "supplied_key_present": hashed in memory.cache_dict,
+            "rehash_key_present": candidate in candidate_memory.cache_dict,
         },
         "key_copy_retains_original_request_fields": {
             "original_request_route": wire.get("request_route"),
-            "original_last_refreshed_at_matches_stored": original_timestamp
+            "original_last_refreshed_at_matches_stored": wire.get("last_refreshed_at")
             == stored.get("last_refreshed_at"),
         },
     }
@@ -186,18 +186,18 @@ async def access_group_report(call: Input) -> JsonValue:
     cache = build_cache(call)
     table = ACCESS_GROUPS.validate_python(call["table"])
     key = f"access_group_id:{call['access_group_id']}"
-    await _cache_access_object(
+    await _cache_access_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3319-L3331
         access_group_id=call["access_group_id"],
         access_group_table=table,
         user_api_key_cache=cache,
         proxy_logging_obj=None,
     )
-    memory = cache.in_memory_cache_for(key)
-    stored = stored_payload(memory, key)
+    memory: CacheView = cache.in_memory_cache_for(key)
+    stored, ttl = entry(memory, key)
     return {
         "access_group_key_and_independent_ttl": {
             "key": key,
-            "ttl": ttl_seconds(memory, key),
+            "ttl": ttl,
             "access_group_id": stored.get("access_group_id"),
             "access_group_name": stored.get("access_group_name"),
         },
@@ -216,4 +216,5 @@ async def dispatch(call: Input) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return JSON_VALUES.validate_python(asyncio.run(dispatch(input_value)))
+    result = asyncio.run(dispatch(input_value))
+    return JSON_VALUES.validate_python(result)

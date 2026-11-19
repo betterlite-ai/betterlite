@@ -8,7 +8,7 @@ use crate::sections::Section;
 mod tests;
 
 const ACCESS_TTL_VARIABLE: &str = "DEFAULT_ACCESS_GROUP_CACHE_TTL";
-const DEFAULT_ACCESS_TTL_SECONDS: i64 = 600;
+const DEFAULT_ACCESS_TTL_SECONDS: f64 = 600.0_f64;
 
 // every value is read from the environment, so this section owns no YAML key
 #[derive(Debug, Default, Deserialize)]
@@ -22,7 +22,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            access_group_ttl: seconds(DEFAULT_ACCESS_TTL_SECONDS),
+            access_group_ttl: DEFAULT_ACCESS_TTL_SECONDS,
         }
     }
 }
@@ -40,14 +40,13 @@ impl Section for Raw {
     }
 }
 
-// LiteLLM parses this at import: an empty or non-integer value stops startup, and a zero or
-// negative value is used as given
+// LiteLLM parses this at import: an empty or non-integer value stops startup, and zero or negative is used as given
 fn access_group_ttl<L>(lookup: &L) -> Result<f64, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let Some(text) = lookup.lookup(ACCESS_TTL_VARIABLE) else {
-        return Ok(seconds(DEFAULT_ACCESS_TTL_SECONDS));
+        return Ok(DEFAULT_ACCESS_TTL_SECONDS);
     };
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -63,9 +62,5 @@ where
             path: ACCESS_TTL_VARIABLE.to_owned(),
             source,
         })?;
-    Ok(seconds(value))
-}
-
-fn seconds(value: i64) -> f64 {
-    Decimal::from(value).to_f64().unwrap_or_default()
+    Ok(Decimal::from(value).to_f64().unwrap_or_default())
 }
