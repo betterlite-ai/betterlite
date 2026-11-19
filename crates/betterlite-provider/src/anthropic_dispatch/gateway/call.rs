@@ -228,8 +228,14 @@ async fn send(
         selection: Some(ChatConfigTag::Anthropic),
     };
     let call_id = Uuid::new_v4().to_string();
-    let (mut state, env) = logging::state(&TracingSink, &runtime.redactor, model, &call_id)
-        .map_err(|source| error::internal(source.to_string()))?;
+    let (mut state, env) = logging::state(
+        &TracingSink,
+        &runtime.redactor,
+        model,
+        &call_id,
+        Utc::now().fixed_offset(),
+    )
+    .map_err(|source| error::internal(source.to_string()))?;
     let mut log = CallLogging {
         state: &mut state,
         env: &env,

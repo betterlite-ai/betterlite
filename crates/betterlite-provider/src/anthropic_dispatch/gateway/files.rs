@@ -124,3 +124,6 @@ fn http_file_urls(messages: &[Json]) -> Vec<String> {
     }
     urls
 }
+
+#[cfg(test)]
+mod tests;

@@ -121,7 +121,7 @@ fn chat_choice(choice: &StreamChoice) -> Result<Value, serde_json::Error> {
 
 fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::Error> {
     let mut delta = Map::new();
-    let named = [
+    for (name, value) in [
         ("role", source.role.as_deref().map(Value::from)),
         ("content", source.content.as_deref().map(Value::from)),
         (
@@ -136,35 +136,29 @@ fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::
                 .map(serde_json::to_value)
                 .transpose()?,
         ),
-    ];
-    for (name, value) in named {
+    ] {
         if let Some(value) = value {
             delta.insert(name.to_owned(), value);
         }
     }
     if let Some(JsonValue::Array(calls)) = &source.tool_calls {
-        let projected = projected_calls(calls)?;
+        let mut projected = Vec::with_capacity(calls.len());
+        for call in calls {
+            let JsonValue::Object(fields) = call else {
+                continue;
+            };
+            // LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
+            let mut kept = Map::new();
+            for name in ["index", "id", "type", "function"] {
+                if let Some(value) = fields.get(name) {
+                    kept.insert(name.to_owned(), serde_json::to_value(value)?);
+                }
+            }
+            projected.push(Value::Object(kept));
+        }
         delta.insert(String::from("tool_calls"), Value::Array(projected));
     }
     Ok(delta)
-}
-
-// LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function; anything else is dropped.
-fn projected_calls(calls: &[JsonValue]) -> Result<Vec<Value>, serde_json::Error> {
-    let mut projected = Vec::with_capacity(calls.len());
-    for call in calls {
-        let JsonValue::Object(fields) = call else {
-            continue;
-        };
-        let mut kept = Map::new();
-        for name in ["index", "id", "type", "function"] {
-            if let Some(value) = fields.get(name) {
-                kept.insert(name.to_owned(), serde_json::to_value(value)?);
-            }
-        }
-        projected.push(Value::Object(kept));
-    }
-    Ok(projected)
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped

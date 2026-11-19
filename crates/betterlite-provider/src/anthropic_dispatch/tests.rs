@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod gateway;
+mod logging;
 mod send;
 
 use super::fixtures::{Case, execute};

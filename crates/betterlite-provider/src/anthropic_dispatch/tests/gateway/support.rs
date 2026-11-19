@@ -22,6 +22,7 @@ use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::anthropic_dispatch::native::tests::support::wire;
 use crate::operation::{ChatOperation, OperationError, OperationRequest, OperationResult};
 use crate::prepared::deployment::Deployment;
+use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Provider;
 
 pub(super) const MODEL: &str = "claude-3-haiku-20240307";
@@ -34,7 +35,7 @@ pub(super) struct Harness {
     pub(super) base: String,
     pub(super) client: ProxiedClient,
     pub(super) deployment: Deployment,
-    server: JoinSet<Vec<wire::Recorded>>,
+    pub(super) server: JoinSet<Vec<wire::Recorded>>,
 }
 
 impl Harness {
@@ -49,24 +50,11 @@ impl Harness {
         let mut server = JoinSet::new();
         server.spawn(wire::serve(listener, answers));
         let client = client();
-        let runtime = runtime(&client);
-        let deployment = Deployment {
-            model: String::from(MODEL),
-            api_base: base.clone(),
-            endpoint: Url::parse(&format!("{base}/v1/messages")).expect("the endpoint"),
-            api_key: Some(SecretString::from(TEST_KEY)),
-            authorization: None,
-            organization: None,
-            timeout: TIMEOUT,
-            max_retries: None,
-            drop_params: None,
-            provider_affinity_header: None,
-            anthropic: Some(runtime),
-        };
+        let configured = deployment(&client, &base, MODEL, TIMEOUT);
         Self {
             base,
             client,
-            deployment,
+            deployment: configured,
             server,
         }
     }
@@ -80,10 +68,10 @@ impl Harness {
     }
 }
 
-pub(super) async fn complete(
+pub(super) async fn upstream(
     harness: &Harness,
     operation: OperationRequest,
-) -> Result<OperationResult, OperationError> {
+) -> Result<(PreparedRequest, Upstream), OperationError> {
     let provider = Provider::Anthropic(Anthropic {
         surface: Surface::Messages,
     });
@@ -93,6 +81,17 @@ pub(super) async fn complete(
     let upstream = provider
         .execute(&harness.client, &prepared, &harness.deployment)
         .await?;
+    Ok((prepared, upstream))
+}
+
+pub(super) async fn complete(
+    harness: &Harness,
+    operation: OperationRequest,
+) -> Result<OperationResult, OperationError> {
+    let (prepared, upstream) = upstream(harness, operation).await?;
+    let provider = Provider::Anthropic(Anthropic {
+        surface: Surface::Messages,
+    });
     provider.decode(&prepared, upstream)
 }
 
@@ -112,7 +111,28 @@ pub(super) fn stream(body: String) -> OperationRequest {
     }))
 }
 
-fn client() -> ProxiedClient {
+pub(super) fn deployment(
+    client: &ProxiedClient,
+    base: &str,
+    model: &str,
+    timeout: Duration,
+) -> Deployment {
+    Deployment {
+        model: String::from(model),
+        api_base: String::from(base),
+        endpoint: Url::parse(&format!("{base}/v1/messages")).expect("the endpoint"),
+        api_key: Some(SecretString::from(TEST_KEY)),
+        authorization: None,
+        organization: None,
+        timeout,
+        max_retries: None,
+        drop_params: None,
+        provider_affinity_header: None,
+        anthropic: Some(runtime(client)),
+    }
+}
+
+pub(super) fn client() -> ProxiedClient {
     let policy =
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy");
     ProxiedClient::outbound(&Arc::new(policy)).expect("the client")
@@ -132,7 +152,7 @@ fn runtime(client: &ProxiedClient) -> Arc<AnthropicRuntime> {
     )
 }
 
-fn catalog() -> CatalogCapabilities {
+pub(super) fn catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
