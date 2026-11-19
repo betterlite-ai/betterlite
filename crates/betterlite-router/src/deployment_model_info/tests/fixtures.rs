@@ -103,8 +103,8 @@ pub fn dispatcher(seconds: f64) -> Arc<Mutex<f64>> {
     Arc::new(Mutex::new(seconds))
 }
 
-pub fn clock(handle: &Arc<Mutex<f64>>) -> Arc<dyn Fn() -> f64 + Send + Sync> {
-    let handle = Arc::clone(handle);
+pub fn clock(ticks: &Arc<Mutex<f64>>) -> Arc<dyn Fn() -> f64 + Send + Sync> {
+    let handle = Arc::clone(ticks);
     Arc::new(move || *handle.lock().unwrap())
 }
 

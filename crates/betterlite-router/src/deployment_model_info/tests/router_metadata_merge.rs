@@ -162,12 +162,12 @@ async fn malformed_params_error_and_id() {
         model_info: &info,
         litellm_params: Some(&model_less),
     };
-    let error = case
+    let dict_error = case
         .merged(Some(without_model), "g", None)
         .await
         .unwrap_err();
     assert_eq!(
-        error.to_string(),
+        dict_error.to_string(),
         "Deployment missing valid litellm_params. Got: dict, deployment_id: one"
     );
     let anonymous = object(r#"{}"#);
@@ -175,11 +175,30 @@ async fn malformed_params_error_and_id() {
         model_info: &anonymous,
         litellm_params: None,
     };
-    let error = case.merged(Some(no_id), "g", None).await.unwrap_err();
+    let no_id_error = case.merged(Some(no_id), "g", None).await.unwrap_err();
     assert_eq!(
-        error.to_string(),
+        no_id_error.to_string(),
         "Deployment missing valid litellm_params. Got: NoneType, deployment_id: unknown"
     );
+}
+
+#[tokio::test]
+async fn nontext_base_model_and_model_error() {
+    let case = Case::plain(catalog(vec![]), FakeSource::answering(&[]));
+    let info = object(r#"{"id":"one","base_model":7}"#);
+    let params = object(r#"{"model":"azure/gpt-4"}"#);
+    let supplied = azure_supplied(&info, &params);
+    let base_error = case.merged(Some(supplied), "g", None).await.unwrap_err();
+    assert_eq!(base_error.to_string(), "base_model is not a string");
+
+    let model_info = object(r#"{"id":"one"}"#);
+    let model_params = object(r#"{"model":5}"#);
+    let model_supplied = azure_supplied(&model_info, &model_params);
+    let model_error = case
+        .merged(Some(model_supplied), "g", None)
+        .await
+        .unwrap_err();
+    assert_eq!(model_error.to_string(), "model is not a string");
 }
 
 #[tokio::test]
@@ -350,11 +369,11 @@ async fn wildcard_same_id_and_bad_candidate() {
         Arc::clone(&broken),
         FakeSource::answering(&[("openai/*", r#"{"max_input_tokens":6}"#)]),
     );
-    let info = object(r#"{"id":"wild"}"#);
-    let params = object(r#"{"model":"openai/*","custom_llm_provider":"openai"}"#);
-    let supplied = azure_supplied(&info, &params);
+    let broken_info = object(r#"{"id":"wild"}"#);
+    let broken_params = object(r#"{"model":"openai/*","custom_llm_provider":"openai"}"#);
+    let broken_supplied = azure_supplied(&broken_info, &broken_params);
     assert!(
-        bad.merged(Some(supplied), "openai/gpt-4-turbo", None)
+        bad.merged(Some(broken_supplied), "openai/gpt-4-turbo", None)
             .await
             .unwrap()
             .is_some()
@@ -396,8 +415,11 @@ async fn model_lookup_none_or_error() {
             .is_none()
     );
     let failing = Case::plain(catalog, FakeSource::failing());
-    let supplied = azure_supplied(&info, &params);
-    let error = failing.merged(Some(supplied), "g", None).await.unwrap_err();
+    let failing_supplied = azure_supplied(&info, &params);
+    let error = failing
+        .merged(Some(failing_supplied), "g", None)
+        .await
+        .unwrap_err();
     assert_eq!(error.to_string(), "the model is unmapped");
     assert!(matches!(
         error,
@@ -453,13 +475,16 @@ async fn source_metadata_unmodified() {
     let stored = case.source.answers.get("openai/gpt-4o").unwrap();
     assert_eq!(stored.get("mode"), Some(&Json::Text("chat".to_owned())));
     let plain = object(r#"{"id":"one"}"#);
-    let supplied = azure_supplied(&plain, &params);
-    let merged = case
-        .merged(Some(supplied), "g", None)
+    let plain_supplied = azure_supplied(&plain, &params);
+    let plain_merged = case
+        .merged(Some(plain_supplied), "g", None)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(merged.get("mode"), Some(&Json::Text("chat".to_owned())));
+    assert_eq!(
+        plain_merged.get("mode"),
+        Some(&Json::Text("chat".to_owned()))
+    );
 }
 
 #[test]
@@ -475,8 +500,8 @@ fn raw_lookup_identity() {
     let mut stale = DeploymentCatalog::default();
     stale.push(spec("g", r#"{"model":"openai/first"}"#, r#"{"id":"one"}"#));
     drop(stale.id_index.insert("ghost".to_owned(), 9));
-    let stale = Arc::new(stale);
-    match get_model_info(&snapshot(&stale), "ghost") {
+    let stale_catalog = Arc::new(stale);
+    match get_model_info(&snapshot(&stale_catalog), "ghost") {
         Err(LookupError::InvalidRow { index }) => assert_eq!(index, 9),
         _ => panic!("expected the stale index failure"),
     }
@@ -585,8 +610,8 @@ async fn no_custom_id_no_discovery() {
         "absent-id",
         record(&catalog, 0, limits(None, None, Some(4096))),
     );
-    let info = with_custom.info("absent-id", "custom-model").await.unwrap();
-    assert_eq!(info.get("max_output_tokens"), Some(&number(4096)));
+    let custom_info = with_custom.info("absent-id", "custom-model").await.unwrap();
+    assert_eq!(custom_info.get("max_output_tokens"), Some(&number(4096)));
 }
 
 #[tokio::test]
@@ -679,9 +704,9 @@ async fn explicit_zero_or_null_price_key_present() {
         FakeSource::failing(),
         registry(r#"{"custom-id":{"output_cost_per_token":null}}"#),
     );
-    let info = nulled.info("custom-id", "unknown-name").await.unwrap();
-    assert_eq!(info.get("output_cost_per_token"), Some(&Json::Null));
-    assert!(info.get("input_cost_per_token").is_none());
+    let nulled_info = nulled.info("custom-id", "unknown-name").await.unwrap();
+    assert_eq!(nulled_info.get("output_cost_per_token"), Some(&Json::Null));
+    assert!(nulled_info.get("input_cost_per_token").is_none());
 }
 
 #[tokio::test]
