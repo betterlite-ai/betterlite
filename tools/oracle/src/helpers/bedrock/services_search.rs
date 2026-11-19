@@ -38,14 +38,31 @@ impl Helper for Op {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "scenario", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    ConfiguredGatewayRequired { runs: Vec<GatewayRun> },
-    McpRequestHeaders { runs: Vec<HeaderRun> },
-    WebsearchToolSuffix { runs: Vec<ToolRun> },
-    QueryListAnd200CharCap { runs: Vec<ToolRun> },
-    HttpsOrLoopbackOnly { runs: Vec<SignRun> },
-    GatewayBearerTrust { runs: Vec<SignRun> },
-    GatewayHostSigning { runs: Vec<SignRun> },
-    GatewaySigningRegion { runs: Vec<SignRun> },
+    ConfiguredGatewayRequired {
+        runs: Vec<GatewayRun>,
+    },
+    McpRequestHeaders {
+        runs: Vec<HeaderRun>,
+    },
+    WebsearchToolSuffix {
+        runs: Vec<ToolRun>,
+    },
+    #[serde(rename = "query_list_and_200_char_cap")]
+    QueryListAnd200CharCap {
+        runs: Vec<ToolRun>,
+    },
+    HttpsOrLoopbackOnly {
+        runs: Vec<SignRun>,
+    },
+    GatewayBearerTrust {
+        runs: Vec<SignRun>,
+    },
+    GatewayHostSigning {
+        runs: Vec<SignRun>,
+    },
+    GatewaySigningRegion {
+        runs: Vec<SignRun>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
