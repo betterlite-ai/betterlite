@@ -1,0 +1,72 @@
+kind: helper
+name: deployment-model-info-custom-builtin-base-and-failures
+call:
+  deployment_model_info:
+    function: deployment_info
+    model_list: []
+    model_cost:
+      custom-1:
+        max_tokens: 111
+        input_cost_per_token: 0.3
+        output_cost_per_token: 0.4
+        litellm_provider: openai
+    arguments:
+      model_id: custom-1
+      model_name: openai/ghost-model
+calls:
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost:
+        openai/gpt-4o:
+          max_tokens: 500
+          max_input_tokens: 400
+          max_output_tokens: 300
+          input_cost_per_token: 0.1
+          output_cost_per_token: 0.2
+          litellm_provider: openai
+      arguments:
+        model_id: no-custom
+        model_name: openai/gpt-4o
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost:
+        custom-base:
+          base_model: openai/gpt-4o
+          max_output_tokens: 222
+        openai/gpt-4o:
+          max_tokens: 500
+          max_input_tokens: 400
+          max_output_tokens: 300
+          input_cost_per_token: 0.1
+          output_cost_per_token: 0.2
+          litellm_provider: openai
+      arguments:
+        model_id: custom-base
+        model_name: openai/ghost-model
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost: {}
+      arguments:
+        model_id: nowhere
+        model_name: openai/ghost-model
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost:
+        custom-both:
+          max_tokens: 5
+        openai/gpt-4o:
+          max_tokens: 500
+          max_input_tokens: 400
+          max_output_tokens: 300
+          input_cost_per_token: 0.1
+          output_cost_per_token: 0.2
+          litellm_provider: openai
+      arguments:
+        model_id: custom-both
+        model_name: openai/gpt-4o
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: deployment-model-info-cache-identity-and-configured-null
+call:
+  deployment_model_info:
+    function: listing
+    model_list:
+      - model_name: listed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: one
+          max_tokens: null
+          max_input_tokens: 8000
+          display_name: " One "
+      - model_name: listed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: two
+          max_output_tokens: 2000
+    model_cost:
+      openai/gpt-4o:
+        max_tokens: 1000
+        max_input_tokens: 1000
+        max_output_tokens: 1000
+        input_cost_per_token: 0.1
+        output_cost_per_token: 0.2
+        litellm_provider: openai
+    arguments:
+      model_name: listed
+env: {}
+compare: {ignore: []}

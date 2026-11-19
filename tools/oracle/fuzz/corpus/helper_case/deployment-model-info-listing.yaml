@@ -1,0 +1,5 @@
+kind: helper
+name: deployment-model-info-listing-seed
+call: {deployment_model_info: {function: listing, model_list: [{model_name: seed, litellm_params: {model: openai/gpt-4o}, model_info: {id: one, max_input_tokens: 8}}], model_cost: {openai/gpt-4o: {max_tokens: 4, litellm_provider: openai}}, arguments: {model_name: seed}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: deployment-model-info-cost-key-order-and-base-fallback
+call:
+  deployment_model_info:
+    function: listing
+    model_list:
+      - model_name: keys
+        litellm_params:
+          model: openai/gpt-4o
+          base_model: openai/base-a
+      - model_name: keys
+        litellm_params:
+          model: openai/gpt-4o-mini
+        model_info:
+          id: info-base
+          base_model: openai/from-info
+      - model_name: keys
+        litellm_params:
+          model: openai/gpt-4o-mini
+        model_info:
+          id: info-base-twin
+          base_model: openai/from-info
+      - model_name: keys
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: empty-base
+          base_model: ""
+    model_cost: {}
+    arguments:
+      model_name: keys
+env: {}
+compare: {ignore: []}

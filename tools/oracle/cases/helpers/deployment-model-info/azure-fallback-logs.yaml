@@ -1,0 +1,48 @@
+kind: helper
+name: deployment-model-info-azure-fallback-logs
+call:
+  deployment_model_info:
+    function: azure_logs
+    model_list: []
+    model_cost:
+      azure/my-deployment:
+        max_tokens: 4096
+        max_input_tokens: 128000
+        input_cost_per_token: 0.1
+        output_cost_per_token: 0.2
+        litellm_provider: azure
+    arguments:
+      received_model_name: my-group
+      deployment:
+        model_name: my-group
+        litellm_params:
+          model: azure/my-deployment
+          api_key: sk-test
+          api_base: https://azure.test
+          api_version: "2024-02-01"
+        model_info:
+          id: azure-one
+calls:
+  - deployment_model_info:
+      function: azure_logs
+      model_list: []
+      model_cost:
+        azure/my-deployment:
+          max_tokens: 0
+          max_input_tokens: 0
+          input_cost_per_token: 0
+          output_cost_per_token: 0.5
+          litellm_provider: azure
+      arguments:
+        received_model_name: my-group
+        deployment:
+          model_name: my-group
+          litellm_params:
+            model: azure/my-deployment
+            api_key: sk-test
+            api_base: https://azure.test
+            api_version: "2024-02-01"
+          model_info:
+            id: azure-one
+env: {}
+compare: {ignore: []}
