@@ -72,11 +72,11 @@ fn project_failure(
     metadata: Option<ErrorMetadata>,
     message: &str,
 ) -> SdkResult {
-    let (kind, param, code) = metadata.map_or((None, None, None), |metadata| {
+    let (kind, param, code) = metadata.map_or((None, None, None), |present| {
         (
-            field(metadata.error_type),
-            field(metadata.param),
-            Some(metadata.openai_code),
+            field(present.error_type),
+            field(present.param),
+            Some(present.openai_code),
         )
     });
     failure_result(Failure {
