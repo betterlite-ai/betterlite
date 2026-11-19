@@ -16,14 +16,20 @@ mock_provider "random" {}
 
 # A plan leaves every computed attribute unknown, so each value an assertion reads is fixed here for the plan phase
 override_resource {
-  target          = aws_lb.this
-  values          = { arn_suffix = "app/acme-litellm-test/1234567890abcdef" }
+  target = aws_lb.this
+  values = {
+    arn        = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme-litellm-test/1234567890abcdef"
+    arn_suffix = "app/acme-litellm-test/1234567890abcdef"
+  }
   override_during = plan
 }
 
 override_resource {
-  target          = aws_lb_target_group.betterlite
-  values          = { arn_suffix = "targetgroup/acme-litellm-test/0123456789abcdef" }
+  target = aws_lb_target_group.betterlite
+  values = {
+    arn        = "arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/acme-litellm-test/0123456789abcdef"
+    arn_suffix = "targetgroup/acme-litellm-test/0123456789abcdef"
+  }
   override_during = plan
 }
 

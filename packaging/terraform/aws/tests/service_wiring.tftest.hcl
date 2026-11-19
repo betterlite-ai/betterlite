@@ -138,9 +138,9 @@ run "service_runs_one_betterlite_container_on_port_4000" {
 
   assert {
     condition = alltrue([
-      aws_ecs_service.betterlite.load_balancer[*].target_group_arn == [aws_lb_target_group.betterlite.arn],
-      aws_ecs_service.betterlite.load_balancer[*].container_name == ["betterlite"],
-      aws_ecs_service.betterlite.load_balancer[*].container_port == [4000],
+      tolist(aws_ecs_service.betterlite.load_balancer[*].target_group_arn) == tolist([aws_lb_target_group.betterlite.arn]),
+      tolist(aws_ecs_service.betterlite.load_balancer[*].container_name) == tolist(["betterlite"]),
+      tolist(aws_ecs_service.betterlite.load_balancer[*].container_port) == tolist([4000]),
       aws_ecs_service.betterlite.network_configuration[0].assign_public_ip == false,
     ])
     error_message = "The service must register the container with the single target group and run without a public IP."
@@ -274,6 +274,8 @@ run "no_store_runs_without_database_or_cache" {
     create_redis        = false
     autoscaling_enabled = false
     desired_count       = 1
+    # Above one, so a process ceiling read from min_capacity instead of desired_count fires the check
+    min_capacity = 2
   }
 
   assert {
@@ -461,7 +463,9 @@ run "redis_less_check_fires_for_three_tasks" {
 
   variables {
     create_redis = false
-    max_capacity = 3
+    # Below two, so only max_capacity can push the process ceiling over the limit
+    desired_count = 1
+    max_capacity  = 3
   }
 
   expect_failures = [

@@ -83,7 +83,7 @@ run "plaintext_serves_the_single_target_group" {
       aws_lb_target_group.betterlite.health_check[0].timeout == 10,
       aws_lb_target_group.betterlite.health_check[0].healthy_threshold == 2,
       aws_lb_target_group.betterlite.health_check[0].unhealthy_threshold == 3,
-      aws_lb_target_group.betterlite.deregistration_delay == 30,
+      tonumber(aws_lb_target_group.betterlite.deregistration_delay) == 30,
     ])
     error_message = "The target group must be IP-based on port 4000 and poll /health/readiness on the module's schedule."
   }
