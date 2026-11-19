@@ -37,16 +37,6 @@ pub struct AliasPattern {
     regex: Regex,
 }
 
-impl AliasPattern {
-    // a pattern that runs out of backtracking budget matches nothing, so a hostile alias can never widen the rule
-    fn full_matches(&self, alias: &str) -> bool {
-        match self.regex.is_match(alias) {
-            Ok(matched) => matched,
-            Err(_exhausted) => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum AliasRule<'settings> {
     Configured(&'settings AliasPattern),
@@ -60,7 +50,8 @@ impl AliasRule<'_> {
             return false;
         }
         match self {
-            Self::Configured(pattern) => pattern.full_matches(alias),
+            // a pattern that runs out of backtracking budget matches nothing, so a hostile alias can never widen the rule
+            Self::Configured(pattern) => pattern.regex.is_match(alias).unwrap_or_default(),
             Self::Builtin => accepts_builtin(alias),
         }
     }
@@ -102,7 +93,7 @@ pub struct Settings {
 impl Settings {
     // the configured pattern wins over the toggle: LiteLLM reads key_alias_pattern before enable_key_alias_format_validation
     #[must_use]
-    pub fn alias_rule(&self) -> Option<AliasRule<'_>> {
+    pub const fn alias_rule(&self) -> Option<AliasRule<'_>> {
         match (&self.alias_pattern, self.alias_format_validation) {
             (Some(pattern), _enabled) => Some(AliasRule::Configured(pattern)),
             (None, true) => Some(AliasRule::Builtin),
@@ -136,11 +127,16 @@ where
     L: EnvironmentLookup,
 {
     match value {
-        JsonValue::String(text) if text.starts_with(ENV_PREFIX) => {
+        JsonValue::String(text) => {
             let resolved = resolve_string(text, ALIAS_PATTERN_PATH, lookup)?;
             parse_key_alias_pattern(JsonValue::String(resolved))
         }
-        other => parse_key_alias_pattern(other),
+        other @ JsonValue::Null
+        | other @ JsonValue::Bool(_)
+        | other @ JsonValue::Number(_)
+        | other @ JsonValue::String(_)
+        | other @ JsonValue::Array(_)
+        | other @ JsonValue::Object(_) => parse_key_alias_pattern(other),
     }
 }
 
@@ -152,19 +148,19 @@ where
         path: VALIDATION_PATH.to_owned(),
         value: false,
     };
-    let Some(value) = value else {
+    let Some(present) = value else {
         return Ok(false);
     };
-    match value {
+    match present {
         JsonValue::Null => Ok(false),
         JsonValue::Bool(flag) => Ok(flag),
         JsonValue::String(text) => {
             let Some(variable) = text.strip_prefix(ENV_PREFIX) else {
                 return Err(invalid());
             };
-            let variable = variable.to_owned();
+            let name = variable.to_owned();
             let resolved = resolve_string(text, VALIDATION_PATH, lookup)?;
-            Ok(betterlite_env::flag(&variable, &resolved)?.unwrap_or(false))
+            Ok(betterlite_env::flag(&name, &resolved)?.unwrap_or(false))
         }
         JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => Err(invalid()),
     }

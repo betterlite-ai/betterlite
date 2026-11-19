@@ -69,7 +69,16 @@ fn nonstring_pattern_rejected() {
     };
     match error {
         ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
-        other => panic!("expected an invalid scalar, got: {other}"),
+        other @ ConfigError::CustomDimensions(_)
+        | other @ ConfigError::Environment { .. }
+        | other @ ConfigError::Yaml { .. }
+        | other @ ConfigError::Unsupported { .. }
+        | other @ ConfigError::MissingEnvironment { .. }
+        | other @ ConfigError::InvalidFloat { .. }
+        | other @ ConfigError::InvalidInteger { .. }
+        | other @ ConfigError::LoadThread { .. } => {
+            panic!("expected an invalid scalar, got: {other}")
+        }
     }
 }
 
@@ -155,7 +164,16 @@ fn invalid_regex_rejected() {
     };
     match error {
         ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
-        other => panic!("expected an invalid scalar, got: {other}"),
+        other @ ConfigError::CustomDimensions(_)
+        | other @ ConfigError::Environment { .. }
+        | other @ ConfigError::Yaml { .. }
+        | other @ ConfigError::Unsupported { .. }
+        | other @ ConfigError::MissingEnvironment { .. }
+        | other @ ConfigError::InvalidFloat { .. }
+        | other @ ConfigError::InvalidInteger { .. }
+        | other @ ConfigError::LoadThread { .. } => {
+            panic!("expected an invalid scalar, got: {other}")
+        }
     }
 }
 
