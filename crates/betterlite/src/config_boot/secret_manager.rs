@@ -173,8 +173,7 @@ where
     }
 }
 
-// LiteLLM gives Vault the default httpx client, whose TLS comes from get_ssl_verify:
-// SSL_VERIFY, then litellm_settings.ssl_verify, then SSL_CERT_FILE when verification is on
+// Vault gets the default httpx client, so get_ssl_verify decides: SSL_VERIFY, litellm_settings.ssl_verify, SSL_CERT_FILE
 fn vault_tls(
     env: &BTreeMap<String, String>,
     litellm_ssl_verify: Option<&VerifySetting>,
