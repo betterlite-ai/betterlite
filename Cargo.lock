@@ -3191,6 +3191,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-router",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
