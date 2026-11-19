@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::record::ModelInfo;
@@ -132,7 +132,7 @@ impl BridgePolicy for Script {
     fn bridge(&self, request: &BridgeRequest<'_>) -> Result<BridgeOutcome, ModelInfoError> {
         self.bridge_calls
             .lock()
-            .expect("the lock is free")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(BridgeSeen {
                 model: request.model.to_owned(),
                 provider: request.custom_llm_provider.to_owned(),
@@ -339,22 +339,22 @@ fn thinking_promotes_only_openai(
     let mut script = script();
     script.provider = resolution.map(|local| resolve_as(local, "openai", None));
     script.info = info.map(map);
-    let mut kwargs = completion(kwargs);
+    let mut prepared = completion(kwargs);
     let infers = matches!(
-        kwargs.fields.get("custom_llm_provider"),
+        prepared.fields.get("custom_llm_provider"),
         None | Some(Json::Null)
     );
-    let thinking = value(thinking);
+    let thinking_value = value(thinking);
     route_thinking(
-        &mut kwargs,
-        Some(&thinking),
+        &mut prepared,
+        Some(&thinking_value),
         AutoSummary {
             global: false,
             environment: None,
         },
         &seams(&script),
     );
-    assert_eq!(kwargs.fields, map(expected));
+    assert_eq!(prepared.fields, map(expected));
     assert_eq!(
         locked(&script.lookups).len(),
         usize::from(infers),
@@ -490,18 +490,18 @@ fn summary_options_preserve_presence(
     #[case] expected: &str,
 ) {
     let script = script();
-    let mut kwargs = completion(kwargs);
-    let thinking = value(thinking);
+    let mut prepared = completion(kwargs);
+    let thinking_value = value(thinking);
     route_thinking(
-        &mut kwargs,
-        Some(&thinking),
+        &mut prepared,
+        Some(&thinking_value),
         AutoSummary {
             global,
             environment,
         },
         &seams(&script),
     );
-    assert_eq!(kwargs.fields, map(expected));
+    assert_eq!(prepared.fields, map(expected));
 }
 
 #[test]
@@ -675,9 +675,9 @@ fn normalize_before_route(
 ) {
     let mut script = script();
     script.info = info.map(map);
-    let mut kwargs = completion(kwargs);
-    normalize_effort(&mut kwargs, &script);
-    assert_eq!(kwargs.fields, map(expected));
+    let mut prepared = completion(kwargs);
+    normalize_effort(&mut prepared, &script);
+    assert_eq!(prepared.fields, map(expected));
     let calls = locked(&script.info_calls);
     match lookup {
         Some((model, provider)) => assert_eq!(
@@ -786,12 +786,12 @@ fn plain_effort_requires_chat(
     #[case] expected: Option<&str>,
 ) {
     let mut script = script();
-    script.provider = provider.map(|(local, provider)| resolve_as(local, provider, None));
+    script.provider = provider.map(|(local, family)| resolve_as(local, family, None));
     script.bridge_mode = bridge.map(str::to_owned);
-    let kwargs = completion(kwargs);
-    let thinking = value(thinking);
-    let effort =
-        plain_effort(&kwargs, Some(&thinking), &seams(&script)).expect("the bridge policy answers");
+    let prepared = completion(kwargs);
+    let thinking_value = value(thinking);
+    let effort = plain_effort(&prepared, Some(&thinking_value), &seams(&script))
+        .expect("the bridge policy answers");
     assert_eq!(effort.as_deref(), expected);
 }
 
@@ -846,9 +846,9 @@ fn plain_effort_returns_none_without_resolving(#[case] kwargs: &str, #[case] thi
     let mut script = script();
     script.provider = Some(resolve_as("o3", "openai", None));
     script.bridge_mode = Some("chat".to_owned());
-    let kwargs = completion(kwargs);
-    let thinking = value(thinking);
-    let effort = plain_effort(&kwargs, Some(&thinking), &seams(&script))
+    let prepared = completion(kwargs);
+    let thinking_value = value(thinking);
+    let effort = plain_effort(&prepared, Some(&thinking_value), &seams(&script))
         .expect("no bridge policy is consulted");
     assert_eq!(effort, None);
     assert!(locked(&script.lookups).is_empty());
@@ -910,12 +910,12 @@ fn plain_effort_passes_the_resolved_target_to_the_bridge(
     let mut script = script();
     script.provider = Some(resolve_as("local-o3", "openai", Some("https://api.test")));
     script.bridge_mode = Some("chat".to_owned());
-    let kwargs = completion(kwargs);
-    let thinking = value(r#"{"type":"enabled"}"#);
-    let effort =
-        plain_effort(&kwargs, Some(&thinking), &seams(&script)).expect("the bridge policy answers");
+    let prepared = completion(kwargs);
+    let thinking_value = value(r#"{"type":"enabled"}"#);
+    let effort = plain_effort(&prepared, Some(&thinking_value), &seams(&script))
+        .expect("the bridge policy answers");
     assert_eq!(effort.as_deref(), Some("high"));
-    let reasoning_effort = match &kwargs.fields["reasoning_effort"] {
+    let reasoning_effort = match &prepared.fields["reasoning_effort"] {
         Json::Object(fields) => fields.clone(),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             panic!("the case carries a reasoning dict")
@@ -927,7 +927,7 @@ fn plain_effort_passes_the_resolved_target_to_the_bridge(
             model: "local-o3".to_owned(),
             provider: "openai".to_owned(),
             web_search_options: web_search_options.map(value),
-            tools: tools.map(|tools| match value(tools) {
+            tools: tools.map(|text| match value(text) {
                 Json::List(items) => items,
                 Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) =>
                     panic!("the case carries a tools list"),
