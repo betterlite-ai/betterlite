@@ -77,8 +77,7 @@ fn outbound<T>(
     })
 }
 
-// The SDK appends the relative call path to the base URL's raw path, which keeps a base query and
-// lets the last query value swallow the tail, and then merges api-version into that query.
+// The SDK joins the call path onto the raw base path and merges api-version into the base query.
 fn target_url(base_url: &str, api_version: &str, tail: &str) -> Result<Url, ThreadMessagesError> {
     let joined = format!("{}/{tail}", base_url.trim_end_matches('/'));
     let mut url = Url::parse(&joined).map_err(|source| ThreadsError::BaseUrl { source })?;
@@ -129,8 +128,7 @@ fn quote_thread_id(thread_id: &str) -> String {
     quoted
 }
 
-// The SDK sends a static token, or a provider's token, as the bearer; only without a static token
-// does the key ride along, since the provider goes through the request options and the key does not.
+// A static or provider token is the bearer; the key rides along only when there is no static token.
 fn auth_headers<T>(
     client: &AzureAssistantsClient<'_, T>,
 ) -> Result<HeaderMap, ThreadMessagesError> {
