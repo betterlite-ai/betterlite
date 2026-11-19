@@ -1,9 +1,8 @@
-from collections.abc import Callable
 from typing import Final, Protocol, TypeAlias, TypedDict
 
 import litellm
-from litellm.llms.vertex_ai.vertex_ai_partner_models.anthropic.transformation import (
-    VertexAIPartnerModelsAnthropicMessagesConfig,
+from litellm.llms.vertex_ai.vertex_ai_partner_models.anthropic.experimental_pass_through import (
+    transformation as vertex_messages,
 )
 from litellm.types.llms.vertex_ai import VERTEX_CREDENTIALS_TYPES
 from litellm.types.router import GenericLiteLLMParams
@@ -18,15 +17,6 @@ JSON: Final = TypeAdapter(Json)
 STR: Final = TypeAdapter(str)
 BETA_VALUES: Final = TypeAdapter(list[Json])
 MESSAGES: Final = TypeAdapter(list[JsonObject])
-EnvironmentReply: TypeAlias = tuple[JsonObject, str | None]
-ValidateEnvironment: TypeAlias = Callable[
-    [JsonObject, str, list[Json], JsonObject, JsonObject, str | None, str | None],
-    EnvironmentReply,
-]
-TransformRequest: TypeAlias = Callable[
-    [str, list[JsonObject], JsonObject, GenericLiteLLMParams, JsonObject],
-    JsonObject,
-]
 
 
 class Input(TypedDict):
@@ -42,15 +32,25 @@ class Input(TypedDict):
 
 
 class Config(Protocol):
-    @property
     def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ValidateEnvironment: ...
+        headers: JsonObject,
+        model: str,
+        messages: list[Json],
+        optional_params: JsonObject,
+        litellm_params: JsonObject,
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> tuple[JsonObject, str | None]: ...
 
-    @property
     def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
         self,
-    ) -> TransformRequest: ...
+        model: str,
+        messages: list[JsonObject],
+        anthropic_messages_optional_request_params: JsonObject,  # ast-grep-ignore: no-long-names
+        litellm_params: GenericLiteLLMParams,
+        headers: JsonObject,
+    ) -> JsonObject: ...
 
     def get_complete_url(
         self,
@@ -59,14 +59,14 @@ class Config(Protocol):
         model: str,
         optional_params: JsonObject,
         litellm_params: JsonObject,
+        stream: bool | None = None,
     ) -> str: ...
 
 
 # ast-grep-ignore: no-long-names
-class FixedAccess(VertexAIPartnerModelsAnthropicMessagesConfig):
-    def __init__(self, access_token: str, project: str) -> None:
-        self.fixed_token = access_token
-        self.fixed_project = project
+class FixedAccess(vertex_messages.VertexAIPartnerModelsAnthropicMessagesConfig):
+    fixed_token: str
+    fixed_project: str
 
     # The fixed token stands in for the service-account file a live deployment loads.
     @override
@@ -147,8 +147,7 @@ def answer(argument: Input, config: Config) -> Json:
 def run(argument: Input) -> Json:
     # an unknown model otherwise prints its banner to stdout, which carries the answer
     litellm.suppress_debug_info = True
-    config: Config = FixedAccess(
-        argument["access_token"],
-        argument["credential_project"],
-    )
+    config = FixedAccess()
+    config.fixed_token = argument["access_token"]
+    config.fixed_project = argument["credential_project"]
     return answer(argument, config)
