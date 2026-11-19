@@ -1,16 +1,14 @@
 use rstest::rstest;
 
-use crate::router_dependencies::config_write::validate_complexity_router_config_write;
+use crate::router_dependencies::config_write::validate_config_write;
 use crate::router_dependencies::error::{ComplexityConfigWriteError, StrategyRouterWriteError};
-use crate::router_dependencies::validation::{
-    validate_complexity_router_config_placement, validate_strategy_router_model_write,
-};
+use crate::router_dependencies::validation::{validate_config_placement, validate_model_write};
 use crate::router_dependencies::{AUTO_ROUTER_MODEL_PREFIX, STRATEGY_ROUTER_PARAM_FIELDS};
 
 use super::{json, names, params};
 
 fn rejected_location(config: &str) -> String {
-    match validate_complexity_router_config_write(Some(&json(config))) {
+    match validate_config_write(Some(&json(config))) {
         Err(
             ComplexityConfigWriteError::Invalid { location, .. }
             | ComplexityConfigWriteError::InvalidField { location, .. },
@@ -43,22 +41,34 @@ fn the_router_param_fields_are_exactly_litellms_set() {
     );
 }
 
+#[rstest]
+#[case::auto_router_config("auto_router_config")]
+#[case::auto_router_config_path("auto_router_config_path")]
+#[case::auto_router_default_model("auto_router_default_model")]
+#[case::auto_router_embedding_model("auto_router_embedding_model")]
+#[case::auto_router_max_input_chars("auto_router_max_input_chars")]
+#[case::complexity_router_config("complexity_router_config")]
+#[case::complexity_router_default_model("complexity_router_default_model")]
+#[case::adaptive_router_config("adaptive_router_config")]
+#[case::quality_router_config("quality_router_config")]
+#[case::quality_router_default_model("quality_router_default_model")]
+fn every_router_param_field_is_recognized_on_a_regular_model(#[case] field: &str) {
+    let error = validate_model_write("gpt-4o", &names(&[field]))
+        .expect_err("a regular model carrying a router field is rejected");
+    assert!(
+        error.to_string().contains(&format!("({field})")),
+        "{field}: {error}"
+    );
+}
+
 #[test]
-fn every_router_param_field_is_recognized_on_a_regular_model() {
-    for field in STRATEGY_ROUTER_PARAM_FIELDS {
-        let error = validate_strategy_router_model_write("gpt-4o", &names(&[field]))
-            .expect_err("a regular model carrying a router field is rejected");
-        assert!(
-            error.to_string().contains(&format!("({field})")),
-            "{field}: {error}"
-        );
-    }
-    assert!(validate_strategy_router_model_write("gpt-4o", &names(&["embedding_model"])).is_ok());
+fn a_non_router_field_on_a_regular_model_is_accepted() {
+    assert!(validate_model_write("gpt-4o", &names(&["embedding_model"])).is_ok());
 }
 
 #[test]
 fn a_regular_model_carrying_router_settings_reads_exactly() {
-    let error = validate_strategy_router_model_write(
+    let error = validate_model_write(
         "gpt-4o",
         &names(&["auto_router_config", "adaptive_router_config", "model"]),
     )
@@ -74,7 +84,7 @@ fn a_regular_model_carrying_router_settings_reads_exactly() {
 
 #[test]
 fn a_repeated_prefix_names_the_remainder() {
-    let error = validate_strategy_router_model_write("auto_router/auto_router/x", &names(&[]))
+    let error = validate_model_write("auto_router/auto_router/x", &names(&[]))
         .expect_err("a repeated prefix is rejected");
     assert_eq!(
         error.to_string(),
@@ -86,9 +96,8 @@ fn a_repeated_prefix_names_the_remainder() {
 
 #[test]
 fn an_empty_router_name_is_rejected_even_with_its_settings() {
-    let error =
-        validate_strategy_router_model_write("auto_router/", &names(&["auto_router_config"]))
-            .expect_err("an empty router name is rejected");
+    let error = validate_model_write("auto_router/", &names(&["auto_router_config"]))
+        .expect_err("an empty router name is rejected");
     assert_eq!(
         error.to_string(),
         "litellm_params.model='auto_router/' is missing the router name after the 'auto_router/' prefix."
@@ -122,8 +131,8 @@ fn a_write_missing_settings_names_every_group(
     #[case] present: Vec<&str>,
     #[case] expected: &str,
 ) {
-    let error = validate_strategy_router_model_write(model, &names(&present))
-        .expect_err("the write is missing settings");
+    let error =
+        validate_model_write(model, &names(&present)).expect_err("the write is missing settings");
     match error {
         StrategyRouterWriteError::MissingSettings { requirements, .. } => {
             assert_eq!(requirements, expected);
@@ -134,7 +143,7 @@ fn a_write_missing_settings_names_every_group(
 
 #[test]
 fn a_missing_settings_message_names_the_router_kind() {
-    let error = validate_strategy_router_model_write("auto_router/support-bot", &names(&[]))
+    let error = validate_model_write("auto_router/support-bot", &names(&[]))
         .expect_err("the write is missing settings");
     assert_eq!(
         error.to_string(),
@@ -146,7 +155,7 @@ fn a_missing_settings_message_names_the_router_kind() {
 
 #[test]
 fn a_complexity_model_carrying_only_quality_fields_is_rejected() {
-    let error = validate_strategy_router_model_write(
+    let error = validate_model_write(
         "auto_router/complexity_router",
         &names(&["quality_router_config"]),
     )
@@ -164,7 +173,7 @@ fn a_placement_violation_lists_every_key_in_sorted_order() {
         r#"{"model":"gpt-4o","tier_labels":{},"adaptive":false,"match_threshold":0.5,
             "complexity_router_config":{}}"#,
     );
-    let error = validate_complexity_router_config_placement(Some(&litellm_params))
+    let error = validate_config_placement(Some(&litellm_params))
         .expect_err("the settings sit one level too high");
     assert_eq!(
         error.to_string(),
@@ -179,8 +188,8 @@ fn a_placement_violation_lists_every_key_in_sorted_order() {
 fn a_clean_placement_is_accepted() {
     let unrelated =
         params(r#"{"model":"gpt-4o","complexity_router_config":{"tiers":{}},"api_key":"x"}"#);
-    assert!(validate_complexity_router_config_placement(Some(&unrelated)).is_ok());
-    assert!(validate_complexity_router_config_placement(Some(&params("{}"))).is_ok());
+    assert!(validate_config_placement(Some(&unrelated)).is_ok());
+    assert!(validate_config_placement(Some(&params("{}"))).is_ok());
 }
 
 #[rstest]
@@ -275,7 +284,7 @@ fn a_config_write_reads_every_field_at_its_own_path(#[case] config: &str, #[case
 
 #[test]
 fn a_config_write_message_names_the_key_and_the_load() {
-    let error = validate_complexity_router_config_write(Some(&json(
+    let error = validate_config_write(Some(&json(
         r#"{"classifier_type":"hybrid","hybrid_boundary_margin":1.5}"#,
     )))
     .expect_err("the margin is out of range");
@@ -285,9 +294,8 @@ fn a_config_write_message_names_the_key_and_the_load() {
          must be between 0 and 1. The router would drop this deployment at load time, so the write \
          is rejected instead."
     );
-    let unreadable =
-        validate_complexity_router_config_write(Some(&json(r#"{"classifier_type":"nope"}"#)))
-            .expect_err("the classifier type is unknown");
+    let unreadable = validate_config_write(Some(&json(r#"{"classifier_type":"nope"}"#)))
+        .expect_err("the classifier type is unknown");
     let message = unreadable.to_string();
     assert!(message.starts_with("complexity_router_config is invalid at classifier_type: "));
     assert!(message.ends_with(
@@ -301,8 +309,8 @@ fn a_config_write_message_names_the_key_and_the_load() {
 #[case::number("5")]
 #[case::boolean("true")]
 fn a_config_write_that_is_not_an_object_says_so(#[case] config: &str) {
-    let error = validate_complexity_router_config_write(Some(&json(config)))
-        .expect_err("a non-object config is rejected");
+    let error =
+        validate_config_write(Some(&json(config))).expect_err("a non-object config is rejected");
     assert!(matches!(error, ComplexityConfigWriteError::NotAnObject));
     assert_eq!(
         error.to_string(),
@@ -311,32 +319,30 @@ fn a_config_write_that_is_not_an_object_says_so(#[case] config: &str) {
     );
 }
 
-#[test]
-fn a_config_write_accepts_the_edge_shapes_the_load_accepts() {
-    for accepted in [
-        r#"{"tiers":null,"plan_mode_min_tier":null,"adaptive":null}"#,
-        r#"{"enable_non_reasoning_tier":false}"#,
-        r#"{"classification_mode":"every_request"}"#,
-        r#"{"plugins":[]}"#,
-        r#"{"plugins":["pkg.Plugin"]}"#,
-        r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":0.2}}]}}"#,
-        r#"{"future_key":1}"#,
-        r#"{"context_compaction":false}"#,
-        r#"{"session_affinity":true}"#,
-        r#"{"stall_escalation_enabled":true}"#,
-        r#"{"custom_dimensions":[],"dimension_weights":{}}"#,
-        r#"{"custom_dimensions":null,"dimension_weights":null}"#,
-    ] {
-        let judged = validate_complexity_router_config_write(Some(&json(accepted)));
-        assert!(judged.is_ok(), "{accepted}: {judged:?}");
-    }
+#[rstest]
+#[case::nulls(r#"{"tiers":null,"plan_mode_min_tier":null,"adaptive":null}"#)]
+#[case::non_reasoning_off(r#"{"enable_non_reasoning_tier":false}"#)]
+#[case::classification_mode(r#"{"classification_mode":"every_request"}"#)]
+#[case::empty_plugins(r#"{"plugins":[]}"#)]
+#[case::plugins(r#"{"plugins":["pkg.Plugin"]}"#)]
+#[case::tier_pools(
+    r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":0.2}}]}}"#
+)]
+#[case::future_key(r#"{"future_key":1}"#)]
+#[case::compaction_off(r#"{"context_compaction":false}"#)]
+#[case::session_affinity(r#"{"session_affinity":true}"#)]
+#[case::stall(r#"{"stall_escalation_enabled":true}"#)]
+#[case::empty_dimensions(r#"{"custom_dimensions":[],"dimension_weights":{}}"#)]
+#[case::null_dimensions(r#"{"custom_dimensions":null,"dimension_weights":null}"#)]
+fn a_config_write_accepts_the_edge_shapes_the_load_accepts(#[case] accepted: &str) {
+    let judged = validate_config_write(Some(&json(accepted)));
+    assert!(judged.is_ok(), "{accepted}: {judged:?}");
 }
 
 #[test]
 fn a_config_write_rule_error_keeps_the_rule_as_its_cause() {
-    let error =
-        validate_complexity_router_config_write(Some(&json(r#"{"plan_mode_min_tier":"NOPE"}"#)))
-            .expect_err("the tier is unknown");
+    let error = validate_config_write(Some(&json(r#"{"plan_mode_min_tier":"NOPE"}"#)))
+        .expect_err("the tier is unknown");
     match error {
         ComplexityConfigWriteError::Invalid { location, source } => {
             assert_eq!(location, "complexity_router_config");
