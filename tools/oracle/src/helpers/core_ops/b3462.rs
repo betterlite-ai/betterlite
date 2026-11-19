@@ -22,7 +22,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum Part {
+pub(crate) enum Part {
     Text {
         name: String,
         text: String,
