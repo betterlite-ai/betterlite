@@ -1,0 +1,10 @@
+kind: helper
+name: auth-pubsub-subscriber-reconnect
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: fail}
+        - - {kind: block}
+env: {}
+compare: {ignore: []}

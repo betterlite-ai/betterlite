@@ -1,0 +1,9 @@
+model_list:
+  - model_name: usage-routing-v2-group
+    litellm_params:
+      model: openai/gpt-4o-mini
+    model_info:
+      id: usage-routing-v2-primary
+
+router_settings:
+  routing_strategy: usage-based-routing-v2-fastest

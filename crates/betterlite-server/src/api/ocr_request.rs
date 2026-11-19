@@ -1,7 +1,7 @@
 pub mod error;
 mod format;
 mod json_body;
-mod multipart_form;
+pub(crate) mod multipart_form;
 pub mod native_response;
 mod upload;
 
