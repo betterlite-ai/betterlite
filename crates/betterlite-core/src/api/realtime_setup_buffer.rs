@@ -95,10 +95,9 @@ pub trait SetupFlush {
 impl SetupBuffer for RealtimeStreaming {
     // A provider that needs no session configuration has setup complete from the first frame
     fn uses_deferred_backend_setup(&self) -> bool {
-        match self.provider_config.as_deref() {
-            None => false,
-            Some(config) => !config.requires_session_configuration(),
-        }
+        self.provider_config
+            .as_deref()
+            .is_some_and(|config| !config.requires_session_configuration())
     }
 
     fn should_buffer_until_setup(&self, message: &str) -> Result<bool, RealtimeSetupBufferError> {
@@ -108,10 +107,8 @@ impl SetupBuffer for RealtimeStreaming {
         if self.setup.backend_setup_complete.0 && !self.setup.flushing_pending_messages.0 {
             return Ok(false);
         }
-        Ok(match frame_type(message)? {
-            Some(kind) => CLIENT_AUDIO_BUFFER_TYPES.contains(&kind.as_str()),
-            None => false,
-        })
+        Ok(frame_type(message)?
+            .is_some_and(|kind| CLIENT_AUDIO_BUFFER_TYPES.contains(&kind.as_str())))
     }
 
     fn buffer_pending_message(&mut self, message: &str) -> Result<(), RealtimeSetupBufferError> {
