@@ -10,7 +10,7 @@ use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Number;
 
 use crate::api::anthropic_beta_filter::Headers;
