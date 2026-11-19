@@ -410,7 +410,7 @@ async fn dedicated_logger_ignores_the_global_source() {
         .err()
         .expect("an empty audit source has no bucket");
     assert!(
-        matches!(error, CatalogError::Init { message } if message.contains("bucket")),
+        matches!(&error, CatalogError::Init { message } if message.contains("bucket")),
         "{error:?}"
     );
 }
@@ -458,7 +458,7 @@ async fn dedicated_logger_applies_the_audit_s3_verify() {
         .expect("a text s3_verify is refused");
     assert!(
         matches!(
-            error,
+            &error,
             CatalogError::Init { message }
                 if message.contains("s3_audit_callback_params.s3_verify: expected a bool, got str")
         ),
@@ -491,7 +491,7 @@ async fn dedicated_logger_refuses_an_unsupported_security_level() {
         .err()
         .expect("rustls has no security level");
     assert!(
-        matches!(error, CatalogError::Init { message } if message.contains("SSL_SECURITY_LEVEL")),
+        matches!(&error, CatalogError::Init { message } if message.contains("SSL_SECURITY_LEVEL")),
         "{error:?}"
     );
 }

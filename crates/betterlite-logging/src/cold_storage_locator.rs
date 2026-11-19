@@ -24,10 +24,10 @@ impl ColdStorageLocator for CatalogColdStorage {
     // the lookup only reads a logger the catalog already built, so nothing is constructed for a name nobody uses
     fn locate(&self) -> Option<ColdStorageTarget> {
         let name = self.logger_name.as_deref()?;
-        let target = self
-            .catalog
-            .existing(name)
-            .and_then(|logger| logger.cold_storage_target());
-        Some(target.unwrap_or_default())
+        let target = match self.catalog.existing(name) {
+            Some(logger) => logger.cold_storage_target().unwrap_or_default(),
+            None => ColdStorageTarget::default(),
+        };
+        Some(target)
     }
 }
