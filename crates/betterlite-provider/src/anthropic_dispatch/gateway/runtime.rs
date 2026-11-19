@@ -268,7 +268,6 @@ fn option_defaults(
     }
 }
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Debug, thiserror::Error)]
