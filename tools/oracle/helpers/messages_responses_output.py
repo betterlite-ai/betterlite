@@ -24,6 +24,7 @@ class Adapter(Protocol):
     def translate_request(
         self,
         anthropic_request: AnthropicMessagesRequest,
+        *,
         include_encrypted_reasoning: bool = True,
     ) -> JsonValue: ...
 
