@@ -38,6 +38,8 @@ fn registering_the_same_instance_twice_in_one_list_keeps_its_first_place() {
     assert_eq!(snapshot.len(), 2);
     assert!(Arc::ptr_eq(&snapshot[0], &first));
     assert!(Arc::ptr_eq(&snapshot[1], &second));
+    // the snapshot dedups by identity, so the stored list is what proves the third registration was refused
+    assert_eq!(store.remove_from_list(VantageCallbackList::Callbacks), 2);
 }
 
 #[test]
