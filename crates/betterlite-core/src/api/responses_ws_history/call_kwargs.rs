@@ -41,7 +41,10 @@ fn proxy_body(
     let mut body = match proxy_server_request.get("body") {
         Some(Json::Object(fields)) => fields.clone(),
         Some(other) if has_content(other) => {
-            return Err(ResponsesWsHistoryError::shape("body", "an object"));
+            return Err(ResponsesWsHistoryError::Shape {
+                field: "body",
+                expected: "an object",
+            });
         }
         _ => IndexMap::new(),
     };
@@ -72,10 +75,10 @@ pub fn update_proxy_request(
         Some(Json::Object(fields)) => fields.clone(),
         None | Some(Json::Null) => IndexMap::new(),
         Some(_) => {
-            return Err(ResponsesWsHistoryError::shape(
-                "litellm_metadata",
-                "an object",
-            ));
+            return Err(ResponsesWsHistoryError::Shape {
+                field: "litellm_metadata",
+                expected: "an object",
+            });
         }
     };
     let mut proxy = match metadata.get("proxy_server_request") {

@@ -24,7 +24,7 @@ use crate::api::responses_ws_history::call_kwargs::{
 };
 use crate::api::responses_ws_history::error::ResponsesWsHistoryError;
 use crate::api::responses_ws_history::history::{
-    apply_history, extract_response_id, get_history_messages, store_history,
+    apply_history, extract_response_id, get_history_messages,
 };
 use crate::api::responses_ws_history::messages::{extract_output_messages, input_to_messages};
 use crate::api::responses_ws_history::provider::{resolve_provider, same_provider};
@@ -599,7 +599,9 @@ fn response_id_history() {
     let message_a = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": []}"#,
     ));
-    store_history(&mut handler, "raw-1", vec![message_a.clone()]);
+    handler
+        .session_history
+        .insert("raw-1".to_owned(), vec![message_a.clone()]);
     let mut got = get_history_messages(&handler, ENCODED_RAW_ONE);
     assert_eq!(got, vec![message_a.clone()]);
     let marker = object_map(&support::json(r#"{"probe": true}"#));
@@ -612,7 +614,9 @@ fn response_id_history() {
     let message_b = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "B"}]}"#,
     ));
-    store_history(&mut handler, "raw-1", vec![message_b.clone()]);
+    handler
+        .session_history
+        .insert("raw-1".to_owned(), vec![message_b.clone()]);
     assert_eq!(
         get_history_messages(&handler, ENCODED_RAW_ONE),
         vec![message_b]

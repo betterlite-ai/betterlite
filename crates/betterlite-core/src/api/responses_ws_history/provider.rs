@@ -18,8 +18,10 @@ pub fn resolve_provider<Sink: FrameSink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     model: Option<&str>,
 ) -> Option<String> {
-    let candidate = model.filter(|value| !value.is_empty())?;
-    handler.resolver.resolve(candidate).ok()
+    if model.is_none_or(str::is_empty) {
+        return None;
+    }
+    model.and_then(|candidate| handler.resolver.resolve(candidate).ok())
 }
 
 #[must_use]

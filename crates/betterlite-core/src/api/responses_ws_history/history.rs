@@ -57,15 +57,6 @@ pub fn apply_history(
     call_kwargs.insert("input".to_owned(), Json::List(input));
 }
 
-pub fn store_history<Sink: FrameSink>(
-    handler: &mut ManagedResponsesWebSocket<Sink>,
-    response_id: &str,
-    messages: Vec<IndexMap<String, Json>>,
-) {
-    let history = &mut handler.session_history;
-    history.insert(response_id.to_owned(), messages);
-}
-
 #[must_use]
 pub fn get_history_messages<Sink: FrameSink>(
     handler: &ManagedResponsesWebSocket<Sink>,

@@ -125,7 +125,10 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
             return Ok(None);
         };
         let Json::Object(fields) = message else {
-            return Err(ResponsesWsHistoryError::shape("message", "a JSON object"));
+            return Err(ResponsesWsHistoryError::Shape {
+                field: "message",
+                expected: "a JSON object",
+            });
         };
         match fields.get("type") {
             Some(Json::Text(message_type)) if message_type == "response.create" => Ok(Some(fields)),

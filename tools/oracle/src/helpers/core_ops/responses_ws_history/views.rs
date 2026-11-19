@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use betterlite_core::api::responses_ws_history::ManagedResponsesWebSocket;
 use betterlite_core::api::responses_ws_history::call_kwargs::build_base_call_kwargs;
 use betterlite_core::api::responses_ws_history::history::{
-    apply_history, extract_response_id, get_history_messages, store_history,
+    apply_history, extract_response_id, get_history_messages,
 };
 use betterlite_core::api::responses_ws_history::messages::{
     extract_output_messages, input_to_messages,
@@ -112,24 +112,20 @@ fn response_view(response: &Value) -> Value {
     json!({
         "id_is_warmup": identifier.starts_with(WARMUP_RESPONSE_ID_PREFIX),
         "id_hex": identifier.len() == WARMUP_RESPONSE_ID_PREFIX.len().saturating_add(32),
-        "object": field(response, "object"),
-        "status": field(response, "status"),
-        "model": field(response, "model"),
-        "output": field(response, "output"),
-        "usage": field(response, "usage"),
+        "object": response.get("object").cloned().unwrap_or(Value::Null),
+        "status": response.get("status").cloned().unwrap_or(Value::Null),
+        "model": response.get("model").cloned().unwrap_or(Value::Null),
+        "output": response.get("output").cloned().unwrap_or(Value::Null),
+        "usage": response.get("usage").cloned().unwrap_or(Value::Null),
     })
-}
-
-fn field(response: &Value, name: &str) -> Value {
-    response.get(name).cloned().unwrap_or(Value::Null)
 }
 
 fn ack_view(events: &[Value]) -> Value {
     let mut answers = Vec::with_capacity(events.len());
     for event in events {
         answers.push(json!({
-            "type": field(event, "type"),
-            "response": response_view(&field(event, "response")),
+            "type": event.get("type").cloned().unwrap_or(Value::Null),
+            "response": response_view(&event.get("response").cloned().unwrap_or(Value::Null)),
         }));
     }
     Value::Array(answers)
@@ -151,7 +147,9 @@ pub(super) fn messages_view(case: &Case) -> Result<Value, Box<HelperError>> {
 
 pub(super) fn history_view(handler: &mut ManagedResponsesWebSocket<Socket>, case: &Case) -> Value {
     for stored in &case.store {
-        store_history(handler, &stored.id, stored.messages.clone());
+        handler
+            .session_history
+            .insert(stored.id.clone(), stored.messages.clone());
     }
     let first = get_history_messages(handler, &case.first);
     let mut appended = first.clone();
