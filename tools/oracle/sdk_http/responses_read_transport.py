@@ -27,45 +27,24 @@ InputItemsWork = dict[str, object] | Coroutine[object, object, dict[str, object]
 
 RetrieveCall = Callable[
     [
-        str,
-        BaseResponsesAPIConfig,
-        GenericLiteLLMParams,
-        Logging,
-        str,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
+        str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, dict[str, object] | None,
+        dict[str, object] | None, float | httpx.Timeout | None,
     ],
     RetrieveWork,
 ]
 
 AsyncRetrieveCall = Callable[
     [
-        str,
-        BaseResponsesAPIConfig,
-        GenericLiteLLMParams,
-        Logging,
-        str,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
+        str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, dict[str, object] | None,
+        dict[str, object] | None, float | httpx.Timeout | None,
     ],
     Coroutine[object, object, ResponsesAPIResponse],
 ]
 
 InputItemsCall = Callable[
     [
-        str,
-        BaseResponsesAPIConfig,
-        GenericLiteLLMParams,
-        Logging,
-        str,
-        str | None,
-        str | None,
-        list[str] | None,
-        int,
-        Literal["asc", "desc"],
-        dict[str, object] | None,
+        str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, str | None, str | None,
+        list[str] | None, int, Literal["asc", "desc"], dict[str, object] | None,
         float | httpx.Timeout | None,
     ],
     InputItemsWork,
@@ -73,17 +52,8 @@ InputItemsCall = Callable[
 
 AsyncInputItemsCall = Callable[
     [
-        str,
-        BaseResponsesAPIConfig,
-        GenericLiteLLMParams,
-        Logging,
-        str,
-        str | None,
-        str | None,
-        list[str] | None,
-        int,
-        Literal["asc", "desc"],
-        dict[str, object] | None,
+        str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, str | None, str | None,
+        list[str] | None, int, Literal["asc", "desc"], dict[str, object] | None,
         float | httpx.Timeout | None,
     ],
     Coroutine[object, object, dict[str, object]],
@@ -170,9 +140,8 @@ class Handlers(Protocol):
     def list_responses_input_items(self) -> InputItemsCall: ...
 
     @property
-    def async_list_responses_input_items(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> AsyncInputItemsCall: ...
+    # ast-grep-ignore: no-long-names
+    def async_list_responses_input_items(self) -> AsyncInputItemsCall: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
@@ -189,24 +158,20 @@ class Prepared:
     timeout: float | None
 
 
-def logging_fixture() -> Logging:
-    return Logging(
-        model="",
-        messages="",
-        stream=False,
-        call_type="responses",
-        start_time=datetime(2026, 1, 1, tzinfo=UTC),
-        litellm_call_id="responses-read-transport",
-        function_id="responses-read-transport",
-    )
-
-
 def prepared_run(run: TransportRun, config: BaseResponsesAPIConfig, api_base: str) -> Prepared:
     return Prepared(
         run=run,
         config=config,
         params=GenericLiteLLMParams(api_base=api_base),
-        logging_obj=logging_fixture(),
+        logging_obj=Logging(
+            model="",
+            messages="",
+            stream=False,
+            call_type="responses",
+            start_time=datetime(2026, 1, 1, tzinfo=UTC),
+            litellm_call_id="responses-read-transport",
+            function_id="responses-read-transport",
+        ),
         extra_headers=OBJECTS.validate_python(run.extra_headers),
         extra_body=OBJECTS.validate_python(run.extra_body),
         timeout=None if run.timeout_seconds is None else float(run.timeout_seconds),
@@ -296,20 +261,24 @@ def input_items(prepared: Prepared) -> dict[str, object]:
                 prepared.timeout,
             )
         )
-    if isinstance(value, Coroutine):
-        raise TypeError("the sync handler returned a coroutine")
-    return value
+    match value:
+        case Coroutine():
+            raise TypeError("the sync handler returned a coroutine")
+        case _:
+            return value
 
 
 def project_response(value: RetrieveWork) -> Retrieved:
-    if not isinstance(value, ResponsesAPIResponse):
-        raise TypeError("the sync handler returned a coroutine")
-    return Retrieved(
-        id=value.id,
-        created_at=value.created_at,
-        status=value.status,
-        model=value.model,
-    )
+    match value:
+        case ResponsesAPIResponse():
+            return Retrieved(
+                id=value.id,
+                created_at=value.created_at,
+                status=value.status,
+                model=value.model,
+            )
+        case _:
+            raise TypeError("the sync handler returned a coroutine")
 
 
 class ResponsesReadTransportRequest(BaseModel):
