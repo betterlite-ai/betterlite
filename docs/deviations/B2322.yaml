@@ -1,0 +1,9 @@
+task: B2322
+deviations: []
+kept_bugs:
+  - what: "A failed primary or end-user spend read returns None instead of raising, so the caller falls back to stale spend: an outage, a timeout or a query bug all read as unknown spend."
+    why: "LiteLLM catches every counter lookup failure (end_user_from_db does the same at L184-L190) so the auth path keeps serving through database trouble; betterlite keeps that degrade-to-None and logs the failure."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L136-L142"
+  - what: "A failed read, a missing row and an older window row all read as no current row, so the caller falls back to the spend-logs aggregate; a failed aggregate read returns None too, so enforcement sees no window spend rather than an error."
+    why: "LiteLLM treats every unreadable window source as fallback (window_from_spend_logs catches at L402) because the aggregate is the transitional path; a working deployment relies on that instead of a 500, so betterlite keeps it and logs the failure."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L330-L334"

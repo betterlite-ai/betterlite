@@ -1,0 +1,3 @@
+[default.extend-identifiers]
+# the production input type keeps the task's spelling
+MessagesResponsesOutpuInput = "MessagesResponsesOutpuInput"
