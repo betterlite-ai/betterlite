@@ -7,6 +7,7 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_models::decisions::Json;
+use betterlite_router::model_rate_limits::service::ModelRateLimits;
 use betterlite_router::prompt_affinity::service::{PromptAffinity, SuccessEvent};
 use betterlite_router::router_core::attempt::AttemptResult;
 use betterlite_router::router_core::error::RoutingError;
@@ -21,7 +22,6 @@ use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use rand::Rng;
 
 use crate::routing::prompt_affinity::{PromptAffinityError, PromptAffinityInputs, build};
-use crate::routing::routing_state::RoutingState;
 
 mod tests;
 
@@ -31,6 +31,7 @@ const CALLBACK_NAME: &str = "PromptCachingDeploymentCheck";
 // The dynamic state a server route reads, and the callback its successes are logged to.
 pub struct RouterServices {
     prompt_affinity: Option<PromptAffinity>,
+    model_rate_limits: Option<ModelRateLimits>,
 }
 
 impl RouterServices {
@@ -44,13 +45,25 @@ impl RouterServices {
     {
         Ok(Self {
             prompt_affinity: build(&config.sections.prompt_affinity, inputs)?,
+            model_rate_limits: None,
         })
+    }
+
+    // Router.add_optional_pre_call_checks registers the model rate-limit check beside the prompt caching one
+    #[must_use]
+    pub fn with_model_rate_limits(mut self, check: Option<ModelRateLimits>) -> Self {
+        self.model_rate_limits = check;
+        self
     }
 }
 
 impl RouteServices for RouterServices {
     fn prompt_affinity(&self) -> Option<&PromptAffinity> {
         self.prompt_affinity.as_ref()
+    }
+
+    fn model_rate_limits(&self) -> Option<&ModelRateLimits> {
+        self.model_rate_limits.as_ref()
     }
 }
 
@@ -97,9 +110,9 @@ pub struct RouteInputs<'route> {
     pub clients: Option<ClientAccess<'route>>,
 }
 
-// Router.async_get_available_deployment over one server route: every stage reads the config's rules through the routing state.
+// Router.async_get_available_deployment over one server route: every stage reads the config's checks through the services.
 pub async fn route<R>(
-    state: &RoutingState,
+    services: &dyn RouteServices,
     inputs: RouteInputs<'_>,
     dispatch: &mut StrategyDispatch,
     resolved: Resolved,
@@ -110,7 +123,7 @@ where
 {
     let context = RouteContext {
         request: inputs.request,
-        services: state,
+        services,
         limits: inputs.limits,
         params: inputs.params,
         policy: inputs.policy,

@@ -134,7 +134,9 @@ fn deployment(group: &str, entry: &Entry) -> Result<DeploymentSpec, OperationErr
 fn strategy(args: Option<&str>) -> Result<Lar1Strategy, String> {
     let source = args.map_or_else(
         || "router_settings: {}\n".to_owned(),
-        |text| format!("router_settings:\n  routing_strategy_args: {text}\n"),
+        |text| {
+            format!("router_settings:\n  routing_strategy: lar1\n  routing_strategy_args: {text}\n")
+        },
     );
     let lookup = BTreeMap::<String, String>::new();
     let config = ConfigLoader { lookup }

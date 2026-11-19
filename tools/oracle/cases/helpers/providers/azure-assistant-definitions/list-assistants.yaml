@@ -1,0 +1,26 @@
+kind: helper
+name: azure-assistant-definitions-list-assistants
+call:
+  azure_assistant_definitions:
+    list_assistants:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: true
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        reply:
+          status: 200
+          body: '{"object":"list","data":[{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","name":"first","tools":[{"type":"code_interpreter"}]}],"first_id":"asst_1","last_id":"asst_1","has_more":true,"marker":"kept"}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        reply:
+          status: 404
+          body: '{"error":{"message":"nope","type":"invalid_request_error"}}'
+env: {}
+compare: {ignore: []}

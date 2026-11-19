@@ -1,0 +1,175 @@
+kind: helper
+name: thinking-promotes-only-openai
+call:
+  messages_reasoning_route:
+    calls:
+      - function: route
+        kwargs: {model: openai/o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3}
+        thinking: {type: enabled}
+        model_info: null
+        provider: {local: o3, provider: openai, api_base: null}
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: anthropic/claude, custom_llm_provider: anthropic}
+        thinking: {type: enabled}
+        model_info: null
+        provider: {local: claude, provider: openai, api_base: null}
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: ""}
+        thinking: {type: enabled}
+        model_info: null
+        provider: {local: o3, provider: openai, api_base: null}
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: azure}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: 7}
+        thinking: {type: enabled}
+        model_info: null
+        provider: {local: o3, provider: openai, api_base: null}
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: null}
+        thinking: {type: enabled}
+        model_info: null
+        provider: {local: o3, provider: openai, api_base: null}
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: disabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: adaptive}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {summary: concise}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: [enabled]
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: null
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {supports_reasoning: false}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {supports_reasoning: 0}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {supports_reasoning: true}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {supports_reasoning: null}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: openai/responses/o3, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: {supports_reasoning: true}
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: azure/gpt-5, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: "", custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: null, custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {custom_llm_provider: openai}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+env: {}
+compare: {ignore: []}
