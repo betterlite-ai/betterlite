@@ -1,0 +1,58 @@
+kind: probe
+name: input-plus-output-fit
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      context_placement:
+        config:
+          enabled: true
+          buffer: "0.95"
+        tier: SIMPLE
+        signals: [keyword]
+        default_model: null
+        pool_override: null
+        pools:
+          SIMPLE: [small]
+          MEDIUM: [large]
+          REASONING: [mystery, agent]
+        groups:
+          - model: small
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 100
+                max_output_tokens: 1000
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: large
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: null
+                max_output_tokens: null
+                router_max_input_tokens: 10000
+                router_max_output_tokens: 4000
+          - model: mystery
+            deployments:
+              - model: openai/an-unmapped-model
+                custom_llm_provider: null
+                max_input_tokens: null
+                max_output_tokens: null
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: agent
+            deployments:
+              - model: github_copilot/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: null
+                max_output_tokens: null
+                router_max_input_tokens: 500
+                router_max_output_tokens: 500
+        messages:
+          - Summarize the quarterly report for the finance team.
+        instructions: Answer in one paragraph.
+        system: null
+        count: 500
+compare:
+  ignore: []

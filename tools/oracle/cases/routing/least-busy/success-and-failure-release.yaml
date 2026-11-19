@@ -1,0 +1,28 @@
+kind: probe
+name: success-and-failure-release
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      least_busy:
+        model_group: gpt
+        shared: true
+        deployments:
+          - {id: a}
+          - {id: b}
+        steps:
+          - {kind: pre_call, call_id: 1, deployment: a}
+          - {kind: pre_call, call_id: 2, deployment: a}
+          - {kind: pre_call, call_id: 3, deployment: b}
+          - {kind: select}
+          - {kind: success, call_id: 1, callback: sync}
+          - {kind: select_sync}
+          - {kind: failure, call_id: 3, callback: async}
+          - {kind: select}
+          - {kind: pre_call, call_id: 4, deployment: b}
+          - {kind: success, call_id: 4, callback: async}
+          - {kind: pre_call, call_id: 5, deployment: a}
+          - {kind: failure, call_id: 5, callback: sync}
+          - {kind: shared}
+compare:
+  ignore: []

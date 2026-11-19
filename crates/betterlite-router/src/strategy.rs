@@ -48,6 +48,8 @@ impl Strategy {
 // What one strategy weighs the pool by, besides the randomness the caller injects.
 pub struct StrategyContext<'context> {
     pub deployments: &'context [DeploymentSpec],
+    // the model group the request resolved to, which the counter keys name
+    pub model_group: &'context str,
     pub route: &'context RouteContext<'context>,
     pub dispatch: &'context mut StrategyDispatch,
     pub resolution: &'context Resolution,

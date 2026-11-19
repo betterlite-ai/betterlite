@@ -1,7 +1,7 @@
 id: B3122
 milestone: M4 keys, spend and management
 title: Record and retrieve caller-scoped provider cache observations
-status: todo
+status: done
 depends_on: [B3120, B3121, B189, B4293]
 file: tasks/B3122-prompt-cache-observations.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/hooks/prompt_cache_prediction.py"
 parent: B075
 split_from: B075
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2464
