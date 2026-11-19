@@ -41,12 +41,12 @@ tests:
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
     asserts:
       - equal:
           path: 'spec.rules[0].http.paths[-2]'
           value:
-            path: /my-passthrough
+            path: /my-provider
             pathType: Prefix
             backend:
               service:
@@ -68,7 +68,7 @@ tests:
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
     asserts:
       - contains:
           path: spec.rules[0].http.paths
@@ -115,7 +115,7 @@ tests:
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
           service: gateway
         - path: /my-management
           pathType: Exact
@@ -127,7 +127,7 @@ tests:
       - equal:
           path: 'spec.rules[0].http.paths[-4]'
           value:
-            path: /my-passthrough
+            path: /my-provider
             pathType: Prefix
             backend:
               service:
@@ -162,7 +162,7 @@ tests:
       backend.service.port: 8001
       ui.service.port: 8080
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
         - path: /my-management
           service: backend
         - path: /brand.txt
@@ -176,21 +176,21 @@ tests:
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
           service: proxy
     asserts:
       - failedTemplate:
-          errorMessage: 'ingress.extraPaths[0] (path /my-passthrough): unknown service "proxy", expected one of backend, gateway, ui'
+          errorMessage: 'ingress.extraPaths[0] (path /my-provider): unknown service "proxy", expected one of backend, gateway, ui'
 
-  - it: rejects an entry whose pathType is not a kubernetes pathType
+  - it: rejects an entry whose pathType is not one Kubernetes accepts
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - path: /my-passthrough
+        - path: /my-provider
           pathType: prefix
     asserts:
       - failedTemplate:
-          errorMessage: 'ingress.extraPaths[0] (path /my-passthrough): unknown pathType "prefix", expected one of Exact, ImplementationSpecific, Prefix'
+          errorMessage: 'ingress.extraPaths[0] (path /my-provider): unknown pathType "prefix", expected one of Exact, ImplementationSpecific, Prefix'
 
   - it: rejects an entry with no path
     set:
@@ -205,7 +205,7 @@ tests:
     set:
       ingress.enabled: true
       ingress.extraPaths:
-        - /my-passthrough
+        - /my-provider
     asserts:
       - failedTemplate:
           errorMessage: "ingress.extraPaths[0]: each entry must be a mapping with a 'path' key"
