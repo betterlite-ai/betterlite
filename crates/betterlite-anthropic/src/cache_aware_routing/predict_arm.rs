@@ -29,13 +29,16 @@ const PRICING_UNAVAILABLE: &str = "pricing_unavailable";
 const OBSERVATION_EXPIRED: &str = "observation_expired";
 const NO_OBSERVATION: &str = "no_compatible_observation";
 
-pub async fn predict_arm_for_request<Counter: TokenCounter>(
+pub async fn predict_arm_for_request<Counter>(
     request: &ArmRequest<'_>,
     body: &Json,
     prefix: &PromptPrefix,
     counter: &Counter,
     services: &PredictionServices<'_>,
-) -> CachePredictionArm {
+) -> CachePredictionArm
+where
+    Counter: TokenCounter,
+{
     let deployment = request.deployment;
     if deployment.blocked {
         return failed_arm(deployment.deployment_id, deployment.model, BLOCKED_REASON);
@@ -127,12 +130,15 @@ struct PromptCounts {
 }
 
 impl PromptCounts {
-    async fn measure<Counter: TokenCounter>(
+    async fn measure<Counter>(
         target: &NativePredictionTarget,
         body: &Json,
         prefix: &PromptPrefix,
         counter: &Counter,
-    ) -> Option<Self> {
+    ) -> Option<Self>
+    where
+        Counter: TokenCounter,
+    {
         let prefix_body: Json = serde_json::from_str(prefix.prefix_body.get()).ok()?;
         let total = counter.count(&target.model, &target.api_key, body).await?;
         let prefix_tokens = counter
@@ -178,10 +184,10 @@ impl ResolvedArm<'_, '_> {
             };
             return arm;
         }
-        self.scenarios(services).await
+        self.scenarios(services)
     }
 
-    async fn scenarios(&self, services: &PredictionServices<'_>) -> CachePredictionArm {
+    fn scenarios(&self, services: &PredictionServices<'_>) -> CachePredictionArm {
         let window = self.window();
         let read = match window {
             CacheWindow::FreshExact | CacheWindow::FreshLookback => self
@@ -198,10 +204,12 @@ impl ResolvedArm<'_, '_> {
         let estimate_tokens = services
             .cost
             .buckets(self.cacheable, self.suffix, read, ttl);
-        let cold = self.price(services, &cold_tokens);
-        let warm = self.price(services, &warm_tokens);
-        let estimate = self.price(services, &estimate_tokens);
-        let (Some(cold), Some(warm), Some(estimate)) = (cold, warm, estimate) else {
+        let priced = (
+            self.price(services, &cold_tokens),
+            self.price(services, &warm_tokens),
+            self.price(services, &estimate_tokens),
+        );
+        let (Some(cold), Some(warm), Some(estimate)) = priced else {
             let deployment = self.request.deployment;
             return failed_arm(
                 deployment.deployment_id,
