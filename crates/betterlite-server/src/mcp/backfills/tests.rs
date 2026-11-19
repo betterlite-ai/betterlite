@@ -17,7 +17,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::flow::backfill_null_oauth2_flows;
 use super::issuer::heal_stamped_issuers;
-use super::log::{FlowBackfillEvent, FlowBackfillLog, IssuerBackfillEvent, IssuerBackfillLog};
+use super::log::{BackfillEvent, BackfillLog};
 use super::{
     BackfillRule, DISCOVERY_ACTOR, FlowBackfillTable, FlowCandidateRow, FlowSignals,
     IssuerBackfillTable, IssuerCandidateRow, UserCredentialRow, classify_null_flow_row,
@@ -39,8 +39,8 @@ fn test_cipher() -> DbCipher {
     }
 }
 
-fn credentials_value(client_id: Option<&str>, client_secret: Option<&str>) -> Option<JsonValue> {
-    let mut fields = BTreeMap::new();
+fn credential_fields(client_id: Option<&str>, client_secret: Option<&str>) -> CredentialBlob {
+    let mut fields = CredentialBlob::new();
     if let Some(id) = client_id {
         fields.insert("client_id".to_owned(), JsonValue::String(id.to_owned()));
     }
@@ -50,21 +50,14 @@ fn credentials_value(client_id: Option<&str>, client_secret: Option<&str>) -> Op
             JsonValue::String(secret.to_owned()),
         );
     }
-    Some(JsonValue::Object(fields))
+    fields
 }
 
-fn credential_blob(client_id: Option<&str>, client_secret: Option<&str>) -> CredentialBlob {
-    let mut blob = CredentialBlob::new();
-    if let Some(id) = client_id {
-        blob.insert("client_id".to_owned(), JsonValue::String(id.to_owned()));
-    }
-    if let Some(secret) = client_secret {
-        blob.insert(
-            "client_secret".to_owned(),
-            JsonValue::String(secret.to_owned()),
-        );
-    }
-    blob
+fn credentials_value(client_id: Option<&str>, client_secret: Option<&str>) -> Option<JsonValue> {
+    Some(JsonValue::Object(credential_fields(
+        client_id,
+        client_secret,
+    )))
 }
 
 fn oauth_payload_b64() -> String {
@@ -220,40 +213,42 @@ impl CapturedLog {
     }
 }
 
-impl FlowBackfillLog for CapturedLog {
-    fn flow_event(&self, event: FlowBackfillEvent<'_>) {
-        let line = match event {
-            FlowBackfillEvent::Ambiguous { server_id } => format!("ambiguous:{server_id}"),
-            FlowBackfillEvent::Stamped {
+impl BackfillLog for CapturedLog {
+    fn event(&self, event: BackfillEvent<'_>) {
+        let (from_flow, line) = match event {
+            BackfillEvent::FlowAmbiguous { server_id } => (true, format!("ambiguous:{server_id}")),
+            BackfillEvent::FlowStamped {
                 server_id,
                 flow,
                 rule,
-            } => format!("stamped:{server_id}:{}:{}", flow_name(flow), rule.as_str()),
-            FlowBackfillEvent::Processed { rows, counts } => {
-                format!("processed:{rows}:{}", counts.len())
+            } => (
+                true,
+                format!("stamped:{server_id}:{}:{}", flow_name(flow), rule.as_str()),
+            ),
+            BackfillEvent::FlowProcessed { rows, counts } => {
+                (true, format!("processed:{rows}:{}", counts.len()))
             }
-        };
-        self.flow_events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(line);
-    }
-}
-
-impl IssuerBackfillLog for CapturedLog {
-    fn issuer_event(&self, event: IssuerBackfillEvent<'_>) {
-        let line = match event {
-            IssuerBackfillEvent::HealFailed { server_id, error } => {
-                format!("heal_failed:{server_id}:{error}")
+            BackfillEvent::IssuerHealFailed { server_id, error } => {
+                (false, format!("heal_failed:{server_id}:{error}"))
             }
-            IssuerBackfillEvent::Healed {
+            BackfillEvent::IssuerHealed {
                 server_id,
                 issuer,
                 alias,
-            } => format!("healed:{server_id}:{issuer}:{}", alias.unwrap_or_default()),
-            IssuerBackfillEvent::HealedCount { healed } => format!("healed_count:{healed}"),
+            } => (
+                false,
+                format!("healed:{server_id}:{issuer}:{}", alias.unwrap_or_default()),
+            ),
+            BackfillEvent::IssuerHealedCount { healed } => {
+                (false, format!("healed_count:{healed}"))
+            }
         };
-        self.issuer_events
+        let events = if from_flow {
+            &self.flow_events
+        } else {
+            &self.issuer_events
+        };
+        events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(line);
@@ -276,7 +271,7 @@ fn issuer_row(server_id: &str) -> IssuerCandidateRow {
 
 #[test]
 fn flow_classification_prefers_per_user_tokens() {
-    let blob = credential_blob(Some("id"), Some("secret"));
+    let blob = credential_fields(Some("id"), Some("secret"));
     let classification = classify_null_flow_row(&FlowSignals {
         has_per_user_tokens: true,
         authorization_url: Some("https://idp/authorize"),
@@ -290,7 +285,7 @@ fn flow_classification_prefers_per_user_tokens() {
 
 #[test]
 fn flow_classification_uses_the_authorization_url() {
-    let blob = credential_blob(Some("id"), Some("secret"));
+    let blob = credential_fields(Some("id"), Some("secret"));
     let classification = classify_null_flow_row(&signals(
         Some("https://idp/authorize"),
         Some("https://idp/register"),
@@ -303,7 +298,7 @@ fn flow_classification_uses_the_authorization_url() {
 
 #[test]
 fn flow_classification_uses_the_registration_url() {
-    let blob = credential_blob(Some("id"), Some("secret"));
+    let blob = credential_fields(Some("id"), Some("secret"));
     let classification = classify_null_flow_row(&signals(
         None,
         Some("https://idp/register"),
@@ -316,7 +311,7 @@ fn flow_classification_uses_the_registration_url() {
 
 #[test]
 fn flow_classification_leaves_the_ambiguous_m2m_shape_unstamped() {
-    let blob = credential_blob(Some("id"), Some("secret"));
+    let blob = credential_fields(Some("id"), Some("secret"));
     let classification =
         classify_null_flow_row(&signals(None, None, Some("https://idp/token"), Some(&blob)));
     assert_eq!(classification.flow, None);
@@ -332,13 +327,13 @@ fn flow_classification_defaults_to_interactive() {
 
 #[test]
 fn flow_classification_ignores_empty_endpoints_and_partial_credentials() {
-    let blob = credential_blob(Some("id"), Some("secret"));
+    let blob = credential_fields(Some("id"), Some("secret"));
     let empty_authorization =
         classify_null_flow_row(&signals(Some(""), Some("https://idp/register"), None, None));
     assert_eq!(empty_authorization.rule, BackfillRule::RegistrationUrl);
     let empty_registration = classify_null_flow_row(&signals(Some(""), Some(""), None, None));
     assert_eq!(empty_registration.rule, BackfillRule::InteractiveDefault);
-    let partial = credential_blob(Some("id"), None);
+    let partial = credential_fields(Some("id"), None);
     let partial_credentials = classify_null_flow_row(&signals(
         None,
         None,
@@ -350,7 +345,7 @@ fn flow_classification_ignores_empty_endpoints_and_partial_credentials() {
 
 #[test]
 fn flow_classification_ignores_empty_credential_strings() {
-    let blob = credential_blob(Some("id"), Some(""));
+    let blob = credential_fields(Some("id"), Some(""));
     let classification =
         classify_null_flow_row(&signals(None, None, Some("https://idp/token"), Some(&blob)));
     assert_eq!(classification.flow, Some(OAuth2Flow::AuthorizationCode));
