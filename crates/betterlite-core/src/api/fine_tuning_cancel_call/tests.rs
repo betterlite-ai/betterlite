@@ -232,7 +232,7 @@ async fn first_call(settings: Settings, call: FineTuningCancelCall) -> Recorded 
     recorded_calls(&calls).pop().expect("one recorded call")
 }
 
-fn values(entry: &Recorded) -> &RecordedValues {
+const fn values(entry: &Recorded) -> &RecordedValues {
     match entry {
         Recorded::OpenAi { values, .. } | Recorded::Azure { values, .. } => values,
     }

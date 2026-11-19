@@ -228,7 +228,7 @@ fn resolve_timeout(
     }
 }
 
-fn structured_timeout(phases: &TimeoutPhases) -> StructuredTimeout {
+const fn structured_timeout(phases: &TimeoutPhases) -> StructuredTimeout {
     StructuredTimeout {
         connect: phases.connect,
         read: phases.read,
