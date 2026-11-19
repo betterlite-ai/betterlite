@@ -26,6 +26,12 @@ async fn every_missed_date_gets_its_own_window_ending_at_its_midnight() {
             (day("2024-03-09"), at(FIXED_NOW)),
         ]
     );
+    assert!(
+        recorder
+            .frequencies()
+            .iter()
+            .all(|frequency| frequency.as_str() == "daily")
+    );
     assert!(logs.has_at(Level::INFO, "catching up missed date 2024-03-06"));
     assert!(logs.has_at(Level::INFO, "catching up missed date 2024-03-08"));
     assert!(!logs.has_at(Level::INFO, "catching up missed date 2024-03-09"));
