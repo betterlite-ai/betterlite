@@ -109,6 +109,13 @@ fn managed_store_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
     }
 }
 
+fn keyed_query<'query>(sql: &'query str, value: &'query (dyn ToSql + Sync)) -> Query<'query> {
+    Query {
+        sql,
+        parameters: vec![value],
+    }
+}
+
 impl Table for ObjectPermissionTable {
     type Column = Infallible;
     type Filter = Infallible;
@@ -120,20 +127,14 @@ impl Table for ObjectPermissionTable {
         action: KeyAction<'query, ()>,
         key: Key<'query, Self::Column>,
     ) -> Query<'query> {
-        Query {
-            sql: object_permission_keyed_sql(action),
-            parameters: vec![key.value],
-        }
+        keyed_query(object_permission_keyed_sql(action), key.value)
     }
 
     fn list<'query>(
         &'query self,
         _options: FindMany<'query, Self::Filter, Self::Order>,
     ) -> Query<'query> {
-        Query {
-            sql: OBJECT_PERMISSION_LIST_SQL,
-            parameters: vec![&NO_LIMIT],
-        }
+        object_permission_listed(None, &NO_LIMIT)
     }
 
     fn insert<'query>(&'query self, _data: &'query ()) -> Query<'query> {
@@ -166,10 +167,7 @@ impl Table for ManagedVectorStoreTable {
         action: KeyAction<'query, ()>,
         key: Key<'query, Self::Column>,
     ) -> Query<'query> {
-        Query {
-            sql: managed_store_keyed_sql(action),
-            parameters: vec![key.value],
-        }
+        keyed_query(managed_store_keyed_sql(action), key.value)
     }
 
     // a bare table read has no borrowed limit, so the selecting table applies the request's take
@@ -177,10 +175,8 @@ impl Table for ManagedVectorStoreTable {
         &'query self,
         options: FindMany<'query, Self::Filter, Self::Order>,
     ) -> Query<'query> {
-        managed_store_list(
-            options.filter.and_then(|filters| filters.first()),
-            &NO_LIMIT,
-        )
+        let filter = options.filter.and_then(|filters| filters.first());
+        managed_store_list(filter, &NO_LIMIT)
     }
 
     fn insert<'query>(&'query self, _data: &'query ()) -> Query<'query> {
@@ -208,38 +204,38 @@ impl Table for ManagedVectorStoreTable {
     }
 }
 
-impl Including for ObjectPermissionTable {
-    type Include = ();
+// both grant tables answer the same relation selection, and only the listed read differs
+macro_rules! grant_including {
+    ($table:ty, $listed:path) => {
+        impl Including for $table {
+            type Include = ();
 
-    fn including<'query>(
-        &'query self,
-        query: IncludingQuery<'query, Self>,
-        _include: Option<&'query Self::Include>,
-    ) -> Query<'query> {
-        match query {
-            IncludingQuery::Keyed { action, key } => self.keyed(action, key),
-            IncludingQuery::Listed { limit, .. } => Query {
-                sql: OBJECT_PERMISSION_LIST_SQL,
-                parameters: vec![limit],
-            },
-            IncludingQuery::Inserted { data } => self.insert(data),
+            fn including<'query>(
+                &'query self,
+                query: IncludingQuery<'query, Self>,
+                _include: Option<&'query Self::Include>,
+            ) -> Query<'query> {
+                match query {
+                    IncludingQuery::Keyed { action, key } => self.keyed(action, key),
+                    IncludingQuery::Listed { filter, limit } => $listed(filter, limit),
+                    IncludingQuery::Inserted { data } => self.insert(data),
+                }
+            }
         }
-    }
+    };
 }
 
-impl Including for ManagedVectorStoreTable {
-    type Include = ();
+grant_including!(ObjectPermissionTable, object_permission_listed);
+grant_including!(ManagedVectorStoreTable, managed_store_list);
 
-    fn including<'query>(
-        &'query self,
-        query: IncludingQuery<'query, Self>,
-        _include: Option<&'query Self::Include>,
-    ) -> Query<'query> {
-        match query {
-            IncludingQuery::Keyed { action, key } => self.keyed(action, key),
-            IncludingQuery::Listed { filter, limit } => managed_store_list(filter, limit),
-            IncludingQuery::Inserted { data } => self.insert(data),
-        }
+// the object permission table has no filter, so its listed read binds the limit alone
+fn object_permission_listed<'query>(
+    _filter: Option<&'query Infallible>,
+    limit: &'query Option<i64>,
+) -> Query<'query> {
+    Query {
+        sql: OBJECT_PERMISSION_LIST_SQL,
+        parameters: vec![limit],
     }
 }
 
@@ -250,14 +246,9 @@ pub fn managed_store_list<'query>(
     filter: Option<&'query Vec<String>>,
     limit: &'query Option<i64>,
 ) -> Query<'query> {
-    let Some(ids) = filter else {
-        return Query {
-            sql: MANAGED_STORE_LIST_SQL,
-            parameters: vec![limit],
-        };
+    let (sql, parameters): (&'query str, Vec<&'query (dyn ToSql + Sync)>) = match filter {
+        None => (MANAGED_STORE_LIST_SQL, vec![limit]),
+        Some(ids) => (MANAGED_STORE_IN_SQL, vec![ids, limit]),
     };
-    Query {
-        sql: MANAGED_STORE_IN_SQL,
-        parameters: vec![ids, limit],
-    }
+    Query { sql, parameters }
 }

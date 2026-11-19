@@ -87,31 +87,23 @@ pub fn can_object_call_search_tool(
     }))
 }
 
+// every search tool check answers with the denial LiteLLM's ProxyException carries
+pub type GrantResult = Result<(), ProxyException>;
+
 // the token's role is read by no check here, so a proxy admin gets no bypass from this helper
-pub fn can_key_call_search_tool(
-    search_tool_name: &str,
-    valid_token: &UserAPIKeyAuth,
-) -> Result<(), ProxyException> {
-    let permission = valid_token.view.token.object_permission.as_ref();
+pub fn can_key_call_search_tool(name: &str, key: &UserAPIKeyAuth) -> GrantResult {
     can_object_call_search_tool(
-        search_tool_name,
-        &search_tool_names(permission),
+        name,
+        &search_tool_names(key.view.token.object_permission.as_ref()),
         SearchToolObject::Key,
     )
 }
 
 // a team denial still carries key_model_access_denied, as LiteLLM's shared projection does
-pub fn can_team_call_search_tool(
-    search_tool_name: &str,
-    team_object: Option<&LiteLLMTeamTable>,
-) -> Result<(), ProxyException> {
-    let Some(team) = team_object else {
-        return Ok(());
-    };
-    let permission = team.fields.object_permission.as_ref();
+pub fn can_team_call_search_tool(name: &str, team: Option<&LiteLLMTeamTable>) -> GrantResult {
     can_object_call_search_tool(
-        search_tool_name,
-        &search_tool_names(permission),
+        name,
+        &search_tool_names(team.and_then(|row| row.fields.object_permission.as_ref())),
         SearchToolObject::Team,
     )
 }
