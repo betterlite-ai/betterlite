@@ -91,7 +91,7 @@ impl<'context> Rig<'context> {
                 }
             }
         }
-        Ok(())
+        Ok(Value::Null)
     }
 
     async fn payload(

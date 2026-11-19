@@ -74,7 +74,7 @@ fn generic_event(mut fields: IndexMap<String, Json>) -> GenericEvent {
     };
     GenericEvent {
         r#type,
-        extra: fields,
+        extra: fields.into_iter().collect(),
     }
 }
 
