@@ -414,7 +414,7 @@ fn beta_lists_join() {
     let mut headers = IndexMap::new();
     headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
     headers.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
-    let mut body = obj(r#"{"anthropic_beta":["b1","b1","b2"]}"#);
+    let body = obj(r#"{"anthropic_beta":["b1","b1","b2"]}"#);
     move_betas_into_header(&body, &mut headers).expect("the betas move");
     assert_eq!(
         headers.get("anthropic-beta").map(String::as_str),
@@ -424,7 +424,7 @@ fn beta_lists_join() {
         headers.get("Anthropic-Beta").map(String::as_str),
         Some("upper-beta")
     );
-    for falsey in [r#"[]"#, "null", "false", "0", "0.0", "-0.0", r#""""#, "{}"] {
+    for falsey in ["[]", "null", "false", "0", "0.0", "-0.0", r#""""#, "{}"] {
         let mut body = obj(r#"{"anthropic_beta":[]}"#);
         body.insert("anthropic_beta".to_owned(), js(falsey));
         headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
@@ -435,7 +435,7 @@ fn beta_lists_join() {
 
 fn beta_shape_errors() {
     let mut headers = IndexMap::new();
-    let mut body = obj(r#"{"anthropic_beta":"b1"}"#);
+    let body = obj(r#"{"anthropic_beta":"b1"}"#);
     let error =
         move_betas_into_header(&body, &mut headers).expect_err("a string is not a tuple of betas");
     assert_eq!(error.status_code(), Some(400));
@@ -443,12 +443,12 @@ fn beta_shape_errors() {
         error.to_string(),
         "anthropic_beta must be a list of strings"
     );
-    let mut body = obj(r#"{"anthropic_beta":["b1",2]}"#);
+    let body = obj(r#"{"anthropic_beta":["b1",2]}"#);
     let error =
         move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta name");
     assert_eq!(error.status_code(), Some(400));
     assert_eq!(error.to_string(), "anthropic_beta[1] is not a string");
-    let mut body = obj(r#"{"anthropic_beta":5}"#);
+    let body = obj(r#"{"anthropic_beta":5}"#);
     let error =
         move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta list");
     assert_eq!(error.status_code(), Some(400));
@@ -456,7 +456,7 @@ fn beta_shape_errors() {
         error.to_string(),
         "anthropic_beta must be a list of strings"
     );
-    let mut body = obj(r#"{"anthropic_beta":{"a":"b"}}"#);
+    let body = obj(r#"{"anthropic_beta":{"a":"b"}}"#);
     let error =
         move_betas_into_header(&body, &mut headers).expect_err("an object is not a beta list");
     assert_eq!(error.status_code(), Some(400));
@@ -804,7 +804,7 @@ pub(super) fn at<'value>(body: &'value Object, path: &[&str]) -> &'value BodyJso
         current = match current {
             BodyJson::Object(fields) => fields.get(*step).expect("the object field exists"),
             BodyJson::List(items) => items
-                .get(step.parse().expect("a list step is an index"))
+                .get(step.parse::<usize>().expect("a list step is an index"))
                 .expect("the list index exists"),
             BodyJson::Null | BodyJson::Bool(_) | BodyJson::Number(_) | BodyJson::Text(_) => {
                 panic!("the path meets a scalar")

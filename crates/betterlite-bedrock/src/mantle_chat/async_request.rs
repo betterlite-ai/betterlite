@@ -27,7 +27,8 @@ where
     Lookup: ModelInfoLookup,
 {
     let mut inlined = ClaudeInvokeRequest::clone(request);
-    inlined.messages = inlined_messages(&request.messages, sources.prompts.fetcher).await?;
+    inlined.messages =
+        inlined_messages::<Fetcher, Blocks>(&request.messages, sources.prompts.fetcher).await?;
     transform_request(&inlined, sources).await
 }
 
