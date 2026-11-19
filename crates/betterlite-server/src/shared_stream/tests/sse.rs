@@ -95,6 +95,28 @@ fn sse_no_restamp_without_model() {
 }
 
 #[test]
+fn sse_empty_model_no_restamp() {
+    let rig = Rig::new(HookConfig::plain());
+    let item = event_chunk(&[
+        ("type", Json::Text(String::from("message_start"))),
+        (
+            "message",
+            Json::Object(object(&[("model", Json::Text(String::from("provider")))])),
+        ),
+    ]);
+    let frames = texts(
+        rig.generator
+            .sse_data_generator(call(vec![Ok(item)]), Some(String::new())),
+    );
+    assert_eq!(
+        frames,
+        vec![String::from(
+            "data: {\"type\": \"message_start\", \"message\": {\"model\": \"provider\"}}\n\n"
+        )]
+    );
+}
+
+#[test]
 fn sse_holds_torn_frame() {
     let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
