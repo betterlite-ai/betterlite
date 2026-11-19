@@ -652,10 +652,21 @@ fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
         let _lock = cache.lock_for(&format!("srv-1:{index}"));
     });
     let locks = cache.locks.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(locks.len(), super::OAUTH2_TOKEN_CACHE_MAX_LOCKS);
+    assert_eq!(locks.len(), 1024);
     assert!(!locks.contains_key("srv-1:0"));
     assert!(locks.contains_key("srv-1:1"));
     assert!(locks.contains_key(&format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_LOCKS)));
+}
+
+#[test]
+fn the_cache_matches_litellm_inmemory_defaults() {
+    let post = Arc::new(ScriptedPost::new(Vec::new()));
+    let clock = Arc::new(ManualClock::new());
+    let cache = cache_with(&post, &clock);
+    let entries = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    let limits = entries.as_ref();
+    assert_eq!(limits.capacity, 200);
+    assert!((limits.default_ttl - 3600.0_f64).abs() < f64::EPSILON);
 }
 
 #[derive(Debug, thiserror::Error)]
