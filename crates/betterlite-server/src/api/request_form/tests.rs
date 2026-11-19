@@ -91,19 +91,19 @@ fn repeated_plain_last_wins() {
 #[test]
 fn urlencoded_raw_bytes_keep_starlette_latin1() {
     let fields = urlencoded_fields(
-        b"raw=\xe9&plus=+x&caf\xe9=%E9&caf\xc3\xa9=%C3%A9&mix=caf\xe9%20au+lait&plain=a%41b%6ac%4C&edge=x\x80\x7fy&short=x%4&tail=x%",
+        b"raw=\xe9&plus=+x&latin\xe9=%E9&latin\xc3\xa9=%C3%A9&mix=latin\xe9%20au+lait&plain=a%41b%6ac%4C&edge=x\x80\x7fy&short=x%4&tail=x%",
     );
     assert_eq!(
-        fields.get("caf\u{e9}"),
+        fields.get("latin\u{e9}"),
         Some(&FormValue::Text("\u{fffd}".to_owned()))
     );
     assert_eq!(
-        fields.get("caf\u{c3}\u{a9}"),
+        fields.get("latin\u{c3}\u{a9}"),
         Some(&FormValue::Text("\u{e9}".to_owned()))
     );
     assert_eq!(
         fields.get("mix"),
-        Some(&FormValue::Text("caf\u{e9} au lait".to_owned()))
+        Some(&FormValue::Text("latin\u{e9} au lait".to_owned()))
     );
     assert_eq!(
         fields.get("plain"),
