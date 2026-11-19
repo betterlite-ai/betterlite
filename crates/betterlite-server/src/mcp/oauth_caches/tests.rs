@@ -17,11 +17,11 @@ use super::{
     MCPOAuth2TokenCache, MCPPerUserTokenCache, compute_per_user_token_ttl, resolve_mcp_auth,
     resolved_token_header,
 };
-use crate::mcp::outbound_credentials::WallClock;
 use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use crate::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome,
 };
+use crate::mcp::outbound_credentials::{PER_USER_TOKEN_KEY_PREFIX, WallClock};
 
 fn base_server() -> MCPServer {
     serde_json::from_str(r#"{"server_id":"srv-1","name":"Server","transport":"http"}"#)
@@ -143,35 +143,50 @@ fn token_identity_hashes_the_material_under_the_server_prefix() {
     assert_eq!(MCPOAuth2TokenCache::token_identity(&configured), base);
 }
 
-#[test]
-fn token_identity_changes_with_any_request_material() {
+type ServerMutation = fn(&mut MCPServer);
+
+fn with_changed_client(server: &mut MCPServer) {
+    server.fields.client_id = Some("other".to_owned());
+}
+
+fn with_rotated_secret(server: &mut MCPServer) {
+    server.fields.client_secret = Some(secret_credential("rotated"));
+}
+
+fn with_retargeted_url(server: &mut MCPServer) {
+    server.fields.token_url = Some("https://other.example.com/token".to_owned());
+}
+
+fn with_narrowed_scopes(server: &mut MCPServer) {
+    server.fields.scopes = Some(vec!["read".to_owned()]);
+}
+
+fn with_upstream_resource(server: &mut MCPServer) {
+    server.fields.upstream_resource = Some("https://api.example.com".to_owned());
+}
+
+fn with_basic_auth_method(server: &mut MCPServer) {
+    server.fields.token_endpoint_auth_method = Some(MCPTokenEndpointAuthMethod::ClientSecretBasic);
+}
+
+fn with_automatic_resource(server: &mut MCPServer) {
+    server.fields.url = Some("https://mcp.example.com/sse".to_owned());
+    server.fields.upstream_resource = Some("auto".to_owned());
+}
+
+#[rstest]
+#[case::changed_client(with_changed_client)]
+#[case::rotated_secret(with_rotated_secret)]
+#[case::retargeted_url(with_retargeted_url)]
+#[case::narrowed_scopes(with_narrowed_scopes)]
+#[case::upstream_resource(with_upstream_resource)]
+#[case::basic_auth_method(with_basic_auth_method)]
+#[case::automatic_resource(with_automatic_resource)]
+fn token_identity_changes_with_any_request_material(#[case] mutate: ServerMutation) {
     let base = MCPOAuth2TokenCache::token_identity(&client_server());
-    let mut changed_client = client_server();
-    changed_client.fields.client_id = Some("other".to_owned());
-    let mut rotated_secret = client_server();
-    rotated_secret.fields.client_secret = Some(secret_credential("rotated"));
-    let mut retargeted = client_server();
-    retargeted.fields.token_url = Some("https://other.example.com/token".to_owned());
-    let mut narrowed = client_server();
-    narrowed.fields.scopes = Some(vec!["read".to_owned()]);
-    let mut resourced = client_server();
-    resourced.fields.upstream_resource = Some("https://api.example.com".to_owned());
-    let mut basic = client_server();
-    basic.fields.token_endpoint_auth_method = Some(MCPTokenEndpointAuthMethod::ClientSecretBasic);
-    let mut automatic = client_server();
-    automatic.fields.url = Some("https://mcp.example.com/sse".to_owned());
-    automatic.fields.upstream_resource = Some("auto".to_owned());
-    for server in [
-        changed_client,
-        rotated_secret,
-        retargeted,
-        narrowed,
-        resourced,
-        basic,
-        automatic,
-    ] {
-        assert_ne!(MCPOAuth2TokenCache::token_identity(&server), base);
-    }
+    let mut server = client_server();
+    mutate(&mut server);
+    assert_ne!(MCPOAuth2TokenCache::token_identity(&server), base);
 }
 
 #[tokio::test]
@@ -205,36 +220,50 @@ async fn async_get_token_serves_the_cached_token_until_the_ttl_lapses() {
     assert_eq!(post.calls().len(), 2);
 }
 
+fn without_flow(server: &mut MCPServer) {
+    server.fields.oauth2_flow = None;
+}
+
+fn with_authorization_code(server: &mut MCPServer) {
+    server.fields.oauth2_flow = Some(OAuth2Flow::AuthorizationCode);
+}
+
+fn without_secret(server: &mut MCPServer) {
+    server.fields.client_secret = None;
+}
+
+fn with_empty_secret(server: &mut MCPServer) {
+    server.fields.client_secret = Some(secret_credential(""));
+}
+
+fn with_empty_client_id(server: &mut MCPServer) {
+    server.fields.client_id = Some(String::new());
+}
+
+fn without_token_url(server: &mut MCPServer) {
+    server.fields.token_url = None;
+}
+
+#[rstest]
+#[case::missing_flow(without_flow)]
+#[case::authorization_code(with_authorization_code)]
+#[case::missing_secret(without_secret)]
+#[case::empty_secret(with_empty_secret)]
+#[case::empty_client_id(with_empty_client_id)]
+#[case::missing_token_url(without_token_url)]
 #[tokio::test]
-async fn async_get_token_returns_none_without_client_credentials_config() {
+async fn async_get_token_returns_none_without_client_credentials_config(
+    #[case] mutate: ServerMutation,
+) {
     let post = Arc::new(ScriptedPost::new(Vec::new()));
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
-    let mut missing_flow = client_server();
-    missing_flow.fields.oauth2_flow = None;
-    let mut authorization_code = client_server();
-    authorization_code.fields.oauth2_flow = Some(OAuth2Flow::AuthorizationCode);
-    let mut missing_secret = client_server();
-    missing_secret.fields.client_secret = None;
-    let mut empty_secret = client_server();
-    empty_secret.fields.client_secret = Some(secret_credential(""));
-    let mut empty_client = client_server();
-    empty_client.fields.client_id = Some(String::new());
-    let mut missing_url = client_server();
-    missing_url.fields.token_url = None;
-    for server in [
-        missing_flow,
-        authorization_code,
-        missing_secret,
-        empty_secret,
-        empty_client,
-        missing_url,
-    ] {
-        assert_eq!(
-            cache.async_get_token(&server).await.expect("no fetch runs"),
-            None
-        );
-    }
+    let mut server = client_server();
+    mutate(&mut server);
+    assert_eq!(
+        cache.async_get_token(&server).await.expect("no fetch runs"),
+        None
+    );
     assert!(post.calls().is_empty());
 }
 
@@ -275,12 +304,11 @@ async fn async_get_token_fetches_once_for_concurrent_callers() {
     let results =
         futures_util::future::join_all((0..8).map(|_index| cache.async_get_token(&server))).await;
     assert_eq!(post.calls().len(), 1);
-    for result in results {
-        assert_eq!(
-            result.expect("every caller gets a token"),
-            Some("tok".to_owned())
-        );
-    }
+    let tokens = results
+        .into_iter()
+        .map(|result| result.expect("every caller gets a token"))
+        .collect::<Vec<_>>();
+    assert_eq!(tokens, vec![Some("tok".to_owned()); 8]);
 }
 
 #[tokio::test]
@@ -363,31 +391,28 @@ async fn fetch_token_omits_an_empty_scope() {
     );
 }
 
+#[rstest]
+#[case::absent(r#"{"access_token":"tok"}"#, 3540)]
+#[case::null(r#"{"access_token":"tok","expires_in":null}"#, 3540)]
+#[case::text_number(r#"{"access_token":"tok","expires_in":"120"}"#, 60)]
+#[case::padded_text_number(r#"{"access_token":"tok","expires_in":" 36 "}"#, 10)]
+#[case::text_word(r#"{"access_token":"tok","expires_in":"soon"}"#, 3540)]
+#[case::float(r#"{"access_token":"tok","expires_in":1.5}"#, 10)]
+#[case::flag(r#"{"access_token":"tok","expires_in":true}"#, 10)]
+#[case::under_the_minimum(r#"{"access_token":"tok","expires_in":30}"#, 10)]
+#[case::on_the_minimum(r#"{"access_token":"tok","expires_in":10}"#, 10)]
+#[case::below_the_buffer(r#"{"access_token":"tok","expires_in":70}"#, 10)]
+#[case::above_the_buffer(r#"{"access_token":"tok","expires_in":71}"#, 11)]
 #[tokio::test]
-async fn fetch_token_buffers_and_parses_expires_in() {
-    let cases = [
-        (r#"{"access_token":"tok"}"#, 3540),
-        (r#"{"access_token":"tok","expires_in":null}"#, 3540),
-        (r#"{"access_token":"tok","expires_in":"120"}"#, 60),
-        (r#"{"access_token":"tok","expires_in":" 36 "}"#, 10),
-        (r#"{"access_token":"tok","expires_in":"soon"}"#, 3540),
-        (r#"{"access_token":"tok","expires_in":1.5}"#, 10),
-        (r#"{"access_token":"tok","expires_in":true}"#, 10),
-        (r#"{"access_token":"tok","expires_in":30}"#, 10),
-        (r#"{"access_token":"tok","expires_in":10}"#, 10),
-        (r#"{"access_token":"tok","expires_in":70}"#, 10),
-        (r#"{"access_token":"tok","expires_in":71}"#, 11),
-    ];
-    for (body, ttl) in cases {
-        let post = Arc::new(ScriptedPost::new(vec![success(body)]));
-        let clock = Arc::new(ManualClock::new());
-        let cache = cache_with(&post, &clock);
-        let fetched = cache
-            .fetch_token(&client_server())
-            .await
-            .expect("the fetch succeeds");
-        assert_eq!(fetched.1, ttl, "for {body}");
-    }
+async fn fetch_token_buffers_and_parses_expires_in(#[case] body: &'static str, #[case] ttl: i64) {
+    let post = Arc::new(ScriptedPost::new(vec![success(body)]));
+    let clock = Arc::new(ManualClock::new());
+    let cache = cache_with(&post, &clock);
+    let fetched = cache
+        .fetch_token(&client_server())
+        .await
+        .expect("the fetch succeeds");
+    assert_eq!(fetched.1, ttl, "for {body}");
 }
 
 #[tokio::test]
@@ -400,13 +425,16 @@ async fn fetch_token_names_an_unusable_access_token() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     let server = client_server();
-    for _index in 0..3 {
-        let error = cache
-            .fetch_token(&server)
-            .await
-            .expect_err("the response has no usable access token");
-        assert!(matches!(error, OAuthCacheError::MissingAccessToken { .. }));
-    }
+    let errors = futures_util::future::join_all((0..3).map(|_index| cache.fetch_token(&server)))
+        .await
+        .into_iter()
+        .map(|result| result.expect_err("the response has no usable access token"))
+        .collect::<Vec<_>>();
+    assert!(
+        errors
+            .iter()
+            .all(|error| matches!(error, OAuthCacheError::MissingAccessToken { .. }))
+    );
 }
 
 #[tokio::test]
@@ -476,12 +504,14 @@ async fn invalidate_removes_every_identity_of_the_server() {
     let first = client_server();
     let mut second = client_server();
     second.fields.scopes = Some(vec!["read".to_owned()]);
-    for server in [&first, &second] {
-        cache
-            .async_get_token(server)
-            .await
-            .expect("the fetch succeeds");
-    }
+    cache
+        .async_get_token(&first)
+        .await
+        .expect("the fetch succeeds");
+    cache
+        .async_get_token(&second)
+        .await
+        .expect("the fetch succeeds");
     assert_eq!(post.calls().len(), 2);
     cache.invalidate("srv-1");
     assert_eq!(
@@ -536,9 +566,9 @@ fn the_cache_evicts_the_oldest_entry_at_the_max_size() {
     let post = Arc::new(ScriptedPost::new(Vec::new()));
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
-    for index in 0..super::OAUTH2_TOKEN_CACHE_MAX_SIZE {
+    (0..super::OAUTH2_TOKEN_CACHE_MAX_SIZE).for_each(|index| {
         cache.insert(format!("srv-1:{index}"), "token".to_owned(), 600);
-    }
+    });
     assert_eq!(cache.cached("srv-1:0"), Some("token".to_owned()));
     cache.insert("srv-1:new".to_owned(), "fresh".to_owned(), 600);
     assert_eq!(cache.cached("srv-1:0"), None);
@@ -551,9 +581,9 @@ fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
     let post = Arc::new(ScriptedPost::new(Vec::new()));
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
-    for index in 0..=super::OAUTH2_TOKEN_CACHE_MAX_LOCKS {
+    (0..=super::OAUTH2_TOKEN_CACHE_MAX_LOCKS).for_each(|index| {
         let _lock = cache.lock_for(&format!("srv-1:{index}"));
-    }
+    });
     let locks = cache.locks.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(locks.len(), super::OAUTH2_TOKEN_CACHE_MAX_LOCKS);
     assert!(!locks.contains_key("srv-1:0"));
@@ -561,21 +591,9 @@ fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
     assert!(locks.contains_key(&format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_LOCKS)));
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("the fake backend failed")]
 struct FakeError;
-
-impl std::fmt::Debug for FakeError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("FakeError")
-    }
-}
-
-impl std::fmt::Display for FakeError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("the fake backend failed")
-    }
-}
-
-impl std::error::Error for FakeError {}
 
 struct FakeBackend {
     entries: Mutex<BTreeMap<String, String>>,
@@ -693,15 +711,16 @@ fn codec() -> OAuthTokenCacheCodec {
 
 #[test]
 fn per_user_cache_key_matches_litellm() {
-    assert_eq!(
-        MCPPerUserTokenCache::<FakeBackend>::cache_key("user-1", "srv-1"),
-        "mcp:per_user_token:user-1:srv-1"
-    );
+    let key = format!("{PER_USER_TOKEN_KEY_PREFIX}user-1:srv-1");
+    assert_eq!(key, "mcp:per_user_token:user-1:srv-1");
 }
 
 #[tokio::test]
 async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
-    let cache = MCPPerUserTokenCache::new(FakeBackend::new(), codec());
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::new(),
+        codec: codec(),
+    };
     cache
         .set("user-1", "srv-1", "tok", 120, Some("proof"))
         .await;
@@ -732,7 +751,10 @@ async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
 
 #[tokio::test]
 async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
-    let cache = MCPPerUserTokenCache::new(FakeBackend::new(), codec());
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::new(),
+        codec: codec(),
+    };
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     let stored = cache
         .backend
@@ -744,30 +766,39 @@ async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
 
 #[tokio::test]
 async fn per_user_set_swallows_a_backend_failure() {
-    let cache = MCPPerUserTokenCache::new(FakeBackend::failing_set(), codec());
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::failing_set(),
+        codec: codec(),
+    };
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_get_token_reads_an_undecryptable_value_as_a_miss() {
-    let cache = MCPPerUserTokenCache::new(
-        FakeBackend::with_entry("mcp:per_user_token:user-1:srv-1", "not-a-sealed-value"),
-        codec(),
-    );
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::with_entry("mcp:per_user_token:user-1:srv-1", "not-a-sealed-value"),
+        codec: codec(),
+    };
     assert_eq!(cache.get_token("user-1", "srv-1").await, None);
     assert_eq!(cache.get("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_get_token_swallows_a_backend_failure() {
-    let cache = MCPPerUserTokenCache::new(FakeBackend::failing_get(), codec());
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::failing_get(),
+        codec: codec(),
+    };
     assert_eq!(cache.get_token("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_delete_evicts_the_key_and_swallows_failures() {
-    let cache = MCPPerUserTokenCache::new(FakeBackend::new(), codec());
+    let cache = MCPPerUserTokenCache {
+        backend: FakeBackend::new(),
+        codec: codec(),
+    };
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     cache.delete("user-1", "srv-1").await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
@@ -780,7 +811,10 @@ async fn per_user_delete_evicts_the_key_and_swallows_failures() {
             .as_slice(),
         &["mcp:per_user_token:user-1:srv-1".to_owned()]
     );
-    let failing = MCPPerUserTokenCache::new(FakeBackend::failing_delete(), codec());
+    let failing = MCPPerUserTokenCache {
+        backend: FakeBackend::failing_delete(),
+        codec: codec(),
+    };
     failing.delete("user-1", "srv-1").await;
 }
 

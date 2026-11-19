@@ -12,10 +12,11 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::server_record::OAuth2Flow;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::flow::backfill_null_oauth2_flows;
-use super::issuer::backfill_discovery_stamped_issuers;
+use super::issuer::heal_stamped_issuers;
 use super::log::{FlowBackfillEvent, FlowBackfillLog, IssuerBackfillEvent, IssuerBackfillLog};
 use super::{
     BackfillRule, DISCOVERY_ACTOR, FlowBackfillTable, FlowCandidateRow, FlowSignals,
@@ -23,21 +24,9 @@ use super::{
     decrypted_credentials, flow_name, is_stamped_issuer_row,
 };
 
+#[derive(Debug, thiserror::Error)]
+#[error("the fake table failed")]
 struct FakeError;
-
-impl std::fmt::Debug for FakeError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("FakeError")
-    }
-}
-
-impl std::fmt::Display for FakeError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("the fake table failed")
-    }
-}
-
-impl std::error::Error for FakeError {}
 
 fn test_cipher() -> DbCipher {
     DbCipher {
@@ -561,17 +550,18 @@ fn issuer_predicate_requires_an_issuer() {
     assert!(!is_stamped_issuer_row(&missing));
 }
 
+#[rstest]
+#[case::oauth2(MCPAuth::Oauth2)]
+#[case::true_passthrough(MCPAuth::TruePassthrough)]
+#[case::oauth_delegate(MCPAuth::OauthDelegate)]
+fn issuer_predicate_requires_an_anchoring_auth_type(#[case] auth_type: MCPAuth) {
+    let mut row = issuer_row("srv-1");
+    row.auth_type = Some(auth_type);
+    assert!(is_stamped_issuer_row(&row), "for {auth_type:?}");
+}
+
 #[test]
-fn issuer_predicate_requires_an_anchoring_auth_type() {
-    for auth_type in [
-        MCPAuth::Oauth2,
-        MCPAuth::TruePassthrough,
-        MCPAuth::OauthDelegate,
-    ] {
-        let mut row = issuer_row("srv-1");
-        row.auth_type = Some(auth_type);
-        assert!(is_stamped_issuer_row(&row), "for {auth_type:?}");
-    }
+fn issuer_predicate_rejects_other_auth_types() {
     let mut foreign = issuer_row("srv-1");
     foreign.auth_type = Some(MCPAuth::ApiKey);
     assert!(!is_stamped_issuer_row(&foreign));
@@ -616,7 +606,7 @@ async fn issuer_backfill_heals_only_matching_rows() {
     mismatch.token_url = Some("https://other.example.com/token".to_owned());
     let table = FakeIssuerTable::new(vec![issuer_row("srv-1"), mismatch], None);
     let log = CapturedLog::default();
-    let healed = backfill_discovery_stamped_issuers(&table, &log)
+    let healed = heal_stamped_issuers(&table, &log)
         .await
         .expect("the backfill runs");
     assert_eq!(healed, 1);
@@ -636,7 +626,7 @@ async fn issuer_backfill_continues_after_a_failed_row() {
         Some("srv-1"),
     );
     let log = CapturedLog::default();
-    let healed = backfill_discovery_stamped_issuers(&table, &log)
+    let healed = heal_stamped_issuers(&table, &log)
         .await
         .expect("the backfill runs");
     assert_eq!(healed, 1);
@@ -654,14 +644,14 @@ async fn issuer_backfill_is_idempotent() {
     let table = FakeIssuerTable::new(vec![issuer_row("srv-1")], None);
     let first = CapturedLog::default();
     assert_eq!(
-        backfill_discovery_stamped_issuers(&table, &first)
+        heal_stamped_issuers(&table, &first)
             .await
             .expect("the first run"),
         1
     );
     let second = CapturedLog::default();
     assert_eq!(
-        backfill_discovery_stamped_issuers(&table, &second)
+        heal_stamped_issuers(&table, &second)
             .await
             .expect("the second run"),
         0
@@ -677,7 +667,7 @@ async fn issuer_backfill_reports_zero_without_candidates() {
     let table = FakeIssuerTable::new(vec![mismatch], None);
     let log = CapturedLog::default();
     assert_eq!(
-        backfill_discovery_stamped_issuers(&table, &log)
+        heal_stamped_issuers(&table, &log)
             .await
             .expect("the backfill runs"),
         0
