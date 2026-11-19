@@ -1,0 +1,26 @@
+kind: sdk_http
+name: file-http-upload-diagnostics
+env: {}
+call:
+  file_http_upload:
+    mode: async
+    headers: {x-client-version: oracle}
+    file: {filename: notes.txt, content: "hello oracle"}
+    plan:
+      presigned:
+        method: put
+        url: "{{upstream}}/diagnostics-target"
+        headers:
+          authorization: "Bearer oracle-signature"
+          content-type: text/plain
+          x-amz-date: "20260101T000000Z"
+        data: "hello oracle"
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-oracle, object: file, bytes: 12, filename: notes.txt, purpose: batch}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-amz-date]
+  ignore: []
