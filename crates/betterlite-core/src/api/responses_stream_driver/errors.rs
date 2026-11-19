@@ -23,7 +23,7 @@ impl TransportFailure {
         }
     }
     #[must_use]
-    pub fn is_transport(&self) -> bool {
+    pub const fn is_transport(&self) -> bool {
         matches!(
             self.kind,
             TransportKind::ReadError | TransportKind::RemoteProtocolError

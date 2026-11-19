@@ -12,7 +12,6 @@ use super::{
     fixed_clock, payload, poll_count, prefetched, scripted_clock, timeout_details, timestamp,
 };
 use crate::api::responses_stream_events::{BaseStreamStateInput, LoggingSnapshot, StreamTimes};
-use crate::api::responses_stream_hooks::failure::await_pending_logging;
 use crate::api::responses_stream_hooks::ports::Dispatch;
 #[rstest]
 #[case::rate_limit(RATE_LIMITED, 429, true)]
@@ -31,7 +30,12 @@ async fn terminal_error_events_raise_before_the_deployment_hook(
     ports.failure = Some(Arc::clone(&failure));
     ports.chunk_hooks = vec![Arc::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(CREATED), payload(event)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(
+        &hooks,
+        prefetched(vec![payload(CREATED), payload(event)]),
+        None,
+    );
     stream.next_event().await.expect("the created event yields");
     let error = stream
         .next_event()
@@ -56,7 +60,8 @@ async fn the_deployment_hook_decides_whether_output_started() {
     let mut ports = Ports::default();
     ports.chunk_hooks = vec![Arc::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(CREATED)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(CREATED)]), None);
     let yielded = stream
         .next_event()
         .await
@@ -71,7 +76,8 @@ async fn the_deployment_hook_decides_whether_output_started() {
 #[tokio::test]
 async fn a_queued_event_does_not_start_the_output() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(QUEUED)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(QUEUED)]), None);
     let queued = stream
         .next_event()
         .await
@@ -85,7 +91,8 @@ async fn a_queued_event_does_not_start_the_output() {
 #[tokio::test]
 async fn an_in_progress_event_does_not_start_the_output() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(IN_PROGRESS)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(IN_PROGRESS)]), None);
     let started = stream
         .next_event()
         .await
@@ -99,7 +106,9 @@ async fn an_in_progress_event_does_not_start_the_output() {
 #[tokio::test]
 async fn undecodable_payloads_are_skipped() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());
+    let hooks = fixture.hooks();
     let mut stream = fixture.stream(
+        &hooks,
         prefetched(vec![payload("not json"), payload(COMPLETED)]),
         None,
     );
@@ -117,8 +126,9 @@ async fn streaming_duration_limit_blocks_the_first_read() {
     let mut ports = Ports::default();
     ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, scripted_clock(&[LATE]));
+    let hooks = fixture.hooks();
     let (source, polls) = CountingSource::new(&[CREATED]);
-    let mut stream = fixture.stream(Box::new(source), Some(10.0));
+    let mut stream = fixture.stream(&hooks, Box::new(source), Some(10.0));
     let error = stream.next_event().await.expect_err("the stream times out");
     assert_eq!(
         timeout_details(&error).context.message,
@@ -131,8 +141,9 @@ async fn streaming_duration_limit_blocks_the_first_read() {
 #[tokio::test]
 async fn streaming_duration_limit_stops_after_a_received_event() {
     let fixture = Fixture::new(Ports::default(), scripted_clock(&[START, LATE]));
+    let hooks = fixture.hooks();
     let (source, polls) = CountingSource::new(&[CREATED]);
-    let mut stream = fixture.stream(Box::new(source), Some(10.0));
+    let mut stream = fixture.stream(&hooks, Box::new(source), Some(10.0));
     let error = stream.next_event().await.expect_err("the stream times out");
     assert_eq!(timeout_details(&error).original_status.0, 408);
     assert_eq!(poll_count(&polls), 1);
@@ -144,7 +155,8 @@ fn sync_iteration_runs_failure_handlers_without_a_runtime() {
     let mut ports = Ports::default();
     ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(CREATED)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(CREATED)]), None);
     futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect("the created event yields")
         .expect("an event is returned");
@@ -160,7 +172,8 @@ fn sync_iteration_logs_a_completed_response_inline() {
     let mut ports = Ports::default();
     ports.success = Some(Arc::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.stream(prefetched(vec![payload(COMPLETED)]), None);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(COMPLETED)]), None);
     futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect("the terminal event yields")
         .expect("an event is returned");
@@ -178,7 +191,8 @@ async fn fake_response_iteration_slices_text_into_chunks() {
     ports.cache = Some(Arc::clone(&cache));
     ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.synthetic(None, true);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.synthetic(&hooks, None, true);
     let mut types = Vec::new();
     let mut deltas = Vec::new();
     while let Some(event) = stream
@@ -196,7 +210,7 @@ async fn fake_response_iteration_slices_text_into_chunks() {
         vec!["abcde".to_owned(), "fghij".to_owned(), "k".to_owned()]
     );
     assert_eq!(types.last().map(String::as_str), Some("response.completed"));
-    await_pending_logging(&mut stream.callback).await;
+    stream.drain_pending_logging().await;
     let dispatches = success.dispatches();
     assert_eq!(dispatches.len(), 1);
     assert_eq!(dispatches[0].cache_hit, None);
@@ -212,7 +226,8 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     ports.cache = Some(Arc::clone(&cache));
     ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.synthetic(Some(true), false);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.synthetic(&hooks, Some(true), false);
     let mut deltas = Vec::new();
     loop {
         let event = futures_executor::block_on(stream.advance(Dispatch::Inline))
@@ -238,14 +253,15 @@ async fn cached_response_iteration_logs_only_when_completed_is_yielded() {
     let mut ports = Ports::default();
     ports.success = Some(Arc::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut stream = fixture.synthetic(Some(true), false);
+    let hooks = fixture.hooks();
+    let mut stream = fixture.synthetic(&hooks, Some(true), false);
     let first = stream
         .advance(Dispatch::Spawned)
         .await
         .expect("the first event yields")
         .expect("an event is returned");
     assert_ne!(event_type(&first), "response.completed");
-    await_pending_logging(&mut stream.callback).await;
+    stream.drain_pending_logging().await;
     assert!(success.dispatches().is_empty());
     assert!(success.async_calls().is_empty());
     assert!(success.sync_calls().is_empty());
@@ -257,8 +273,9 @@ fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
     let mut ports = Ports::default();
     ports.success = Some(Arc::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
-    let mut first = fixture.synthetic(Some(true), false);
-    let mut second = fixture.synthetic(Some(true), false);
+    let hooks = fixture.hooks();
+    let mut first = fixture.synthetic(&hooks, Some(true), false);
+    let mut second = fixture.synthetic(&hooks, Some(true), false);
     let first_event = futures_executor::block_on(first.advance(Dispatch::Inline))
         .expect("the first stream yields")
         .expect("an event is returned");
@@ -274,8 +291,8 @@ fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
         .expect("the second stream yields")
         .is_some()
     {}
-    futures_executor::block_on(await_pending_logging(&mut first.callback));
-    futures_executor::block_on(await_pending_logging(&mut second.callback));
+    futures_executor::block_on(first.drain_pending_logging());
+    futures_executor::block_on(second.drain_pending_logging());
     assert_eq!(success.async_calls().len(), 2);
     assert_eq!(success.sync_calls().len(), 2);
 }
@@ -283,12 +300,13 @@ fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
 #[tokio::test]
 async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());
+    let hooks = fixture.hooks();
     let mut stream = LiveStream::new(
         StreamEngine {
             transform: Some(&fixture.transform),
             tokenization: Some(&fixture.tokenization),
             calculator: Some(&fixture.calculator),
-            hooks: &fixture.hooks,
+            hooks: &hooks,
             logging: &fixture.logging,
             details: IndexMap::new(),
             limits: &fixture.limits,

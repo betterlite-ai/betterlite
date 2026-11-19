@@ -16,6 +16,7 @@ use crate::api::responses_stream_events::{
     BaseStreamStateInput, ResponsesStreamBaseState, base_stream_state,
 };
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
+use crate::api::responses_stream_hooks::failure::await_pending_logging;
 use crate::api::responses_stream_hooks::logging::log_completed_response;
 use crate::api::responses_stream_hooks::ports::Dispatch;
 use crate::api::responses_stream_hooks::state::ResponsesStreamHookState;
@@ -30,12 +31,12 @@ pub struct SyntheticSetup<'setup> {
 }
 // one event per call keeps a caller's step boundary, as an iterator does
 pub struct SyntheticStream<'stream> {
-    hooks: &'stream ResponsesStreamHooks<'stream>,
-    events: Vec<Event>,
-    index: usize,
-    state: ResponsesStreamBaseState,
-    pub callback: ResponsesStreamHookState,
-    details: IndexMap<String, Json>,
+    pub(crate) hooks: &'stream ResponsesStreamHooks<'stream>,
+    pub(crate) events: Vec<Event>,
+    pub(crate) index: usize,
+    pub(crate) state: ResponsesStreamBaseState,
+    pub(crate) callback: ResponsesStreamHookState,
+    pub(crate) details: IndexMap<String, Json>,
 }
 impl<'stream> SyntheticStream<'stream> {
     pub fn build<Calculator>(
@@ -46,7 +47,7 @@ impl<'stream> SyntheticStream<'stream> {
     where
         Calculator: ResponsesCostCalculator,
     {
-        let mut events = build_events(&mut transformed, calculator, CHUNK_SIZE)?;
+        let events = build_events(&mut transformed, calculator, CHUNK_SIZE)?;
         let mut state = base_stream_state(&setup.state);
         state.completed_response_cache_hit = setup.cache_hit;
         state.persist_before_logging = setup.persist_before_logging;
@@ -82,6 +83,10 @@ impl<'stream> SyntheticStream<'stream> {
             }
         }
         Ok(Some(event))
+    }
+    // ast-grep-ignore: no-one-line-functions
+    pub async fn drain_pending_logging(&mut self) {
+        await_pending_logging(&mut self.callback).await;
     }
 }
 pub(super) fn is_completed(event: &Event) -> bool {

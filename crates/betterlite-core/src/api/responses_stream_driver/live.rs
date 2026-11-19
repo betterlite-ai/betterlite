@@ -49,7 +49,7 @@ where
 {
     engine: StreamEngine<'stream, Transform, Tokenization, Calculator>,
     state: ResponsesStreamBaseState,
-    pub callback: ResponsesStreamHookState,
+    callback: ResponsesStreamHookState,
     source: Box<dyn PayloadSource>,
 }
 impl<'stream, Transform, Tokenization, Calculator>
@@ -75,10 +75,14 @@ where
     // The async iterator awaits the hook directly and waits for pending logging on every exit.
     pub async fn next_event(&mut self) -> Result<Option<Event>, DriverError> {
         let outcome = self.drive(Dispatch::Spawned).await;
-        if matches!(&outcome, Ok(None) | Err(_)) {
+        if !matches!(&outcome, Ok(Some(_))) {
             await_pending_logging(&mut self.callback).await;
         }
         outcome
+    }
+    // ast-grep-ignore: no-one-line-functions
+    pub async fn drain_pending_logging(&mut self) {
+        await_pending_logging(&mut self.callback).await;
     }
     // both iterators share this pipeline and only the dispatch differs
     pub async fn drive(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
@@ -108,54 +112,58 @@ where
             };
             let payload = item.map_err(source_error)?;
             self.check_duration()?;
-            // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
-            let text = String::from_utf8_lossy(&payload);
-            let outcome = {
-                let mut processor = ResponsesEventProcessor {
-                    transform: self.engine.transform,
-                    tokenization: self.engine.tokenization,
-                    calculator: self.engine.calculator,
-                    hooks: self.engine.hooks,
-                    details: &mut self.engine.details,
-                    dispatch,
-                    limits: self.engine.limits,
-                };
-                processor
-                    .process(
-                        text.as_ref(),
-                        &mut self.state,
-                        &mut self.callback,
-                        self.engine.logging,
-                    )
-                    .await
-            };
-            let result = outcome.map_err(|error| DriverError::Class {
-                class: error
-                    .error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
-            })?;
-            if self.state.finished {
-                self.raise_if_ended().await?;
-                return Ok(None);
-            }
-            if let Some(event) = result {
-                if let Err(failure) =
-                    maybe_raise_for_error_event(self.engine.hooks, &self.state, &event)
-                {
-                    return Err(DriverError::Class {
-                        class: failure.exception,
-                    });
-                }
-                let context = ChunkHookContext {
-                    explicit_call_type: self.state.call_type.as_deref(),
-                    logging_call_type: None,
-                    request_data: Some(&self.state.request_data),
-                    model_call_details: &self.engine.details,
-                };
-                let event = chunk_hook(self.engine.hooks, &mut self.callback, context, event).await;
-                note_yielded_event(&mut self.state, &event);
-                return Ok(Some(event));
+            if let Some(event) = self.process_payload(&payload, dispatch).await? {
+                return self.deliver(event).await;
             }
         }
+    }
+    async fn process_payload(
+        &mut self,
+        payload: &[u8],
+        dispatch: Dispatch,
+    ) -> Result<Option<Event>, DriverError> {
+        // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
+        let text = replaced_text(payload);
+        let outcome = ResponsesEventProcessor {
+            transform: self.engine.transform,
+            tokenization: self.engine.tokenization,
+            calculator: self.engine.calculator,
+            hooks: self.engine.hooks,
+            details: &mut self.engine.details,
+            dispatch,
+            limits: self.engine.limits,
+        }
+        .process(
+            &text,
+            &mut self.state,
+            &mut self.callback,
+            self.engine.logging,
+        )
+        .await;
+        let result = outcome.map_err(|error| DriverError::Class {
+            class: error.error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
+        })?;
+        if self.state.finished {
+            self.raise_if_ended().await?;
+            return Ok(None);
+        }
+        Ok(result)
+    }
+    async fn deliver(&mut self, event: Event) -> Result<Option<Event>, DriverError> {
+        if let Err(failure) = maybe_raise_for_error_event(self.engine.hooks, &self.state, &event) {
+            return Err(DriverError::Class {
+                class: failure.exception,
+            });
+        }
+        let context = ChunkHookContext {
+            explicit_call_type: self.state.call_type.as_deref(),
+            logging_call_type: None,
+            request_data: Some(&self.state.request_data),
+            model_call_details: &self.engine.details,
+        };
+        let hooked = chunk_hook(self.engine.hooks, &mut self.callback, context, event).await;
+        note_yielded_event(&mut self.state, &hooked);
+        Ok(Some(hooked))
     }
     fn check_duration(&self) -> Result<(), DriverError> {
         self.state
@@ -171,7 +179,7 @@ where
             .now()
             .timestamp_micros()
             .to_f64()
-            .map(|micros| micros.mul_add(1e-6, 0.0_f64))
+            .map(|micros| micros.mul_add(1e-6_f64, 0.0_f64))
             .unwrap_or(f64::INFINITY)
     }
     async fn raise_if_ended(&mut self) -> Result<(), DriverError> {
@@ -220,4 +228,15 @@ where
             class: fallback_error(&self.state, &failure.message, 503),
         })
     }
+}
+// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn replaced_text(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
 }
