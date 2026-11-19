@@ -6,8 +6,8 @@ deviations:
   - what: price_cache_tokens returns None when the deployment tariff or a required rate is missing, instead of falling back to completion_cost's catalog lookup.
     why: Explicit tariff selection is the behavior betterlite already owns (B1682/B2225); returning None lets predict_arm report pricing_unavailable to the caller instead of billing a catalog price the deployment did not configure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_pricing.py#L99-L100
-  - what: fits reports false when the Anthropic model info is unknown or a declared limit is not a JSON integer.
-    why: LiteLLM calls litellm.get_model_info and _ModelLimits.model_validate, which raise for an unknown model or a wrong-typed limit; betterlite's soft catalog lookup reports absence, so the caller gets a refusal instead of an exception.
+  - what: fits never raises. A declared limit that is not a JSON integer falls back to the catalog limit, an unknown Anthropic model contributes no catalog limit, and a missing limit on either side reports false.
+    why: LiteLLM calls litellm.get_model_info and _ModelLimits.model_validate, which raise for an unknown model or a wrong-typed limit; betterlite's lookup reports absence instead, so the predicate refuses rather than throwing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L111-L129
   - what: token_buckets saturates creation tokens at zero when a read count exceeds the prefix, where LiteLLM subtracts and can produce a negative count.
     why: A negative bucket has no meaning in a price scenario, and CacheTokenBuckets in LiteLLM rejects it as a TokenCount; predict_arm never passes a read above the cacheable prefix, so the clamp only guards a nonsensical internal call.
