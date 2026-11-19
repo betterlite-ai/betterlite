@@ -15,8 +15,7 @@ use crate::credentials::source::CallableTokenProvider;
 
 // Every SDK failure keeps its own kind, and none of them is retried or rewritten as text.
 pub(super) async fn check() {
-    rejects_a_bad_create_status().await;
-    rejects_a_bad_poll_status().await;
+    rejects_a_bad_status().await;
     reports_transport_failures().await;
     reports_decode_failures().await;
     refuses_bad_path_ids().await;
@@ -26,27 +25,21 @@ pub(super) async fn check() {
     reports_stream_entry_failures().await;
 }
 
-async fn rejects_a_bad_create_status() {
-    let recorder = Recorder::start();
-    recorder.queue(400, ERROR_BODY);
-    let fixture = Fixture::new();
-    let error = support::failed(&recorder, &fixture, &run_request()).await;
-    let (status, body) = status_of(error);
-    assert_eq!(status, 400);
-    assert_eq!(body, ERROR_BODY.as_bytes());
-    assert_eq!(recorder.requests().len(), 1);
-}
-
-async fn rejects_a_bad_poll_status() {
-    let recorder = Recorder::start();
-    recorder.queue_poll(200, CREATED);
-    recorder.queue(500, ERROR_BODY);
-    let fixture = Fixture::new();
-    let error = support::failed(&recorder, &fixture, &run_request()).await;
-    let (status, body) = status_of(error);
-    assert_eq!(status, 500);
-    assert_eq!(body, ERROR_BODY.as_bytes());
-    assert_eq!(recorder.requests().len(), 2);
+// A status failure keeps its code and body whether the create or a later poll answers it.
+async fn rejects_a_bad_status() {
+    for (after_poll, failure, total) in [(false, 400_u16, 1_usize), (true, 500, 2)] {
+        let recorder = Recorder::start();
+        if after_poll {
+            recorder.queue_poll(200, CREATED);
+        }
+        recorder.queue(failure, ERROR_BODY);
+        let fixture = Fixture::new();
+        let error = support::failed(&recorder, &fixture, &run_request()).await;
+        let (status, body) = status_of(error);
+        assert_eq!(status, failure);
+        assert_eq!(body, ERROR_BODY.as_bytes());
+        assert_eq!(recorder.requests().len(), total);
+    }
 }
 
 async fn reports_transport_failures() {

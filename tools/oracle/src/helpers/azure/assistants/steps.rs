@@ -75,7 +75,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
         },
     )) {
         Ok(RunInvocation::Polled(kind, reply)) => Ok(json!({
-            "requests": reports::requests(&harness.recorder),
+            "requests": harness.recorder.take_seen(),
             "calls": calls,
             "kind": reports::kind_name(kind),
             "result": reply,
@@ -84,7 +84,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
             consumed(runtime, &harness, *manager, handler.as_ref())
         }
         Err(error) => Ok(json!({
-            "requests": reports::requests(&harness.recorder),
+            "requests": harness.recorder.take_seen(),
             "calls": calls,
             "error": reports::failure(&error)?,
         })),
@@ -101,7 +101,7 @@ fn consumed(
     let outcome = runtime.block_on(manager.consume());
     let calls = recording.map_or_else(Vec::new, |handler| handler.calls());
     let mut output = json!({
-        "requests": reports::requests(&harness.recorder),
+        "requests": harness.recorder.take_seen(),
         "calls": calls,
     });
     match outcome {

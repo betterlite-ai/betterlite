@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Callable, Coroutine
-from typing import Literal, TypeAlias, TypedDict, cast
+from collections.abc import Coroutine
+from typing import Protocol, TypeAlias, TypedDict, cast
 
 from litellm.llms.azure.assistants import AzureAssistantsAPI
 from openai import AssistantEventHandler, AsyncAssistantEventHandler
@@ -8,9 +8,11 @@ from openai.lib.streaming import AssistantStreamManager, AsyncAssistantStreamMan
 from openai.types.beta import AssistantStreamEvent
 from openai.types.beta.threads.run import Run
 from pydantic import JsonValue
+from typing_extensions import override
 
 from azure_assistant_definitions import values_of
-from azure_assistant_definitions.sdk import JSON, SdkClient, Step as SharedStep
+from azure_assistant_definitions.sdk import JSON, SdkClient
+from azure_assistant_definitions.sdk import Step as SharedStep
 
 ENDPOINT = "https://supplied.test"
 KEY = "supplied-key"
@@ -24,9 +26,12 @@ class Reply(TypedDict):
     headers: dict[str, str]
 
 
-class RunKeywords(TypedDict, total=False):
+class RunTarget(TypedDict):
     thread_id: str
     assistant_id: str
+
+
+class RunKeywords(RunTarget, total=False):
     additional_instructions: str | None
     instructions: str | None
     metadata: dict[str, JsonValue] | None
@@ -46,19 +51,22 @@ class Step(SharedStep, total=False):
     arun_thread: bool
     stream: bool
     handler: bool
-    run: RunKeywords
     replies: list[Reply]
 
 
+class RunStep(Step):
+    run: RunKeywords
+
+
 class Input(TypedDict, total=False):
-    run_poll: list[Step]
-    run_stream: list[Step]
-    run_instructions_tools: list[Step]
-    run_failure: list[Step]
-    run_dispatch: list[Step]
-    instructions_tools_overrides: list[Step]
-    stream_event_handler: list[Step]
-    assistants_beta_default: list[Step]
+    run_poll: list[RunStep]
+    run_stream: list[RunStep]
+    run_instructions_tools: list[RunStep]
+    run_failure: list[RunStep]
+    run_dispatch: list[RunStep]
+    instructions_tools_overrides: list[RunStep]
+    stream_event_handler: list[RunStep]
+    assistants_beta_default: list[RunStep]
 
 
 ASSISTANTS = AzureAssistantsAPI()
@@ -66,8 +74,17 @@ ASSISTANTS = AzureAssistantsAPI()
 SyncManager: TypeAlias = AssistantStreamManager[AssistantEventHandler]
 AsyncManager: TypeAlias = AsyncAssistantStreamManager[AsyncAssistantEventHandler]
 RunResult: TypeAlias = Run | Coroutine[None, None, Run] | SyncManager | AsyncManager
+
+
 # LiteLLM types its run facade itself; the adapter passes the keywords its call received.
-RunCall: TypeAlias = Callable[..., RunResult]
+class RunCall(Protocol):
+    def __call__(
+        self,
+        *,
+        client: SdkClient | None,
+        event_handler: AssistantEventHandler | AsyncAssistantEventHandler | None,
+        **params: JsonValue,
+    ) -> RunResult: ...
 
 
 class Recorder(AssistantEventHandler):
@@ -75,9 +92,11 @@ class Recorder(AssistantEventHandler):
         super().__init__()
         self.calls = calls
 
+    @override
     def on_event(self, event: AssistantStreamEvent) -> None:
         self.calls.append(event.event)
 
+    @override
     def on_end(self) -> None:
         self.calls.append("end")
 
@@ -87,9 +106,11 @@ class AsyncRecorder(AsyncAssistantEventHandler):
         super().__init__()
         self.calls = calls
 
+    @override
     async def on_event(self, event: AssistantStreamEvent) -> None:
         self.calls.append(event.event)
 
+    @override
     async def on_end(self) -> None:
         self.calls.append("end")
 
@@ -100,7 +121,7 @@ RUN_THREAD: RunCall = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6
 
 
 def handler_for(
-    step: Step, calls: list[JsonValue], *, asynchronous: bool
+    step: RunStep, calls: list[JsonValue], *, asynchronous: bool
 ) -> AssistantEventHandler | AsyncAssistantEventHandler | None:
     if not step.get("handler"):
         return None
@@ -110,7 +131,7 @@ def handler_for(
 
 
 def dispatched(
-    step: Step, client: SdkClient | None, calls: list[JsonValue]
+    step: RunStep, client: SdkClient | None, calls: list[JsonValue]
 ) -> dict[str, JsonValue]:
     values = values_of(step)
     run = step["run"]
@@ -137,17 +158,15 @@ def dispatched(
         litellm_params=values.litellm_params,
     )
     if arun is True and streaming is True:
-        return consumed_async(cast(AsyncManager, result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L822-L850
+        async_manager = cast(AsyncManager, result)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L822-L850
+        return {"events": asyncio.run(drained(async_manager))}
     if arun is True:
         settled = asyncio.run(cast(Coroutine[None, None, Run], result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L836-L838
-        return buffered(settled, "async")
+        return {"kind": "async", "result": JSON.validate_json(settled.model_dump_json())}
     if streaming is True:
-        return consumed_sync(cast(SyncManager, result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L890-L901
-    return buffered(cast(Run, result), "sync")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L902-L904
-
-
-def buffered(run: Run, kind: Literal["sync", "async"]) -> dict[str, JsonValue]:
-    return {"kind": kind, "result": JSON.validate_json(run.model_dump_json())}
+        sync_manager = cast(SyncManager, result)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L890-L901
+        return consumed_sync(sync_manager)
+    return {"kind": "sync", "result": JSON.validate_json(cast(Run, result).model_dump_json())}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L902-L904
 
 
 def consumed_sync(manager: SyncManager) -> dict[str, JsonValue]:
@@ -159,7 +178,3 @@ def consumed_sync(manager: SyncManager) -> dict[str, JsonValue]:
 async def drained(manager: AsyncManager) -> list[JsonValue]:
     async with manager as entered:
         return [JSON.validate_json(event.model_dump_json()) async for event in entered]
-
-
-def consumed_async(manager: AsyncManager) -> dict[str, JsonValue]:
-    return {"events": asyncio.run(drained(manager))}

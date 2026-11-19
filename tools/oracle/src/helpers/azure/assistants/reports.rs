@@ -1,6 +1,3 @@
-use std::mem;
-use std::sync::PoisonError;
-
 use betterlite_azure::assistants::error::AssistantsRunError;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_openai::assistants::client::ClientKind;
@@ -8,8 +5,6 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::HelperError;
-
-use super::fixture::Recorder;
 
 pub(super) fn invalid_input(message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -47,9 +42,4 @@ pub(super) const fn kind_name(kind: ClientKind) -> &'static str {
         ClientKind::Sync => "sync",
         ClientKind::Async => "async",
     }
-}
-
-// Everything the wire saw before the case reads its outcome.
-pub(super) fn requests(recorder: &Recorder) -> Vec<Value> {
-    mem::take(&mut *recorder.seen.lock().unwrap_or_else(PoisonError::into_inner))
 }

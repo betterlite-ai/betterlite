@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
+use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -66,6 +67,11 @@ impl Recorder {
             seen: Mutex::new(Vec::new()),
             replies: Mutex::new(replies.iter().cloned().collect()),
         })
+    }
+
+    pub(super) fn take_seen(&self) -> Vec<Value> {
+        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        mem::take(&mut *seen)
     }
 
     fn record(&self, request: &OutboundRequest) {

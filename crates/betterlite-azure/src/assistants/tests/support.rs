@@ -231,15 +231,24 @@ pub(super) async fn invoked(
         .unwrap()
 }
 
+impl RunInvocation<Recorder> {
+    // A completed run is the only outcome a poll test accepts.
+    fn polled(self) -> (ClientKind, RunReply) {
+        match self {
+            Self::Polled(kind, reply) => (kind, *reply),
+            Self::Streaming(_) => panic!("expected a polled run"),
+        }
+    }
+}
+
 pub(super) async fn polled(
     transport: &Arc<Recorder>,
     fixture: &Fixture,
     run: &RunRequest,
 ) -> (ClientKind, RunReply) {
-    match invoked(transport, fixture, run, RunDispatch::default(), None).await {
-        RunInvocation::Polled(kind, reply) => (kind, *reply),
-        RunInvocation::Streaming(_) => panic!("expected a polled run"),
-    }
+    invoked(transport, fixture, run, RunDispatch::default(), None)
+        .await
+        .polled()
 }
 
 pub(super) async fn streamed(
