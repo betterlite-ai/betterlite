@@ -65,27 +65,20 @@ where
         request: &mut IndexMap<String, Json>,
         call_type: Option<CallType>,
     ) -> Result<HookResult, CompressionHookError<Engine::Failure>> {
-        if !self.settings.enabled {
-            return Ok(HookResult::Skipped);
-        }
-        if call_type.is_some_and(|kind| kind != CallType::AnthropicMessages) {
-            return Ok(HookResult::Skipped);
-        }
-        if agentic_loop_depth(request) > 0 {
-            return Ok(HookResult::Skipped);
-        }
-        let Some(Json::List(messages)) = request.get(MESSAGES_FIELD) else {
+        let Some((messages, model)) = self.compressible(request, call_type) else {
             return Ok(HookResult::Skipped);
         };
-        let Some(Json::Text(model)) = request.get(MODEL_FIELD) else {
-            return Ok(HookResult::Skipped);
-        };
-        if has_retrieval_tool(request.get(TOOLS_FIELD)) {
-            return Ok(HookResult::Skipped);
-        }
         self.cache.prune();
         let output = {
-            let call = self.compression_call(messages.as_slice(), model);
+            let call = CompressionCall {
+                model,
+                call_type: CallType::AnthropicMessages,
+                messages,
+                compression_trigger: self.settings.compression_trigger,
+                compression_target: self.settings.compression_target,
+                embedding_model: self.settings.embedding_model.as_deref(),
+                embedding_model_params: self.settings.embedding_model_params.as_ref(),
+            };
             self.engine
                 .compress(&call)
                 .await
@@ -93,6 +86,32 @@ where
         };
         self.apply_output(request, output)?;
         Ok(HookResult::Applied)
+    }
+
+    fn compressible<'request>(
+        &self,
+        request: &'request IndexMap<String, Json>,
+        call_type: Option<CallType>,
+    ) -> Option<(&'request [Json], &'request str)> {
+        if !self.settings.enabled {
+            return None;
+        }
+        if call_type.is_some_and(|kind| kind != CallType::AnthropicMessages) {
+            return None;
+        }
+        if agentic_loop_depth(request) > 0 {
+            return None;
+        }
+        let Some(Json::List(messages)) = request.get(MESSAGES_FIELD) else {
+            return None;
+        };
+        let Some(Json::Text(model)) = request.get(MODEL_FIELD) else {
+            return None;
+        };
+        if has_retrieval_tool(request.get(TOOLS_FIELD)) {
+            return None;
+        }
+        Some((messages.as_slice(), model.as_str()))
     }
 
     #[must_use]
@@ -103,22 +122,6 @@ where
         match self.cache.entry(stored_id) {
             Some(entry) => entry.content,
             None => IndexMap::new(),
-        }
-    }
-
-    fn compression_call<'call>(
-        &'call self,
-        messages: &'call [Json],
-        model: &'call str,
-    ) -> CompressionCall<'call> {
-        CompressionCall {
-            model,
-            call_type: CallType::AnthropicMessages,
-            messages,
-            compression_trigger: self.settings.compression_trigger,
-            compression_target: self.settings.compression_target,
-            embedding_model: self.settings.embedding_model.as_deref(),
-            embedding_model_params: self.settings.embedding_model_params.as_ref(),
         }
     }
 

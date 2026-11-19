@@ -109,7 +109,13 @@ impl Session {
         lookup.sort();
         let (compress_calls, diagnostics) = self.drain_engine();
         Ok(StepOutcome {
-            settings: record_of(&interception.settings),
+            settings: SettingsRecord {
+                enabled: interception.settings.enabled,
+                compression_trigger: interception.settings.compression_trigger,
+                compression_target: interception.settings.compression_target,
+                embedding_model: interception.settings.embedding_model.clone(),
+                embedding_model_params: interception.settings.embedding_model_params.clone(),
+            },
             skipped: result == HookResult::Skipped,
             request,
             compress_calls,
@@ -152,16 +158,6 @@ fn load_settings(
     .load(&document)
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     Ok(config.sections.compression_interception_state)
-}
-
-fn record_of(settings: &Settings) -> SettingsRecord {
-    SettingsRecord {
-        enabled: settings.enabled,
-        compression_trigger: settings.compression_trigger,
-        compression_target: settings.compression_target,
-        embedding_model: settings.embedding_model.clone(),
-        embedding_model_params: settings.embedding_model_params.clone(),
-    }
 }
 
 fn scripted_output(scripted: &ScriptedResult) -> Result<CompressionOutput, SdkHttpError> {
