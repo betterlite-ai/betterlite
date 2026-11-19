@@ -15,6 +15,18 @@ pub(super) struct FailureAnswer {
     pub(super) provider_specific_fields: Option<String>,
 }
 
+impl FailureAnswer {
+    pub(super) fn plain(status: u16, error_type: &str, message: String) -> Self {
+        Self {
+            status,
+            error_type: Some(error_type.to_owned()),
+            param: None,
+            message,
+            provider_specific_fields: None,
+        }
+    }
+}
+
 pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
     match error {
         DispatchError::Rejected {
@@ -31,20 +43,16 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
             message,
             provider_specific_fields: None,
         },
-        DispatchError::MissingDeployment { model_id } => FailureAnswer {
-            status: 400,
-            error_type: Some(String::from("invalid_request_error")),
-            param: None,
-            message: format!("no model_list entry serves the model {model_id}"),
-            provider_specific_fields: None,
-        },
-        DispatchError::DeadlineExpired { .. } => FailureAnswer {
-            status: 408,
-            error_type: Some(String::from("invalid_request_error")),
-            param: None,
-            message: String::from("the completion call passed its deadline"),
-            provider_specific_fields: None,
-        },
+        DispatchError::MissingDeployment { model_id } => FailureAnswer::plain(
+            400,
+            "invalid_request_error",
+            format!("no model_list entry serves the model {model_id}"),
+        ),
+        DispatchError::DeadlineExpired { .. } => FailureAnswer::plain(
+            408,
+            "invalid_request_error",
+            String::from("the completion call passed its deadline"),
+        ),
         DispatchError::NotBuilt { .. }
         | DispatchError::UnknownOperation { .. }
         | DispatchError::MismatchedOperation { .. }

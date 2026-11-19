@@ -16,46 +16,27 @@ use betterlite_core::operation::embedding::{
     EmbeddingCall, EmbeddingCallInput, EmbeddingFailure,
     EmbeddingRequest as DispatchEmbeddingRequest, EmbeddingResult, EmbeddingRoute, route_error,
 };
-use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::chat::provider_error::ProviderFailure;
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
-use serde::Serialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
-use crate::route_read_through::{ModelReadThrough, route_with_read_through};
-use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::RouterErrorFields;
+use crate::route_read_through::ModelReadThrough;
 use crate::server::chat_setup::provider_call::CallError;
 use crate::server::chat_setup::provider_call::embedding::provider_embedding;
+use crate::server::{ErrorBody, ErrorObject, RouterErrorFields};
 
 use super::chat::headers::{failure_headers, success_headers};
 
+mod read_through;
 mod tests;
 mod vertex;
-
-#[derive(Serialize)]
-struct ErrorBody {
-    error: ErrorObject,
-}
-
-#[derive(Serialize)]
-struct ErrorObject {
-    message: String,
-    #[serde(rename = "type")]
-    error_type: String,
-    param: Option<String>,
-    code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    provider_specific_fields: Option<RouterErrorFields>,
-}
 
 pub(crate) fn embedding_routes(
     executor: Arc<ChatExecutor>,
@@ -149,21 +130,10 @@ async fn embeddings(
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    let model_text = model.as_deref().unwrap_or("None");
-    let route = route_endpoint("aembedding").unwrap_or("aembedding");
-    let attempt = || async {
-        pick_deployment(&state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
+    let deployment = match read_through::deployment_or_answer(&state, model.as_deref()).await {
+        Ok(deployment) => deployment,
+        Err(not_found) => return read_through::not_found_response(not_found, &call_id),
     };
-    let deployment =
-        match route_with_read_through(model.as_deref(), state.read_through.as_deref(), attempt)
-            .await
-        {
-            Ok(deployment) => deployment,
-            Err(error) => {
-                return not_found_response(&error, &call_id, &state.executor.redactor);
-            }
-        };
     execute(&state, request, deployment, &call_id, started).await
 }
 
@@ -264,11 +234,12 @@ fn render(
     let body = ErrorBody {
         error: ErrorObject {
             message: route.message,
-            error_type: route.failure.error_type,
+            error_type: Some(route.failure.error_type),
             param: route.failure.param,
             code: route.failure.status.to_string(),
             provider_specific_fields: provider_specific_fields
                 .map(|error| RouterErrorFields { error }),
+            litellm_call_id: None,
         },
     };
     (
@@ -277,24 +248,6 @@ fn render(
         Json(body),
     )
         .into_response()
-}
-
-fn not_found_response(
-    error: &ProxyModelNotFoundError,
-    call_id: &str,
-    redactor: &Redactor,
-) -> Response {
-    let message = redactor.redact_internal_details(&error.detail.error);
-    let route = EmbeddingRoute {
-        failure: ProviderFailure {
-            status: ProxyModelNotFoundError::STATUS.as_u16(),
-            error_type: String::from("invalid_request_error"),
-            param: None,
-        },
-        message: message.clone(),
-        upstream_headers: None,
-    };
-    render(route, call_id, None, Some(message))
 }
 
 fn internal_message(

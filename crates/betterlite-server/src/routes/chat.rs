@@ -16,27 +16,26 @@ use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::dispatch::log::TracingCallLog;
 use betterlite_core::dispatch::{Dispatch, NoRules};
 use betterlite_core::operation::chat::first_message::first_message_has_content;
-use betterlite_core::operation::chat::{
-    ChatCall, ChatFailure, ChatRequest as DispatchChatRequest, ChatResult,
-};
+use betterlite_core::operation::chat::{ChatCall, ChatRequest as DispatchChatRequest, ChatResult};
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::normalize::{ErrorFacts, Normalizer, class::Class, provider::provider_facts};
-use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
+use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::{ChatRequest, RequestError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
-use crate::route_read_through::route_with_read_through;
-use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::{FailureShape, failure, plain_failure};
+use crate::server::failure;
+use crate::server::render::{FailureShape, plain_failure};
 use crate::state::ServerState;
 
+use self::failure::{
+    chat_failure, internal_failure, not_found_failure, parse_chat_request, routed_deployment,
+};
 use headers::success_headers;
 
 // LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
@@ -149,58 +148,27 @@ async fn chat_completion(
         started,
         errors: &state.errors,
     };
-    let request = match ChatRequest::parse(&body) {
+    let request = match parse_chat_request(&body, &mut call) {
         Ok(request) => request,
-        Err(source) => {
-            if let RequestError::Body { source: json } = &source {
-                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
-                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
-            }
-            let error = ChatError::from(source);
-            log_unrouted_failure(&error.to_string(), &call);
+        Err(error) => {
+            // only the dispatch's own terminal record covers a routed call; this covers one that never got there
+            let message = call
+                .errors
+                .redactor
+                .redact_internal_details(&error.to_string());
+            tracing::warn!(error = %message, "chat request failed before dispatch");
             return failure(&error, &call, None);
         }
     };
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    let model_text = model.as_deref().unwrap_or("None");
-    let read_through =
-        server.and_then(|Extension(server)| server.model_read_through.read_through.clone());
-    let route = route_endpoint("acompletion").unwrap_or("acompletion");
-    let attempt = || async {
-        pick_deployment(&state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
+    let deployment = match routed_deployment(&state, model.as_deref(), server).await {
+        Ok(deployment) => deployment,
+        Err(error) => return not_found_failure(&call, &error),
     };
-    let deployment =
-        match route_with_read_through(model.as_deref(), read_through.as_deref(), attempt).await {
-            Ok(deployment) => deployment,
-            Err(error) => {
-                log_unrouted_failure(&error.to_string(), &call);
-                return plain_failure(
-                    &call,
-                    None,
-                    FailureShape {
-                        status: ProxyModelNotFoundError::STATUS,
-                        error_type: "invalid_request_error",
-                        param: None,
-                        message: call
-                            .errors
-                            .redactor
-                            .redact_internal_details(&error.detail.error),
-                        repeat_message: true,
-                    },
-                );
-            }
-        };
     let has_content = first_message_has_content(&body);
     execute_chat(&state, &request, has_content, deployment, &call).await
-}
-
-// only the dispatch's own terminal record covers a routed call; this covers one that never got there
-fn log_unrouted_failure(message: &str, call: &CallContext<'_>) {
-    let message = call.errors.redactor.redact_internal_details(message);
-    tracing::warn!(error = %message, "chat request failed before dispatch");
 }
 
 async fn execute_chat(
@@ -287,48 +255,5 @@ fn dispatch_failure(
     }
 }
 
-fn chat_failure(
-    chat_error: &ChatFailure,
-    call: &CallContext<'_>,
-    deployment: Option<&ChatDeployment>,
-) -> Response {
-    if let ChatFailure::Route(route) = chat_error {
-        return failure(route, call, deployment);
-    }
-    if let ChatFailure::InvalidControl { source } = chat_error {
-        let param = Some(source.param().to_owned());
-        return plain_failure(
-            call,
-            deployment,
-            FailureShape {
-                status: StatusCode::BAD_REQUEST,
-                error_type: "invalid_request_error",
-                param,
-                message: source.to_string(),
-                repeat_message: false,
-            },
-        );
-    }
-    internal_failure(&chat_error.to_string(), call, deployment)
-}
-
-fn internal_failure(
-    message: &str,
-    call: &CallContext<'_>,
-    deployment: Option<&ChatDeployment>,
-) -> Response {
-    let redacted = call.errors.redactor.redact_internal_details(message);
-    plain_failure(
-        call,
-        deployment,
-        FailureShape {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            error_type: "internal_server_error",
-            param: None,
-            message: redacted,
-            repeat_message: false,
-        },
-    )
-}
-
+mod failure;
 mod tests;
