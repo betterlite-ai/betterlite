@@ -47,6 +47,29 @@ async fn boot_agents_registers_every_config_agent() {
 }
 
 #[tokio::test]
+async fn boot_agents_keeps_every_entry_field_type() {
+    let config = config_from_yaml(
+        "agents:\n  - agent_name: alpha\n    agent_card_params:\n      model: gpt-4o\n    litellm_params:\n      temperature: 0.5\n    tpm_limit: 5\n    rpm_limit: 0\n    session_tpm_limit: null\n    enabled: false\n    extra_headers:\n      - x-one\n",
+    );
+    let (registry, ports) = registries();
+    load_non_llm_configs(&config, None, &ports).await.unwrap();
+    let agents = registry.get_agent_list(None);
+    assert_eq!(agents.len(), 1);
+    let alpha = &agents[0];
+    assert_eq!(alpha.tpm_limit, Some(5));
+    assert_eq!(alpha.rpm_limit, Some(0));
+    assert_eq!(alpha.session_tpm_limit, None);
+    assert!(!alpha.enabled.0);
+    assert_eq!(alpha.extra_headers, Some(vec![String::from("x-one")]));
+    let temperature = alpha
+        .litellm_params
+        .as_ref()
+        .and_then(|params| params.get("temperature"))
+        .map(|raw| raw.get());
+    assert_eq!(temperature, Some("0.5"));
+}
+
+#[tokio::test]
 async fn boot_agents_loads_agent_list_when_agents_is_absent() {
     let config = config_from_yaml(
         "agent_list:\n  - agent_name: alpha\n    agent_card_params:\n      model: gpt-4o\n",
