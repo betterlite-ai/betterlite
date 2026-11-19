@@ -69,10 +69,7 @@ impl FineTuningCreateDispatch for Scripted {
                     target,
                     task: try_id(),
                 });
-            match failure {
-                Some(error) => Err(error),
-                None => Ok(job()),
-            }
+            failure.map_or_else(|| Ok(job()), Err)
         }
     }
 }
@@ -723,7 +720,11 @@ fn tuning_call_wire_form() {
             Number::from_f64(2.5_f64).expect("a finite number")
         ))
     );
-    let structured_params = CreateParams {
+}
+
+#[test]
+fn tuning_call_structured_timeout_wire_form() {
+    let params = CreateParams {
         api_base: None,
         api_key: None,
         api_version: None,
@@ -736,15 +737,14 @@ fn tuning_call_wire_form() {
         request_timeout: None,
         max_retries: None,
     };
-    let structured_wire: Json = serde_json::from_str(
-        &serde_json::to_string(&structured_params).expect("the params encode"),
-    )
-    .expect("the wire form is JSON");
-    let Json::Object(structured_fields) = structured_wire else {
+    let wire: Json =
+        serde_json::from_str(&serde_json::to_string(&params).expect("the params encode"))
+            .expect("the wire form is JSON");
+    let Json::Object(fields) = wire else {
         panic!("the wire form is an object");
     };
     assert_eq!(
-        structured_fields.get("timeout"),
+        fields.get("timeout"),
         Some(&Json::Number(
             Number::from_f64(2.0_f64).expect("a finite number")
         ))
@@ -767,12 +767,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

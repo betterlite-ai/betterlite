@@ -1,4 +1,5 @@
 use super::native;
+use crate::sdk_http::OracleLimits;
 use crate::sdk_http::call_kind::CallKind;
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::kinds::SdkResult;
@@ -42,7 +43,7 @@ pub struct Run {
     pub params: CreateParams,
 }
 impl CallKind for Call {
-    fn validate(&self, _limits: &crate::sdk_http::OracleLimits) -> Result<(), SdkHttpError> {
+    fn validate(&self, _limits: &OracleLimits) -> Result<(), SdkHttpError> {
         if self.runs.is_empty() {
             return Err(SdkHttpError::Invalid(
                 "a fine-tuning create call needs at least one run".to_owned(),
@@ -56,8 +57,8 @@ impl CallKind for Call {
         env: &BTreeMap<String, String>,
     ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
         let runs = self.runs.clone();
-        let api_base = api_base.to_owned();
-        let env = env.clone();
-        async move { native::run(&runs, &api_base, &env).await }
+        let request_base = api_base.to_owned();
+        let request_env = env.clone();
+        async move { native::run(&runs, &request_base, &request_env).await }
     }
 }

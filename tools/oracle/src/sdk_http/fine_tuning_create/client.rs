@@ -3,13 +3,13 @@ use betterlite_openai::fine_tuning::client::{
 };
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use std::time::Duration;
 
 // the class the openai SDK raises for a response status
-pub const fn error_class(status: u16) -> &'static str {
+pub(crate) const fn error_class(status: u16) -> &'static str {
     match status {
         400 => "BadRequestError",
         401 => "AuthenticationError",
@@ -22,7 +22,7 @@ pub const fn error_class(status: u16) -> &'static str {
         _ => "APIStatusError",
     }
 }
-pub fn sdk_error(status: u16, bytes: &[u8]) -> SdkError {
+pub(crate) fn sdk_error(status: u16, bytes: &[u8]) -> SdkError {
     let body: Value = serde_json::from_slice(bytes).unwrap_or(Value::Null);
     let field = |name: &str| {
         body.get("error")
@@ -38,7 +38,7 @@ pub fn sdk_error(status: u16, bytes: &[u8]) -> SdkError {
         message: field("message").unwrap_or_default(),
     }
 }
-fn transport_error(status: u16, message: String) -> SdkError {
+const fn transport_error(status: u16, message: String) -> SdkError {
     SdkError {
         status,
         error_type: None,
@@ -49,48 +49,42 @@ fn transport_error(status: u16, message: String) -> SdkError {
 }
 // which header carries the credential: a key-based Azure client sends api-key, everything else a bearer token
 #[derive(Debug, Clone, Copy)]
-pub enum Auth {
+pub(crate) enum Auth {
     Bearer,
     ApiKey,
 }
-pub struct HttpJobsApi {
-    pub is_async: bool,
-    pub url: String,
-    pub api_key: Option<SecretString>,
-    pub organization: Option<String>,
-    pub auth: Auth,
-    pub timeout: Option<f64>,
+pub(crate) struct HttpJobsApi {
+    pub(crate) is_async: bool,
+    pub(crate) url: String,
+    pub(crate) api_key: Option<SecretString>,
+    pub(crate) organization: Option<String>,
+    pub(crate) auth: Auth,
+    pub(crate) timeout: Option<f64>,
 }
 fn headers(api_key: Option<&SecretString>, organization: Option<&str>, auth: Auth) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        HeaderValue::from_static("application/json"),
-    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     if let Some(key) = api_key {
         let (name, value) = match auth {
-            Auth::Bearer => (
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", key.expose_secret()),
-            ),
+            Auth::Bearer => (AUTHORIZATION, format!("Bearer {}", key.expose_secret())),
             Auth::ApiKey => (
-                reqwest::header::HeaderName::from_static("api-key"),
+                HeaderName::from_static("api-key"),
                 key.expose_secret().to_owned(),
             ),
         };
-        if let Ok(value) = HeaderValue::from_str(&value) {
-            headers.insert(name, value);
+        if let Ok(header_value) = HeaderValue::from_str(&value) {
+            headers.insert(name, header_value);
         }
     }
-    if let Some(organization) = organization
-        && let Ok(value) = HeaderValue::from_str(organization)
+    if let Some(org) = organization
+        && let Ok(header_value) = HeaderValue::from_str(org)
     {
-        headers.insert("openai-organization", value);
+        headers.insert("openai-organization", header_value);
     }
     headers
 }
 impl HttpJobsApi {
-    pub fn send(&self, body: &Value) -> Result<Vec<u8>, SdkError> {
+    pub(crate) fn send(&self, body: &Value) -> Result<Vec<u8>, SdkError> {
         let client = Client::builder()
             .no_proxy()
             .timeout(
@@ -149,7 +143,7 @@ impl JobsApi for HttpJobsApi {
     }
 }
 // the production builder belongs to the SDK dispatcher; the oracle only needs the real HTTP client
-pub struct HttpBuilder;
+pub(crate) struct HttpBuilder;
 impl ClientBuilder for HttpBuilder {
     fn build(
         &self,

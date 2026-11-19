@@ -25,7 +25,7 @@ use std::time::Duration;
 use url::Position;
 
 // the source's mock auth returns this project, so the native seam returns the same one
-pub async fn create(
+pub(crate) async fn create(
     call: VertexCreateCall,
     urls: Arc<Mutex<Vec<String>>>,
 ) -> Result<FineTuneJob, SendError> {
@@ -71,10 +71,15 @@ pub async fn create(
 fn adapter_size(original: &Extra) -> Option<String> {
     match original.get("adapter_size")? {
         Json::Text(text) if !text.is_empty() => Some(text.clone()),
-        Json::Number(number) if number.as_f64().is_some_and(|value| value != 0.0) => {
+        Json::Number(number) if number.as_f64().is_some_and(|value| value != 0.0_f64) => {
             Some(number.to_string())
         }
-        _ => None,
+        Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_) => None,
     }
 }
 fn transport(
@@ -104,7 +109,7 @@ fn transport(
     })
 }
 // the closed test transport records the regional URL B1384 resolved and redirects only its origin
-pub struct RecordingTransport {
+pub(crate) struct RecordingTransport {
     inner: ProxiedClient,
     origin: String,
     urls: Arc<Mutex<Vec<String>>>,

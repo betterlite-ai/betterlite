@@ -20,7 +20,7 @@ use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub fn create(call: AzureCreateCall) -> Result<FineTuneJob, SendError> {
+pub(crate) fn create(call: AzureCreateCall) -> Result<FineTuneJob, SendError> {
     let AzureCreateCall {
         is_async,
         mut data,

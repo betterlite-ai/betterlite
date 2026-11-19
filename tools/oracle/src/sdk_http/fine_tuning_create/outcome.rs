@@ -33,7 +33,7 @@ pub struct JobView {
     pub seed: Option<i64>,
     pub hyperparameters: Value,
 }
-pub fn job_view(job: &FineTuneJob) -> Result<JobView, SdkHttpError> {
+pub(crate) fn job_view(job: &FineTuneJob) -> Result<JobView, SdkHttpError> {
     serde_json::from_value(serde_json::to_value(job).map_err(SdkHttpError::Serialize)?)
         .map_err(SdkHttpError::Serialize)
 }

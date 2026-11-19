@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum SendError {
+pub(crate) enum SendError {
     #[error(transparent)]
     OpenAi(#[from] FineTuneError),
     #[error(transparent)]
@@ -38,7 +38,7 @@ pub enum SendError {
     #[error("the oracle client could not be built: {message}")]
     Setup { message: String },
 }
-pub async fn run(
+pub(crate) async fn run(
     runs: &[Run],
     api_base: &str,
     env: &BTreeMap<String, String>,
@@ -104,10 +104,10 @@ fn project(error: &FineTuningCreateError<SendError>) -> Failure {
             code: Some(None),
             message: format!("litellm.BadRequestError: {error}"),
         },
-        FineTuningCreateError::Dispatch(SendError::OpenAi(FineTuneError::Sdk { source }))
-        | FineTuningCreateError::Dispatch(SendError::Azure(AzureFineTuneError::Sdk { source })) => {
-            sdk_failure(source)
-        }
+        FineTuningCreateError::Dispatch(
+            SendError::OpenAi(FineTuneError::Sdk { source })
+            | SendError::Azure(AzureFineTuneError::Sdk { source }),
+        ) => sdk_failure(source),
         FineTuningCreateError::Timeout(_)
         | FineTuningCreateError::Data(_)
         | FineTuningCreateError::Dispatch(_) => exception_failure(&error.to_string()),
@@ -170,7 +170,7 @@ fn openai(call: OpenAiCreateCall) -> Result<FineTuneJob, SendError> {
     };
     request_fine_tuning_job(connection, &JobRequest::Create(&data)).map_err(SendError::from)
 }
-pub fn seconds(timeout: FineTuningTimeout) -> Option<f64> {
+pub(crate) fn seconds(timeout: FineTuningTimeout) -> Option<f64> {
     match timeout {
         FineTuningTimeout::Seconds(value) => Some(value),
         FineTuningTimeout::Structured(found) => {

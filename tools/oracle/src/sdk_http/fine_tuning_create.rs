@@ -2,8 +2,8 @@ mod azure;
 pub mod call;
 mod client;
 mod native;
-mod outcome;
+pub mod outcome;
 mod vertex;
 
-pub use call::{Call, Run};
-pub use outcome::{JobView, Outcome, RunOutcome};
+pub type Call = call::Call;
+pub type Outcome = outcome::Outcome;
