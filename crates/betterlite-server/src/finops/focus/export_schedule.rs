@@ -124,19 +124,23 @@ impl<Cache: LockCache> FocusPodLock for PodLockManager<Cache> {
     }
 }
 
-// The redis lease of one scheduled run: a tracked task releases it whether the export ends or its future is dropped.
-struct PodLockLease {
+// The redis lease of one scheduled run: a tracked task releases the job's lock whether the export ends or its future is dropped.
+pub(crate) struct PodLockLease {
     release_now: Arc<Notify>,
     release_task: Option<JoinHandle<()>>,
 }
 
 impl PodLockLease {
-    fn start(pod_lock: Arc<dyn FocusPodLock>, tasks: &TaskTracker) -> Self {
+    pub(crate) fn start(
+        pod_lock: Arc<dyn FocusPodLock>,
+        job_name: &'static str,
+        tasks: &TaskTracker,
+    ) -> Self {
         let release_now = Arc::new(Notify::new());
         let wake = Arc::clone(&release_now);
         let release_task = tasks.spawn(async move {
             wake.notified().await;
-            pod_lock.release_lock(FOCUS_USAGE_DATA_JOB_NAME).await;
+            pod_lock.release_lock(job_name).await;
         });
         Self {
             release_now,
@@ -144,7 +148,7 @@ impl PodLockLease {
         }
     }
 
-    async fn release(mut self) {
+    pub(crate) async fn release(mut self) {
         self.release_now.notify_one();
         if let Some(release_task) = self.release_task.take() {
             let _released = release_task.await;
@@ -156,6 +160,16 @@ impl Drop for PodLockLease {
     fn drop(&mut self) {
         // a cancelled export never reaches release(): wake the tracked task so the lease is not held until its TTL
         self.release_now.notify_one();
+    }
+}
+
+// _build_scheduler_trigger's daily branch: the offset counts minutes from midnight, clamped into its day
+pub(crate) const fn daily_cron_trigger(cron_offset_minute: i64) -> ScheduleTrigger {
+    let total_minutes = cron_offset_minute.max(0);
+    ScheduleTrigger::Cron {
+        hour: Some(total_minutes.div_euclid(60).min(23)),
+        minute: total_minutes.rem_euclid(60).min(59),
+        second: 0,
     }
 }
 
@@ -173,14 +187,7 @@ where
             minute: logger.cron_offset_minute.clamp(0, 59),
             second: 0,
         }),
-        ExportFrequency::Daily => {
-            let total_minutes = logger.cron_offset_minute.max(0);
-            Ok(ScheduleTrigger::Cron {
-                hour: Some(total_minutes.div_euclid(60).min(23)),
-                minute: total_minutes.rem_euclid(60).min(59),
-                second: 0,
-            })
-        }
+        ExportFrequency::Daily => Ok(daily_cron_trigger(logger.cron_offset_minute)),
         ExportFrequency::Unsupported(frequency) => {
             Err(ScheduleError::UnsupportedFrequency { frequency })
         }
@@ -228,7 +235,11 @@ where
                 tracing::debug!("Focus export: unable to acquire pod lock");
                 return Ok(());
             }
-            Some(PodLockLease::start(Arc::clone(pod_lock), &logger.tasks))
+            Some(PodLockLease::start(
+                Arc::clone(pod_lock),
+                FOCUS_USAGE_DATA_JOB_NAME,
+                &logger.tasks,
+            ))
         }
         _ => None,
     };
