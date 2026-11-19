@@ -1,0 +1,73 @@
+task: B1555
+deviations:
+  - what: >-
+      A DuckDuckGo search reply larger than 16 MiB is refused with a size error before it is
+      decoded.
+    why: >-
+      LiteLLM reads the whole reply body into memory with no cap. A search reply is a short JSON
+      document, so no working setup sends one near the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L162
+  - what: >-
+      A present reply field of the wrong JSON type fails the decode with an error that names the
+      field: AbstractURL, AbstractText, Heading, FirstURL and Text must be strings. LiteLLM fails
+      only where its control flow reads the value, so a wrong-typed AbstractURL next to a missing
+      AbstractText returns the related topics there without an error.
+    why: >-
+      The reply fields are typed strings and docs/compatibility.md makes a wrong-typed value an
+      error that names the field, so the decode refuses it even where LiteLLM never reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L180
+  - what: >-
+      RelatedTopics and a nested Topics must be JSON lists, and every nested Topics member must be
+      a JSON object; anything else fails the decode. LiteLLM iterates a RelatedTopics object or
+      string without an error (yielding no members or skipping the non-dict ones), skips a string
+      nested member through a substring check, and raises TypeError only for null or a scalar.
+    why: >-
+      The task requires failures for malformed nesting and invalid present field types instead of
+      silently dropping topics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L191
+  - what: >-
+      A reply carrying a non-standard JSON constant such as NaN or Infinity is a parse error.
+      Python's json.loads accepts both and would project the reply's related topics.
+    why: >-
+      Replies are standard JSON (docs/compatibility.md), and serde_json parses only standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L162
+  - what: >-
+      max_results as a JSON list sends one repeated _max_results parameter per element, as doseq
+      does, but the reply limit is read only from a number or a numeric string, so a list leaves
+      the limit absent. LiteLLM takes the first _max_results value from the request URL, so a list
+      whose first element is an integer caps the results there. A numeric string is read with
+      Rust's integer parser, so a spelling only Python's int() accepts, such as a digit separator
+      in "1_0" or non-ASCII digits, leaves the limit absent here and caps the results there. A
+      value outside the signed 64-bit range does the same, so a huge negative limit leaves the
+      results uncapped here while Python's unbounded int() caps them at the abstract.
+    why: >-
+      The task reads _max_results as an integer when possible and leaves the limit absent
+      otherwise, and neither a JSON list nor a number outside the 64-bit limit is an integer here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L169
+  - what: >-
+      The decode limit comes from the params the config stored in transform_search_request,
+      because the SearchProvider response hook receives no request. A transport that shares one
+      config across concurrent requests would mix their limits; LiteLLM reads _max_results from
+      the response's own request URL, so concurrent requests stay apart.
+    why: >-
+      The trait hands transform_search_response only &self and the response, so the request the
+      reply belongs to is remembered on the config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L166-L172
+  - what: >-
+      A pretty, no_redirect, no_html or skip_disambig request option holding an integer outside the
+      signed 64-bit range fails the request with an OptionType error that names the field. LiteLLM
+      copies the option into the query and urlencode sends its full decimal text upstream. A JSON
+      boolean is accepted and sent as True or False, the text urlencode writes for Python's bool.
+    why: >-
+      The four flags keep a boolean or an integer that fits i64; the source declares them int and
+      Python's bool is an int, so a boolean is in type. Python's int is unbounded, so a value
+      outside i64 is an error here under docs/compatibility.md and accepted there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L131-L134
+kept_bugs:
+  - what: >-
+      The comment at the response transform gives Answer priority after the abstract, but the
+      code never reads Answer; betterlite follows the code and drops Answer and AnswerType.
+    why: >-
+      A working setup sees no result for a reply that carries only Answer, and the task pins the
+      code's behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L177

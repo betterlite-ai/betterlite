@@ -1,0 +1,13 @@
+kind: helper
+name: gemini-handler-unmatched-route
+call:
+  b3640:
+    operation: gemini_handler
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:predict
+    body:
+      candidates: []
+    request_body: {}
+    lines: []
+    model: null
+env: {}
+compare: {ignore: []}
