@@ -1,0 +1,16 @@
+kind: helper
+name: auth-tag-budgets-empty-batch
+call:
+  auth_tag_budgets:
+    function: tags
+    database: true
+    names: []
+    cached: []
+    rows:
+      - tag_name: tag-a
+        models: []
+        spend: 0.0
+    fail_query: false
+env: {}
+compare:
+  ignore: []
