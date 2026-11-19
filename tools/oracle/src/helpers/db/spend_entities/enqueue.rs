@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::spend_attribution::access_groups::ServedDeployments;
 use betterlite_db::spend_attribution::enqueue::{
@@ -40,7 +40,7 @@ impl RecordingQueue {
     fn items(&self) -> Vec<SpendUpdateQueueItem> {
         self.items
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 }
@@ -48,14 +48,12 @@ impl RecordingQueue {
 impl EntitySpendQueue for RecordingQueue {
     fn enqueue(&self, update: SpendUpdateQueueItem) -> EnqueueFuture<'_> {
         Box::pin(async move {
-            let mut items = self
-                .items
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
             if self.fail_at == Some(items.len()) {
                 return Err(SpendQueueError::ZeroCapacity);
             }
             items.push(update);
+            drop(items);
             Ok(())
         })
     }
@@ -222,8 +220,8 @@ fn kind_name(entity_type: &EntityType) -> String {
 fn spend_amount(value: Option<&Value>) -> Result<Option<SpendAmount>, Box<HelperError>> {
     match value {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => serde_json::from_value::<Decimal>(value.clone())
-            .map(|amount| Some(SpendAmount(amount)))
+        Some(amount) => serde_json::from_value::<Decimal>(amount.clone())
+            .map(|spend| Some(SpendAmount(spend)))
             .map_err(failure),
     }
 }

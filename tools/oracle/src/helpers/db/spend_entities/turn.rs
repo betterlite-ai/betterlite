@@ -1,6 +1,7 @@
 use betterlite_db::autorouter_facts::turn::{TurnPayload, turn_transaction};
 use betterlite_db::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnTime};
 use betterlite_models::model_registration::JsonObject;
+use betterlite_oracle_helper_api::error::HelperError;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::Value;
@@ -36,14 +37,12 @@ struct TurnView {
     user_id: String,
 }
 
-pub(super) fn turn_value(
-    step: &Step,
-) -> Result<Value, Box<betterlite_oracle_helper_api::error::HelperError>> {
+pub(super) fn turn_value(step: &Step) -> Result<Value, Box<HelperError>> {
     let payload = step
         .payload
         .clone()
         .ok_or_else(|| failure("a turn step needs a payload"))?;
-    let payload: TurnPayload = serde_json::from_value(payload).map_err(failure)?;
+    let turn: TurnPayload = serde_json::from_value(payload).map_err(failure)?;
     let metadata_value = step
         .metadata
         .clone()
@@ -53,7 +52,7 @@ pub(super) fn turn_value(
         None | Some(Value::Null) => Decimal::ZERO,
         Some(value) => serde_json::from_value::<Decimal>(value.clone()).map_err(failure)?,
     };
-    let record = turn_transaction(&payload, &metadata, saved_spend)
+    let record = turn_transaction(&turn, &metadata, saved_spend)
         .map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(TurnAnswer {
         record: record.map(turn_view),
