@@ -1,0 +1,18 @@
+task: B1552
+deviations:
+  - what: >-
+      An APISerpent reply larger than 16 MiB is refused before it is parsed, where LiteLLM hands
+      whatever size the provider sends to json and parses it.
+    why: >-
+      The reply is untrusted provider input, and 16 MiB matches the bound the other betterlite
+      search providers put on a reply; a search reply is a short JSON document, so no working
+      setup sends one near the limit while a hostile one cannot grow memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L154
+kept_bugs:
+  - what: >-
+      A nonempty deep value such as the string "false" selects the deep endpoint, because the
+      source reads deep by Python truthiness instead of as the boolean its docstring names.
+    why: >-
+      A caller that sends a string there keeps the endpoint it selected under LiteLLM, so the
+      truthiness check is copied rather than replaced with a boolean read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L46-L47

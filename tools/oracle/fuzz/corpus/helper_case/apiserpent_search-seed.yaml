@@ -1,0 +1,15 @@
+kind: helper
+name: apiserpent-search-seed
+call:
+  apiserpent_search:
+    query: "seed"
+    optional_params: {deep: true, max_results: 5}
+    api_key: "seed-key"
+    api_base: null
+    environment: {}
+    headers: {X-Trace: seed}
+    reply: |-
+      {"results": {"organic": [{"title": "seed", "url": "https://example.test", "snippet": "seed snippet"}]}}
+env: {}
+compare:
+  ignore: []
