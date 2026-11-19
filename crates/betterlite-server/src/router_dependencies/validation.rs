@@ -5,12 +5,12 @@ use betterlite_router::complexity_config::keys::COMPLEXITY_ROUTER_CONFIG_KEYS;
 
 use super::error::{ComplexityPlacementError, StrategyRouterWriteError};
 use super::{
-    AUTO_ROUTER_MODEL_PREFIX, STRATEGY_ROUTER_PARAM_FIELDS, classify_strategy_router_model,
-    required_fields,
+    AUTO_ROUTER_MODEL_PREFIX, STRATEGY_ROUTER_PARAM_FIELDS, StrategyRouterKind,
+    classify_strategy_router_model, required_fields,
 };
 
 // a setting written one level too high configures nothing and reaches the provider as an unknown param
-pub fn validate_complexity_router_config_placement(
+pub fn validate_config_placement(
     litellm_params: Option<&JsonObject>,
 ) -> Result<(), ComplexityPlacementError> {
     let Some(litellm_params) = litellm_params else {
@@ -30,7 +30,7 @@ pub fn validate_complexity_router_config_placement(
     })
 }
 
-pub fn validate_strategy_router_model_write(
+pub fn validate_model_write(
     model: &str,
     present_fields: &BTreeSet<String>,
 ) -> Result<(), StrategyRouterWriteError> {
@@ -74,7 +74,12 @@ pub fn validate_strategy_router_model_write(
     }
     Err(StrategyRouterWriteError::MissingSettings {
         model: model.to_owned(),
-        kind,
+        kind: match kind {
+            StrategyRouterKind::Semantic => "semantic",
+            StrategyRouterKind::Complexity => "complexity",
+            StrategyRouterKind::Adaptive => "adaptive",
+            StrategyRouterKind::Quality => "quality",
+        },
         requirements: missing.join("; "),
     })
 }

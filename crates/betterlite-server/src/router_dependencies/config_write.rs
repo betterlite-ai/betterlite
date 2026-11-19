@@ -11,8 +11,8 @@ use betterlite_router::complexity_config::checks::{
 use betterlite_router::complexity_config::error::ComplexityConfigError;
 use betterlite_router::complexity_config::resolve;
 use betterlite_router::tier_definitions::checks::{ClassifierFallback, ClassifierKind};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use super::error::ComplexityConfigWriteError;
 
@@ -20,7 +20,7 @@ use super::error::ComplexityConfigWriteError;
 const CONFIG_ROOT: &str = "complexity_router_config";
 
 // LiteLLM parses a written config with the router's own model, and betterlite's model is the loader's section config
-pub fn validate_complexity_router_config_write(
+pub fn validate_config_write(
     complexity_router_config: Option<&Json>,
 ) -> Result<(), ComplexityConfigWriteError> {
     let Some(Json::Object(fields)) = complexity_router_config else {
@@ -67,7 +67,8 @@ struct Inputs {
 }
 
 fn decode_declared(fields: &JsonObject) -> Result<Inputs, ComplexityConfigWriteError> {
-    let raw: RawChecks = decode_object(fields, CONFIG_ROOT)?;
+    let encoded = encode(fields)?;
+    let raw: RawChecks = decode_text(&encoded, "", CONFIG_ROOT)?;
     let keyword_rule_tiers = raw
         .keyword_tier_rules
         .as_deref()
@@ -76,9 +77,11 @@ fn decode_declared(fields: &JsonObject) -> Result<Inputs, ComplexityConfigWriteE
         .map(|rule| rule.tier.clone())
         .collect();
     let features = order_features(&raw);
+    let settings: settings_section::Config = decode_text(&encoded, "", CONFIG_ROOT)?;
+    let tiers: tier_section::Config = decode_text(&encoded, "", CONFIG_ROOT)?;
     Ok(Inputs {
-        settings: decode_object(fields, CONFIG_ROOT)?,
-        tiers: decode_object(fields, CONFIG_ROOT)?,
+        settings,
+        tiers,
         dimensions: decode_optional_field(fields, "custom_dimensions")?.unwrap_or_default(),
         dimension_weights: decode_optional_field(fields, "dimension_weights")?.unwrap_or_default(),
         raw,
@@ -105,9 +108,7 @@ fn decode_checks<'config>(
         embedding_model: raw.embedding_model.as_deref(),
         stall_escalation: StallWindow {
             window: raw.stall_escalation_window.unwrap_or(STALL_WINDOW_DEFAULT),
-            repeat_threshold: raw
-                .stall_escalation_repeat_threshold
-                .unwrap_or(STALL_REPEAT_DEFAULT),
+            repeat_threshold: raw.stall_repeat_threshold.unwrap_or(STALL_REPEAT_DEFAULT),
         },
         features,
     }
@@ -181,20 +182,6 @@ fn without_nulls(fields: &JsonObject) -> JsonObject {
     declared
 }
 
-fn decode_object<Decoded>(
-    fields: &JsonObject,
-    location: &str,
-) -> Result<Decoded, ComplexityConfigWriteError>
-where
-    Decoded: DeserializeOwned,
-{
-    let text =
-        serde_json::to_string(fields).map_err(|source| ComplexityConfigWriteError::Unreadable {
-            message: source.to_string(),
-        })?;
-    decode_text(&text, "", location)
-}
-
 fn decode_optional_field<Decoded>(
     fields: &JsonObject,
     key: &str,
@@ -205,12 +192,17 @@ where
     let Some(value) = fields.get(key) else {
         return Ok(None);
     };
-    let text =
-        serde_json::to_string(value).map_err(|source| ComplexityConfigWriteError::Unreadable {
-            message: source.to_string(),
-        })?;
-    let decoded = decode_text(&text, key, key)?;
+    let decoded = decode_text(&encode(value)?, key, key)?;
     Ok(Some(decoded))
+}
+
+fn encode<Encoded>(value: &Encoded) -> Result<String, ComplexityConfigWriteError>
+where
+    Encoded: Serialize,
+{
+    serde_json::to_string(value).map_err(|source| ComplexityConfigWriteError::Unreadable {
+        message: source.to_string(),
+    })
 }
 
 // the prefix names the field a nested value was read from, and the fallback names the value itself
@@ -252,7 +244,8 @@ struct RawChecks {
     keyword_tier_rules: Option<Vec<RawKeywordRule>>,
     embedding_model: Option<String>,
     stall_escalation_window: Option<u32>,
-    stall_escalation_repeat_threshold: Option<u32>,
+    #[serde(rename = "stall_escalation_repeat_threshold")]
+    stall_repeat_threshold: Option<u32>,
     adaptive: Option<bool>,
     session_affinity: Option<bool>,
     stall_escalation_enabled: Option<bool>,

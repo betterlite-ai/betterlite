@@ -1,7 +1,5 @@
 use betterlite_router::complexity_config::error::ComplexityConfigError;
 
-use super::StrategyRouterKind;
-
 #[derive(Debug, thiserror::Error)]
 pub enum StrategyRouterWriteError {
     #[error(
@@ -26,7 +24,7 @@ pub enum StrategyRouterWriteError {
     )]
     MissingSettings {
         model: String,
-        kind: StrategyRouterKind,
+        kind: &'static str,
         requirements: String,
     },
 }

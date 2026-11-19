@@ -1,5 +1,3 @@
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 pub mod config_write;
@@ -33,24 +31,6 @@ pub enum StrategyRouterKind {
     Complexity,
     Adaptive,
     Quality,
-}
-
-impl StrategyRouterKind {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Semantic => "semantic",
-            Self::Complexity => "complexity",
-            Self::Adaptive => "adaptive",
-            Self::Quality => "quality",
-        }
-    }
-}
-
-impl fmt::Display for StrategyRouterKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.name())
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

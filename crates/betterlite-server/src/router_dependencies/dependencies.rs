@@ -36,31 +36,35 @@ pub fn strategy_router_dependencies(litellm_params: &JsonObject) -> Vec<Strategy
 
 fn semantic_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDependency> {
     let mut dependencies = Vec::new();
-    dependencies.extend(named(
-        litellm_params.get("auto_router_default_model"),
-        StrategyRouterDependencyRole::Default,
-    ));
-    dependencies.extend(named(
-        litellm_params.get("auto_router_embedding_model"),
-        StrategyRouterDependencyRole::Embedding,
-    ));
+    for (key, role) in [
+        (
+            "auto_router_default_model",
+            StrategyRouterDependencyRole::Default,
+        ),
+        (
+            "auto_router_embedding_model",
+            StrategyRouterDependencyRole::Embedding,
+        ),
+    ] {
+        dependencies.extend(named(litellm_params.get(key), role));
+    }
     dependencies
 }
 
 fn quality_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDependency> {
     let quality = object(litellm_params.get("quality_router_config"));
-    let mut dependencies = pool(
-        field(quality, "available_models"),
-        StrategyRouterDependencyRole::Tier,
-    );
     // an absent or null deployment default takes the config default_model; a written value stays as given
     let declared = litellm_params.get("quality_router_default_model");
     let default_model = match declared {
         None | Some(Json::Null) => field(quality, "default_model"),
         Some(_) => declared,
     };
-    dependencies.extend(named(default_model, StrategyRouterDependencyRole::Default));
-    deduplicated(dependencies)
+    let available = pool(
+        field(quality, "available_models"),
+        StrategyRouterDependencyRole::Tier,
+    );
+    let default = named(default_model, StrategyRouterDependencyRole::Default);
+    deduplicated(available.into_iter().chain(default).collect())
 }
 
 fn complexity_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDependency> {
@@ -127,7 +131,10 @@ fn named(
     value: Option<&Json>,
     role: StrategyRouterDependencyRole,
 ) -> Option<StrategyRouterDependency> {
-    let model_name = text(value).filter(|name| !name.is_empty())?;
+    let model_name = text(value)?;
+    if model_name.is_empty() {
+        return None;
+    }
     Some(StrategyRouterDependency {
         model_name: model_name.to_owned(),
         role,
