@@ -42,6 +42,9 @@ deviations:
 - what: "A failed provider call answers with betterlite's own message; LiteLLM copies the SDK exception's message, which for a status error is \"Error code: N - <provider body>\"."
   why: The provider body can repeat the caller's input and deployment details, and betterlite redacts each failure's message before it reaches the client.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12500-L12505
+- what: A deployment that answered a 401 or a 400 stays in service, so the next moderation request reaches the provider again; LiteLLM's router puts a deployment in cooldown for an error it does not retry, and the next request is answered 429 with type all_deployments_in_cooldown and param the literal string "None" without a provider call.
+  why: Cooldown state is router state shared across requests, and the moderation route answers each call from the deployment's own provider answer; router cooldowns belong to the router.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_handlers.py#L413
 kept_bugs:
 - what: The error body's code is the stringified HTTP status, so a provider error's own code, such as invalid_input, is dropped.
   why: LiteLLM's ProxyException stores the status as code and its handler writes that string, and clients that read the OpenAI error envelope see the same value from a working setup.

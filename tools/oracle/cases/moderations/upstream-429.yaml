@@ -1,7 +1,7 @@
 name: moderations-upstream-429
 config: |
   model_list:
-    - model_name: guard
+    - model_name: guard-429
       litellm_params: {model: openai/omni-moderation-latest, api_base: "{{upstream}}/v1", api_key: oracle-key}
   router_settings: {num_retries: 0}
 env: {}
@@ -9,7 +9,7 @@ request:
   method: POST
   path: /v1/moderations
   headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-moderation-429}
-  body: {model: guard, input: Sample text goes here}
+  body: {model: guard-429, input: Sample text goes here}
 upstream:
   - status: 429
     headers: {content-type: application/json}
