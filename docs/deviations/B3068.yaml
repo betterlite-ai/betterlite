@@ -26,7 +26,7 @@ deviations:
       The marker type is B3063's untagged enum, and a Python float marker read into an i64 field does not fit the declared JSON shape betterlite accepts.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L38-L70"
   - what: >-
-      _build_scheduler_trigger's hourly, interval and unsupported branches are not ported; daily_trigger always builds the daily cron trigger from the cron offset.
+      _build_scheduler_trigger's hourly, interval and unsupported branches are not ported for Mavvrik; the background job calls the shared daily_cron_trigger in finops/focus/export_schedule.rs, so the Mavvrik job can only build the daily cron trigger from the cron offset.
     why: >-
       The constructor rejects every frequency but daily, so the other branches can never be reached by a Mavvrik logger.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L158-L174"
@@ -36,7 +36,7 @@ deviations:
       betterlite has no module-level state, and the composition root supplies the pod lock manager and the registered callbacks.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L225-L242"
   - what: >-
-      The scheduled run releases the pod lock from a task on a TaskTracker the server drains at shutdown, and awaits it before returning; a cancelled or dropped export still releases the lease.
+      The scheduled run takes the shared, job-named PodLockLease in finops/focus/export_schedule.rs: the release runs on a task on a TaskTracker the server drains at shutdown, and the run awaits it before returning; a cancelled or dropped export still releases the lease.
     why: >-
       Rust drops a future at its await point without running the code after it, so LiteLLM's try/finally release would never run on cancellation; the tracked task keeps the release alive and shutdown waits for it.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L231-L242"
