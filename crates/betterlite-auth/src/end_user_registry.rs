@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use betterlite_config::sections::end_user_registry::Settings;
 use betterlite_db::postgres_store::session::PostgresStore;
+use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
 use crate::auth_cache::keys::{CacheKey, END_USER_RESTRICTED_OVERFLOW};
@@ -28,8 +29,7 @@ pub const REGISTRY_ERROR_TTL: f64 = 30.0;
 // the per-call reasons an end-user row's mere existence matters, so the registry cannot answer for it
 #[derive(Clone, Copy)]
 pub struct RegistryGuards<'call> {
-    // ast-grep-ignore: no-float-money
-    pub token_end_user_max_budget: Option<f64>,
+    pub token_end_user_max_budget: Option<Decimal>,
     pub key_end_user_budget_id: Option<&'call str>,
 }
 
@@ -66,7 +66,7 @@ impl EndUserRegistry {
             return Ok(false);
         }
         let registry = self.restricted_registry(store, cache).await?;
-        Ok(registry.is_some_and(|registry| !registry.contains(end_user_id)))
+        Ok(registry.is_some_and(|known| !known.contains(end_user_id)))
     }
 
     // LiteLLM's _load_end_user_restricted_registry: one cache key and one load lock for every caller

@@ -9,13 +9,14 @@ use betterlite_config::sections::end_user_registry::Settings;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde_json::Number;
 use tokio::sync::{Mutex, Notify};
 
-use super::cache::RegistryCache;
+use super::cache::RegistryCache as _;
 use super::errors::RegistryError;
 use super::loader::{RegistrySpec, load_bounded_registry};
-use super::predicate::{RESTRICTED_COLUMNS, column_is_set, restricted_end_user_where};
+use super::predicate::{RESTRICTED_COLUMNS, restricted_end_user_where};
 use super::{EndUserRegistry, RESTRICTED_REGISTRY_MAX_SIZE, RegistryGuards};
 use crate::auth_cache::keys::{CacheKey, END_USER_RESTRICTED_OVERFLOW};
 
@@ -127,14 +128,14 @@ async fn blocked_true_only() {
             panic!("the restricted filter is an object")
         }
     };
-    let Json::List(alternatives) = alternatives else {
+    let Json::List(items) = alternatives else {
         panic!("the restricted filter ORs its alternatives")
     };
     assert_eq!(
-        alternatives.first(),
+        items.first(),
         Some(&object([("blocked", Json::Bool(true))]))
     );
-    assert!(!alternatives.contains(&object([("blocked", not_null())])));
+    assert!(!items.contains(&object([("blocked", not_null())])));
     let (fixture, pool) = support::database().await;
     support::seed(&pool).await;
     let store = support::store(&pool);
@@ -169,13 +170,13 @@ async fn cache_tuple_and_redis_list() {
     assert_eq!(fetches.load(Ordering::SeqCst), 0);
     // a fresh load stores the list the memory tier hands back
     let fresh = support::test_cache(None, &clock);
-    let load_lock = Mutex::new(());
-    let loaded = load_bounded_registry(&fresh, spec(), &load_lock, || async {
+    let fresh_lock = Mutex::new(());
+    let fresh_loaded = load_bounded_registry(&fresh, spec(), &fresh_lock, || async {
         Ok::<_, Infallible>(vec!["one".to_owned(), "two".to_owned()])
     })
     .await
     .expect("the registry loads");
-    assert_eq!(loaded, Some(ids(&["one", "two"])));
+    assert_eq!(fresh_loaded, Some(ids(&["one", "two"])));
     assert_eq!(
         fresh.async_get(support::CACHE_KEY, false).await,
         Some(cached_list(&["one", "two"]))
@@ -304,7 +305,7 @@ async fn exact_capacity_fits() {
 #[tokio::test]
 async fn registry_overflow_fallback() {
     let clock = support::Clock::new(0);
-    let cache = support::test_cache(Some(60.0), &clock);
+    let cache = support::test_cache(Some(60.0_f64), &clock);
     let load_lock = Mutex::new(());
     let fetches = AtomicUsize::new(0);
     let oversized = (0..=RESTRICTED_REGISTRY_MAX_SIZE)
@@ -337,7 +338,25 @@ async fn registry_overflow_fallback() {
     .expect("the sentinel reads");
     assert_eq!(still_unusable, None);
     assert_eq!(fetches.load(Ordering::SeqCst), 1);
-    clock.advance(30);
+}
+
+#[tokio::test]
+async fn overflow_sentinel_expires_at_management_ttl() {
+    let clock = support::Clock::new(0);
+    let cache = support::test_cache(Some(60.0_f64), &clock);
+    let load_lock = Mutex::new(());
+    let fetches = AtomicUsize::new(0);
+    let oversized = (0..=RESTRICTED_REGISTRY_MAX_SIZE)
+        .map(|index| format!("id-{index}"))
+        .collect::<Vec<_>>();
+    let overflowed = load_bounded_registry(&cache, spec(), &load_lock, || async {
+        Ok::<_, Infallible>(oversized)
+    })
+    .await
+    .expect("the overflow reads");
+    assert_eq!(overflowed, None);
+    // the sentinel expires with the management ttl, so a later load queries the database again
+    clock.advance(61);
     let reloaded = load_bounded_registry(&cache, spec(), &load_lock, || async {
         fetches.fetch_add(1, Ordering::SeqCst);
         Ok::<_, Infallible>(vec!["restricted".to_owned()])
@@ -345,13 +364,13 @@ async fn registry_overflow_fallback() {
     .await
     .expect("the registry reloads");
     assert_eq!(reloaded, Some(ids(&["restricted"])));
-    assert_eq!(fetches.load(Ordering::SeqCst), 2);
+    assert_eq!(fetches.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
 async fn database_error_warns_thirty_seconds() {
     let clock = support::Clock::new(0);
-    let cache = support::test_cache(Some(60.0), &clock);
+    let cache = support::test_cache(Some(60.0_f64), &clock);
     let load_lock = Mutex::new(());
     let fetches = AtomicUsize::new(0);
     let (loaded, logs) = support::capture_async(load_bounded_registry(
@@ -428,30 +447,22 @@ async fn singleflight_waiter_rechecks() {
     let load_lock = Mutex::new(());
     let gate = Arc::new(Notify::new());
     let fetches = Arc::new(AtomicUsize::new(0));
-    let cache = &cache;
-    let load_lock = &load_lock;
-    let first = {
-        let gate = Arc::clone(&gate);
-        let fetches = Arc::clone(&fetches);
-        load_bounded_registry(cache, spec(), load_lock, move || async move {
-            fetches.fetch_add(1, Ordering::SeqCst);
-            gate.notified().await;
-            Ok::<_, Infallible>(vec!["restricted".to_owned()])
-        })
+    let first_gate = Arc::clone(&gate);
+    let first_fetches = Arc::clone(&fetches);
+    let first_load = load_bounded_registry(&cache, spec(), &load_lock, move || async move {
+        first_fetches.fetch_add(1, Ordering::SeqCst);
+        first_gate.notified().await;
+        Ok::<_, Infallible>(vec!["restricted".to_owned()])
+    });
+    let second_fetches = Arc::clone(&fetches);
+    let second_load = load_bounded_registry(&cache, spec(), &load_lock, move || async move {
+        second_fetches.fetch_add(1, Ordering::SeqCst);
+        Ok::<_, Infallible>(vec!["other".to_owned()])
+    });
+    let notify_first = async {
+        gate.notify_one();
     };
-    let second = {
-        let gate = Arc::clone(&gate);
-        let fetches = Arc::clone(&fetches);
-        async move {
-            gate.notify_one();
-            load_bounded_registry(cache, spec(), load_lock, move || async move {
-                fetches.fetch_add(1, Ordering::SeqCst);
-                Ok::<_, Infallible>(vec!["other".to_owned()])
-            })
-            .await
-        }
-    };
-    let (first, second) = tokio::join!(first, second);
+    let (first, (), second) = tokio::join!(first_load, notify_first, second_load);
     assert_eq!(first.expect("the first load"), Some(ids(&["restricted"])));
     assert_eq!(
         second.expect("the waiting caller"),
@@ -466,30 +477,22 @@ async fn failed_cache_write_waiter_reloads() {
     let fetches = Arc::new(AtomicUsize::new(0));
     let cache = support::FailingCache(support::Failure::Write);
     let load_lock = Mutex::new(());
-    let cache = &cache;
-    let load_lock = &load_lock;
-    let first = {
-        let gate = Arc::clone(&gate);
-        let fetches = Arc::clone(&fetches);
-        load_bounded_registry(cache, spec(), load_lock, move || async move {
-            fetches.fetch_add(1, Ordering::SeqCst);
-            gate.notified().await;
-            Ok::<_, Infallible>(vec!["first".to_owned()])
-        })
+    let first_gate = Arc::clone(&gate);
+    let first_fetches = Arc::clone(&fetches);
+    let first_load = load_bounded_registry(&cache, spec(), &load_lock, move || async move {
+        first_fetches.fetch_add(1, Ordering::SeqCst);
+        first_gate.notified().await;
+        Ok::<_, Infallible>(vec!["first".to_owned()])
+    });
+    let second_fetches = Arc::clone(&fetches);
+    let second_load = load_bounded_registry(&cache, spec(), &load_lock, move || async move {
+        second_fetches.fetch_add(1, Ordering::SeqCst);
+        Ok::<_, Infallible>(vec!["second".to_owned()])
+    });
+    let notify_first = async {
+        gate.notify_one();
     };
-    let second = {
-        let gate = Arc::clone(&gate);
-        let fetches = Arc::clone(&fetches);
-        async move {
-            gate.notify_one();
-            load_bounded_registry(cache, spec(), load_lock, move || async move {
-                fetches.fetch_add(1, Ordering::SeqCst);
-                Ok::<_, Infallible>(vec!["second".to_owned()])
-            })
-            .await
-        }
-    };
-    let (first, second) = tokio::join!(first, second);
+    let (first, (), second) = tokio::join!(first_load, notify_first, second_load);
     assert_eq!(first.expect("the first load"), Some(ids(&["first"])));
     assert_eq!(second.expect("the waiting caller"), Some(ids(&["second"])));
     assert_eq!(fetches.load(Ordering::SeqCst), 2);
@@ -548,7 +551,7 @@ async fn token_zero_budget_disables() {
     let registry = EndUserRegistry::new(settings(false, None));
     let cache = support::FailingCache(support::Failure::Read);
     let guards = RegistryGuards {
-        token_end_user_max_budget: Some(0.0),
+        token_end_user_max_budget: Some(Decimal::ZERO),
         key_end_user_budget_id: None,
     };
     let known = registry

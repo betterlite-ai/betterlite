@@ -21,6 +21,7 @@ use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tracing::Subscriber;
+use tracing::subscriber::set_default;
 
 use crate::auth_cache::{AuthCache, AuthCacheError, gateway_cache};
 use crate::end_user_registry::cache::RegistryCache;
@@ -135,7 +136,11 @@ struct LogWriter(Arc<Mutex<Vec<u8>>>);
 
 impl Write for LogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().expect("the log bytes").extend_from_slice(buf);
+        let mut bytes = self
+            .0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the log bytes"))?;
+        bytes.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -163,7 +168,7 @@ where
 {
     let (subscriber, bytes) = capturing();
     let result = {
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let _guard = set_default(subscriber);
         operation.await
     };
     let text =

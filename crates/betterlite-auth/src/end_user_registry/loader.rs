@@ -30,17 +30,23 @@ where
     Fut: Future<Output = Result<Vec<String>, Failure>> + Send,
     Failure: Display + Send,
 {
-    let mut cached = cached_registry(cache, spec).await?;
-    if matches!(cached, CachedRegistry::Missing) {
-        // the probe guard is released at the semicolon, before the await below
-        let waited_for_another_load = load_lock.try_lock().is_err();
-        let _load_guard = load_lock.lock().await;
-        if waited_for_another_load {
-            cached = cached_registry(cache, spec).await?;
+    match cached_registry(cache, spec).await? {
+        CachedRegistry::Missing => {
+            // the probe guard is released at the semicolon, before the wait below
+            let waited_for_another_load = load_lock.try_lock().is_err();
+            let _load_guard = load_lock.lock().await;
+            // the lock spans the fetch, so only the first caller queries the database
+            let cached = if waited_for_another_load {
+                cached_registry(cache, spec).await?
+            } else {
+                CachedRegistry::Missing
+            };
+            match cached {
+                CachedRegistry::Missing => fetch_and_cache_registry(cache, spec, fetch_ids).await,
+                CachedRegistry::Unusable => Ok(None),
+                CachedRegistry::Known(registry) => Ok(Some(registry)),
+            }
         }
-    }
-    match cached {
-        CachedRegistry::Missing => fetch_and_cache_registry(cache, spec, fetch_ids).await,
         CachedRegistry::Unusable => Ok(None),
         CachedRegistry::Known(registry) => Ok(Some(registry)),
     }
