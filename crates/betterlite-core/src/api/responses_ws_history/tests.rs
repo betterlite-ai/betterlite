@@ -1,3 +1,4 @@
+#![cfg(test)]
 #![expect(
     clippy::too_many_lines,
     reason = "each named case asserts a whole frame or projection sequence"
@@ -15,7 +16,6 @@ use serde_json::Number;
 
 use crate::api::response_synthetic_events::error::SyntheticEventsError;
 use crate::api::response_synthetic_events::model_dump::{HasModelDump, HasModelDumpJson};
-use crate::api::responses_ws_history::MANAGED_WS_SKIP_KWARGS;
 use crate::api::responses_ws_history::call_kwargs::{
     RESPONSE_CREATE_PARAMS, build_base_call_kwargs, update_proxy_request,
 };
@@ -26,6 +26,7 @@ use crate::api::responses_ws_history::serialization::{Chunk, ChunkWriter, serial
 use crate::api::responses_ws_history::warmup::{
     is_warmup_frame, is_warmup_response_id, warmup_source_params,
 };
+use crate::api::responses_ws_history::{MANAGED_WS_SKIP_KWARGS, ManagedResponsesWebSocket};
 
 use support::{ENCODED_RAW_ONE, MODEL, NOW, OTHER_MODEL, UNKNOWN_MODEL, WARMUP_ID_HEX};
 
@@ -117,6 +118,59 @@ fn fail_created(chunk: Chunk<'_>) -> Option<String> {
     serialize_chunk(chunk)
 }
 
+fn model_group_view(metadata: &str) -> Option<String> {
+    let handles = support::recording_sink();
+    let mut connection = support::connection(MODEL, handles.sink);
+    connection.litellm_metadata = Some(object_map(&support::json(metadata)));
+    let handler = support::plain(connection);
+    assert_eq!(
+        Json::Object(handler.litellm_metadata.clone()),
+        support::json(metadata),
+        "the metadata map is stored unchanged"
+    );
+    handler.model_group
+}
+
+fn warmup_frame(text: &str) -> bool {
+    is_warmup_frame(&object_map(&support::json(text)))
+}
+
+async fn assert_non_object(handler: &ManagedResponsesWebSocket<support::RecordingSink>, raw: &str) {
+    match handler.parse_message(raw).await {
+        Err(ResponsesWsHistoryError::Shape { field, expected }) => {
+            assert_eq!(field, "message");
+            assert_eq!(expected, "a JSON object");
+        }
+        other => panic!("{raw} must be refused as a non-object, got {other:?}"),
+    }
+}
+
+fn base_kwargs_view(text: &str) -> Json {
+    Json::Object(build_base_call_kwargs(&object_map(&support::json(text))))
+}
+
+fn response_id(text: &str) -> Option<String> {
+    extract_response_id(&object_map(&support::json(text)))
+}
+
+fn proxy_fresh(text: &str) -> (Option<Json>, Option<Json>) {
+    let mut fresh = object_map(&support::json(text));
+    update_proxy_request(&mut fresh, "m").expect("the fresh proxy request updates");
+    let stored = fresh.get("proxy_server_request").cloned();
+    let nested = fresh.get("litellm_metadata").and_then(|value| match value {
+        Json::Object(fields) => fields.get("proxy_server_request").cloned(),
+        _ => None,
+    });
+    (stored, nested)
+}
+
+fn proxy_unchanged(text: &str) -> bool {
+    let original = object_map(&support::json(text));
+    let mut kwargs = original.clone();
+    update_proxy_request(&mut kwargs, "m").expect("a truthy non-object request is ignored");
+    Json::Object(kwargs) == Json::Object(original)
+}
+
 #[test]
 fn constructor_defaults_and_passthrough() {
     assert_eq!(
@@ -131,11 +185,11 @@ fn constructor_defaults_and_passthrough() {
     );
     let handles = support::recording_sink();
     let mut connection = support::connection(MODEL, handles.sink);
-    for name in MANAGED_WS_SKIP_KWARGS {
-        connection
-            .kwargs
-            .insert(name.to_owned(), Json::Text("drop".to_owned()));
-    }
+    connection.kwargs.extend(
+        MANAGED_WS_SKIP_KWARGS
+            .into_iter()
+            .map(|name| (name.to_owned(), Json::Text("drop".to_owned()))),
+    );
     connection.kwargs.insert(
         "extra_headers".to_owned(),
         support::json(r#"{"X-Test": "yes"}"#),
@@ -158,35 +212,32 @@ fn constructor_defaults_and_passthrough() {
         support::json(r#"{"extra_headers": {"X-Test": "yes"}}"#)
     );
 
-    let cases = [
-        (
-            r#"{"model_group": "router-alias", "deployment_model_name": "deployment-alias"}"#,
-            Some("router-alias"),
-        ),
-        (
-            r#"{"model_group": "", "deployment_model_name": "deployment-alias"}"#,
-            Some("deployment-alias"),
-        ),
-        (
-            r#"{"model_group": 7, "deployment_model_name": "deployment-alias"}"#,
-            None,
-        ),
-        (r#"{"model_group": [], "deployment_model_name": 7}"#, None),
-        (
-            r#"{"deployment_model_name": "deployment-alias"}"#,
-            Some("deployment-alias"),
-        ),
-        ("{}", None),
-    ];
-    for (metadata, expected) in cases {
-        let handles = support::recording_sink();
-        let mut connection = support::connection(MODEL, handles.sink);
-        let stored = object_map(&support::json(metadata));
-        connection.litellm_metadata = Some(stored.clone());
-        let handler = support::plain(connection);
-        assert_eq!(handler.model_group.as_deref(), expected, "{metadata}");
-        assert_eq!(Json::Object(handler.litellm_metadata), Json::Object(stored));
-    }
+    assert_eq!(
+        model_group_view(
+            r#"{"model_group": "router-alias", "deployment_model_name": "deployment-alias"}"#
+        )
+        .as_deref(),
+        Some("router-alias")
+    );
+    assert_eq!(
+        model_group_view(r#"{"model_group": "", "deployment_model_name": "deployment-alias"}"#)
+            .as_deref(),
+        Some("deployment-alias")
+    );
+    assert_eq!(
+        model_group_view(r#"{"model_group": 7, "deployment_model_name": "deployment-alias"}"#)
+            .as_deref(),
+        None
+    );
+    assert_eq!(
+        model_group_view(r#"{"model_group": [], "deployment_model_name": 7}"#).as_deref(),
+        None
+    );
+    assert_eq!(
+        model_group_view(r#"{"deployment_model_name": "deployment-alias"}"#).as_deref(),
+        Some("deployment-alias")
+    );
+    assert_eq!(model_group_view("{}").as_deref(), None);
 
     let handles = support::recording_sink();
     let mut connection = support::connection(UNKNOWN_MODEL, handles.sink);
@@ -320,15 +371,10 @@ async fn parse_message_cases() {
     assert!(matches!(ping, Ok(None)));
     assert_eq!(support::sent(&frames).len(), 1);
 
-    for raw in ["[]", "null", "7", "\"text\""] {
-        match handler.parse_message(raw).await {
-            Err(ResponsesWsHistoryError::Shape { field, expected }) => {
-                assert_eq!(field, "message");
-                assert_eq!(expected, "a JSON object");
-            }
-            other => panic!("{raw} must be refused as a non-object, got {other:?}"),
-        }
-    }
+    assert_non_object(&handler, "[]").await;
+    assert_non_object(&handler, "null").await;
+    assert_non_object(&handler, "7").await;
+    assert_non_object(&handler, "\"text\"").await;
     assert_eq!(support::sent(&frames).len(), 1);
 
     let Ok(Some(parsed)) = handler
@@ -354,23 +400,22 @@ async fn parse_message_cases() {
 
 #[tokio::test]
 async fn warmup_ack_without_provider() {
-    for text in [
-        r#"{"type": "response.create", "generate": false}"#,
-        r#"{"type": "response.create", "response": {"generate": false}}"#,
-        r#"{"type": "response.create", "generate": false, "response": {}}"#,
-    ] {
-        assert!(is_warmup_frame(&object_map(&support::json(text))), "{text}");
-    }
-    for text in [
-        r#"{"type": "response.create", "generate": 0}"#,
-        r#"{"type": "response.create"}"#,
-        r#"{"type": "response.create", "response": {"generate": 0}}"#,
-    ] {
-        assert!(
-            !is_warmup_frame(&object_map(&support::json(text))),
-            "{text}"
-        );
-    }
+    assert!(warmup_frame(
+        r#"{"type": "response.create", "generate": false}"#
+    ));
+    assert!(warmup_frame(
+        r#"{"type": "response.create", "response": {"generate": false}}"#
+    ));
+    assert!(warmup_frame(
+        r#"{"type": "response.create", "generate": false, "response": {}}"#
+    ));
+    assert!(!warmup_frame(
+        r#"{"type": "response.create", "generate": 0}"#
+    ));
+    assert!(!warmup_frame(r#"{"type": "response.create"}"#));
+    assert!(!warmup_frame(
+        r#"{"type": "response.create", "response": {"generate": 0}}"#
+    ));
     assert!(!is_warmup_response_id(None));
     assert!(!is_warmup_response_id(Some("")));
     assert!(!is_warmup_response_id(Some("raw-1")));
@@ -456,12 +501,11 @@ fn input_and_output_message_projection() {
         as_json(array),
         support::json(r#"[{"type": "message", "role": "user"}]"#)
     );
-    for text in ["null", "{}", "7", "[]", r#"{"type": "message"}"#] {
-        assert!(
-            input_to_messages(&support::json(text)).is_empty(),
-            "{text} has no message items"
-        );
-    }
+    assert!(input_to_messages(&support::json("null")).is_empty());
+    assert!(input_to_messages(&support::json("{}")).is_empty());
+    assert!(input_to_messages(&support::json("7")).is_empty());
+    assert!(input_to_messages(&support::json("[]")).is_empty());
+    assert!(input_to_messages(&support::json(r#"{"type": "message"}"#)).is_empty());
 
     let completed = object_map(&support::json(
         r#"{"response": {"output": [
@@ -522,20 +566,12 @@ fn response_id_history() {
         )))),
         Some("raw-1".to_owned())
     );
-    for text in [
-        "{}",
-        r#"{"response": "not-a-dict"}"#,
-        r#"{"response": {}}"#,
-        r#"{"response": {"id": null}}"#,
-        r#"{"response": {"id": 7}}"#,
-        r#"{"response": {"id": ""}}"#,
-    ] {
-        assert_eq!(
-            extract_response_id(&object_map(&support::json(text))),
-            None,
-            "{text}"
-        );
-    }
+    assert_eq!(response_id("{}"), None);
+    assert_eq!(response_id(r#"{"response": "not-a-dict"}"#), None);
+    assert_eq!(response_id(r#"{"response": {}}"#), None);
+    assert_eq!(response_id(r#"{"response": {"id": null}}"#), None);
+    assert_eq!(response_id(r#"{"response": {"id": 7}}"#), None);
+    assert_eq!(response_id(r#"{"response": {"id": ""}}"#), None);
 
     let handles = support::recording_sink();
     let mut handler = support::plain(support::connection(MODEL, handles.sink));
@@ -622,22 +658,25 @@ fn base_call_kwargs() {
         Json::Object(build_base_call_kwargs(&nested)),
         support::json(r#"{"input": "nested", "model": "nested-m"}"#)
     );
-    for text in [
-        r#"{"type": "response.create", "input": "flat", "response": {}}"#,
-        r#"{"type": "response.create", "input": "flat", "response": null}"#,
-        r#"{"type": "response.create", "input": "flat", "response": "x"}"#,
-    ] {
-        assert_eq!(
-            Json::Object(build_base_call_kwargs(&object_map(&support::json(text)))),
-            support::json(r#"{"input": "flat"}"#),
-            "{text}"
-        );
-    }
+    assert_eq!(
+        base_kwargs_view(r#"{"type": "response.create", "input": "flat", "response": {}}"#),
+        support::json(r#"{"input": "flat"}"#)
+    );
+    assert_eq!(
+        base_kwargs_view(r#"{"type": "response.create", "input": "flat", "response": null}"#),
+        support::json(r#"{"input": "flat"}"#)
+    );
+    assert_eq!(
+        base_kwargs_view(r#"{"type": "response.create", "input": "flat", "response": "x"}"#),
+        support::json(r#"{"input": "flat"}"#)
+    );
     let mut every = IndexMap::new();
     every.insert("type".to_owned(), Json::Text("response.create".to_owned()));
-    for name in RESPONSE_CREATE_PARAMS {
-        every.insert(name.to_owned(), Json::Text(format!("v-{name}")));
-    }
+    every.extend(
+        RESPONSE_CREATE_PARAMS
+            .into_iter()
+            .map(|name| (name.to_owned(), Json::Text(format!("v-{name}")))),
+    );
     every.insert("unknown".to_owned(), Json::Text("x".to_owned()));
     let built = build_base_call_kwargs(&every);
     assert_eq!(built.len(), 30);
@@ -883,39 +922,33 @@ fn proxy_request_projection() {
     );
     assert_eq!(existing.get("proxy_server_request").cloned(), Some(updated));
 
-    for text in [
-        r#"{"input": "i", "litellm_metadata": null}"#,
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": null}}"#,
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": 0}}"#,
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": {}}}"#,
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": []}}"#,
-    ] {
-        let mut fresh = object_map(&support::json(text));
-        update_proxy_request(&mut fresh, "m").unwrap();
-        let body = support::json(r#"{"body": {"input": "i", "store": null, "model": "m"}}"#);
-        assert_eq!(
-            fresh.get("proxy_server_request").cloned(),
-            Some(body.clone()),
-            "{text}"
-        );
-        assert_eq!(
-            fresh.get("litellm_metadata").and_then(|value| match value {
-                Json::Object(fields) => fields.get("proxy_server_request").cloned(),
-                _ => None,
-            }),
-            Some(body),
-            "{text}"
-        );
-    }
-    for text in [
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": "not-a-dict"}}"#,
-        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": [1]}}"#,
-    ] {
-        let original = object_map(&support::json(text));
-        let mut unchanged = original.clone();
-        update_proxy_request(&mut unchanged, "m").unwrap();
-        assert_eq!(Json::Object(unchanged), Json::Object(original), "{text}");
-    }
+    let body = support::json(r#"{"body": {"input": "i", "store": null, "model": "m"}}"#);
+    assert_eq!(
+        proxy_fresh(r#"{"input": "i", "litellm_metadata": null}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert_eq!(
+        proxy_fresh(r#"{"input": "i", "litellm_metadata": {"proxy_server_request": null}}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert_eq!(
+        proxy_fresh(r#"{"input": "i", "litellm_metadata": {"proxy_server_request": 0}}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert_eq!(
+        proxy_fresh(r#"{"input": "i", "litellm_metadata": {"proxy_server_request": {}}}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert_eq!(
+        proxy_fresh(r#"{"input": "i", "litellm_metadata": {"proxy_server_request": []}}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert!(proxy_unchanged(
+        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": "not-a-dict"}}"#
+    ));
+    assert!(proxy_unchanged(
+        r#"{"input": "i", "litellm_metadata": {"proxy_server_request": [1]}}"#
+    ));
 
     let mut literal_metadata = object_map(&support::json(
         r#"{"input": "i", "litellm_metadata": "not-a-dict"}"#,

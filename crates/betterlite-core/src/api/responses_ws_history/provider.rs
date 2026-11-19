@@ -17,8 +17,10 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
     // _resolve_provider: an empty or unresolvable model has no provider
     #[must_use]
     pub fn resolve_provider(&self, model: Option<&str>) -> Option<String> {
-        let model = model.filter(|value| !value.is_empty())?;
-        self.resolver.resolve(model).ok()
+        match model.filter(|value| !value.is_empty()) {
+            Some(model) => self.resolver.resolve(model).ok(),
+            None => None,
+        }
     }
 
     // _same_provider: no model and the exact connection model match without resolving anything

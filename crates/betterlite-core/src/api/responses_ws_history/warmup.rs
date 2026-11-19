@@ -6,7 +6,7 @@ use crate::api::response_id_codecs::response::decode_previous_response_id;
 
 use super::error::ResponsesWsHistoryError;
 use super::serialization::Chunk;
-use super::values::is_truthy;
+use super::values::has_content;
 use super::{FrameSink, ManagedResponsesWebSocket};
 
 pub const WARMUP_RESPONSE_ID_PREFIX: &str = "resp_warmup_";
@@ -51,7 +51,7 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
         message: &IndexMap<String, Json>,
     ) -> IndexMap<String, Json> {
         let source = warmup_source_params(message);
-        let wire_model = match source.get("model").filter(|value| is_truthy(value)) {
+        let wire_model = match source.get("model").filter(|value| has_content(value)) {
             Some(model) => model.clone(),
             None => match self.model_group.as_ref().filter(|group| !group.is_empty()) {
                 Some(group) => Json::Text(group.clone()),

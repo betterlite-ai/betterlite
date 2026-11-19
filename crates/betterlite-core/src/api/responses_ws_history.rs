@@ -8,7 +8,6 @@ pub mod warmup;
 
 mod values;
 
-#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;

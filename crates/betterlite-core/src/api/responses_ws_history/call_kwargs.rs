@@ -4,7 +4,7 @@ use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::error::ResponsesWsHistoryError;
-use super::values::is_truthy;
+use super::values::has_content;
 use super::warmup::warmup_source_params;
 use super::{FrameSink, ManagedResponsesWebSocket};
 
@@ -82,7 +82,7 @@ fn metadata_object(
 fn existing_proxy_request(metadata: Option<&IndexMap<String, Json>>) -> ProxyRequest {
     match metadata.and_then(|fields| fields.get("proxy_server_request")) {
         Some(Json::Object(fields)) if !fields.is_empty() => ProxyRequest::Present(fields.clone()),
-        Some(other) if is_truthy(other) => ProxyRequest::Ignored,
+        Some(other) if has_content(other) => ProxyRequest::Ignored,
         _ => ProxyRequest::Absent,
     }
 }
@@ -92,7 +92,7 @@ fn proxy_body(
 ) -> Result<IndexMap<String, Json>, ResponsesWsHistoryError> {
     match proxy.and_then(|fields| fields.get("body")) {
         Some(Json::Object(fields)) if !fields.is_empty() => Ok(fields.clone()),
-        Some(other) if is_truthy(other) => Err(ResponsesWsHistoryError::Shape {
+        Some(other) if has_content(other) => Err(ResponsesWsHistoryError::Shape {
             field: "body",
             expected: "an object",
         }),

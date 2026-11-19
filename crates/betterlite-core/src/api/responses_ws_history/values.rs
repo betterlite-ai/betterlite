@@ -3,9 +3,9 @@ use indexmap::IndexMap;
 
 const SIGN_MASK: u64 = 0x7fff_ffff_ffff_ffff;
 
-// Python truthiness where LiteLLM branches on it: empty containers, zero and "" are falsey
+// LiteLLM branches on `if value:` here: empty containers, zero and empty text take the other path
 #[must_use]
-pub(super) fn is_truthy(value: &Json) -> bool {
+pub(super) fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
@@ -24,7 +24,7 @@ pub(super) fn is_truthy(value: &Json) -> bool {
 pub(super) fn metadata_model_group(metadata: &IndexMap<String, Json>) -> Option<String> {
     let raw = metadata
         .get("model_group")
-        .filter(|value| is_truthy(value))
+        .filter(|value| has_content(value))
         .or_else(|| metadata.get("deployment_model_name"));
     let Some(Json::Text(text)) = raw else {
         return None;
