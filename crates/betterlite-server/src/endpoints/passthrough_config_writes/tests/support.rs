@@ -13,6 +13,7 @@ use axum::body::Body;
 use axum::body::to_bytes;
 use axum::http::Request;
 use axum::http::StatusCode;
+use axum::response::Response;
 use betterlite_auth::auth_identity::records::CredentialRef;
 use betterlite_auth::auth_identity::records::NetworkContext;
 use betterlite_auth::auth_identity::records::Principal;
@@ -391,14 +392,7 @@ fn with_caller(mut request: Request<Body>, caller: Option<&AuthContext>) -> Requ
 
 pub(crate) async fn call(app: Router, request: Request<Body>) -> Reply {
     let response = app.oneshot(request).await.expect("router response");
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("response body");
-    Reply {
-        status,
-        body: bytes.to_vec(),
-    }
+    Reply::from_response(response).await
 }
 
 pub(crate) struct Reply {
@@ -407,6 +401,17 @@ pub(crate) struct Reply {
 }
 
 impl Reply {
+    pub(crate) async fn from_response(response: Response) -> Self {
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        Self {
+            status,
+            body: bytes.to_vec(),
+        }
+    }
+
     pub(crate) fn json<T>(&self) -> T
     where
         T: DeserializeOwned,

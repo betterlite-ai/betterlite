@@ -32,6 +32,26 @@ async fn delete_removes_the_entry_and_its_routes() {
     assert_eq!(support::registered_paths(&routes), vec!["/two".to_owned()]);
 }
 
+#[tokio::test]
+async fn delete_removes_the_second_entry_by_its_id() {
+    let saved = [
+        support::stored("ep1", "/one"),
+        support::stored("ep2", "/two"),
+    ];
+    let store = Arc::new(support::FakeStore::holding(support::entries(&saved)));
+    let routes = support::registry();
+    support::seed(&routes, &[("ep1", "/one"), ("ep2", "/two")]);
+    let request = support::delete(
+        "/config/pass_through_endpoint?endpoint_id=ep2",
+        Some(&support::admin()),
+    );
+    let reply = support::call(support::app(&store, &routes, &[]), request).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(support::endpoint_of(&reply).id.as_deref(), Some("ep2"));
+    assert_eq!(store.stored_ids(), vec!["ep1".to_owned()]);
+    assert_eq!(support::registered_ids(&routes), vec!["ep1".to_owned()]);
+}
+
 #[rstest]
 #[case::read_fails(true)]
 #[case::null_field(false)]
