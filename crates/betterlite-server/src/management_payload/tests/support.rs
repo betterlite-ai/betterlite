@@ -11,6 +11,7 @@ use betterlite_config::sections::request_body::Settings as RequestBodySettings;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_logging::alert_dispatch::Alert;
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
 use betterlite_logging::otel::service::management::ManagementPayload;
@@ -21,6 +22,7 @@ use chrono::{DateTime, Utc};
 use opentelemetry::trace::SpanContext;
 use serde::Serialize;
 
+use crate::alerting::model_alerts::ModelAlertSender;
 use crate::alerting::model_alerts::key_event::VirtualKeyEvent;
 use crate::management_payload::alerts::ManagementAlertTransport;
 use crate::management_payload::otel_span::{
@@ -96,6 +98,30 @@ impl ManagementAlertTransport for RecordingAlertTransport {
             request_kwargs: key_event.request_kwargs.clone(),
             alert_type,
             event_name: event_name.to_owned(),
+        });
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SentModelAlert {
+    pub(crate) message: String,
+    pub(crate) alert_type: AlertType,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct RecordingModelAlertSender {
+    pub(crate) alerts: Journal<SentModelAlert>,
+}
+
+#[async_trait]
+impl ModelAlertSender for RecordingModelAlertSender {
+    type Error = FakeTransportError;
+
+    async fn send_alert(&self, alert: Alert<'_>) -> Result<(), Self::Error> {
+        self.alerts.record(SentModelAlert {
+            message: alert.message.to_owned(),
+            alert_type: alert.alert_type,
         });
         Ok(())
     }

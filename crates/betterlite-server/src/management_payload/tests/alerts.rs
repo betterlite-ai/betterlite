@@ -4,12 +4,14 @@ use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_models::model_registration::JsonObject;
 use serde_json::json;
 
+use crate::alerting::model_alerts::key_event::KeyEventAlerts;
 use crate::management_payload::alerts::{
     ManagementAlertError, displayed_event_name, management_event_alert,
     send_management_endpoint_alert,
 };
 use crate::management_payload::tests::support::{
-    FakeTransportError, RecordingAlertTransport, json_object, json_value, key_fixture,
+    FakeTransportError, RecordingAlertTransport, RecordingModelAlertSender, json_object,
+    json_value, key_fixture,
 };
 
 const MAPPINGS: [(&str, AlertType, &str); 9] = [
@@ -125,6 +127,24 @@ async fn alert_kwargs_and_alias_preserved() {
     );
     assert_eq!(alert.alert_type, AlertType::VirtualKeyUpdated);
     assert_eq!(alert.event_name, "Virtual Key Updated");
+}
+
+#[tokio::test]
+async fn slack_alert_reaches_the_sender() {
+    let sender = RecordingModelAlertSender::default();
+    let transport = KeyEventAlerts {
+        sender: sender.clone(),
+    };
+    let key = key_fixture(r#"{"user_id": "admin", "key_alias": "ops-key"}"#);
+    let kwargs: JsonObject = json_object(json!({"api_key": "sk-secret"}));
+    send_management_endpoint_alert(Some(&transport), "generate_key_fn", kwargs, &key)
+        .await
+        .expect("the slack alert is sent");
+    let sent = sender.alerts.entries();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].alert_type, AlertType::NewVirtualKeyCreated);
+    assert!(sent[0].message.contains("`New Virtual Key Created`"));
+    assert!(sent[0].message.contains("created_by_user_id: `admin`"));
 }
 
 #[tokio::test]
