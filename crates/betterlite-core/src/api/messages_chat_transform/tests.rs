@@ -112,11 +112,15 @@ impl SupportedParameterSource for Declared {
     }
 }
 
+fn json(source: &str) -> Json {
+    serde_json::from_str(source).expect("a valid JSON fixture")
+}
+
 fn object(source: &str) -> Object {
     serde_json::from_str(source).expect("a valid object fixture")
 }
 
-fn adapter() -> AnthropicAdapter {
+const fn adapter() -> AnthropicAdapter {
     AnthropicAdapter::new()
 }
 

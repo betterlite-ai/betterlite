@@ -44,17 +44,17 @@ where
 
 // LiteLLM reads messages first, translates them, and only then needs the model new_kwargs carries.
 async fn conversation<Predicates>(
-    request: &mut Object,
+    request: &Object,
     settings: &AdapterSettings<'_>,
     predicates: &mut Predicates,
 ) -> Result<(Vec<Json>, String), TransformError>
 where
     Predicates: CapabilityPredicates + Send,
 {
-    let Some(messages) = request.get("messages") else {
+    let Some(sent_messages) = request.get("messages") else {
         return Err(TransformError::MissingKey { key: "messages" });
     };
-    let Json::List(messages) = messages else {
+    let Json::List(messages) = sent_messages else {
         return Err(TransformError::MessagesNotList);
     };
     let model = match request.get("model") {
@@ -76,10 +76,10 @@ where
     )
     .await?;
     insert_system_message(&mut translated, request);
-    let Some(model) = model else {
+    let Some(model_name) = model else {
         return Err(TransformError::MissingKey { key: "model" });
     };
-    Ok((translated, model.to_owned()))
+    Ok((translated, model_name.to_owned()))
 }
 
 // The option steps in order: the copy-through is last because it may overwrite anything translated.

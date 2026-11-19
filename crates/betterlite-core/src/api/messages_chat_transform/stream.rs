@@ -90,7 +90,7 @@ fn setup_of(options: &StreamOptions<'_>) -> StreamSetup {
     }
 }
 
-fn wire_limits(limits: ApiLimits) -> WireDecodeLimits {
+const fn wire_limits(limits: ApiLimits) -> WireDecodeLimits {
     WireDecodeLimits {
         max_json_bytes: limits.max_json_bytes,
         max_event_bytes: limits.max_event_bytes,
