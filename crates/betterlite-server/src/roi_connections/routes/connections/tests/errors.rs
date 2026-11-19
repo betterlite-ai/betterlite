@@ -27,7 +27,7 @@ async fn missing_repository_is_a_500() {
 #[tokio::test]
 async fn estimator_missing_key_is_a_409() {
     let harness = harness()
-        .stored(stored("", &["acme/widgets"]))
+        .stored(&stored("", &["acme/widgets"]))
         .models(&["gpt-4o"]);
     let reply = call(harness.app(), post(CONNECTIONS_TEST_PATH, Some(&admin()))).await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
@@ -38,7 +38,7 @@ async fn estimator_missing_key_is_a_409() {
 #[tokio::test]
 async fn estimator_master_key_is_the_fallback() {
     let harness = harness()
-        .stored(stored("", &["acme/widgets"]))
+        .stored(&stored("", &["acme/widgets"]))
         .master_key("master-key")
         .models(&["gpt-4o"])
         .answers(vec![models_ok(), Answer::ok("{}"), Answer::ok("{}")]);

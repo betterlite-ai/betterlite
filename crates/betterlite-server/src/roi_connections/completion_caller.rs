@@ -18,7 +18,7 @@ use crate::roi_github::transport::Transport;
 use super::error::RoiConnectionsError;
 use super::gateway_http_client::{GatewayError, GatewayHttpClient};
 use super::gateway_key::gateway_key;
-use super::state::{RoiConnectionsState, gateway};
+use super::state::RoiConnectionsState;
 
 const COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const GATEWAY_LABEL: &str = "The estimator gateway returned an error.";
@@ -45,7 +45,10 @@ where
     T: Transport + Clone + 'static,
 {
     let credential = gateway_key(settings, state.master_key.as_ref())?;
-    let client = gateway(state);
+    let client = GatewayHttpClient {
+        base: state.gateway_base.clone(),
+        transport: state.http.clone(),
+    };
     let caller = move |request: ROICompletionRequest| -> CompletionFuture {
         let gateway_client = client.clone();
         let bearer = credential.clone();

@@ -2,7 +2,7 @@
 
 pub(crate) mod support;
 
-use axum::http::StatusCode;
+use axum::http::{Request, StatusCode};
 use rstest::rstest;
 
 use self::support::{Answer, admin, call, get, harness, post};
@@ -40,7 +40,7 @@ async fn oneshot_unknown_path_is_not_found() {
 #[tokio::test]
 async fn oneshot_routes_refuse_the_other_method(#[case] path: &str, #[case] method: &str) {
     let harness = harness();
-    let request = axum::http::Request::builder()
+    let request = Request::builder()
         .method(method)
         .uri(path)
         .body(axum::body::Body::empty())

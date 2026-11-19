@@ -39,7 +39,7 @@ async fn success_reports_the_public_settings() {
 #[tokio::test]
 async fn success_tests_every_configured_repository() {
     let harness = harness()
-        .stored(stored("sk-estimator", &["acme/one", "acme/two"]))
+        .stored(&stored("sk-estimator", &["acme/one", "acme/two"]))
         .models(&["gpt-4o"])
         .answers(vec![
             Answer::ok(r#"{"data":[{"id":"gpt-4o"}]}"#),

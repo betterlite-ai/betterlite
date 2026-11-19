@@ -272,7 +272,9 @@ impl Harness {
     }
 
     pub(crate) fn models(mut self, names: &[&str]) -> Self {
-        self.catalog.names = names.iter().map(|name| (*name).to_owned()).collect();
+        self.catalog = Arc::new(Catalog {
+            names: names.iter().copied().map(str::to_owned).collect(),
+        });
         self
     }
 
@@ -293,8 +295,8 @@ impl Harness {
 
     pub(crate) fn state(&self) -> RoiConnectionsState<Wire> {
         self.repository.seed(&self.stored);
-        let repository: Arc<dyn SettingsRepository> = self.repository.clone();
-        let catalog: Arc<dyn RouterCatalog> = self.catalog.clone();
+        let repository: Arc<dyn SettingsRepository> = Arc::clone(&self.repository);
+        let catalog: Arc<dyn RouterCatalog> = Arc::clone(&self.catalog);
         RoiConnectionsState {
             repository: self.repository_present.then_some(repository),
             catalog: Some(catalog),

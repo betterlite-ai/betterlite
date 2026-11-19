@@ -10,7 +10,8 @@ use crate::roi_settings::store::load_settings;
 
 use super::super::access::{WRITE_FORBIDDEN, WRITE_ROLES, require_admin};
 use super::super::error::RoiConnectionsError;
-use super::super::state::{RoiConnectionsState, gateway, github_client, require_repository};
+use super::super::gateway_http_client::GatewayHttpClient;
+use super::super::state::{RoiConnectionsState, github_client, require_repository};
 use super::super::test_estimator_access::test_estimator_access;
 
 pub const CONNECTIONS_TEST_PATH: &str = "/roi-calculator/connections/test";
@@ -31,7 +32,10 @@ where
     if !public.ready {
         return Err(RoiConnectionsError::Conflict(NOT_READY));
     }
-    let client = gateway(&state);
+    let client = GatewayHttpClient {
+        base: state.gateway_base.clone(),
+        transport: state.http.clone(),
+    };
     test_estimator_access(&settings, state.master_key.as_ref(), &client).await?;
     let github = github_client(&settings, &state)?;
     let check = test_repositories(&github, &settings.repos).await;
