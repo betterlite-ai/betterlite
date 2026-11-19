@@ -97,8 +97,7 @@ pub(super) fn body_view(
     })
 }
 
-// Both validations raise the same AuthenticationError shape, so one view renders either failure.
-// The wording stays out of the compared value; the Rust case pins it.
+// Both validations raise the same AuthenticationError shape; the compared value keeps status, provider and model.
 pub(super) fn failure_view(status: Option<u16>, model: &str) -> Value {
     json!({
         "status": status,
