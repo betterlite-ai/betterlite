@@ -1,39 +1,28 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::string::FromUtf8Error;
-use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_core::api::fine_tuning_cancel_call::{
-    AzureFineTuningCancel, FineTuningCancel, FineTuningCancelCall, FineTuningCancelDispatch,
-    FineTuningCancelError, FineTuningCancelTarget, FineTuningOptionalParams,
-    OpenAiFineTuningCancel, OptionalTimeout,
+    FineTuningCancel, FineTuningCancelCall, FineTuningOptionalParams, OptionalTimeout,
 };
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::sdk::TimeoutPhases;
-use betterlite_openai::fine_tuning::error::FineTuneError;
-use betterlite_openai::fine_tuning::job::{FineTuneJob, decode_fine_tune_job};
-use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use http::{HeaderMap, HeaderValue, Method};
+use betterlite_openai::fine_tuning::job::FineTuneJob;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use url::Url;
 
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
+use super::result::Failure;
 use super::result::kinds::SdkResult;
-use super::result::{Failure, Nullable};
+use dispatch::HttpDispatch;
+use projection::failure;
 
-const DEADLINE: Duration = Duration::from_secs(30);
-const JSON_CONTENT: &str = "application/json";
-// the openai client sends the organization it was built with as a header
-const ORGANIZATION: &str = "openai-organization";
+mod dispatch;
+mod projection;
 
 fn openai_provider() -> Option<String> {
     Some("openai".to_owned())
@@ -149,66 +138,6 @@ pub struct RunOutcome {
     pub(crate) error: Option<Failure>,
 }
 
-pub(crate) struct HttpDispatch {
-    client: ProxiedClient,
-}
-
-// the failure a dispatch reports as the call's own, before the outcome names its class
-#[derive(Debug, Error)]
-pub enum CancelFailure {
-    #[error("the api key is not set")]
-    MissingKey,
-    #[error("the api base is not set")]
-    MissingBase,
-    #[error("the cancel call needs a credential a request header cannot carry")]
-    InvalidHeader,
-    #[error("the provider answered with status {status}")]
-    Status { status: u16, body: String },
-    #[error("the provider answered with status {status} and a body that is not UTF-8")]
-    StatusUtf8 {
-        status: u16,
-        #[source]
-        source: FromUtf8Error,
-    },
-    #[error(transparent)]
-    Url(#[from] url::ParseError),
-    #[error(transparent)]
-    Transport(#[from] Box<TransportError>),
-    #[error(transparent)]
-    Decode(#[from] FineTuneError),
-}
-
-impl FineTuningCancelDispatch for HttpDispatch {
-    type Error = CancelFailure;
-
-    async fn cancel(
-        &self,
-        target: FineTuningCancelTarget<'_>,
-    ) -> Result<FineTuneJob, CancelFailure> {
-        let (request, is_azure) = match &target {
-            FineTuningCancelTarget::OpenAi(openai) => (openai_request(openai)?, false),
-            FineTuningCancelTarget::Azure(azure) => (azure_request(azure)?, true),
-        };
-        let response = self
-            .client
-            .send_buffered(request)
-            .await
-            .map_err(|source| CancelFailure::Transport(Box::new(source)))?;
-        if !(200..300).contains(&response.status) {
-            let body =
-                String::from_utf8(response.body).map_err(|source| CancelFailure::StatusUtf8 {
-                    status: response.status,
-                    source,
-                })?;
-            return Err(CancelFailure::Status {
-                status: response.status,
-                body,
-            });
-        }
-        decode_fine_tune_job(&response.body, is_azure).map_err(CancelFailure::Decode)
-    }
-}
-
 impl CallKind for Call {
     fn send(
         &self,
@@ -300,165 +229,6 @@ fn environment_settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkH
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     Ok(config.sections.resource_sdk_settings.clone())
-}
-
-fn openai_request(target: &OpenAiFineTuningCancel<'_>) -> Result<OutboundRequest, CancelFailure> {
-    let Some(api_key) = target.api_key else {
-        return Err(CancelFailure::MissingKey);
-    };
-    let mut headers = json_headers();
-    let authorization = format!("Bearer {}", api_key.expose_secret());
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&authorization).map_err(|_source| CancelFailure::InvalidHeader)?,
-    );
-    if let Some(organization) = target.organization {
-        headers.insert(
-            ORGANIZATION,
-            HeaderValue::from_str(organization).map_err(|_source| CancelFailure::InvalidHeader)?,
-        );
-    }
-    let url = format!(
-        "{}/fine_tuning/jobs/{}/cancel",
-        target.api_base.trim_end_matches('/'),
-        target.values.job_id
-    );
-    Ok(OutboundRequest {
-        method: Method::POST,
-        url: Url::parse(&url)?,
-        query: Vec::new(),
-        headers,
-        body: RequestBody::Empty,
-        deadline: DEADLINE,
-    })
-}
-
-fn azure_request(target: &AzureFineTuningCancel<'_>) -> Result<OutboundRequest, CancelFailure> {
-    let Some(api_base) = target.api_base else {
-        return Err(CancelFailure::MissingBase);
-    };
-    let Some(api_key) = target.api_key else {
-        return Err(CancelFailure::MissingKey);
-    };
-    let mut headers = json_headers();
-    headers.insert(
-        "api-key",
-        HeaderValue::from_str(api_key.expose_secret())
-            .map_err(|_source| CancelFailure::InvalidHeader)?,
-    );
-    let url = format!(
-        "{}/openai/fine_tuning/jobs/{}/cancel",
-        api_base.trim_end_matches('/'),
-        target.values.job_id
-    );
-    let query = target
-        .api_version
-        .map(|version| vec![("api-version".to_owned(), version.to_owned())])
-        .unwrap_or_default();
-    Ok(OutboundRequest {
-        method: Method::POST,
-        url: Url::parse(&url)?,
-        query,
-        headers,
-        body: RequestBody::Empty,
-        deadline: DEADLINE,
-    })
-}
-
-fn json_headers() -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT));
-    headers.insert(ACCEPT, HeaderValue::from_static(JSON_CONTENT));
-    headers
-}
-
-// the class each failure projects to; only the SDK's status errors carry a status, type, param and code
-fn failure(error: &FineTuningCancelError<CancelFailure>) -> Failure {
-    match error {
-        FineTuningCancelError::Unsupported { .. } => {
-            null_failure("BadRequestError", 400, error.to_string())
-        }
-        FineTuningCancelError::Timeout(_)
-        | FineTuningCancelError::Dispatch(
-            CancelFailure::MissingBase | CancelFailure::InvalidHeader,
-        ) => null_failure("ValueError", 0, error.to_string()),
-        FineTuningCancelError::Dispatch(CancelFailure::MissingKey) => {
-            null_failure("OpenAIError", 0, error.to_string())
-        }
-        FineTuningCancelError::Dispatch(CancelFailure::Status { status, body }) => {
-            status_failure(*status, body)
-        }
-        FineTuningCancelError::Dispatch(CancelFailure::StatusUtf8 { status, .. }) => {
-            null_failure(status_class(*status), *status, error.to_string())
-        }
-        FineTuningCancelError::Dispatch(
-            CancelFailure::Url(_) | CancelFailure::Transport(_) | CancelFailure::Decode(_),
-        ) => null_failure("APIConnectionError", 0, error.to_string()),
-    }
-}
-
-// an error the SDK raises before or without a provider body leaves type, param and code null
-fn null_failure(class: &str, status: u16, message: String) -> Failure {
-    Failure {
-        class: class.to_owned(),
-        status,
-        kind: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message,
-    }
-}
-
-// a status error reads type, param and code out of the body and renders the status with the raw body
-fn status_failure(status: u16, body: &str) -> Failure {
-    let (kind, param, code) = body_fields(body);
-    Failure {
-        class: status_class(status).to_owned(),
-        status,
-        kind,
-        param,
-        code,
-        message: format!("Error code: {status} - {body}"),
-    }
-}
-
-const fn status_class(status: u16) -> &'static str {
-    match status {
-        400 => "BadRequestError",
-        401 => "AuthenticationError",
-        403 => "PermissionDeniedError",
-        404 => "NotFoundError",
-        409 => "ConflictError",
-        422 => "UnprocessableEntityError",
-        429 => "RateLimitError",
-        _ if status >= 500 => "InternalServerError",
-        _ => "APIStatusError",
-    }
-}
-
-// the SDK reads type, param and code from the body, or from its "error" member when it has one
-fn body_fields(body: &str) -> (Nullable, Nullable, Nullable) {
-    let parsed: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
-    let candidate = match &parsed {
-        serde_json::Value::Object(fields) => fields.get("error").unwrap_or(&parsed),
-        _ => &parsed,
-    };
-    let serde_json::Value::Object(fields) = candidate else {
-        return (Some(None), Some(None), Some(None));
-    };
-    (
-        nullable(fields.get("type")),
-        nullable(fields.get("param")),
-        nullable(fields.get("code")),
-    )
-}
-
-fn nullable(value: Option<&serde_json::Value>) -> Nullable {
-    match value {
-        None | Some(serde_json::Value::Null) => Some(None),
-        Some(serde_json::Value::String(text)) => Some(Some(text.clone())),
-        Some(other) => Some(Some(other.to_string())),
-    }
 }
 
 fn job_json(job: &FineTuneJob) -> Result<Json, SdkHttpError> {
