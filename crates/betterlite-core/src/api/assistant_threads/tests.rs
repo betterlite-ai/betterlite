@@ -434,6 +434,28 @@ fn timeouts_resolve_like_litellm(#[case] text: &'static str, #[case] expected: f
 }
 
 #[test]
+fn a_negative_timeout_has_no_deadline_and_a_non_finite_one_is_refused() {
+    let harness = Harness::new();
+    let negative = kwargs_of(r#"{"timeout":-5}"#);
+    let prepared = harness
+        .threads()
+        .prepare(prepare_request(empty_create(), &negative, None))
+        .expect("the call prepares");
+    let Target::Openai(client) = prepared.target else {
+        panic!("openai prepares an openai client");
+    };
+    assert_eq!(client.timeout, Some(Duration::MAX));
+    let infinite = kwargs_of(r#"{"timeout":"inf"}"#);
+    let refused = harness
+        .threads()
+        .prepare(prepare_request(empty_create(), &infinite, None));
+    assert!(matches!(
+        refused,
+        Err(ThreadError::Timeout(TimeoutError::NonFinite))
+    ));
+}
+
+#[test]
 fn a_read_only_structured_timeout_stays_structured() {
     let params = ThreadParams::from_kwargs(&kwargs_of(r#"{"timeout":{"read":3.0,"connect":1.0}}"#))
         .expect("the kwargs parse");
