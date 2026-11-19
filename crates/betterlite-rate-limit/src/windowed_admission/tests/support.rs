@@ -497,7 +497,7 @@ pub(crate) struct Harness {
     pub(crate) gauges: Arc<RecordingGauges>,
     pub(crate) slots: Arc<SlotIds>,
     pub(crate) clock: Arc<FixedClock>,
-    pub(crate) fail_closed: bool,
+    pub(crate) fail_closed: FailClosedPolicy,
     pub(crate) window_size: i64,
     pub(crate) script_enabled: bool,
     pub(crate) batch_enabled: bool,
@@ -512,7 +512,7 @@ pub(crate) fn harness() -> Harness {
         gauges: RecordingGauges::new(),
         slots: SlotIds::new(GENERATED_SLOT),
         clock: FixedClock::at(NOW),
-        fail_closed: false,
+        fail_closed: FailClosedPolicy { enabled: false },
         window_size: HANDLER_WINDOW_SIZE,
         script_enabled: true,
         batch_enabled: false,
@@ -521,21 +521,13 @@ pub(crate) fn harness() -> Harness {
 
 impl Harness {
     pub(crate) fn limiter(&self) -> WindowedAdmission {
-        let script: Option<Arc<dyn CounterScript>> = if self.script_enabled {
-            Some(Arc::clone(&self.script))
-        } else {
-            None
-        };
-        let request_batch: Option<Arc<dyn RequestBatchSource>> = if self.batch_enabled {
-            Some(Arc::new(BatchSource {
+        let script: Option<Arc<dyn CounterScript>> =
+            self.script_enabled.then_some(Arc::clone(&self.script));
+        let request_batch: Option<Arc<dyn RequestBatchSource>> =
+            self.batch_enabled.then_some(Arc::new(BatchSource {
                 batch: Arc::clone(&self.batch),
-            }))
-        } else {
-            None
-        };
-        let fail_closed = FailClosedPolicy {
-            enabled: self.fail_closed,
-        };
+            }));
+        let fail_closed = self.fail_closed;
         let gauges = ConcurrencyGauges {
             cache: Arc::clone(&self.gauges),
             clock: Arc::clone(&self.clock),

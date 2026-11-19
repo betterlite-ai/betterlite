@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
+use crate::fail_closed::FailClosedPolicy;
 use crate::limiter_records::{CacheCounterValue, ScriptReply};
 use crate::rate_limit_window_store::ScriptHandle;
 use crate::rate_limit_window_store::batch_rate_limiter_script::window_script_args;
@@ -119,7 +120,7 @@ async fn a_failed_group_falls_back_to_the_sliding_window() {
 async fn a_failed_group_with_fail_closed_refunds_the_earlier_groups_and_rejects() {
     let mut harness = harness();
     harness.cache.as_cluster();
-    harness.fail_closed = true;
+    harness.fail_closed = FailClosedPolicy { enabled: true };
     harness.script = PlannedScript::new(vec![
         mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(7))]),
         ReplyPlan::Failure,
@@ -151,7 +152,7 @@ async fn a_failed_group_with_fail_closed_refunds_the_earlier_groups_and_rejects(
 async fn fail_closed_refunds_the_later_pipelined_groups() {
     let mut harness = harness();
     harness.cache.as_cluster();
-    harness.fail_closed = true;
+    harness.fail_closed = FailClosedPolicy { enabled: true };
     harness.batch_enabled = true;
     harness.batch = PlannedBatch::new(vec![
         mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(7))]),
