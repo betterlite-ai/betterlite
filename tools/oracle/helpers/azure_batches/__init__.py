@@ -1,7 +1,10 @@
+import litellm
 from pydantic import JsonValue
 
 from .contracts import Input
 from .steps import run_step
+
+litellm.suppress_debug_info = True
 
 
 def run(input_value: Input) -> JsonValue:

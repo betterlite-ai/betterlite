@@ -102,7 +102,7 @@ def request_step(
     if query is None:
         raise ValueError(f"a {action} step carries no query")
     if action == "cancel":
-        cancelled = cast(ModelResult, api.cancel_batch(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L126-L164
+        cancelled = cast(ModelResult, api.cancel_batch(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L126-L164
             _is_async=is_async,
             cancel_batch_data=query,
             api_key=args["api_key"],
@@ -114,7 +114,7 @@ def request_step(
             litellm_params=step.get("params"),
         ))
         return JSON.validate_json(settle(cancelled).model_dump_json())
-    retrieved = cast(ModelResult, api.retrieve_batch(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L84-L116
+    retrieved = cast(ModelResult, api.retrieve_batch(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L84-L116
         _is_async=is_async,
         retrieve_batch_data=query,
         api_key=args["api_key"],
@@ -130,7 +130,7 @@ def request_step(
 
 def list_step(step: Step, supplied: SdkClient | None, *, is_async: bool) -> JsonValue:
     args = step["args"]
-    listed = cast(ModelResult, AzureBatchesAPI().list_batches(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L175-L208
+    listed = cast(ModelResult, AzureBatchesAPI().list_batches(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L175-L208
         _is_async=is_async,
         api_key=args["api_key"],
         api_base=args["api_base"],
