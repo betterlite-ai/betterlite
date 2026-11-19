@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use chrono::{DateTime, Utc};
+use jiff::civil::Time;
 use jiff::tz::TimeZoneDatabase;
 use rstest::rstest;
 
@@ -10,7 +11,7 @@ use betterlite_models::model_registration::JsonObject;
 use crate::access_windows::reservation::{filter_reserved_deployments, reserved_deployments};
 use crate::access_windows::team::filter_team_based_models;
 use crate::access_windows::window::{
-    access_windows_config_error, is_window_active, parse_access_windows,
+    ModelAccessWindow, access_windows_config_error, is_window_active, parse_access_windows,
 };
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_catalog::types::Authority;
@@ -239,6 +240,16 @@ fn a_non_admin_without_a_team_sees_only_shared_deployments() {
     assert_eq!(ids(&kept), ["a"]);
 }
 
+// The admin arm needs proxy_admin: a caller with no team and no admin right never keeps another team's pool.
+fn a_non_admin_without_a_team_sees_no_team_pool() {
+    let deployments = [
+        spec("gpt", "a", &[("team_id", text("t1"))]),
+        spec("gpt", "b", &[("team_id", text("t1"))]),
+    ];
+    let kept = filter_team_based_models(deployments.to_vec(), Authority::default(), "gpt").unwrap();
+    assert!(kept.is_empty());
+}
+
 fn an_empty_team_id_counts_as_no_team() {
     let deployments = [
         spec("gpt", "a", &[]),
@@ -312,6 +323,24 @@ fn overnight_bounds_wrap_at_midnight() {
             active,
             "{instant}"
         );
+    }
+}
+
+// The parser refuses equal bounds, so this window can only be built by hand, and it wraps the whole day.
+fn equal_bounds_wrap_the_whole_day() {
+    let equal = ModelAccessWindow {
+        start: Time::new(9, 0, 0, 0).unwrap(),
+        end: Time::new(9, 0, 0, 0).unwrap(),
+        timezone: String::from("UTC"),
+        zone: database().get("UTC").unwrap(),
+        team_ids: vec![String::from("t")],
+    };
+    for instant in [
+        "2026-01-05T08:59:59.999Z",
+        "2026-01-05T09:00:00Z",
+        "2026-01-05T23:00:00Z",
+    ] {
+        assert!(is_window_active(&equal, at(instant)).unwrap(), "{instant}");
     }
 }
 
@@ -649,6 +678,7 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
 #[case::a_non_admin_without_a_team_sees_only_shared_deployments(
     a_non_admin_without_a_team_sees_only_shared_deployments
 )]
+#[case::a_non_admin_without_a_team_sees_no_team_pool(a_non_admin_without_a_team_sees_no_team_pool)]
 #[case::an_empty_team_id_counts_as_no_team(an_empty_team_id_counts_as_no_team)]
 #[case::an_admin_pool_keeps_only_authorized_teams(an_admin_pool_keeps_only_authorized_teams)]
 #[case::an_admin_pool_unnamed_by_the_request_is_only_filtered(
@@ -661,6 +691,7 @@ fn access_windows_behaviors(#[case] run: fn()) {
 #[rstest]
 #[case::same_day_bounds_are_half_open(same_day_bounds_are_half_open)]
 #[case::overnight_bounds_wrap_at_midnight(overnight_bounds_wrap_at_midnight)]
+#[case::equal_bounds_wrap_the_whole_day(equal_bounds_wrap_the_whole_day)]
 #[case::a_dst_change_shifts_the_local_window(a_dst_change_shifts_the_local_window)]
 #[case::wall_clock_takes_seconds_and_fractions(wall_clock_takes_seconds_and_fractions)]
 #[case::wall_clock_refuses_malformed_values_and_offsets(
