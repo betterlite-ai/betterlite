@@ -2,12 +2,13 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::future::Future;
 
+use betterlite_models::decisions::Json;
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::zeroize::Zeroize;
+use secrecy::{CloneableSecret, ExposeSecret as _, SecretBox, SecretString, SerializableSecret};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
@@ -16,7 +17,7 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 
 pub mod page;
-mod service;
+pub mod service;
 mod tests;
 
 // the provider literal both calls declare; absent is openai, and any other name is rejected later
@@ -72,12 +73,27 @@ impl From<ReadStructuredTimeout> for StructuredTimeout {
     }
 }
 
+// the key a case or the Python child carries as text, kept out of Debug by the SecretBox around it
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct ApiKeyText(String);
+
+impl Zeroize for ApiKeyText {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl CloneableSecret for ApiKeyText {}
+
+impl SerializableSecret for ApiKeyText {}
+
 // the kwargs both calls read through GenericLiteLLMParams, beside request_timeout from kwargs
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct FineTuningReadParams {
     pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
+    pub api_key: Option<SecretBox<ApiKeyText>>,
     pub api_version: Option<String>,
     pub organization: Option<String>,
     pub timeout: Option<ReadTimeout>,
@@ -90,7 +106,10 @@ impl From<&FineTuningReadParams> for ResourceSdkRequestOptions {
         Self {
             api_base: params.api_base.clone(),
             api_version: params.api_version.clone(),
-            api_key: params.api_key.clone(),
+            api_key: params
+                .api_key
+                .as_ref()
+                .map(|key| SecretString::from(key.expose_secret().0.clone())),
             organization: params.organization.clone(),
             vertex_project: None,
             vertex_location: None,
@@ -111,7 +130,7 @@ pub struct FineTuningListCall {
     pub extra_headers: Option<IndexMap<String, String>>,
     // LiteLLM forwards extra_body as the caller's own JSON, so a non-string value still parses
     #[serde(default)]
-    pub extra_body: Option<IndexMap<String, Value>>,
+    pub extra_body: Option<IndexMap<String, Json>>,
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
@@ -124,7 +143,7 @@ pub struct FineTuningRetrieveCall {
     #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
     #[serde(default)]
-    pub extra_body: Option<IndexMap<String, Value>>,
+    pub extra_body: Option<IndexMap<String, Json>>,
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
@@ -141,7 +160,7 @@ pub enum FineTuningReadInput {
     ARetrieve(Box<FineTuningRetrieveCall>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FineTuningReadOutcome {
     Page(page::FineTuningPage),
@@ -228,5 +247,3 @@ where
     #[error(transparent)]
     Dispatch(DispatchError),
 }
-
-pub use service::FineTuningRead;

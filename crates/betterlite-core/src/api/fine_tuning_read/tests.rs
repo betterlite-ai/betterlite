@@ -1,12 +1,12 @@
 #![cfg(test)]
 
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
-use betterlite_openai::fine_tuning::job::FineTuneJob;
+use betterlite_openai::fine_tuning::job::{FineTuneJob, JobStatus};
+use secrecy::zeroize::Zeroize;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde_json::json;
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::timeout::{
@@ -14,9 +14,10 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 
 use super::page::FineTuningPage;
+use super::service::FineTuningRead;
 use super::{
-    FineTuningRead, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
-    FineTuningReadOutcome, ReadOperation, ReadTarget, ReadValues,
+    ApiKeyText, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
+    FineTuningReadOutcome, ReadOperation, ReadProvider, ReadTarget, ReadValues,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -87,17 +88,12 @@ impl Fake {
 impl FineTuningReadDispatch for Fake {
     type Error = FakeError;
 
-    fn read(
-        &self,
-        target: ReadTarget<'_>,
-    ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        async move {
-            let mut state = self.state.lock().expect("the fake state");
-            state.calls.push(record(&target));
-            match &state.error {
-                Some(error) => Err(error.clone()),
-                None => Ok(state.reply.clone()),
-            }
+    async fn read(&self, target: ReadTarget<'_>) -> Result<Vec<u8>, Self::Error> {
+        let mut state = self.state.lock().expect("the fake state");
+        state.calls.push(record(&target));
+        match &state.error {
+            Some(error) => Err(error.clone()),
+            None => Ok(state.reply.clone()),
         }
     }
 }
@@ -106,7 +102,7 @@ fn record(target: &ReadTarget<'_>) -> RecordedTarget {
     match target {
         ReadTarget::OpenAi(call) => RecordedTarget::OpenAi(record_call(
             &call.values,
-            Some(&call.api_base),
+            Some(call.api_base.as_str()),
             call.api_key,
             call.api_version,
             call.organization,
@@ -124,7 +120,7 @@ fn record(target: &ReadTarget<'_>) -> RecordedTarget {
 fn record_call(
     values: &ReadValues<'_>,
     api_base: Option<&str>,
-    api_key: Option<&secrecy::SecretString>,
+    api_key: Option<&SecretString>,
     api_version: Option<&str>,
     organization: Option<&str>,
 ) -> RecordedCall {
@@ -162,8 +158,8 @@ async fn run(
     .await
 }
 
-fn input(value: Value) -> FineTuningReadInput {
-    serde_json::from_value(value).expect("a read call")
+fn input(source: &str) -> FineTuningReadInput {
+    serde_json::from_str(source).expect("a read call")
 }
 
 fn openai(calls: &[RecordedTarget]) -> RecordedCall {
@@ -181,45 +177,24 @@ fn azure(calls: &[RecordedTarget]) -> RecordedCall {
 }
 
 // every fine-tuning job field the fixtures share; each fixture changes what its call reads
-fn job_json() -> Value {
-    json!({
-        "id": "ft_a",
-        "object": "fine_tuning.job",
-        "created_at": 1700000000,
-        "model": "gpt-4o-mini-2024-07-18",
-        "organization_id": "org_1",
-        "result_files": ["file_r"],
-        "status": "succeeded",
-        "training_file": "file_1",
-        "hyperparameters": {"n_epochs": 3},
-        "seed": 42
-    })
-}
+const JOB: &str = r#"{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": "org_1", "result_files": ["file_r"], "status": "succeeded", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42}"#;
+
+// the page carries the fields list doesn't normalize and one key the job shape never declares
+const PAGE: &str = r#"{"object": "list", "has_more": true, "data": [{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": null, "result_files": null, "status": "canceling", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42, "method": {"type": "supervised", "hyperparameters": {"n_epochs": "auto"}}, "unknown_top": 1}]}"#;
+
+// the azure answer differs in the fields its normalization reads
+const AZURE_JOB: &str = r#"{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini", "organization_id": null, "result_files": null, "status": "canceled", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42}"#;
 
 fn page() -> Vec<u8> {
-    let mut entry = job_json();
-    entry["status"] = json!("canceling");
-    entry["organization_id"] = Value::Null;
-    entry["result_files"] = Value::Null;
-    entry["method"] = json!({"type": "supervised", "hyperparameters": {"n_epochs": "auto"}});
-    entry["unknown_top"] = json!(1);
-    let envelope = json!({"object": "list", "has_more": true, "data": [entry]});
-    envelope.to_string().into_bytes()
+    PAGE.as_bytes().to_vec()
 }
 
 fn job() -> Vec<u8> {
-    let entry = job_json();
-    entry.to_string().into_bytes()
+    JOB.as_bytes().to_vec()
 }
 
-// the azure answer differs in the fields its normalization reads
 fn azure_job() -> Vec<u8> {
-    let mut entry = job_json();
-    entry["model"] = json!("gpt-4o-mini");
-    entry["organization_id"] = Value::Null;
-    entry["result_files"] = Value::Null;
-    entry["status"] = json!("canceled");
-    entry.to_string().into_bytes()
+    AZURE_JOB.as_bytes().to_vec()
 }
 
 // list and alist with no pagination leave after and limit null, and the default provider is openai
@@ -229,7 +204,7 @@ async fn list_jobs_does_not_invent_limit() {
     let outcome = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect("a listed page");
@@ -244,34 +219,41 @@ async fn list_jobs_does_not_invent_limit() {
     );
     assert_eq!(call.api_base.as_deref(), Some("https://api.openai.com/v1"));
     assert_eq!(call.organization, None);
+}
 
-    let literal = Fake::answering(&page());
-    let outcome = run(
-        &literal,
+// a given empty after and a zero limit reach the provider as the caller wrote them
+#[tokio::test]
+async fn list_keeps_empty_after_and_zero_limit() {
+    let fake = Fake::answering(&page());
+    run(
+        &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {"after": "", "limit": 0}})),
+        &input(r#"{"list": {"after": "", "limit": 0}}"#),
     )
     .await
     .expect("a listed page");
-    assert!(matches!(outcome, FineTuningReadOutcome::Page(_)));
     assert_eq!(
-        openai(&literal.calls()).operation,
+        openai(&fake.calls()).operation,
         RecordedOperation::List {
             after: Some(String::new()),
             limit: Some(0)
         }
     );
+}
 
-    let paged = Fake::answering(&page());
+// alist forwards the pagination it is given
+#[tokio::test]
+async fn alist_forwards_pagination() {
+    let fake = Fake::answering(&page());
     run(
-        &paged,
+        &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"alist": {"after": "ft_prev", "limit": 7}})),
+        &input(r#"{"alist": {"after": "ft_prev", "limit": 7}}"#),
     )
     .await
     .expect("a listed page");
     assert_eq!(
-        openai(&paged.calls()).operation,
+        openai(&fake.calls()).operation,
         RecordedOperation::List {
             after: Some("ft_prev".to_owned()),
             limit: Some(7)
@@ -286,21 +268,22 @@ async fn list_page_preserves_metadata_and_jobs() {
     let outcome = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect("a listed page");
     let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
         panic!("list answered a job");
     };
-    assert_eq!(page["object"], json!("list"));
-    assert_eq!(page["has_more"], json!(true));
-    let job = &page["data"][0];
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    assert_eq!(page_json["object"], json!("list"));
+    assert_eq!(page_json["has_more"], json!(true));
+    let job = &page_json["data"][0];
     assert_eq!(job["status"], json!("canceling"));
-    assert_eq!(job["organization_id"], Value::Null);
+    assert_eq!(job["organization_id"], json!(null));
     assert_eq!(job["training_file"], json!("file_1"));
     assert_eq!(job["unknown_top"], json!(1));
-    assert_eq!(job["error"], Value::Null);
+    assert_eq!(job["error"], json!(null));
     assert_eq!(
         job["hyperparameters"],
         json!({"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 3})
@@ -316,34 +299,37 @@ async fn list_page_keeps_absent_keys_absent() {
     let outcome = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect("a listed page");
     let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
         panic!("list answered a job");
     };
-    assert_eq!(page, json!({"data": null, "has_more": null}));
+    assert_eq!(
+        serde_json::to_value(page).expect("a page serializes"),
+        json!({"data": null, "has_more": null})
+    );
 }
 
 // azure list entries come back exactly as the page wrote them; only retrieve normalizes a job
 #[tokio::test]
 async fn azure_list_entries_are_not_normalized() {
     let fake = Fake::answering(&page());
-    let settings = ConfiguredSettings::default();
     let outcome = run(
         &fake,
-        &settings,
-        &input(json!({"list": {"provider": "azure", "api_version": "2024-08-01-preview"}})),
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {"provider": "azure", "api_version": "2024-08-01-preview"}}"#),
     )
     .await
     .expect("a listed page");
     let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
         panic!("list answered a job");
     };
-    assert_eq!(page["data"][0]["status"], json!("canceling"));
-    assert_eq!(page["data"][0]["organization_id"], Value::Null);
-    assert_eq!(page["data"][0]["result_files"], Value::Null);
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    assert_eq!(page_json["data"][0]["status"], json!("canceling"));
+    assert_eq!(page_json["data"][0]["organization_id"], json!(null));
+    assert_eq!(page_json["data"][0]["result_files"], json!(null));
     assert_eq!(
         azure(&fake.calls()).api_version.as_deref(),
         Some("2024-08-01-preview")
@@ -357,7 +343,7 @@ async fn retrieve_job_preserves_provider_result() {
     let outcome = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"retrieve": {"fine_tuning_job_id": "ft_a"}})),
+        &input(r#"{"retrieve": {"fine_tuning_job_id": "ft_a"}}"#),
     )
     .await
     .expect("a retrieved job");
@@ -371,8 +357,9 @@ async fn retrieve_job_preserves_provider_result() {
         ..
     } = *job;
     assert_eq!(training_file, "file_1");
-    assert_eq!(format!("{status:?}"), "Succeeded");
+    assert_eq!(status, JobStatus::Succeeded);
     assert_eq!(seed, Some(42));
+    assert!(!openai(&fake.calls()).is_async);
     assert_eq!(
         openai(&fake.calls()).operation,
         RecordedOperation::Retrieve {
@@ -388,27 +375,24 @@ async fn azure_retrieve_normalizes_job() {
     let outcome = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"aretrieve": {
-            "fine_tuning_job_id": "ft_a",
-            "provider": "azure",
-            "api_version": "2024-08-01-preview"
-        }})),
+        &input(
+            r#"{"aretrieve": {"fine_tuning_job_id": "ft_a", "provider": "azure", "api_version": "2024-08-01-preview"}}"#,
+        ),
     )
     .await
     .expect("a retrieved job");
     let FineTuningReadOutcome::Job(job) = outcome else {
         panic!("retrieve answered a page");
     };
-    assert_eq!(format!("{:?}", job.status), "Cancelled");
+    assert_eq!(job.status, JobStatus::Cancelled);
     assert_eq!(job.organization_id, "");
-    assert_eq!(job.result_files, Vec::<String>::new());
+    assert!(job.result_files.is_empty());
     assert!(azure(&fake.calls()).is_async);
 }
 
-// the openai branch reads request credentials, then the loaded settings, then the default base
-#[tokio::test]
-async fn read_settings_and_client_mode() {
-    let mut settings = ConfiguredSettings {
+// the loaded settings every credential test starts from; each test drops or keeps what it reads
+fn settings() -> ConfiguredSettings {
+    ConfiguredSettings {
         api_base: Some("http://settings/v1".to_owned()),
         api_version: None,
         api_key: Some(SecretString::from("sk-settings".to_owned())),
@@ -429,16 +413,19 @@ async fn read_settings_and_client_mode() {
         vertexai_project: None,
         vertexai_location: None,
         vertexai_credentials: None,
-    };
+    }
+}
+
+// the openai branch reads request credentials before the loaded settings
+#[tokio::test]
+async fn read_settings_and_client_mode() {
     let fake = Fake::answering(&page());
     run(
         &fake,
-        &settings,
-        &input(json!({"list": {
-            "api_base": "http://request/v1",
-            "api_key": "sk-request",
-            "organization": "org-request"
-        }})),
+        &settings(),
+        &input(
+            r#"{"list": {"api_base": "http://request/v1", "api_key": "sk-request", "organization": "org-request"}}"#,
+        ),
     )
     .await
     .expect("a listed page");
@@ -446,33 +433,37 @@ async fn read_settings_and_client_mode() {
     assert_eq!(call.api_base.as_deref(), Some("http://request/v1"));
     assert_eq!(call.api_key.as_deref(), Some("sk-request"));
     assert_eq!(call.organization.as_deref(), Some("org-request"));
+}
 
-    let fallback = Fake::answering(&page());
-    run(&fallback, &settings, &input(json!({"list": {}})))
+// without request credentials the settings answer, and without those the environment does
+#[tokio::test]
+async fn read_falls_back_to_settings_and_environment() {
+    let fake = Fake::answering(&page());
+    run(&fake, &settings(), &input(r#"{"list": {}}"#))
         .await
         .expect("a listed page");
-    let call = openai(&fallback.calls());
+    let call = openai(&fake.calls());
     assert_eq!(call.api_base.as_deref(), Some("http://settings/v1"));
     assert_eq!(call.api_key.as_deref(), Some("sk-settings"));
     assert_eq!(call.organization.as_deref(), Some("org-settings"));
 
-    settings.api_base = None;
-    settings.api_key = None;
-    settings.organization = None;
-    let environment = Fake::answering(&page());
-    run(&environment, &settings, &input(json!({"list": {}})))
+    let mut environment = settings();
+    environment.api_base = None;
+    environment.api_key = None;
+    environment.organization = None;
+    let fallback = Fake::answering(&page());
+    run(&fallback, &environment, &input(r#"{"list": {}}"#))
         .await
         .expect("a listed page");
-    let call = openai(&environment.calls());
-    assert_eq!(call.api_base.as_deref(), Some("http://env-base/v1"));
-    assert_eq!(call.api_key.as_deref(), Some("sk-env"));
-    assert_eq!(call.organization.as_deref(), Some("org-env"));
+    let env_call = openai(&fallback.calls());
+    assert_eq!(env_call.api_base.as_deref(), Some("http://env-base/v1"));
+    assert_eq!(env_call.api_key.as_deref(), Some("sk-env"));
+    assert_eq!(env_call.organization.as_deref(), Some("org-env"));
 }
 
-// the azure branch never reads the openai names, and its organization has no setting fallback
-#[tokio::test]
-async fn azure_settings_chain_and_request_organization() {
-    let settings = ConfiguredSettings {
+// the azure settings differ from the openai ones in every name the branch reads
+fn azure_settings() -> ConfiguredSettings {
+    ConfiguredSettings {
         api_base: Some("http://settings/v1".to_owned()),
         api_version: Some("2024-01-01".to_owned()),
         api_key: Some(SecretString::from("sk-settings".to_owned())),
@@ -493,12 +484,17 @@ async fn azure_settings_chain_and_request_organization() {
         vertexai_project: None,
         vertexai_location: None,
         vertexai_credentials: None,
-    };
+    }
+}
+
+// azure reads the request first, and its organization has no setting fallback
+#[tokio::test]
+async fn azure_settings_chain_and_request_organization() {
     let fake = Fake::answering(&page());
     run(
         &fake,
-        &settings,
-        &input(json!({"list": {"provider": "azure"}})),
+        &azure_settings(),
+        &input(r#"{"list": {"provider": "azure", "organization": "org-request"}}"#),
     )
     .await
     .expect("a listed page");
@@ -506,139 +502,83 @@ async fn azure_settings_chain_and_request_organization() {
     assert_eq!(call.api_base.as_deref(), Some("http://settings/v1"));
     assert_eq!(call.api_version.as_deref(), Some("2024-01-01"));
     assert_eq!(call.api_key.as_deref(), Some("sk-settings"));
-    assert_eq!(call.organization, None);
+    assert_eq!(call.organization.as_deref(), Some("org-request"));
+}
 
-    let environment = Fake::answering(&page());
-    let settings = ConfiguredSettings {
-        api_base: None,
-        api_version: None,
-        api_key: None,
-        openai_key: None,
-        azure_key: None,
-        azure_ad_token: None,
-        organization: Some("org-settings".to_owned()),
-        vertex_project: None,
-        vertex_location: None,
-        openai_base_url: None,
-        openai_api_base: None,
-        openai_api_key: None,
-        openai_organization: None,
-        azure_api_base: Some("http://azure-env/v1".to_owned()),
-        azure_api_version: Some("2024-06-01".to_owned()),
-        azure_openai_api_key: Some(SecretString::from("sk-azure-env".to_owned())),
-        azure_api_key: None,
-        vertexai_project: None,
-        vertexai_location: None,
-        vertexai_credentials: None,
-    };
+// without request or setting values azure reads the environment's azure names
+#[tokio::test]
+async fn azure_falls_back_to_environment() {
+    let mut environment = azure_settings();
+    environment.api_base = None;
+    environment.api_version = None;
+    environment.api_key = None;
+    let fake = Fake::answering(&page());
     run(
+        &fake,
         &environment,
-        &settings,
-        &input(json!({"list": {"provider": "azure", "organization": "org-request"}})),
+        &input(r#"{"list": {"provider": "azure", "organization": "org-request"}}"#),
     )
     .await
     .expect("a listed page");
-    let call = azure(&environment.calls());
+    let call = azure(&fake.calls());
     assert_eq!(call.api_base.as_deref(), Some("http://azure-env/v1"));
     assert_eq!(call.api_version.as_deref(), Some("2024-06-01"));
     assert_eq!(call.api_key.as_deref(), Some("sk-azure-env"));
     assert_eq!(call.organization.as_deref(), Some("org-request"));
 }
 
+async fn list_timeout(source: &str) -> FineTuningTimeout {
+    let fake = Fake::answering(&page());
+    run(&fake, &ConfiguredSettings::default(), &input(source))
+        .await
+        .expect("a listed page");
+    openai(&fake.calls()).timeout
+}
+
 // timeout then request_timeout then 600, with a zero or empty value falling through
 #[tokio::test]
 async fn timeout_chain_and_structured_passthrough() {
+    assert_eq!(
+        list_timeout(r#"{"list": {}}"#).await,
+        FineTuningTimeout::Seconds(600.0)
+    );
+    assert_eq!(
+        list_timeout(r#"{"list": {"timeout": 0, "request_timeout": 9}}"#).await,
+        FineTuningTimeout::Seconds(9.0)
+    );
+    assert_eq!(
+        list_timeout(r#"{"list": {"timeout": "", "request_timeout": 9}}"#).await,
+        FineTuningTimeout::Seconds(9.0)
+    );
+    assert_eq!(
+        list_timeout(r#"{"list": {"timeout": 5}}"#).await,
+        FineTuningTimeout::Seconds(5.0)
+    );
+    assert_eq!(
+        list_timeout(r#"{"list": {"timeout": "5", "request_timeout": 9}}"#).await,
+        FineTuningTimeout::Seconds(5.0)
+    );
+    assert_eq!(
+        list_timeout(r#"{"list": {"request_timeout": "7.5"}}"#).await,
+        FineTuningTimeout::Seconds(7.5)
+    );
+}
+
+// a structured timeout passes through as the four numbers the caller wrote
+#[tokio::test]
+async fn structured_timeout_passes_through() {
     let fake = Fake::answering(&page());
     run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(
+            r#"{"list": {"provider": "azure", "timeout": {"connect": 1.0, "read": 2.0, "write": 3.0, "pool": 4.0}}}"#,
+        ),
     )
     .await
     .expect("a listed page");
     assert_eq!(
-        openai(&fake.calls()).timeout,
-        FineTuningTimeout::Seconds(600.0)
-    );
-
-    let zero = Fake::answering(&page());
-    run(
-        &zero,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {"timeout": 0, "request_timeout": 9}})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        openai(&zero.calls()).timeout,
-        FineTuningTimeout::Seconds(9.0)
-    );
-
-    let empty = Fake::answering(&page());
-    run(
-        &empty,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {"timeout": "", "request_timeout": 9}})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        openai(&empty.calls()).timeout,
-        FineTuningTimeout::Seconds(9.0)
-    );
-
-    let text = Fake::answering(&page());
-    run(
-        &text,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {"request_timeout": "7.5"}})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        openai(&text.calls()).timeout,
-        FineTuningTimeout::Seconds(7.5)
-    );
-
-    let alone = Fake::answering(&page());
-    run(
-        &alone,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {"timeout": 5}})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        openai(&alone.calls()).timeout,
-        FineTuningTimeout::Seconds(5.0)
-    );
-
-    let chosen = Fake::answering(&page());
-    run(
-        &chosen,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {"timeout": "5", "request_timeout": 9}})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        openai(&chosen.calls()).timeout,
-        FineTuningTimeout::Seconds(5.0)
-    );
-
-    let structured = Fake::answering(&page());
-    run(
-        &structured,
-        &ConfiguredSettings::default(),
-        &input(json!({"list": {
-            "provider": "azure",
-            "timeout": {"connect": 1.0, "read": 2.0, "write": 3.0, "pool": 4.0}
-        }})),
-    )
-    .await
-    .expect("a listed page");
-    assert_eq!(
-        azure(&structured.calls()).timeout,
+        azure(&fake.calls()).timeout,
         FineTuningTimeout::Structured(StructuredTimeout {
             connect: Some(1.0),
             read: Some(2.0),
@@ -648,74 +588,48 @@ async fn timeout_chain_and_structured_passthrough() {
     );
 }
 
-// the four functions set the async flag, and extras ride along without reaching the target
+// list is the sync form and alist sets the async flag; extras ride along and never reach the target
 #[tokio::test]
 async fn async_flags_and_unused_extras() {
-    let list = Fake::answering(&page());
+    let sync = Fake::answering(&page());
     run(
-        &list,
+        &sync,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect("a listed page");
-    assert!(!openai(&list.calls()).is_async);
+    assert!(!openai(&sync.calls()).is_async);
 
-    let alist = Fake::answering(&page());
+    let asynchronous = Fake::answering(&page());
     run(
-        &alist,
+        &asynchronous,
         &ConfiguredSettings::default(),
-        &input(json!({"alist": {}})),
+        &input(r#"{"alist": {}}"#),
     )
     .await
     .expect("a listed page");
-    assert!(openai(&alist.calls()).is_async);
+    assert!(openai(&asynchronous.calls()).is_async);
 
     let extras = Fake::answering(&page());
     run(
         &extras,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {"extra_headers": {"X-Ignored": "x"}, "extra_body": {"limit": 99}}})),
+        &input(r#"{"list": {"extra_headers": {"X-Ignored": "x"}, "extra_body": {"limit": 99}}}"#),
     )
     .await
     .expect("a listed page");
-    assert_eq!(openai(&extras.calls()), openai(&list.calls()));
-
-    let retrieve = Fake::answering(&job());
-    run(
-        &retrieve,
-        &ConfiguredSettings::default(),
-        &input(json!({"retrieve": {"fine_tuning_job_id": "ft_a"}})),
-    )
-    .await
-    .expect("a retrieved job");
-    assert!(!openai(&retrieve.calls()).is_async);
-
-    let aretrieve = Fake::answering(&job());
-    run(
-        &aretrieve,
-        &ConfiguredSettings::default(),
-        &input(json!({"aretrieve": {"fine_tuning_job_id": "ft_a"}})),
-    )
-    .await
-    .expect("a retrieved job");
-    assert!(openai(&aretrieve.calls()).is_async);
-    assert_eq!(
-        openai(&aretrieve.calls()).operation,
-        RecordedOperation::Retrieve {
-            job_id: "ft_a".to_owned()
-        }
-    );
+    assert_eq!(openai(&extras.calls()), openai(&sync.calls()));
 }
 
-// vertex_ai, an unknown name and an explicit null all answer the provider's own 400 without a call
+// an unsupported provider answers its own 400 without a call, and list keeps create_batch's name
 #[tokio::test]
 async fn unsupported_read_provider() {
     let fake = Fake::default();
     let error = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {"provider": "vertex_ai"}})),
+        &input(r#"{"list": {"provider": "vertex_ai"}}"#),
     )
     .await
     .expect_err("an unsupported provider");
@@ -727,7 +641,7 @@ async fn unsupported_read_provider() {
     let retrieve = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"retrieve": {"fine_tuning_job_id": "ft_a", "provider": "vertex_ai"}})),
+        &input(r#"{"retrieve": {"fine_tuning_job_id": "ft_a", "provider": "vertex_ai"}}"#),
     )
     .await
     .expect_err("an unsupported provider");
@@ -735,11 +649,17 @@ async fn unsupported_read_provider() {
         retrieve.to_string(),
         "LiteLLM doesn't support vertex_ai for 'retrieve_fine_tuning_job'. Only 'openai' and 'azure' are supported."
     );
+    assert!(fake.calls().is_empty());
+}
 
+// an explicit null and an unknown name take the branch they reached, which keeps Python's text
+#[tokio::test]
+async fn unsupported_provider_null_and_unknown() {
+    let fake = Fake::default();
     let null = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {"provider": null}})),
+        &input(r#"{"list": {"provider": null}}"#),
     )
     .await
     .expect_err("an unsupported provider");
@@ -751,7 +671,7 @@ async fn unsupported_read_provider() {
     let unknown = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"retrieve": {"fine_tuning_job_id": "ft_a", "provider": "wat"}})),
+        &input(r#"{"retrieve": {"fine_tuning_job_id": "ft_a", "provider": "wat"}}"#),
     )
     .await
     .expect_err("an unsupported provider");
@@ -759,7 +679,6 @@ async fn unsupported_read_provider() {
         unknown.to_string(),
         "LiteLLM doesn't support wat for 'retrieve_fine_tuning_job'. Only 'openai' and 'azure' are supported."
     );
-    assert!(fake.calls().is_empty());
 }
 
 // an unparsable timeout is a plain ValueError, raised before any provider work
@@ -769,7 +688,7 @@ async fn invalid_timeout_fails_before_dispatch() {
     let error = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {"timeout": "bad"}})),
+        &input(r#"{"list": {"timeout": "bad"}}"#),
     )
     .await
     .expect_err("an invalid timeout");
@@ -787,7 +706,7 @@ async fn dispatch_errors_propagate() {
     let error = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect_err("a provider error");
@@ -804,7 +723,7 @@ async fn page_json_errors_are_reported() {
     let error = run(
         &fake,
         &ConfiguredSettings::default(),
-        &input(json!({"list": {}})),
+        &input(r#"{"list": {}}"#),
     )
     .await
     .expect_err("an invalid page");
@@ -812,22 +731,24 @@ async fn page_json_errors_are_reported() {
     assert_eq!(fake.calls().len(), 1);
 }
 
-// provider is a literal in the source, so an absent one takes openai and an explicit null stays null
-#[tokio::test]
-async fn provider_defaults_only_when_absent() {
-    let absent: FineTuningReadInput = serde_json::from_value(json!({"list": {}})).expect("a call");
-    let FineTuningReadInput::List(call) = absent else {
-        panic!("a list call");
-    };
-    assert_eq!(
-        call.provider,
-        Some(super::ReadProvider("openai".to_owned()))
-    );
+// the SecretBox wipes the key through this impl, so a no-op here would leave the text readable
+#[test]
+fn api_key_text_zeroizes() {
+    let mut key = ApiKeyText("sk-request".to_owned());
+    key.zeroize();
+    assert!(key.0.bytes().all(|byte| byte == 0));
+}
 
-    let null: FineTuningReadInput =
-        serde_json::from_value(json!({"list": {"provider": null}})).expect("a call");
-    let FineTuningReadInput::List(call) = null else {
+// provider is a literal in the source, so an absent one takes openai and an explicit null stays null
+#[test]
+fn provider_defaults_only_when_absent() {
+    let FineTuningReadInput::List(absent) = input(r#"{"list": {}}"#) else {
         panic!("a list call");
     };
-    assert_eq!(call.provider, None);
+    assert_eq!(absent.provider, Some(ReadProvider("openai".to_owned())));
+
+    let FineTuningReadInput::List(null) = input(r#"{"list": {"provider": null}}"#) else {
+        panic!("a list call");
+    };
+    assert_eq!(null.provider, None);
 }

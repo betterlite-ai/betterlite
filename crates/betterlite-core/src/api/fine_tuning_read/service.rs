@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
 use betterlite_openai::fine_tuning::job::decode_fine_tune_job;
 
@@ -6,11 +8,12 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
-use super::page::{self, FineTuningPage};
+use super::page;
 use super::{
-    AzureReadCall, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
-    FineTuningReadOutcome, FineTuningReadParams, OpenAiReadCall, ReadOperation, ReadProvider,
-    ReadTarget, ReadTimeout, ReadTimeoutValue, ReadValues,
+    AzureReadCall, FineTuningListCall, FineTuningReadDispatch, FineTuningReadError,
+    FineTuningReadInput, FineTuningReadOutcome, FineTuningReadParams, FineTuningRetrieveCall,
+    OpenAiReadCall, ReadOperation, ReadProvider, ReadTarget, ReadTimeout, ReadTimeoutValue,
+    ReadValues,
 };
 
 pub struct FineTuningRead<Dispatch> {
@@ -27,53 +30,36 @@ where
         input: &FineTuningReadInput,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
         match input {
-            FineTuningReadInput::List(call) => {
-                self.read(
-                    call.provider.as_ref(),
-                    &call.params,
-                    ReadOperation::List {
-                        after: call.after.as_deref(),
-                        limit: call.limit,
-                    },
-                    false,
-                )
-                .await
-            }
-            FineTuningReadInput::AList(call) => {
-                self.read(
-                    call.provider.as_ref(),
-                    &call.params,
-                    ReadOperation::List {
-                        after: call.after.as_deref(),
-                        limit: call.limit,
-                    },
-                    true,
-                )
-                .await
-            }
-            FineTuningReadInput::Retrieve(call) => {
-                self.read(
-                    call.provider.as_ref(),
-                    &call.params,
-                    ReadOperation::Retrieve {
-                        job_id: &call.fine_tuning_job_id,
-                    },
-                    false,
-                )
-                .await
-            }
-            FineTuningReadInput::ARetrieve(call) => {
-                self.read(
-                    call.provider.as_ref(),
-                    &call.params,
-                    ReadOperation::Retrieve {
-                        job_id: &call.fine_tuning_job_id,
-                    },
-                    true,
-                )
-                .await
-            }
+            FineTuningReadInput::List(call) => self.read_list(call, false).await,
+            FineTuningReadInput::AList(call) => self.read_list(call, true).await,
+            FineTuningReadInput::Retrieve(call) => self.read_retrieve(call, false).await,
+            FineTuningReadInput::ARetrieve(call) => self.read_retrieve(call, true).await,
         }
+    }
+
+    async fn read_list(
+        &self,
+        call: &FineTuningListCall,
+        is_async: bool,
+    ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
+        let operation = ReadOperation::List {
+            after: call.after.as_deref(),
+            limit: call.limit,
+        };
+        self.read(call.provider.as_ref(), &call.params, operation, is_async)
+            .await
+    }
+
+    async fn read_retrieve(
+        &self,
+        call: &FineTuningRetrieveCall,
+        is_async: bool,
+    ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
+        let operation = ReadOperation::Retrieve {
+            job_id: &call.fine_tuning_job_id,
+        };
+        self.read(call.provider.as_ref(), &call.params, operation, is_async)
+            .await
     }
 
     // all four calls share the provider, timeout and dispatch chains; only the decode differs
@@ -85,11 +71,8 @@ where
         is_async: bool,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
         // a missing provider stays absent into the unsupported branch, where Python writes None
-        let provider = match provider {
-            Some(provider) => provider.0.as_str(),
-            None => "None",
-        };
-        let timeout = resolve_timeout(params, provider)?;
+        let provider_name = provider.map_or("None", |named| named.0.as_str());
+        let timeout = resolve_timeout(params, provider_name)?;
         let settings = ResourceSdkSettings::from(&self.settings);
         let options = ResourceSdkRequestOptions::from(params);
         let values = ReadValues {
@@ -98,14 +81,8 @@ where
             timeout: &timeout,
             max_retries: params.max_retries,
         };
-        let Some(target) = read_target(provider, values, &settings, &options) else {
-            let provider = provider.to_owned();
-            return Err(match operation {
-                ReadOperation::List { .. } => FineTuningReadError::UnsupportedList { provider },
-                ReadOperation::Retrieve { .. } => {
-                    FineTuningReadError::UnsupportedRetrieve { provider }
-                }
-            });
+        let Some(target) = read_target(provider_name, values, &settings, &options) else {
+            return Err(Self::unsupported(provider_name, operation));
         };
         let is_azure = matches!(target, ReadTarget::Azure(_));
         let bytes = self
@@ -113,17 +90,41 @@ where
             .read(target)
             .await
             .map_err(FineTuningReadError::Dispatch)?;
+        decode(operation, &bytes, is_azure)
+    }
+
+    // list keeps LiteLLM's create_batch wording, and retrieve names its own function
+    fn unsupported(
+        provider: &str,
+        operation: ReadOperation<'_>,
+    ) -> FineTuningReadError<Dispatch::Error> {
         match operation {
-            ReadOperation::List { .. } => {
-                let page: FineTuningPage = page::decode_page(&bytes)
-                    .map_err(|source| FineTuningReadError::Page { source })?;
-                Ok(FineTuningReadOutcome::Page(page))
-            }
-            ReadOperation::Retrieve { .. } => {
-                let job = decode_fine_tune_job(&bytes, is_azure)?;
-                Ok(FineTuningReadOutcome::Job(Box::new(job)))
-            }
+            ReadOperation::List { .. } => FineTuningReadError::UnsupportedList {
+                provider: provider.to_owned(),
+            },
+            ReadOperation::Retrieve { .. } => FineTuningReadError::UnsupportedRetrieve {
+                provider: provider.to_owned(),
+            },
         }
+    }
+}
+
+// list decodes a page, and retrieve decodes a job the azure handler normalizes first
+fn decode<DispatchError>(
+    operation: ReadOperation<'_>,
+    bytes: &[u8],
+    is_azure: bool,
+) -> Result<FineTuningReadOutcome, FineTuningReadError<DispatchError>>
+where
+    DispatchError: Error + 'static,
+{
+    match operation {
+        ReadOperation::List { .. } => Ok(FineTuningReadOutcome::Page(
+            page::decode_page(bytes).map_err(|source| FineTuningReadError::Page { source })?,
+        )),
+        ReadOperation::Retrieve { .. } => Ok(FineTuningReadOutcome::Job(Box::new(
+            decode_fine_tune_job(bytes, is_azure)?,
+        ))),
     }
 }
 
@@ -162,24 +163,15 @@ fn resolve_timeout(
         Some(ReadTimeout::Structured(structured)) => {
             resolve_fine_tuning_timeout(None, provider, Some(StructuredTimeout::from(*structured)))
         }
-        Some(ReadTimeout::Plain(value)) if configured(value) => {
-            let raw = TimeoutValue::from(value);
-            resolve_fine_tuning_timeout(Some(&raw), provider, None)
+        Some(ReadTimeout::Plain(ReadTimeoutValue::Number(seconds))) if *seconds != 0.0_f64 => {
+            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider, None)
         }
-        None | Some(ReadTimeout::Plain(_)) => match params.request_timeout.as_ref() {
-            Some(value) => {
-                let raw = TimeoutValue::from(value);
-                resolve_fine_tuning_timeout(Some(&raw), provider, None)
-            }
-            None => resolve_fine_tuning_timeout(None, provider, None),
-        },
-    }
-}
-
-// a value Python reads as falsy lets request_timeout take the chain
-fn configured(value: &ReadTimeoutValue) -> bool {
-    match value {
-        ReadTimeoutValue::Number(seconds) => *seconds != 0.0_f64,
-        ReadTimeoutValue::Text(text) => !text.is_empty(),
+        Some(ReadTimeout::Plain(ReadTimeoutValue::Text(text))) if !text.is_empty() => {
+            resolve_fine_tuning_timeout(Some(&TimeoutValue::String(text.clone())), provider, None)
+        }
+        None | Some(ReadTimeout::Plain(_)) => {
+            let request = params.request_timeout.as_ref().map(TimeoutValue::from);
+            resolve_fine_tuning_timeout(request.as_ref(), provider, None)
+        }
     }
 }

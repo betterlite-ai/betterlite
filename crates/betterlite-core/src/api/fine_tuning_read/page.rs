@@ -1,13 +1,14 @@
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 // the SDK page is handed back undecoded: data and has_more stay, other keys are kept as extras
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct FineTuningPage(pub Value);
+pub struct FineTuningPage(pub Json);
 
 pub fn decode_page(bytes: &[u8]) -> Result<FineTuningPage, serde_json::Error> {
-    let value: Value = serde_json::from_slice(bytes)?;
+    let value: Json = serde_json::from_slice(bytes)?;
     let normalized = normalize(&value, &PAGE);
     Ok(FineTuningPage(normalized))
 }
@@ -19,34 +20,38 @@ enum Shape {
     Objects(&'static Shape),
 }
 
-fn normalize(value: &Value, shape: &Shape) -> Value {
+fn normalize(value: &Json, shape: &Shape) -> Json {
     match shape {
         Shape::Any => value.clone(),
-        Shape::Object(fields) => {
-            let Value::Object(source) = value else {
-                return value.clone();
-            };
-            let mut object = Map::new();
-            for (name, field) in *fields {
-                let normalized = source
-                    .get(*name)
-                    .map_or(Value::Null, |value| normalize(value, field));
-                object.insert((*name).to_owned(), normalized);
-            }
-            for (name, extra) in source {
-                if !fields.iter().any(|(declared, _)| declared == name) {
-                    object.insert(name.clone(), extra.clone());
-                }
-            }
-            Value::Object(object)
-        }
-        Shape::Objects(element) => {
-            let Value::Array(items) = value else {
-                return value.clone();
-            };
-            Value::Array(items.iter().map(|item| normalize(item, element)).collect())
+        Shape::Object(fields) => normalize_object(value, fields),
+        Shape::Objects(element) => normalize_list(value, element),
+    }
+}
+
+// an object writes every declared key in its shape's order and appends the keys the shape never names
+fn normalize_object(value: &Json, fields: &'static [(&'static str, Shape)]) -> Json {
+    let Json::Object(source) = value else {
+        return value.clone();
+    };
+    let mut object = IndexMap::new();
+    for (name, field) in fields {
+        let normalized = normalize(source.get(*name).unwrap_or(&Json::Null), field);
+        object.insert((*name).to_owned(), normalized);
+    }
+    for (name, extra) in source {
+        if !object.contains_key(name) {
+            object.insert(name.clone(), extra.clone());
         }
     }
+    Json::Object(object)
+}
+
+// a list is normalized element by element, and any other value stays as the provider wrote it
+fn normalize_list(value: &Json, element: &Shape) -> Json {
+    let Json::List(items) = value else {
+        return value.clone();
+    };
+    Json::List(items.iter().map(|item| normalize(item, element)).collect())
 }
 
 const ERROR: Shape = Shape::Object(&[
