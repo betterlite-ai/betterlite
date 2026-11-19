@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::api::fine_tuning_provider_config::{
-    get_fine_tuning_provider_config, set_fine_tuning_config,
+    fine_tuning_config_for, set_fine_tuning_config,
 };
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
@@ -60,8 +60,8 @@ impl Helper for Op {
                             message: "'provider'".to_owned(),
                         }));
                     };
-                    let found = get_fine_tuning_provider_config(current.as_deref(), provider)
-                        .or_value_error()?;
+                    let found =
+                        fine_tuning_config_for(current.as_deref(), provider).or_value_error()?;
                     results.push(found.unwrap_or(Json::Null));
                 }
             }

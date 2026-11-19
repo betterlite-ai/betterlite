@@ -1,7 +1,7 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use betterlite_config::api::fine_tuning_provider_config::{
-    FineTuningConfigError, Settings as FineTuningSettings, get_fine_tuning_provider_config,
+    FineTuningConfigError, Settings as FineTuningSettings, fine_tuning_config_for,
     set_fine_tuning_config,
 };
 use betterlite_config::loader::EnvironmentLookup;
@@ -34,9 +34,9 @@ impl FineTuningProviderConfig {
         Ok(())
     }
 
-    // get_fine_tuning_provider_config: the whole first entry whose custom_llm_provider matches
+    // fine_tuning_config_for: the whole first entry whose custom_llm_provider matches
     pub fn provider(&self, provider: &str) -> Result<Option<Json>, FineTuningConfigError> {
         let current = self.current.read().unwrap_or_else(PoisonError::into_inner);
-        get_fine_tuning_provider_config(current.as_deref(), provider)
+        fine_tuning_config_for(current.as_deref(), provider)
     }
 }

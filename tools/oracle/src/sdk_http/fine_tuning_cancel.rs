@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::string::FromUtf8Error;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_core::api::fine_tuning_cancel_call::{
     AzureFineTuningCancel, FineTuningCancel, FineTuningCancelCall, FineTuningCancelDispatch,
     FineTuningCancelError, FineTuningCancelTarget, FineTuningOptionalParams,
@@ -160,6 +162,12 @@ pub enum CancelFailure {
     InvalidHeader,
     #[error("the provider answered with status {status}")]
     Status { status: u16, body: String },
+    #[error("the provider answered with status {status} and a body that is not UTF-8")]
+    StatusUtf8 {
+        status: u16,
+        #[source]
+        source: FromUtf8Error,
+    },
     #[error(transparent)]
     Url(#[from] url::ParseError),
     #[error(transparent)]
@@ -185,9 +193,14 @@ impl FineTuningCancelDispatch for HttpDispatch {
             .await
             .map_err(|source| CancelFailure::Transport(Box::new(source)))?;
         if !(200..300).contains(&response.status) {
+            let body =
+                String::from_utf8(response.body).map_err(|source| CancelFailure::StatusUtf8 {
+                    status: response.status,
+                    source,
+                })?;
             return Err(CancelFailure::Status {
                 status: response.status,
-                body: String::from_utf8_lossy(&response.body).into_owned(),
+                body,
             });
         }
         decode_fine_tune_job(&response.body, is_azure).map_err(CancelFailure::Decode)
@@ -212,38 +225,46 @@ async fn send(
     let client = super::vector_query_embedding::outbound_client(env)?;
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
-        let mut run_env = env.clone();
-        let params = prepared_params(run, api_base, &mut run_env);
-        let service = FineTuningCancel {
-            dispatch: HttpDispatch {
-                client: client.clone(),
-            },
-            settings: environment_settings(&run_env)?,
-        };
-        let request = FineTuningCancelCall {
-            fine_tuning_job_id: run.fine_tuning_job_id.clone(),
-            custom_llm_provider: run.custom_llm_provider.clone(),
-            extra_headers: run.extra_headers.clone(),
-            extra_body: run.extra_body.clone(),
-            params,
-            acancel_fine_tuning_job: run.asynchronous.then_some(Json::Bool(true)),
-            client: None,
-        };
-        let outcome = match service.run(&request).await {
-            Ok(job) => RunOutcome {
-                job: Some(job_json(&job)?),
-                error: None,
-            },
-            Err(error) => RunOutcome {
-                job: None,
-                error: Some(failure(&error)),
-            },
-        };
-        runs.push(outcome);
+        runs.push(run_once(run, api_base, env, &client).await?);
     }
     Ok(SdkResult::FineTuningCancel {
         value: Box::new(Outcome { runs }),
     })
+}
+
+async fn run_once(
+    run: &Run,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+    client: &ProxiedClient,
+) -> Result<RunOutcome, SdkHttpError> {
+    let mut run_env = env.clone();
+    let params = prepared_params(run, api_base, &mut run_env);
+    let service = FineTuningCancel {
+        dispatch: HttpDispatch {
+            client: client.clone(),
+        },
+        settings: environment_settings(&run_env)?,
+    };
+    let request = FineTuningCancelCall {
+        fine_tuning_job_id: run.fine_tuning_job_id.clone(),
+        custom_llm_provider: run.custom_llm_provider.clone(),
+        extra_headers: run.extra_headers.clone(),
+        extra_body: run.extra_body.clone(),
+        params,
+        acancel_fine_tuning_job: run.asynchronous.then_some(Json::Bool(true)),
+        client: None,
+    };
+    match service.run(&request).await {
+        Ok(job) => Ok(RunOutcome {
+            job: Some(job_json(&job)?),
+            error: None,
+        }),
+        Err(error) => Ok(RunOutcome {
+            job: None,
+            error: Some(failure(&error)),
+        }),
+    }
 }
 
 // the harness owns the mock, so its base replaces both the parameter and the environment variable
@@ -264,9 +285,7 @@ fn prepared_params(
     params
 }
 
-fn environment_settings(
-    env: &BTreeMap<String, String>,
-) -> Result<betterlite_config::sections::resource_sdk_settings::Settings, SdkHttpError> {
+fn environment_settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkHttpError> {
     let config = ConfigLoader {
         lookup: env.clone(),
     }
@@ -377,6 +396,14 @@ fn failure(error: &FineTuningCancelError<CancelFailure>) -> Failure {
                 message: format!("Error code: {status} - {body}"),
             }
         }
+        FineTuningCancelError::Dispatch(CancelFailure::StatusUtf8 { status, .. }) => Failure {
+            class: status_class(*status).to_owned(),
+            status: *status,
+            kind: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        },
         FineTuningCancelError::Dispatch(CancelFailure::MissingBase)
         | FineTuningCancelError::Dispatch(CancelFailure::InvalidHeader) => Failure {
             class: "ValueError".to_owned(),

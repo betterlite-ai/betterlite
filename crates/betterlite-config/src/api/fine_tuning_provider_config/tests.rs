@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 
-use super::{FineTuningConfigError, get_fine_tuning_provider_config, set_fine_tuning_config};
+use super::{FineTuningConfigError, fine_tuning_config_for, set_fine_tuning_config};
 use crate::loader::{ConfigError, ConfigLoader};
 
 fn environment() -> BTreeMap<String, String> {
@@ -51,7 +51,7 @@ fn loads_finetune_settings() {
         &text("2024-05-01-preview")
     );
     assert_eq!(field(&settings[1], "api_key"), &text("second"));
-    let azure = get_fine_tuning_provider_config(Some(&settings), "azure")
+    let azure = fine_tuning_config_for(Some(&settings), "azure")
         .expect("the settings are set")
         .expect("azure is configured");
     assert_eq!(field(&azure, "api_key"), &text("first"));
@@ -103,7 +103,7 @@ fn loads_an_empty_finetune_settings_list() {
         .expect("the empty list is configured");
     assert!(settings.is_empty());
     assert!(
-        get_fine_tuning_provider_config(Some(&settings), "azure")
+        fine_tuning_config_for(Some(&settings), "azure")
             .expect("the empty list is set")
             .is_none()
     );
@@ -144,7 +144,7 @@ fn keeps_provider_order_and_returns_the_first_match() {
     let resolved = set_fine_tuning_config(None, Some(&settings), &environment)
         .expect("the list sets")
         .expect("the list is configured");
-    let matched = get_fine_tuning_provider_config(Some(&resolved), "azure")
+    let matched = fine_tuning_config_for(Some(&resolved), "azure")
         .expect("the settings are set")
         .expect("azure is configured");
     assert_eq!(field(&matched, "api_key"), &text("first"));
@@ -159,7 +159,7 @@ fn stores_a_non_dict_entry_and_fails_a_lookup_that_reaches_it() {
         .expect("the list stores as given")
         .expect("the list is configured");
     assert_eq!(resolved[0], text("not-a-provider"));
-    let error = get_fine_tuning_provider_config(Some(&resolved), "azure")
+    let error = fine_tuning_config_for(Some(&resolved), "azure")
         .expect_err("the lookup reaches the string entry");
     assert!(matches!(
         error,
@@ -176,7 +176,7 @@ fn returns_null_for_a_provider_that_is_not_configured() {
         .expect("the list sets")
         .expect("the list is configured");
     assert!(
-        get_fine_tuning_provider_config(Some(&resolved), "azure")
+        fine_tuning_config_for(Some(&resolved), "azure")
             .expect("the list is set")
             .is_none()
     );
@@ -214,7 +214,7 @@ fn a_non_list_set_is_rejected() {
 
 #[test]
 fn a_lookup_before_set_names_the_config_file() {
-    let error = get_fine_tuning_provider_config(None, "azure").expect_err("nothing is configured");
+    let error = fine_tuning_config_for(None, "azure").expect_err("nothing is configured");
     assert_eq!(
         error.to_string(),
         "fine_tuning_config is not set, set it on your config.yaml file."

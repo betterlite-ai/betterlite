@@ -99,8 +99,8 @@ where
     Ok(Some(settings))
 }
 
-// get_fine_tuning_provider_config: the whole first entry whose custom_llm_provider matches
-pub fn get_fine_tuning_provider_config(
+// fine_tuning_config_for: the whole first entry whose custom_llm_provider matches
+pub fn fine_tuning_config_for(
     current: Option<&[Json]>,
     provider: &str,
 ) -> Result<Option<Json>, FineTuningConfigError> {
