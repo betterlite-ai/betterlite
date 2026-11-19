@@ -12,7 +12,7 @@ description: >-
 
   prepare_object_permission_upsert performs no write. A truthy existing ID is retained, otherwise mint
   a UUID and still query it. Read existing fields excluding unset/null; validate changed tool grants
-  through the owned ambiguity check and B817 resolver. Shallow-merge incoming fields over the row and
+  through the owned ambiguity check and B10000 resolver. Shallow-merge incoming fields over the row and
   finally force the chosen object_permission_id, ignoring an incoming override. Whenever merged
   mcp_tool_permissions is present, B192 safe_dumps serializes it, including explicit null as the string
   "null". Omitted grant fields survive; an incoming tool map replaces the whole map, not its keys.
@@ -32,13 +32,18 @@ description: >-
   _mcp_tool_permission_entries parses JSON strings or validates mappings as dict[str,list[str]|None];
   other raw types produce {}. Null lists become empty sets and duplicates/order are ignored for equality;
   malformed JSON or wrong values fail. Reject ambiguity only for new/changed entries, including a changed
-  empty tool set; deleting an entry or echoing an unchanged legacy collision is allowed. B817 returns
+  empty tool set; deleting an entry or echoing an unchanged legacy collision is allowed. B10000's resolve_identifiers_to_ids returns
   identifier-to-ID sets; an exact server ID always passes even when also another server's alias. Other
   identifiers with more than one match cause HTTPException 400 detail.error beginning "Ambiguous
   mcp_tool_permissions key: ", sorted identifiers and sorted colliding IDs, then "Key tool permissions
   by server_id when servers share a name or alias.". Unresolved identifiers are not rejected here.
   Cases changed_collision_400, grandfathered_collision, exact_id_wins and unresolved_identifier cover
   these branches with a real DB plus injected registry snapshot; route-specific error mapping stays with callers.
+  The registry snapshot is an argument of the ambiguity check and of every function that reaches it
+  (prepare_object_permission_upsert, _set_object_permission, and handle_update_object_permission_common through
+  the upsert), in the shape B4731's get_registry returns (MCPServer records in registry order), passed through to
+  the resolver.
+  Route callers pass B4731's live registry once it lands and an empty one until then.
 
   invalidate_cached_object_permissions takes string IDs only (including ""), deduplicates preserving
   first order, derives B733 object_permission_id:<id> keys, and calls B878 evict_and_broadcast even for
@@ -181,9 +186,10 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L324-L332
 out_of_scope:
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B10000 owns _mcp_server_identifier_matches (L251-L257),
+    _get_db_mcp_servers_by_identifiers (L260-L276) and _resolve_mcp_server_identifiers_to_ids (L279-L318).'
   - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248),
-    _mcp_server_identifier_matches (L251-L257), _get_db_mcp_servers_by_identifiers (L260-L276), _resolve_mcp_server_identifiers_to_ids
-    (L279-L318), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
+    _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
     (L393-L405), _drop_stale_object_permission_mcp_identifiers (L408-L422), _flatten_resolved_mcp_server_ids
     (L425-L428), _resolve_team_allowed_mcp_servers (L431-L463), _get_allow_all_keys_server_ids (L466-L472),
     _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
