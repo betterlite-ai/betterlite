@@ -1,0 +1,94 @@
+kind: helper
+name: azure-stream-errors-header-difference
+call:
+  azure_stream_errors:
+    function: streaming
+    cases:
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        api_key: call-key
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers:
+            x-ratelimit-limit-requests: "7"
+            x-ratelimit-remaining-tokens: "3"
+            x-custom-name: MiXeD
+          events:
+            - "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        api_key: call-key
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers: {}
+          events:
+            - "data: {\"id\":\"chatcmpl-2\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+calls:
+  - azure_stream_errors:
+      function: async_streaming
+      cases:
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          send:
+            headers:
+              x-ratelimit-limit-requests: "7"
+              x-ratelimit-remaining-tokens: "3"
+              x-custom-name: MiXeD
+            events:
+              - "data: {\"id\":\"chatcmpl-3\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+              - "data: [DONE]\n\n"
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          send:
+            headers: {}
+            events:
+              - "data: {\"id\":\"chatcmpl-4\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+              - "data: [DONE]\n\n"
+env: {}
+compare: {ignore: []}

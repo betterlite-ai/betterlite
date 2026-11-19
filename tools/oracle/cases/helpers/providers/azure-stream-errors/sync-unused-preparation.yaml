@@ -1,0 +1,150 @@
+kind: helper
+name: azure-stream-errors-unused-preparation
+call:
+  azure_stream_errors:
+    function: streaming
+    cases:
+      - model: deployment
+        api_base: https://unit.test/openai/deployments/deployment
+        api_version: "2024-02-01"
+        azure_ad_token: oidc/env/ASSERTION
+        max_retries: 3
+        timeout: 12.5
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers:
+            content-type: text/event-stream
+          events:
+            - "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+        exchange:
+          environment:
+            AZURE_CLIENT_ID: client-A
+            AZURE_TENANT_ID: tenant
+            ASSERTION: assertion-A
+            ASSERTION_FAIL: assertion-B
+          status: 200
+          body: '{"access_token":"token-A","expires_in":3600}'
+          assertion: assertion-A
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        api_key: call-key
+        azure_ad_token: oidc/env/ASSERTION
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers:
+            content-type: text/event-stream
+          events:
+            - "data: {\"id\":\"chatcmpl-2\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        azure_ad_token: plain-token
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers:
+            content-type: text/event-stream
+          events:
+            - "data: {\"id\":\"chatcmpl-3\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        azure_ad_token_provider: 7
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        send:
+          headers:
+            content-type: text/event-stream
+          events:
+            - "data: {\"id\":\"chatcmpl-4\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        azure_ad_token: oidc/env/ASSERTION_FAIL
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        exchange:
+          environment:
+            AZURE_CLIENT_ID: client-A
+            AZURE_TENANT_ID: tenant
+            ASSERTION: assertion-A
+            ASSERTION_FAIL: assertion-B
+          status: 400
+          body: bad exchange
+          assertion: assertion-B
+calls:
+  - azure_stream_errors:
+      function: async_streaming
+      cases:
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          azure_ad_token: oidc/env/ASSERTION
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          send:
+            headers:
+              content-type: text/event-stream
+            events:
+              - "data: {\"id\":\"chatcmpl-5\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"deployment\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":\"stop\"}]}\n\n"
+              - "data: [DONE]\n\n"
+env:
+  AZURE_CLIENT_ID: client-A
+  AZURE_TENANT_ID: tenant
+  ASSERTION: assertion-A
+  ASSERTION_FAIL: assertion-B
+compare: {ignore: []}

@@ -1,0 +1,37 @@
+kind: helper
+name: azure_stream_errors-async-failure-seed
+call:
+  azure_stream_errors:
+    function: async_streaming
+    cases:
+      - model: deployment
+        api_base: https://unit.test/openai/deployments/deployment
+        api_version: "2024-02-01"
+        azure_ad_token: oidc/env/ASSERTION
+        max_retries: 2
+        timeout: 9.5
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_async
+          api_key: client-key
+        get_error:
+          text: socket closed
+          response: {present: true, value: {retry-after: "4"}}
+        exchange:
+          environment:
+            AZURE_CLIENT_ID: client-A
+            AZURE_TENANT_ID: tenant
+            ASSERTION: assertion-A
+          status: 200
+          body: '{"access_token":"token-A","expires_in":3600}'
+          assertion: assertion-A
+env:
+  AZURE_CLIENT_ID: client-A
+  AZURE_TENANT_ID: tenant
+  ASSERTION: assertion-A
+compare: {ignore: []}

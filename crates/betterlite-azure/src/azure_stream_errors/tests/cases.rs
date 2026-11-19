@@ -340,7 +340,7 @@ fn stream_header_difference() {
     assert_eq!(
         sync_stream
             .additional_headers
-            .get("llm_provider-llm_provider-x-custom-name"),
+            .get("llm_provider-x-custom-name"),
         Some(&Json::Text("MiXeD".to_owned()))
     );
 
