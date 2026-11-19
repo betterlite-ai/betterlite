@@ -561,28 +561,38 @@ async fn timeout_chain_and_structured_passthrough() {
     );
 }
 
-// a structured timeout passes through as the four numbers the caller wrote
+// a structured timeout passes through as the four numbers the caller wrote, for either provider
 #[tokio::test]
 async fn structured_timeout_passes_through() {
-    let fake = Fake::answering(&page());
+    let expected = FineTuningTimeout::Structured(StructuredTimeout {
+        connect: Some(1.0_f64),
+        read: Some(2.0_f64),
+        write: Some(3.0_f64),
+        pool: Some(4.0_f64),
+    });
+    let plain = Fake::answering(&page());
     run(
-        &fake,
+        &plain,
         &ConfiguredSettings::default(),
         &input(
-            r#"{"list": {"provider": "azure", "timeout": {"connect": 1.0, "read": 2.0, "write": 3.0, "pool": 4.0}}}"#,
+            r#"{"list": {"timeout": {"connect": 1.0, "read": 2.0, "write": 3.0, "pool": 4.0}}}"#,
         ),
     )
     .await
     .expect("a listed page");
-    assert_eq!(
-        azure(&fake.calls()).timeout,
-        FineTuningTimeout::Structured(StructuredTimeout {
-            connect: Some(1.0_f64),
-            read: Some(2.0_f64),
-            write: Some(3.0_f64),
-            pool: Some(4.0_f64)
-        })
-    );
+    assert_eq!(openai(&plain.calls()).timeout, expected);
+
+    let azure_fake = Fake::answering(&page());
+    run(
+        &azure_fake,
+        &ConfiguredSettings::default(),
+        &input(
+            r#"{"list": {"provider": "azure", "api_version": "2024-08-01-preview", "timeout": {"connect": 1.0, "read": 2.0, "write": 3.0, "pool": 4.0}}}"#,
+        ),
+    )
+    .await
+    .expect("a listed page");
+    assert_eq!(azure(&azure_fake.calls()).timeout, expected);
 }
 
 // list is the sync form and alist sets the async flag; extras ride along and never reach the target
