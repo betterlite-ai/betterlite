@@ -103,7 +103,11 @@ async fn retry_runs_the_attempt_twice_and_returns_the_second_result() {
 }
 
 #[rstest]
-#[case::not_found_again(not_found(true))]
+#[case::not_found_again(Err(FakeError::Model(ProxyModelNotFoundError::new(
+    "atext_completion",
+    MODEL,
+    true,
+))))]
 #[case::another_error(other_error())]
 #[tokio::test]
 async fn retry_returns_the_second_attempt_error(#[case] second: Result<&'static str, FakeError>) {
