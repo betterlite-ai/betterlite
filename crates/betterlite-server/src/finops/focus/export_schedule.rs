@@ -164,7 +164,7 @@ impl Drop for PodLockLease {
 }
 
 // _build_scheduler_trigger's daily branch: the offset counts minutes from midnight, clamped into its day
-pub(crate) const fn daily_cron_trigger(cron_offset_minute: i64) -> ScheduleTrigger {
+pub(crate) fn daily_cron_trigger(cron_offset_minute: i64) -> ScheduleTrigger {
     let total_minutes = cron_offset_minute.max(0);
     ScheduleTrigger::Cron {
         hour: Some(total_minutes.div_euclid(60).min(23)),
