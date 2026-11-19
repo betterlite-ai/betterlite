@@ -1,0 +1,19 @@
+kind: helper
+name: windowed-admission-over-limit-seed
+call:
+  b3036:
+    function: check_over_limit
+    keys_to_fetch:
+      - "{api-key:seeded}:window"
+      - "{api-key:seeded}:requests"
+    cache_values: [1700000000, 9]
+    key_metadata:
+      "{api-key:seeded}:window":
+        requests_limit: 4
+        tokens_limit: null
+        window_size: 60
+        descriptor_key: api-key
+        descriptor_value: seeded
+    read_only: false
+env: {}
+compare: {ignore: []}

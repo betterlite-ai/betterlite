@@ -1,0 +1,27 @@
+kind: helper
+name: json-native-api-policy-generic-messages-headers-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: generic_messages_headers
+        model: anthropic/probe-model
+        environment: {}
+        api_key: sk-generic
+        headers: {x-custom: "1", Anthropic-Version: "2024-01-01"}
+        optional_params: {speed: fast}
+        messages: []
+      - kind: generic_messages_headers
+        model: anthropic/probe-model
+        environment: {}
+        api_key: sk-generic
+        headers: {Authorization: "Bearer caller"}
+        optional_params: {}
+        messages: []
+      - kind: generic_messages_headers
+        model: anthropic/probe-model
+        environment: {}
+        headers: {anthropic-beta: prompt-caching-2024-07-31}
+        optional_params: {speed: fast}
+        messages: []
+env: {}
+compare: {ignore: []}

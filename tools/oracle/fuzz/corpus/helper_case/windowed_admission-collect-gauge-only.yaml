@@ -1,0 +1,17 @@
+kind: helper
+name: windowed-admission-collect-gauge-only-seed
+call:
+  b3036:
+    function: collect
+    descriptors:
+      - key: api-key
+        value: seeded
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 2
+          window_size: null
+    skip_tpm_check: false
+    window_size: 60
+env: {}
+compare: {ignore: []}

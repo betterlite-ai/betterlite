@@ -13,6 +13,14 @@ pub const RAW_BODY_STATE_KEY: &str = "litellm_pass_through_raw_body";
 pub const MODEL_INFO_STATE_KEY: &str = "litellm_pass_through_deployment_model_info";
 pub const ENDPOINT_MARKER: &str = "__litellm_pass_through_endpoint__";
 
+// RFC 6455 gives the reason of a 125-byte control frame 123 bytes once the two-byte code is counted
+pub const CLOSE_REASON_MAX_BYTES: usize = 123;
+
+// every websockets CloseCode member except 1005, 1006 and 1015, which no peer may send on the wire
+pub const SENDABLE_CLOSE_CODES: [u16; 12] = [
+    1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EndpointType {
@@ -36,8 +44,14 @@ pub struct PassthroughLogPayload {
     pub cost_per_request: Option<Decimal>,
 }
 
+pub mod multipart;
+pub mod non_streaming;
+pub mod request_data;
 pub mod route_registration;
 mod tests;
+pub mod upstream;
+pub mod vertex_setup;
+pub mod websocket;
 
 #[must_use]
 pub fn get_endpoint_type(url: &str, custom_llm_provider: Option<&str>) -> EndpointType {
