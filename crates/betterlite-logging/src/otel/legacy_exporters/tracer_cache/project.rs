@@ -46,13 +46,8 @@ pub(crate) fn tracer_for(
     }
     drop(projects);
     // resource detection and exporter construction can block, so they run without the cache lock
-    let plan = span_processor_plan(&cache.config, None, None, cache.callback_name.as_deref())?;
-    let processor = cache.builder.span_processor(&plan)?;
     let fresh = CachedProvider {
-        provider: SdkTracerProvider::builder()
-            .with_resource(project_resource(&cache.resource, attributes))
-            .with_span_processor(processor)
-            .build(),
+        provider: project_provider(cache, attributes)?,
         owns_exporter: !matches!(cache.config.exporter, Exporter::InMemory),
     };
     let mut cached_projects = cache
@@ -83,6 +78,19 @@ pub(crate) fn tracer_for(
     Ok(tracer)
 }
 
+fn project_provider(
+    cache: &DynamicTracerCache,
+    attributes: &BTreeMap<String, String>,
+) -> Result<SdkTracerProvider, LegacyExporterError> {
+    let plan = span_processor_plan(&cache.config, None, None, cache.callback_name.as_deref())?;
+    let processor = cache.builder.span_processor(&plan)?;
+    Ok(SdkTracerProvider::builder()
+        .with_resource(project_resource(&cache.resource, attributes))
+        .with_span_processor(processor)
+        .build())
+}
+
+#[cfg(test)]
 #[must_use]
 pub(crate) fn project_names(cache: &DynamicTracerCache) -> Vec<String> {
     let projects = cache
