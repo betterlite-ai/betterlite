@@ -30,6 +30,7 @@ fn runtime() -> Runtime {
 #[case::a_repeated_id_keeps_its_place_and_its_last_deployment(
     "a_repeated_id_keeps_its_place_and_its_last_deployment"
 )]
+#[case::an_id_with_a_colon_keeps_its_counter("an_id_with_a_colon_keeps_its_counter")]
 #[case::a_value_of_another_kind_is_unknown("a_value_of_another_kind_is_unknown")]
 #[case::a_failed_read_answers_the_cold_pick("a_failed_read_answers_the_cold_pick")]
 #[case::the_async_facade_reads_the_pool_in_one_batch(
