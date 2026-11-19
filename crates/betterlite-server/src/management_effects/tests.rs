@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::future::Future;
 use std::future::ready;
@@ -142,6 +143,31 @@ async fn success_alert_span_eviction_order() {
     assert_eq!(spans[0].hook, SpanHook::Success);
     assert_eq!(spans[0].response, Some(expected_response()));
     assert_eq!(spans[0].parent, Some(parent.context.clone()));
+}
+
+#[tokio::test]
+async fn unprojectable_result_has_no_response() {
+    let harness = Harness::default();
+    let auth = actor_auth();
+    let parent = parent_span();
+    // a tuple map key makes serde_json reject the projection, as dict(result) raises in LiteLLM
+    let result = BTreeMap::from([((1_u8, 2_u8), 3_u8)]);
+    let outcome: Result<BTreeMap<(u8, u8), u8>, FakeHandlerError> = management_endpoint_wrapper(
+        call(None, Some(&auth), Some(&parent)),
+        harness.deps(),
+        ready(Ok(result)),
+    )
+    .await;
+    assert_eq!(
+        outcome.expect("the handler result comes back"),
+        BTreeMap::from([((1_u8, 2_u8), 3_u8)])
+    );
+    let spans = harness.span.sent.entries();
+    assert_eq!(spans[0].response, None);
+    assert_eq!(
+        harness.events.entries(),
+        vec![Effect::Alert, Effect::SuccessSpan]
+    );
 }
 
 #[tokio::test]
@@ -394,6 +420,7 @@ impl Kind {
 #[rstest]
 #[case::update_key(Kind::UpdateKey, &["k1"], &["k1"])]
 #[case::delete_keys(Kind::DeleteKeys, &["k1", "k2"], &["k1", "k2"])]
+#[case::delete_keys_empty_entry(Kind::DeleteKeys, &[""], &[""])]
 #[case::update_user(Kind::UpdateUser, &["u1"], &["u1"])]
 #[case::delete_users(Kind::DeleteUsers, &["u1", "u2"], &["u1", "u2"])]
 #[case::update_team(Kind::UpdateTeam, &["t1"], &["t1"])]
