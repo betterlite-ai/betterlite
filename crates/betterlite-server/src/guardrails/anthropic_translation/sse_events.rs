@@ -27,7 +27,7 @@ pub enum SseChunk {
 }
 
 // Python's str.strip also drops U+001C to U+001F, which Rust's trim leaves in place.
-pub(super) fn trim_sse(text: &str) -> &str {
+fn trim_sse(text: &str) -> &str {
     text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     })

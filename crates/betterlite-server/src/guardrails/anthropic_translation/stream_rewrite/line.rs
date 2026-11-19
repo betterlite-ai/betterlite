@@ -1,11 +1,9 @@
 use std::str;
 
-use serde_json::Value;
-
 use super::events::rewritten_event;
 use super::json_dumps::dumped_json;
 use super::rewriter::EventRewriter;
-use crate::guardrails::anthropic_translation::sse_events::trim_sse;
+use crate::guardrails::anthropic_translation::sse_events::parse_sse_data_line;
 
 // LiteLLM's _rewrite_sse_events: framing stays byte for byte, and bytes that are not UTF-8 come back unchanged.
 #[must_use]
@@ -30,10 +28,10 @@ pub fn rewrite_sse_events(bytes: &[u8], rewriter: &mut EventRewriter) -> Vec<u8>
 // LiteLLM's _rewrite_sse_line: only an untrimmed `data:` line whose payload is a JSON object can be rewritten.
 #[must_use]
 pub fn rewrite_sse_line(line: &str, rewriter: &mut EventRewriter) -> String {
-    let Some(payload) = line.strip_prefix("data:") else {
+    if !line.starts_with("data:") {
         return line.to_owned();
-    };
-    let Ok(Value::Object(event)) = serde_json::from_str::<Value>(trim_sse(payload)) else {
+    }
+    let Some(event) = parse_sse_data_line(line) else {
         return line.to_owned();
     };
     let Some(rewritten) = rewritten_event(&event, rewriter) else {
