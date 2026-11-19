@@ -464,7 +464,7 @@ fn file_delete_surfaces_a_json_parse_failure() {
     for body in ["", "not json"] {
         let observation = run(&delete_step(body));
         let Outcome::Raised(raised) = observation.outcome else {
-            panic!("an unparseable json body raises");
+            panic!("an unparsable json body raises");
         };
         assert_eq!(raised.class, "ValidationError");
         assert!(
