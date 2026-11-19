@@ -18,7 +18,7 @@ class Adapter(MessagesAdapter):
 @runtime_checkable
 class Translate(Protocol):
     # the message TypedDicts carry Any, so the call enters through this JSON-facing signature
-    def translate_anthropic_messages_to_openai(
+    def translate_anthropic_messages_to_openai(  # ast-grep-ignore: no-long-names
         self,
         messages: list[JsonValue],
         model: str | None = None,

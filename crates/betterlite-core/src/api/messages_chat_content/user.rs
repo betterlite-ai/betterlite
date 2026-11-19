@@ -1,7 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::ChatContentError;
-use super::{ChatTarget, encode, text_part};
+use super::{ChatTarget, text_part};
 use crate::api::messages_content_primitives::markers::{
     carry_cache_breakpoint, copy_cache_control,
 };
@@ -40,7 +40,8 @@ fn push_tool_result(
     let mut message = Object::new();
     message.insert("role".to_owned(), Json::Text("tool".to_owned()));
     message.insert("tool_call_id".to_owned(), Json::Text(id.to_owned()));
-    message.insert("content".to_owned(), encode(&tool_result_content(content))?);
+    let encoded = serde_json::to_value(&tool_result_content(content))?;
+    message.insert("content".to_owned(), serde_json::from_value(encoded)?);
     copy_cache_control(block, &mut message, model);
     tool_messages.push(Json::Object(message));
     Ok(())

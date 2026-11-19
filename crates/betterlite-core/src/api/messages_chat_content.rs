@@ -7,7 +7,6 @@ mod tests;
 use betterlite_anthropic::message_replay::{BlockStrip, strip_blocks};
 use betterlite_models::model_capability_predicates::CapabilityPredicates;
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde::Serialize;
 
 use crate::api::messages_chat_options::system::mid_turn_system_message;
 use crate::api::messages_content_primitives::markers::mid_system_supported;
@@ -84,13 +83,4 @@ fn text_part(block: &Object) -> Object {
     part.insert("type".to_owned(), Json::Text("text".to_owned()));
     part.insert("text".to_owned(), Json::Text(text.to_owned()));
     part
-}
-
-// A part built from our own primitives always encodes, but the caller still sees the failure.
-fn encode<Part>(part: &Part) -> Result<Json, ChatContentError>
-where
-    Part: Serialize,
-{
-    let encoded = serde_json::to_value(part)?;
-    Ok(serde_json::from_value(encoded)?)
 }

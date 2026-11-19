@@ -5,7 +5,7 @@ use betterlite_prompts::message_content::ContentPart;
 use betterlite_prompts::reasoning_fields::thinking_text::reasoning_content_from_blocks;
 
 use super::error::ChatContentError;
-use super::{ChatTarget, encode, text_part};
+use super::{ChatTarget, text_part};
 use crate::api::messages_content_primitives::markers::copy_cache_control;
 use crate::api::messages_content_primitives::signatures::tool_use_signature;
 use crate::api::messages_content_primitives::tools::truncate_tool_name;
@@ -133,7 +133,8 @@ impl Parts {
         let blocks = if self.thinking.is_empty() {
             Json::Null
         } else {
-            encode(&self.thinking)?
+            let encoded = serde_json::to_value(&self.thinking)?;
+            serde_json::from_value(encoded)?
         };
         let reasoning = reasoning_content_from_blocks(&self.thinking);
         let mut message = Object::new();
