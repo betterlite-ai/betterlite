@@ -171,13 +171,13 @@ def request_options(run: Run, api_base: str) -> CreateOptions:
 def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
     options = request_options(run, api_base)
     if run.is_async:
-        held: Coroutine[object, object, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
+        held: Coroutine[None, None, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
             **options
         )
         return asyncio.run(held)
     answer: CreateAnswer = create_fine_tuning_job(**options)
     if asyncio.iscoroutine(answer):
-        pending: Coroutine[object, object, LiteLLMFineTuningJob] = answer
+        pending: Coroutine[None, None, LiteLLMFineTuningJob] = answer
         return asyncio.run(pending)
     return TypeAdapter(LiteLLMFineTuningJob).validate_python(answer)
 
