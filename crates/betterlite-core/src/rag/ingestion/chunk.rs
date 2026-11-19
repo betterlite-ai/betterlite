@@ -58,8 +58,9 @@ fn default_separators() -> Vec<String> {
 }
 
 pub fn split(text: &str, plan: ChunkPlan) -> Result<Vec<String>, ChunkError> {
-    let splitter = RecursiveCharacterTextSplitter::new(plan.size, plan.overlap, plan.separators)?;
-    splitter.split_text(text).map_err(ChunkError::Split)
+    RecursiveCharacterTextSplitter::new(plan.size, plan.overlap, plan.separators)?
+        .split_text(text)
+        .map_err(ChunkError::Split)
 }
 
 #[must_use]

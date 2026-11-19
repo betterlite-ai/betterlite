@@ -5,13 +5,14 @@ pub mod ocr;
 pub mod store;
 pub mod upload;
 
-#[cfg(test)]
 #[path = "ingestion/tests.rs"]
 mod ingestion_state;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::rag::document::ingest::{RAGIngestEmbeddingOptions, RAGIngestOCROptions};
 use serde_json::value::RawValue;
 use uuid::Uuid;
@@ -136,7 +137,7 @@ impl IngestionState {
         let data_url = format!(
             "data:{};base64,{}",
             content_type.unwrap_or_default(),
-            ocr::encode_base64(content)
+            BASE64.encode(content)
         );
         let request = OcrRequest {
             model,
