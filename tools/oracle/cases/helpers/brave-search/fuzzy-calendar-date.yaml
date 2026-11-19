@@ -32,5 +32,21 @@ call:
         value: "March 5th, 2024 at 10:30 AM"
         dayfirst: false
         yearfirst: false
+      - kind: date
+        value: "Mar 5, 2024 at 3 PM"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Sept 5 2024"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Thurs"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Junk"
+        dayfirst: false
+        yearfirst: false
 env: {}
 compare: {ignore: []}

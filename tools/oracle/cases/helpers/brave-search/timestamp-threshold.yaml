@@ -32,5 +32,13 @@ call:
         value: "1700000000.25"
         dayfirst: false
         yearfirst: false
+      - kind: date
+        value: -100000000000
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: 253402300800000
+        dayfirst: false
+        yearfirst: false
 env: {}
 compare: {ignore: []}

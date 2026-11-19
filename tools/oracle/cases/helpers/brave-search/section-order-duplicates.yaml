@@ -12,5 +12,9 @@ call:
         query: unsupported filter
         optional_params: {result_filter: "answers,web"}
         body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}]}, "videos": {"results": [{"title": "v1", "url": "https://v1.test", "description": "video"}]}, "discussions": {"results": [{"title": "d1", "url": "https://d1.test", "description": "discussion"}]}}'
+      - kind: reply
+        query: repeated filter
+        optional_params: {result_filter: [news, web], count: 4}
+        body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}]}, "news": {"results": [{"title": "n1", "url": "https://n1.test", "description": "news"}]}}'
 env: {}
 compare: {ignore: []}
