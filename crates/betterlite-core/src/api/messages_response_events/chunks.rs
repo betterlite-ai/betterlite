@@ -93,14 +93,6 @@ pub(super) fn content_block_stop(index: i64) -> Json {
     )
 }
 
-#[must_use]
-pub(super) fn signature_delta(signature: &str) -> Json {
-    typed_object(
-        "signature_delta",
-        vec![("signature", Json::Text(signature.to_owned()))],
-    )
-}
-
 pub(super) fn message_delta(
     stop_reason: AnthropicStopReason,
     refusal_text: Option<&str>,

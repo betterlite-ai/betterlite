@@ -157,52 +157,36 @@ pub(super) fn completed(
         .expect("the event processes");
 }
 
-// A valid status needs an int in 400..=599 or a decimal string in that range.
-pub(super) fn failure_status_matrix() {
-    let statuses: &[(&str, u16)] = &[
-        ("429", 429),
-        ("\"\u{0664}\u{0662}\u{0669}\"", 429),
-        ("true", 500),
-        ("429.0", 500),
-        ("\"+429\"", 500),
-        ("\" 429 \"", 500),
-        ("399", 500),
-        ("600", 500),
-        ("\"abc\"", 500),
-        ("null", 500),
-        ("400", 400),
-        ("599", 599),
+// A valid status is an int in 400..=599 or a decimal string there; a message is a nonempty string.
+pub(super) fn failure_projection_matrix() {
+    let cases: &[(&str, &str, u16, &str)] = &[
+        ("429", "\"m\"", 429, "m"),
+        ("\"\u{0664}\u{0662}\u{0669}\"", "\"m\"", 429, "m"),
+        ("true", "\"m\"", 500, "m"),
+        ("429.0", "\"m\"", 500, "m"),
+        ("\"+429\"", "\"m\"", 500, "m"),
+        ("\" 429 \"", "\"m\"", 500, "m"),
+        ("399", "\"m\"", 500, "m"),
+        ("600", "\"m\"", 500, "m"),
+        ("\"abc\"", "\"m\"", 500, "m"),
+        ("null", "\"m\"", 500, "m"),
+        ("400", "\"m\"", 400, "m"),
+        ("599", "\"m\"", 599, "m"),
+        ("null", "\"busy\"", 500, "busy"),
+        ("null", "429", 500, "boom"),
+        ("null", "3.5", 500, "boom"),
+        ("null", "null", 500, "boom"),
+        ("null", "\"\"", 500, "boom"),
+        ("null", "\"x\"", 500, "x"),
     ];
-    for &(raw, expected) in statuses {
+    for &(status, message, expected_status, expected_message) in cases {
         let cause = failure(&format!(
-            r#"{{"kind":"plain","text":"m","status_code":{raw}}}"#
+            r#"{{"kind":"plain","text":"boom","status_code":{status},"message":{message}}}"#
         ));
         assert_eq!(
             failure_status_and_message(&cause),
-            (expected, "m".to_owned()),
-            "status {raw}"
-        );
-    }
-}
-
-// A message needs a nonempty string; any other value falls back to the failure text.
-pub(super) fn failure_message_matrix() {
-    let messages: &[(&str, &str)] = &[
-        ("\"busy\"", "busy"),
-        ("429", "boom"),
-        ("3.5", "boom"),
-        ("null", "boom"),
-        ("\"\"", "boom"),
-        ("\"x\"", "x"),
-    ];
-    for &(raw, expected) in messages {
-        let cause = failure(&format!(
-            r#"{{"kind":"plain","text":"boom","message":{raw}}}"#
-        ));
-        assert_eq!(
-            failure_status_and_message(&cause),
-            (500, expected.to_owned()),
-            "message {raw}"
+            (expected_status, expected_message.to_owned()),
+            "status {status} message {message}"
         );
     }
 }

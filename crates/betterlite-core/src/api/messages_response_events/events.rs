@@ -15,49 +15,54 @@ use super::input::{ItemObject, ParsedEvent, is_present, text};
 
 const NO_OUTPUT: &[OutputItem<'static>] = &[];
 
+// The two names a content_block_delta carries: the delta's own type and the field holding its payload.
+type DeltaNames = (&'static str, &'static str);
+
+const TEXT_DELTA: DeltaNames = ("text_delta", "text");
+const THINKING_DELTA: DeltaNames = ("thinking_delta", "thinking");
+const INPUT_JSON_DELTA: DeltaNames = ("input_json_delta", "partial_json");
+const SIGNATURE_DELTA: DeltaNames = ("signature_delta", "signature");
+
+// A truthy field of an output item: getattr and dict.get both answer None when the key is absent.
+fn item_field<'item>(item: ItemObject<'item>, key: &str) -> Option<&'item Json> {
+    item.fields
+        .and_then(|fields| fields.get(key))
+        .filter(|value| is_present(value))
+}
+
 // The handlers of _process_event; they are free functions so MessageStreamState keeps its one inherent impl.
 pub(super) fn item_added(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
     let Some(item) = event.item() else {
         return;
     };
-    let item_type = item
-        .fields
-        .and_then(|fields| fields.get("type"))
-        .filter(|value| is_present(value))
-        .and_then(text);
-    match item_type {
-        Some("message") => {
-            let item_id = item
-                .fields
-                .and_then(|fields| fields.get("id"))
-                .filter(|value| is_present(value));
-            state.open_block(
-                item_id,
-                chunks::typed_object("text", vec![("text", Json::Text(String::new()))]),
-            );
-        }
-        Some("function_call") => open_function_call(state, item),
-        Some(_) | None => {}
+    let item_id = item_field(item, "id");
+    let Some(item_type) = item_field(item, "type").and_then(text) else {
+        return;
+    };
+    if item_type == "function_call" {
+        open_function_call(state, item, item_id);
+        return;
     }
+    if item_type != "message" {
+        return;
+    }
+    state.open_block(
+        item_id,
+        chunks::typed_object("text", vec![("text", Json::Text(String::new()))]),
+    );
 }
 
-fn open_function_call(state: &mut MessageStreamState, item: ItemObject<'_>) {
-    let call_id = item
-        .fields
-        .and_then(|fields| fields.get("call_id"))
-        .filter(|value| is_present(value))
+fn open_function_call(
+    state: &mut MessageStreamState,
+    item: ItemObject<'_>,
+    item_id: Option<&Json>,
+) {
+    let call_id = item_field(item, "call_id")
         .cloned()
         .unwrap_or(Json::Text(String::new()));
-    let name = item
-        .fields
-        .and_then(|fields| fields.get("name"))
-        .filter(|value| is_present(value))
+    let name = item_field(item, "name")
         .cloned()
         .unwrap_or(Json::Text(String::new()));
-    let item_id = item
-        .fields
-        .and_then(|fields| fields.get("id"))
-        .filter(|value| is_present(value));
     if let Some(Json::Text(text_id)) = item_id {
         state
             .pending_tool_ids
@@ -86,59 +91,64 @@ pub(super) fn refusal_delta(state: &mut MessageStreamState, event: ParsedEvent<'
         return;
     }
     state.refusal_text.push_str(delta);
-    let block_idx = text_target(state, event.item_id());
-    let frame = chunks::typed_object("text_delta", vec![("text", Json::Text(delta.to_owned()))]);
-    push_delta(state, block_idx, frame);
+    emit_delta(state, event, DeltaKind::Text);
 }
 
-pub(super) fn text_delta(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
-    let block_idx = text_target(state, event.item_id());
-    let frame = chunks::typed_object("text_delta", vec![("text", event.delta().clone())]);
-    push_delta(state, block_idx, frame);
+// The delta branches of _process_event differ only in the block they pick and the payload they carry.
+pub(super) enum DeltaKind {
+    Text,
+    SummaryPart,
+    SummaryText,
+    Arguments,
 }
 
-pub(super) fn summary_part_added(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
-    let part_block_idx = state.mapped_block_index(event.field("item_id"));
-    if part_block_idx < 0 || !qualifies_as_summary_index(event.field("summary_index")) {
-        return;
+pub(super) fn emit_delta(state: &mut MessageStreamState, event: ParsedEvent<'_>, kind: DeltaKind) {
+    match kind {
+        DeltaKind::Text => {
+            let block_idx = text_target(state, event.item_id());
+            push_delta(state, block_idx, TEXT_DELTA, event.delta().clone());
+        }
+        DeltaKind::SummaryPart => {
+            let block_idx = state.mapped_block_index(event.field("item_id"));
+            if block_idx < 0 || !qualifies_as_summary_index(event.field("summary_index")) {
+                return;
+            }
+            let payload = Json::Text(SUMMARY_PART_SEPARATOR.to_owned());
+            push_delta(state, block_idx, THINKING_DELTA, payload);
+        }
+        DeltaKind::SummaryText => {
+            let Some(block_idx) = summary_text_target(state, event) else {
+                return;
+            };
+            let payload = event.delta().clone();
+            push_delta(state, block_idx, THINKING_DELTA, payload);
+        }
+        DeltaKind::Arguments => {
+            let block_idx = state.arguments_block_index(event.item_id());
+            let payload = event.delta().clone();
+            push_delta(state, block_idx, INPUT_JSON_DELTA, payload);
+        }
     }
-    let separator = Json::Text(SUMMARY_PART_SEPARATOR.to_owned());
-    push_delta(
-        state,
-        part_block_idx,
-        chunks::typed_object("thinking_delta", vec![("thinking", separator)]),
-    );
 }
 
-pub(super) fn summary_text_delta(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
+// A summary text delta opens its thinking block only when it carries a delta.
+fn summary_text_target(state: &mut MessageStreamState, event: ParsedEvent<'_>) -> Option<i64> {
     let item_id = event.item_id();
-    let block_idx = match state.block_index_for(item_id) {
-        block_idx if block_idx >= 0 => block_idx,
-        _ if is_present(event.delta()) => state.open_block(item_id, chunks::thinking_block()),
-        _ => return,
-    };
-    let frame = chunks::typed_object("thinking_delta", vec![("thinking", event.delta().clone())]);
-    push_delta(state, block_idx, frame);
-}
-
-pub(super) fn arguments_delta(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
-    let block_idx = state.arguments_block_index(event.item_id());
-    let frame = chunks::typed_object(
-        "input_json_delta",
-        vec![("partial_json", event.delta().clone())],
-    );
-    push_delta(state, block_idx, frame);
+    let block_idx = state.block_index_for(item_id);
+    if block_idx >= 0 {
+        return Some(block_idx);
+    }
+    if is_present(event.delta()) {
+        return Some(state.open_block(item_id, chunks::thinking_block()));
+    }
+    None
 }
 
 pub(super) fn item_done(state: &mut MessageStreamState, event: ParsedEvent<'_>) {
     let item = event.item();
-    let item_id = item
-        .and_then(|present| present.fields)
-        .and_then(|fields| fields.get("id"))
-        .filter(|value| is_present(value));
+    let item_id = item.and_then(|present| item_field(present, "id"));
     let is_reasoning = item
-        .and_then(|present| present.fields)
-        .and_then(|fields| fields.get("type"))
+        .and_then(|present| item_field(present, "type"))
         .and_then(text)
         == Some("reasoning");
     if is_reasoning {
@@ -161,10 +171,8 @@ fn close_reasoning_item(
 ) {
     let block_idx = state.block_index_for(item_id);
     let signature = item
-        .and_then(|present| present.fields)
-        .and_then(|fields| fields.get("encrypted_content"))
+        .and_then(|present| item_field(present, "encrypted_content"))
         .and_then(text)
-        .filter(|text| !text.is_empty())
         .map(encrypted_reasoning_signature);
     if block_idx < 0 && signature.is_none() {
         return;
@@ -178,7 +186,7 @@ fn close_reasoning_item(
         return;
     }
     if let Some(encoded) = signature {
-        push_delta(state, block_idx, chunks::signature_delta(&encoded));
+        push_delta(state, block_idx, SIGNATURE_DELTA, Json::Text(encoded));
     }
     state
         .chunk_queue
@@ -209,7 +217,9 @@ pub(super) fn completed(
     Ok(())
 }
 
-fn push_delta(state: &mut MessageStreamState, block_idx: i64, delta: Json) {
+// A content_block_delta carries one typed delta: its two names and the single payload it holds.
+fn push_delta(state: &mut MessageStreamState, block_idx: i64, names: DeltaNames, payload: Json) {
+    let delta = chunks::typed_object(names.0, vec![(names.1, payload)]);
     state.chunk_queue.push_back(chunks::block_frame(
         "content_block_delta",
         block_idx,

@@ -15,16 +15,15 @@ use common::{
     FAILED_DEFAULT, FAILED_LOG_DEFAULT, MESSAGE_ITEM, assert_mapped,
     attributed_event_type_fallback, attributed_falsey_fallbacks, attributed_truthy_delta,
     completed, completed_usage, discard, drained, failed_event_redaction, failure, failure_chains,
-    failure_message_matrix, failure_redaction, failure_status_matrix, json, mapped_error_types,
-    mapping, message_start_once, non_block_items, open_message_and_tool,
-    passthrough_error_messages, process, projected_usage, refusal_deltas, reopen_and_empty_id,
-    silent_events, state, terminal_chunks, text, text_before_block, text_deltas, zero_usage,
+    failure_projection_matrix, failure_redaction, json, mapped_error_types, mapping,
+    message_start_once, non_block_items, open_message_and_tool, passthrough_error_messages,
+    process, projected_usage, refusal_deltas, reopen_and_empty_id, silent_events, state,
+    terminal_chunks, text, text_before_block, text_deltas, zero_usage,
 };
 
 #[test]
 fn failure_projection() {
-    failure_status_matrix();
-    failure_message_matrix();
+    failure_projection_matrix();
     failure_chains();
     mapped_error_types();
     passthrough_error_messages();

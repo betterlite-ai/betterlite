@@ -109,10 +109,18 @@ impl MessageStreamState {
             "response.created" => self.start_message(),
             "response.output_item.added" => events::item_added(self, event),
             "response.refusal.delta" => events::refusal_delta(self, event),
-            "response.output_text.delta" => events::text_delta(self, event),
-            "response.reasoning_summary_part.added" => events::summary_part_added(self, event),
-            "response.reasoning_summary_text.delta" => events::summary_text_delta(self, event),
-            "response.function_call_arguments.delta" => events::arguments_delta(self, event),
+            "response.output_text.delta" => {
+                events::emit_delta(self, event, events::DeltaKind::Text);
+            }
+            "response.reasoning_summary_part.added" => {
+                events::emit_delta(self, event, events::DeltaKind::SummaryPart);
+            }
+            "response.reasoning_summary_text.delta" => {
+                events::emit_delta(self, event, events::DeltaKind::SummaryText);
+            }
+            "response.function_call_arguments.delta" => {
+                events::emit_delta(self, event, events::DeltaKind::Arguments);
+            }
             "response.output_item.done" => events::item_done(self, event),
             "response.failed" => return failure::failed(self, event),
             "response.completed" | "response.incomplete" => return events::completed(self, event),
