@@ -1,17 +1,21 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::thread_runs::records::RunEvent;
 
 use super::support::{self, CREATE_URL, KEY, Recorder, STREAM_BODY, run_body, run_request};
-use crate::assistants::operations::RunDispatch;
+use crate::assistants::error::AssistantsRunError;
+use crate::assistants::operations::{RunCall, RunDispatch};
+use crate::azure_assistant_definitions::error::DefinitionsError;
 
 // A streaming facade call hands back the SDK's manager, which sends its request only when read.
 pub(super) async fn check() {
     builds_without_sending().await;
     streams_events_in_order().await;
+    resolves_the_provider_when_the_manager_is_built().await;
 }
 
 fn streaming() -> RunDispatch {
@@ -51,4 +55,27 @@ async fn streams_events_in_order() {
         seen[0].headers.get("api-key").map(String::as_str),
         Some(KEY)
     );
+}
+
+// The manager's request, and the provider token in it, are fixed when the manager is built, not when it opens.
+async fn resolves_the_provider_when_the_manager_is_built() {
+    let mut fixture = support::Fixture::new();
+    fixture.provider = Some(support::provider(Arc::new(support::FailingToken)));
+    let recorder = Recorder::start();
+    let run = run_request();
+    let call = RunCall {
+        dispatch: streaming(),
+        run: &run,
+        handler: None,
+    };
+    let outcome = support::api(&recorder)
+        .run(&fixture.request(), None, call)
+        .await;
+    assert!(matches!(
+        outcome,
+        Err(AssistantsRunError::Client(
+            DefinitionsError::Provider { .. }
+        ))
+    ));
+    assert!(recorder.requests().is_empty());
 }
