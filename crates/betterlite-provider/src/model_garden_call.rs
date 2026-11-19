@@ -94,11 +94,10 @@ async fn compatible_call(
         identifier: call.identifier,
         clock: call.clock,
     };
-    let outcome = execution
+    execution
         .execute(client, state, env)
         .await
-        .map_err(|error| CallError::Chat(Box::new(error)))?;
-    Ok(outcome)
+        .map_err(|error| CallError::Chat(Box::new(error)))
 }
 
 // the source reads the option without popping it and writes the boolean back, so the body always carries one
