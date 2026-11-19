@@ -1,0 +1,16 @@
+kind: helper
+name: member_permission_fields
+call:
+  team_request_contracts:
+    operation: permission_get
+    document: {"team_id": "t"}
+calls:
+  - team_request_contracts: {operation: permission_get, document: {}}
+  - team_request_contracts: {operation: permission_update, document: {"team_id": "t", "team_member_permissions": ["/key/info"]}}
+  - team_request_contracts: {operation: permission_update, document: {"team_id": "t"}}
+  - team_request_contracts: {operation: permission_get_response, document: {"team_id": "t", "all_available_permissions": ["/key/info"]}}
+  - team_request_contracts: {operation: permission_get_response, document: {"team_id": "t", "team_member_permissions": null, "all_available_permissions": []}}
+  - team_request_contracts: {operation: bulk_permissions_response, document: {"message": "done", "teams_updated": 2}}
+  - team_request_contracts: {operation: bulk_permissions_response, document: {"message": "done", "teams_updated": 0, "permissions_appended": ["/key/info"]}}
+env: {}
+compare: {ignore: []}
