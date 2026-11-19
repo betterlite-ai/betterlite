@@ -153,7 +153,6 @@ macro_rules! stub_router {
             .merge(batch_read::routes($state))
             .merge(claude_gateway_oauth::routes($state))
             .merge(claude_plugin_write::routes($state))
-            .merge(crate::cost_estimate_route::router::routes($state))
             .merge(credentials::routes($state))
             .merge(customer_update::routes($state))
             .merge(file_upload::routes($state))
@@ -282,11 +281,17 @@ pub(crate) fn router(
         .merge(stub_router!(&state));
     application
         .layer(middleware::from_fn_with_state(
-            auth,
+            auth.clone(),
             auth_route_patterns::stage,
         ))
         .layer(middleware::from_fn(stage))
-        .layer(Extension(state))
+        .layer(Extension(Arc::clone(&state)))
+        // /cost/estimate lives in the spend-tracking route table, which the route-match gate does not admit
+        .merge(
+            crate::cost_estimate_route::router::routes(&state).route_layer(
+                middleware::from_fn_with_state(auth, auth_route_patterns::stage),
+            ),
+        )
 }
 
 fn base_application(shutting_down: Arc<AtomicBool>) -> Router {
