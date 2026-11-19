@@ -12,7 +12,7 @@ use crate::api::realtime_guardrail_policy::error::RealtimeGuardrailPolicyError;
 use crate::api::request_destination::RequestData;
 
 // One litellm.callbacks entry: LiteLLM asks isinstance(cb, CustomGuardrail) before it asks the predicate, and detection counts a native-lifecycle guardrail that B1007's runner later skips.
-pub trait RealtimeGuardrailCallback {
+pub trait RealtimeGuardrailCallback: Send + Sync {
     type Error;
 
     fn is_custom_guardrail(&self) -> bool;

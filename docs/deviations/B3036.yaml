@@ -1,0 +1,36 @@
+task: B3036
+deviations:
+  - what: Counter text that is not a base-10 integer makes is_cache_list_over_limit return WindowedAdmissionError::Counter, and bytes counters are decoded as UTF-8 text before the same parse, where Python's int() raises ValueError for the text and TypeError for the bytes.
+    why: Python's int() raises out of the check, and a TypeError there becomes a 500 from the rate limiter. The limiter only writes integer counters, so no working setup reaches either; the failure names the counter value instead of surfacing a Python traceback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1301
+  - what: A value list whose length differs from the key list, or that has an odd length, is WindowedAdmissionError::WindowPairCount, both in is_cache_list_over_limit and in the local-cache write-back after the script.
+    why: LiteLLM walks the values two at a time and indexes keys_to_fetch[i + 1] while keying the metadata by keys_to_fetch[i], so a short value list silently drops the last pair and a long one raises IndexError. The rate limiter script returns one window start and one counter per key, so a different count is a broken reply that betterlite names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1280-L1284
+  - what: A window key missing from key_metadata is WindowedAdmissionError::MissingWindowMetadata naming the key, instead of Python's KeyError.
+    why: collect_windowed_keys_and_gauges inserts the metadata for every window key it appends, so a missing entry means the key list and the metadata map disagree. LiteLLM's key_metadata[window_key] raises a KeyError out of the limiter in that case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1285-L1286
+  - what: A limiter clock that reads a time before the Unix epoch is WindowedAdmissionError::ClockBeforeEpoch, and a time past i64::MAX seconds is ClockOverflow, where Python takes int(timestamp) of any sign and magnitude.
+    why: A window start that predates every real timestamp is a broken clock, and betterlite stores the time and the counters as signed 64-bit integers. Python's int has no bound, so LiteLLM would write a negative window start into Redis.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1563-L1565
+  - what: A script reply that is not an array, or that holds a nil or a nested array, fails its group with WindowedAdmissionError::Reply; LiteLLM's direct script call (the path with no open Redis batch) appends such a nil to the collected values and writes it to the cache.
+    why: The batch rate limiter script returns only window starts and counters, so a nil means the reply did not come from it. LiteLLM's pipelined path already turns the same reply into a TypeError and takes the per-group failure path; betterlite treats both paths the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1483-L1490
+  - what: The WARNING for a failed hash-tag group is written through tracing with LiteLLM's message, without B393's log_redis_failure Redis timeout throttling and its circuit-open DEBUG downgrade.
+    why: B393's log_redis_failure lives in betterlite-server, which takes the rate limiter as a dependency in B3055, so this crate cannot call it without a dependency cycle. The level, the message and the per-group in-memory fallback that follows match; only repeated timeout lines are not throttled. B3032 and B3031 record the same trade for their log lines.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L504
+  - what: The request's parent_otel_span is carried on AdmissionRequest but not passed to the cache reads, the script runs or the gauge check, because betterlite's CounterCache and GaugeCache traits, its CounterScript seam and B3035's check_parallel_request_gauges take no span.
+    why: LiteLLM threads the span into every DualCache call and the gauge check for tracing. betterlite's store (B3032) and gauge (B3035) seams were built without it, so this module can only carry the span until those signatures change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1575-L1579
+  - what: A windowed RateLimitResponse always carries reservation_windows as null, where LiteLLM's windowed response dict has no reservation_windows key.
+    why: RateLimitResponse is shared with the reservation paths of B3031, and the windowed paths never set a reservation window, so standard JSON writes the empty optional as null. B3035 records the same shape for a gauge-only response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L547-L550
+  - what: The Redis group handles, the script runner, the cache reads, the refunds and the slot ids are seams B3032, B3034 and this module define as traits, so the whole admission flow runs in a test without Redis.
+    why: LiteLLM builds these on the proxy handler and patches them in its tests. The wiring and the call order are the same behavior in Rust, and B3055 constructs the production implementations.
+    link: ""
+kept_bugs:
+  - what: A descriptor window_size of 0 is read as absent and falls back to the handler's window size, where 0 would otherwise mean a window that expires every request.
+    why: LiteLLM reads the descriptor window size with `or`, so 0 is falsy and the handler's window wins. A descriptor written with window_size 0 gets a working window today, and copying that keeps such a config behaving as it does under LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1679
+  - what: A parallel_slot_id of "" is replaced by a generated id, where an explicit id would otherwise be registered and released by the caller.
+    why: LiteLLM passes parallel_slot_id or uuid.uuid4().hex to the gauge check, so an empty id is falsy and a generated one is used; a caller that passes "" today gets the generated id, and copying that keeps the slot it registers reachable only through the generated id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1648

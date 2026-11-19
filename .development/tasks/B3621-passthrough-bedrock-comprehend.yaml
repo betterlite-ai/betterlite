@@ -6,7 +6,7 @@ description: >-
   The module reads its values from injected parts: the general_settings map (B002), an environment reader (B198 forbids global env reads), B594's credential resolver, B595's SigV4 signer and B3615's create_pass_through_route.
   Every name below is at most 30 characters.
 
-  Routes. All three require the authenticated key (B052's user_api_key_auth).
+  Routes. All three require the authenticated key (LiteLLM's user_api_key_auth, run by the server's authentication middleware), passed in as B2314's UserAPIKeyAuth.
   `/bedrock/{endpoint:path}` takes GET, POST, PUT, DELETE and PATCH (five methods; B3620's text names four, PATCH is served too). `/comprehendmedical/{operation}` and `/comprehendmedical` take POST only; any other method is axum's 405. There is no /v1, /openai or other alias. Expose them as one axum router; B8607 merges it into the app once.
 
   Shared state keys. A signed request is sent from request state, not from the incoming body. Before calling the handler from create_pass_through_route, set two request-state values with B3600's keys: LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY holds the parsed JSON object, and LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY holds the exact bytes that were signed. Serialize the JSON once, sign those bytes, send those bytes. B3615 clears both keys afterwards.

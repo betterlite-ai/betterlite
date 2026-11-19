@@ -3,7 +3,7 @@ title: Manual cost map and Anthropic beta header reload routes
 description: >-
   An admin reloads the model cost map or the Anthropic beta headers config from the UI, schedules a periodic reload, cancels
   it and reads its status. These are nine handlers in proxy_server.py (L19335-L19850), all hidden from the OpenAPI schema
-  (include_in_schema=False) and all behind the normal key check (B052). Build crates/betterlite-server/src/reload_routes.rs
+  (include_in_schema=False) and all behind the normal key check (the server's authentication middleware). Build crates/betterlite-server/src/reload_routes.rs
   (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8676 mounts it.
   They read and write the same per-pod state as the timer checks: B8385's `PeriodicReloads` (cost map applied revision,
   cost map loaded_at, last beta headers reload time), through its accessors. Never keep a second copy of that state.
