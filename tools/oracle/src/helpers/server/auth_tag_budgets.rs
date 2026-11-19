@@ -111,8 +111,9 @@ async fn answer(input: &Input, fixture: &Fixture) -> HelperResult {
 }
 
 // LiteLLM's _load_tag_registry and _load_model_access_group_registry: the names one row read can prove exist.
-async fn registry_answer<Row: RowName>(kind: RegistryKind, fixture: &Fixture) -> HelperResult
+async fn registry_answer<Row>(kind: RegistryKind, fixture: &Fixture) -> HelperResult
 where
+    Row: RowName,
     Fixture: BudgetRows<Row>,
 {
     let table: &dyn BudgetRows<Row> = fixture;

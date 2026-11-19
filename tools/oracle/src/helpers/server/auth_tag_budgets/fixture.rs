@@ -16,7 +16,7 @@ use betterlite_models::decisions::Json;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use super::{Generated, Input};
+use super::{Function, Generated, Input};
 
 // LiteLLM's management-object cache default, which every row and registry write carries
 const MANAGEMENT_TTL_SECONDS: f64 = 60.0;
@@ -51,10 +51,7 @@ impl Fixture {
             group_rows: Vec::new(),
             fail_query: input.fail_query,
         };
-        if matches!(
-            input.function,
-            super::Function::Tags | super::Function::TagRegistry
-        ) {
+        if matches!(input.function, Function::Tags | Function::TagRegistry) {
             seed(
                 &mut fixture.tags,
                 &mut fixture.tag_rows,
@@ -75,35 +72,35 @@ impl Fixture {
     }
 
     pub(super) fn snapshot(&self) -> Effects {
-        self.effects
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.tracked().clone()
     }
 
     fn tracked(&self) -> MutexGuard<'_, Effects> {
-        match self.effects.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
+        self.effects.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn probe<Value: Clone>(
+    fn probe<Value>(
         &self,
         table: &BTreeMap<String, Value>,
         key: &str,
         prefix: &str,
-    ) -> Option<Value> {
+    ) -> Option<Value>
+    where
+        Value: Clone,
+    {
         self.tracked().reads.push(key.to_owned());
         table.get(key.strip_prefix(prefix).unwrap_or(key)).cloned()
     }
 
-    fn queried<Row: Clone>(
+    fn queried<Row>(
         &self,
         rows: &[Row],
         names: &[String],
         name: fn(&Row) -> &str,
-    ) -> Result<Vec<Row>, TagBudgetRowsFailure> {
+    ) -> Result<Vec<Row>, TagBudgetRowsFailure>
+    where
+        Row: Clone,
+    {
         self.tracked().queries.push(names.to_vec());
         if self.fail_query {
             return Err(failure());
@@ -115,11 +112,10 @@ impl Fixture {
             .collect())
     }
 
-    fn fetched<Row: Clone>(
-        &self,
-        rows: &[Row],
-        take: i64,
-    ) -> Result<Vec<Row>, TagBudgetRowsFailure> {
+    fn fetched<Row>(&self, rows: &[Row], take: i64) -> Result<Vec<Row>, TagBudgetRowsFailure>
+    where
+        Row: Clone,
+    {
         self.tracked().takes.push(take);
         if self.fail_query {
             return Err(failure());
