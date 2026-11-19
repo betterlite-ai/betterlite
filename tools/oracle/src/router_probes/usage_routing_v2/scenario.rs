@@ -15,7 +15,6 @@ use betterlite_router::usage_routing_v2::error::{
 };
 use betterlite_router::usage_routing_v2::selection::CounterKeys;
 use betterlite_router::usage_routing_v2::service::UsageRoutingV2;
-use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::runtime::Builder;
 
