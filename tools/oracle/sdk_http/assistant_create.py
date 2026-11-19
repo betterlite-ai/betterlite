@@ -54,7 +54,7 @@ class Call(BaseModel):
     api_version: str | None = None
     organization: str | None = None
     max_retries: int | None = None
-    timeout: float | str | Phases | None = None
+    timeout: int | float | str | Phases | None = None
     request_timeout: int | float | None = None
     azure_ad_token: str | None = None
     tenant_id: str | None = None
@@ -149,10 +149,20 @@ class AssistantCreateRequest(BaseModel):
 ASSISTANT_FIELDS: Final = TypeAdapter(AssistantView)
 
 
-def to_timeout(timeout: float | str | Phases | None) -> float | str | httpx.Timeout | None:
-    if isinstance(timeout, Phases):
-        return httpx.Timeout(**timeout.given())
-    return timeout
+def to_timeout(
+    timeout: int | float | str | Phases | None,
+) -> float | str | httpx.Timeout | None:
+    match timeout:
+        case None:
+            return None
+        case int() as whole:
+            return float(whole)
+        case float() as seconds:
+            return seconds
+        case str() as text:
+            return text
+        case Phases() as phases:
+            return httpx.Timeout(**phases.given())
 
 
 def create_options(
