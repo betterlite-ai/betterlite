@@ -141,7 +141,7 @@ fn gauge_check(call: &GaugeCheckInput) -> HelperResult {
         .replies
         .as_ref()
         .map(|plan| Arc::new(PlannedScript::new(plan.clone())));
-    let shared: Arc<dyn GaugeCache> = Arc::clone(&cache);
+    let shared: Arc<dyn GaugeCache> = Arc::<RecordingCache>::clone(&cache);
     let clock: Arc<dyn LimiterClock> = Arc::new(clock_at(call.now)?);
     let limiter = concurrency_gauges(
         shared,
@@ -170,7 +170,7 @@ fn release_slot(call: &ReleaseInput) -> HelperResult {
         .replies
         .as_ref()
         .map(|plan| Arc::new(PlannedScript::new(plan.clone())));
-    let shared: Arc<dyn GaugeCache> = Arc::clone(&cache);
+    let shared: Arc<dyn GaugeCache> = Arc::<RecordingCache>::clone(&cache);
     let clock: Arc<dyn LimiterClock> = Arc::new(clock_at(call.now)?);
     let limiter = concurrency_gauges(
         shared,
