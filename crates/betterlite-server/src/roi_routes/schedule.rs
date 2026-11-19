@@ -56,11 +56,11 @@ pub fn next_update(
 
 fn interval_delta(minutes: f64) -> Result<TimeDelta, RoiRoutesError> {
     let value = Decimal::try_from(minutes).map_err(|_source| RoiRoutesError::TimestampOverflow)?;
-    let micros = value
+    let rounded = value
         .checked_mul(Decimal::from(MICROS_PER_MINUTE))
         .ok_or(RoiRoutesError::TimestampOverflow)?
         .round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
-    let micros = i64::try_from(micros).map_err(|_source| RoiRoutesError::TimestampOverflow)?;
+    let micros = i64::try_from(rounded).map_err(|_source| RoiRoutesError::TimestampOverflow)?;
     Ok(TimeDelta::microseconds(micros))
 }
 
