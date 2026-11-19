@@ -1,0 +1,75 @@
+kind: probe
+name: latency-routing-buffer-inclusion
+probes:
+  # lowest_latency_buffer widens the valid set to lowest + lowest * buffer
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.5, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}, {id: dep-c}]
+        stored:
+          - {id: dep-a, latency: [10.0]}
+          - {id: dep-b, latency: [12.0]}
+          - {id: dep-c, latency: [16.0]}
+  # a score exactly on the buffered edge is still valid
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.5, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [10.0]}
+          - {id: dep-b, latency: [15.0]}
+  # the largest injected draw reaches the last buffered deployment
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [9007199254740991]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.5, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [10.0]}
+          - {id: dep-b, latency: [15.0]}
+  # a score past the buffered edge is left out
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.5, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [10.0]}
+          - {id: dep-b, latency: [15.5]}
+  # a zero buffer keeps only the lowest score
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [10.0]}
+          - {id: dep-b, latency: [12.0]}
+compare: {ignore: []}

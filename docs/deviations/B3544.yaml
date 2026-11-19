@@ -1,0 +1,24 @@
+task: B3544
+deviations:
+  - what: >-
+      Extraction reads only the JSON-object form of response content blocks. LiteLLM also has a
+      branch for SDK objects that rebuilds thinking blocks with only type, thinking and signature
+      (or type and data) and reads the other fields with getattr.
+    why: >-
+      A betterlite response arrives as JSON, so the SDK object branch has no input to run on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L376-L402
+  - what: >-
+      A retrieval key that is not a string is treated as a missing key and returns
+      "No retrieval key provided.", where LiteLLM runs str() on the value and looks the text up.
+    why: >-
+      docs/compatibility.md does not port Python's str() renderings, and the retrieval tool
+      schema only allows string keys, so a non-string key can never match a cached entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L336-L345
+  - what: >-
+      A max_tokens that is negative or larger than u64 fails the plan with an error naming the
+      field, where LiteLLM's int type passes the value through untouched.
+    why: >-
+      AgenticLoopRequestPatch carries max_tokens as a u64 in betterlite, and a provider rejects a
+      negative token count anyway, so the value is reported as the wrong type for the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L73
+kept_bugs: []

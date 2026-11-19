@@ -1,0 +1,10 @@
+kind: helper
+name: chunk-config-defaults
+call:
+  b3451:
+    mode: chunk
+    options:
+      chunking_strategy: {}
+    text: one two three four five
+env: {}
+compare: {ignore: []}

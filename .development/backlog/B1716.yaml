@@ -1,7 +1,7 @@
 id: B1716
 milestone: M4 keys, spend and management
 title: Assemble persisted spend payloads without losing billing provenance
-status: todo
+status: done
 depends_on: [B002, B4296, B171, B188, B198, B204, B206, B567, B1664, B1708, B1713, B1714, B1715, B9964]
 file: tasks/B1716-spend-payload.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/utils.py"
 parent: B069
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2540
