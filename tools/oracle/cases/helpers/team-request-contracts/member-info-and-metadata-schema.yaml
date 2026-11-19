@@ -1,0 +1,19 @@
+kind: helper
+name: member_info_and_metadata_schema
+call:
+  team_request_contracts:
+    operation: member_info
+    document: {"user_id": "u", "team_id": "t"}
+calls:
+  - team_request_contracts: {operation: member_info, document: {"user_id": "u", "team_id": "t", "budget_id": "b", "role": "admin", "user_email": "e@x", "team_alias": "a"}}
+  - team_request_contracts: {operation: member_info, document: {"team_id": "t"}}
+  - team_request_contracts: {operation: metadata_field, document: {"key": "k"}}
+  - team_request_contracts: {operation: metadata_field, document: {"key": " ", "label": "L"}}
+  - team_request_contracts: {operation: metadata_field, document: {"key": ""}}
+  - team_request_contracts: {operation: metadata_field, document: {"key": "k", "extra": 1}}
+  - team_request_contracts: {operation: metadata_schema, document: {"fields": []}}
+  - team_request_contracts: {operation: metadata_schema, document: {"fields": [{"key": "a"}, {"key": "b", "label": "B"}]}}
+  - team_request_contracts: {operation: metadata_schema, document: {}}
+  - team_request_contracts: {operation: metadata_schema, document: {"fields": null}}
+env: {}
+compare: {ignore: []}

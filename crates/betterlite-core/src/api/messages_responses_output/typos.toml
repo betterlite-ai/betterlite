@@ -1,0 +1,4 @@
+[default.extend-identifiers]
+# the task names its input and result types with this spelling on purpose
+MessagesResponsesOutpuInput = "MessagesResponsesOutpuInput"
+MessagesResponsesOutpuResult = "MessagesResponsesOutpuResult"

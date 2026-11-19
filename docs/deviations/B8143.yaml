@@ -1,0 +1,30 @@
+task: B8143
+deviations:
+  - what: The example has one module call and no separate gateway, backend or ui settings.
+    why: The module runs one service, so there are no per-component variables to surface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/main.tf
+  - what: The image variable in the example has no default.
+    why: There is no published betterlite image name yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: The example exposes seven inputs (region, tenant, env, image, litellm_master_key, acm_certificate_arn, allow_plaintext_alb), not LiteLLM's curated set with azs, vpc_id, the database and cache URLs, the extra env and secret maps and proxy_config.
+    why: The task fixes this shorter surface, and every other input keeps its module default and can still be set on the module "betterlite" block in examples/default/main.tf.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: The example's region, tenant and env have defaults ("us-east-1", "demo", "dev") where LiteLLM's example requires all three, and litellm_master_key is required where LiteLLM's defaults it to "".
+    why: The task fixes these defaults; an empty litellm_master_key still reaches the module's key generation, but a tfvars file that leaves the variable out now fails at plan where LiteLLM's example would have generated a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: terraform.tfvars.example sets litellm_master_key to "sk-change-me", where LiteLLM's sample leaves the line commented out and points readers at TF_VAR_litellm_master_key.
+    why: The task asks for a sample value with a comment to replace it; the comment and the README state that a value in terraform.tfvars outranks TF_VAR_litellm_master_key, so the line must be deleted or commented out before that variable applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/terraform.tfvars.example
+  - what: The example sets azs to the first two availability zones of var.region instead of taking an azs input.
+    why: The module needs two AZs for its VPC, Aurora and ElastiCache subnet groups, and the shorter input surface has no azs variable, so the example derives them to stay runnable as written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: The example's provider block carries an active default_tags block with managed_by = "terraform"; LiteLLM's example only shows a commented-out one.
+    why: The task asks for the default tag, and it lands next to the module's own managed-by tag on every resource.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/providers.tf
+  - what: The example exposes five outputs (alb_url, alb_dns_name, ecs_cluster, migration_run_command, db_bootstrap_sql) instead of LiteLLM's thirteen. The eight it leaves out are vpc_id, task_security_group_id, aurora_writer_endpoint, aurora_reader_endpoint, redis_endpoint, s3_bucket, master_key_secret_arn and db_master_password_secret_arn.
+    why: The task fixes these five, and every other module output stays one module reference away in the module block; the quick start reads the master-key secret by its stack name instead of through master_key_secret_arn.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/outputs.tf
+  - what: The README follows the task's section list (what the module builds, quick start, inputs, outputs, bring your own, TLS, migration, autoscaling, connection pool, not built, tests) instead of LiteLLM's longer one, which also covers proxy config, extra env and secrets, observability, image pulls, tenant deployment and storage retention.
+    why: The task fixes the outline, and every module input keeps a row in the inputs tables, so the knobs those sections describe are still documented in one place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/README.md
+kept_bugs: []

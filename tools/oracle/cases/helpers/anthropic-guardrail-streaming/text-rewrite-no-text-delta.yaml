@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-streaming-text-rewrite-no-text-delta
+call:
+  b3676: {"function": "text_rewrite", "scenarios": [{"responses_so_far": [{"bytes": "data: {\"message\": {\"id\": \"msg_1\"}, \"type\": \"message_start\"}\n\ndata: {\"content_block\": {\"text\": \"hi\", \"type\": \"text\"}, \"index\": 0, \"type\": \"content_block_start\"}"}], "rewritten_text": "new", "guardrail_name": "guard"}, {"responses_so_far": [], "rewritten_text": "new", "guardrail_name": "other"}]}
+env: {}
+compare: {ignore: []}

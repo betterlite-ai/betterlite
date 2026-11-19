@@ -1,0 +1,76 @@
+task: B3772
+deviations:
+  - what: >-
+      The monitoring POST's HTTP client is a constructor argument. LiteLLM builds an AsyncHTTPHandler with
+      get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback) inside
+      GraySwanGuardrail.__init__ and keeps it as self.async_handler.
+    why: >-
+      The hook dispatcher builds one shared client for every guardrail it runs and passes it in, so the
+      guardrail creates no transport state of its own. The POST still carries the guardrail's own
+      guardrail_timeout, so a working setup reaches the same endpoint with the same timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L133-L135
+  - what: >-
+      on_flagged_action defaults to monitor in the constructor and to passthrough in
+      GraySwanGuardrailConfigModelOptionalParams. betterlite keeps the two defaults apart and the config
+      normalizer decides which value reaches the constructor.
+    why: >-
+      LiteLLM's pydantic model fills the key with passthrough before the constructor sees it, while a direct
+      constructor call with no value gets monitor. One shared default would change one of the two paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py#L12-L13
+  - what: >-
+      _post_call_context receives the translation registry and the route catalog as arguments. LiteLLM calls
+      load_guardrail_translation_mappings() and get_call_types_for_route() inside the function on every call.
+    why: >-
+      Both tables are process-wide and built once at startup; betterlite keeps them as typed structures the
+      hook is given instead of module-level loaders read per call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L625-L626
+  - what: >-
+      litellm_metadata is a typed map before it is sanitized, so safe_dumps and the re-parse cannot fail and
+      LiteLLM's safe_json_loads(..., default={}) recovery has no reachable input. A dump or parse failure
+      still leaves the empty default, and an empty result omits the key, as LiteLLM does.
+    why: >-
+      GuardrailValue only holds JSON-shaped data. The fallback stays so the omission rule is the same for
+      every value a request can carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L708
+  - what: >-
+      _extract_inbound_headers forwards a shade_scan_id only when its value is JSON text, and a truthy
+      headers source that is not an object does not end the search. LiteLLM stringifies every value with
+      str(value) and returns None once the first truthy source is not a dict.
+    why: >-
+      The request body is typed: a header value that is not text has no string form without Python's str()
+      rules, which docs/compatibility.md does not port, and a headers key that is not an object is not a
+      header map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L603-L610
+  - what: >-
+      An explicit null metadata in the dynamic body is left out of the payload. LiteLLM tests
+      "metadata" in dynamic_body and sends metadata: null in that case.
+    why: >-
+      A typed Option cannot tell an absent key from an explicit null, and docs/compatibility.md makes null
+      take the default, here no metadata at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L695-L696
+  - what: >-
+      A guardrail_timeout that is negative, NaN or outside Duration's range fails construction with
+      GraySwanGuardrailSetupError::Timeout, and a negative or overflowing streaming_sampling_rate fails with
+      SamplingRate. LiteLLM stores both values as given and fails when the POST or the streaming path uses
+      them.
+    why: >-
+      Configured holds a Duration and a u32 because the settings are typed, so the constructor is where the
+      conversion happens. LiteLLM has no bound on either value in the constructor or the config model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L165-L169
+  - what: >-
+      GraySwanGuardrailAPIError's message is a typed description of the failure. LiteLLM's message is
+      str(exc) of the httpx or parsing exception it wrapped. status_code is carried the same way on both
+      sides: the HTTP status, 400 for a block, 408 for a timeout, and None for connect, header and JSON
+      failures.
+    why: >-
+      docs/compatibility.md does not port Python's str() text. The message still names what failed, and the
+      status code, which the failure log and callers read, matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L485-L487
+  - what: >-
+      A monitor response body larger than 1 MiB fails with ResponseTooLarge before parsing. LiteLLM reads the
+      whole body with response.json() and has no size limit.
+    why: >-
+      The guardrail parses an untrusted upstream body on the request path, and the cap bounds what a monitor
+      endpoint can make betterlite allocate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L482
+kept_bugs: []

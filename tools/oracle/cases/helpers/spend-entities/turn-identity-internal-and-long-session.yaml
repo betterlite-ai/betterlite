@@ -1,0 +1,69 @@
+kind: helper
+name: turn-identity-internal-and-long-session
+call:
+  spend_entities:
+    steps:
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          api_key: sk-1
+          session_id: session-1
+          startTime: "2024-01-02T03:04:05Z"
+        metadata:
+          internal_call_origin: shadow_eval
+          routing_decision:
+            router_model_name: smart
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          session_id: session-1
+          startTime: "2024-01-02T03:04:05Z"
+        metadata:
+          routing_decision:
+            router_model_name: smart
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          api_key: sk-1
+          session_id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          startTime: "2024-01-02T03:04:05Z"
+          prompt_tokens: 2
+        metadata:
+          routing_decision:
+            router_model_name: smart
+            router_type: heuristic
+      - kind: turn
+        payload:
+          status: failure
+          model: gpt-4o
+          api_key: sk-1
+          session_id: session-1
+          startTime: "2024-01-02T03:04:05Z"
+        metadata:
+          routing_decision:
+            router_model_name: smart
+      - kind: turn
+        payload:
+          status: success
+          model: ""
+          api_key: sk-1
+          session_id: session-1
+          startTime: "2024-01-02T03:04:05Z"
+        metadata:
+          routing_decision:
+            router_model_name: smart
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          api_key: sk-1
+          session_id: session-1
+          startTime: "not a time"
+        metadata:
+          routing_decision:
+            router_model_name: smart
+env: {}
+compare: {ignore: []}

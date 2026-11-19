@@ -1,16 +1,19 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction};
-use betterlite_guardrails::generic_guardrail_contracts::{
-    GuardrailExtraValue, GuardrailInputType, GuardrailMessage, GuardrailToolParam,
-};
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::generic_guardrail_contracts::{GuardrailExtraValue, GuardrailInputType};
 use betterlite_guardrails::grayswan::GraySwanGuardrail;
-use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
+use betterlite_guardrails::grayswan::error::{GraySwanFailure, GraySwanGuardrailAPIError};
+use betterlite_guardrails::grayswan::grayswan_monitoring::payload::{
+    PreparePayloadRequest, prepare_payload,
+};
+use betterlite_guardrails::grayswan::grayswan_monitoring::{Object, RequestContext};
 use betterlite_guardrails::grayswan::wire::{
     GraySwanDynamicParams, GraySwanInput, GraySwanResponse, GraySwanVerdict,
 };
-use reqwest::StatusCode;
+use betterlite_guardrails::guardrail_base::GuardrailBase;
+use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -34,12 +37,9 @@ pub(super) fn verdict(input: &serde_json::Value) -> HelperResult {
         mutation: None,
         ipi: None,
     };
-    let guardrail = GraySwanGuardrail {
-        settings: parse_settings(input, OnFlaggedAction::Block)?,
-        client: reqwest::Client::default(),
-    };
+    let guardrail = guardrail_with(parse_settings(input, OnFlaggedAction::Block)?);
     let value = guardrail
-        .process_response(&response, input_type(input), Vec::new(), Vec::new())
+        .process_response(&response, input_type(input), &[], &[])
         .map_err(|error| failure(&error))?;
     let (flagged, replaced) = match value.verdict {
         GraySwanVerdict::Pass => (false, false),
@@ -105,11 +105,11 @@ struct Request {
     input_type: GuardrailInputType,
     settings: Configured,
     dynamic_params: GraySwanDynamicParams,
-    tools: Vec<GuardrailToolParam>,
-    messages: Vec<GuardrailMessage>,
+    tools: Vec<GuardrailValue>,
+    messages: Vec<GuardrailValue>,
     texts: Vec<String>,
     tool_calls: Vec<GuardrailExtraValue>,
-    context: Vec<GuardrailMessage>,
+    context: Vec<GuardrailValue>,
     answer: Option<UpstreamAnswer>,
     fail: String,
 }
@@ -143,22 +143,11 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<HelperError
         fail,
     })
 }
-fn parse_messages(request: &serde_json::Value) -> Result<Vec<GuardrailMessage>, Box<HelperError>> {
-    let fallback_message = || {
-        Ok(vec![GuardrailMessage {
-            role: "user".to_owned(),
-            extra: BTreeMap::from([(
-                "content".to_owned(),
-                GuardrailExtraValue::Text("hello".to_owned()),
-            )]),
-        }])
-    };
-    request
-        .get("messages")
-        .map_or_else(fallback_message, |value| {
-            serde_json::from_value(value.clone())
-                .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
-        })
+fn parse_messages(request: &serde_json::Value) -> Result<Vec<GuardrailValue>, Box<HelperError>> {
+    let default = json!([{"role": "user", "content": "hello"}]);
+    let value = request.get("messages").cloned().unwrap_or(default);
+    serde_json::from_value(value)
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
 }
 fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
     let input_type = match request
@@ -181,19 +170,17 @@ pub(super) fn payload(input: &serde_json::Value) -> HelperResult {
     run_payload(parse_request(&request)?)
 }
 fn run_payload(parsed: Request) -> HelperResult {
-    let guardrail = GraySwanGuardrail {
-        settings: parsed.settings,
-        client: reqwest::Client::default(),
-    };
-    let prepared = GraySwanInput {
-        texts: Vec::new(),
-        tool_calls: Vec::new(),
-        tools: parsed.tools.clone(),
-        metadata: parsed.dynamic_params,
-        request_history: Vec::new(),
-        litellm_metadata: BTreeMap::new(),
-    };
-    let payload = guardrail.prepare_payload(&prepared, parsed.messages, parsed.tools);
+    let request_data = Object::new();
+    let payload = prepare_payload(
+        &parsed.settings,
+        PreparePayloadRequest {
+            messages: parsed.messages,
+            tools: (!parsed.tools.is_empty()).then_some(parsed.tools),
+            dynamic: &parsed.dynamic_params,
+            request_data: &request_data,
+            log_target: None,
+        },
+    );
     serde_json::to_value(payload)
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
 }
@@ -201,6 +188,16 @@ pub(super) fn call(input: &serde_json::Value) -> HelperResult {
     let found = input.get("grayswan_call").cloned();
     let request = found.unwrap_or_else(|| json!({}));
     run_call(parse_request(&request)?)
+}
+fn guardrail_with(settings: Configured) -> GraySwanGuardrail {
+    GraySwanGuardrail {
+        settings,
+        base: GuardrailBase {
+            settings: GuardrailSettings::default(),
+            mode: None,
+        },
+        client: reqwest::Client::default(),
+    }
 }
 fn run_call(call: Request) -> HelperResult {
     let script = match &call.answer {
@@ -213,27 +210,27 @@ fn run_call(call: Request) -> HelperResult {
     let mut settings = call.settings;
     settings.api_base.clone_from(&mock.base_url);
     settings.guardrail_timeout = Duration::from_millis(200);
-    let guardrail = GraySwanGuardrail {
-        settings,
-        client: reqwest::Client::default(),
-    };
+    let guardrail = guardrail_with(settings);
     let prepared = GraySwanInput {
         texts: call.texts,
         tool_calls: call.tool_calls,
         tools: Vec::new(),
         metadata: GraySwanDynamicParams::default(),
         request_history: call.context,
-        litellm_metadata: BTreeMap::new(),
     };
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-    let result = runtime.block_on(guardrail.apply_guardrail(prepared, call.input_type));
-    let calls = mock
+    let mut request_data = Object::new();
+    let context = RequestContext {
+        request_data: &mut request_data,
+        log_target: None,
+    };
+    let result = runtime.block_on(guardrail.apply_guardrail(prepared, call.input_type, context));
+    let payload = mock
         .finish()
-        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-    let payload = calls
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?
         .into_iter()
         .next()
         .map(|received| received.request.body);
@@ -242,21 +239,11 @@ fn run_call(call: Request) -> HelperResult {
         .map_err(|error| failure(&error))
 }
 pub(super) fn failure(error: &GraySwanGuardrailAPIError) -> Box<HelperError> {
-    let is_blocked = matches!(error, GraySwanGuardrailAPIError::Blocked { .. });
-    let status = match error {
-        GraySwanGuardrailAPIError::Blocked { .. } => Some(400_u16),
-        GraySwanGuardrailAPIError::Timeout { .. } => Some(StatusCode::REQUEST_TIMEOUT.as_u16()),
-        GraySwanGuardrailAPIError::HttpStatus { status } => Some(status.as_u16()),
-        GraySwanGuardrailAPIError::Request { .. }
-        | GraySwanGuardrailAPIError::InvalidHeader { .. }
-        | GraySwanGuardrailAPIError::ResponseTooLarge { .. }
-        | GraySwanGuardrailAPIError::ResponseJson { .. } => None,
-    };
     error_failure(
-        is_blocked,
+        matches!(&error.cause, Some(GraySwanFailure::Blocked { .. })),
         "HTTPException",
         "GraySwanGuardrailAPIError",
-        status,
+        error.status_code,
         error.to_string(),
     )
 }

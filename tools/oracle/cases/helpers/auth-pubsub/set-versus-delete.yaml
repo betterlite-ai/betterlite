@@ -1,0 +1,16 @@
+kind: helper
+name: auth-pubsub-set-versus-delete
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: message, message: '{"cache_key": "spend:team:1", "new_value": 1200.0, "ttl": 30.0}'}
+          - {kind: message, message: '{"cache_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}'}
+          - {kind: message, message: '{"cache_key": ""}'}
+          - {kind: block}
+      probe_keys:
+        - spend:team:1
+        - 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        - ""
+env: {}
+compare: {ignore: []}
