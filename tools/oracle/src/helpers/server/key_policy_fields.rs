@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::sync::OnceLock;
 
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_config::sections::key_policy_fields::{Settings, parse_key_alias_pattern};
@@ -187,7 +186,9 @@ fn rotation_answer(
     now: &str,
 ) -> Result<Option<Value>, CallFailed> {
     let mut fields = data.clone();
-    let clock = clock_at(now)?;
+    let reset = BudgetResetSettings::default();
+    let database = TimeZoneDatabase::from_env();
+    let clock = clock_at(now, &reset, &database)?;
     set_key_rotation_fields(
         &mut fields,
         switches,
@@ -258,19 +259,23 @@ fn budget_answer(
     budget_limits: Option<&[BudgetLimitEntry]>,
     now: &str,
 ) -> Result<Option<Value>, CallFailed> {
-    let clock = clock_at(now)?;
+    let reset = BudgetResetSettings::default();
+    let database = TimeZoneDatabase::from_env();
+    let clock = clock_at(now, &reset, &database)?;
     let windows = generate_budget_windows(budget_limits, clock)?;
     value_answer(windows)
 }
 
 // the oracle always runs the default UTC reset policy; the case freezes the request time
-fn clock_at(now: &str) -> Result<KeyClock<'static>, CallFailed> {
-    static SETTINGS: OnceLock<BudgetResetSettings> = OnceLock::new();
-    static DATABASE: OnceLock<TimeZoneDatabase> = OnceLock::new();
+fn clock_at<'context>(
+    now: &str,
+    reset: &'context BudgetResetSettings,
+    database: &'context TimeZoneDatabase,
+) -> Result<KeyClock<'context>, CallFailed> {
     let parsed = DateTime::parse_from_rfc3339(now)?.with_timezone(&Utc);
     Ok(KeyClock {
         now: parsed,
-        reset: SETTINGS.get_or_init(BudgetResetSettings::default),
-        database: DATABASE.get_or_init(TimeZoneDatabase::from_env),
+        reset,
+        database,
     })
 }
