@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use betterlite_anthropic::api::messages_errors::decode::WireDecodeLimits;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use bytes::Bytes;
 
@@ -220,6 +221,27 @@ fn http_failure_status_defaults() {
     let abort = abort_of(&results, 0);
     assert_eq!(abort.status, 500);
     assert_eq!(abort.detail, "gone");
+}
+
+#[test]
+fn wire_limit_failure_aborts_the_body() {
+    let mut rig = Rig::new(HookConfig::plain());
+    rig.generator.limits = WireDecodeLimits {
+        max_json_bytes: 4,
+        max_event_bytes: 4,
+        max_items: 100,
+    };
+    let results = drive(
+        rig.generator
+            .sse_data_generator(call(vec![Err(status_failure("a long message", 400))]), None),
+    );
+    let abort = abort_of(&results, 0);
+    assert_eq!(abort.status, 500);
+    assert_eq!(abort.detail, "messages JSON exceeds the configured limit");
+    let outcomes = rig.outcomes();
+    assert_eq!(outcomes.len(), 1);
+    assert!(outcomes[0].stream_completed);
+    assert!(!outcomes[0].client_disconnected);
 }
 
 #[test]

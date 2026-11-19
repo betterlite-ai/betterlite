@@ -9,6 +9,9 @@ deviations:
   - what: An HTTP failure ends the body with a StreamAbort value that the route turns into a cut connection, where LiteLLM raises the HTTPException out of the generator.
     why: A Rust stream cannot raise; once the status line is sent both cut the connection.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3995
+  - what: A body dropped at the error frame releases the budget reservation when no provider chunk was delivered, where LiteLLM's GeneratorExit branch sits before the error frame in its own handler, so once the failure path has set stream_completed that branch cannot run and its release is skipped.
+    why: the drop guard runs one cancel branch for every drop point, and refunding a hold for a stream that delivered no provider output is that branch's rule; a skipped release leaves the hold behind until it expires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4004-L4007
   - what: An Anthropic error frame that B958 cannot build (a WireDecodeError) ends the body with a StreamAbort of 500.
     why: LiteLLM's frame builder cannot fail; betterlite's checks decode limits, and cutting the stream is the only honest answer left.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4047-L4051
