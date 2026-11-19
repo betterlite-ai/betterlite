@@ -294,7 +294,6 @@ pub(crate) fn during_call(mut scan: ChecksScan<'_>) -> ChecksScan<'_> {
 
 pub(crate) async fn run_checks<C, T>(
     guardrail: &BedrockGuardrail,
-    base: &GuardrailBase,
     request_data: &mut BTreeMap<String, GuardrailValue>,
     scan: ChecksScan<'_>,
     credentials: &C,
@@ -304,9 +303,10 @@ where
     C: CredentialSource,
     T: GuardrailTransport,
 {
+    let invocation_base = base();
     let mut invocation = ChecksInvocation {
         guardrail,
-        base,
+        base: &invocation_base,
         request_data,
         log_target: None,
         environment: environment(),

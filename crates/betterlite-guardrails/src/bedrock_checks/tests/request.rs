@@ -8,9 +8,9 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::support::{
     CHECKS_PATH, GUARDRAIL_NAME, MissingCredentials, RUNTIME_URL, ScriptedTransport, Sent,
-    StaticCredentials, as_object, as_text, base, built, checks_named, during_call, field,
-    guardrail, guardrail_init, input_scan, messages, model_response, only_record, output_scan,
-    records, run_checks,
+    StaticCredentials, as_object, as_text, built, checks_named, during_call, field, guardrail,
+    guardrail_init, input_scan, messages, model_response, only_record, output_scan, records,
+    run_checks,
 };
 use crate::bedrock_message_selection::wire::Message;
 use crate::bedrock_records::Response;
@@ -59,7 +59,6 @@ async fn posts_the_checks_call_to_the_guardrail_checks_path() {
     let scan = input_scan(&scanned);
     run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -88,7 +87,6 @@ async fn sends_the_checks_and_retags_every_message_as_user() {
     let scan = input_scan(&scanned);
     run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -113,7 +111,6 @@ async fn output_scan_sends_the_assistant_role_and_the_post_call_mode() {
     let scan = output_scan(&response);
     run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -138,7 +135,6 @@ async fn a_passing_check_writes_the_success_record() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -167,7 +163,6 @@ async fn a_blocked_check_writes_the_intervened_record() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &blocking_guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -203,7 +198,6 @@ async fn during_call_overrides_the_record_mode() {
     let scan = during_call(input_scan(&scanned));
     run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -223,7 +217,6 @@ async fn nothing_to_scan_returns_before_the_call() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -249,7 +242,6 @@ async fn the_logged_response_strips_the_pii_offsets() {
     let scan = input_scan(&scanned);
     run_checks(
         &built(init),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -272,7 +264,6 @@ async fn a_non_200_response_is_the_upstream_error() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -304,7 +295,6 @@ async fn a_success_status_other_than_200_is_an_error() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -327,7 +317,6 @@ async fn a_malformed_response_is_a_500() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -359,7 +348,6 @@ async fn an_unreachable_endpoint_is_a_500() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -388,7 +376,6 @@ async fn an_api_key_of_the_wrong_type_is_a_500_without_a_record() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &StaticCredentials,
@@ -413,7 +400,6 @@ async fn missing_credentials_are_a_500_without_a_record() {
     let scan = input_scan(&scanned);
     let outcome = run_checks(
         &guardrail(),
-        &base(),
         &mut request_data,
         scan,
         &MissingCredentials,

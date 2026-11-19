@@ -72,29 +72,25 @@ fn collect_scores(
         push_scored(
             violations,
             check,
-            ScoreKind::Severity,
+            Label::Category(entry.category.clone()),
             entry.severity_score.as_ref(),
             threshold,
-            entry.category.clone(),
-            None,
         );
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum ScoreKind {
-    Severity,
-    Confidence,
+#[derive(Debug, Clone)]
+enum Label {
+    Category(Option<String>),
+    TypeName(Option<String>),
 }
 
 fn push_scored(
     violations: &mut Vec<ChecksViolation>,
     check: &str,
-    kind: ScoreKind,
+    label: Label,
     score: Option<&Number>,
     threshold: ConfidenceThreshold,
-    category: Option<String>,
-    type_name: Option<String>,
 ) {
     let Some(score) = score.and_then(Number::as_f64) else {
         return;
@@ -105,9 +101,9 @@ fn push_scored(
     let Some(score) = Number::from_f64(score) else {
         return;
     };
-    let (severity_score, confidence_score) = match kind {
-        ScoreKind::Severity => (Some(score), None),
-        ScoreKind::Confidence => (None, Some(score)),
+    let (category, type_name, severity_score, confidence_score) = match label {
+        Label::Category(category) => (category, None, Some(score), None),
+        Label::TypeName(type_name) => (None, type_name, None, Some(score)),
     };
     violations.push(ChecksViolation {
         check: Some(check.to_owned()),
@@ -151,11 +147,9 @@ fn collect_sensitive(
         push_scored(
             violations,
             check,
-            ScoreKind::Confidence,
+            Label::TypeName(entry.type_name.clone()),
             entry.confidence_score.as_ref(),
             threshold,
-            None,
-            entry.type_name.clone(),
         );
     }
 }
