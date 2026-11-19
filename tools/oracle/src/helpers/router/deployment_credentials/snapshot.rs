@@ -36,7 +36,7 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
     let (id, credentials) = match input.function {
         // get_deployment then get_deployment_credentials: the id map only, and no named credential resolution.
         Function::GetDeploymentCredentials => {
-            let id = selected_id(&deployment_by_id(&catalog, model_id)?);
+            let id = selected_id(deployment_by_id(&catalog, model_id)?.as_ref());
             let credentials =
                 deployment_credentials(&catalog, model_id)?.map(|params| params.fields);
             (id, credentials)
@@ -44,7 +44,7 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
         // get_credential_deployment then get_deployment_credentials_with_provider, over the case's credential_list.
         Function::CredentialsWithProvider => {
             let team = input.arguments.team_id.as_deref();
-            let id = selected_id(&credential_deployment(&catalog, model_id, team)?);
+            let id = selected_id(credential_deployment(&catalog, model_id, team)?.as_ref());
             let credentials = credential_snapshot(input);
             let credentials = credentials_with_provider(&catalog, model_id, team, &credentials)?
                 .map(|params| params.fields);
@@ -59,9 +59,8 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
 }
 
 // The id of the deployment a call selected, when it selected one.
-fn selected_id(selected: &Option<SelectedDeployment>) -> Option<String> {
+fn selected_id(selected: Option<&SelectedDeployment>) -> Option<String> {
     selected
-        .as_ref()
         .and_then(|chosen| chosen.deployment.id())
         .map(str::to_owned)
 }
