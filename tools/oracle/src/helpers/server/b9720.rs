@@ -60,22 +60,22 @@ impl Helper for Op {
             Kind::Seal => Ok(seal_value(&input.writes)),
             Kind::RawModel => {
                 let Some(request_data) = input.request_data.as_ref() else {
-                    return Err(missing("request_data"));
+                    return Err(helper_error(String::from(
+                        "the b9720 request_data field is required",
+                    )));
                 };
                 Ok(json!({ "raw": should_return_raw_model_name(request_data) }))
             }
             Kind::Failure => {
                 let Some(spec) = input.failure.as_ref() else {
-                    return Err(missing("failure"));
+                    return Err(helper_error(String::from(
+                        "the b9720 failure field is required",
+                    )));
                 };
                 failure_value(spec)
             }
         }
     }
-}
-
-fn missing(name: &str) -> Box<HelperError> {
-    helper_error(format!("the b9720 {name} field is required"))
 }
 
 fn helper_error(message: String) -> Box<HelperError> {
