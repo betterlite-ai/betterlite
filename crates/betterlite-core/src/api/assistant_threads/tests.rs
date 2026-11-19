@@ -750,6 +750,25 @@ async fn azure_create_posts_to_threads_with_api_key_auth() {
 }
 
 #[tokio::test]
+async fn azure_sends_the_facade_token_as_bearer_auth_without_a_key() {
+    let mut harness = Harness::new();
+    harness.resources.azure_openai_api_key = None;
+    harness.resources.azure_ad_token = Some(SecretString::from("env-token"));
+    harness.recorder.queue(200, THREAD);
+    let mut kwargs = kwargs_of(r#"{"extra_body":null}"#);
+    let mut call = create_call(&mut kwargs, None);
+    call.custom_llm_provider = String::from("azure");
+    let _ = harness
+        .threads()
+        .create_thread(call)
+        .await
+        .expect("the create succeeds");
+    let seen = &harness.recorder.seen()[0];
+    assert_eq!(seen.authorization.as_deref(), Some("Bearer env-token"));
+    assert_eq!(seen.api_key, None);
+}
+
+#[tokio::test]
 async fn an_unsupported_provider_is_a_bad_request() {
     let harness = Harness::new();
     let mut kwargs = BTreeMap::new();
