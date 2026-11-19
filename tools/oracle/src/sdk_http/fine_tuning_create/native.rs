@@ -150,7 +150,11 @@ impl FineTuningCreateDispatch for Dispatch {
                 }
                 FineTuningCreateTarget::Vertex(call) => return vertex::create(call, urls).await,
             }
-            tasks.join_next().await.transpose()?.ok_or(SendError::Empty)
+            match tasks.join_next().await {
+                Some(Ok(job)) => job,
+                Some(Err(source)) => Err(SendError::from(source)),
+                None => Err(SendError::Empty),
+            }
         }
     }
 }
