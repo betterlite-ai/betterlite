@@ -181,7 +181,7 @@ impl KillSwitchResponse for FakeResponse {
         let read = probe.chunks_read.saturating_add(1);
         probe.chunks_read = read;
         drop(probe);
-        chunk.map(|chunk| chunk.map_err(|message| FakeError { message }))
+        chunk.map(|result| result.map_err(|message| FakeError { message }))
     }
 
     async fn close(&mut self) -> Result<(), FakeError> {

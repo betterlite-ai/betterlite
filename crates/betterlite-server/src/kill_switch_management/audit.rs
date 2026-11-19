@@ -8,10 +8,10 @@ use crate::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
 use crate::audit_events::record::AuditLogRecord;
 use crate::audit_events::sink::AuditClock;
 
-pub struct KillSwitchAuditContext<'a> {
-    pub caller: &'a CallerIdentity,
-    pub litellm_proxy_admin_name: Option<&'a str>,
-    pub clock: &'a dyn AuditClock,
+pub struct KillSwitchAuditContext<'ctx> {
+    pub caller: &'ctx CallerIdentity,
+    pub litellm_proxy_admin_name: Option<&'ctx str>,
+    pub clock: &'ctx dyn AuditClock,
     pub id: String,
 }
 
@@ -22,16 +22,16 @@ pub enum KillSwitchAuditError {
 }
 
 #[derive(Serialize)]
-struct ResultValues<'a> {
-    agent_id: &'a str,
-    url: &'a str,
-    method: &'a AgentKillSwitchMethod,
+struct ResultValues<'ctx> {
+    agent_id: &'ctx str,
+    url: &'ctx str,
+    method: &'ctx AgentKillSwitchMethod,
     #[serde(skip_serializing_if = "Option::is_none")]
     status_code: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_body: Option<&'a str>,
+    response_body: Option<&'ctx str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<&'a str>,
+    error: Option<&'ctx str>,
 }
 
 pub fn build_kill_switch_audit_log(
