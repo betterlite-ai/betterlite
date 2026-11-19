@@ -172,6 +172,6 @@ pitfalls:
   the sync failure handler wrote, so don't move it to a background task.
 - '`return_raw_request` must not send a real key: it uses "my-fake-api-key" whatever the request holds.'
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 3500
   max_new_expects: 0
 review_level: security
