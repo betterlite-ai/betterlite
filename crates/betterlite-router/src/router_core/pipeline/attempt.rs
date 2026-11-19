@@ -1,23 +1,28 @@
+use crate::context::RouteStage;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::least_busy::guard::InFlightCall;
 use crate::least_busy::identity::AttemptFacts;
 use crate::router_core::attempt::AttemptResult;
-use crate::router_core::route::RouteContext;
+use crate::router_core::error::RoutingError;
+use crate::router_core::route::{ResolvedRoute, RouteContext, no_deployment_error, stage_single};
 use crate::strategy::Strategy;
 
-use super::ResolvedRoute;
 use super::clients::acquire_client;
 
 // The attempt one route settled on: the deployment, its client, the count it holds and the bindings the caller dispatches.
 pub(super) async fn attempt(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
-    deployment: DeploymentSpec,
+    picked: DeploymentSpec,
     strategy: Option<Strategy>,
-) -> AttemptResult {
+) -> Result<AttemptResult, RoutingError> {
+    // async_routing_strategy_pre_call_checks: the picked deployment passes the router's checks before it is called or counted
+    let Some(deployment) = stage_single(context, RouteStage::ModelRateLimits, picked).await? else {
+        return Err(no_deployment_error(context, &resolved));
+    };
     let client = acquire_client(context, &resolved.group, &deployment);
     let least_busy = start_count(context, &resolved.group, &deployment).await;
-    AttemptResult {
+    Ok(AttemptResult {
         group: resolved.group,
         deployment,
         aliases: resolved.aliases,
@@ -26,7 +31,7 @@ pub(super) async fn attempt(
         override_pre_call: resolved.override_pre_call,
         bindings: resolved.bindings,
         least_busy,
-    }
+    })
 }
 
 // log_pre_api_call: the attempt holds one in-flight count until its guard releases it, and an unwritable counter only warns
