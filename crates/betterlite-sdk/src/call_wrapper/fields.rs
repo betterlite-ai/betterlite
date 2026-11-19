@@ -31,12 +31,10 @@ impl FieldValue for i64 {
 
 impl FieldValue for bool {
     fn read(field: &'static str, value: &Json) -> Result<Self, CallError> {
-        match value {
-            Json::Bool(flag) => Ok(*flag),
-            Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-                Err(field_error(field, "a boolean"))
-            }
+        if let Json::Bool(flag) = value {
+            return Ok(*flag);
         }
+        Err(field_error(field, "a boolean"))
     }
 }
 

@@ -1,3 +1,5 @@
+use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
@@ -6,6 +8,7 @@ use super::support::Stub;
 use super::support::api_error;
 use super::support::bad_request;
 use super::support::chat_request;
+use super::support::context;
 use super::support::fixture;
 use super::support::plain;
 use super::support::rate_limit;
@@ -13,6 +16,7 @@ use super::support::request;
 use super::support::response;
 use super::support::run_sync;
 use super::support::value;
+use crate::call_wrapper::error::class_status;
 use crate::call_wrapper::state::WrapperOptions;
 
 fn count(value: i64) -> Json {
@@ -279,4 +283,11 @@ async fn async_failure_stamps_the_request_count_and_timeout() {
     assert_eq!(error.num_retries, Some(0));
     assert_eq!(error.timeout, Some(count(30)));
     assert_eq!(stub.retry_count(), 0);
+}
+
+#[test]
+fn class_status_carries_the_openai_codes_but_not_the_plain_exception() {
+    let missing = ErrorClass::NotFound(Box::new(ResponseDetails::from(context("missing"))));
+    assert_eq!(class_status(&missing), Some(404));
+    assert_eq!(class_status(&plain("boom").class), None);
 }

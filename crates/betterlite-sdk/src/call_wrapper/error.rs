@@ -117,27 +117,8 @@ pub const fn class_name(class: &ErrorClass) -> &'static str {
 // A plain Python Exception has no status_code; every class derived from openai's errors carries one
 #[must_use]
 pub fn class_status(class: &ErrorClass) -> Option<u16> {
-    match class {
-        ErrorClass::Authentication(_)
-        | ErrorClass::NotFound(_)
-        | ErrorClass::PermissionDenied(_)
-        | ErrorClass::BadRequest(_)
-        | ErrorClass::UnprocessableEntity(_)
-        | ErrorClass::Timeout(_)
-        | ErrorClass::RateLimit(_)
-        | ErrorClass::BudgetExceeded(_)
-        | ErrorClass::ContextWindowExceeded(_)
-        | ErrorClass::ContentPolicyViolation(_)
-        | ErrorClass::ServiceUnavailable(_)
-        | ErrorClass::BadGateway(_)
-        | ErrorClass::InternalServer(_)
-        | ErrorClass::Api(_)
-        | ErrorClass::ApiConnection(_)
-        | ErrorClass::ApiResponseValidation(_)
-        | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::UnsupportedParams(_)
-        | ErrorClass::GuardrailRaised(_)
-        | ErrorClass::MidStreamFallback(_) => Some(class.metadata().status_code),
-        ErrorClass::Unclassified(_) => None,
+    if matches!(class, ErrorClass::Unclassified(_)) {
+        return None;
     }
+    Some(class.metadata().status_code)
 }

@@ -82,27 +82,24 @@ where
         let outcome = self.send_call()?;
         self.end = Some(self.wrapper.clock.now());
         let times = steps::times(self.start, self.end, self.wrapper.clock.as_ref());
+        // a stream is assembled for a complete_response, and otherwise only its metadata is updated
         if is_streaming_request(&self.request, &self.call_type) {
-            return self.stream_outcome(outcome, times);
+            let complete: Option<bool> = field(&self.request, "complete_response")?;
+            if complete == Some(true) {
+                return steps::assemble(
+                    self.wrapper,
+                    &self.request,
+                    self.logging.as_ref(),
+                    &outcome,
+                );
+            }
+            self.update_metadata(times, &outcome);
+            return Ok(outcome);
         }
         if async_result(&self.request) {
             return Ok(outcome);
         }
         self.post_call(outcome, times)
-    }
-
-    // the stream is assembled for a complete_response, and otherwise only its metadata is updated
-    fn stream_outcome(
-        &mut self,
-        outcome: CallOutcome,
-        times: CallTimes,
-    ) -> Result<CallOutcome, CallError> {
-        let complete: Option<bool> = field(&self.request, "complete_response")?;
-        if complete == Some(true) {
-            return steps::assemble(self.wrapper, &self.request, self.logging.as_ref(), &outcome);
-        }
-        self.update_metadata(times, &outcome);
-        Ok(outcome)
     }
 
     // post_call_processing, the cache write, the metadata update and the success log, in that order
