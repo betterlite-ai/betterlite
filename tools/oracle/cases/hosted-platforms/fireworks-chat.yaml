@@ -1,0 +1,50 @@
+kind: helper
+name: fireworks-chat
+call:
+  b8310:
+    op: chat
+    provider: fireworks_ai
+    model: accounts/fireworks/models/gpt-oss-120b
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}"
+    api_key: "sk-fireworks"
+    reasoning: true
+    optional_params:
+      temperature: 1
+      extra_body:
+        chat_template_kwargs:
+          reasoning_budget: 64
+        oracle_extra: kept
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+calls:
+  - b8310:
+      op: chat
+      provider: fireworks_ai
+      model: accounts/fireworks/models/llama-v3p1-8b-instruct
+      messages: [{role: user, content: hi}]
+      api_base: "{{upstream}}"
+      api_key: "sk-fireworks"
+      reasoning: false
+      optional_params:
+        temperature: 1
+        extra_body:
+          chat_template_kwargs:
+            reasoning_budget: 64
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: fireworks_ai
+      model: accounts/fireworks/models/gpt-oss-120b
+      messages: [{role: user, content: hi}]
+      api_base: "{{upstream}}"
+      api_key: "sk-fireworks"
+      reasoning: true
+      answer:
+        status: 503
+        body: '{"error":{"message":"upstream boom","type":"server_error"}}'
+env: {}
+compare: {ignore: []}

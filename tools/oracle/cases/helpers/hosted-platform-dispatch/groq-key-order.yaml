@@ -1,0 +1,71 @@
+kind: helper
+name: groq-key-order
+call:
+  b8310:
+    op: chat
+    provider: groq
+    model: llama-3.1-8b-instant
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    headers: {x-scope: tenant}
+    globals: {api_base: "{{upstream}}/global", api_key: "sk-global", groq_key: "sk-groq"}
+    env: {GROQ_API_BASE: "{{upstream}}/env", GROQ_API_KEY: "sk-env"}
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+calls:
+  - b8310:
+      op: chat
+      provider: groq
+      model: llama-3.1-8b-instant
+      messages: [{role: user, content: hi}]
+      globals: {api_key: "sk-global", groq_key: "sk-groq"}
+      env: {GROQ_API_BASE: "{{upstream}}/env", GROQ_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: groq
+      model: llama-3.1-8b-instant
+      messages: [{role: user, content: hi}]
+      globals: {api_key: "sk-global"}
+      env: {GROQ_API_BASE: "{{upstream}}/env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: groq
+      model: llama-3.1-8b-instant
+      messages: [{role: user, content: hi}]
+      globals: {groq_key: "sk-groq"}
+      env: {GROQ_API_BASE: "{{upstream}}/env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: groq
+      model: llama-3.1-8b-instant
+      messages: [{role: user, content: hi}]
+      api_base: "{{upstream}}/passed"
+      api_key: "sk-passed"
+      globals: {api_base: "{{upstream}}/global"}
+      env: {GROQ_API_BASE: "{{upstream}}/env", GROQ_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: groq
+      model: llama-3.1-8b-instant
+      messages: [{role: user, content: hi}]
+      globals: {api_base: "{{upstream}}/global"}
+      env: {GROQ_API_BASE: "{{upstream}}/env", GROQ_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}

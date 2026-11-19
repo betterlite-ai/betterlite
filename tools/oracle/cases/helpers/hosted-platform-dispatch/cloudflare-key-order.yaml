@@ -1,0 +1,69 @@
+kind: helper
+name: cloudflare-key-order
+call:
+  b8310:
+    op: chat
+    provider: cloudflare
+    model: "@cf/meta/llama-3.1-8b-instruct"
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed/ai/v1"
+    api_key: "sk-passed"
+    headers: {x-scope: tenant}
+    globals: {api_base: "{{upstream}}/global/ai/v1", api_key: "sk-global", cloudflare_api_key: "sk-cf-global"}
+    env: {CLOUDFLARE_API_KEY: "sk-cf-env", CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+calls:
+  - b8310:
+      op: chat
+      provider: cloudflare
+      model: "@cf/meta/llama-3.1-8b-instruct"
+      messages: [{role: user, content: hi}]
+      globals: {api_key: "sk-global", cloudflare_api_key: "sk-cf-global"}
+      env: {CLOUDFLARE_API_KEY: "sk-cf-env", CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: cloudflare
+      model: "@cf/meta/llama-3.1-8b-instruct"
+      messages: [{role: user, content: hi}]
+      globals: {api_key: "sk-global"}
+      env: {CLOUDFLARE_API_KEY: "sk-cf-env", CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: cloudflare
+      model: "@cf/meta/llama-3.1-8b-instruct"
+      messages: [{role: user, content: hi}]
+      env: {CLOUDFLARE_API_KEY: "sk-cf-env", CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: cloudflare
+      model: "@cf/meta/llama-3.1-8b-instruct"
+      messages: [{role: user, content: hi}]
+      api_key: "sk-passed"
+      globals: {api_base: "{{upstream}}/global/ai/v1"}
+      env: {CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8310:
+      op: chat
+      provider: cloudflare
+      model: "@cf/meta/llama-3.1-8b-instruct"
+      messages: [{role: user, content: hi}]
+      api_key: "sk-passed"
+      env: {CLOUDFLARE_API_BASE: "{{upstream}}/env/ai/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}
