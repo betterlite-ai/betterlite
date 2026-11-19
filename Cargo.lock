@@ -1593,6 +1593,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-cache",
+ "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
  "betterlite-cost",
