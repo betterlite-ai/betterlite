@@ -101,7 +101,10 @@ fn passthrough_key_value(step: &PassthroughKeyStep) -> Value {
     let settings = config(None, step.env_key.clone());
     let api_key = step.api_key.clone().map(SecretString::from);
     let key = settings.get_api_key(api_key.as_ref());
-    json!({"ok": true, "key": key.map(|secret| secret.expose_secret())})
+    match key {
+        Some(secret) => json!({"ok": true, "key": secret.expose_secret()}),
+        None => json!({"ok": true, "key": null}),
+    }
 }
 
 fn config(base: Option<String>, key: Option<String>) -> GigachatPassthroughConfig {
