@@ -23,10 +23,8 @@ pub struct OpenAiLikeResponsesConfig {
 }
 
 impl OpenAiLikeResponsesConfig {
-    #[must_use]
-    pub const fn identity(&self) -> ProviderCapabilities {
-        provider_capabilities(ProviderId::OpenaiLike)
-    }
+    // LiteLLM's OpenAILikeResponsesConfig identity: the fallback always reports the OpenAI-like provider
+    pub const IDENTITY: ProviderCapabilities = provider_capabilities(ProviderId::OpenaiLike);
 
     // LiteLLM's validate_environment override: a nonempty key supplies the only header this class adds
     #[must_use]

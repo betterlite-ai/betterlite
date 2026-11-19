@@ -17,7 +17,7 @@ use crate::api::responses_parameters::prompt_merge::{
 };
 use apply::{FinishRequest, finish, merge_request};
 use async_outcome::AsyncOutcomeError;
-use bridge::{ProvisionalBridge, api_base_kwarg, will_bridge_to_chat_completions};
+use bridge::{ProvisionalBridge, api_base_kwarg, will_use_chat_bridge};
 use swap::PromptSwapError;
 use values::{present, text_value};
 
@@ -55,7 +55,7 @@ pub struct MergeAnswer {
 
 // B8560 implements this over the prompt manager; the selection helpers only call these two methods
 pub trait PromptManager {
-    fn should_run_prompt_management_hooks(&self, request: &HookRequest<'_>) -> bool;
+    fn runs_prompt_hooks(&self, request: &HookRequest<'_>) -> bool;
     fn get_chat_completion_prompt(
         &self,
         request: &MergeRequest<'_>,
@@ -99,7 +99,7 @@ struct HookCall<'request> {
 }
 
 // LiteLLM's _apply_prompt_management_to_responses_call: the merged input, model and provider plus kept deployment info
-pub fn apply_prompt_management_to_responses_call(
+pub fn apply_prompt_management(
     request: PromptRequest<'_>,
     manager: Option<&dyn PromptManager>,
     lookup: &dyn ConfigLookup,
@@ -138,7 +138,7 @@ pub fn apply_prompt_management_to_responses_call(
         prompt_id: text_value(kwargs, "prompt_id"),
         non_default_params: kwargs,
     };
-    if !manager.should_run_prompt_management_hooks(&hook) {
+    if !manager.runs_prompt_hooks(&hook) {
         return Ok(unchanged(
             input,
             model,
@@ -187,7 +187,7 @@ fn run_hook(
     client_input: &[ClientMessage],
     lookup: &dyn ConfigLookup,
 ) -> Result<MergeAnswer, PromptError> {
-    let bridged = will_bridge_to_chat_completions(
+    let bridged = will_use_chat_bridge(
         lookup,
         &ProvisionalBridge {
             model: call.model,

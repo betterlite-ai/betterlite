@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
-use super::compatible_provider_settings;
 use crate::loader::ConfigLoader;
 
 fn loaded(environment: &[(&str, &str)]) -> (Option<String>, Option<String>) {
@@ -16,7 +15,7 @@ fn loaded(environment: &[(&str, &str)]) -> (Option<String>, Option<String>) {
     let config = ConfigLoader { lookup }
         .load("")
         .expect("an empty config loads");
-    let settings = compatible_provider_settings(&config);
+    let settings = &config.sections.openai_like_settings;
     let key = settings
         .api_key
         .as_ref()

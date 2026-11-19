@@ -5,8 +5,7 @@ use rstest::rstest;
 use super::{json, parameters, resolution, resolver};
 use crate::api::responses_provider_selection::prompting::PromptError;
 use crate::api::responses_provider_selection::prompting::swap::{
-    PromptSwapError, SwapRequest, deployment_model_info_after_prompt_swap,
-    resolve_prompt_swapped_provider,
+    PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
 
 fn expected_message(
@@ -30,7 +29,7 @@ fn absent_credentials_never_resolve_the_original_provider() {
         custom_llm_provider: Some("openai"),
         prompt_id: Some("p-1"),
     };
-    let provider = resolve_prompt_swapped_provider(&request, &parameters(&[]), &resolver)
+    let provider = resolve_swapped_provider(&request, &parameters(&[]), &resolver)
         .expect("no resolved credentials mean no boundary");
     assert_eq!(provider, "anthropic");
     assert_eq!(resolver.models(), vec![String::from("claude-3")]);
@@ -46,7 +45,7 @@ fn null_credentials_count_as_absent() {
         prompt_id: None,
     };
     let kwargs = parameters(&[("api_key", json("null")), ("api_base", json("null"))]);
-    let provider = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let provider = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect("null credentials mean no boundary");
     assert_eq!(provider, "anthropic");
 }
@@ -63,7 +62,7 @@ fn an_empty_setting_still_counts_as_resolved(#[case] name: &str) {
         prompt_id: Some("p-1"),
     };
     let kwargs = parameters(&[(name, json(r#""""#))]);
-    let error = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let error = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect_err("an empty setting is a resolved credential");
     let PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) = error else {
         panic!("a provider change with resolved credentials is the credential boundary");
@@ -84,7 +83,7 @@ fn the_same_provider_keeps_the_swap() {
         prompt_id: None,
     };
     let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
-    let provider = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let provider = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect("one provider means the credentials stay");
     assert_eq!(provider, "openai");
     assert_eq!(resolver.models(), vec![String::from("gpt-4o-mini")]);
@@ -103,7 +102,7 @@ fn the_original_provider_comes_from_the_model_when_the_caller_named_none() {
         prompt_id: None,
     };
     let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
-    let error = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let error = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect_err("two providers cross the credential boundary");
     let PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) = error else {
         panic!("a provider change with resolved credentials is the credential boundary");
@@ -128,7 +127,7 @@ fn an_unresolvable_original_model_permits_the_swap() {
         prompt_id: None,
     };
     let kwargs = parameters(&[("api_base", json(r#""https://base.test/v1""#))]);
-    let provider = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let provider = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect("an original that names no provider cannot lose its credentials");
     assert_eq!(provider, "anthropic");
     assert_eq!(
@@ -147,7 +146,7 @@ fn the_credential_boundary_is_a_bad_request() {
         prompt_id: Some("p-1"),
     };
     let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
-    let error = resolve_prompt_swapped_provider(&request, &kwargs, &resolver)
+    let error = resolve_swapped_provider(&request, &kwargs, &resolver)
         .expect_err("two providers cross the credential boundary");
     let PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) = error else {
         panic!("a provider change with resolved credentials is the credential boundary");
@@ -181,15 +180,14 @@ fn deployment_info_survives_only_an_unchanged_provider(
     #[case] kept: bool,
 ) {
     let model_info = json(r#"{"id":"dep-1"}"#);
-    let outcome =
-        deployment_model_info_after_prompt_swap(requested, resolved, Some(model_info.clone()));
+    let outcome = model_info_after_swap(requested, resolved, Some(model_info.clone()));
     assert_eq!(outcome, kept.then_some(model_info));
 }
 
 #[test]
 fn absent_deployment_info_stays_absent() {
     assert_eq!(
-        deployment_model_info_after_prompt_swap(Some("openai"), Some("openai"), None),
+        model_info_after_swap(Some("openai"), Some("openai"), None),
         None
     );
 }

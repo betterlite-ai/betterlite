@@ -1,27 +1,22 @@
-use betterlite_config::api::responses_provider_selection::compatible_provider_settings;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::responses_provider_selection::ParameterMap;
 use betterlite_core::api::responses_provider_selection::bridging::bridge_kwargs;
-use betterlite_core::api::responses_provider_selection::error::CredentialBoundaryError;
 use betterlite_core::api::responses_provider_selection::file_ids::apply_managed_file_id_mapping;
 use betterlite_core::api::responses_provider_selection::prefixes::{
-    normalize_openai_chat_completions_responses_model, pop_use_chat_completions_api,
-    strip_responses_routing_prefix,
+    normalize_openai_chat_model, pop_use_chat_completions_api, strip_responses_routing_prefix,
 };
 use betterlite_core::api::responses_provider_selection::prompting::bridge::{
-    ProvisionalBridge, api_base_kwarg, will_bridge_to_chat_completions,
+    ProvisionalBridge, api_base_kwarg, will_use_chat_bridge,
 };
 use betterlite_core::api::responses_provider_selection::prompting::swap::{
-    PromptSwapError, SwapRequest, deployment_model_info_after_prompt_swap,
-    resolve_prompt_swapped_provider,
+    PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
 use betterlite_core::api::responses_provider_selection::prompting::{
-    PromptError, PromptManager, PromptRequest, apply_prompt_management_to_responses_call,
+    PromptError, PromptManager, PromptRequest, apply_prompt_management,
 };
 use betterlite_core::api::responses_provider_selection::provider_config::{
     ASYNC_PROMPT_MERGED_PARAMS, ConfigRequest, ResponsesApiConfig, bridges_to_chat_completions,
-    deployment_passes_through_responses, encrypted_task_support_failure,
-    resolve_responses_api_provider_config,
+    encrypted_task_support_failure, passes_responses_through, resolve_provider_config,
 };
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::response_compatible::OpenAiLikeResponsesConfig;
@@ -33,10 +28,10 @@ use serde_json::{Value, json};
 use super::scripted::{ModelNames, Registry, ScriptedManager};
 use super::{Compatible, CredentialBoundary, FileMapping, Prefixes, PromptCall, Selection};
 
-fn value_error(message: String) -> Box<HelperError> {
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: String::from("ValueError"),
-        status: None,
+        class: String::from(class),
+        status,
         error_type: Some(None),
         param: Some(None),
         code: Some(None),
@@ -44,33 +39,22 @@ fn value_error(message: String) -> Box<HelperError> {
     })
 }
 
-fn boundary_error(boundary: &CredentialBoundaryError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("BadRequestError"),
-        status: Some(400),
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: boundary.message.clone(),
-    })
-}
-
 fn prompt_error(error: PromptError) -> Box<HelperError> {
     match error {
         PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) => {
-            boundary_error(&boundary)
+            failure("BadRequestError", Some(400), boundary.message)
         }
-        PromptError::Swap(other) => value_error(other.to_string()),
-        PromptError::Merge(error) => value_error(error.to_string()),
-        PromptError::Manager(error) => value_error(error.to_string()),
-        PromptError::AsyncOutcome(error) => value_error(error.to_string()),
+        PromptError::Swap(other) => failure("ValueError", None, other.to_string()),
+        PromptError::Merge(error) => failure("ValueError", None, error.to_string()),
+        PromptError::Manager(error) => failure("ValueError", None, error.to_string()),
+        PromptError::AsyncOutcome(error) => failure("ValueError", None, error.to_string()),
     }
 }
 
 pub(super) fn selection(case: &Selection) -> HelperResult {
     let lookup = Registry;
     let api_base = api_base_kwarg(&case.kwargs);
-    let config = resolve_responses_api_provider_config(
+    let config = resolve_provider_config(
         &lookup,
         &ConfigRequest {
             model: &case.model,
@@ -88,7 +72,7 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
         .map_or(Value::Null, |failure| {
             Value::String(String::from(failure.wire_name()))
         });
-    let will_bridge = will_bridge_to_chat_completions(
+    let will_bridge = will_use_chat_bridge(
         &lookup,
         &ProvisionalBridge {
             model: &case.model,
@@ -103,7 +87,7 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
         "config": config_kind,
         "bridges": bridges_to_chat_completions(config.as_ref(), case.use_chat_completions_api),
         "encrypted": encrypted,
-        "passes": deployment_passes_through_responses(&case.model_info),
+        "passes": passes_responses_through(&case.model_info),
         "api_base": api_base,
         "bridge_kwargs": kept,
         "will_bridge": will_bridge,
@@ -119,7 +103,7 @@ pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
         );
     }
     let popped = pop_use_chat_completions_api(&mut kwargs);
-    let (normalized, prefixed) = normalize_openai_chat_completions_responses_model(&case.model);
+    let (normalized, prefixed) = normalize_openai_chat_model(&case.model);
     Ok(json!({
         "normalized": [normalized, prefixed],
         "stripped": strip_responses_routing_prefix(&case.model),
@@ -128,36 +112,37 @@ pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
     }))
 }
 
-pub(super) fn compatible(case: &Compatible) -> HelperResult {
+fn compatible_config(case: &Compatible) -> Result<OpenAiLikeResponsesConfig, Box<HelperError>> {
     let loaded = ConfigLoader {
         lookup: case.environment.clone(),
     }
     .load("")
     .or_config_error()?;
-    let config = OpenAiLikeResponsesConfig {
-        settings: compatible_provider_settings(&loaded).clone(),
-    };
+    Ok(OpenAiLikeResponsesConfig {
+        settings: loaded.sections.openai_like_settings.clone(),
+    })
+}
+
+pub(super) fn compatible(case: &Compatible) -> HelperResult {
+    let config = compatible_config(case)?;
     let explicit_key = case
         .api_key
         .as_ref()
         .map(|key| SecretString::from(String::from(key.as_str())));
-    let headers = config.validate_environment(case.headers.clone(), explicit_key.as_ref());
     let url = config
         .get_complete_url(case.api_base.as_deref())
         .or_value_error()?;
-    let identity = config.identity();
-    let name: &'static str = (&identity.custom_llm_provider).into();
     Ok(json!({
-        "identity": name,
-        "native_file_search": identity.supports_native_file_search,
-        "encrypted": identity.encrypted_agent_messages,
-        "headers": headers,
+        "identity": <&'static str>::from(OpenAiLikeResponsesConfig::IDENTITY.custom_llm_provider),
+        "native_file_search": OpenAiLikeResponsesConfig::IDENTITY.supports_native_file_search,
+        "encrypted": OpenAiLikeResponsesConfig::IDENTITY.encrypted_agent_messages,
+        "headers": config.validate_environment(case.headers.clone(), explicit_key.as_ref()),
         "url": url,
     }))
 }
 
 pub(super) fn credential_boundary(case: &CredentialBoundary) -> HelperResult {
-    let provider = resolve_prompt_swapped_provider(
+    let provider = resolve_swapped_provider(
         &SwapRequest {
             original_model: &case.original_model,
             swapped_model: &case.swapped_model,
@@ -168,7 +153,7 @@ pub(super) fn credential_boundary(case: &CredentialBoundary) -> HelperResult {
         &ModelNames,
     )
     .map_err(prompt_error)?;
-    let model_info = deployment_model_info_after_prompt_swap(
+    let model_info = model_info_after_swap(
         case.provider.as_deref(),
         Some(provider.as_str()),
         case.model_info.clone(),
@@ -185,7 +170,7 @@ pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
         .logging
         .then(|| ScriptedManager::new(case.hook.as_ref()));
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: case.input.clone(),
             model: &case.model,

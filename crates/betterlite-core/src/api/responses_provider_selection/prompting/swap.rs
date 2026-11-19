@@ -24,7 +24,7 @@ pub struct SwapRequest<'request> {
 }
 
 // LiteLLM's _resolve_prompt_swapped_provider: resolved credentials must never cross to another provider
-pub fn resolve_prompt_swapped_provider(
+pub fn resolve_swapped_provider(
     request: &SwapRequest<'_>,
     kwargs: &ParameterMap,
     resolver: &dyn ModelResolver,
@@ -83,7 +83,7 @@ fn provider_of(resolver: &dyn ModelResolver, model: &str) -> Result<String, Reso
 
 // LiteLLM's _deployment_model_info_after_prompt_swap: metadata describes the upstream only while the provider holds
 #[must_use]
-pub fn deployment_model_info_after_prompt_swap(
+pub fn model_info_after_swap(
     requested_provider: Option<&str>,
     resolved_provider: Option<&str>,
     model_info: Option<JsonValue>,

@@ -5,12 +5,12 @@ use rstest::rstest;
 
 use super::{capable_native, configs, json};
 use crate::api::responses_provider_selection::error::{
-    ENCRYPTED_TASK_MESSAGE, responses_compatibility_failure,
+    ENCRYPTED_TASK_MESSAGE, compatibility_failure,
 };
 use crate::api::responses_provider_selection::provider_config::{
     CompatibilityFailure, ConfigLookup, ConfigRequest, NativeConfig, ResponsesApiConfig,
-    bridges_to_chat_completions, deployment_passes_through_responses,
-    encrypted_task_support_failure, resolve_responses_api_provider_config,
+    bridges_to_chat_completions, encrypted_task_support_failure, passes_responses_through,
+    resolve_provider_config,
 };
 
 struct BaseReadingConfigs;
@@ -45,14 +45,14 @@ fn a_resolved_config_bridges_only_when_asked() {
 
 #[test]
 fn only_a_capable_native_config_advertises_encrypted_messages() {
-    assert!(ResponsesApiConfig::Native(capable_native()).supports_encrypted_agent_messages());
+    assert!(ResponsesApiConfig::Native(capable_native()).supports_encrypted_tasks());
     assert!(
         !ResponsesApiConfig::Native(NativeConfig {
             encrypted_agent_messages: false,
         })
-        .supports_encrypted_agent_messages()
+        .supports_encrypted_tasks()
     );
-    assert!(!ResponsesApiConfig::OpenAiLike.supports_encrypted_agent_messages());
+    assert!(!ResponsesApiConfig::OpenAiLike.supports_encrypted_tasks());
 }
 
 #[test]
@@ -96,10 +96,7 @@ fn supported_endpoints_opt_into_the_compatible_config(
     #[case] model_info: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(
-        deployment_passes_through_responses(&json(model_info)),
-        expected
-    );
+    assert_eq!(passes_responses_through(&json(model_info)), expected);
 }
 
 #[test]
@@ -113,7 +110,7 @@ fn the_registry_lookup_wins_over_the_endpoint_marker() {
         api_base: None,
     };
     assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &request),
+        resolve_provider_config(&lookup, &request),
         Some(ResponsesApiConfig::Native(capable_native()))
     );
 }
@@ -129,7 +126,7 @@ fn only_the_endpoint_marker_selects_the_compatible_config() {
         api_base: None,
     };
     assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &request),
+        resolve_provider_config(&lookup, &request),
         Some(ResponsesApiConfig::OpenAiLike)
     );
     let unsupported = json("{}");
@@ -139,10 +136,7 @@ fn only_the_endpoint_marker_selects_the_compatible_config() {
         model_info: &unsupported,
         api_base: None,
     };
-    assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &request),
-        None
-    );
+    assert_eq!(resolve_provider_config(&lookup, &request), None);
 }
 
 #[test]
@@ -156,7 +150,7 @@ fn the_lookup_receives_the_whole_request() {
         api_base: Some("https://base.test/v1"),
     };
     assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &matching),
+        resolve_provider_config(&lookup, &matching),
         Some(ResponsesApiConfig::Native(capable_native()))
     );
     let other_model = ConfigRequest {
@@ -165,30 +159,21 @@ fn the_lookup_receives_the_whole_request() {
         model_info: &model_info,
         api_base: Some("https://base.test/v1"),
     };
-    assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &other_model),
-        None
-    );
+    assert_eq!(resolve_provider_config(&lookup, &other_model), None);
     let other_provider = ConfigRequest {
         model: "gpt-4o",
         provider: "azure",
         model_info: &model_info,
         api_base: Some("https://base.test/v1"),
     };
-    assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &other_provider),
-        None
-    );
+    assert_eq!(resolve_provider_config(&lookup, &other_provider), None);
     let other_base = ConfigRequest {
         model: "gpt-4o",
         provider: "openai",
         model_info: &model_info,
         api_base: Some("https://other.test/v1"),
     };
-    assert_eq!(
-        resolve_responses_api_provider_config(&lookup, &other_base),
-        None
-    );
+    assert_eq!(resolve_provider_config(&lookup, &other_base), None);
 }
 
 #[test]
@@ -202,7 +187,7 @@ fn the_encrypted_failure_names_itself_on_the_wire() {
 #[test]
 fn the_compatibility_failure_is_an_api_connection_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let class = responses_compatibility_failure(
+    let class = compatibility_failure(
         CompatibilityFailure::EncryptedTaskUnsupported,
         "gpt-4o",
         Some("openai"),

@@ -1,8 +1,6 @@
 use betterlite_models::controls::json_value::JsonValue;
 
-use super::swap::{
-    SwapRequest, deployment_model_info_after_prompt_swap, resolve_prompt_swapped_provider,
-};
+use super::swap::{SwapRequest, model_info_after_swap, resolve_swapped_provider};
 use super::values::{present, text_value};
 use super::{MergeAnswer, MergeRequest, PromptError, PromptOutcome};
 use crate::api::responses_parameters::prompt_merge::{
@@ -57,7 +55,7 @@ pub(super) fn finish(
     let resolved_provider = if answer.model == model {
         custom_llm_provider.map(str::to_owned)
     } else {
-        Some(resolve_prompt_swapped_provider(
+        Some(resolve_swapped_provider(
             &SwapRequest {
                 original_model: model,
                 swapped_model: &answer.model,
@@ -77,7 +75,7 @@ pub(super) fn finish(
     for (name, value) in answer.optional_params {
         local_vars.insert(name, value);
     }
-    let deployment_model_info = deployment_model_info_after_prompt_swap(
+    let deployment_model_info = model_info_after_swap(
         custom_llm_provider,
         resolved_provider.as_deref(),
         deployment_model_info,

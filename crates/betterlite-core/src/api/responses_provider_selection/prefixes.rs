@@ -2,13 +2,13 @@ use betterlite_models::controls::json_value::JsonValue;
 
 use super::ParameterMap;
 
-pub const OPENAI_CHAT_COMPLETIONS_MODEL_PREFIX: &str = "openai/chat_completions/";
+pub const OPENAI_CHAT_PREFIX: &str = "openai/chat_completions/";
 pub const RESPONSES_ROUTING_PREFIX: &str = "responses/";
 
 // LiteLLM's _normalize_openai_chat_completions_responses_model: only a nonempty remainder is rewritten
 #[must_use]
-pub fn normalize_openai_chat_completions_responses_model(model: &str) -> (String, bool) {
-    let Some(remainder) = model.strip_prefix(OPENAI_CHAT_COMPLETIONS_MODEL_PREFIX) else {
+pub fn normalize_openai_chat_model(model: &str) -> (String, bool) {
+    let Some(remainder) = model.strip_prefix(OPENAI_CHAT_PREFIX) else {
         return (model.to_owned(), false);
     };
     if remainder.is_empty() {
@@ -29,13 +29,13 @@ pub fn strip_responses_routing_prefix(model: &str) -> String {
 // LiteLLM's _pop_use_chat_completions_api_kw: the value is popped and read with Python truthiness
 pub fn pop_use_chat_completions_api(kwargs: &mut ParameterMap) -> bool {
     match kwargs.shift_remove("use_chat_completions_api") {
-        Some(value) => python_truthy(&value),
+        Some(value) => value_as_flag(&value),
         None => false,
     }
 }
 
 #[must_use]
-pub fn python_truthy(value: &JsonValue) -> bool {
+pub fn value_as_flag(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,

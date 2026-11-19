@@ -19,7 +19,7 @@ pub struct ProviderResolution<'request> {
 }
 
 // LiteLLM's _resolve_model_provider_for_responses: only a dynamic key or base replaces the caller's
-pub fn resolve_model_provider_for_responses(
+pub fn resolve_model_provider(
     resolver: &dyn ModelResolver,
     request: &ProviderResolution<'_>,
     params: &mut CallParams,

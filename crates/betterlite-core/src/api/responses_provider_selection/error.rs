@@ -12,7 +12,7 @@ pub const ENCRYPTED_TASK_MESSAGE: &str =
 
 // LiteLLM's _raise_responses_compatibility_failure: a ValueError goes through exception_type()
 #[must_use]
-pub fn responses_compatibility_failure(
+pub fn compatibility_failure(
     failure: CompatibilityFailure,
     model: &str,
     provider: Option<&str>,

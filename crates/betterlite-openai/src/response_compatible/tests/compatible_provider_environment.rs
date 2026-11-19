@@ -7,7 +7,7 @@ use super::{config, header_map};
 // provider_capability_selection's compatible fallback: openai_like identity, native file search, no encrypted messages
 #[test]
 fn identity_is_openai_like() {
-    let capabilities = config(&[]).identity();
+    let capabilities = super::super::OpenAiLikeResponsesConfig::IDENTITY;
     assert_eq!(capabilities.custom_llm_provider, ProviderId::OpenaiLike);
     assert!(capabilities.supports_native_file_search);
     assert!(!capabilities.encrypted_agent_messages);

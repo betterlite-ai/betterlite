@@ -7,7 +7,7 @@ use super::{
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::prompting::{
     CARRY_UNMATCHED_MESSAGE_POINTS, PromptError, PromptOutcome, PromptRequest,
-    apply_prompt_management_to_responses_call,
+    apply_prompt_management,
 };
 use crate::api::responses_provider_selection::provider_config::ASYNC_PROMPT_MERGED_PARAMS;
 
@@ -16,7 +16,7 @@ fn run_async(value: JsonValue) -> Result<PromptOutcome, PromptError> {
     let resolver = resolver(&[]);
     let mut kwargs = parameters(&[(ASYNC_PROMPT_MERGED_PARAMS, value)]);
     let mut local_vars = ParameterMap::new();
-    apply_prompt_management_to_responses_call(
+    apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -50,7 +50,7 @@ fn the_hook_receives_the_request_and_its_answers_land_in_the_locals() {
         ("temperature", json("0.7")),
     ]);
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -111,7 +111,7 @@ fn a_bridged_request_carries_the_signal_only_during_the_hook() {
     let hook = manager(HookBehavior::Answer(hook_answer("gpt-4o", &[], &[])));
     let mut kwargs = ParameterMap::new();
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -138,7 +138,7 @@ fn a_failing_hook_still_removes_the_signal() {
     let hook = manager(HookBehavior::Fail);
     let mut kwargs = ParameterMap::new();
     let mut local_vars = ParameterMap::new();
-    let error = apply_prompt_management_to_responses_call(
+    let error = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -165,7 +165,7 @@ fn a_native_request_keeps_a_pre_existing_signal() {
     let hook = manager(HookBehavior::Answer(hook_answer("gpt-4o", &[], &[])));
     let mut kwargs = parameters(&[(CARRY_UNMATCHED_MESSAGE_POINTS, json("false"))]);
     let mut local_vars = ParameterMap::new();
-    apply_prompt_management_to_responses_call(
+    apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -193,7 +193,7 @@ fn without_a_prompt_manager_nothing_changes() {
     let resolver = resolver(&[]);
     let mut kwargs = parameters(&[("model_info", json(r#"{"id":"dep-1"}"#))]);
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -225,7 +225,7 @@ fn a_skipped_hook_leaves_everything_unchanged() {
     let hook = manager(HookBehavior::Skip);
     let mut kwargs = parameters(&[("model_info", json(r#"{"id":"dep-1"}"#))]);
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -264,7 +264,7 @@ fn a_swapped_model_resolves_its_provider_once() {
     )));
     let mut kwargs = ParameterMap::new();
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",
@@ -302,7 +302,7 @@ fn an_async_outcome_skips_the_hook_and_fills_the_locals() {
         ),
     )]);
     let mut local_vars = ParameterMap::new();
-    let outcome = apply_prompt_management_to_responses_call(
+    let outcome = apply_prompt_management(
         PromptRequest {
             input: json(r#""hello""#),
             model: "gpt-4o",

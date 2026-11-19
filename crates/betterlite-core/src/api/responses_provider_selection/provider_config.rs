@@ -18,7 +18,7 @@ pub enum ResponsesApiConfig {
 
 impl ResponsesApiConfig {
     #[must_use]
-    pub const fn supports_encrypted_agent_messages(self) -> bool {
+    pub const fn supports_encrypted_tasks(self) -> bool {
         match self {
             Self::Native(native) => native.encrypted_agent_messages,
             Self::OpenAiLike => false,
@@ -46,7 +46,10 @@ pub const fn bridges_to_chat_completions(
     config: Option<&ResponsesApiConfig>,
     use_chat_completions_api: bool,
 ) -> bool {
-    config.is_none() || use_chat_completions_api
+    match config {
+        None => true,
+        Some(_native) => use_chat_completions_api,
+    }
 }
 
 // LiteLLM's _encrypted_task_support_failure: every route but a capable native deployment refuses the task
@@ -55,20 +58,18 @@ pub const fn encrypted_task_support_failure(
     config: Option<&ResponsesApiConfig>,
     use_chat_completions_api: bool,
 ) -> Option<CompatibilityFailure> {
-    match config {
-        Some(native) => {
-            if native.supports_encrypted_agent_messages() && !use_chat_completions_api {
-                return None;
-            }
-            Some(CompatibilityFailure::EncryptedTaskUnsupported)
-        }
-        None => Some(CompatibilityFailure::EncryptedTaskUnsupported),
+    let Some(native) = config else {
+        return Some(CompatibilityFailure::EncryptedTaskUnsupported);
+    };
+    if native.supports_encrypted_tasks() && !use_chat_completions_api {
+        return None;
     }
+    Some(CompatibilityFailure::EncryptedTaskUnsupported)
 }
 
 // LiteLLM's _deployment_passes_through_responses: only a list carrying the exact endpoint opts in
 #[must_use]
-pub fn deployment_passes_through_responses(model_info: &JsonValue) -> bool {
+pub fn passes_responses_through(model_info: &JsonValue) -> bool {
     let JsonValue::Object(fields) = model_info else {
         return false;
     };
@@ -106,7 +107,7 @@ pub struct ConfigRequest<'request> {
 
 // LiteLLM's _resolve_responses_api_provider_config: the lookup wins; supported_endpoints then opts into OpenAI-like
 #[must_use]
-pub fn resolve_responses_api_provider_config(
+pub fn resolve_provider_config(
     lookup: &dyn ConfigLookup,
     request: &ConfigRequest<'_>,
 ) -> Option<ResponsesApiConfig> {
@@ -115,8 +116,7 @@ pub fn resolve_responses_api_provider_config(
     {
         return Some(ResponsesApiConfig::Native(native));
     }
-    deployment_passes_through_responses(request.model_info)
-        .then_some(ResponsesApiConfig::OpenAiLike)
+    passes_responses_through(request.model_info).then_some(ResponsesApiConfig::OpenAiLike)
 }
 
 // LiteLLM's _AsyncPromptManagementOutcome: an async prompt pass hands its result forward through kwargs

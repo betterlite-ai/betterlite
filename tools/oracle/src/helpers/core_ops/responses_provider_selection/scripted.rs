@@ -112,7 +112,7 @@ impl ScriptedManager {
 }
 
 impl PromptManager for ScriptedManager {
-    fn should_run_prompt_management_hooks(&self, request: &HookRequest<'_>) -> bool {
+    fn runs_prompt_hooks(&self, request: &HookRequest<'_>) -> bool {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

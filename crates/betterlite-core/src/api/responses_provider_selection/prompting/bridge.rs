@@ -1,9 +1,9 @@
 use betterlite_models::controls::json_value::JsonValue;
 
 use crate::api::responses_provider_selection::ParameterMap;
-use crate::api::responses_provider_selection::prefixes::normalize_openai_chat_completions_responses_model;
+use crate::api::responses_provider_selection::prefixes::normalize_openai_chat_model;
 use crate::api::responses_provider_selection::provider_config::{
-    ConfigLookup, ConfigRequest, bridges_to_chat_completions, resolve_responses_api_provider_config,
+    ConfigLookup, ConfigRequest, bridges_to_chat_completions, resolve_provider_config,
 };
 
 pub struct ProvisionalBridge<'request> {
@@ -16,16 +16,12 @@ pub struct ProvisionalBridge<'request> {
 
 // LiteLLM's _will_bridge_to_chat_completions: the dispatch-time predicate, asked before the hook runs
 #[must_use]
-pub fn will_bridge_to_chat_completions(
-    lookup: &dyn ConfigLookup,
-    bridge: &ProvisionalBridge<'_>,
-) -> bool {
-    let (normalized_model, prefixed) =
-        normalize_openai_chat_completions_responses_model(bridge.model);
+pub fn will_use_chat_bridge(lookup: &dyn ConfigLookup, bridge: &ProvisionalBridge<'_>) -> bool {
+    let (normalized_model, prefixed) = normalize_openai_chat_model(bridge.model);
     let Some(provider) = bridge.custom_llm_provider else {
         return true;
     };
-    let config = resolve_responses_api_provider_config(
+    let config = resolve_provider_config(
         lookup,
         &ConfigRequest {
             model: &normalized_model,
