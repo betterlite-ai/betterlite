@@ -9,7 +9,6 @@ from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from .types import (
-    AUTHENTICATION_PREFIX,
     BETA_HEADER,
     BILLING_MARKER,
     CHUNK_VIEW,
@@ -65,7 +64,6 @@ def failure_view(error: Exception) -> Json:
         "status": failure.status_code,
         "provider": failure.llm_provider,
         "model": model,
-        "message": failure.message.removeprefix(AUTHENTICATION_PREFIX),
     }
 
 

@@ -80,11 +80,7 @@ fn workspaces(model: &str, cases: &[WorkspaceCase]) -> HelperResult {
                     ChatValidationError::Workspace(workspace) => workspace.model(),
                     ChatValidationError::Features(_) | ChatValidationError::Json(_) => None,
                 };
-                failure_view(
-                    error.status_code(),
-                    failed.unwrap_or_default(),
-                    &error.to_string(),
-                )
+                failure_view(error.status_code(), failed.unwrap_or_default())
             }
         };
         let native_params: IndexMap<String, PromptJson> =
@@ -106,11 +102,7 @@ fn workspaces(model: &str, cases: &[WorkspaceCase]) -> HelperResult {
                     NativeHeaderError::Workspace(workspace) => workspace.model(),
                     NativeHeaderError::Beta(_) | NativeHeaderError::Json(_) => None,
                 };
-                failure_view(
-                    error.status_code(),
-                    failed.unwrap_or_default(),
-                    &error.to_string(),
-                )
+                failure_view(error.status_code(), failed.unwrap_or_default())
             }
         };
         outcomes.push(json!({"chat": chat, "native": native}));
@@ -144,7 +136,6 @@ fn inspect(request: Request<'_>) -> HelperResult {
                     Ok(failure_view(
                         error.status_code(),
                         failed.unwrap_or_default(),
-                        &error.to_string(),
                     ))
                 }
             }
@@ -180,7 +171,6 @@ fn inspect(request: Request<'_>) -> HelperResult {
                     Ok(failure_view(
                         error.status_code(),
                         failed.unwrap_or_default(),
-                        &error.to_string(),
                     ))
                 }
             }

@@ -10,7 +10,6 @@ WORKSPACE_HEADER: Final = "anthropic-workspace-id"
 DROP_MARKER: Final = "dropping unsupported Messages API param(s) "
 IGNORE_MARKER: Final = "ignoring claude_platform_unsupported_params of type "
 BILLING_MARKER: Final = "x-anthropic-billing-header"
-AUTHENTICATION_PREFIX: Final = "litellm.AuthenticationError: "
 AUTHENTICATION_ERROR: Final[type[Exception]] = AuthenticationError
 EMPTY_PARAMS: Final[dict[str, Json]] = {}
 EMPTY_STRINGS: Final[dict[str, str]] = {}
@@ -159,7 +158,6 @@ class ChunkView(TypedDict):
 class Failure(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     status_code: int
-    message: str
     llm_provider: str
     model: str | None
 
