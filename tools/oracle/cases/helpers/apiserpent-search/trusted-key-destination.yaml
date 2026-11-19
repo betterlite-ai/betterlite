@@ -1,0 +1,48 @@
+kind: helper
+name: apiserpent-trusted-key-destination
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params: {}
+    api_key: null
+    api_base: null
+    environment: {APISERPENT_API_KEY: "server-key"}
+    headers: {}
+    reply: null
+calls:
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: null
+      api_base: "https://evil.test"
+      environment: {APISERPENT_API_KEY: "server-key"}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: null
+      api_base: "https://proxy.test/api/search"
+      environment:
+        APISERPENT_API_KEY: "server-key"
+        APISERPENT_API_BASE: "https://proxy.test"
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: "https://evil.test"
+      environment: {APISERPENT_API_KEY: "server-key"}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: null
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}
