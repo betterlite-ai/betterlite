@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_openai::files::records::{
     CreatePurpose, ExpiresAfter, FileContentRequest, FileCreate, FileDeleted, FileKind, FileObject,
-    FilePage, FileUpload, FilesPurpose,
+    FileUpload, FilesPurpose,
 };
 use http::Method;
 use indexmap::IndexMap;
@@ -105,7 +105,8 @@ fn file_upload_caller_headers_win() {
         ("api-key".to_owned(), "caller-key".to_owned()),
         ("authorization".to_owned(), "Bearer caller".to_owned()),
     ]);
-    let request = only_call(&created(step(Action::Create), data));
+    let observation = created(step(Action::Create), data);
+    let request = only_call(&observation);
     assert_eq!(header(request, "api-key"), Some("caller-key"));
     assert_eq!(header(request, "authorization"), Some("Bearer caller"));
 }
@@ -260,7 +261,7 @@ fn file_content() {
     reply.headers.push(("content-type", "application/binary"));
     reply.headers.push(("x-request-id", "r1"));
     let observation = run(content_step(reply));
-    let Outcome::Content(content) = observation.outcome else {
+    let Outcome::Content(content) = &observation.outcome else {
         panic!("the content call returns the body");
     };
     assert_eq!(content.status, 200);

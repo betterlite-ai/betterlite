@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
+use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileKind, FileUpload};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -32,7 +32,7 @@ fn client_view(step: Step) -> ClientView {
     view
 }
 
-fn raised(step: Step) -> Raised {
+fn raised_from(step: Step) -> Raised {
     let Outcome::Raised(raised) = run(step).outcome else {
         panic!("the step raises");
     };
@@ -56,7 +56,7 @@ fn params_with(timeout: f64, max_retries: i64) -> LiteLlmParams {
     }
 }
 
-fn azure_file_client_inputs() {
+pub(super) fn azure_file_client_inputs() {
     let defaults = client_view(step(Action::Client));
     assert_eq!(defaults.api_key, KEY);
     assert_eq!(defaults.base_url, format!("{ENDPOINT}/openai/"));
@@ -182,13 +182,13 @@ fn azure_file_client_inputs() {
     );
 }
 
-fn azure_file_client_errors() {
+pub(super) fn azure_file_client_errors() {
     // a builder that answers with no client
     let mut missing = step(Action::Create);
     missing.client = Some(Supplied::AzureOpenAi);
     missing.builder = BuilderMode::None;
     missing.data = Some(upload());
-    let raised = raised(missing);
+    let raised = raised_from(missing);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(
         raised.message.as_deref(),
@@ -201,7 +201,7 @@ fn azure_file_client_errors() {
     let mut wrong_async = retrieve("file-1", json_reply(FILE_JSON));
     wrong_async.is_async = true;
     wrong_async.client = Some(Supplied::AzureOpenAi);
-    let raised = raised(wrong_async);
+    let raised = raised_from(wrong_async);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(
         raised.message.as_deref(),
@@ -224,7 +224,7 @@ fn azure_file_client_errors() {
     assert_eq!(observation.seen, vec![ClientKind::AsyncAzureOpenAi]);
 
     // the SDK's status error travels without a catch
-    let raised = raised(retrieve("file-1", reply(404, STATUS_ERROR)));
+    let raised = raised_from(retrieve("file-1", reply(404, STATUS_ERROR)));
     assert_eq!(
         raised,
         Raised {
@@ -241,7 +241,7 @@ fn azure_file_client_errors() {
     let mut credentialless = step(Action::Create);
     credentialless.settings.api_key = None;
     credentialless.data = Some(upload());
-    let raised = raised(credentialless);
+    let raised = raised_from(credentialless);
     assert_eq!(raised.class, "OpenAIError");
     assert_eq!(
         raised.message.as_deref(),
@@ -254,14 +254,14 @@ fn azure_file_client_errors() {
     let mut empty_key = step(Action::Create);
     empty_key.settings.api_key = Some(SecretString::from(String::new()));
     empty_key.data = Some(upload());
-    let raised = raised(empty_key);
+    let raised = raised_from(empty_key);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(raised.message.as_deref(), Some("Unable to handle auth"));
 
     // a provider that answers with something the SDK refuses
     let mut non_text = retrieve("file-1", json_reply(FILE_JSON));
     non_text.provider = Some(callable(ProviderReply::NonText("None".to_owned())));
-    let raised = raised(non_text);
+    let raised = raised_from(non_text);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(
         raised.message.as_deref(),
@@ -270,7 +270,7 @@ fn azure_file_client_errors() {
 
     let mut empty_token = retrieve("file-1", json_reply(FILE_JSON));
     empty_token.provider = Some(callable(ProviderReply::Text(String::new())));
-    let raised = raised(empty_token);
+    let raised = raised_from(empty_token);
     assert_eq!(
         raised.message.as_deref(),
         Some("Expected `azure_ad_token_provider` argument to return a string but it returned ")
@@ -279,7 +279,7 @@ fn azure_file_client_errors() {
     // a provider that fails keeps its own error
     let mut failing = retrieve("file-1", json_reply(FILE_JSON));
     failing.provider = Some(callable(ProviderReply::Failure));
-    let raised = raised(failing);
+    let raised = raised_from(failing);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(raised.message.as_deref(), Some("the token call failed"));
 
@@ -303,13 +303,14 @@ fn azure_file_client_errors() {
         timeout: None,
         max_retries: None,
     };
-    let request = only_call(&run(static_token));
+    let observation = run(static_token);
+    let request = only_call(&observation);
     assert_eq!(header(request, "authorization"), Some("Bearer ad-token"));
 
     // without a base URL the client cannot be built
     let mut homeless = retrieve("file-1", json_reply(FILE_JSON));
     homeless.settings.api_base = None;
-    let raised = raised(homeless);
+    let raised = raised_from(homeless);
     assert_eq!(raised.class, "ValueError");
     assert_eq!(
         raised.message.as_deref(),
@@ -319,7 +320,7 @@ fn azure_file_client_errors() {
     );
 
     // an empty file id is the SDK's own argument check
-    let raised = raised(retrieve("", json_reply(FILE_JSON)));
+    let raised = raised_from(retrieve("", json_reply(FILE_JSON)));
     assert_eq!(raised.class, "ValueError");
     assert_eq!(
         raised.message.as_deref(),
@@ -327,13 +328,14 @@ fn azure_file_client_errors() {
     );
 }
 
-fn azure_file_routes() {
+pub(super) fn azure_file_routes() {
     // the deployment base keeps its path before the resource path
     let mut deployment = step(Action::Create);
     deployment.settings.api_base = Some(DEPLOYMENT_BASE.to_owned());
     deployment.data = Some(upload());
     deployment.reply = Some(json_reply(FILE_JSON));
-    let request = only_call(&run(deployment));
+    let observation = run(deployment);
+    let request = only_call(&observation);
     assert_eq!(request.url.path(), "/openai/deployments/dep/files");
     assert_eq!(
         request.query,
@@ -341,11 +343,13 @@ fn azure_file_routes() {
     );
 
     // the v1 family sends to the standard OpenAI paths with a bearer token and no version
-    let request = only_call(&run(retrieve("file two", json_reply(FILE_JSON))));
+    let observation = run(retrieve("file two", json_reply(FILE_JSON)));
+    let request = only_call(&observation);
     assert_eq!(request.url.path(), "/openai/files/file%20two");
     let mut v1 = retrieve("file two", json_reply(FILE_JSON));
     v1.settings.api_version = Some("v1".to_owned());
-    let request = only_call(&run(v1));
+    let observation = run(v1);
+    let request = only_call(&observation);
     assert_eq!(request.url.path(), "/openai/v1/files/file%20two");
     assert_eq!(header(request, "authorization"), Some("Bearer key-1"));
     assert_eq!(header(request, "api-key"), None);
@@ -356,7 +360,8 @@ fn azure_file_routes() {
     supplied.client = Some(Supplied::AzureOpenAi);
     supplied.purpose = Some("batch".to_owned());
     supplied.reply = Some(json_reply(PAGE_JSON));
-    let request = only_call(&run(supplied));
+    let observation = run(supplied);
+    let request = only_call(&observation);
     assert_eq!(request.url.host_str(), Some("supplied.test"));
     assert_eq!(request.url.path(), "/openai/files");
     assert_eq!(header(request, "api-key"), Some(SUPPLIED_KEY));
@@ -396,7 +401,8 @@ fn azure_file_routes() {
         timeout: None,
     });
     asynchronous.reply = Some(reply(200, "file-bytes"));
-    let request = only_call(&run(asynchronous));
+    let observation = run(asynchronous);
+    let request = only_call(&observation);
     assert_eq!(request.url.path(), "/openai/files/file%20two/content");
     assert_eq!(header(request, "accept"), Some("application/binary"));
 }

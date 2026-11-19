@@ -1,10 +1,9 @@
-use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
+use http::header::HeaderValue;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credentials::source::TokenReply;
 use crate::endpoints::projection::TokenProvider;
 
-use super::API_KEY;
 use crate::azure_files::error::AzureFilesError;
 
 // The three ways the SDK clients authenticate, plus the client built without any credential
@@ -22,7 +21,7 @@ pub enum AuthKind {
     None,
 }
 
-pub(super) struct AuthHeader {
+pub struct AuthHeader {
     pub(super) kind: AuthKind,
     pub(super) value: HeaderValue,
 }

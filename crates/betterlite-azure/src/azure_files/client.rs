@@ -105,8 +105,8 @@ pub struct SelectedClient {
     pub files: FilesClient,
     pub api_version: Option<String>,
     pub kind: ClientKind,
-    auth: Option<AuthHeader>,
-    base_query: Vec<(String, String)>,
+    pub auth: Option<AuthHeader>,
+    pub base_query: Vec<(String, String)>,
 }
 
 impl SelectedClient {
