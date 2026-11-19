@@ -113,12 +113,10 @@ pub enum ModeBranch {
 impl ModeBranch {
     #[must_use]
     pub fn from_value(value: &JsonValue) -> Self {
-        match value {
-            JsonValue::String(text) => Self::Text(text.clone()),
-            JsonValue::Array(items) => Self::List(items.iter().map(Self::from_value).collect()),
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Null | JsonValue::Object(_) => {
-                Self::Other
-            }
+        match (value.as_str(), value.as_array()) {
+            (Some(text), _) => Self::Text(text.to_owned()),
+            (None, Some(items)) => Self::List(items.iter().map(Self::from_value).collect()),
+            (None, None) => Self::Other,
         }
     }
 
