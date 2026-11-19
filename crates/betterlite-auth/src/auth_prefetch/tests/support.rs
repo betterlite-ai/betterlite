@@ -11,6 +11,10 @@ use betterlite_cache::backend::BackendError;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
+use betterlite_redis::batch::error::BatchError;
+use betterlite_redis::cache_primitives::decode::DecodeError;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use indexmap::IndexMap;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -226,8 +230,8 @@ impl PrefetchCache for FakeCache {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ReadFailure {
-    Batch(&'static str),
-    Direct(&'static str),
+    Batch,
+    Direct,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -328,12 +332,10 @@ impl PrefetchRedis for FakeRedis {
             .unwrap_or_else(PoisonError::into_inner);
         if let Some(refusal) = failure {
             return Err(match refusal {
-                ReadFailure::Batch(message) => RedisRowsError::Batch {
-                    message: message.to_owned(),
-                },
-                ReadFailure::Direct(message) => RedisRowsError::Direct {
-                    message: message.to_owned(),
-                },
+                ReadFailure::Batch => RedisRowsError::Batch(Arc::new(BatchError::Cancelled)),
+                ReadFailure::Direct => {
+                    RedisRowsError::Direct(RedisCacheError::Decode(DecodeError::UnsupportedLiteral))
+                }
             });
         }
         if self.non_object.load(Ordering::SeqCst) {
@@ -362,9 +364,9 @@ impl PrefetchRedis for FakeRedis {
             .unwrap_or_else(PoisonError::into_inner)
             .push(entries.iter().map(queue_write).collect());
         if self.fail_pipeline.load(Ordering::SeqCst) {
-            return Err(RedisRowsError::Write {
-                message: "the test pipeline failed".to_owned(),
-            });
+            return Err(RedisRowsError::Write(RedisCacheValuesError::Decode(
+                DecodeError::UnsupportedLiteral,
+            )));
         }
         Ok(())
     }
@@ -376,10 +378,10 @@ impl PrefetchRedis for FakeRedis {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
             .filter(|failure| failure == key);
-        if let Some(refusal) = failure {
-            return Err(RedisRowsError::Write {
-                message: format!("the test queue refused {refusal}"),
-            });
+        if failure.is_some() {
+            return Err(RedisRowsError::Write(RedisCacheValuesError::Decode(
+                DecodeError::UnsupportedLiteral,
+            )));
         }
         self.queued.push(QueueWrite::new(key, value, ttl));
         Ok(())

@@ -233,10 +233,14 @@ async fn redis_rows_direct_read_and_guards() {
         rows.queue_set("k", &Json::Text("v".to_owned()), Some(1.0_f64)),
         Err(RedisRowsError::NoBatch)
     ));
-    let outcome = rows
-        .set_pipeline(&[("k".to_owned(), Json::Text("v".to_owned()), Some(1e30_f64))])
+    // the cache records a failed pipeline in its breaker and never surfaces it
+    rows.set_pipeline(&[("k".to_owned(), Json::Text("v".to_owned()), Some(1.0_f64))])
+        .await
+        .expect("the dead pipeline write is swallowed");
+    let refusal = rows
+        .set_pipeline(&[("k".to_owned(), Json::Text("v".to_owned()), Some(f64::NAN))])
         .await;
-    assert!(matches!(outcome, Err(RedisRowsError::Write { .. })));
+    assert!(matches!(refusal, Err(RedisRowsError::Write(_))));
 }
 
 #[tokio::test]

@@ -2,19 +2,22 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
 
 const NUMBER_KEY: &str = "$serde_json::private::Number";
 #[derive(Debug, thiserror::Error)]
 pub enum RedisRowsError {
-    #[error("the request Redis read failed: {message}")]
-    Batch { message: String },
-    #[error("the direct Redis read failed: {message}")]
-    Direct { message: String },
-    #[error("the Redis pipeline write failed: {message}")]
-    Write { message: String },
+    #[error("the request Redis read failed: {0}")]
+    Batch(#[source] Arc<BatchError>),
+    #[error("the direct Redis read failed: {0}")]
+    Direct(#[from] RedisCacheError),
+    #[error("the Redis pipeline write failed: {0}")]
+    Write(#[from] RedisCacheValuesError),
     #[error("no request Redis batch is open")]
     NoBatch,
 }
@@ -36,21 +39,10 @@ impl PrefetchRedis for RedisRows {
     async fn read(&self, keys: &[String]) -> Result<Json, RedisRowsError> {
         let Some(batch) = active_request_redis_batch(&self.client) else {
             let wanted: Vec<Option<&str>> = keys.iter().map(|key| Some(key.as_str())).collect();
-            let found = self
-                .client
-                .async_batch_get_cache(&wanted)
-                .await
-                .map_err(|error| RedisRowsError::Direct {
-                    message: error.to_string(),
-                })?;
+            let found = self.client.async_batch_get_cache(&wanted).await?;
             return Ok(rows_json(&found));
         };
-        let found = batch
-            .mget(keys)
-            .await
-            .map_err(|error| RedisRowsError::Batch {
-                message: error.to_string(),
-            })?;
+        let found = batch.mget(keys).await.map_err(RedisRowsError::Batch)?;
         Ok(rows_json(found.as_ref()))
     }
     fn has_batch(&self) -> bool {
@@ -60,10 +52,8 @@ impl PrefetchRedis for RedisRows {
         self.client
             .values
             .async_set_cache_pipeline_with_ttls(entries)
-            .await
-            .map_err(|error| RedisRowsError::Write {
-                message: error.to_string(),
-            })
+            .await?;
+        Ok(())
     }
     fn queue_set(&self, key: &str, value: &Json, ttl: Option<f64>) -> Result<(), RedisRowsError> {
         let Some(batch) = active_request_redis_batch(&self.client) else {

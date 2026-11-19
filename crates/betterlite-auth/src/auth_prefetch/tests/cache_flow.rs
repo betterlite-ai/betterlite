@@ -162,7 +162,7 @@ async fn redis_sorted_missing_keys_with_duplicates() {
 async fn pipeline_failure_debug_then_db() {
     let (logs, _guard) = Logs::capture();
     let redis = Arc::new(FakeRedis::batch());
-    redis.fail_read(ReadFailure::Batch("the pipeline is down"));
+    redis.fail_read(ReadFailure::Batch);
     let cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::clone(&redis));
     let database = member_rows();
     let clock = FixedClock { now: 10.0 };
@@ -183,7 +183,7 @@ async fn pipeline_failure_debug_then_db() {
 async fn direct_read_propagated_error_warns_without_db() {
     let (logs, _guard) = Logs::capture();
     let redis = Arc::new(FakeRedis::default());
-    redis.fail_read(ReadFailure::Direct("the direct read is down"));
+    redis.fail_read(ReadFailure::Direct);
     let cache = FakeCache::with_redis(MANAGEMENT_TTL, redis);
     let database = member_rows();
     let clock = FixedClock { now: 10.0 };
@@ -647,7 +647,7 @@ async fn identity_uses_selected_partition() {
 async fn identity_read_failure_warns_and_returns() {
     let (logs, _guard) = Logs::capture();
     let redis = Arc::new(FakeRedis::default());
-    redis.fail_read(ReadFailure::Direct("the direct read is down"));
+    redis.fail_read(ReadFailure::Direct);
     let cache = FakeCache::with_redis(MANAGEMENT_TTL, redis);
     let prefetch = IdentityPrefetch { cache: &cache };
     prefetch

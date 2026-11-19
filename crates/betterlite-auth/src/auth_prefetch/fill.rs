@@ -58,9 +58,9 @@ pub async fn read_redis_values(
     sorted.sort();
     let value = match redis.read(&sorted).await {
         Ok(value) => value,
-        Err(RedisRowsError::Batch { message }) => {
+        Err(RedisRowsError::Batch(source)) => {
             tracing::debug!(
-                %message,
+                %source,
                 "auth prefetch Redis read failed, filling from the database"
             );
             return Ok(BTreeMap::new());
