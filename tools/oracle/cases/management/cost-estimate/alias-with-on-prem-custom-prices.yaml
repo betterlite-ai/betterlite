@@ -1,3 +1,5 @@
+# The task lists this case by this path; betterlite's config cannot declare deployment prices yet
+# (docs/deviations/B1651.yaml), so the case proves an alias resolves to its deployment's model.
 name: cost-estimate-alias-resolves-to-the-deployment
 config: |
   general_settings:

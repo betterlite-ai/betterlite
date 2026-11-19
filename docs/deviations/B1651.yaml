@@ -16,9 +16,10 @@ deviations:
     why: >-
       The config crate's model_list parameter and model_info views are owned by the deployment-config
       tasks and are not in this task's scope. The endpoint itself reads every one of these fields
-      whenever the router rows carry them, and the helper oracle cases prove input, output,
-      cache-read and cache-write collection, deployment precedence over model_info, the backend and
-      input-rate fallbacks, and base-model precedence over the deployment's model.
+      whenever the router rows carry them; the helper oracle cases prove input, output, cache-read and
+      cache-write collection, deployment precedence over model_info, and the backend and input-rate
+      fallbacks, while prefers_the_declared_base_model proves base-model precedence over the
+      deployment's model.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L59-L140
   - what: >-
       A request body that is not UTF-8 or not JSON answers a json_invalid issue whose loc is
