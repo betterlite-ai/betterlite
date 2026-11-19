@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::vector_store_registry::repository::VectorStoreDatabase;
@@ -113,14 +114,16 @@ impl ScriptedDatabase {
 }
 
 impl VectorStoreDatabase for ScriptedDatabase {
-    async fn stores(&self) -> Result<Vec<LiteLlmManagedVectorStore>, TableError> {
-        self.record("stores")?;
-        Ok(self.stores.clone())
+    fn stores(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStore>, TableError>> + Send {
+        ready(self.record("stores").map(|()| self.stores.clone()))
     }
 
-    async fn indexes(&self) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
-        self.record("indexes")?;
-        Ok(self.indexes.clone())
+    fn indexes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>> + Send {
+        ready(self.record("indexes").map(|()| self.indexes.clone()))
     }
 }
 
