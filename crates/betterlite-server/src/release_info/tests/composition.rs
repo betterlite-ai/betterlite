@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
+use std::str;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use tower::ServiceExt as _;
@@ -60,7 +61,13 @@ async fn the_application_router_mounts_the_route_behind_auth() {
         )
         .await
         .expect("the router should answer");
-    assert_eq!(keyless.status(), StatusCode::UNAUTHORIZED);
+    // LiteLLM raises for a key it never got, so its server answers 500 before the handler reads its source
+    assert_eq!(keyless.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let keyless_body = to_bytes(keyless.into_body(), 1 << 20).await.expect("body");
+    assert_eq!(
+        str::from_utf8(&keyless_body).expect("utf8 body"),
+        "Internal Server Error"
+    );
     let keyed = application
         .oneshot(
             Request::get("/get/latest_release_info")
@@ -71,4 +78,7 @@ async fn the_application_router_mounts_the_route_behind_auth() {
         .await
         .expect("the router should answer");
     assert_eq!(keyed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let keyed_body = to_bytes(keyed.into_body(), 1 << 20).await.expect("body");
+    let keyed_text = str::from_utf8(&keyed_body).expect("utf8 body");
+    assert!(keyed_text.contains("internal_server_error"), "{keyed_text}");
 }
