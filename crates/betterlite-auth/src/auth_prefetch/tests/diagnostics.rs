@@ -18,9 +18,9 @@ fn prefetch_validation_redacts_values() {
         text.contains("auth prefetch: the row did not validate as its model"),
         "no rejection line: {text}"
     );
-    assert!(text.contains("row=team_row"), "no row label: {text}");
+    assert!(text.contains(r#"row="team_row""#), "no row label: {text}");
     assert!(
-        text.contains("model=LiteLLM_TeamTableCachedObj"),
+        text.contains(r#"model="LiteLLM_TeamTableCachedObj""#),
         "no model name: {text}"
     );
     assert!(text.contains("category=Data"), "no category: {text}");

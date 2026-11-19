@@ -94,7 +94,18 @@ pub(super) fn strings(row: &JsonData, name: &str) -> Vec<String> {
     let JsonData::Array(items) = field(row, name) else {
         panic!("{name} is not an array");
     };
-    items.iter().map(|item| text(item, name)).collect()
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        match item {
+            JsonData::String(element) => values.push(element.clone()),
+            other @ (JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_)) => panic!("{name} holds a non-string: {other:?}"),
+        }
+    }
+    values
 }
 
 pub(super) fn text(row: &JsonData, name: &str) -> String {

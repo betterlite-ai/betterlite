@@ -386,7 +386,7 @@ async fn permission_cache_read_error_propagates() {
     let cache = FakePermissionCache::empty();
     cache.fail_read.store(true, Ordering::SeqCst);
     let normal = FakePermissionStore::returning(fixtures::permission_row("perm-1"));
-    let writer = FakePermissionStore::missing();
+    let writer = FakePermissionStore::returning(fixtures::permission_row("perm-1"));
     let source = ObjectPermissionSource {
         cache: &cache,
         stores: Some(PermissionStores {
@@ -403,6 +403,7 @@ async fn permission_cache_read_error_propagates() {
         .expect("the database-only lookup skips the cache")
         .expect("the stored permission");
     assert_eq!(permission.object_permission_id, "perm-1");
+    assert_eq!(writer.calls(), vec!["perm-1".to_owned()]);
 }
 
 #[tokio::test]
