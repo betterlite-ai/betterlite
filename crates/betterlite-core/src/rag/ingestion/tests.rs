@@ -893,6 +893,15 @@ fn chunk_skips_a_pdf_without_extractable_text() {
 }
 
 #[test]
+fn chunk_skips_a_pdf_behind_a_binary_preamble() {
+    let state = Harness::default().state(IngestionOptions::default());
+    let mut content = vec![0xff, 0xfe];
+    content.extend_from_slice(&sample_pdf());
+    let chunks = state.chunk(None, Some(&content), false).expect("chunks");
+    assert!(chunks.is_empty());
+}
+
+#[test]
 fn chunk_with_no_source_returns_no_chunks() {
     let state = Harness::default().state(IngestionOptions::default());
     assert!(state.chunk(None, None, false).expect("chunks").is_empty());
