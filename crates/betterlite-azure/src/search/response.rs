@@ -4,7 +4,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
 
-use super::reply::{Annotation, GroundingEnvelope};
+use super::reply::{Annotation, ContentPart, GroundingEnvelope};
 use super::{RESPONSE_COST_HEADER, SNIPPET_FALLBACK_LENGTH};
 
 pub(super) const fn present_or<'text>(
@@ -12,7 +12,7 @@ pub(super) const fn present_or<'text>(
     fallback: &'text str,
 ) -> &'text str {
     match message {
-        Some(message) if !message.is_empty() => message,
+        Some(text) if !text.is_empty() => text,
         Some(_) | None => fallback,
     }
 }
@@ -27,10 +27,10 @@ pub fn requested_max_results(optional_params: Option<&Object>) -> Option<i64> {
 
 #[must_use]
 pub fn capped(results: Vec<SearchResult>, max_results: Option<i64>) -> Vec<SearchResult> {
-    let Some(max_results) = max_results else {
+    let Some(requested) = max_results else {
         return results;
     };
-    let Ok(limit) = usize::try_from(max_results) else {
+    let Ok(limit) = usize::try_from(requested) else {
         return results;
     };
     results.into_iter().take(limit).collect()
@@ -38,34 +38,34 @@ pub fn capped(results: Vec<SearchResult>, max_results: Option<i64>) -> Vec<Searc
 
 #[must_use]
 pub fn citation_results(envelope: &GroundingEnvelope) -> Vec<SearchResult> {
-    let mut cited = Vec::new();
-    for item in &envelope.output {
-        if item.kind != "message" {
-            continue;
-        }
-        for part in &item.content {
-            if part.kind != "output_text" {
-                continue;
-            }
-            for annotation in &part.annotations {
-                if annotation.kind != "url_citation" {
-                    continue;
-                }
-                let Some(url) = annotation.url.as_deref().filter(|url| !url.is_empty()) else {
-                    continue;
-                };
-                cited.push(SearchResult {
-                    title: annotation.title.clone().unwrap_or_default(),
-                    url: url.to_owned(),
-                    snippet: snippet(&part.text, annotation),
-                    date: None,
-                    last_updated: None,
-                    extra: Object::new(),
-                });
-            }
-        }
-    }
+    let cited: Vec<SearchResult> = envelope
+        .output
+        .iter()
+        .filter(|item| item.kind == "message")
+        .flat_map(|item| &item.content)
+        .filter(|part| part.kind == "output_text")
+        .flat_map(|part| {
+            part.annotations
+                .iter()
+                .filter_map(|annotation| citation_result(part, annotation))
+        })
+        .collect();
     first_by_url(cited)
+}
+
+fn citation_result(part: &ContentPart, annotation: &Annotation) -> Option<SearchResult> {
+    if annotation.kind != "url_citation" {
+        return None;
+    }
+    let url = annotation.url.as_deref().filter(|url| !url.is_empty())?;
+    Some(SearchResult {
+        title: annotation.title.clone().unwrap_or_default(),
+        url: url.to_owned(),
+        snippet: snippet(&part.text, annotation),
+        date: None,
+        last_updated: None,
+        extra: Object::new(),
+    })
 }
 
 // the first result for a URL wins and the answer order decides the output order

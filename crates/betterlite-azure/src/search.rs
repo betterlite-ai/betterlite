@@ -43,9 +43,8 @@ pub struct AzureSearchConfig<'settings> {
 }
 
 impl fmt::Debug for AzureSearchConfig<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("AzureSearchConfig")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AzureSearchConfig")
             .field("settings", self.settings)
             .field("has_minter", &self.minter.is_some())
             .finish()
@@ -94,11 +93,11 @@ impl AzureSearchConfig<'_> {
     }
 
     fn mint_entra_token(&self, api_base: Option<&str>) -> Result<SecretString, AzureSearchError> {
-        if let Some(api_base) = api_base.filter(|base| !base.is_empty()) {
+        if let Some(base) = api_base.filter(|base| !base.is_empty()) {
             let probe = ProbeEnvironment {
                 settings: self.settings,
             };
-            drop(CREDENTIAL.resolve(None, Some(api_base), &probe)?);
+            drop(CREDENTIAL.resolve(None, Some(base), &probe)?);
         }
         let Some(minter) = self.minter else {
             return Err(AzureSearchError::NoCredential {
@@ -113,13 +112,13 @@ impl AzureSearchConfig<'_> {
     }
 
     pub fn complete_url(&self, api_base: Option<&str>) -> Result<String, AzureSearchError> {
-        let base = api_base.filter(|base| !base.is_empty()).or_else(|| {
+        let resolved = api_base.filter(|base| !base.is_empty()).or_else(|| {
             self.settings
                 .project_endpoint
                 .as_deref()
                 .filter(|base| !base.is_empty())
         });
-        let Some(base) = base else {
+        let Some(base) = resolved else {
             return Err(AzureSearchError::MissingProjectEndpoint);
         };
         let trimmed = base.trim_end_matches('/');

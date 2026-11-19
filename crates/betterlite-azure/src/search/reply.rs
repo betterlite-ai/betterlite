@@ -62,16 +62,18 @@ pub struct IncompleteDetails {
 impl GroundingEnvelope {
     #[must_use]
     pub fn error_message(&self) -> Option<&str> {
-        self.error
-            .as_ref()
-            .and_then(|error| error.message.as_deref())
+        match self.error.as_ref() {
+            Some(error) => error.message.as_deref(),
+            None => None,
+        }
     }
 
     #[must_use]
     pub fn incomplete_text(&self) -> Option<&str> {
-        self.incomplete_details
-            .as_ref()
-            .and_then(|details| details.reason.as_deref())
+        match self.incomplete_details.as_ref() {
+            Some(details) => details.reason.as_deref(),
+            None => None,
+        }
     }
 }
 

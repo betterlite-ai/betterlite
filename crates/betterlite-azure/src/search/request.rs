@@ -51,11 +51,11 @@ pub struct UserLocation {
 #[must_use]
 pub fn search_tool(connection_id: Option<&str>, optional_params: &Object) -> GroundingTool {
     let max_results = requested_max_results(Some(optional_params));
-    if let Some(connection_id) = connection_id.filter(|id| !id.is_empty()) {
+    if let Some(id) = connection_id.filter(|id| !id.is_empty()) {
         return GroundingTool::BingGrounding {
             bing_grounding: BingGroundingParams {
                 search_configurations: vec![SearchConfiguration {
-                    project_connection_id: connection_id.to_owned(),
+                    project_connection_id: id.to_owned(),
                     count: max_results,
                 }],
             },

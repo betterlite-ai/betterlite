@@ -61,6 +61,7 @@ impl AzureSearchError {
 }
 
 // Foundry nests a second JSON document as a string inside error.message, so the unwrap runs twice
+#[must_use]
 pub fn unwrap_error_detail(message: &str) -> String {
     let Ok(envelope) = serde_json::from_str::<ErrorEnvelope>(message) else {
         return message.to_owned();
@@ -72,7 +73,7 @@ pub fn unwrap_error_detail(message: &str) -> String {
         // an empty inner message keeps the whole nested document, as LiteLLM's `or` does
         Ok(body) => body
             .message
-            .filter(|message| !message.is_empty())
+            .filter(|inner| !inner.is_empty())
             .unwrap_or(nested_text),
         Err(_) => nested_text,
     }

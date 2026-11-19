@@ -22,7 +22,7 @@ pub trait EntraTokenMinter: Send + Sync {
     fn mint(&self) -> Result<SecretString, MintError>;
 }
 
-pub struct NativeMinter<'grants, F: Grants + 'grants> {
+pub struct NativeMinter<'grants, F: Grants> {
     pub(crate) provider: AzureTokenProvider<'grants, F>,
 }
 
