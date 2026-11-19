@@ -188,7 +188,7 @@ fn summary_wrapping() {
 }
 
 #[rstest]
-#[case::plain_string("keep", Some(r#"{"role": "system", "content": "keep"}"#))]
+#[case::plain_string(r#""keep""#, Some(r#"{"role": "system", "content": "keep"}"#))]
 #[case::text_blocks(
     r#"[{"type": "text", "text": "one"}, {"type": "text", "text": ""}, {"type": "text", "text": "two"}]"#,
     Some(
