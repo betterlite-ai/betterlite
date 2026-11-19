@@ -81,9 +81,12 @@ pub(crate) struct ProjectedChoice {
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct ProjectedUsage {
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
+    #[serde(rename = "prompt_tokens")]
+    prompt: i64,
+    #[serde(rename = "completion_tokens")]
+    completion: i64,
+    #[serde(rename = "total_tokens")]
+    total: i64,
 }
 
 #[derive(Deserialize, Serialize)]
