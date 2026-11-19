@@ -1,0 +1,20 @@
+kind: helper
+name: management-payload-nested-env-redaction
+call:
+  management_payload:
+    function: redact_env_vars
+    response:
+      env_vars:
+        - {name: TOP, value: top-secret, scope: global}
+      items:
+        - server_id: alpha
+          env_vars:
+            - {name: ALPHA, value: alpha-secret, scope: user}
+          nested:
+            env_vars:
+              - {name: DEEP, value: deep-secret, scope: global}
+        - server_id: beta
+          env_vars:
+            - {name: BETA, value: beta-secret, scope: global, description: the key}
+env: {}
+compare: {ignore: []}

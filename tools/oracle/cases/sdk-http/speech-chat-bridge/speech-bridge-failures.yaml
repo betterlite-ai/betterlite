@@ -1,0 +1,25 @@
+kind: sdk_http
+name: sdk-http-speech-bridge-failures
+env: {}
+call:
+  speech_chat_bridge:
+    model: gpt-4o-audio-preview
+    input: hello
+    voice: alloy
+    optional_params: {}
+    litellm_params: {}
+    headers: {}
+    custom_llm_provider: openai
+    api_key: sk-test
+    timeout_seconds: 10
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body:
+      error: {message: quota, type: rate_limit_error, param: null, code: rate_limit_exceeded}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /failure/message, why: LiteLLM prefixes the provider name and betterlite writes its own text}

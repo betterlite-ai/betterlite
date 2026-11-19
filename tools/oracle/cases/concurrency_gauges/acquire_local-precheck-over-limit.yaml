@@ -1,0 +1,23 @@
+kind: helper
+name: acquire_local-precheck-over-limit
+call:
+  b3035:
+    function: gauge_check
+    descriptors:
+      - key: api-key
+        value: k1
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 1
+          window_size: null
+    slot_id: slot-1
+    read_only: false
+    fail_closed: false
+    now: 1700000000
+    cache:
+      "{api-key:k1}:max_parallel_requests": 1
+    replies:
+      - values: [0, 0]
+env: {}
+compare: {ignore: []}

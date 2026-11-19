@@ -64,6 +64,10 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rejection_response, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_resource_grants::{
+    ResourceGrantStageInput, database_for_request, denial_response,
+    rule_for_request as grant_rule_for_request,
+};
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
@@ -102,6 +106,9 @@ pub(crate) async fn authenticate(
             }
             Err(StageFailure::ModelAccess(rejection)) => {
                 return rejection_response(&rejection);
+            }
+            Err(StageFailure::ResourceGrants(exception)) => {
+                return denial_response(&exception);
             }
         }
     }
@@ -145,7 +152,23 @@ fn stage_input(
                 },
             )))
         }
+        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
     }
+}
+
+fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let stage = ResourceGrantStageInput {
+        context,
+        rule: grant_rule_for_request(request),
+        database: database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {

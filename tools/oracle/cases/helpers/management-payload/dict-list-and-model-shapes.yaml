@@ -1,0 +1,22 @@
+kind: helper
+name: management-payload-dict-list-and-model-shapes
+call:
+  management_payload:
+    function: redact_mapping
+    record:
+      server_id: s1
+      server_name: one
+      env_vars:
+        - {name: A, value: secret, scope: global, description: the key}
+calls:
+  - management_payload:
+      function: redact_model
+      server_id: s1
+      transport: sse
+      env_vars:
+        - {name: A, value: secret, scope: global, description: the key}
+  - management_payload:
+      function: redact_other
+      record: [plain, 3]
+env: {}
+compare: {ignore: []}
