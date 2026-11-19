@@ -6,3 +6,4 @@ pub mod fuzz_input;
 pub mod handlers;
 mod tests;
 pub mod vertex;
+pub mod wrapper;
