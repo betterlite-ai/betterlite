@@ -36,7 +36,7 @@ use super::ports::EstimateRouterPort;
 use crate::cost_service::{Call, CostService};
 
 // calculate_spend prices a model with its messages, or the ModelResponse a call already produced.
-pub async fn estimate(
+pub(crate) async fn estimate(
     service: &CostService<ProviderFormulas>,
     counter: &dyn BillingTokenCounter,
     router: Option<&dyn EstimateRouterPort>,

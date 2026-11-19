@@ -55,11 +55,7 @@ struct DetailBody {
 impl IntoResponse for EstimateError {
     fn into_response(self) -> Response {
         match self {
-            Self::Request(issues) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(DetailBody { detail: issues }),
-            )
-                .into_response(),
+            Self::Request(issues) => detail_response(issues),
             Self::MessagesRequired | Self::InputRequired => proxy(
                 self.to_string(),
                 WireField::MISSING,
@@ -95,6 +91,15 @@ impl IntoResponse for EstimateError {
             ),
         }
     }
+}
+
+// LiteLLM's validation handler answers the issues themselves, under a detail key.
+fn detail_response(issues: Vec<Issue>) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(DetailBody { detail: issues }),
+    )
+        .into_response()
 }
 
 // ProxyException keeps the code as text and openai_exception_handler turns it back into the HTTP status

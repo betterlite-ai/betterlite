@@ -24,6 +24,7 @@ use tower::ServiceExt as _;
 
 use crate::cost_estimate_route::testing::service_from;
 use crate::cost_service::CostService;
+use crate::key_fields::values::Amount;
 use crate::spend::estimates::ports::{Clock, ConfiguredRouter, EstimateRouterPort};
 use crate::spend::estimates::router::{EstimatesState, routes};
 
@@ -192,10 +193,72 @@ pub(crate) async fn get_budgets(state: Arc<EstimatesState>) -> (StatusCode, Stri
     answer(routes(state), request).await
 }
 
-pub(crate) fn body_json(body: &str) -> serde_json::Value {
-    serde_json::from_str(body).unwrap()
+// The routes answer their declared wire models, so a test reads each answer back as a typed body.
+#[derive(serde::Deserialize)]
+pub(crate) struct SpendAnswerBody {
+    #[serde(deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize")]
+    pub(crate) cost: Decimal,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct ErrorEnvelope {
+    pub(crate) error: ErrorBody,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct ErrorBody {
+    pub(crate) message: String,
+    #[serde(rename = "type")]
+    pub(crate) kind: Json,
+    pub(crate) param: Json,
+    pub(crate) code: Json,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct ValidationEnvelope {
+    pub(crate) detail: Vec<ValidationDetail>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct ValidationDetail {
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+    pub(crate) loc: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct BudgetsEnvelope {
+    pub(crate) providers: IndexMap<String, BudgetBody>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct BudgetBody {
+    pub(crate) budget_limit: Option<Amount>,
+    pub(crate) time_period: Option<String>,
+    pub(crate) spend: Amount,
+    pub(crate) budget_reset_at: Option<String>,
+}
+
+pub(crate) fn text(value: &str) -> Json {
+    Json::Text(value.to_owned())
 }
 
 pub(crate) fn cost_of(body: &str) -> Decimal {
-    decimal(&body_json(body)["cost"].to_string())
+    let answer: SpendAnswerBody = serde_json::from_str(body).unwrap();
+    answer.cost
+}
+
+pub(crate) fn error_of(body: &str) -> ErrorBody {
+    let envelope: ErrorEnvelope = serde_json::from_str(body).unwrap();
+    envelope.error
+}
+
+pub(crate) fn validation_detail(body: &str) -> ValidationDetail {
+    let envelope: ValidationEnvelope = serde_json::from_str(body).unwrap();
+    envelope.detail.into_iter().next().unwrap()
+}
+
+pub(crate) fn budgets_of(body: &str) -> IndexMap<String, BudgetBody> {
+    let envelope: BudgetsEnvelope = serde_json::from_str(body).unwrap();
+    envelope.providers
 }

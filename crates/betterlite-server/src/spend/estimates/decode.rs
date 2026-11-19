@@ -1,6 +1,7 @@
 use std::str;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use super::error::{EstimateError, Issue};
 
@@ -21,6 +22,22 @@ pub struct SpendCalculateRequest {
 
 // An empty body and malformed JSON answer like FastAPI's request validation; every field is optional.
 pub fn decode_spend_estimate(bytes: &[u8]) -> Result<SpendCalculateRequest, EstimateError> {
+    let fields = parse_body(bytes)?;
+    let mut issues = Vec::new();
+    let model = narrow_model(fields.get("model"), &mut issues);
+    let messages = narrow_messages(fields.get("messages"), &mut issues);
+    let completion_response = narrow_response(fields.get("completion_response"), &mut issues);
+    if !issues.is_empty() {
+        return Err(EstimateError::Request(issues));
+    }
+    Ok(SpendCalculateRequest {
+        model,
+        messages,
+        completion_response,
+    })
+}
+
+fn parse_body(bytes: &[u8]) -> Result<IndexMap<String, Json>, EstimateError> {
     if bytes.is_empty() {
         return Err(EstimateError::Request(vec![body_issue(
             "missing", REQUIRED,
@@ -41,39 +58,40 @@ pub fn decode_spend_estimate(bytes: &[u8]) -> Result<SpendCalculateRequest, Esti
             OBJECT,
         )]));
     };
-    let mut issues = Vec::new();
-    let model = match fields.get("model") {
+    Ok(fields)
+}
+
+fn narrow_model(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<String> {
+    match field {
         None | Some(Json::Null) => None,
         Some(Json::Text(text)) => Some(text.clone()),
         Some(_) => {
             issues.push(field_issue("string_type", "model", STRING));
             None
         }
-    };
-    let messages = match fields.get("messages") {
+    }
+}
+
+fn narrow_messages(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<Vec<Json>> {
+    match field {
         None | Some(Json::Null) => None,
         Some(Json::List(items)) => Some(items.clone()),
         Some(_) => {
             issues.push(field_issue("list_type", "messages", LIST));
             None
         }
-    };
-    let completion_response = match fields.get("completion_response") {
+    }
+}
+
+fn narrow_response(field: Option<&Json>, issues: &mut Vec<Issue>) -> Option<Json> {
+    match field {
         None | Some(Json::Null) => None,
         Some(object @ Json::Object(_)) => Some(object.clone()),
         Some(_) => {
             issues.push(field_issue("dict_type", "completion_response", DICTIONARY));
             None
         }
-    };
-    if !issues.is_empty() {
-        return Err(EstimateError::Request(issues));
     }
-    Ok(SpendCalculateRequest {
-        model,
-        messages,
-        completion_response,
-    })
 }
 
 fn body_issue(kind: &'static str, message: &'static str) -> Issue {

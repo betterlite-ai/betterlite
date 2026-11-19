@@ -33,7 +33,7 @@ pub fn find_deployment<'list>(
     deployments
         .iter()
         .filter(|deployment| deployment.model_name == name)
-        .last()
+        .next_back()
 }
 
 // The matched deployment's billing model and the only custom pricing the route honors: its token overrides.
