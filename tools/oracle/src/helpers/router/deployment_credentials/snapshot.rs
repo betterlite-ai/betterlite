@@ -45,8 +45,8 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
         Function::CredentialsWithProvider => {
             let team = input.arguments.team_id.as_deref();
             let id = selected_id(credential_deployment(&catalog, model_id, team)?.as_ref());
-            let credentials = credential_snapshot(input);
-            let credentials = credentials_with_provider(&catalog, model_id, team, &credentials)?
+            let stored = credential_snapshot(input);
+            let credentials = credentials_with_provider(&catalog, model_id, team, &stored)?
                 .map(|params| params.fields);
             (id, credentials)
         }

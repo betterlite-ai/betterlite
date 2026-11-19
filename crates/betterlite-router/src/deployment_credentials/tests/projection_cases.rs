@@ -1,7 +1,7 @@
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_credentials::error::CredentialError;
@@ -100,10 +100,10 @@ fn empty_name_still_lookup() {
     let (result, warnings) = rich(&catalog, &credentials);
     assert_eq!(field(&result.unwrap(), "api_key"), Some("sk-empty"));
     assert!(warnings.is_empty());
-    let (result, warnings) = rich(&catalog, &snapshot(&[]));
-    assert_eq!(field(&result.unwrap(), "api_key"), Some("sk-deployment"));
+    let (stored, stored_warnings) = rich(&catalog, &snapshot(&[]));
+    assert_eq!(field(&stored.unwrap(), "api_key"), Some("sk-deployment"));
     assert_eq!(
-        warnings,
+        stored_warnings,
         vec!["Credential '' not found in credential_list".to_owned()]
     );
 }
@@ -153,10 +153,13 @@ fn missing_name_warns_and_returns_base() {
     );
     // a stored record with no values is an empty answer too, so it warns the same way
     let empty_record = snapshot(&[("absent", pairs(&[]))]);
-    let (result, warnings) = rich(&catalog, &empty_record);
-    assert_eq!(field(&result.unwrap(), "api_key"), Some("sk-deployment"));
+    let (empty_result, empty_warnings) = rich(&catalog, &empty_record);
     assert_eq!(
-        warnings,
+        field(&empty_result.unwrap(), "api_key"),
+        Some("sk-deployment")
+    );
+    assert_eq!(
+        empty_warnings,
         vec!["Credential 'absent' not found in credential_list".to_owned()]
     );
 }

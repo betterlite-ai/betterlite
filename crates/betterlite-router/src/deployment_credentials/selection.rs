@@ -53,10 +53,10 @@ fn materialize(
 
 // Deployment(**candidate): a wildcard candidate keeps the recorded row's credentials under the substituted model.
 fn candidate_row(candidate: &Candidate, row: Option<DeploymentSpec>) -> Lookup {
-    match row {
-        Some(row) => materialize(&row, Some(&candidate.model)).map(Some),
-        None => Ok(None),
-    }
+    row.map_or_else(
+        || Ok(None),
+        |served| materialize(&served, Some(&candidate.model)).map(Some),
+    )
 }
 
 // The row an index names, or the typed error a stale index earns.

@@ -19,9 +19,8 @@ pub struct CredentialParams {
 
 // A credential value is a secret, so Debug names the fields and prints none of the values.
 impl fmt::Debug for CredentialParams {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_map()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
             .entries(self.fields.keys().map(|name| (name, "[REDACTED]")))
             .finish()
     }

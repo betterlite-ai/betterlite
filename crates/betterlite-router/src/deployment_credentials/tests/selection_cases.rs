@@ -83,6 +83,20 @@ fn foreign_name_skipped() {
 }
 
 #[test]
+fn null_owner_is_shared() {
+    let mut deployment = row("shared", "s1", "openai/shared");
+    deployment
+        .model_info
+        .insert("team_id".to_owned(), Json::Null);
+    let catalog = catalog_of(vec![deployment]);
+    assert_eq!(chosen(&catalog, "shared", None).as_deref(), Some("s1"));
+    assert_eq!(
+        chosen(&catalog, "shared", Some("team-a")).as_deref(),
+        Some("s1")
+    );
+}
+
+#[test]
 fn non_text_owner_shared_by_nobody() {
     let numbered = spec(
         "numbered",
@@ -244,10 +258,10 @@ fn malformed_candidate_propagates() {
         ],
         &[],
     );
-    let report =
+    let provider_report =
         credential_deployment(&catalog_of(vec![bad_provider]), "openai/gpt-4o", None).unwrap_err();
     assert!(matches!(
-        report,
+        provider_report,
         CredentialError::Deployment(DeploymentReadError::NotText {
             field: "custom_llm_provider"
         })
