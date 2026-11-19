@@ -92,6 +92,33 @@ async fn list_omits_absent_fields(#[case] mode: ClientKind) {
     );
 }
 
+// httpx merges the base URL's own query with the call's params, and the base value wins a repeated name
+#[tokio::test]
+async fn list_merges_the_base_query_and_keeps_its_value() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, PAGE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores?limit=5", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::List(ListCall {
+        target: target(&params),
+        query: ListQuery {
+            after: Some("vs_a"),
+            before: None,
+            limit: Some(0),
+            order: None,
+        },
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_list");
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the list succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests[0].url.query(), Some("limit=5&after=vs_a"));
+}
+
 // LiteLLM returns response.json() itself: an array is as good a list answer as an object
 #[rstest]
 #[case::page(PAGE)]
