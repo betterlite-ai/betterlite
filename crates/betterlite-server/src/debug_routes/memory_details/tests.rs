@@ -22,6 +22,17 @@ fn reads_explicit_values() {
     );
 }
 
+#[test]
+fn reads_an_explicit_true_process_flag() {
+    let uri = "/debug/memory/details?include_process_info=yes"
+        .parse::<Uri>()
+        .expect("a URI");
+    assert_eq!(
+        super::parse(&uri).expect("an explicit true parses"),
+        (20_i64, true)
+    );
+}
+
 fn protected_router() -> Router {
     test_support::protected(test_support::router(
         test_support::state(),
