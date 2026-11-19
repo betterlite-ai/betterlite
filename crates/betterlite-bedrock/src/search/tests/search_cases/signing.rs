@@ -52,6 +52,10 @@ fn assert_untrusted_signing_host_is_refused() {
     let environment = lookup(&[(GATEWAY_URL_VARIABLE, "https://other.example.com/mcp")]);
     let error = sign(&case, &environment, resolver()).unwrap_err();
     assert_eq!(error.to_string(), signing_refusal(api_base));
+    // a configured value that is not a URL cannot authorize a custom gateway host
+    let unparseable = lookup(&[(GATEWAY_URL_VARIABLE, "not a url")]);
+    let error = sign(&case, &unparseable, resolver()).unwrap_err();
+    assert_eq!(error.to_string(), signing_refusal(api_base));
 }
 
 fn assert_spoofed_signing_hosts_need_configuration() {
