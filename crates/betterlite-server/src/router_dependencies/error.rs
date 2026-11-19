@@ -57,13 +57,20 @@ pub enum ComplexityConfigWriteError {
         source: ComplexityConfigError,
     },
     #[error(
-        "complexity_router_config is invalid at {location}: {message}. The router would drop this \
+        "complexity_router_config is invalid at {location}: {source}. The router would drop this \
          deployment at load time, so the write is rejected instead."
     )]
-    InvalidField { location: String, message: String },
+    InvalidField {
+        location: String,
+        #[source]
+        source: serde_path_to_error::Error<serde_json::Error>,
+    },
     #[error(
-        "complexity_router_config cannot be read: {message}. The router would drop this deployment \
+        "complexity_router_config cannot be read: {source}. The router would drop this deployment \
          at load time, so the write is rejected instead."
     )]
-    Unreadable { message: String },
+    Unreadable {
+        #[source]
+        source: serde_json::Error,
+    },
 }
