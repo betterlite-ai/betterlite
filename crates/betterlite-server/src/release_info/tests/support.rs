@@ -17,6 +17,7 @@ pub(super) const RELEASE_URL: &str = "http://127.0.0.1:9/releases/latest";
 pub(super) enum Answer {
     Reply { status: u16, body: Vec<u8> },
     Closed,
+    Hang,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +78,7 @@ impl Transport for Script {
                 headers: HeaderMap::new(),
                 body,
             }),
+            Some(Answer::Hang) => std::future::pending().await,
             Some(Answer::Closed) | None => Err(TransportError::Closed),
         }
     }

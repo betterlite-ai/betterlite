@@ -134,8 +134,8 @@ async fn concurrent_misses_share_a_single_fetch() {
 
 #[tokio::test]
 async fn a_cancelled_read_is_not_cached() {
-    let fixture = fixture(vec![success(), success()]);
-    let cancelled = timeout(Duration::ZERO, fixture.service.get()).await;
+    let fixture = fixture(vec![Answer::Hang, success()]);
+    let cancelled = timeout(Duration::from_millis(10), fixture.service.get()).await;
     cancelled.unwrap_err();
     let served = fixture
         .service
