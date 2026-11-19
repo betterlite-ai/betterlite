@@ -89,6 +89,11 @@ fn generic_target<'event>(extra: &'event mut Extra, event_type: &str) -> Option<
 // a pydantic event model answers getattr("response") from its allowed extras, so any variant may carry one
 fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
     match event {
+        KnownResponseEvent::ResponseCreated(_)
+        | KnownResponseEvent::ResponseInProgress(_)
+        | KnownResponseEvent::ResponseCompleted(_)
+        | KnownResponseEvent::ResponseFailed(_)
+        | KnownResponseEvent::ResponseIncomplete(_) => None,
         KnownResponseEvent::ResponsePartAdded(record) => Some(&mut record.extra),
         KnownResponseEvent::ReasoningSummaryTextDelta(record) => Some(&mut record.extra),
         KnownResponseEvent::ReasoningSummaryTextDone(record) => Some(&mut record.extra),
@@ -120,6 +125,5 @@ fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
         | KnownResponseEvent::McpCallFailed(record) => Some(&mut record.extra),
         KnownResponseEvent::ImageGenerationPartialImage(record) => Some(&mut record.extra),
         KnownResponseEvent::Error(record) => Some(&mut record.extra),
-        _ => None,
     }
 }
