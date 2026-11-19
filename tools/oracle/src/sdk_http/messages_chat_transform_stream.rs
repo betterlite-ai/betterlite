@@ -267,23 +267,7 @@ async fn async_steps(
 ) -> Result<RunOutcome, SdkHttpError> {
     let mut outcomes = Vec::with_capacity(steps.len());
     for step in steps {
-        let mut frames = Vec::new();
-        let mut end = false;
-        match step {
-            Step::Close => view.aclose(),
-            Step::Next => match view.next_frame().await {
-                Some(frame) => {
-                    frames.push(normalized_frame(&frame, &view.stream.state.message_id)?)
-                }
-                None => end = true,
-            },
-            Step::Drain => {
-                while let Some(frame) = view.next_frame().await {
-                    frames.push(normalized_frame(&frame, &view.stream.state.message_id)?);
-                }
-                end = true;
-            }
-        }
+        let (frames, end) = async_step(&mut view, *step).await?;
         outcomes.push(StepOutcome {
             frames,
             end,
@@ -296,36 +280,43 @@ async fn async_steps(
     })
 }
 
+async fn async_step(
+    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
+    step: Step,
+) -> Result<(Vec<String>, bool), SdkHttpError> {
+    match step {
+        Step::Close => {
+            view.aclose();
+            Ok((Vec::new(), false))
+        }
+        Step::Next => match view.next_frame().await {
+            Some(frame) => {
+                let frame = normalized_frame(&frame, &view.stream.state.message_id)?;
+                Ok((vec![frame], false))
+            }
+            None => Ok((Vec::new(), true)),
+        },
+        Step::Drain => drain_async(view).await,
+    }
+}
+
+async fn drain_async(
+    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
+) -> Result<(Vec<String>, bool), SdkHttpError> {
+    let mut frames = Vec::new();
+    while let Some(frame) = view.next_frame().await {
+        frames.push(normalized_frame(&frame, &view.stream.state.message_id)?);
+    }
+    Ok((frames, true))
+}
+
 fn sync_steps(
     mut frames: SyncFrames<Prefetched, UuidV4>,
     steps: &[Step],
 ) -> Result<RunOutcome, SdkHttpError> {
     let mut outcomes = Vec::with_capacity(steps.len());
     for step in steps {
-        let mut collected = Vec::new();
-        let mut end = false;
-        match step {
-            Step::Next => match frames.next() {
-                Some(Ok(frame)) => {
-                    collected.push(normalized_frame(&frame, &frames.driver.state.message_id)?)
-                }
-                Some(Err(error)) => return Err(SdkHttpError::Invalid(error.to_string())),
-                None => end = true,
-            },
-            Step::Drain => {
-                while let Some(item) = frames.next() {
-                    let frame = item.map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-                    let message_id = &frames.driver.state.message_id;
-                    collected.push(normalized_frame(&frame, message_id)?);
-                }
-                end = true;
-            }
-            Step::Close => {
-                return Err(SdkHttpError::Invalid(
-                    "a sync run cannot be closed".to_owned(),
-                ));
-            }
-        }
+        let (collected, end) = sync_step(&mut frames, *step)?;
         outcomes.push(StepOutcome {
             frames: collected,
             end,
@@ -338,10 +329,42 @@ fn sync_steps(
     })
 }
 
+fn sync_step(
+    frames: &mut SyncFrames<Prefetched, UuidV4>,
+    step: Step,
+) -> Result<(Vec<String>, bool), SdkHttpError> {
+    match step {
+        Step::Next => match frames.next() {
+            Some(Ok(frame)) => {
+                let frame = normalized_frame(&frame, &frames.driver.state.message_id)?;
+                Ok((vec![frame], false))
+            }
+            Some(Err(error)) => Err(SdkHttpError::Invalid(error.to_string())),
+            None => Ok((Vec::new(), true)),
+        },
+        Step::Drain => drain_sync(frames),
+        Step::Close => Err(SdkHttpError::Invalid(
+            "a sync run cannot be closed".to_owned(),
+        )),
+    }
+}
+
+fn drain_sync(
+    frames: &mut SyncFrames<Prefetched, UuidV4>,
+) -> Result<(Vec<String>, bool), SdkHttpError> {
+    let mut collected = Vec::new();
+    while let Some(item) = frames.next() {
+        let frame = item.map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+        collected.push(normalized_frame(&frame, &frames.driver.state.message_id)?);
+    }
+    Ok((collected, true))
+}
+
 // The message id is a fresh uuid4 on each side, so both replace it before comparing
 fn normalized_frame(frame: &[u8], message_id: &str) -> Result<String, SdkHttpError> {
-    let text = String::from_utf8(frame.to_vec()).map_err(SdkHttpError::FrameUtf8)?;
-    Ok(text.replace(message_id, NORMALIZED_ID))
+    Ok(String::from_utf8(frame.to_vec())
+        .map_err(SdkHttpError::FrameUtf8)?
+        .replace(message_id, NORMALIZED_ID))
 }
 
 fn view_outcome(view: &AnthropicSseStream<Prefetched, UuidV4>) -> ViewOutcome {

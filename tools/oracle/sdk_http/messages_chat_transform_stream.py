@@ -106,10 +106,6 @@ class ProviderStream(ProviderChunks):
             raise StopAsyncIteration from None
 
 
-def normalized(frame: bytes) -> str:
-    return MESSAGE_ID.sub(NORMALIZED_ID, frame.decode())
-
-
 def view_outcome(view: AnthropicSSEStream) -> ViewOutcome:
     chunks = view.chunks
     raw_messages = view.messages
@@ -133,11 +129,11 @@ async def async_steps(stream: AnthropicSSEStream, steps: list[Step]) -> list[Ste
                 if frame is None:
                     end = True
                 else:
-                    written.append(normalized(frame))
+                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
             case "drain":
                 frame = await anext(stream, None)
                 while frame is not None:
-                    written.append(normalized(frame))
+                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
                     frame = await anext(stream, None)
                 end = True
         outcomes.append(StepOutcome(frames=written, end=end, view=view_outcome(stream)))
@@ -157,10 +153,10 @@ def sync_steps(stream: Iterator[bytes], steps: list[Step]) -> list[StepOutcome]:
                 if frame is None:
                     end = True
                 else:
-                    written.append(normalized(frame))
+                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
             case "drain":
                 for frame in stream:
-                    written.append(normalized(frame))
+                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
                 end = True
         outcomes.append(StepOutcome(frames=written, end=end, view=None))
     return outcomes
@@ -212,14 +208,13 @@ async def run_one(
     response = await client.post(f"{api_base}/chat/completions", json=request)
     source = ProviderStream(frames(response.content), messages)
     result = factory_result(call, spec, source)
-    if spec.is_async:
-        if not isinstance(result, AnthropicSSEStream):
-            raise TypeError("is_async=True must return the async SSE view")
-        steps = await async_steps(result, spec.steps)
-        return RunOutcome(is_async=True, steps=steps)
-    if not isinstance(result, Iterator):
-        raise TypeError("is_async=False must return the sync iterator")
-    return RunOutcome(is_async=False, steps=sync_steps(result, spec.steps))
+    match result:
+        case AnthropicSSEStream():
+            steps = await async_steps(result, spec.steps)
+            return RunOutcome(is_async=True, steps=steps)
+        case Iterator():
+            return RunOutcome(is_async=False, steps=sync_steps(result, spec.steps))
+    raise TypeError("the streaming factory returned no iterator")
 
 
 async def run_all(
@@ -229,7 +224,7 @@ async def run_all(
         return [await run_one(call, spec, api_base, client) for spec in call.runs]
 
 
-def run_messages_chat_transform_stream(
+def run_transform_stream(
     call: MessagesChatTransformCall, api_base: str
 ) -> str:
     runs = asyncio.run(run_all(call, api_base))
@@ -243,4 +238,4 @@ class ChatTransformStreamRequest(BaseModel):
     messages_chat_transform_stream: MessagesChatTransformCall
 
     def serialize(self, api_base: str) -> str:
-        return run_messages_chat_transform_stream(self.messages_chat_transform_stream, api_base)
+        return run_transform_stream(self.messages_chat_transform_stream, api_base)
