@@ -318,11 +318,41 @@ async fn write_transport_failures(#[case] operation: Operation) {
         error.headers.get("content-type"),
         Some(&Json::Text(String::from("text/plain")))
     );
+    assert_eq!(
+        error.headers.get("content-length"),
+        Some(&Json::Text(String::from("9")))
+    );
     assert_eq!(wire.requests().len(), 1);
     assert_eq!(
         config.errors(),
         vec![(String::from("slow down"), 429, error.headers.clone())]
     );
+    let rejected = RecordingConfig::new("http://mock.test/v1/responses");
+    let rejected_wire = Wire::replying(Reply::json(400, DELETED), &events);
+    let rejected_source = Source::new(rejected_wire.clone());
+    let rejected_deps = WriteDeps {
+        config: &rejected,
+        source: &rejected_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut rejected_fixture = Fixture::new("responses");
+    let rejected_call = operation_call(operation, "resp_a", &write_params, None, None);
+    let Err(WriteError::Provider(error)) = run(
+        &mut rejected_fixture,
+        &rejected_deps,
+        ClientKind::Sync,
+        &rejected_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a 400 is a provider error even when its body is a valid record");
+    };
+    assert_eq!(error.status_code, 400);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, DELETED);
+    assert_eq!(rejected_wire.requests().len(), 1);
     let invalid = RecordingConfig::new("http://mock.test/v1/responses");
     let invalid_wire = Wire::replying(Reply::json(200, "not json"), &events);
     let invalid_source = Source::new(invalid_wire.clone());
