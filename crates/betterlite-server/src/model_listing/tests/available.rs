@@ -7,11 +7,10 @@ use crate::model_listing::available::available_models_for_user;
 #[tokio::test]
 async fn a_requested_team_replaces_the_key_models_after_the_membership_check() {
     let key = key(r#"{"models": ["key-model"]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["key-model", "team-model"]);
-    let mut access = FakeAccess::default();
-    access.member = true;
-    access.team_row = Some(team(&["team-model"]));
+    let router = FakeRouter::default().with_model_names(&["key-model", "team-model"]);
+    let access = FakeAccess::default()
+        .with_member(true)
+        .with_team(team(&["team-model"]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(
@@ -29,8 +28,7 @@ async fn a_requested_team_replaces_the_key_models_after_the_membership_check() {
 async fn a_requested_team_the_caller_is_not_on_fails_the_listing() {
     let key = key(r#"{"models": ["key-model"]}"#);
     let router = FakeRouter::default();
-    let mut access = FakeAccess::default();
-    access.team_row = Some(team(&["team-model"]));
+    let access = FakeAccess::default().with_team(team(&["team-model"]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let error = available_models_for_user(
@@ -47,8 +45,7 @@ async fn a_requested_team_the_caller_is_not_on_fails_the_listing() {
 async fn a_requested_team_the_database_does_not_have_fails_the_listing() {
     let key = key(r#"{"models": ["key-model"]}"#);
     let router = FakeRouter::default();
-    let mut access = FakeAccess::default();
-    access.team_missing = true;
+    let access = FakeAccess::default().with_missing_team();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let error = available_models_for_user(
@@ -64,8 +61,7 @@ async fn a_requested_team_the_database_does_not_have_fails_the_listing() {
 #[tokio::test]
 async fn a_requested_team_without_a_database_lists_by_the_key() {
     let key = key(r#"{"models": ["key-model"]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["key-model", "team-model"]);
+    let router = FakeRouter::default().with_model_names(&["key-model", "team-model"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -83,10 +79,8 @@ async fn a_requested_team_without_a_database_lists_by_the_key() {
 #[tokio::test]
 async fn key_access_group_models_extend_a_restricted_key_list() {
     let key = key(r#"{"models": ["a"]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "b"]);
-    let mut access = FakeAccess::default();
-    access.key_group_models = strings(&["b"]);
+    let router = FakeRouter::default().with_model_names(&["a", "b"]);
+    let access = FakeAccess::default().with_key_group_models(&["b"]);
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -98,10 +92,8 @@ async fn key_access_group_models_extend_a_restricted_key_list() {
 #[tokio::test]
 async fn access_group_models_leave_an_unrestricted_key_alone() {
     let key = key("{}");
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a"]);
-    let mut access = FakeAccess::default();
-    access.key_group_models = strings(&["ghost"]);
+    let router = FakeRouter::default().with_model_names(&["a"]);
+    let access = FakeAccess::default().with_key_group_models(&["ghost"]);
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -113,13 +105,12 @@ async fn access_group_models_leave_an_unrestricted_key_alone() {
 #[tokio::test]
 async fn team_access_group_models_come_before_the_key_groups_without_repeats() {
     let key = key(r#"{"models": ["a"]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "t1", "dup", "k1"]);
-    let mut access = FakeAccess::default();
-    access.member = true;
-    access.team_row = Some(team(&["a"]));
-    access.team_group_models = strings(&["t1", "dup"]);
-    access.key_group_models = strings(&["k1", "dup"]);
+    let router = FakeRouter::default().with_model_names(&["a", "t1", "dup", "k1"]);
+    let access = FakeAccess::default()
+        .with_member(true)
+        .with_team(team(&["a"]))
+        .with_team_group_models(&["t1", "dup"])
+        .with_key_group_models(&["k1", "dup"]);
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(
@@ -136,12 +127,11 @@ async fn team_access_group_models_come_before_the_key_groups_without_repeats() {
 #[tokio::test]
 async fn a_team_the_listing_cannot_fetch_still_lists_the_key_groups() {
     let key = key(r#"{"models": ["a"], "team_id": "t1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "from-key"]);
-    let mut access = FakeAccess::default();
-    access.team_missing = true;
-    access.team_group_models = strings(&["from-team"]);
-    access.key_group_models = strings(&["from-key"]);
+    let router = FakeRouter::default().with_model_names(&["a", "from-key"]);
+    let access = FakeAccess::default()
+        .with_missing_team()
+        .with_team_group_models(&["from-team"])
+        .with_key_group_models(&["from-key"]);
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -153,11 +143,10 @@ async fn a_team_the_listing_cannot_fetch_still_lists_the_key_groups() {
 #[tokio::test]
 async fn the_effective_team_id_fetches_the_team_for_its_access_groups() {
     let key = key(r#"{"models": ["a"], "team_id": "t1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "from-team"]);
-    let mut access = FakeAccess::default();
-    access.team_row = Some(team(&[]));
-    access.team_group_models = strings(&["from-team"]);
+    let router = FakeRouter::default().with_model_names(&["a", "from-team"]);
+    let access = FakeAccess::default()
+        .with_team(team(&[]))
+        .with_team_group_models(&["from-team"]);
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -169,8 +158,7 @@ async fn the_effective_team_id_fetches_the_team_for_its_access_groups() {
 #[tokio::test]
 async fn the_effective_team_id_reaches_the_wildcard_lookup() {
     let key = key(r#"{"models": ["wild/*"], "team_id": "t1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["wild/*"]);
+    let router = FakeRouter::default().with_model_names(&["wild/*"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -184,11 +172,8 @@ async fn the_effective_team_id_reaches_the_wildcard_lookup() {
 #[tokio::test]
 async fn a_requested_team_is_the_team_the_wildcard_lookup_sees() {
     let key = key(r#"{"models": ["wild/*"], "team_id": "t1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["wild/*"]);
-    let mut access = FakeAccess::default();
-    access.member = true;
-    access.team_row = Some(team(&[]));
+    let router = FakeRouter::default().with_model_names(&["wild/*"]);
+    let access = FakeAccess::default().with_member(true).with_team(team(&[]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(
@@ -205,10 +190,9 @@ async fn a_requested_team_is_the_team_the_wildcard_lookup_sees() {
 #[tokio::test]
 async fn an_agent_ceiling_caps_the_list_and_keeps_its_order() {
     let key = key(r#"{"agent_id": "agent-1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "b", "c"]);
-    let mut access = FakeAccess::default();
-    access.ceiling = Some(BTreeSet::from(["a".to_owned(), "c".to_owned()]));
+    let router = FakeRouter::default().with_model_names(&["a", "b", "c"]);
+    let access =
+        FakeAccess::default().with_ceiling(BTreeSet::from(["a".to_owned(), "c".to_owned()]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -220,8 +204,7 @@ async fn an_agent_ceiling_caps_the_list_and_keeps_its_order() {
 #[tokio::test]
 async fn an_agent_without_a_ceiling_keeps_the_list() {
     let key = key(r#"{"agent_id": "agent-1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "b"]);
+    let router = FakeRouter::default().with_model_names(&["a", "b"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -234,8 +217,7 @@ async fn an_agent_without_a_ceiling_keeps_the_list() {
 #[tokio::test]
 async fn an_agent_key_without_a_router_is_capped_to_its_ceiling_models() {
     let key = key(r#"{"models": ["a", "b"], "agent_id": "agent-1"}"#);
-    let mut access = FakeAccess::default();
-    access.ceiling = Some(BTreeSet::from(["b".to_owned()]));
+    let access = FakeAccess::default().with_ceiling(BTreeSet::from(["b".to_owned()]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(None, &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -247,10 +229,8 @@ async fn an_agent_key_without_a_router_is_capped_to_its_ceiling_models() {
 #[tokio::test]
 async fn an_empty_ceiling_caps_the_list_to_nothing() {
     let key = key(r#"{"agent_id": "agent-1"}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a"]);
-    let mut access = FakeAccess::default();
-    access.ceiling = Some(BTreeSet::new());
+    let router = FakeRouter::default().with_model_names(&["a"]);
+    let access = FakeAccess::default().with_ceiling(BTreeSet::new());
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -262,10 +242,8 @@ async fn an_empty_ceiling_caps_the_list_to_nothing() {
 #[tokio::test]
 async fn a_key_without_an_agent_id_is_not_capped() {
     let key = key(r#"{"agent_id": null}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a"]);
-    let mut access = FakeAccess::default();
-    access.ceiling = Some(BTreeSet::from(["other".to_owned()]));
+    let router = FakeRouter::default().with_model_names(&["a"]);
+    let access = FakeAccess::default().with_ceiling(BTreeSet::from(["other".to_owned()]));
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
     let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
@@ -315,8 +293,7 @@ async fn infer_model_from_keys_off_leaves_the_list_empty() {
 #[tokio::test]
 async fn return_wildcard_routes_keeps_the_wildcard_name() {
     let key = key("{}");
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["wild/*"]);
+    let router = FakeRouter::default().with_model_names(&["wild/*"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -341,8 +318,7 @@ async fn return_wildcard_routes_keeps_the_wildcard_name() {
 #[tokio::test]
 async fn return_wildcard_routes_off_drops_the_wildcard_name() {
     let key = key("{}");
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["wild/*"]);
+    let router = FakeRouter::default().with_model_names(&["wild/*"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -355,8 +331,7 @@ async fn return_wildcard_routes_off_drops_the_wildcard_name() {
 #[tokio::test]
 async fn only_model_access_groups_keeps_the_group_names() {
     let key = key(r#"{"models": ["g1"]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a"]);
+    let mut router = FakeRouter::default().with_model_names(&["a"]);
     router
         .access_groups
         .insert("g1".to_owned(), strings(&["a"]));
@@ -384,8 +359,7 @@ async fn only_model_access_groups_keeps_the_group_names() {
 #[tokio::test]
 async fn non_text_grants_are_ignored() {
     let key = key(r#"{"models": ["a", 5, null, ["b"], {"c": 1}]}"#);
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["a", "b", "c"]);
+    let router = FakeRouter::default().with_model_names(&["a", "b", "c"]);
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
@@ -398,9 +372,9 @@ async fn non_text_grants_are_ignored() {
 #[tokio::test]
 async fn a_failed_wildcard_lookup_fails_the_listing() {
     let key = key("{}");
-    let mut router = FakeRouter::default();
-    router.model_names = strings(&["wild/*"]);
-    router.rows_fail = true;
+    let router = FakeRouter::default()
+        .with_model_names(&["wild/*"])
+        .with_failing_rows();
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
     let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);

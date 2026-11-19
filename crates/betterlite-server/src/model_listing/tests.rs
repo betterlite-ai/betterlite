@@ -147,6 +147,20 @@ impl ListingRouter for FakeRouter {
     }
 }
 
+impl FakeRouter {
+    #[must_use]
+    fn with_model_names(mut self, names: &[&str]) -> Self {
+        self.model_names = strings(names);
+        self
+    }
+
+    #[must_use]
+    fn with_failing_rows(mut self) -> Self {
+        self.rows_fail = true;
+        self
+    }
+}
+
 #[derive(Default)]
 struct FakeAccess {
     team_row: Option<TeamListing>,
@@ -202,6 +216,44 @@ impl AccessLookups for FakeAccess {
 
     async fn agent_ceiling(&self, _agent_id: &str) -> Option<BTreeSet<String>> {
         self.ceiling.clone()
+    }
+}
+
+impl FakeAccess {
+    #[must_use]
+    fn with_member(mut self, member: bool) -> Self {
+        self.member = member;
+        self
+    }
+
+    #[must_use]
+    fn with_team(mut self, team: TeamListing) -> Self {
+        self.team_row = Some(team);
+        self
+    }
+
+    #[must_use]
+    fn with_missing_team(mut self) -> Self {
+        self.team_missing = true;
+        self
+    }
+
+    #[must_use]
+    fn with_team_group_models(mut self, models: &[&str]) -> Self {
+        self.team_group_models = strings(models);
+        self
+    }
+
+    #[must_use]
+    fn with_key_group_models(mut self, models: &[&str]) -> Self {
+        self.key_group_models = strings(models);
+        self
+    }
+
+    #[must_use]
+    fn with_ceiling(mut self, ceiling: BTreeSet<String>) -> Self {
+        self.ceiling = Some(ceiling);
+        self
     }
 }
 
