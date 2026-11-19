@@ -1,0 +1,17 @@
+kind: sdk_http
+name: vector-search-transport-search-beta-default
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_search_transport:
+    mode: async
+    vector_store_id: vs_a
+    query: [a]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: a, data: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []
