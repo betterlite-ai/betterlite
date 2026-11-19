@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::mem::size_of;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
@@ -35,11 +34,6 @@ fn values(entries: &[(&str, JsonData)]) -> CredentialValues {
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect();
     CredentialValues::from(Payload(fields))
-}
-
-#[test]
-fn loads_credential_list_settings_stay_behind_one_pointer() {
-    assert_eq!(size_of::<Settings>(), size_of::<usize>());
 }
 
 #[test]
