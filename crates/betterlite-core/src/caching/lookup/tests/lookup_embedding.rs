@@ -9,11 +9,10 @@ use betterlite_models::decisions::{HiddenParams, Json};
 use serde_json::Number;
 
 use super::support::{
-    EMBEDDING_MODEL, Fixture, ReadKind, Tokens, details_fields, duration_field, embedding_key,
-    embedding_kwargs, embedding_lookup, handler_named, hit_field, perf_clock, services,
-    stored_embedding, text, worker,
+    EMBEDDING_MODEL, Fixture, ReadKind, Tokens, async_cache_lookup, details_fields, duration_field,
+    embedding_key, embedding_kwargs, embedding_lookup, handler_named, hit_field, perf_clock,
+    stored_embedding, text,
 };
-use crate::caching::lookup::async_lookup::async_get_cache;
 
 fn vector(values: &[f64]) -> EmbeddingPayload {
     EmbeddingPayload::Vector(
@@ -32,61 +31,103 @@ fn embedding_handler(request: &KeyObject) -> CachingHandler {
     handler_named("aembedding", &["model", "input"], request.clone())
 }
 
+const fn usage_counts(prompt: i64, completion: i64, total: i64) -> Usage {
+    Usage {
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: total,
+        prompt_tokens_details: None,
+    }
+}
+
+fn partial_embedding_response() -> CachedEmbeddingResponse {
+    CachedEmbeddingResponse {
+        model: Some(EMBEDDING_MODEL.to_owned()),
+        data: vec![
+            Some(Embedding {
+                embedding: vector(&[0.5_f64, 0.25_f64]),
+                index: 0,
+            }),
+            None,
+        ],
+        usage: Some(usage_counts(2, 0, 2)),
+        hidden_params: cached_hit_response(),
+        response_headers: None,
+    }
+}
+
+fn merged_usage(response: &CachedEmbeddingResponse) -> &Usage {
+    response.usage.as_ref().expect("the merge sums the usage")
+}
+
+fn assert_embedding_logged(fixture: &Fixture) {
+    let snapshots = fixture.snapshots();
+    assert_eq!(snapshots.len(), 1);
+    let snapshot = &snapshots[0];
+    assert_eq!(snapshot.model, EMBEDDING_MODEL);
+    assert_eq!(snapshot.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(hit_field(&snapshot.caching_details), Some(true));
+    assert_eq!(
+        details_fields(&snapshot.caching_details).get("cache_duration_ms"),
+        Some(&Json::Null)
+    );
+    assert_eq!(duration_field(&snapshot.caching_details), None);
+    assert_eq!(snapshot.original_response, snapshot.logged_response);
+    let Json::Object(logged) = &snapshot.logged_response else {
+        panic!("the embedding response is logged");
+    };
+    assert_eq!(
+        logged.get("model"),
+        Some(&Json::Text(EMBEDDING_MODEL.to_owned()))
+    );
+    let Some(Json::Object(usage)) = logged.get("usage") else {
+        panic!("the merged usage is logged");
+    };
+    assert_eq!(
+        usage.get("prompt_tokens"),
+        Some(&Json::Number(Number::from(9_i32)))
+    );
+    assert_eq!(
+        usage.get("total_tokens"),
+        Some(&Json::Number(Number::from(9_i32)))
+    );
+    let Some(Json::List(data)) = logged.get("data") else {
+        panic!("the merged positions are logged");
+    };
+    assert_eq!(data.len(), 2);
+}
+
 #[tokio::test]
 async fn a_partial_embedding_hit_merges_the_cached_positions() {
     let fixture = Fixture::new();
     let request_kwargs = embedding_kwargs(&["alpha", "beta"]);
+    let stored = stored_embedding(
+        &[0.5_f64, 0.25_f64],
+        Some(2),
+        EMBEDDING_CACHE_FORMAT_VERSION,
+    );
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "alpha"),
-        stored_embedding(&[0.5, 0.25], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
+        stored,
     );
     let mut handler = embedding_handler(&request_kwargs);
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
+    let request = embedding_lookup(request_kwargs);
     let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &embedding_lookup(request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the embedding lookup runs");
+    .await;
     assert_eq!(fixture.backend.reads(), [ReadKind::Async, ReadKind::Async]);
-    let response = outcome
-        .response
-        .expect("the partial hit returns a response");
+    let response = outcome.response.expect("a hit returns a response");
     assert!(response.cached_result.is_none());
     assert!(!response.all_embeddings_cached);
     assert_eq!(
         response.final_embedding_response,
-        Some(CachedEmbeddingResponse {
-            model: Some(EMBEDDING_MODEL.to_owned()),
-            data: vec![
-                Some(Embedding {
-                    embedding: vector(&[0.5, 0.25]),
-                    index: 0,
-                }),
-                None,
-            ],
-            usage: Some(Usage {
-                prompt_tokens: 2,
-                completion_tokens: 0,
-                total_tokens: 2,
-                prompt_tokens_details: None,
-            }),
-            hidden_params: cached_hit_response(),
-            response_headers: None,
-        })
+        Some(partial_embedding_response())
     );
     assert_eq!(response.embedding_uncached_input, Some(vec![text("beta")]));
     assert_eq!(
@@ -105,34 +146,26 @@ async fn a_full_embedding_hit_logs_the_merged_usage_once() {
     let request_kwargs = embedding_kwargs(&["alpha", "beta"]);
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "alpha"),
-        stored_embedding(&[0.5], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
+        stored_embedding(&[0.5_f64], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
     );
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "beta"),
-        stored_embedding(&[0.25], None, EMBEDDING_CACHE_FORMAT_VERSION),
+        stored_embedding(&[0.25_f64], None, EMBEDDING_CACHE_FORMAT_VERSION),
     );
     let mut handler = embedding_handler(&request_kwargs);
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
-    let mut tokens = Tokens::default();
-    tokens.count = 7;
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let request = embedding_lookup(request_kwargs);
+    let tokens = Tokens {
+        count: 7,
+        ..Tokens::default()
+    };
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &embedding_lookup(request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the embedding lookup runs");
+    .await;
     let report = worker.flush().await;
     assert_eq!(report.completed, 1);
     assert!(outcome.logging.is_none());
@@ -144,48 +177,8 @@ async fn a_full_embedding_hit_logs_the_merged_usage_once() {
     let final_response = response
         .final_embedding_response
         .expect("the cached positions are merged");
-    assert_eq!(
-        final_response.usage,
-        Some(Usage {
-            prompt_tokens: 9,
-            completion_tokens: 0,
-            total_tokens: 9,
-            prompt_tokens_details: None,
-        })
-    );
-    let snapshots = fixture.snapshots();
-    assert_eq!(snapshots.len(), 1);
-    assert_eq!(snapshots[0].model, EMBEDDING_MODEL);
-    assert_eq!(snapshots[0].custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(hit_field(&snapshots[0].caching_details), Some(true));
-    assert_eq!(
-        details_fields(&snapshots[0].caching_details).get("cache_duration_ms"),
-        Some(&Json::Null)
-    );
-    assert_eq!(duration_field(&snapshots[0].caching_details), None);
-    assert_eq!(snapshots[0].original_response, snapshots[0].logged_response);
-    let Json::Object(logged) = &snapshots[0].logged_response else {
-        panic!("the embedding response is logged");
-    };
-    assert_eq!(
-        logged.get("model"),
-        Some(&Json::Text(EMBEDDING_MODEL.to_owned()))
-    );
-    let Some(Json::Object(usage)) = logged.get("usage") else {
-        panic!("the merged usage is logged");
-    };
-    assert_eq!(
-        usage.get("prompt_tokens"),
-        Some(&Json::Number(Number::from(9)))
-    );
-    assert_eq!(
-        usage.get("total_tokens"),
-        Some(&Json::Number(Number::from(9)))
-    );
-    let Some(Json::List(data)) = logged.get("data") else {
-        panic!("the merged positions are logged");
-    };
-    assert_eq!(data.len(), 2);
+    assert_eq!(merged_usage(&final_response), &usage_counts(9, 0, 9));
+    assert_embedding_logged(&fixture);
 }
 
 #[tokio::test]
@@ -194,47 +187,32 @@ async fn every_cached_prompt_token_count_skips_the_counter() {
     let request_kwargs = embedding_kwargs(&["alpha", "beta"]);
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "alpha"),
-        stored_embedding(&[0.5], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
+        stored_embedding(&[0.5_f64], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
     );
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "beta"),
-        stored_embedding(&[0.25], Some(3), EMBEDDING_CACHE_FORMAT_VERSION),
+        stored_embedding(&[0.25_f64], Some(3), EMBEDDING_CACHE_FORMAT_VERSION),
     );
     let mut handler = embedding_handler(&request_kwargs);
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
-    let mut tokens = Tokens::default();
-    tokens.count = 99;
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let request = embedding_lookup(request_kwargs);
+    let tokens = Tokens {
+        count: 99,
+        ..Tokens::default()
+    };
+    let (outcome, _worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &embedding_lookup(request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the embedding lookup runs");
-    worker.flush().await;
+    .await;
     assert!(tokens.counted().is_empty());
     let response = outcome.response.expect("the full hit returns a response");
     let final_response = response
         .final_embedding_response
         .expect("the cached positions are merged");
-    assert_eq!(
-        final_response
-            .usage
-            .expect("the merge sums the usage")
-            .prompt_tokens,
-        5
-    );
+    assert_eq!(merged_usage(&final_response).prompt_tokens, 5);
 }
 
 #[tokio::test]
@@ -243,33 +221,23 @@ async fn an_old_format_entry_is_treated_as_uncached() {
     let request_kwargs = embedding_kwargs(&["alpha", "beta"]);
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "alpha"),
-        stored_embedding(&[0.5], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
+        stored_embedding(&[0.5_f64], Some(2), EMBEDDING_CACHE_FORMAT_VERSION),
     );
     fixture.backend.seed(
         &embedding_key(&fixture.cache, &request_kwargs, "beta"),
-        stored_embedding(&[0.25], Some(3), EMBEDDING_CACHE_FORMAT_VERSION - 1),
+        stored_embedding(&[0.25_f64], Some(3), EMBEDDING_CACHE_FORMAT_VERSION - 1),
     );
     let mut handler = embedding_handler(&request_kwargs);
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
+    let request = embedding_lookup(request_kwargs);
     let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let (outcome, _worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &embedding_lookup(request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the embedding lookup runs");
+    .await;
     let response = outcome
         .response
         .expect("the partial hit returns a response");
@@ -279,12 +247,6 @@ async fn an_old_format_entry_is_treated_as_uncached() {
         .final_embedding_response
         .expect("the cached positions are merged");
     assert!(final_response.data[1].is_none());
-    assert_eq!(
-        final_response
-            .usage
-            .expect("the merge sums the usage")
-            .prompt_tokens,
-        2
-    );
+    assert_eq!(merged_usage(&final_response).prompt_tokens, 2);
     assert_eq!(fixture.backend.reads(), [ReadKind::Async, ReadKind::Async]);
 }

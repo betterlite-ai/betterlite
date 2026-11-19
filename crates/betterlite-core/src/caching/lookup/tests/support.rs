@@ -19,8 +19,8 @@ use betterlite_cache::handler::kwargs::key_request;
 use betterlite_cache::handler::retrieve::{AsyncSupport, CacheSource};
 use betterlite_cache::handler::state::{CachingHandler, HandlerDependencies, OriginalFunction};
 use betterlite_cache::replay::{
-    CacheHitMetadata, CachedDict, ReplayConversions, ReplayError, ReplayedBy, ResponseKind,
-    TranscriptionHidden,
+    CacheHitMetadata, CachedDict, ReplayConversions, ReplayError, Replayed, ReplayedBy,
+    ResponseKind, TranscriptionHidden,
 };
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
 use betterlite_cache::types::call_type::CachingSupportedCallType;
@@ -60,14 +60,18 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use tokio::task::yield_now;
 
 use crate::caching::hit_callbacks::context::CACHING_DETAILS;
 use crate::caching::hit_callbacks::job::{CacheHitSuccessJob, OwnedSuccessHandler};
+use crate::caching::lookup::async_lookup::{AsyncLookup, async_get_cache};
 use crate::caching::lookup::error::TokenCountError;
 use crate::caching::lookup::hit::{HitLogging, HitResponse};
 use crate::caching::lookup::json::cache_value_json;
 use crate::caching::lookup::request::CacheLookup;
+use crate::caching::lookup::response::LookupResponse;
 use crate::caching::lookup::services::{LookupServices, PerfClock, ResponseTokens};
+use crate::caching::lookup::sync_lookup::sync_get_cache;
 
 pub(super) const MODEL: &str = "gpt-4o";
 pub(super) const EMBEDDING_MODEL: &str = "text-embedding-3-small";
@@ -300,12 +304,12 @@ impl EnvelopeBackend for RecordingBackend {
         key: &str,
         _lookup: &mut EnvelopeLookup,
     ) -> CacheResult<Option<CacheValue>> {
-        tokio::task::yield_now().await;
+        yield_now().await;
         Ok(self.read(key, ReadKind::Async))
     }
 
     async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        tokio::task::yield_now().await;
+        yield_now().await;
         self.set_cache(key, value, ttl)
     }
 
@@ -335,7 +339,7 @@ fn key_settings() -> CacheKeySettings {
 }
 
 fn fixture_clock() -> Clock {
-    Arc::new(|| 1_700_000_000.0)
+    Arc::new(|| 1_700_000_000.0_f64)
 }
 
 fn cache(backend: Arc<RecordingBackend>) -> TestCache {
@@ -404,10 +408,6 @@ pub(super) fn handler_named(name: &str, parameters: &[&str], kwargs: KeyObject) 
         },
         kwargs,
     )
-}
-
-pub(super) fn handler(kwargs: KeyObject) -> CachingHandler {
-    handler_named("acompletion", &["model", "messages"], kwargs)
 }
 
 pub(super) struct FixedClock {
@@ -488,7 +488,7 @@ pub(super) struct FakeLogger {
 
 #[async_trait]
 impl CallbackLogger for FakeLogger {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "langfuse"
     }
 
@@ -498,7 +498,8 @@ impl CallbackLogger for FakeLogger {
     }
 
     async fn async_log_success_event(&self, _event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        Ok(self.calls.record("async"))
+        self.calls.record("async");
+        Ok(())
     }
 }
 
@@ -637,6 +638,7 @@ pub(super) struct Fixture {
     pub(super) snapshots: Arc<Mutex<Vec<Snapshot>>>,
     pub(super) counter: Arc<RecordingCounter>,
     pub(super) conversions: FakeConversions,
+    pub(super) cache_type: LiteLlmCacheType,
 }
 
 impl Fixture {
@@ -657,6 +659,7 @@ impl Fixture {
             snapshots: Arc::new(Mutex::new(Vec::new())),
             counter: Arc::new(RecordingCounter::default()),
             conversions: FakeConversions::default(),
+            cache_type: LiteLlmCacheType::Local,
         }
     }
 
@@ -721,10 +724,18 @@ impl Fixture {
 }
 
 // A converted response records what the hit path asked of it, so the tests read the stamp and the logged result
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) enum Stamp {
+    #[default]
+    Unset,
+    Cleared,
+    Key(String),
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Model {
     pub(super) cache_hit: bool,
-    pub(super) stamp: Option<Option<String>>,
+    pub(super) stamp: Stamp,
 }
 
 impl CacheHitMetadata for Model {
@@ -735,7 +746,7 @@ impl CacheHitMetadata for Model {
 
 impl HitResponse for Model {
     fn stamp_cache_key(&mut self, cache_key: Option<&str>) {
-        self.stamp = Some(cache_key.map(str::to_owned));
+        self.stamp = cache_key.map_or(Stamp::Cleared, |key| Stamp::Key(key.to_owned()));
     }
 
     fn success_result(&self) -> SuccessResult {
@@ -821,7 +832,9 @@ impl ReplayConversions for FakeConversions {
         &self,
         _cached: &CachedDict,
     ) -> Result<Option<Self::Response>, ReplayError> {
-        self.record(|recorded| recorded.messages_probes += 1);
+        self.record(|recorded| {
+            recorded.messages_probes = recorded.messages_probes.saturating_add(1);
+        });
         Ok(None)
     }
 
@@ -873,6 +886,53 @@ pub(super) fn services<'svc>(
         perf,
         wall: wall(),
     }
+}
+
+// Runs the async lookup with the fixture's services, so a test keeps only its own seeds and assertions
+pub(super) async fn async_cache_lookup(
+    fixture: &Fixture,
+    handler: &mut CachingHandler,
+    request: &CacheLookup,
+    tokens: &Tokens,
+    perf: PerfClock,
+) -> (
+    AsyncLookup<Replayed<Model>>,
+    LoggingWorker<CacheHitSuccessJob>,
+) {
+    let source = fixture.source();
+    let resolution = fixture.resolution.context();
+    let worker = worker();
+    let mut services = services(Some(&source), &resolution, &worker, tokens, perf);
+    services.cache_type = fixture.cache_type;
+    let outcome = async_get_cache(
+        handler,
+        request,
+        fixture.hit_logging(),
+        &services,
+        &fixture.conversions,
+    )
+    .await
+    .expect("the async lookup runs");
+    (outcome, worker)
+}
+
+// Runs the sync lookup the same way, handing the caller back the logging state it wrote into
+pub(super) async fn sync_cache_lookup(
+    fixture: &Fixture,
+    handler: &mut CachingHandler,
+    request: &CacheLookup,
+    perf: PerfClock,
+    logging: &mut HitLogging,
+) -> LookupResponse<Replayed<Model>> {
+    let source = fixture.source();
+    let resolution = fixture.resolution.context();
+    let tokens = Tokens::default();
+    let worker = worker();
+    let mut services = services(Some(&source), &resolution, &worker, &tokens, perf);
+    services.cache_type = fixture.cache_type;
+    sync_get_cache(handler, request, logging, &services, &fixture.conversions)
+        .await
+        .expect("the sync lookup runs")
 }
 
 pub(super) fn lookup(call_type: CachingSupportedCallType, kwargs: KeyObject) -> CacheLookup {

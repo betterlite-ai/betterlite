@@ -6,74 +6,25 @@ use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, MODEL, Metadata, SilentConsole, SilentLogger, Tokens, cached_chat, cached_json,
-    chat_kwargs, computed_key, details_fields, duration_field, handler_named, hit_field, lookup,
-    object, perf_clock, services, text, worker,
+    Fixture, MODEL, Metadata, Model, SilentConsole, SilentLogger, Stamp, Tokens,
+    async_cache_lookup, cached_chat, cached_json, chat_kwargs, computed_key, details_fields,
+    duration_field, handler_named, hit_field, kwargs, lookup, object, perf_clock,
+    sync_cache_lookup, text,
 };
-use crate::caching::lookup::async_lookup::async_get_cache;
 use crate::caching::lookup::error::HitError;
-use crate::caching::lookup::hit::{HitKind, hit_cache_key, hit_record, resolve_provider};
+use crate::caching::lookup::hit::{
+    HitKind, HitLogging, hit_cache_key, hit_record, resolve_provider,
+};
 use crate::caching::lookup::parent_span::add_parent_otel_span;
-use crate::caching::lookup::sync_lookup::sync_get_cache;
 
-#[tokio::test]
-async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
-    let fixture = Fixture::new();
-    let request_kwargs = chat_kwargs();
-    let key = computed_key(&fixture.cache, &request_kwargs);
-    fixture.backend.seed(&key, cached_chat());
-    let mut handler = handler_named(
-        "acompletion",
-        &["model", "messages"],
-        request_kwargs.clone(),
-    );
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
-    let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
-        &tokens,
-        perf_clock(&[Duration::from_millis(100), Duration::from_millis(175)]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
-    )
-    .await
-    .expect("the async lookup runs");
-    worker.flush().await;
-    let snapshots = fixture.snapshots();
-    assert_eq!(snapshots.len(), 1);
-    let snapshot = &snapshots[0];
-    assert_eq!(snapshot.model, MODEL);
-    assert_eq!(snapshot.custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(snapshot.original_response, cached_json(&cached_chat()));
-    assert_eq!(hit_field(&snapshot.caching_details), Some(true));
-    assert_eq!(duration_field(&snapshot.caching_details), Some(75.0));
-    assert_eq!(
-        snapshot.litellm_params.get("acompletion"),
-        Some(&Json::Bool(true))
-    );
-    assert_eq!(
-        snapshot.litellm_params.get("custom_llm_provider"),
-        Some(&Json::Text("openai".to_owned()))
-    );
-    assert_eq!(
-        snapshot.litellm_params.get("preset_cache_key"),
-        Some(&Json::Text(key.clone()))
-    );
-    let response = outcome.response.expect("a hit returns a response");
-    let Some(Replayed::Response(ResponseKind::Chat, model)) = response.cached_result else {
+fn converted_chat(response: Option<Replayed<Model>>) -> Model {
+    let Some(Replayed::Response(ResponseKind::Chat, model)) = response else {
         panic!("the cached chat response is converted");
     };
-    assert!(model.cache_hit);
-    assert_eq!(model.stamp, Some(Some(key)));
+    model
+}
+
+fn assert_chat_conversion(fixture: &Fixture) {
     let recorded = fixture.conversions.recorded();
     assert_eq!(recorded.kinds, [ResponseKind::Chat]);
     assert_eq!(
@@ -85,35 +36,30 @@ async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
     );
 }
 
-#[tokio::test]
-async fn a_sync_hit_records_the_provider_prefixed_model_without_a_duration() {
-    let fixture = Fixture::new();
-    let request_kwargs = chat_kwargs();
-    let key = computed_key(&fixture.cache, &request_kwargs);
-    fixture.backend.seed(&key, cached_chat());
-    let mut handler = handler_named("completion", &["model", "messages"], request_kwargs.clone());
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
-    let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
-        &tokens,
-        perf_clock(&[Duration::ZERO, Duration::ZERO]),
+fn assert_async_chat_snapshot(fixture: &Fixture, preset: &str) {
+    let snapshots = fixture.snapshots();
+    assert_eq!(snapshots.len(), 1);
+    let snapshot = &snapshots[0];
+    assert_eq!(snapshot.model, MODEL);
+    assert_eq!(snapshot.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(snapshot.original_response, cached_json(&cached_chat()));
+    assert_eq!(hit_field(&snapshot.caching_details), Some(true));
+    assert_eq!(duration_field(&snapshot.caching_details), Some(75.0_f64));
+    assert_eq!(
+        snapshot.litellm_params.get("acompletion"),
+        Some(&Json::Bool(true))
     );
-    let mut logging = fixture.hit_logging();
-    logging.state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
-    let response = sync_get_cache(
-        &mut handler,
-        &lookup(CachingSupportedCallType::Completion, request_kwargs),
-        &mut logging,
-        &services,
-        &fixture.conversions,
-    )
-    .await
-    .expect("the sync lookup runs");
+    assert_eq!(
+        snapshot.litellm_params.get("custom_llm_provider"),
+        Some(&Json::Text("openai".to_owned()))
+    );
+    assert_eq!(
+        snapshot.litellm_params.get("preset_cache_key"),
+        Some(&Json::Text(preset.to_owned()))
+    );
+}
+
+fn assert_sync_chat_snapshot(fixture: &Fixture, logging: &HitLogging) {
     let snapshots = fixture.snapshots();
     assert_eq!(snapshots.len(), 1);
     let snapshot = &snapshots[0];
@@ -142,19 +88,65 @@ async fn a_sync_hit_records_the_provider_prefixed_model_without_a_duration() {
             .get("has_logged_sync_success"),
         Some(&Json::Bool(true))
     );
-    let Some(Replayed::Response(ResponseKind::Chat, model)) = response.cached_result else {
-        panic!("the cached chat response is converted");
-    };
-    assert!(model.cache_hit);
-    assert_eq!(model.stamp, Some(Some(key)));
-    let recorded = fixture.conversions.recorded();
-    assert_eq!(
-        recorded.metadata,
-        [Metadata {
-            model: MODEL.to_owned(),
-            elapsed: Duration::from_secs(2),
-        }]
+}
+
+#[tokio::test]
+async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
+    let fixture = Fixture::new();
+    let request_kwargs = chat_kwargs();
+    let key = computed_key(&fixture.cache, &request_kwargs);
+    fixture.backend.seed(&key, cached_chat());
+    let mut handler = handler_named(
+        "acompletion",
+        &["model", "messages"],
+        request_kwargs.clone(),
     );
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    let tokens = Tokens::default();
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
+        &tokens,
+        perf_clock(&[Duration::from_millis(100), Duration::from_millis(175)]),
+    )
+    .await;
+    worker.flush().await;
+    assert_async_chat_snapshot(&fixture, &key);
+    let model = converted_chat(
+        outcome
+            .response
+            .expect("a hit returns a response")
+            .cached_result,
+    );
+    assert!(model.cache_hit);
+    assert_eq!(model.stamp, Stamp::Key(key));
+    assert_chat_conversion(&fixture);
+}
+
+#[tokio::test]
+async fn a_sync_hit_records_the_provider_prefixed_model_without_a_duration() {
+    let fixture = Fixture::new();
+    let request_kwargs = chat_kwargs();
+    let key = computed_key(&fixture.cache, &request_kwargs);
+    fixture.backend.seed(&key, cached_chat());
+    let mut handler = handler_named("completion", &["model", "messages"], request_kwargs.clone());
+    let request = lookup(CachingSupportedCallType::Completion, request_kwargs);
+    let mut logging = fixture.hit_logging();
+    logging.state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
+    let response = sync_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
+        perf_clock(&[Duration::ZERO, Duration::ZERO]),
+        &mut logging,
+    )
+    .await;
+    assert_sync_chat_snapshot(&fixture, &logging);
+    let model = converted_chat(response.cached_result);
+    assert!(model.cache_hit);
+    assert_eq!(model.stamp, Stamp::Key(key));
+    assert_chat_conversion(&fixture);
 }
 
 #[tokio::test]
@@ -168,37 +160,30 @@ async fn a_request_cache_key_reaches_the_context_and_the_stamp() {
         &["model", "messages"],
         request_kwargs.clone(),
     );
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
     let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
-    );
-    let outcome = async_get_cache(
-        &mut handler,
-        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the async lookup runs");
+    .await;
     worker.flush().await;
-    let snapshots = fixture.snapshots();
     assert_eq!(
-        snapshots[0].litellm_params.get("preset_cache_key"),
+        fixture.snapshots()[0]
+            .litellm_params
+            .get("preset_cache_key"),
         Some(&Json::Text("request-key".to_owned()))
     );
-    let response = outcome.response.expect("a hit returns a response");
-    let Some(Replayed::Response(_, model)) = response.cached_result else {
-        panic!("the cached chat response is converted");
-    };
-    assert_eq!(model.stamp, Some(Some("request-key".to_owned())));
+    let model = converted_chat(
+        outcome
+            .response
+            .expect("a hit returns a response")
+            .cached_result,
+    );
+    assert_eq!(model.stamp, Stamp::Key("request-key".to_owned()));
 }
 
 #[test]
@@ -253,30 +238,22 @@ async fn a_backwards_cache_timing_counts_no_time() {
         &["model", "messages"],
         request_kwargs.clone(),
     );
-    let source = fixture.source();
-    let resolution = fixture.resolution.context();
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
     let tokens = Tokens::default();
-    let worker = worker();
-    let services = services(
-        Some(&source),
-        &resolution,
-        &worker,
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
         &tokens,
         perf_clock(&[Duration::from_millis(250), Duration::from_millis(100)]),
-    );
-    async_get_cache(
-        &mut handler,
-        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
-        fixture.hit_logging(),
-        &services,
-        &fixture.conversions,
     )
-    .await
-    .expect("the async lookup runs");
+    .await;
     worker.flush().await;
-    let snapshots = fixture.snapshots();
-    assert_eq!(snapshots.len(), 1);
-    assert_eq!(duration_field(&snapshots[0].caching_details), Some(0.0));
+    assert!(outcome.response.is_some());
+    assert_eq!(
+        duration_field(&fixture.snapshots()[0].caching_details),
+        Some(0.0_f64)
+    );
 }
 
 #[test]
@@ -284,7 +261,7 @@ fn the_hit_kind_sets_the_async_and_embedding_flags() {
     let fixture = Fixture::new();
     let resolution = fixture.resolution.context();
     let request = chat_kwargs();
-    let record = hit_record(&resolution, MODEL, &request, &cached_chat(), Some(12.5))
+    let record = hit_record(&resolution, MODEL, &request, &cached_chat(), Some(12.5_f64))
         .expect("the hit record builds");
     assert_eq!(record.provider.model, MODEL);
     assert_eq!(record.provider.provider, "openai");
@@ -292,7 +269,7 @@ fn the_hit_kind_sets_the_async_and_embedding_flags() {
     let async_hit = record.context(MODEL, Some("preset-key"), HitKind::AsyncResponse, cached);
     assert!(async_hit.is_async);
     assert!(!async_hit.is_embedding);
-    assert_eq!(async_hit.cache_duration_ms, Some(12.5));
+    assert_eq!(async_hit.cache_duration_ms, Some(12.5_f64));
     assert_eq!(async_hit.custom_llm_provider, Some("openai"));
     assert_eq!(async_hit.preset_cache_key, Some("preset-key"));
     assert_eq!(async_hit.cached_result, cached);
@@ -311,7 +288,7 @@ fn the_hit_kind_sets_the_async_and_embedding_flags() {
 fn a_provider_field_of_the_wrong_type_is_refused(#[case] field: &'static str) {
     let fixture = Fixture::new();
     let resolution = fixture.resolution.context();
-    let request = super::support::kwargs(&[(field, KeyValue::Bool(true))]);
+    let request = kwargs(&[(field, KeyValue::Bool(true))]);
     let Err(error) = resolve_provider(&resolution, MODEL, &request) else {
         panic!("the provider field is refused");
     };
@@ -328,7 +305,7 @@ fn a_provider_field_of_the_wrong_type_is_refused(#[case] field: &'static str) {
 fn a_null_provider_field_names_no_provider() {
     let fixture = Fixture::new();
     let resolution = fixture.resolution.context();
-    let request = super::support::kwargs(&[("custom_llm_provider", KeyValue::Null)]);
+    let request = kwargs(&[("custom_llm_provider", KeyValue::Null)]);
     let provider = resolve_provider(&resolution, MODEL, &request).expect("the provider resolves");
     assert_eq!(provider.provider, "openai");
     assert_eq!(provider.model, MODEL);

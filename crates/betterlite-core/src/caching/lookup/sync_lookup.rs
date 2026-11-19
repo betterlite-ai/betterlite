@@ -33,12 +33,7 @@ where
     Conv: ReplayConversions + Sync,
     Conv::Response: HitResponse,
 {
-    let supports_call = services.cache.is_some()
-        && call_type_supported(
-            &handler.original_function.name,
-            services.supported_call_types,
-        );
-    if !supports_call {
+    if !supports_sync_call(handler, services) {
         return Ok(LookupResponse::default());
     }
     let source = services.cache.map(|cache| CacheSource {
@@ -73,6 +68,19 @@ where
         }
         Retrieval::Hit(value) => sync_hit(&pass, value, logging),
     }
+}
+
+// LiteLLM's sync read needs both a cache and a call type the cache supports; anything else is the backend's own read
+fn supports_sync_call<L, C>(handler: &CachingHandler, services: &LookupServices<'_, L, C>) -> bool
+where
+    L: LoggerSink,
+    C: ConsoleSink,
+{
+    services.cache.is_some()
+        && call_type_supported(
+            &handler.original_function.name,
+            services.supported_call_types,
+        )
 }
 
 fn sync_hit<L, C, Conv>(

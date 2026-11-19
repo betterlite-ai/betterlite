@@ -37,8 +37,8 @@ pub async fn partial_embedding_hit<L, C, Conv>(
     logging: HitLogging,
 ) -> Result<AsyncLookup<ReplayedBy<Conv>>, LookupError>
 where
-    L: LoggerSink,
-    C: ConsoleSink,
+    L: LoggerSink + Send + Sync,
+    C: ConsoleSink + Send + Sync,
     Conv: ReplayConversions + Sync,
 {
     if pass.services.cache_type == LiteLlmCacheType::S3 {
@@ -123,8 +123,11 @@ impl CacheHitServices for EmbeddingHitServices<'_> {
     }
 
     fn log_complete_hit(&self, hit: &CompleteHit<'_>) -> Result<(), HitError> {
-        let mut held = self.logging.lock().map_err(|_poison| HitError::Poisoned)?;
-        let Some(logging) = held.take() else {
+        let returned = {
+            let mut held = self.logging.lock().map_err(|_poison| HitError::Poisoned)?;
+            held.take()
+        };
+        let Some(logging) = returned else {
             return Ok(());
         };
         self.complete_hit(logging, hit)
@@ -171,22 +174,22 @@ fn embedding_item(item: &Embedding) -> Json {
 }
 
 fn embedding_usage(usage: Option<&Usage>) -> Json {
-    let Some(usage) = usage else {
+    let Some(counts) = usage else {
         return Json::Null;
     };
-    let details = usage.prompt_tokens_details.clone();
+    let details = counts.prompt_tokens_details.clone();
     Json::Object(IndexMap::from([
         (
             "prompt_tokens".to_owned(),
-            Json::Number(Number::from(usage.prompt_tokens)),
+            Json::Number(Number::from(counts.prompt_tokens)),
         ),
         (
             "completion_tokens".to_owned(),
-            Json::Number(Number::from(usage.completion_tokens)),
+            Json::Number(Number::from(counts.completion_tokens)),
         ),
         (
             "total_tokens".to_owned(),
-            Json::Number(Number::from(usage.total_tokens)),
+            Json::Number(Number::from(counts.total_tokens)),
         ),
         (
             "prompt_tokens_details".to_owned(),
