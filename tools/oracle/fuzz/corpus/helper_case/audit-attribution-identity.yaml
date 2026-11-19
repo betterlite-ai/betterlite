@@ -1,0 +1,13 @@
+kind: helper
+name: audit-attribution-corpus-identity
+call:
+  audit_attribution:
+    function: identity
+    litellm_changed_by: header-actor
+    user_id: user-1
+    metadata:
+      allow_litellm_changed_by_header: true
+    team_metadata: null
+    admin_name: admin
+env: {}
+compare: {ignore: []}

@@ -471,3 +471,10 @@ path = "fuzz_targets/messages_responses_output.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "rag_json_decoder"
+path = "fuzz_targets/rag_json_decoder.rs"
+test = false
+doc = false
+bench = false

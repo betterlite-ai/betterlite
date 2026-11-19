@@ -477,6 +477,7 @@ use crate::api::realtime_session_state;
 use crate::api::response_chat_request;
 use crate::api::responses_hook_policy;
 use crate::api::vector_context_shaping;
+use crate::api::vector_store_registry;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 
 pub trait Section: DeserializeOwned + Default {
@@ -652,7 +653,7 @@ sections! {
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
-    vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
+    vector_context_shaping, vector_store_registry, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
     vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings, xecguard_runtime,
     config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,

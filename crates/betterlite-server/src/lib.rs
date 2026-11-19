@@ -173,6 +173,7 @@ pub mod management_rbac;
 pub mod master_key_rotation;
 pub mod master_rotation;
 pub mod mcp;
+pub mod mcp_identifier_resolution;
 pub mod mcp_path_routes;
 pub mod mcp_permission_ids;
 pub mod mcp_rotation;

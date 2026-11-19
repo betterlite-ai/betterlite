@@ -1,0 +1,54 @@
+kind: helper
+name: vector-store-registry-database-fallback
+call:
+  vector_store_registry:
+    operation: database_lookup
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+        vector_store_description: memory
+    lookups: [vs_a, vs_db, vs_absent]
+    database:
+      stores:
+        - vector_store_id: vs_old
+          custom_llm_provider: openai
+        - vector_store_id: vs_db
+          custom_llm_provider: bedrock
+          vector_store_description: from-database
+      indexes: []
+calls:
+  - vector_store_registry:
+      operation: database_lookup
+      lookups: [vs_missing]
+  - vector_store_registry:
+      operation: database_lookup
+      lookups: [vs_db]
+      database:
+        failing: true
+  - vector_store_registry:
+      operation: database_rows
+      database:
+        stores:
+          - vector_store_id: vs_new
+            custom_llm_provider: bedrock
+          - vector_store_id: vs_old
+            custom_llm_provider: openai
+        indexes:
+          - id: i_new
+            index_name: notes
+            litellm_params:
+              vector_store_index: idx-new
+              vector_store_name: notes
+          - id: i_old
+            index_name: archive
+            litellm_params:
+              vector_store_index: idx-old
+              vector_store_name: archive
+  - vector_store_registry:
+      operation: database_rows
+  - vector_store_registry:
+      operation: database_rows
+      database:
+        failing: true
+env: {}
+compare: {ignore: []}

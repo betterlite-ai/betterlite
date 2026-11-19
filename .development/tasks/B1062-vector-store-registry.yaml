@@ -17,6 +17,9 @@ description: >-
   lines; budget 210 code, 190 tests, 100 adapters, 110 fixtures and 65 config/corpus/wiring, 675 under 720.
 scope:
   paths:
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-config/src/sections.rs"
+  - "crates/betterlite-config/src/loader.rs"
   - crates/betterlite-core/src/api/vector_store_registry.rs
   - crates/betterlite-core/src/api/vector_store_registry/**
   - crates/betterlite-config/src/api/vector_store_registry.rs

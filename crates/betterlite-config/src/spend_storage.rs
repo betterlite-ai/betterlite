@@ -13,6 +13,9 @@ pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
+const DISABLE_END_USER_PATH: &str = "litellm_settings.disable_end_user_cost_tracking";
+const ENABLE_PROMETHEUS_PATH: &str =
+    "litellm_settings.enable_end_user_cost_tracking_prometheus_only";
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
@@ -23,6 +26,9 @@ pub struct Raw {
 #[serde(default)]
 pub struct LiteLlmSettings {
     max_budget: Option<JsonValue>,
+    disable_end_user_cost_tracking: JsonValue,
+    #[serde(rename = "enable_end_user_cost_tracking_prometheus_only")]
+    enable_prometheus_only: JsonValue,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -50,6 +56,8 @@ pub struct Settings {
     pub missing_session_id: Option<MissingSessionId>,
     pub spend_updates: SpendUpdates,
     pub max_budget: Decimal,
+    pub disable_end_user_cost_tracking: Option<bool>,
+    pub enable_prometheus_only: Option<bool>,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -78,6 +86,14 @@ impl Section for Raw {
                 parse_money,
             )?
             .unwrap_or(Decimal::ZERO),
+            disable_end_user_cost_tracking: optional_flag(
+                &self.litellm_settings.disable_end_user_cost_tracking,
+                DISABLE_END_USER_PATH,
+            )?,
+            enable_prometheus_only: optional_flag(
+                &self.litellm_settings.enable_prometheus_only,
+                ENABLE_PROMETHEUS_PATH,
+            )?,
         })
     }
 }
@@ -152,6 +168,21 @@ const fn spend_updates(value: &JsonValue) -> SpendUpdates {
         SpendUpdates::Allowed
     }
 }
+// litellm sets both end-user switches as Optional[bool] = None, so only a boolean or a null loads.
+fn optional_flag(configured: &JsonValue, path: &str) -> Result<Option<bool>, ConfigError> {
+    match configured {
+        JsonValue::Null => Ok(None),
+        JsonValue::Bool(flag) => Ok(Some(*flag)),
+        JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => Err(ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
+        }),
+    }
+}
+
 fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {
     let number = match configured {
         JsonValue::Number(number) => number.as_f64().map(RawNumber::Float),
