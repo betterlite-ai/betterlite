@@ -24,6 +24,14 @@ const SUPPLIED_API_VERSION: &str = "2024-01-01";
 const SUPPLIED_KEY: &str = "supplied-key";
 const SUPPLIED_DEADLINE: Duration = Duration::from_secs(42);
 
+// Which facade the step exercises: a bare create, a bare retrieve, or whichever the step's fields name.
+#[derive(Clone, Copy)]
+enum Only {
+    Create,
+    Retrieve,
+    Mixed,
+}
+
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread()
         .build()
@@ -31,48 +39,41 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let steps: Vec<Value> = match input {
         Input::ThreadCreate(steps) => steps
             .iter()
-            .map(|step| create_step(&runtime, step))
+            .map(|step| thread_call(&runtime, step, Only::Create))
             .collect::<Result<_, _>>()?,
         Input::ThreadRetrieve(steps) => steps
             .iter()
-            .map(|step| retrieve_step(&runtime, step))
+            .map(|step| thread_call(&runtime, step, Only::Retrieve))
             .collect::<Result<_, _>>()?,
         Input::AssistantsBetaDefault(steps) | Input::AzureThreadAsyncFlags(steps) => steps
             .iter()
-            .map(|step| either_step(&runtime, step))
+            .map(|step| thread_call(&runtime, step, Only::Mixed))
             .collect::<Result<_, _>>()?,
     };
     Ok(json!({"steps": steps}))
 }
 
-fn create_step(runtime: &Runtime, step: &Step) -> HelperResult {
-    if step.thread_id.is_some() {
+// A bare create refuses a thread id and a bare retrieve needs one; the mixed variants pick by the field the step carries.
+fn thread_call(runtime: &Runtime, step: &Step, only: Only) -> HelperResult {
+    if matches!(only, Only::Create) && step.thread_id.is_some() {
         return Err(reports::invalid_input(String::from(
             "a thread_create step carries a thread_id",
         )));
     }
-    let data = ThreadCreate {
-        messages: step.messages.clone(),
-        metadata: step.metadata.clone(),
-    };
-    thread_step(runtime, step, ThreadOperation::Create(&data))
-}
-
-fn retrieve_step(runtime: &Runtime, step: &Step) -> HelperResult {
-    let Some(thread_id) = step.thread_id.as_deref() else {
+    if matches!(only, Only::Retrieve) && step.thread_id.is_none() {
         return Err(reports::invalid_input(String::from(
             "a thread_retrieve step carries no thread_id",
         )));
-    };
-    thread_step(runtime, step, ThreadOperation::Retrieve(thread_id))
-}
-
-// The mixed variants choose the SDK call by the field the step carries: a thread id means retrieve.
-fn either_step(runtime: &Runtime, step: &Step) -> HelperResult {
-    if step.thread_id.is_some() {
-        retrieve_step(runtime, step)
-    } else {
-        create_step(runtime, step)
+    }
+    match step.thread_id.as_deref() {
+        Some(thread_id) => thread_step(runtime, step, ThreadOperation::Retrieve(thread_id)),
+        None => {
+            let data = ThreadCreate {
+                messages: step.messages.clone(),
+                metadata: step.metadata.clone(),
+            };
+            thread_step(runtime, step, ThreadOperation::Create(&data))
+        }
     }
 }
 

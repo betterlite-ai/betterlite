@@ -14,8 +14,7 @@ pub(super) async fn check() {
     environment_version().await;
     trailing_slash().await;
     deployments().await;
-    double_slash_base().await;
-    fragment_base().await;
+    base_url_shapes().await;
     base_query_version().await;
     base_query_params().await;
 }
@@ -61,50 +60,25 @@ async fn deployments() {
     );
 }
 
-// A base URL ending in two slashes keeps both: the SDK adds a slash only when the raw path lacks one.
-async fn double_slash_base() {
-    let mut fixture = Fixture::new();
-    fixture.api_base = Some(String::from(
+// The base URL, then the URLs the create and the retrieve join onto it.
+const JOINED_BASES: [(&str, &str, &str); 2] = [
+    (
         "https://example.test/openai/deployments/dep//",
-    ));
-    let request = fixture.request();
-    let seen = exchange(&request).await;
-    let write = wire(
-        "POST",
         "https://example.test/openai/deployments/dep//threads?api-version=2024-02-01",
-        Some("{}"),
-        Auth::Key(KEY),
-    );
-    let read = wire(
-        "GET",
         "https://example.test/openai/deployments/dep//threads/thread_1?api-version=2024-02-01",
-        None,
-        Auth::Key(KEY),
-    );
-    assert_eq!(seen, vec![write, read]);
-}
-
-// The tail goes ahead of a base URL's fragment, which stays after the merged query.
-async fn fragment_base() {
-    let mut fixture = Fixture::new();
-    fixture.api_base = Some(String::from(
+    ),
+    (
         "https://example.test/openai/deployments/dep#x",
-    ));
-    let request = fixture.request();
-    let seen = exchange(&request).await;
-    let write = wire(
-        "POST",
         "https://example.test/openai/deployments/dep/threads?api-version=2024-02-01#x",
-        Some("{}"),
-        Auth::Key(KEY),
-    );
-    let read = wire(
-        "GET",
         "https://example.test/openai/deployments/dep/threads/thread_1?api-version=2024-02-01#x",
-        None,
-        Auth::Key(KEY),
-    );
-    assert_eq!(seen, vec![write, read]);
+    ),
+];
+
+// A second trailing slash stays, and the tail goes ahead of a base URL's fragment, which stays after the merged query.
+async fn base_url_shapes() {
+    for (base, write, read) in JOINED_BASES {
+        expect_urls(base, write, read).await;
+    }
 }
 
 // The SDK's raw-path join keeps the base URL's query, and api-version wins when both name it.
@@ -126,25 +100,25 @@ async fn base_query_version() {
 
 // The tail joins the raw URL, so the last query value of a base URL swallows it exactly as httpx does.
 async fn base_query_params() {
-    let mut fixture = Fixture::new();
-    fixture.api_base = Some(String::from(
+    expect_urls(
         "https://example.test/openai/deployments/dep?foo=bar&api-version=old&empty=",
-    ));
+        "https://example.test/openai/deployments/dep?foo=bar&api-version=2024-02-01&empty=%2Fthreads",
+        "https://example.test/openai/deployments/dep?foo=bar&api-version=2024-02-01&empty=%2Fthreads%2Fthread_1",
+    )
+    .await;
+}
+
+// Both thread calls against one base URL, compared as the exact request pair the SDK sends.
+async fn expect_urls(base: &str, write: &str, read: &str) {
+    let mut fixture = Fixture::new();
+    fixture.api_base = Some(String::from(base));
     let request = fixture.request();
     let seen = exchange(&request).await;
-    let write = wire(
-        "POST",
-        "https://example.test/openai/deployments/dep?foo=bar&api-version=2024-02-01&empty=%2Fthreads",
-        Some("{}"),
-        Auth::Key(KEY),
-    );
-    let read = wire(
-        "GET",
-        "https://example.test/openai/deployments/dep?foo=bar&api-version=2024-02-01&empty=%2Fthreads%2Fthread_1",
-        None,
-        Auth::Key(KEY),
-    );
-    assert_eq!(seen, vec![write, read]);
+    let sent = vec![
+        wire("POST", write, Some("{}"), Auth::Key(KEY)),
+        wire("GET", read, None, Auth::Key(KEY)),
+    ];
+    assert_eq!(seen, sent, "{base}");
 }
 
 async fn exchange(request: &ClientRequest<'_>) -> Vec<Seen> {
