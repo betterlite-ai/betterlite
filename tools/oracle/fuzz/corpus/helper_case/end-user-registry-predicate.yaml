@@ -1,0 +1,11 @@
+kind: helper
+name: end-user-registry-predicate-seed
+call:
+  end_user_registry:
+    kind: restricted_end_user_where
+calls:
+  - end_user_registry:
+      kind: column_is_set
+      column: budget_id
+env: {}
+compare: {ignore: []}

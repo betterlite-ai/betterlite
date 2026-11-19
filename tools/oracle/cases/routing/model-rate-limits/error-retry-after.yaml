@@ -1,0 +1,14 @@
+kind: probe
+name: model-rate-limits-error-retry-after
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_rate_limits:
+        now_millis: 1700000000000
+        deployment: {id: dep-a, model: openai/gpt-4o, model_name: gpt-4o, tpm: 5}
+        redis: up
+        remote: {tpm: 5}
+        steps:
+          - {kind: check}
+compare: {ignore: []}

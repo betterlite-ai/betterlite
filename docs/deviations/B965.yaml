@@ -1,0 +1,31 @@
+task: B965
+deviations:
+  - what: >-
+      A thinking.budget_tokens that is not an integer is refused with a typed error naming the field
+      instead of reaching the threshold comparison.
+    why: >-
+      LiteLLM passes whatever the request holds to reasoning_effort_from_thinking_budget, where a string
+      raises TypeError and a float buckets on its fractional value; the declared type is int.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L653-L669
+  - what: >-
+      An output_config.effort that is not a string, with adaptive thinking, is refused with a typed error
+      naming the field instead of being forwarded as reasoning_effort.
+    why: >-
+      LiteLLM takes any truthy value as the declared effort and assigns it to reasoning_effort, so a list
+      or a number reaches the provider; the declared type is a literal of five strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1157-L1171
+  - what: >-
+      A metadata.user_id string over the JSON boundary's 16 MiB limit is refused with B962's typed limit
+      error instead of reading as no session key.
+    why: >-
+      B962 owns the session key parser, and it bounds the string before parsing; LiteLLM parses any
+      length it was given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L34-L46
+kept_bugs:
+  - what: >-
+      A request-level reasoning_effort or stop key overwrites the value translated from thinking or
+      stop_sequences, because the pass-through copy runs last.
+    why: >-
+      LiteLLM copies every key that is not one of the nine translatable params after the translations, so
+      a caller that sends one of these chat keys already gets it forwarded; B965 keeps that order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1203-L1212
