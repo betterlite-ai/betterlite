@@ -147,9 +147,9 @@ fn registry_for(
     }
 }
 
-fn registry_of<'call>(
-    entries: Vec<(&'call FakeTranslation, CallType)>,
-) -> TranslationRegistry<&'call dyn StructuredMessageSource> {
+fn registry_of(
+    entries: Vec<(&FakeTranslation, CallType)>,
+) -> TranslationRegistry<&dyn StructuredMessageSource> {
     let mut built = Vec::new();
     for (translation, call_type) in entries {
         let source: &dyn StructuredMessageSource = translation;
