@@ -96,7 +96,7 @@ fn json_value(value: &JsonValue) -> Json {
         JsonValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), json_value(value)))
+                .map(|(key, field)| (key.clone(), json_value(field)))
                 .collect(),
         ),
     }
