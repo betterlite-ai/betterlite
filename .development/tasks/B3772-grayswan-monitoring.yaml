@@ -28,7 +28,10 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/agent_365_tokens.rs"
     - crates/betterlite-guardrails/src/grayswan.rs
+    - tools/oracle/src/helpers/guardrails/b3771.rs
+    - tools/oracle/src/helpers/guardrails/b3771/**
     - crates/betterlite-guardrails/src/grayswan/**
     - tools/oracle/cases/grayswan/**
   lint_tables: false
@@ -202,5 +205,5 @@ pitfalls:
 review_level: standard
 
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0

@@ -1,7 +1,7 @@
 id: B1231
 milestone: M4 keys, spend and management
 title: Team management request and response contracts
-status: todo
+status: done
 depends_on: [B002, B008, B1100, B202, B2317, B171, B732, B770, B856, B859, B1665, B2310]
 file: tasks/B1231-team-request-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/management_endpoints/team_endpoints.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2472

@@ -28,6 +28,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "anthropic_stream_rewrite"
+path = "fuzz_targets/anthropic_stream_rewrite.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "key_header"
 path = "fuzz_targets/key_header.rs"
 test = false
@@ -168,6 +175,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "request_form"
+path = "fuzz_targets/request_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_event_stream"
 path = "fuzz_targets/bedrock_event_stream.rs"
 test = false
@@ -226,6 +240,13 @@ bench = false
 [[bin]]
 name = "spend_totals_query"
 path = "fuzz_targets/spend_totals_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spend_log_query"
+path = "fuzz_targets/spend_log_query.rs"
 test = false
 doc = false
 bench = false
@@ -324,6 +345,20 @@ bench = false
 [[bin]]
 name = "credential_request"
 path = "fuzz_targets/credential_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "team_request_contracts"
+path = "fuzz_targets/team_request_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pass_through_config_writes"
+path = "fuzz_targets/pass_through_config_writes.rs"
 test = false
 doc = false
 bench = false

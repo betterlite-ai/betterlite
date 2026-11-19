@@ -1,0 +1,29 @@
+kind: helper
+name: duckduckgo-search-instant-answer
+call:
+  duckduckgo_search:
+    environment: {DUCKDUCKGO_API_BASE: "https://seed.example"}
+    calls:
+      - kind: headers
+        headers: {X-Seed: "1"}
+      - kind: request
+        query: seed query
+        optional_params: {max_results: 4, no_html: 1}
+      - kind: url
+        api_base: null
+        query: [seed, query]
+        optional_params: {max_results: 4}
+      - kind: reply
+        query: seed
+        optional_params: {max_results: 4}
+        body: '{"AbstractURL":"https://abstract.test","AbstractText":"seed abstract","Heading":"Seed","RelatedTopics":[{"Name":"Group","Topics":[{"Text":"nested - one","FirstURL":"https://nested.test"}]},{"Text":"direct - two","FirstURL":"https://direct.test"}]}'
+calls:
+  - duckduckgo_search:
+      environment: {}
+      calls:
+        - kind: reply
+          query: limit
+          optional_params: {max_results: 1}
+          body: '{"RelatedTopics":[{"Text":"one - first","FirstURL":"https://one.test"},{"Text":"two - second","FirstURL":"https://two.test"}]}'
+env: {}
+compare: {ignore: []}
