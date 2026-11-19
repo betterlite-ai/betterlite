@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::managed_resource_rows::tag::TagTable;
+use betterlite_models::decisions::Json;
 
 use super::support::{
     RecordingCache, RecordingRows, TAG_A, TAG_B, TAG_C, TAG_REGISTRY_KEY, TTL, registry_names, tag,
@@ -85,6 +86,17 @@ async fn cache_read_error_propagates() {
     assert!(matches!(error, TagBudgetError::TagPayload(_)));
     assert!(rows.tag_queries().is_empty());
     assert!(rows.registry_takes().is_empty());
+}
+
+#[tokio::test]
+async fn undecodable_payload_propagates() {
+    let raw = Json::Text("not a tag".to_owned());
+    let cache = RecordingCache::new(TTL).with_registry("tag:tag-a", raw);
+    let rows = RecordingRows::new(vec![tag(TAG_A)], Vec::new());
+    let error = batch(&cache, &rows, &["tag-a"])
+        .await
+        .expect_err("the undecodable payload reaches the caller");
+    assert!(matches!(error, TagBudgetError::TagPayload(_)));
 }
 
 #[tokio::test]

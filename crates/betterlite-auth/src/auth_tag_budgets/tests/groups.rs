@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
 use super::support::{
@@ -91,6 +92,17 @@ async fn cache_read_error_propagates() {
         .expect_err("the cache read failure reaches the caller");
     assert!(matches!(error, TagBudgetError::GroupPayload(_)));
     assert!(rows.group_queries().is_empty());
+}
+
+#[tokio::test]
+async fn undecodable_payload_propagates() {
+    let raw = Json::Text("not a budget".to_owned());
+    let cache = RecordingCache::new(TTL).with_registry("model_access_group:group-a", raw);
+    let rows = RecordingRows::new(Vec::new(), vec![group_row(GROUP_A)]);
+    let error = batch(&cache, &rows, &["group-a"])
+        .await
+        .expect_err("the undecodable payload reaches the caller");
+    assert!(matches!(error, TagBudgetError::GroupPayload(_)));
 }
 
 #[tokio::test]
