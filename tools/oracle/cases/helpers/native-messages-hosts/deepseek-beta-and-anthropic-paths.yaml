@@ -10,6 +10,7 @@ call:
           - "https://api.deepseek.com/anthropic/"
           - "https://api.deepseek.com/beta"
           - "https://proxy.test/anthropic/v1/messages"
+          - "https://proxy.test/anthropic/beta/v1/messages"
           - "https://proxy.test/prefix/v1/messages"
           - "https://proxy.test/anthropic/proxy"
         environment: {}
@@ -24,6 +25,11 @@ call:
         environment:
           DEEPSEEK_ANTHROPIC_API_BASE: ""
           DEEPSEEK_API_BASE: "https://fallback.deepseek.test"
+      - function: url
+        host: deepseek
+        api_bases: ["https://explicit.deepseek.test"]
+        environment:
+          DEEPSEEK_ANTHROPIC_API_BASE: "https://env.deepseek.test"
       - function: environment
         host: deepseek
         api_base: null

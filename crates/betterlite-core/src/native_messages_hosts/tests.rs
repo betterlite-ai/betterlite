@@ -79,6 +79,12 @@ fn keys_follow_the_python_or_chain(
     None,
     "https://proxy.test/anthropic/v1/messages"
 )]
+#[case::complete_anthropic_beta(
+    Some("https://proxy.test/anthropic/beta/v1/messages"),
+    None,
+    None,
+    "https://proxy.test/anthropic/beta/v1/messages"
+)]
 #[case::anthropic_v1(
     Some("https://proxy.test/anthropic/v1"),
     None,
@@ -114,6 +120,12 @@ fn keys_follow_the_python_or_chain(
     Some("https://env.deepseek.test"),
     Some("https://fallback.deepseek.test"),
     "https://env.deepseek.test/anthropic/v1/messages"
+)]
+#[case::explicit_over_environment(
+    Some("https://explicit.deepseek.test"),
+    Some("https://env.deepseek.test"),
+    Some("https://fallback.deepseek.test"),
+    "https://explicit.deepseek.test/anthropic/v1/messages"
 )]
 #[case::fallback(
     Some(""),
@@ -332,6 +344,25 @@ fn deepseek_checks_header_names_in_exact_lowercase() {
 }
 
 #[test]
+fn deepseek_keeps_a_supplied_lowercase_x_api_key() {
+    let sources = Sources {
+        explicit: Some("explicit-key".to_owned()),
+        environment: None,
+        global: None,
+    };
+    let (headers, _) = deepseek_headers(
+        &sources,
+        &[("x-api-key", "supplied")],
+        &empty_parameters(),
+        None,
+    );
+    assert_eq!(
+        headers.get("x-api-key").map(String::as_str),
+        Some("supplied")
+    );
+}
+
+#[test]
 fn deepseek_keeps_supplied_lowercase_headers() {
     let sources = Sources::default();
     let (headers, _) = deepseek_headers(
@@ -469,6 +500,21 @@ fn inherited_hosts_fall_back_to_the_anthropic_key() {
     assert_eq!(
         headers.get("x-api-key").map(String::as_str),
         Some("anthropic-key")
+    );
+}
+
+#[test]
+fn inherited_hosts_use_a_provider_environment_key() {
+    let sources = Sources {
+        explicit: None,
+        environment: Some("tencent-env-key".to_owned()),
+        global: None,
+    };
+    let headers = inherited_headers(&sources, &[], &empty_parameters(), &settings(None, None))
+        .expect("the environment key authenticates");
+    assert_eq!(
+        headers.get("x-api-key").map(String::as_str),
+        Some("tencent-env-key")
     );
 }
 

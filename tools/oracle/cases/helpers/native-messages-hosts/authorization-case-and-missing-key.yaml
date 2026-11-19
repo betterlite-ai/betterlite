@@ -170,5 +170,59 @@ calls:
           explicit_api_key: null
           global_api_key: null
           environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers:
+            x-api-key: "supplied"
+          optional_params: {}
+          messages: []
+          explicit_api_key: "explicit-key"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: tencent
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment:
+            TENCENT_API_KEY: "tencent-env-key"
+        - function: environment
+          host: minimax
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment:
+            MINIMAX_API_KEY: "minimax-env-key"
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages:
+            - role: user
+              content: hi
+              output_config: {}
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: tencent
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages:
+            - role: user
+              content: hi
+              output_config: {}
+          explicit_api_key: "tencent-key"
+          global_api_key: null
+          environment: {}
 env: {}
 compare: {ignore: []}
