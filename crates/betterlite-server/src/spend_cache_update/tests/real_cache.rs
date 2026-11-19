@@ -13,7 +13,7 @@ use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
-use super::super::cache::SpendCache;
+use super::super::cache::SpendCache as _;
 use super::super::{UpdateInput, update_spend_cache};
 use super::support::{HASHED_TEST_TOKEN, RecordingAlerts, json_from, local_cache, update_deps};
 

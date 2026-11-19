@@ -9,7 +9,7 @@ use betterlite_auth::auth_cache::keys::{Partition, partition};
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::batch_reads::BatchReadOptions;
-use betterlite_cache::batch_reads::BatchReads;
+use betterlite_cache::batch_reads::BatchReads as _;
 use betterlite_cache::batch_reads::DeclaredBatchRead;
 use betterlite_cache::dual_cache::DualCache;
 use betterlite_cache::dual_cache::MemoryMaxSize;

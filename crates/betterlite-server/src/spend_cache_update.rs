@@ -86,15 +86,15 @@ pub fn cache_read_keys(
         return Vec::new();
     }
     let mut keys = Vec::new();
-    if let Some(user_id) = user_id {
-        keys.push(user_id.to_owned());
+    if let Some(user) = user_id {
+        keys.push(user.to_owned());
         keys.push(GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned());
     }
-    if let Some(end_user_id) = end_user_id {
-        keys.push(CacheKey::EndUserId(end_user_id).render());
+    if let Some(end_user) = end_user_id {
+        keys.push(CacheKey::EndUserId(end_user).render());
     }
-    if let Some(team_id) = team_id {
-        keys.push(format!("team_id:{team_id}"));
+    if let Some(team) = team_id {
+        keys.push(format!("team_id:{team}"));
     }
     for tag in tags.into_iter().flatten() {
         if let Json::Text(name) = tag

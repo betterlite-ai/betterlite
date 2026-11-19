@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs;
 use std::future::Future;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -13,7 +13,6 @@ use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
@@ -45,9 +44,7 @@ use super::super::cache::{ArmedSpendRead, SpendCache};
 use super::super::{SpendCacheUpdateError, UpdateDeps};
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 // sha256("sk-test-token"), the key the api-key branch looks up after hashing a plaintext sk- token
@@ -64,6 +61,12 @@ pub(crate) struct WriteCall {
     pub local_only: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FakeFailure {
+    Reads,
+    Resolve,
+}
+
 #[derive(Default)]
 pub(crate) struct FakeState {
     pub cached: BTreeMap<String, Json>,
@@ -72,8 +75,7 @@ pub(crate) struct FakeState {
     pub declared: Vec<Vec<String>>,
     pub resolves: usize,
     pub reads: Vec<Vec<String>>,
-    pub fail_reads: bool,
-    pub fail_resolve: bool,
+    pub fail: Option<FakeFailure>,
     pub armable: bool,
     pub management_ttl: f64,
     pub writes: Vec<WriteCall>,
@@ -92,13 +94,13 @@ impl FakeState {
 
     #[must_use]
     pub(crate) fn failing_reads(mut self) -> Self {
-        self.fail_reads = true;
+        self.fail = Some(FakeFailure::Reads);
         self
     }
 
     #[must_use]
     pub(crate) fn failing_resolve(mut self) -> Self {
-        self.fail_resolve = true;
+        self.fail = Some(FakeFailure::Resolve);
         self
     }
 
@@ -166,7 +168,7 @@ impl SpendCache for FakeCache {
     ) -> Result<Vec<Option<Json>>, SpendCacheUpdateError> {
         let mut state = self.state();
         state.reads.push(keys.to_vec());
-        if state.fail_reads {
+        if state.fail == Some(FakeFailure::Reads) {
             return Err(SpendCacheUpdateError::CacheRead);
         }
         Ok(keys
@@ -180,8 +182,8 @@ impl SpendCache for FakeCache {
         armed: ArmedSpendRead,
     ) -> Result<Vec<Option<Json>>, SpendCacheUpdateError> {
         let mut state = self.state();
-        state.resolves += 1;
-        if state.fail_resolve {
+        state.resolves = state.resolves.saturating_add(1);
+        if state.fail == Some(FakeFailure::Resolve) {
             return Err(SpendCacheUpdateError::CacheRead);
         }
         Ok(armed
@@ -242,11 +244,15 @@ pub(crate) fn june_15_clock() -> Arc<dyn Clock> {
     Arc::new(FixedClock(noon))
 }
 
-pub(crate) fn update_deps(
-    cache: Arc<dyn SpendCache>,
-    alerts: Arc<dyn SpendBudgetAlerts>,
+pub(crate) fn update_deps<Cache, Alerts>(
+    cache: Arc<Cache>,
+    alerts: Arc<Alerts>,
     tasks: &TaskTracker,
-) -> UpdateDeps {
+) -> UpdateDeps
+where
+    Cache: SpendCache + 'static,
+    Alerts: SpendBudgetAlerts + 'static,
+{
     UpdateDeps {
         cache,
         alerts,
@@ -377,10 +383,10 @@ pub(crate) fn key_auth(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> 
         ),
         ("soft_budget_cooldown".to_owned(), JsonData::Bool(cooldown)),
     ]);
-    if let Some(soft_budget) = soft_budget {
+    if let Some(limit) = soft_budget {
         fields.insert(
             "soft_budget".to_owned(),
-            JsonData::Number(serde_json::Number::from(soft_budget)),
+            JsonData::Number(serde_json::Number::from(limit)),
         );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the auth fixture builds")

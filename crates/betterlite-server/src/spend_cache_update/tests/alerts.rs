@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use crate::failure_hook::ports::{BudgetAlertKind, CallInfo, EntityType};
 
-use super::super::alerts::SpendBudgetAlerts;
+use super::super::alerts::SpendBudgetAlerts as _;
 use super::support::{RecordingSlack, proxy_alerts};
 
 #[tokio::test]
