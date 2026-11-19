@@ -96,7 +96,11 @@ pub(crate) async fn authenticate(
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver).await {
+        let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver) {
+            Ok(input) => input,
+            Err(failure) => return stage_failure_response(&failure),
+        };
+        let input = match prefetch_tag_budgets(input).await {
             Ok(input) => input,
             Err(failure) => return stage_failure_response(&failure),
         };
@@ -121,7 +125,7 @@ fn stage_failure_response(failure: &StageFailure) -> Response {
     }
 }
 
-async fn stage_input(
+fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
@@ -156,7 +160,22 @@ async fn stage_input(
             )))
         }
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
-        AuthBackend::AuthTagBudgets => auth_tag_budgets::stage_input(request, authenticated).await,
+        AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
+            auth_tag_budgets::stage_input(request, authenticated)?,
+        ))),
+    }
+}
+
+// LiteLLM runs both batch reads before common_checks; the input is owned because Request<Body> is Send but not Sync
+async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthTagBudgets(stage) => {
+            auth_tag_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::TagBudgets)?;
+            Ok(StageInput::AuthTagBudgets(stage))
+        }
+        other => Ok(other),
     }
 }
 

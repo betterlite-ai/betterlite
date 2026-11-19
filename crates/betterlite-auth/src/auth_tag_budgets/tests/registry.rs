@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_models::decisions::Json;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 
 use super::support::{
     GROUP_A, GROUP_REGISTRY_KEY, RecordingCache, RecordingRows, TAG_A, TAG_B, TAG_REGISTRY_KEY,
@@ -116,7 +117,7 @@ async fn distinct_registry_keys_locks() {
             load_registry(RegistryKind::Group, &cache, groups_table)
         )
     };
-    let (tags, groups) = tokio::time::timeout(Duration::from_secs(2), loads)
+    let (tags, groups) = timeout(Duration::from_secs(2), loads)
         .await
         .expect("each registry takes its own load lock");
     assert_eq!(

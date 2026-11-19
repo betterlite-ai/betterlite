@@ -74,7 +74,7 @@ async fn ordered_duplicate_probes() {
 
 #[tokio::test]
 async fn cache_hits_survive_failed_fetch() {
-    let cache = RecordingCache::new(TTL).with_group(group_budget(GROUP_A));
+    let cache = RecordingCache::new(TTL).with_group(&group_budget(GROUP_A));
     let rows = RecordingRows::new(Vec::new(), Vec::new()).failing_groups();
     let found = batch(&cache, &rows, &["group-a", "group-b"])
         .await
@@ -112,7 +112,7 @@ async fn one_query_for_misses() {
         Vec::new(),
         vec![group_row(GROUP_A), group_row(GROUP_B), group_row(GROUP_C)],
     );
-    let cache = RecordingCache::new(TTL).with_group(group_budget(GROUP_A));
+    let cache = RecordingCache::new(TTL).with_group(&group_budget(GROUP_A));
     let found = batch(&cache, &rows, &["group-a", "group-b", "group-c"])
         .await
         .expect("the batch read");
@@ -122,7 +122,7 @@ async fn one_query_for_misses() {
 
 #[tokio::test]
 async fn all_hits_skip_the_database() {
-    let cache = RecordingCache::new(TTL).with_group(group_budget(GROUP_A));
+    let cache = RecordingCache::new(TTL).with_group(&group_budget(GROUP_A));
     let rows = RecordingRows::new(Vec::new(), vec![group_row(GROUP_A)]);
     let found = batch(&cache, &rows, &["group-a"])
         .await
@@ -167,7 +167,7 @@ fn requested_names_and_budget_include() {
 async fn fetched_row_wins() {
     let cached = r#"{"access_group_name":"group-a","spend":1}"#;
     let fetched = r#"{"access_group_name":"group-a","spend":9}"#;
-    let cache = RecordingCache::new(TTL).with_group_hit_once(group_budget(cached));
+    let cache = RecordingCache::new(TTL).with_group_hit_once(&group_budget(cached));
     let rows = RecordingRows::new(Vec::new(), vec![group_row(fetched)]);
     let found = batch(&cache, &rows, &["group-a", "group-a"])
         .await
@@ -236,7 +236,7 @@ async fn management_ttl_used() {
     assert_eq!(found.len(), 1);
     assert_eq!(
         cache.prefixed_writes("model_access_group:"),
-        [("model_access_group:group-a".to_owned(), 42.0)]
+        [("model_access_group:group-a".to_owned(), 42.0_f64)]
     );
 }
 

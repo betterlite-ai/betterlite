@@ -67,7 +67,7 @@ async fn ordered_duplicate_probes() {
 
 #[tokio::test]
 async fn cache_hits_survive_failed_fetch() {
-    let cache = RecordingCache::new(TTL).with_tag(tag(TAG_A));
+    let cache = RecordingCache::new(TTL).with_tag(&tag(TAG_A));
     let rows = RecordingRows::new(Vec::new(), Vec::new()).failing_tags();
     let found = batch(&cache, &rows, &["tag-a", "tag-b"])
         .await
@@ -104,10 +104,12 @@ async fn undecodable_payload_refetched() {
 
 #[tokio::test]
 async fn one_query_for_misses() {
-    let cache = RecordingCache::new(TTL).with_tag(tag(TAG_A)).with_registry(
-        TAG_REGISTRY_KEY,
-        registry_names(&["tag-a", "tag-b", "tag-c"]),
-    );
+    let cache = RecordingCache::new(TTL)
+        .with_tag(&tag(TAG_A))
+        .with_registry(
+            TAG_REGISTRY_KEY,
+            registry_names(&["tag-a", "tag-b", "tag-c"]),
+        );
     let rows = RecordingRows::new(vec![tag(TAG_A), tag(TAG_B), tag(TAG_C)], Vec::new());
     let found = batch(&cache, &rows, &["tag-a", "tag-b", "tag-c"])
         .await
@@ -118,7 +120,7 @@ async fn one_query_for_misses() {
 
 #[tokio::test]
 async fn all_hits_skip_the_registry() {
-    let cache = RecordingCache::new(TTL).with_tag(tag(TAG_A));
+    let cache = RecordingCache::new(TTL).with_tag(&tag(TAG_A));
     let rows = RecordingRows::new(vec![tag(TAG_A)], Vec::new());
     let found = batch(&cache, &rows, &["tag-a"])
         .await
@@ -166,7 +168,7 @@ async fn fetched_row_wins() {
     let cached = r#"{"tag_name":"tag-a","models":[],"spend":1}"#;
     let fetched = tag(r#"{"tag_name":"tag-a","models":["m9"],"spend":9}"#);
     let cache = RecordingCache::new(TTL)
-        .with_tag_hit_once(tag(cached))
+        .with_tag_hit_once(&tag(cached))
         .with_registry(TAG_REGISTRY_KEY, registry_names(&["tag-a"]));
     let rows = RecordingRows::new(vec![fetched.clone()], Vec::new());
     let found = batch(&cache, &rows, &["tag-a", "tag-a"])
@@ -241,6 +243,6 @@ async fn management_ttl_used() {
     assert_eq!(found.len(), 1);
     assert_eq!(
         cache.prefixed_writes("tag:"),
-        [("tag:tag-a".to_owned(), 42.0)]
+        [("tag:tag-a".to_owned(), 42.0_f64)]
     );
 }

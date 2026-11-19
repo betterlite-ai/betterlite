@@ -65,19 +65,21 @@ pub(super) fn group_budget(text: &str) -> ModelAccessGroupBudget {
 }
 
 pub(super) fn named_tags(count: usize) -> Vec<TagTable> {
-    let wires = (0..count).map(
-        |index| serde_json::json!({"tag_name": format!("tag-{index}"), "models": [], "spend": 0}),
-    );
-    let rows = wires.map(|wire| serde_json::from_value(wire).expect("the generated tag row"));
-    rows.collect()
+    (0..count)
+        .map(|index| {
+            let wire = format!(r#"{{"tag_name":"tag-{index}","models":[],"spend":0}}"#);
+            serde_json::from_str(&wire).expect("the generated tag row")
+        })
+        .collect()
 }
 
 pub(super) fn named_group_rows(count: usize) -> Vec<ModelAccessGroupBudgetRow> {
-    let wires = (0..count).map(
-        |index| serde_json::json!({"access_group_name": format!("group-{index}"), "spend": 0}),
-    );
-    let rows = wires.map(|wire| serde_json::from_value(wire).expect("the generated group row"));
-    rows.collect()
+    (0..count)
+        .map(|index| {
+            let wire = format!(r#"{{"access_group_name":"group-{index}","spend":0}}"#);
+            serde_json::from_str(&wire).expect("the generated group row")
+        })
+        .collect()
 }
 
 fn no_database() -> DbError {
@@ -147,31 +149,31 @@ impl RecordingCache {
         }
     }
 
-    pub(super) fn with_tag(self, row: TagTable) -> Self {
+    pub(super) fn with_tag(self, row: &TagTable) -> Self {
         let key = tag_key(&row.tag_name);
-        self.cached(key, CachedValue::Tag(&row))
+        self.cached(key, CachedValue::Tag(row))
     }
 
-    pub(super) fn with_tag_hit_once(self, row: TagTable) -> Self {
+    pub(super) fn with_tag_hit_once(self, row: &TagTable) -> Self {
         let key = tag_key(&row.tag_name);
         self.once
             .lock()
             .expect("the scripted values lock")
-            .insert(key, stored(CachedValue::Tag(&row)));
+            .insert(key, stored(CachedValue::Tag(row)));
         self
     }
 
-    pub(super) fn with_group(self, budget: ModelAccessGroupBudget) -> Self {
+    pub(super) fn with_group(self, budget: &ModelAccessGroupBudget) -> Self {
         let key = group_key(&budget.access_group_name);
-        self.cached(key, CachedValue::Group(&budget))
+        self.cached(key, CachedValue::Group(budget))
     }
 
-    pub(super) fn with_group_hit_once(self, budget: ModelAccessGroupBudget) -> Self {
+    pub(super) fn with_group_hit_once(self, budget: &ModelAccessGroupBudget) -> Self {
         let key = group_key(&budget.access_group_name);
         self.once
             .lock()
             .expect("the scripted values lock")
-            .insert(key, stored(CachedValue::Group(&budget)));
+            .insert(key, stored(CachedValue::Group(budget)));
         self
     }
 
@@ -250,36 +252,51 @@ impl RecordingCache {
             .push(key.to_owned());
     }
 
+    fn scripted(&self, key: &str) -> Option<Json> {
+        self.once
+            .lock()
+            .expect("the scripted values lock")
+            .remove(key)
+    }
+
+    fn cached_value(&self, key: &str) -> Option<Json> {
+        self.values
+            .lock()
+            .expect("the cache values lock")
+            .get(key)
+            .cloned()
+    }
+
     fn probe(&self, key: &str, fail: bool) -> Result<Option<Json>, PayloadError> {
         self.record_read(key);
         if fail {
             return Err(payload_error());
         }
-        let scripted = self
-            .once
-            .lock()
-            .expect("the scripted values lock")
-            .remove(key);
-        if scripted.is_some() {
-            return Ok(scripted);
+        if let Some(scripted) = self.scripted(key) {
+            return Ok(Some(scripted));
         }
-        Ok(self
-            .values
+        Ok(self.cached_value(key))
+    }
+
+    fn write_count(&self) -> usize {
+        self.writes.lock().expect("the cache writes lock").len()
+    }
+
+    fn push_write(&self, key: &str, ttl: f64) {
+        self.writes
             .lock()
-            .expect("the cache values lock")
-            .get(key)
-            .cloned())
+            .expect("the cache writes lock")
+            .push((key.to_owned(), ttl));
     }
 
     fn record_write(&self, key: &str, ttl: f64) -> Result<(), AuthCacheError> {
-        let mut writes = self.writes.lock().expect("the cache writes lock");
         if self
             .fail_write_after
-            .is_some_and(|allowed| writes.len() >= allowed)
+            .is_some_and(|allowed| self.write_count() >= allowed)
         {
             return Err(AuthCacheError::Payload(Box::new(payload_error())));
         }
-        writes.push((key.to_owned(), ttl));
+        self.push_write(key, ttl);
         Ok(())
     }
 }
@@ -429,7 +446,7 @@ impl RecordingRows {
             .clone()
     }
 
-    fn failure(&self, kind: Failure) -> Option<TagBudgetRowsFailure> {
+    fn failure(kind: Failure) -> Option<TagBudgetRowsFailure> {
         match kind {
             Failure::None => None,
             Failure::Query => Some(query_failure()),
@@ -450,7 +467,7 @@ impl RecordingRows {
 impl BudgetRows<TagTable> for RecordingRows {
     async fn by_names(&self, names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
         Self::record(&self.tag_queries, names.clone());
-        if let Some(failure) = self.failure(self.tag_failure) {
+        if let Some(failure) = Self::failure(self.tag_failure) {
             return Err(failure);
         }
         Ok(matching(&self.tags, &names, |row| &row.tag_name))
@@ -458,7 +475,7 @@ impl BudgetRows<TagTable> for RecordingRows {
 
     async fn registry_rows(&self, take: i64) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
         Self::record_take(&self.registry_takes, take);
-        if let Some(failure) = self.failure(self.tag_failure) {
+        if let Some(failure) = Self::failure(self.tag_failure) {
             return Err(failure);
         }
         Ok(limited(&self.tags, take))
@@ -472,7 +489,7 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for RecordingRows {
         names: Vec<String>,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
         Self::record(&self.group_queries, names.clone());
-        if let Some(failure) = self.failure(self.group_failure) {
+        if let Some(failure) = Self::failure(self.group_failure) {
             return Err(failure);
         }
         Ok(matching(&self.groups, &names, |row| &row.access_group_name))
@@ -483,7 +500,7 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for RecordingRows {
         take: i64,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
         Self::record_take(&self.group_registry_takes, take);
-        if let Some(failure) = self.failure(self.group_failure) {
+        if let Some(failure) = Self::failure(self.group_failure) {
             return Err(failure);
         }
         Ok(limited(&self.groups, take))

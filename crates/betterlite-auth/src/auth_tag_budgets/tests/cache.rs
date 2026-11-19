@@ -16,7 +16,9 @@ const FALLBACK_TTL: f64 = 45.0;
 
 fn local_cache() -> TestCache {
     let memory = || {
-        Arc::new(LocalMemoryOps::new(1024, Arc::new(|| 0.0)).expect("the local memory tier builds"))
+        Arc::new(
+            LocalMemoryOps::new(1024, Arc::new(|| 0.0_f64)).expect("the local memory tier builds"),
+        )
     };
     let settings = DualCacheSettings {
         default_in_memory_ttl: Some(MANAGEMENT_TTL),
