@@ -127,10 +127,10 @@ fn base_step(step: &BaseStep) -> Value {
         request_query_params: step.request_query_params.as_ref(),
         litellm_params: &plan.litellm_params,
     };
-    match plan.get_complete_url(&request) {
-        Ok((url, root)) => json!({"url": url.as_str(), "root": root}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    let Ok((url, root)) = plan.get_complete_url(&request) else {
+        return json!({"error": {"status": null}});
+    };
+    json!({"url": url.as_str(), "root": root})
 }
 
 fn validation_step(step: &ValidationStep, sources: &NoSources) -> Value {

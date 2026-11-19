@@ -5,5 +5,4 @@ pub mod ocr;
 pub mod plan;
 pub mod url;
 
-#[cfg(test)]
 mod tests;

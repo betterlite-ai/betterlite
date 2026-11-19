@@ -210,7 +210,10 @@ impl<Inner: Subscriber> Layer<Inner> for Warnings {
     }
 }
 
-pub(super) fn capture_warnings<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
+pub(super) fn capture_warnings<T, Run>(run: Run) -> (T, Vec<String>)
+where
+    Run: FnOnce() -> T,
+{
     let warnings = Warnings::default();
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
     let value = tracing::subscriber::with_default(subscriber, run);
@@ -481,13 +484,14 @@ fn passthrough_secret_safe_failure() {
     assert_plan_debug_redacts(&plan);
     let error = offline_entra_error();
     let rendered = format!("{error:?} {error}");
-    for secret in [
+    let leaked = [
         "fixture-environment-secret",
         "fixture-params-secret",
         "fixture-global-secret",
-    ] {
-        assert!(!rendered.contains(secret), "{rendered}");
-    }
+    ]
+    .into_iter()
+    .any(|secret| rendered.contains(secret));
+    assert!(!leaked, "{rendered}");
     let root_error = foundry_root("https://user:fixture-url-secret@host/a\nb").unwrap_err();
     let root_rendered = format!("{root_error:?} {root_error}");
     assert!(
@@ -500,6 +504,26 @@ fn passthrough_secret_safe_failure() {
     ));
 }
 
+fn corpus_failure(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).expect("corpus file");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("corpus name");
+    let expected_ok = name.starts_with("ok-");
+    let outcome = decode_logged_ocr_reply(None, OCR_MODEL, OCR_ENDPOINT, &bytes);
+    let matched = match &outcome {
+        Ok(Some(_)) => expected_ok,
+        Ok(None) => false,
+        Err(_) => !expected_ok,
+    };
+    if matched {
+        None
+    } else {
+        Some(format!("{name}: {outcome:?}"))
+    }
+}
+
 #[test]
 fn replays_the_foundry_passthrough_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/foundry_passthrough");
@@ -508,19 +532,9 @@ fn replays_the_foundry_passthrough_corpus() {
         .map(|entry| entry.expect("corpus entry").path())
         .collect();
     assert!(!paths.is_empty());
-    for path in &paths {
-        let bytes = fs::read(path).expect("corpus file");
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("corpus name");
-        let expected_ok = name.starts_with("ok-");
-        let outcome = decode_logged_ocr_reply(None, OCR_MODEL, OCR_ENDPOINT, &bytes);
-        let matched = match &outcome {
-            Ok(Some(_)) => expected_ok,
-            Ok(None) => false,
-            Err(_) => !expected_ok,
-        };
-        assert!(matched, "{name}: {outcome:?}");
-    }
+    let failures: Vec<String> = paths
+        .iter()
+        .filter_map(|path| corpus_failure(path.as_path()))
+        .collect();
+    assert!(failures.is_empty(), "{failures:?}");
 }

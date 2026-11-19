@@ -99,7 +99,10 @@ impl<Inner: Subscriber> Layer<Inner> for Warnings {
 }
 
 // only the OCR warning is a WARN event on this path, so one raised flag is enough
-pub(super) fn capture_warnings<T>(run: impl FnOnce() -> T) -> (T, bool) {
+pub(super) fn capture_warnings<T, Run>(run: Run) -> (T, bool)
+where
+    Run: FnOnce() -> T,
+{
     let warnings = Warnings::default();
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
     let value = tracing::subscriber::with_default(subscriber, run);
