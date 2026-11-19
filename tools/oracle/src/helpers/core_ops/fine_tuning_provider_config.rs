@@ -37,8 +37,8 @@ enum Action {
 pub(crate) struct Op;
 
 // the class LiteLLM's own failure carries; a non-map entry fails on its .get
-fn config_error(error: FineTuningConfigError) -> Box<HelperError> {
-    let class = match &error {
+fn config_error(error: &FineTuningConfigError) -> Box<HelperError> {
+    let class = match error {
         FineTuningConfigError::NotAProviderMap { .. } => "AttributeError",
         FineTuningConfigError::Unset
         | FineTuningConfigError::NotAList
@@ -64,7 +64,7 @@ impl Helper for Op {
             match step.action {
                 Action::Set => {
                     current = set_fine_tuning_config(current, step.config.as_ref(), &input.env)
-                        .map_err(config_error)?;
+                        .map_err(|error| config_error(&error))?;
                     results.push(Json::Null);
                 }
                 Action::Get => {
@@ -79,7 +79,7 @@ impl Helper for Op {
                         }));
                     };
                     let found = fine_tuning_config_for(current.as_deref(), provider)
-                        .map_err(config_error)?;
+                        .map_err(|error| config_error(&error))?;
                     results.push(found.unwrap_or(Json::Null));
                 }
             }

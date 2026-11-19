@@ -31,6 +31,7 @@ impl FineTuningProviderConfig {
         let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
         let next = set_fine_tuning_config(current.clone(), config, lookup)?;
         *current = next;
+        drop(current);
         Ok(())
     }
 
