@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Nothing enables this; a declared feature changes the unit fingerprint, so the shared lint lane rebuilds dependents instead of reusing metadata built before a merge of main.
+lint-lane-rebuild = []
+
 [dependencies]
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }

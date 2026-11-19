@@ -1,0 +1,15 @@
+task: B1506
+deviations:
+  - what: The generated-file listing is capped at 1 MiB of stdout and 4096 paths, and the collected files at 64 MiB; past either cap betterlite warns and keeps the prefix it collected, where LiteLLM decodes and copies whatever the sandbox prints. A listing whose stdout is valid JSON but not a list of strings counts as malformed and collects nothing, where LiteLLM iterates whatever json.loads returned.
+    why: The listing and the downloads come from code running inside the sandbox image, so one submission must not be able to make the gateway allocate without bound or wait on an endless walk; everything under the caps is collected in the source's order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L245-L312
+  - what: execute runs under an outer 120-second deadline; when it passes, the call returns success=false with a timeout error and no files, while LiteLLM stores its timeout field and never forwards or applies it.
+    why: A sandbox run that never returns must not hold the caller's request open, and the SDK's own run has no deadline the gateway controls; the value is not forwarded as a session option either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L55-L225
+kept_bugs:
+  - what: The constructor stores backend and timeout but never passes either to SandboxSession, so backend="podman" or timeout=60 still runs the SDK's docker default with the SDK's own timing; betterlite likewise sends only lang, verbose and a truthy image.
+    why: A working setup that configured these options today gets the SDK default, and forwarding them now would switch its backend or cut its runs short after the move to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L109-L117
+  - what: The relative path of a generated file is str.replace("/sandbox/", "") over the whole path, so a path that carries the prefix twice loses the inner occurrence; betterlite applies the same replacement, and the name, the path and the original-file exclusion all match the source.
+    why: The relative path and the exclusion set are what a client receives and what keeps a skill's own files out of the result, so a path shape the source mangles must be mangled the same way or the two sides disagree on which files are new.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L276-L280

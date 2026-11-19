@@ -1,0 +1,73 @@
+kind: helper
+name: empty-search-response
+call:
+  azure_search:
+    reply:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "id": "resp-1", "ignored": {"extra": true}}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": []}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "completed"}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "failed"}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "boom"}}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": ""}}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "incomplete"}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [], "status": "incomplete", "incomplete_details": {}}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [{"type": "message", "content": []}], "status": "incomplete"}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output": [{"type": "message", "content": [{"type": "output_text", "text": "claim", "annotations": [{"type": "url_citation", "url": "https://cited.example"}]}]}], "status": "incomplete"}
+        - environment: {}
+          status: 429
+          body: |
+            {"id": "resp-1"}
+        - environment: {}
+          status: 200
+          body: |
+            []
+        - environment: {}
+          status: 500
+          body: |
+            not json
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [{"content": [{"annotations": [{"type": "url_citation"}]}]}]}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [{"type": "message", "content": [{"type": "output_text", "text": "", "annotations": [{"type": "url_citation", "url": "https://empty-text.example"}]}]}]}
+env: {}
+compare:
+  ignore: []

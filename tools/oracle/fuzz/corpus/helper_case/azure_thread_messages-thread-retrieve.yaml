@@ -1,0 +1,5 @@
+kind: helper
+name: azure-thread-messages-seed-thread-retrieve
+call: {azure_thread_messages: {thread_retrieve: [{api_key: sk-seed, api_base: 'https://example.test', api_version: '2024-02-01', thread_id: thread_1}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+kind: helper
+name: azure-file-client-errors
+call:
+  azure_files:
+    steps:
+    - action: client
+      args: {api_key: null, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+    - action: client
+      args: {api_key: key-1, api_base: null, api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: azure_open_ai
+      builder: none
+    - action: retrieve
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      is_async: true
+      client: azure_open_ai
+      file_id: file-1
+    - action: retrieve
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      file_id: missing-file
+      reply: {status: 404, headers: {content-type: application/json}, body: '{"error": {"message": "no such file", "type": "invalid_request_error", "param": "file_id", "code": "file_not_found"}}'}
+env: {}
+compare: {ignore: []}

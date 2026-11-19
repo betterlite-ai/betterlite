@@ -1,7 +1,7 @@
 id: B697
 milestone: M3 providers
 title: Azure message creation and attachment policy
-status: todo
+status: done
 depends_on: [B520, B686, B184, B002, B171]
 file: tasks/B697-azure-message-attachments.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/azure.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2568

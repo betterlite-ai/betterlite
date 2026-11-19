@@ -1,18 +1,16 @@
-use betterlite_logging::logging_pre_post::args::AdditionalArgs;
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv,
+use betterlite_logging::logging_pre_post::{
+    args::AdditionalArgs,
+    env::{DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv},
+    error::PrePostError,
+    hooks::{ApiCallLogger, InputCallback, PostCallEvent, PreCallEvent},
+    post_call::{PostCall, post_call},
+    pre_call::{PreCall, pre_call},
 };
-use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_logging::logging_pre_post::hooks::{
-    ApiCallLogger, InputCallback, PostCallEvent, PreCallEvent,
-};
-use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
-use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
+use betterlite_logging::logging_state::{
+    LoggingInit, LoggingState,
+    correlation::{CorrelationContext, CorrelationSettings, CorrelationSetup},
 };
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -21,7 +19,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
-use std::cell::RefCell;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 pub(crate) struct Op;
@@ -43,7 +41,7 @@ struct DebugFlags {
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
-struct CaptureFlags {
+struct RawFlags {
     log_raw_request_response: bool,
     raw_request_only: bool,
 }
@@ -59,55 +57,62 @@ struct FailureFlags {
 pub(crate) struct Input {
     #[serde(default)]
     action: Action,
-    #[serde(default = "default_call_type")]
-    call_type: String,
+    call_type: Option<String>,
     messages: Option<Json>,
     #[serde(default)]
     litellm_params: IndexMap<String, Json>,
     #[serde(flatten)]
     debug: DebugFlags,
     #[serde(flatten)]
-    capture: CaptureFlags,
+    raw: RawFlags,
     #[serde(flatten)]
     failures: FailureFlags,
     #[serde(default)]
     turn_off_message_logging: bool,
-    #[serde(rename = "input", default = "default_input")]
-    payload: Json,
+    #[serde(rename = "input")]
+    payload: Option<Json>,
     model: Option<String>,
-    #[serde(default = "default_original_response")]
-    original_response: Json,
+    original_response: Option<Json>,
     #[serde(default)]
     additional_args: AdditionalArgs,
 }
 
-fn default_call_type() -> String {
-    "completion".to_owned()
-}
-
-const fn default_input() -> Json {
-    Json::Null
-}
-
-const fn default_original_response() -> Json {
-    Json::Null
-}
-
 struct Recorder {
-    events: RefCell<Vec<Value>>,
-    failing: bool,
+    events: Mutex<Vec<Value>>,
+    failing_callback: bool,
+    failing_logger_fn: bool,
 }
 
 impl Recorder {
-    fn finish(&self, entry: Value) -> Result<(), PrePostError> {
-        self.events.borrow_mut().push(entry);
-        if self.failing {
-            return Err(PrePostError::CallbackFailed {
-                message: "callback exploded".to_owned(),
-            });
-        }
-        Ok(())
+    fn push(&self, event: Value) {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(event);
     }
+
+    fn finish(&self, entry: Value) -> Result<(), PrePostError> {
+        self.push(entry);
+        callback_result(self.failing_callback, "callback exploded")
+    }
+
+    fn log_fn(&self, details: &Json) -> Result<(), PrePostError> {
+        self.push(serde_json::json!({
+            "kind": "logger_fn",
+            "log_event_type": detail(details, "log_event_type"),
+            "input": detail(details, "input"),
+        }));
+        callback_result(self.failing_logger_fn, "logger_fn exploded")
+    }
+}
+
+fn callback_result(failing: bool, message: &str) -> Result<(), PrePostError> {
+    if !failing {
+        return Ok(());
+    }
+    Err(PrePostError::CallbackFailed {
+        message: message.to_owned(),
+    })
 }
 
 fn detail(details: &Json, name: &str) -> Json {
@@ -124,7 +129,7 @@ impl LogSink for Recorder {
             LogLevel::Warning => "warning",
             LogLevel::Error => "error",
         };
-        self.events.borrow_mut().push(serde_json::json!({
+        self.push(serde_json::json!({
             "kind": "log",
             "level": level,
             "message": record.message,
@@ -161,8 +166,9 @@ impl Helper for Op {
         let mut state = build_state(input, &scrubber)?;
         state.litellm_request_debug = input.debug.request_debug;
         let recorder = Recorder {
-            events: RefCell::new(Vec::new()),
-            failing: input.failures.failing_callback,
+            events: Mutex::new(Vec::new()),
+            failing_callback: input.failures.failing_callback,
+            failing_logger_fn: input.failures.failing_logger_fn,
         };
         let error = dispatch(input, &mut state, &recorder, &scrubber)?;
         Ok(output(&state, &recorder, &error))
@@ -183,7 +189,7 @@ fn failure(message: String) -> Box<HelperError> {
 fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
     let init: LoggingInit = serde_json::from_value(serde_json::json!({
         "model": "gpt-4o",
-        "call_type": input.call_type,
+        "call_type": input.call_type.as_deref().unwrap_or("completion"),
         "start_time": "2026-01-01T00:00:00+00:00",
         "litellm_call_id": "call-1",
         "function_id": "fn-1",
@@ -191,8 +197,8 @@ fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<H
         "messages": input.messages,
         "litellm_params": input.litellm_params,
         "request_logging": {
-            "log_raw_request_response": input.capture.log_raw_request_response,
-            "raw_request_only": input.capture.raw_request_only,
+            "log_raw_request_response": input.raw.log_raw_request_response,
+            "raw_request_only": input.raw.raw_request_only,
         },
     }))
     .map_err(|error| failure(error.to_string()))?;
@@ -216,40 +222,31 @@ fn dispatch(
     scrubber: &Redactor,
 ) -> Result<Value, Box<HelperError>> {
     let callbacks = [InputCallback::Logger(recorder)];
-    let failing_logger_fn = input.failures.failing_logger_fn;
-    let logger_fn = |details: &Json| {
-        recorder.events.borrow_mut().push(serde_json::json!({
-            "kind": "logger_fn",
-            "log_event_type": detail(details, "log_event_type"),
-            "input": detail(details, "input"),
-        }));
-        if failing_logger_fn {
-            return Err(PrePostError::CallbackFailed {
-                message: "logger_fn exploded".to_owned(),
-            });
-        }
-        Ok(())
+    let logger_fn = |details: &Json| recorder.log_fn(details);
+    let debug = DebugSettings {
+        verbose: input.debug.verbose,
+        json_logs: false,
     };
+    let globals = GlobalFlags {
+        log_raw_request_response: false,
+        turn_off_message_logging: input.turn_off_message_logging,
+    };
+    let decision = Decision {
+        content: input.turn_off_message_logging,
+        key_info: false,
+    };
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+        .map_err(|error| failure(error.to_string()))?;
     let env = PrePostEnv {
-        debug: DebugSettings {
-            verbose: input.debug.verbose,
-            json_logs: false,
-        },
-        globals: GlobalFlags {
-            log_raw_request_response: false,
-            turn_off_message_logging: input.turn_off_message_logging,
-        },
-        decision: Decision {
-            content: input.turn_off_message_logging,
-            key_info: false,
-        },
+        debug,
+        globals,
+        decision,
         redactor: scrubber,
         log: recorder,
         input_callbacks: &callbacks,
         sentry: None,
         logger_fn: Some(&logger_fn),
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-            .map_err(|error| failure(error.to_string()))?,
+        now,
     };
     Ok(invoke_hook(input, state, &env))
 }
@@ -257,15 +254,15 @@ fn dispatch(
 fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Value {
     if matches!(input.action, Action::Post) {
         let call = PostCall {
-            original_response: input.original_response.clone(),
-            input: input.payload.clone(),
+            original_response: input.original_response.clone().unwrap_or(Json::Null),
+            input: input.payload.clone().unwrap_or(Json::Null),
             additional_args: input.additional_args.clone(),
         };
         post_call(state, &call, env);
         return Value::Null;
     }
     let call = PreCall {
-        input: input.payload.clone(),
+        input: input.payload.clone().unwrap_or(Json::Null),
         model: input.model.clone(),
         additional_args: input.additional_args.clone(),
     };
@@ -278,7 +275,11 @@ fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) ->
 fn output(state: &LoggingState, recorder: &Recorder, error: &Value) -> Value {
     let details = &state.model_call_details;
     let set = |name: &str| !matches!(details.get(name), None | Some(Json::Null));
-    let events = recorder.events.borrow().clone();
+    let events = recorder
+        .events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     serde_json::json!({
         "events": events,
         "details": {

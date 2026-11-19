@@ -185,7 +185,7 @@ roles:
         model: deepseek-flash[1m]
         effort: max
         attempts: 1
-        timeout_minutes: 30
+        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-sonnet-5-5
         effort: high

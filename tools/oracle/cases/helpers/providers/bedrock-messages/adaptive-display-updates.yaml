@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-messages-adaptive-display-updates
+call:
+  bedrock_messages:
+    function: transform
+    model_cost:
+      bedrock/fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    calls:
+      - model: fixture-adaptive
+        messages: [{role: user, content: hi}]
+        optional_params:
+          max_tokens: 1024
+          thinking: {type: adaptive, display: updates}
+      - model: fixture-adaptive
+        messages: [{role: user, content: hi}]
+        optional_params:
+          max_tokens: 1024
+          thinking: {type: adaptive}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}
