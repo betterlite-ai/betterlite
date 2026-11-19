@@ -121,10 +121,7 @@ pub(super) fn refreshed_at(
     writes: &[(String, CacheValue, Option<f64>)],
     key: &str,
 ) -> Option<CacheValue> {
-    let write = writes
-        .iter()
-        .find(|write| write.0 == key)
-        .expect("the prefetched write");
+    let write = writes.iter().find(|write| write.0 == key)?;
     let CacheValue::Object(fields) = &write.1 else {
         panic!("the prefetched write holds an object");
     };

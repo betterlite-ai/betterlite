@@ -45,6 +45,20 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, models, obje
     VALUES ('project-1', 'team-1', 'budget-project', ARRAY['model-a'], 'perm-project', 'tester', 'tester');
 "#;
 
+const BUDGET_SEED: &str = r#"
+INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by, allowed_models)
+    VALUES ('budget-org', 'tester', 'tester', NULL),
+           ('budget-project', 'tester', 'tester', NULL),
+           ('budget-member', 'tester', 'tester', NULL);
+INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by)
+    VALUES ('org-1', 'org one', 'budget-org', 'tester', 'tester');
+INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('user-1');
+INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('team-1');
+INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, budget_id) VALUES ('user-1', 'team-1', 'budget-member');
+INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, updated_by)
+    VALUES ('project-1', 'team-1', 'budget-project', 'tester', 'tester');
+"#;
+
 fn all_refs() -> AuthObjectRefs {
     AuthObjectRefs {
         user_id: Some("user-1".to_owned()),
@@ -372,23 +386,7 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
 #[tokio::test]
 async fn budget_allowed_models_null_to_empty() {
     let database = database().await;
-    seed(
-        &database.pool,
-        r#"
-INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by, allowed_models)
-    VALUES ('budget-org', 'tester', 'tester', NULL),
-           ('budget-project', 'tester', 'tester', NULL),
-           ('budget-member', 'tester', 'tester', NULL);
-INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by)
-    VALUES ('org-1', 'org one', 'budget-org', 'tester', 'tester');
-INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('user-1');
-INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('team-1');
-INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, budget_id) VALUES ('user-1', 'team-1', 'budget-member');
-INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, updated_by)
-    VALUES ('project-1', 'team-1', 'budget-project', 'tester', 'tester');
-"#,
-    )
-    .await;
+    seed(&database.pool, BUDGET_SEED).await;
     let rows = WriterRows {
         store: database.store.clone(),
     }
