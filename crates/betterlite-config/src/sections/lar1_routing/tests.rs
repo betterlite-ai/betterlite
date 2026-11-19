@@ -109,6 +109,12 @@ fn lar1_routing_args_load(#[case] source: &str, #[case] expected: Option<Args>) 
 #[case::usage_v2_out_of_scale(
     "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
 )]
+#[case::least_busy_words(
+    "router_settings:\n  routing_strategy: least-busy\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::cost_based_out_of_scale(
+    "router_settings:\n  routing_strategy: cost-based-routing\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
 fn ignores_the_args_of_another_strategy(#[case] source: &str) {
     assert!(load(source).args.is_none());
 }

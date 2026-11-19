@@ -91,6 +91,12 @@ fn usage_routing_reads_the_declared_ttl(#[case] source: &str, #[case] expected: 
 #[case::usage_v2_whole_float(
     "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120.0\n"
 )]
+#[case::least_busy_fraction(
+    "router_settings:\n  routing_strategy: least-busy\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::cost_based_words(
+    "router_settings:\n  routing_strategy: cost-based-routing\n  routing_strategy_args:\n    ttl: words\n"
+)]
 fn ignores_the_args_of_another_strategy(#[case] source: &str) {
     assert_eq!(ttl(source), None);
 }

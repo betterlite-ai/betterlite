@@ -73,6 +73,12 @@ fn converts_the_window_ttl(#[case] source: &str, #[case] seconds: u64) {
 #[case::usage_whole_seconds(
     "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: 120\n"
 )]
+#[case::least_busy_fraction(
+    "router_settings:\n  routing_strategy: least-busy\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::cost_based_words(
+    "router_settings:\n  routing_strategy: cost-based-routing\n  routing_strategy_args:\n    ttl: words\n"
+)]
 fn ignores_the_args_of_another_strategy(#[case] source: &str) {
     assert_eq!(load(source).ttl, Duration::from_secs(60));
 }
