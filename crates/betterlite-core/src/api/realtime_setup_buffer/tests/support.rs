@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::fmt::Debug;
+use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
@@ -312,12 +313,15 @@ pub(super) fn make<'sender>(
     }
 }
 
+// A retry step takes the sender a failed flush already built, so the concrete provider and callback types are named once here
+pub(super) type Sender<'sender> = RealtimeSender<'sender, ScriptedProvider, Infallible>;
+
 #[derive(Clone, Default)]
 pub(super) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
 
 impl CapturedLogs {
     pub(super) fn take(&self) -> Vec<String> {
-        std::mem::take(&mut *lock(&self.0))
+        take(&mut *lock(&self.0))
     }
 }
 
