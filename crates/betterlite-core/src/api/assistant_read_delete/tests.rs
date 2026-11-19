@@ -20,7 +20,7 @@ use secrecy::{ExposeSecret, SecretString};
 use super::call::{AssistantCall, AssistantProviderCall, AzureAssistantCall};
 use super::error::AssistantReadDeleteError;
 use super::request::{
-    AssistantFlag, AssistantOperation, AssistantParams, AssistantReadDeleteInput, AssistantTimeout,
+    AssistantOperation, AssistantParams, AssistantReadDeleteInput, AssistantTimeout,
     AssistantWrapper, SuppliedClient, SuppliedClientKind, TimeoutPhases,
 };
 use super::sdk_dispatch::{AssistantSdkError, NoSources, SdkDispatch};
@@ -262,7 +262,7 @@ async fn sync_list_without_a_flag_makes_the_same_request() {
 async fn sync_list_with_the_async_flag_hands_back_a_coroutine() {
     let (recorder, dispatch) = harness(200, PAGE);
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.aget_assistants = Some(AssistantFlag::Bool(true));
+    input.aget_assistants = Some(Json::Bool(true));
     let result = facade(dispatch, Settings::default())
         .run(&input)
         .await
@@ -723,9 +723,7 @@ fn no_request() -> Sdk {
 
 async fn a_list_flag_that_is_not_a_bool_is_an_exception() {
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.aget_assistants = Some(AssistantFlag::Other(Json::Number(
-        serde_json::Number::from(1),
-    )));
+    input.aget_assistants = Some(Json::Number(serde_json::Number::from(1)));
     let error = facade(no_request(), Settings::default())
         .run(&input)
         .await
@@ -742,7 +740,7 @@ async fn a_list_flag_that_is_not_a_bool_is_an_exception() {
 
 async fn a_delete_flag_that_is_not_a_bool_is_a_value_error() {
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.async_delete_assistants = Some(AssistantFlag::Other(Json::Text("true".to_owned())));
+    input.async_delete_assistants = Some(Json::Text("true".to_owned()));
     let error = facade(no_request(), Settings::default())
         .run(&input)
         .await
@@ -757,7 +755,7 @@ async fn a_delete_flag_that_is_not_a_bool_is_a_value_error() {
 
 async fn the_async_entry_ignores_the_callers_invalid_flag() {
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.async_delete_assistants = Some(AssistantFlag::Other(Json::Text("true".to_owned())));
+    input.async_delete_assistants = Some(Json::Text("true".to_owned()));
     input.entry = AssistantWrapper::Async;
     let (recorder, dispatch) = harness(200, DELETED);
     facade(dispatch, Settings::default())
@@ -953,7 +951,7 @@ async fn limits_refuse_an_oversized_extra_body() {
 async fn the_async_entry_forces_the_flag_even_when_the_caller_falses_it() {
     let (recorder, dispatch) = harness(200, PAGE);
     let mut input = list_openai(AssistantWrapper::Async);
-    input.aget_assistants = Some(AssistantFlag::Bool(false));
+    input.aget_assistants = Some(Json::Bool(false));
     facade(dispatch, Settings::default())
         .run(&input)
         .await

@@ -25,7 +25,7 @@ pub struct AzureAssistantCall {
 
 #[derive(Debug, Clone)]
 pub enum AssistantProviderCall {
-    OpenAi(ClientOptions),
+    OpenAi(Box<ClientOptions>),
     Azure(Box<AzureAssistantCall>),
 }
 

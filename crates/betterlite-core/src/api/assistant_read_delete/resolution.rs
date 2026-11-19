@@ -114,15 +114,11 @@ pub(super) fn azure(
             },
             max_retries: input.params.max_retries,
             // litellm_params keeps the raw kwargs timeout, and B686 reads only a number from it
-            timeout: input
-                .params
-                .timeout
-                .as_ref()
-                .and_then(|timeout| match timeout {
-                    AssistantTimeout::Number(value) => Some(*value),
-                    AssistantTimeout::Text(text) => text.trim().parse().ok(),
-                    AssistantTimeout::Structured(_) => None,
-                }),
+            timeout: input.params.timeout.as_ref().and_then(|raw| match raw {
+                AssistantTimeout::Number(value) => Some(*value),
+                AssistantTimeout::Text(text) => text.trim().parse().ok(),
+                AssistantTimeout::Structured(_) => None,
+            }),
         },
         extra_body,
     }

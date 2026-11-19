@@ -201,7 +201,7 @@ where
         Ok(match reply.reply {
             DefinitionReply::Page(page) => AssistantReply::Page(*page),
             DefinitionReply::Deleted(deleted) => AssistantReply::Deleted(*deleted),
-            DefinitionReply::Assistant(assistant) => AssistantReply::Assistant(*assistant),
+            DefinitionReply::Assistant(assistant) => AssistantReply::Assistant(assistant),
         })
     }
 

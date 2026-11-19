@@ -11,6 +11,7 @@ use std::future::Future;
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::records::{AssistantDeleted, AssistantObject, AssistantPage};
+use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 
 use crate::api::api_boundaries::{
@@ -20,13 +21,13 @@ use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSe
 
 use call::{AssistantCall, AssistantProviderCall};
 use error::AssistantReadDeleteError;
-use request::{AssistantFlag, AssistantOperation, AssistantReadDeleteInput, AssistantWrapper};
+use request::{AssistantOperation, AssistantReadDeleteInput, AssistantWrapper};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssistantReply {
     Page(AssistantPage),
     Deleted(AssistantDeleted),
-    Assistant(AssistantObject),
+    Assistant(Box<AssistantObject>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,9 +122,9 @@ where
             Some(false) | None => ClientKind::Sync,
         };
         let provider = match input.provider.as_str() {
-            "openai" => AssistantProviderCall::OpenAi(resolution::openai(
+            "openai" => AssistantProviderCall::OpenAi(Box::new(resolution::openai(
                 input, &settings, &options, timeout,
-            )),
+            ))),
             "azure" => AssistantProviderCall::Azure(Box::new(resolution::azure(
                 input, &settings, &options, timeout,
             ))),
@@ -164,12 +165,14 @@ fn requested_flag(
     };
     match raw {
         None => Ok(None),
-        Some(AssistantFlag::Bool(value)) => Ok(Some(*value)),
+        Some(Json::Bool(value)) => Ok(Some(*value)),
         // the flag's name, and the class its sync function raises when the value isn't a bool
-        Some(AssistantFlag::Other(_)) => Err(match input.operation {
-            AssistantOperation::List => ("aget_assistants", "Exception"),
-            AssistantOperation::Delete => ("async_delete_assistants", "ValueError"),
-        }),
+        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(match input.operation {
+                AssistantOperation::List => ("aget_assistants", "Exception"),
+                AssistantOperation::Delete => ("async_delete_assistants", "ValueError"),
+            })
+        }
     }
 }
 

@@ -48,14 +48,6 @@ pub enum AssistantWrapper {
     Async,
 }
 
-// aget_assistants and async_delete_assistants declare bool | None, and LiteLLM refuses any other JSON
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum AssistantFlag {
-    Bool(bool),
-    Other(Json),
-}
-
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -171,8 +163,9 @@ pub struct AssistantReadDeleteInput {
     pub assistant_id: Option<String>,
     #[serde(default)]
     pub entry: AssistantWrapper,
-    pub aget_assistants: Option<AssistantFlag>,
-    pub async_delete_assistants: Option<AssistantFlag>,
+    // aget_assistants and async_delete_assistants declare bool | None, and LiteLLM refuses any other JSON
+    pub aget_assistants: Option<Json>,
+    pub async_delete_assistants: Option<Json>,
     // optional_params.get("extra_body", {}): omitted reads as {}, while an explicit null stays None
     #[serde(
         default,
