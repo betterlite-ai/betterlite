@@ -127,6 +127,14 @@ impl Recorder {
     fn next(&self) -> Result<(u16, HeaderMap, Vec<u8>), TransportError> {
         self.replies.lock().unwrap().pop_front().unwrap()
     }
+
+    fn reply(
+        &self,
+        request: &OutboundRequest,
+    ) -> Result<(u16, HeaderMap, Vec<u8>), TransportError> {
+        self.record(request);
+        self.next()
+    }
 }
 
 fn header(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -175,15 +183,12 @@ impl AssistantsTransport for Recorder {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(&request);
-        match self.next() {
-            Ok((status, headers, body)) => ready(Ok(UpstreamResponse {
-                status,
-                headers,
-                body,
-            })),
-            Err(error) => ready(Err(error)),
-        }
+        let reply = self.reply(&request);
+        ready(reply.map(|(status, headers, body)| UpstreamResponse {
+            status,
+            headers,
+            body,
+        }))
     }
 }
 
@@ -192,8 +197,8 @@ impl RunStreamTransport for Recorder {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
-        self.record(&request);
-        match self.next() {
+        let reply = self.reply(&request);
+        match reply {
             Ok((status, _headers, body)) if status >= 400 => {
                 ready(Err(ThreadRunsError::Status(status, body)))
             }
@@ -225,10 +230,9 @@ pub(super) async fn invoked(
         run,
         handler,
     };
-    api(transport)
-        .run(&fixture.request(), None, call)
-        .await
-        .unwrap()
+    let request = fixture.request();
+    let api = api(transport);
+    api.run(&request, None, call).await.unwrap()
 }
 
 impl RunInvocation<Recorder> {
@@ -260,7 +264,7 @@ pub(super) async fn streamed(
 ) -> RunStream<Recorder> {
     match invoked(transport, fixture, run, dispatch, handler).await {
         RunInvocation::Streaming(stream) => *stream,
-        RunInvocation::Polled(..) => panic!("expected a stream"),
+        RunInvocation::Polled(reply) => panic!("expected a stream, got {}", reply.id),
     }
 }
 
@@ -269,33 +273,28 @@ pub(super) async fn failed(
     fixture: &Fixture,
     run: &RunRequest,
 ) -> AssistantsRunError {
-    match api(transport)
-        .run(
-            &fixture.request(),
-            None,
-            RunCall {
-                dispatch: RunDispatch::default(),
-                run,
-                handler: None,
-            },
-        )
-        .await
-    {
+    let call = RunCall {
+        dispatch: RunDispatch::default(),
+        run,
+        handler: None,
+    };
+    let request = fixture.request();
+    let outcome = api(transport).run(&request, None, call).await;
+    match outcome {
         Err(error) => error,
         Ok(_) => panic!("expected a failed run"),
     }
 }
 
+// The run the tests call: the create body's keywords plus the thread id the path carries.
 pub(super) fn run_request() -> RunRequest {
-    RunRequest {
-        thread_id: String::from("thread_1"),
-        assistant_id: String::from("asst_1"),
-        additional_instructions: Some(String::from("extra")),
-        instructions: Some(String::from("base")),
-        metadata: Some(json!({"tag": "x"})),
-        model: Some(String::from("gpt-4o-mini")),
-        tools: Some(json!([{"type": "code_interpreter"}])),
-    }
+    let mut body = run_body(false);
+    body["thread_id"] = json!("thread_1");
+    body.as_object_mut()
+        .expect("a body")
+        .remove("stream")
+        .expect("a stream flag");
+    serde_json::from_value(body).expect("a run request")
 }
 
 // The body one run request carries, as JSON text, so a test states the wire form it expects.
