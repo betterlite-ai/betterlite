@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::option_primitives::OptionDefaults;
@@ -245,8 +246,8 @@ fn fetcher(
         },
         config.sections.image_url_download.max_download_size_mb,
         Arc::new(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .map_or(0.0, |elapsed| elapsed.as_secs_f64())
         }),
     )?;

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_anthropic::anthropic_http_stream::call::{StreamLogger as _, StreamPostCall};
 use betterlite_logging::logging_pre_post::env::{LogLevel, LogRecord, LogSink as _};
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use tracing::Subscriber;
 use tracing::subscriber::with_default;
@@ -24,7 +25,10 @@ impl<S: Subscriber> Layer<S> for DebugEvents {
     }
 }
 
-fn emitted_events(run: impl FnOnce()) -> usize {
+fn emitted_events<Run>(run: Run) -> usize
+where
+    Run: FnOnce(),
+{
     let events = DebugEvents::default();
     let subscriber = tracing_subscriber::registry().with(events.clone());
     with_default(subscriber, run);
@@ -45,7 +49,7 @@ fn the_production_sink_writes_the_record_as_a_debug_event() {
 
 #[test]
 fn the_stream_logger_writes_the_post_call_as_a_debug_event() {
-    let input = betterlite_models::decisions::Json::Null;
+    let input = Json::Null;
     let events = emitted_events(|| {
         TracingStreamLogger.post_call(StreamPostCall {
             input: &input,

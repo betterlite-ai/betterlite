@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -195,7 +196,7 @@ pub(super) async fn dropped_param() {
     ));
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
-    let text = std::str::from_utf8(&requests[0].body).expect("the request body is text");
+    let text = from_utf8(&requests[0].body).expect("the request body is text");
     assert!(!text.contains("logit_bias"));
     assert!(!text.contains("drop_params"));
 }
@@ -295,7 +296,7 @@ async fn the_extra_headers_reach_the_upstream_request() {
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].header("x-custom"), Some("yes"));
-    let text = std::str::from_utf8(&requests[0].body).expect("the request body is text");
+    let text = from_utf8(&requests[0].body).expect("the request body is text");
     assert!(!text.contains("extra_headers"));
 }
 
@@ -317,7 +318,7 @@ async fn the_additional_drop_params_take_the_named_parameter_out() {
     ));
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
-    let text = std::str::from_utf8(&requests[0].body).expect("the request body is text");
+    let text = from_utf8(&requests[0].body).expect("the request body is text");
     assert!(!text.contains("logit_bias"));
     assert!(text.contains("x-extra"));
 }
@@ -340,7 +341,7 @@ async fn the_extra_body_can_be_dropped_by_name() {
     ));
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
-    let text = std::str::from_utf8(&requests[0].body).expect("the request body is text");
+    let text = from_utf8(&requests[0].body).expect("the request body is text");
     assert!(!text.contains("x-extra"));
 }
 

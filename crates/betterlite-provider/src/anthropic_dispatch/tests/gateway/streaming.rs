@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_openai::stream::chunk::{Chunk, ThinkingKind};
 use futures_util::StreamExt as _;
 use tokio::time::timeout;
@@ -49,7 +51,7 @@ async fn chunks(events: &[&str]) -> Vec<Chunk> {
         let mut parsed = Vec::new();
         while let Some(frame) = frames.next().await {
             let frame = frame.expect("a frame");
-            let text = std::str::from_utf8(&frame).expect("a utf-8 frame");
+            let text = from_utf8(&frame).expect("a utf-8 frame");
             let data = text
                 .trim_end()
                 .strip_prefix("data: ")

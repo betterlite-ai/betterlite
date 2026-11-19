@@ -10,6 +10,8 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
+use std::time::Duration;
+
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -57,7 +59,7 @@ pub(crate) fn state<'env>(
         },
         redactor,
         || call_id.to_owned(),
-        || std::time::Duration::default(),
+        || Duration::default(),
     )?;
     Ok((state, env(redactor, sink, now)))
 }
