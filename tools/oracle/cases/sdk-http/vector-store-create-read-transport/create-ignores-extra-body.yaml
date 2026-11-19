@@ -1,0 +1,19 @@
+kind: sdk_http
+name: vector-store-create-read-transport-create-ignores-extra-body
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_create_read_transport:
+    operation: create
+    mode: async
+    optional_params: {name: notes, metadata: {tag: x}}
+    extra_body: {name: override}
+    timeout_seconds: 7
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []
