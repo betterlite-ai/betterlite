@@ -17,8 +17,8 @@ pub(super) async fn management(
 ) -> Result<Value, Box<HelperError>> {
     let row = LiteLLMTeamTableCachedObj::try_from(team.clone()).or_value_error()?;
     let key = format!("team_id:{team_id}", team_id = row.team.fields.base.team_id);
-    let invalidation = invalidation(store, 0.0_f64);
-    invalidation
+    let state = invalidation(store, 0.0_f64);
+    state
         .cache_management_object(&key, &row)
         .await
         .or_value_error()?;
@@ -47,8 +47,8 @@ pub(super) async fn team_refresh(
         store.seed(key, stale_alias);
     }
     let was_none = row.last_refreshed_at.is_none();
-    let invalidation = invalidation(store, 0.0_f64);
-    invalidation
+    let state = invalidation(store, 0.0_f64);
+    state
         .cache_team_object(team_id, &mut row)
         .await
         .or_value_error()?;
@@ -81,8 +81,8 @@ pub(super) async fn key_refresh(
     auth: &BTreeMap<String, JsonData>,
 ) -> Result<Value, Box<HelperError>> {
     let mut original = UserAPIKeyAuth::construct(AuthInput::Dict(auth.clone())).or_value_error()?;
-    let invalidation = invalidation(store, 0.0_f64);
-    invalidation
+    let state = invalidation(store, 0.0_f64);
+    state
         .cache_key_object(hashed_token, &mut original)
         .await
         .or_value_error()?;
@@ -124,8 +124,8 @@ pub(super) async fn access_group(
 ) -> Result<Value, Box<HelperError>> {
     let wire = serde_json::to_value(table).or_value_error()?;
     let row: AccessGroupTable = serde_json::from_value(wire).or_value_error()?;
-    let invalidation = invalidation(store, access_group_ttl);
-    invalidation
+    let state = invalidation(store, access_group_ttl);
+    state
         .cache_access_object(access_group_id, &row)
         .await
         .or_value_error()?;
