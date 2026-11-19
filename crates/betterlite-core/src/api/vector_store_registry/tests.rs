@@ -6,6 +6,7 @@ mod support;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
 use betterlite_config::api::vector_store_registry::RegistryEntry;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_models::decisions::Json;
@@ -460,6 +461,12 @@ fn registry_id_and_tool_params() {
     assert_eq!(extracted.filters, Some(params(&[("kind", text("doc"))])));
     assert_eq!(extracted.max_num_results, Some(0));
     assert_eq!(extracted.ranking_options, Some(JsonObject::new()));
+    let sized = extract_tool_params(&params(&[(
+        "max_num_results",
+        Json::Number(serde_json::Number::from(25_u8)),
+    )]))
+    .unwrap();
+    assert_eq!(sized.max_num_results, Some(25));
 
     let absent = extract_tool_params(&params(&[])).unwrap();
     assert_eq!(absent, VectorStoreToolParams::default());
@@ -554,6 +561,26 @@ fn registry_named_credentials() {
         registry.credentials_for_vector_store("vs_dup"),
         params(&[("api_key", text("second-value"))]),
         "the first record carrying a credential name answers, so a nameless duplicate does not"
+    );
+}
+
+#[test]
+fn credential_snapshot_answers_named_lookups() {
+    let snapshot = CredentialSnapshot::new(vec![CredentialEntry {
+        credential_name: "cred".to_owned(),
+        credential_values: params(&[("api_key", text("snapshot-value"))]),
+    }]);
+    let registry =
+        registry_with_credentials(vec![named_store("vs_cred", "cred")], Arc::new(snapshot));
+    assert_eq!(
+        registry.credentials_for_vector_store("vs_cred"),
+        params(&[("api_key", text("snapshot-value"))]),
+        "the production accessor reads the loaded credential snapshot"
+    );
+    assert!(
+        registry
+            .credentials_for_vector_store("vs_absent")
+            .is_empty()
     );
 }
 
