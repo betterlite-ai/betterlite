@@ -705,3 +705,10 @@ path = "fuzz_targets/openai_output_limits.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "speech_audio"
+path = "fuzz_targets/speech_audio.rs"
+test = false
+doc = false
+bench = false

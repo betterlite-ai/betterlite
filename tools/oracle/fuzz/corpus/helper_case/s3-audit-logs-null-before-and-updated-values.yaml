@@ -1,0 +1,21 @@
+kind: helper
+name: s3-audit-logs-null-before-and-updated-values-seed
+call:
+  b115:
+    global_params:
+      s3_bucket_name: audit-bucket
+      s3_region_name: us-east-1
+      s3_path: logs
+    record:
+      id: req-8
+      updated_at: "2026-03-04T05:06:07Z"
+      changed_by: admin
+      changed_by_api_key: hashed-key
+      action: updated
+      table_name: LiteLLM_VerificationToken
+      object_id: object-8
+      before_value: null
+      updated_values: null
+    now: "2026-03-04T05:06:07+00:00"
+env: {}
+compare: {ignore: []}

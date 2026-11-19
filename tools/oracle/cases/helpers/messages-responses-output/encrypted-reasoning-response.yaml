@@ -1,0 +1,49 @@
+kind: helper
+name: messages-responses-output-encrypted-reasoning-response
+call:
+  messages_responses_output:
+    request: null
+    response:
+      id: resp_b984_reasoning
+      created_at: 1
+      model: gpt-5
+      status: completed
+      output:
+      - type: reasoning
+        id: rs_b984
+        summary:
+        - type: summary_text
+          text: step
+        encrypted_content: ENC
+      usage:
+        input_tokens: 10
+        output_tokens: 2
+        total_tokens: 12
+    include_encrypted_reasoning: true
+    settings: {}
+calls:
+- messages_responses_output:
+    request: null
+    response:
+      id: resp_b984_redacted
+      created_at: 1
+      output:
+      - type: reasoning
+        id: rs_b984_redacted
+        summary: []
+        encrypted_content: ENC
+    include_encrypted_reasoning: true
+    settings: {}
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      thinking:
+        type: enabled
+        budget_tokens: 1500
+    response: null
+    include_encrypted_reasoning: false
+    settings: {}
+env:
+  LITELLM_REASONING_AUTO_SUMMARY: "false"
+compare: {ignore: []}
