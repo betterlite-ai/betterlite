@@ -1,0 +1,30 @@
+task: B2454
+deviations:
+  - what: >-
+      A 3xx provider answer is returned to the response transformer as the answer itself; LiteLLM's httpx
+      handler client follows redirects, re-sending the request with the caller's headers attached.
+    why: >-
+      The pooled transport never follows a redirect, so a provider key cannot be replayed to another host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      The pre-call callback sees no api_key entry and masked headers; LiteLLM stores the raw key in
+      model_call_details["api_key"] and the live header dict for every callback.
+    why: >-
+      The shared pre-call keeps the credential out of callback data and stores the masked header instead, so
+      no logging callback receives the key in clear text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1327-L1335
+  - what: >-
+      With timeout=None the call is held to the transport's limits, a 6000 second read and a 10 second connect;
+      LiteLLM's handler client applies its own default of 600 seconds per read and 5 seconds to connect.
+    why: >-
+      One transport policy serves every provider call, and the handler only forwards the timeout it was given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: >-
+      An api_base that is not a URL, or a header name or value bytes reject, ends the call as a typed
+      RerankHttpError naming the field; LiteLLM catches the httpx exception in its send wrapper and turns it
+      into a synthesized 500 provider error.
+    why: >-
+      A configuration value httpx refuses is not a provider answer, and reporting it as one would name the
+      wrong culprit and hide the bad field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1360-L1368
+kept_bugs: []
