@@ -77,6 +77,13 @@ fn check_retrieve_failure(result: &Result<Json, CreateReadError>, config: &Recor
     };
     assert_eq!(error.status_code, 429);
     assert!(!error.status_code_is_synthesized);
+    // the GET raises no status error, so the converter's parse error is the message, not the body text
+    assert_eq!(
+        error.message,
+        serde_json::from_str::<Json>("slow")
+            .expect_err("slow is not a JSON value")
+            .to_string()
+    );
     assert_eq!(
         error.headers.get("retry-after"),
         Some(&Json::Text("3".to_owned()))
