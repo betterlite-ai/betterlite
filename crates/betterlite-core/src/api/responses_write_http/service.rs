@@ -18,9 +18,7 @@ use indexmap::IndexMap;
 use url::Url;
 
 use self::facts::ReplyView;
-use self::request::{
-    LoggedCall, log_pre_call, resource_payload, select_client, validated_headers, write_endpoint,
-};
+use self::request::{LoggedCall, log_pre_call, select_client, write_endpoint};
 use super::config::{ResponsesConfig, WriteParams};
 use super::error::{WriteError, handle_error};
 use crate::api::vector_store_http_write::error::ClientError;
@@ -171,7 +169,9 @@ where
     let client = select_client(deps, mode, operation, target.params.ssl_verify)?;
     let headers = handler_headers(deps.config, target, operation);
     let (api_base, resource) = write_endpoint(deps.config, target, operation)?;
-    let payload = resource_payload(&resource.payload)?;
+    let encoded = serde_json::to_value(&resource.payload).map_err(WriteError::Encode)?;
+    let payload: IndexMap<String, Json> =
+        serde_json::from_value(encoded).map_err(WriteError::Encode)?;
     log_pre_call(
         &LoggedCall {
             operation,
@@ -191,7 +191,7 @@ where
     })
 }
 
-// The validated environment headers; only the delete handler sets the media type itself
+// The caller's map goes in first because B508 rewrites Authorization in it; only the delete handler sets the media type itself
 fn handler_headers<C>(
     config: &C,
     target: &WriteTarget<'_>,
@@ -200,7 +200,10 @@ fn handler_headers<C>(
 where
     C: ResponsesConfig,
 {
-    let mut headers = validated_headers(config, target);
+    let mut headers = config.validate_environment(
+        target.extra_headers.cloned().unwrap_or_default(),
+        target.params,
+    );
     if matches!(operation, Operation::Delete) {
         headers
             .entry(String::from("Content-Type"))

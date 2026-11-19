@@ -4,7 +4,6 @@ use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_resources::request::ResourceRequest;
-use betterlite_prompts::arguments::json::Object as ResourceObject;
 use indexmap::IndexMap;
 
 use super::super::config::ResponsesConfig;
@@ -53,15 +52,6 @@ const fn session_label(shared: Option<SharedSession>) -> &'static str {
     }
 }
 
-// B508's validate_environment rewrites Authorization in the map it is handed, so the caller's entries go in first
-pub(super) fn validated_headers<C>(config: &C, target: &WriteTarget<'_>) -> BTreeMap<String, String>
-where
-    C: ResponsesConfig,
-{
-    let caller = target.extra_headers.cloned().unwrap_or_default();
-    config.validate_environment(caller, target.params)
-}
-
 pub(super) fn write_endpoint<C>(
     config: &C,
     target: &WriteTarget<'_>,
@@ -79,14 +69,6 @@ where
     };
     let resource = transformed.map_err(WriteError::Resource)?;
     Ok((api_base, resource))
-}
-
-// The pre-call record and the wire body both read B509's payload, whose JSON type differs from the logging one
-pub(super) fn resource_payload(
-    payload: &ResourceObject,
-) -> Result<IndexMap<String, Json>, WriteError> {
-    let encoded = serde_json::to_value(payload).map_err(WriteError::Encode)?;
-    serde_json::from_value(encoded).map_err(WriteError::Encode)
 }
 
 pub(super) struct LoggedCall<'call> {
