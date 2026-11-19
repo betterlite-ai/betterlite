@@ -155,6 +155,8 @@ class Upstream:
 
     async def __call__(self, connection: ServerConnection) -> None:
         async for message in connection:
+            if len(self.frames) >= MAX_FRAMES:
+                raise SendFailureError("the scripted upstream capture is full")
             match message:
                 case str():
                     self.frames.append(recorded("text", message.encode("utf-8")))
