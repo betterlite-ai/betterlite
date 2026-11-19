@@ -467,7 +467,7 @@ fn passthrough_secret_safe_failure() {
     ] {
         assert!(!rendered.contains(secret), "{rendered}");
     }
-    let root_error = foundry_root("https://user:fixture-url-secret@host/a%3Fb/models").unwrap_err();
+    let root_error = foundry_root("https://user:fixture-url-secret@host/a\nb").unwrap_err();
     let root_rendered = format!("{root_error:?} {root_error}");
     assert!(
         !root_rendered.contains("fixture-url-secret"),
@@ -475,7 +475,7 @@ fn passthrough_secret_safe_failure() {
     );
     assert!(matches!(
         root_error,
-        FoundryPassthroughError::UnwritableBasePath
+        FoundryPassthroughError::InvalidApiBase(_)
     ));
 }
 

@@ -11,7 +11,8 @@ use super::RES;
 
 pub(super) fn foundry_root_path() {
     foundry_root_truncates_at_the_first_exact_models_segment();
-    foundry_root_rejects_an_unwritable_base();
+    foundry_root_requotes_reserved_characters();
+    foundry_root_rejects_a_control_character();
 }
 
 fn foundry_root_truncates_at_the_first_exact_models_segment() {
@@ -45,13 +46,19 @@ fn foundry_root_truncates_at_the_first_exact_models_segment() {
     );
 }
 
-fn foundry_root_rejects_an_unwritable_base() {
-    for base in [format!("{RES}/a%3Fb/models"), format!("{RES}/a%23b/models")] {
-        assert!(matches!(
-            foundry_root(&base),
-            Err(FoundryPassthroughError::UnwritableBasePath)
-        ));
-    }
+// httpx's copy_with quotes a decoded '?' or '#' back into the path
+fn foundry_root_requotes_reserved_characters() {
+    assert_eq!(
+        foundry_root(&format!("{RES}/a%3Fb/models")).unwrap(),
+        format!("{RES}/a%3Fb")
+    );
+    assert_eq!(
+        foundry_root(&format!("{RES}/a%23b/models/x")).unwrap(),
+        format!("{RES}/a%23b")
+    );
+}
+
+fn foundry_root_rejects_a_control_character() {
     assert!(matches!(
         foundry_root("https://example.test/a\nb"),
         Err(FoundryPassthroughError::InvalidApiBase(_))
