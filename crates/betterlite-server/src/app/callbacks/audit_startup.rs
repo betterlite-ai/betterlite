@@ -23,25 +23,25 @@ pub async fn install_audit_callbacks(
     configured: Option<&[String]>,
     policy: &AuditPolicy,
 ) -> Result<(), AuditStartupError> {
-    let Some(configured) = configured else {
+    let Some(entries) = configured else {
         return Ok(());
     };
     // LiteLLM drops the name cache and the list before the first import, so a reload never keeps a stale entry
     service.delivery.named.reset_audit_log_callback_cache();
     service.clear_audit_log_callbacks();
-    for entry in configured {
+    for entry in entries {
         let callback = hooks
             .load_callback(ListKey::AuditLogCallbacks, entry)
             .await
             .map_err(|source| AuditStartupError::Load {
-                entry: entry.to_owned(),
+                entry: entry.clone(),
                 source: Box::new(source),
             })?;
         service.append_audit_log_callback(callback);
     }
     // LiteLLM passes litellm_settings.store_audit_logs when it is set and the configured policy value otherwise
     if policy.is_audit_logging_enabled(policy.store_audit_logs) {
-        tracing::info!(callbacks = ?configured, "Initialized Audit Log Callbacks");
+        tracing::info!(callbacks = ?entries, "Initialized Audit Log Callbacks");
     } else {
         tracing::warn!("{DISABLED_WARNING}");
     }

@@ -1,7 +1,9 @@
 #![cfg(test)]
 
-use super::support::{BROKEN_MODULE, Workspace, capture, entry_name, environment, load, start};
-use crate::app::callbacks::audit_startup::{AuditStartupError, install_audit_callbacks};
+use super::support::{
+    BROKEN_MODULE, Workspace, capture, environment, install, installed_names, load, start,
+};
+use crate::app::callbacks::audit_startup::AuditStartupError;
 use crate::python_hooks::PythonHooks;
 
 const WARNING: &str = "'audit_log_callbacks' is configured but audit logging is not enabled. Audit log callbacks will not fire.";
@@ -13,19 +15,14 @@ async fn a_false_setting_warns_with_the_exact_litellm_text() {
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(None);
     let (captured, guard) = capture();
-    install_audit_callbacks(
-        &fixture.service,
-        &hooks,
-        loaded.configured.as_deref(),
-        &loaded.policy,
-    )
-    .await
-    .expect("the callbacks install");
+    install(&fixture, &hooks, &loaded)
+        .await
+        .expect("the callbacks install");
     drop(guard);
     let output = captured.text();
     assert!(output.contains(WARNING), "{output}");
     assert_eq!(
-        fixture.service.callbacks.lock().unwrap().len(),
+        installed_names(&fixture.service).len(),
         1,
         "a disabled policy still installs the configured callbacks"
     );
@@ -39,19 +36,14 @@ async fn an_explicit_empty_list_still_warns() {
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(None);
     let (captured, guard) = capture();
-    install_audit_callbacks(
-        &fixture.service,
-        &hooks,
-        loaded.configured.as_deref(),
-        &loaded.policy,
-    )
-    .await
-    .expect("an empty list installs nothing");
+    install(&fixture, &hooks, &loaded)
+        .await
+        .expect("an empty list installs nothing");
     drop(guard);
     let output = captured.text();
     assert!(output.contains(WARNING), "{output}");
     assert!(
-        fixture.service.callbacks.lock().unwrap().is_empty(),
+        installed_names(&fixture.service).is_empty(),
         "an explicit empty list stays empty"
     );
 }
@@ -64,19 +56,14 @@ async fn a_true_setting_overrides_a_false_environment_value() {
     let source = format!(
         "model_list: []\nlitellm_settings:\n  audit_log_callbacks:\n    - {entry}\n  store_audit_logs: true\n"
     );
-    let environment = environment(&[("LITELLM_STORE_AUDIT_LOGS", "false")]);
-    let loaded = load(&source, &environment);
+    let lookup = environment(&[("LITELLM_STORE_AUDIT_LOGS", "false")]);
+    let loaded = load(&source, &lookup);
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
     let (captured, guard) = capture();
-    install_audit_callbacks(
-        &fixture.service,
-        &hooks,
-        loaded.configured.as_deref(),
-        &loaded.policy,
-    )
-    .await
-    .expect("the callback installs");
+    install(&fixture, &hooks, &loaded)
+        .await
+        .expect("the callback installs");
     drop(guard);
     let output = captured.text();
     assert!(!output.contains(WARNING), "{output}");
@@ -107,24 +94,11 @@ async fn a_disabled_policy_still_imports_the_configured_handler() {
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
     let (captured, guard) = capture();
-    install_audit_callbacks(
-        &fixture.service,
-        &hooks,
-        loaded.configured.as_deref(),
-        &loaded.policy,
-    )
-    .await
-    .expect("a disabled policy does not suppress the import");
+    install(&fixture, &hooks, &loaded)
+        .await
+        .expect("a disabled policy does not suppress the import");
     drop(guard);
-    let names: Vec<String> = fixture
-        .service
-        .callbacks
-        .lock()
-        .unwrap()
-        .iter()
-        .map(entry_name)
-        .collect();
-    assert_eq!(names, vec![entry]);
+    assert_eq!(installed_names(&fixture.service), vec![entry]);
     assert!(captured.text().contains(WARNING));
     hooks.shutdown().await;
 }
@@ -137,19 +111,14 @@ async fn a_broken_handler_fails_with_auditing_disabled() {
     let loaded = load(source, &environment(&[]));
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
-    let error = install_audit_callbacks(
-        &fixture.service,
-        &hooks,
-        loaded.configured.as_deref(),
-        &loaded.policy,
-    )
-    .await
-    .expect_err("a disabled policy cannot make a broken handler valid");
+    let error = install(&fixture, &hooks, &loaded)
+        .await
+        .expect_err("a disabled policy cannot make a broken handler valid");
     match error {
         AuditStartupError::Load { entry, .. } => assert_eq!(entry, "b8872_broken.handler"),
     }
     assert!(
-        fixture.service.callbacks.lock().unwrap().is_empty(),
+        installed_names(&fixture.service).is_empty(),
         "the failing entry leaves no callback behind"
     );
     hooks.shutdown().await;

@@ -16,7 +16,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::audit::callbacks::{
     AuditLoggerBuildError, DedicatedAuditLoggerBuilder, NamedAuditCallbacks,
 };
-use betterlite_logging::audit::delivery::AuditDelivery;
+use betterlite_logging::audit::delivery::{AuditCallback, AuditDelivery};
 use betterlite_logging::audit::payload::StandardAuditLogPayload;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
@@ -29,19 +29,21 @@ use secrecy::SecretString;
 use tempfile::TempDir;
 use tracing::subscriber::{DefaultGuard, set_default};
 
+use crate::app::callbacks::audit_startup::{AuditStartupError, install_audit_callbacks};
 use crate::audit::callbacks::AuditCallbackEntry;
 use crate::audit::service::{AuditService, AuditServiceDeps};
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::record::AuditLogRecord;
 use crate::audit_events::sink::{AuditClock, AuditLogRepository, AuditRepositoryError};
+use crate::python_hooks::PythonHooks;
 
 const NOW: &str = "2024-05-06T07:08:09.123+00:00";
 
-const CUSTOM_LOGGER: &str = r#"
+const CUSTOM_LOGGER: &str = "
 class CustomLogger:
     async def async_log_audit_log_event(self, audit_log):
         pass
-"#;
+";
 
 const RECORDER_MODULE: &str = r#"
 from betterlite.integrations.custom_logger import CustomLogger
@@ -151,7 +153,6 @@ impl CallbackLogger for RecordingLogger {
     }
 }
 
-#[derive(Default)]
 pub(super) struct NamedResolver {
     pub(super) calls: Mutex<Vec<String>>,
     pub(super) loggers: Mutex<BTreeMap<String, Arc<dyn CallbackLogger>>>,
@@ -242,27 +243,19 @@ pub(super) fn start(settings: &AuditSettings) -> AuditFixture {
         name: "otel".to_owned(),
         delivered: Mutex::new(Vec::new()),
     });
-    let mut loggers: BTreeMap<String, Arc<dyn CallbackLogger>> = BTreeMap::new();
-    loggers.insert("otel".to_owned(), Arc::clone(&logger));
+    let mut available: BTreeMap<String, Arc<dyn CallbackLogger>> = BTreeMap::new();
+    available.insert("otel".to_owned(), Arc::clone(&logger));
     let resolver = Arc::new(NamedResolver {
         calls: Mutex::new(Vec::new()),
-        loggers: Mutex::new(loggers),
+        loggers: Mutex::new(available),
     });
     let repository = Arc::new(RecordingRepository {
         inserted: Mutex::new(Vec::new()),
     });
-    let delivery = Arc::new(AuditDelivery {
-        named: NamedAuditCallbacks {
-            resolver: Arc::<NamedResolver>::clone(&resolver),
-            dedicated: Arc::new(RecordingBuilder),
-            cache: Mutex::new(BTreeMap::new()),
-        },
-        worker: LoggingWorker::start(worker_settings()).expect("the delivery worker starts"),
-    });
     let service = AuditService::start(AuditServiceDeps {
         settings: settings.clone(),
         callbacks: Vec::new(),
-        delivery,
+        delivery: audit_delivery(Arc::<NamedResolver>::clone(&resolver)),
         repository: Arc::<RecordingRepository>::clone(&repository),
         clock: Arc::new(FixedClock),
         new_id: Arc::new(|| "audit-id-1".to_owned()),
@@ -275,6 +268,17 @@ pub(super) fn start(settings: &AuditSettings) -> AuditFixture {
         logger,
         repository,
     }
+}
+
+fn audit_delivery(resolver: Arc<NamedResolver>) -> Arc<AuditDelivery> {
+    Arc::new(AuditDelivery {
+        named: NamedAuditCallbacks {
+            resolver,
+            dedicated: Arc::new(RecordingBuilder),
+            cache: Mutex::new(BTreeMap::new()),
+        },
+        worker: LoggingWorker::start(worker_settings()).expect("the delivery worker starts"),
+    })
 }
 
 pub(super) fn worker_settings() -> WorkerSettings {
@@ -290,6 +294,38 @@ pub(super) fn worker_settings() -> WorkerSettings {
 pub(super) async fn flush(service: &AuditService) {
     service.writes.flush().await;
     service.delivery.worker.flush().await;
+}
+
+pub(super) async fn install(
+    fixture: &AuditFixture,
+    hooks: &PythonHooks,
+    loaded: &LoadedConfig,
+) -> Result<(), AuditStartupError> {
+    install_audit_callbacks(
+        &fixture.service,
+        hooks,
+        loaded.configured.as_deref(),
+        &loaded.policy,
+    )
+    .await
+}
+
+pub(super) fn resolve(fixture: &AuditFixture) -> Option<AuditCallback> {
+    fixture.service.delivery.named.resolve("otel", None)
+}
+
+pub(super) fn calls(fixture: &AuditFixture) -> usize {
+    fixture.resolver.calls.lock().unwrap().len()
+}
+
+pub(super) fn installed_names(service: &AuditService) -> Vec<String> {
+    service
+        .callbacks
+        .lock()
+        .unwrap()
+        .iter()
+        .map(entry_name)
+        .collect()
 }
 
 pub(super) fn entry_name(entry: &AuditCallbackEntry) -> String {
