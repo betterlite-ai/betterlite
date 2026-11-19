@@ -12,6 +12,7 @@ use crate::dashboard::DashboardFixtureError;
 use crate::dashboard_governance::DashboardGovernanceError;
 use crate::discovery_skills::DiscoveryError;
 use crate::finops::FinOpsFixtureError;
+use crate::scim::ScimFixtureError;
 use crate::search_tools::SearchSeedError;
 
 #[derive(Debug, Error)]
@@ -91,6 +92,8 @@ pub enum FixtureError {
     DailyUsage(#[from] DailyUsageError),
     #[error("finops fixture seed failed: {0}")]
     FinOps(#[from] FinOpsFixtureError),
+    #[error("scim fixture seed failed: {0}")]
+    Scim(#[from] ScimFixtureError),
     #[error("discovery skills fixture seed failed: {0}")]
     DiscoverySkills(#[from] DiscoveryError),
     #[error("search tools fixture seed failed: {0}")]
