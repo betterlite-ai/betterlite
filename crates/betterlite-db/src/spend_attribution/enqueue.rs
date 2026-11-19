@@ -57,18 +57,6 @@ pub fn org_member_transaction_key(org_id: &str, user_id: &str) -> String {
     )
 }
 
-fn item(
-    entity_type: EntityType,
-    entity_id: &str,
-    response_cost: Option<SpendAmount>,
-) -> SpendUpdateQueueItem {
-    SpendUpdateQueueItem {
-        entity_type: Some(entity_type),
-        entity_id: Some(entity_id.to_owned()),
-        response_cost,
-    }
-}
-
 // One entity row through the queue: a failure is logged with its entity and id and returned for the caller to swallow or pass up.
 async fn enqueue_row(
     queue: &dyn EntitySpendQueue,
@@ -78,7 +66,11 @@ async fn enqueue_row(
     entity: &'static str,
 ) -> Result<(), SpendAttributionError> {
     if let Err(source) = queue
-        .enqueue(item(entity_type, entity_id, response_cost))
+        .enqueue(SpendUpdateQueueItem {
+            entity_type: Some(entity_type),
+            entity_id: Some(entity_id.to_owned()),
+            response_cost,
+        })
         .await
     {
         tracing::error!(
