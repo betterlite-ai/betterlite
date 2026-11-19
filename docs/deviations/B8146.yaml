@@ -45,4 +45,7 @@ deviations:
   - what: The outputs are renamed and trimmed for the one-service shape. service_url replaces gateway_service_url, backend_service_url and ui_service_url, writer_private_ip and reader_private_ip replace cloudsql_writer_ip and cloudsql_reader_ip, runtime_service_account replaces runtime_service_account_email, data_bucket replaces gcs_bucket, migration_job_name replaces migration_run_command, and redis_endpoint, redis_port, redis_server_ca_pem, db_username and db_name are dropped; cloud_run_service_name, config_bucket and network_id are new.
     why: One service has one URL, the database user and name are the caller's own variables, the Redis endpoint and CA are readable from the Redis resource, and config_bucket and network_id are what a caller wiring a custom host needs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/outputs.tf#L11-L24
+  - what: The plaintext guard sits on the backend service, where LiteLLM puts the same condition and message on the HTTP target proxy.
+    why: The task places the precondition on the backend service, so the failure is reported against the resource that routes traffic; the condition, the message and the refused plan are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf#L155-L160
 kept_bugs: []
