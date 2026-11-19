@@ -8,11 +8,13 @@ deviations:
       betterlite keeps no globals; the results are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8037-L8040
   - what: >-
-      A stored `_guardrail_pipelines` entry that is not a [policy name, pipeline]
-      pair, or whose pipeline does not deserialize, is skipped with a warning.
-      LiteLLM trusts the slot and fails unpacking or reading `.mode` from it.
+      A `_guardrail_pipelines` slot that is not an array yields no pipelines, and
+      an entry that is not a [policy name, pipeline] pair, or whose pipeline does
+      not deserialize, is skipped with a warning. LiteLLM trusts the slot: a
+      non-array value is unpacked as pairs or raises, and a bad entry raises on
+      unpacking or on reading `.mode`.
     why: >-
-      The slot arrives as JSON from a request, so a malformed entry must not take
+      The slot arrives as JSON from a request, so a malformed slot must not take
       the proxy task down; the pipelines that do parse still run.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L569-L575
   - what: >-
@@ -26,16 +28,17 @@ deviations:
       working setup can rely on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8041-L8043
   - what: >-
-      A `metadata.model_info.id` or `user_api_key_team_id` that is not a string is
-      ignored: a non-string id counts as an unknown deployment and returns the
-      data unchanged, and a non-string team id counts as unset. LiteLLM passes
-      the value to Router, which returns no deployment for an unknown hashable id
-      and raises TypeError for an unhashable one.
+      A `metadata.model_info.id` that is not a string counts as an unknown
+      deployment and returns the data unchanged, and a `user_api_key_team_id`
+      that is not a string is skipped, so the `litellm_metadata` value is used
+      when it is a string. LiteLLM passes either value to Router, which returns
+      no deployment for an unknown hashable id and raises TypeError for an
+      unhashable one.
     why: >-
       Both fields are declared as optional strings. A typed lookup cannot carry a
       container, and refusing to crash keeps the guardrail merge running for the
       rest of the request.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8049-L8055
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8044-L8050
   - what: >-
       The merged guardrail list keeps first-seen order over each entry's JSON text,
       and an entry that is not hashable is kept once instead of raising TypeError.
@@ -57,6 +60,26 @@ deviations:
       decide about a value that has no name, and dropping the request over one is
       not something a working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L682-L694
+  - what: >-
+      A `policy_sources` value that is not a string never counts as a tag match,
+      because the deferred policies are matched on the string values as written.
+      LiteLLM tests `"tag:" in str(value)`, so a dict or list value whose text
+      form contains `tag:` counts as tag-matched.
+    why: >-
+      docs/compatibility.md keeps Python's str() text out of parity, and the
+      policy engine writes these values as strings; the string comparison is the
+      declared behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L756-L766
+  - what: >-
+      `merge_guardrails_with_existing` treats an absent or null `metadata` as
+      absent and a non-object `metadata` as a typed error naming the field.
+      LiteLLM's `setdefault` returns a null bucket and a truthy non-dict bucket
+      as they are, and the next `.get` raises AttributeError.
+    why: >-
+      docs/compatibility.md gives absent or null the default and a wrong type a
+      typed error, and a request field of the wrong type must not crash the
+      request path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8111-L8112
 kept_bugs:
   - what: >-
       Merging pipeline metadata writes creates the bucket even when the working
@@ -75,4 +98,4 @@ kept_bugs:
       The rewrite is visible in the request the post_call hooks read, and a
       working setup that stores a bare name relies on the list shape, so the
       empty-list path keeps LiteLLM's behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8059-L8097
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8059-L8062

@@ -94,10 +94,10 @@ pub fn merge_guardrails_with_existing(
     Ok(modified)
 }
 
-fn metadata_object<'data>(
-    data: &'data JsonMap,
+fn metadata_object(
+    data: &JsonMap,
     field: &'static str,
-) -> Result<Option<&'data JsonMap>, ModelGuardrailsError> {
+) -> Result<Option<&JsonMap>, ModelGuardrailsError> {
     match data.get(field) {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Object(bucket)) => Ok(Some(bucket)),

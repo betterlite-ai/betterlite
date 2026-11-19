@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     PolicyState {
         data: Map<String, Value>,
