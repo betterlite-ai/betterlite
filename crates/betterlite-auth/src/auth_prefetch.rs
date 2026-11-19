@@ -8,6 +8,6 @@ pub mod permission;
 pub mod redis_rows;
 pub mod rows;
 
-#[path = "tests/postgres/mod.rs"]
+#[path = "auth_prefetch/tests/postgres/mod.rs"]
 mod postgres;
 mod tests;

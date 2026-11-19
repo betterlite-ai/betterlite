@@ -4,7 +4,6 @@ call:
   auth_prefetch:
     op: references_and_entries
     management_ttl: 60.0
-    organization_ttl: 7
     tokens:
       - user_id: user-1
         team_id: team-1

@@ -7,7 +7,7 @@ use super::db::{PrefetchDatabase, PrefetchDatabaseError};
 use super::entries::{AuthObjectRefs, PrefetchEntry};
 use super::memory::{MemoryWriteError, PrefetchCache, PrefetchMemory};
 use super::redis_rows::{PrefetchRedis, RedisRowsError};
-use super::rows::{RowKind, RowObject, RowValues, validate_row};
+use super::rows::{RowKind, RowObject, validate_row};
 use crate::auth_cache::payload::PayloadError;
 
 #[derive(Debug, thiserror::Error)]
@@ -86,14 +86,6 @@ pub async fn read_redis_values(
     }
 }
 
-pub async fn read_redis_rows(
-    entries: &[PrefetchEntry],
-    redis: &dyn PrefetchRedis,
-) -> Result<BTreeMap<String, Json>, PrefetchError> {
-    let keys: Vec<String> = entries.iter().map(|entry| entry.key.clone()).collect();
-    read_redis_values(&keys, redis).await
-}
-
 // Redis rows are cached as found: the typed getters validate them when they read
 pub async fn fill_from_redis(
     entries: &[PrefetchEntry],
@@ -103,7 +95,8 @@ pub async fn fill_from_redis(
     if entries.is_empty() {
         return Ok(());
     }
-    let found = read_redis_rows(entries, redis).await?;
+    let keys: Vec<String> = entries.iter().map(|entry| entry.key.clone()).collect();
+    let found = read_redis_values(&keys, redis).await?;
     for entry in entries {
         if let Some(value) = found.get(&entry.key) {
             set_in_memory(memory, &entry.key, value, entry.ttl)?;

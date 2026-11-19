@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use betterlite_db::auxiliary_repository::bindings::ObjectPermissionTable;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{LookupClock, SystemClock};

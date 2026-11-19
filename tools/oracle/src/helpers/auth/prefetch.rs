@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+// litellm/constants.py: DEFAULT_IN_MEMORY_TTL = int(os.getenv("DEFAULT_IN_MEMORY_TTL", 5))
+const DEFAULT_IN_MEMORY_TTL: f64 = 5.0;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -17,9 +20,8 @@ impl Helper for Op {
         Ok(match input {
             PrefetchInput::ReferencesAndEntries {
                 management_ttl,
-                organization_ttl,
                 tokens,
-            } => references_and_entries(tokens, *management_ttl, *organization_ttl),
+            } => references_and_entries(tokens, *management_ttl),
             PrefetchInput::IdentityCacheKeys { calls } => identity_keys(calls),
             PrefetchInput::RowValidation { refreshed_at, rows } => {
                 row_validation(rows, *refreshed_at)
@@ -34,7 +36,6 @@ impl Helper for Op {
 pub(crate) enum PrefetchInput {
     ReferencesAndEntries {
         management_ttl: f64,
-        organization_ttl: f64,
         tokens: Vec<LiteLLMVerificationToken>,
     },
     IdentityCacheKeys {
@@ -71,17 +72,13 @@ pub(crate) struct TtlCall {
     management_ttl: f64,
 }
 
-fn references_and_entries(
-    tokens: &[LiteLLMVerificationToken],
-    management_ttl: f64,
-    organization_ttl: f64,
-) -> Value {
+fn references_and_entries(tokens: &[LiteLLMVerificationToken], management_ttl: f64) -> Value {
     Value::Array(
         tokens
             .iter()
             .map(|token| {
                 let refs = AuthObjectRefs::from_token(token);
-                let entries = iter_entries(&refs, management_ttl, organization_ttl);
+                let entries = iter_entries(&refs, management_ttl, DEFAULT_IN_MEMORY_TTL);
                 let entries: Vec<Value> = entries
                     .iter()
                     .map(|entry| {
@@ -135,13 +132,15 @@ fn row_validation(rows: &[RowCall], refreshed_at: f64) -> Value {
     )
 }
 
+// model_dump_json()["last_refreshed_at"]: the validated model's own serialization carries the stamp
 fn stamp(object: Option<&RowObject>) -> Option<f64> {
-    match object {
-        Some(RowObject::Team(row) | RowObject::Project(row)) => row.last_refreshed_at,
-        Some(RowObject::User(_) | RowObject::Membership(_) | RowObject::Organization(_)) | None => {
-            None
-        }
-    }
+    let Json::Object(fields) = object?.payload().ok()? else {
+        return None;
+    };
+    let Some(Json::Number(number)) = fields.get("last_refreshed_at") else {
+        return None;
+    };
+    number.as_f64()
 }
 
 fn identity_ttls(ttls: &[TtlCall]) -> Value {

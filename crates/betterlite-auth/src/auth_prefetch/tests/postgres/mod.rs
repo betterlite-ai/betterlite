@@ -20,8 +20,7 @@ use crate::auth_read::table::ReadContext;
 mod support;
 
 use support::{
-    CountingCache, CountingClock, Database, close, database, field, is_null, object, seed, strings,
-    text,
+    CountingCache, CountingClock, close, database, field, is_null, object, seed, strings, text,
 };
 
 const FULL_SEED: &str = r#"
@@ -199,15 +198,23 @@ async fn user_null_arrays_and_memberships() {
     .await
     .expect("the prefetch query");
     let user = rows.get(RowKind::User).expect("the user row");
-    for list in [
-        "teams",
-        "models",
-        "allowed_cache_controls",
-        "policies",
-        "organization_memberships",
-    ] {
-        assert!(strings(user, list).is_empty(), "{list} normalizes to []");
-    }
+    assert!(strings(user, "teams").is_empty(), "teams normalizes to []");
+    assert!(
+        strings(user, "models").is_empty(),
+        "models normalizes to []"
+    );
+    assert!(
+        strings(user, "allowed_cache_controls").is_empty(),
+        "allowed_cache_controls normalizes to []"
+    );
+    assert!(
+        strings(user, "policies").is_empty(),
+        "policies normalizes to []"
+    );
+    assert!(
+        strings(user, "organization_memberships").is_empty(),
+        "organization_memberships normalizes to []"
+    );
     close(database).await;
 }
 
@@ -229,17 +236,34 @@ async fn team_all_null_arrays() {
     .await
     .expect("the prefetch query");
     let team = rows.get(RowKind::Team).expect("the team row");
-    for list in [
-        "admins",
-        "members",
-        "models",
-        "team_member_permissions",
-        "access_group_ids",
-        "policies",
-        "default_team_member_models",
-    ] {
-        assert!(strings(team, list).is_empty(), "{list} normalizes to []");
-    }
+    assert!(
+        strings(team, "admins").is_empty(),
+        "admins normalizes to []"
+    );
+    assert!(
+        strings(team, "members").is_empty(),
+        "members normalizes to []"
+    );
+    assert!(
+        strings(team, "models").is_empty(),
+        "models normalizes to []"
+    );
+    assert!(
+        strings(team, "team_member_permissions").is_empty(),
+        "team_member_permissions normalizes to []"
+    );
+    assert!(
+        strings(team, "access_group_ids").is_empty(),
+        "access_group_ids normalizes to []"
+    );
+    assert!(
+        strings(team, "policies").is_empty(),
+        "policies normalizes to []"
+    );
+    assert!(
+        strings(team, "default_team_member_models").is_empty(),
+        "default_team_member_models normalizes to []"
+    );
     assert!(is_null(team, "litellm_model_table"));
     assert!(is_null(team, "object_permission"));
     close(database).await;
@@ -345,10 +369,18 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
     .fetch_rows(&all_refs(), &[RowKind::Organization, RowKind::Project])
     .await
     .expect("the prefetch query");
-    for kind in [RowKind::Organization, RowKind::Project] {
-        let row = rows.get(kind).expect("the row");
-        assert!(strings(row, "models").is_empty(), "{kind:?} models");
-    }
+    let organization = rows
+        .get(RowKind::Organization)
+        .expect("the organization row");
+    assert!(
+        strings(organization, "models").is_empty(),
+        "organization models normalize to []"
+    );
+    let project = rows.get(RowKind::Project).expect("the project row");
+    assert!(
+        strings(project, "models").is_empty(),
+        "project models normalize to []"
+    );
     close(database).await;
 }
 
@@ -378,14 +410,26 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
     .fetch_rows(&all_refs(), &all_kinds())
     .await
     .expect("the prefetch query");
-    for kind in [RowKind::Membership, RowKind::Organization, RowKind::Project] {
-        let row = rows.get(kind).expect("the row");
-        let budget = object(row, "litellm_budget_table");
-        assert!(
-            strings(&budget, "allowed_models").is_empty(),
-            "{kind:?} allowed_models normalizes to []"
-        );
-    }
+    let membership = rows.get(RowKind::Membership).expect("the membership row");
+    let member_budget = object(membership, "litellm_budget_table");
+    assert!(
+        strings(&member_budget, "allowed_models").is_empty(),
+        "membership allowed_models normalizes to []"
+    );
+    let organization = rows
+        .get(RowKind::Organization)
+        .expect("the organization row");
+    let organization_budget = object(organization, "litellm_budget_table");
+    assert!(
+        strings(&organization_budget, "allowed_models").is_empty(),
+        "organization allowed_models normalizes to []"
+    );
+    let project = rows.get(RowKind::Project).expect("the project row");
+    let project_budget = object(project, "litellm_budget_table");
+    assert!(
+        strings(&project_budget, "allowed_models").is_empty(),
+        "project allowed_models normalizes to []"
+    );
     close(database).await;
 }
 
@@ -412,23 +456,46 @@ INSERT INTO "LiteLLM_TeamTable" (team_id, object_permission_id)
     .expect("the prefetch query");
     let team = rows.get(RowKind::Team).expect("the team row");
     let permission = object(team, "object_permission");
-    for list in [
-        "mcp_servers",
-        "mcp_access_groups",
-        "mcp_toolsets",
-        "blocked_tools",
-        "vector_stores",
-        "agents",
-        "agent_access_groups",
-        "models",
-        "search_tools",
-        "skills",
-    ] {
-        assert!(
-            strings(&permission, list).is_empty(),
-            "{list} normalizes to []"
-        );
-    }
+    assert!(
+        strings(&permission, "mcp_servers").is_empty(),
+        "mcp_servers normalizes to []"
+    );
+    assert!(
+        strings(&permission, "mcp_access_groups").is_empty(),
+        "mcp_access_groups normalizes to []"
+    );
+    assert!(
+        strings(&permission, "mcp_toolsets").is_empty(),
+        "mcp_toolsets normalizes to []"
+    );
+    assert!(
+        strings(&permission, "blocked_tools").is_empty(),
+        "blocked_tools normalizes to []"
+    );
+    assert!(
+        strings(&permission, "vector_stores").is_empty(),
+        "vector_stores normalizes to []"
+    );
+    assert!(
+        strings(&permission, "agents").is_empty(),
+        "agents normalizes to []"
+    );
+    assert!(
+        strings(&permission, "agent_access_groups").is_empty(),
+        "agent_access_groups normalizes to []"
+    );
+    assert!(
+        strings(&permission, "models").is_empty(),
+        "models normalizes to []"
+    );
+    assert!(
+        strings(&permission, "search_tools").is_empty(),
+        "search_tools normalizes to []"
+    );
+    assert!(
+        strings(&permission, "skills").is_empty(),
+        "skills normalizes to []"
+    );
     close(database).await;
 }
 
@@ -486,7 +553,10 @@ async fn raw_prefetch_uses_writer() {
     .await;
     let refs = AuthObjectRefs {
         user_id: Some("user-1".to_owned()),
-        ..AuthObjectRefs::default()
+        team_id: None,
+        membership_user_id: None,
+        organization_id: None,
+        project_id: None,
     };
     let writer_rows = WriterRows {
         store: writer.store.clone(),
@@ -529,20 +599,30 @@ async fn one_timestamp_after_query() {
     owner.prefetch(&all_refs()).await;
     assert_eq!(clock.calls(), 1);
     let writes = cache.writes();
-    for key in ["team_id:team-1", "project_id:project-1"] {
-        let write = writes
-            .iter()
-            .find(|write| write.0 == key)
-            .unwrap_or_else(|| panic!("the {key} write"));
-        let CacheValue::Object(fields) = &write.1 else {
-            panic!("{key} holds an object");
-        };
-        assert_eq!(
-            fields.get("last_refreshed_at"),
-            Some(&CacheValue::Float(1234.5)),
-            "{key} carries the query time"
-        );
-    }
+    let team = writes
+        .iter()
+        .find(|write| write.0 == "team_id:team-1")
+        .expect("the team write");
+    let CacheValue::Object(fields) = &team.1 else {
+        panic!("the team write holds an object");
+    };
+    assert_eq!(
+        fields.get("last_refreshed_at"),
+        Some(&CacheValue::Float(1234.5)),
+        "the team write carries the query time"
+    );
+    let project = writes
+        .iter()
+        .find(|write| write.0 == "project_id:project-1")
+        .expect("the project write");
+    let CacheValue::Object(fields) = &project.1 else {
+        panic!("the project write holds an object");
+    };
+    assert_eq!(
+        fields.get("last_refreshed_at"),
+        Some(&CacheValue::Float(1234.5)),
+        "the project write carries the query time"
+    );
     close(database).await;
 }
 
