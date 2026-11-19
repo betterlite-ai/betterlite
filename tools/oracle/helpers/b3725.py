@@ -96,7 +96,7 @@ def build_guardrail(input_value: Checks) -> BedrockGuardrail:
 def response_of(value: dict[str, JsonValue] | None) -> ModelResponse | None:
     if value is None:
         return None
-    return ModelResponse.model_validate(value)
+    return ModelResponse.model_validate(value)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
 
 
 def event_of(input_value: Checks) -> GuardrailEventHooks | None:
