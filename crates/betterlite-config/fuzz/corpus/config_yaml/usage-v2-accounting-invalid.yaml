@@ -1,3 +1,4 @@
 router_settings:
+  routing_strategy: usage-based-routing-v2
   routing_strategy_args:
     ttl: soon

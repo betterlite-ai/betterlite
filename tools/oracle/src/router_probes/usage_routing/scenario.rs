@@ -91,7 +91,11 @@ pub(super) fn run_scenario(input: &Input) -> Result<Output, ScenarioError> {
 fn resolve_ttl(ttl: Option<i64>) -> Result<i64, ScenarioError> {
     let source = ttl.map_or_else(
         || "router_settings: {}\n".to_owned(),
-        |value| format!("router_settings:\n  routing_strategy_args:\n    ttl: {value}\n"),
+        |value| {
+            format!(
+                "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: {value}\n"
+            )
+        }
     );
     let lookup = BTreeMap::<String, String>::new();
     let config = ConfigLoader { lookup }.load(&source).map_err(invalid)?;
