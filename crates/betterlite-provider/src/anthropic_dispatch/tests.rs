@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod gateway;
 mod send;
 
 use super::fixtures::{Case, execute};
@@ -17,29 +18,55 @@ struct Call {
     anthropic_provider: Case,
 }
 
+#[derive(Clone, Copy)]
+enum Family {
+    Helper(&'static str),
+    Gateway(&'static str),
+}
+
+const HTTP: &str = "anthropic_provider_dispatch_http";
+const STREAM: &str = "anthropic_provider_dispatch_stream";
+const THINKING: &str = "anthropic_provider_dispatch_thinking";
+const UPSTREAM_ERROR: &str = "anthropic_provider_dispatch_error";
+const UNSUPPORTED_PARAM: &str = "anthropic_provider_unsupported_param";
+const DROPPED_PARAM: &str = "anthropic_provider_dropped_param";
+const REMOTE_FILE: &str = "anthropic_provider_remote_file";
+const REMOTE_FILE_ERROR: &str = "anthropic_provider_remote_file_error";
+
+// One row per anthropic-provider oracle case file, then one per loopback gateway case.
 #[rstest]
-#[case::anthropic_chat_dispatch("anthropic-chat-dispatch")]
-#[case::anthropic_legacy_dispatch("anthropic-legacy-dispatch")]
-#[case::anthropic_count_dispatch("anthropic-count-dispatch")]
-#[case::anthropic_batch_file_dispatch("anthropic-batch-file-dispatch")]
-#[case::messages_default_base("messages-default-base")]
-#[case::legacy_default_base("legacy-default-base")]
-#[case::url_suffix_enabled("url-suffix-enabled")]
-#[case::url_suffix_disabled("url-suffix-disabled")]
-#[case::provider_config_selection("provider-config-selection")]
-#[case::config_url_selector("config-url-selector")]
-#[test]
-fn anthropic_dispatch_cases(#[case] name: &str) {
-    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/oracle/cases/helpers/providers/anthropic-provider")
-        .join(format!("{name}.yaml"));
-    let source = fs::read_to_string(path).unwrap();
-    let case: Calls = serde_saphyr::from_str(&source).unwrap();
-    let actual = runtime
-        .block_on(execute(&case.call.anthropic_provider))
-        .unwrap();
-    assert_eq!(actual, case.call.anthropic_provider.expected);
+#[case::anthropic_chat_dispatch(Family::Helper("anthropic-chat-dispatch"))]
+#[case::anthropic_legacy_dispatch(Family::Helper("anthropic-legacy-dispatch"))]
+#[case::anthropic_count_dispatch(Family::Helper("anthropic-count-dispatch"))]
+#[case::anthropic_batch_file_dispatch(Family::Helper("anthropic-batch-file-dispatch"))]
+#[case::messages_default_base(Family::Helper("messages-default-base"))]
+#[case::legacy_default_base(Family::Helper("legacy-default-base"))]
+#[case::url_suffix_enabled(Family::Helper("url-suffix-enabled"))]
+#[case::url_suffix_disabled(Family::Helper("url-suffix-disabled"))]
+#[case::provider_config_selection(Family::Helper("provider-config-selection"))]
+#[case::config_url_selector(Family::Helper("config-url-selector"))]
+#[case::anthropic_provider_dispatch_http(Family::Gateway(HTTP))]
+#[case::anthropic_provider_dispatch_stream(Family::Gateway(STREAM))]
+#[case::anthropic_provider_dispatch_thinking(Family::Gateway(THINKING))]
+#[case::anthropic_provider_dispatch_error(Family::Gateway(UPSTREAM_ERROR))]
+#[case::anthropic_provider_unsupported_param(Family::Gateway(UNSUPPORTED_PARAM))]
+#[case::anthropic_provider_dropped_param(Family::Gateway(DROPPED_PARAM))]
+#[case::anthropic_provider_remote_file(Family::Gateway(REMOTE_FILE))]
+#[case::anthropic_provider_remote_file_error(Family::Gateway(REMOTE_FILE_ERROR))]
+#[tokio::test]
+async fn anthropic_dispatch_cases(#[case] family: Family) {
+    match family {
+        Family::Helper(name) => {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/oracle/cases/helpers/providers/anthropic-provider")
+                .join(format!("{name}.yaml"));
+            let source = fs::read_to_string(path).unwrap();
+            let case: Calls = serde_saphyr::from_str(&source).unwrap();
+            let actual = execute(&case.call.anthropic_provider).await.unwrap();
+            assert_eq!(actual, case.call.anthropic_provider.expected);
+        }
+        Family::Gateway(name) => gateway::check(name).await,
+    }
 }
 
 #[test]

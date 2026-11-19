@@ -187,6 +187,7 @@ impl PreparedRequest {
 pub enum Upstream {
     Buffered(UpstreamResponse),
     Streaming(StreamResponse),
+    Anthropic(Box<crate::anthropic_dispatch::gateway::AnthropicUpstream>),
 }
 
 impl Upstream {
@@ -195,6 +196,7 @@ impl Upstream {
         match self {
             Self::Buffered(response) => &response.headers,
             Self::Streaming(response) => response.response.headers(),
+            Self::Anthropic(upstream) => &upstream.headers,
         }
     }
 }

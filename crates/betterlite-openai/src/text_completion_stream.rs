@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use betterlite_streaming::stream_chunk_shaping::decision::is_delta_empty;
 use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonValue, StreamChoice, StreamChunk, TokenDetails, Usage,
+    JsonValue, StreamChoice, StreamChunk, StreamDelta, TokenDetails, Usage,
 };
 
 use crate::stream::SseError;
@@ -76,10 +76,16 @@ pub fn chat_chunk(
     model: &str,
     include_usage: bool,
 ) -> Result<Option<Value>, serde_json::Error> {
-    let silent = chunk
-        .choices
-        .iter()
-        .all(|choice| is_delta_empty(&choice.delta) && choice.finish_reason.is_none());
+    let silent = chunk.choices.iter().all(|choice| {
+        is_delta_empty(&choice.delta)
+            && choice
+                .delta
+                .reasoning_content
+                .as_deref()
+                .is_none_or(str::is_empty)
+            && choice.delta.thinking_blocks.is_none()
+            && choice.finish_reason.is_none()
+    });
     if silent && (chunk.usage.is_none() || !include_usage) {
         return Ok(None);
     }
@@ -87,7 +93,11 @@ pub fn chat_chunk(
     let named = given.unwrap_or(chunk.model.as_str());
     let asked = chunk.usage.clone().map(with_details);
     let usage = serde_json::to_value(asked.filter(|_| include_usage))?;
-    let choices = chunk.choices.iter().map(chat_choice).collect();
+    let choices = chunk
+        .choices
+        .iter()
+        .map(chat_choice)
+        .collect::<Result<Vec<_>, _>>()?;
     let fields = Value::Object(Map::from_iter([
         field("id", Some(Value::from(chunk.id.as_str()))),
         field("object", Some(Value::from(chunk.object.as_str()))),
@@ -99,17 +109,62 @@ pub fn chat_chunk(
     Ok(Some(without_nulls(fields)))
 }
 
-fn chat_choice(choice: &StreamChoice) -> Value {
-    let delta = Value::Object(Map::from_iter([
-        field("role", choice.delta.role.as_deref().map(Value::from)),
-        field("content", choice.delta.content.as_deref().map(Value::from)),
-    ]));
+fn chat_choice(choice: &StreamChoice) -> Result<Value, serde_json::Error> {
+    let delta = Value::Object(delta_fields(&choice.delta)?);
     let finish = choice.finish_reason.as_deref();
-    Value::Object(Map::from_iter([
+    Ok(Value::Object(Map::from_iter([
         field("index", Some(Value::from(choice.index))),
         field("delta", Some(delta)),
         field("finish_reason", finish.map(Value::from)),
-    ]))
+    ])))
+}
+
+fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::Error> {
+    let mut delta = Map::new();
+    let named = [
+        ("role", source.role.as_deref().map(Value::from)),
+        ("content", source.content.as_deref().map(Value::from)),
+        (
+            "reasoning_content",
+            source.reasoning_content.as_deref().map(Value::from),
+        ),
+        (
+            "thinking_blocks",
+            source
+                .thinking_blocks
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?,
+        ),
+    ];
+    for (name, value) in named {
+        if let Some(value) = value {
+            delta.insert(name.to_owned(), value);
+        }
+    }
+    if let Some(JsonValue::Array(calls)) = &source.tool_calls {
+        let projected = projected_calls(calls)?;
+        delta.insert(String::from("tool_calls"), Value::Array(projected));
+    }
+    Ok(delta)
+}
+
+// LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function; anything else is dropped.
+fn projected_calls(calls: &[JsonValue]) -> Result<Vec<Value>, serde_json::Error> {
+    let mut projected = Vec::with_capacity(calls.len());
+    for call in calls {
+        let JsonValue::Object(fields) = call else {
+            continue;
+        };
+        let mut kept = Map::new();
+        for name in ["index", "id", "type", "function"] {
+            if let Some(value) = fields.get(name) {
+                kept.insert(name.to_owned(), serde_json::to_value(value)?);
+            }
+        }
+        projected.push(Value::Object(kept));
+    }
+    Ok(projected)
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped

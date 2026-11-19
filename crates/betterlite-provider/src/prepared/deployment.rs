@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -31,6 +32,7 @@ pub struct Deployment {
     pub max_retries: Option<u32>,
     pub drop_params: Option<DropParams>,
     pub provider_affinity_header: Option<String>,
+    pub anthropic: Option<Arc<crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime>>,
 }
 
 impl Deployment {
@@ -51,6 +53,7 @@ impl Deployment {
             max_retries: None,
             drop_params: None,
             provider_affinity_header: None,
+            anthropic: None,
         }
     }
 
@@ -85,6 +88,7 @@ impl Deployment {
             max_retries,
             drop_params,
             provider_affinity_header,
+            anthropic: None,
         })
     }
 
