@@ -21,9 +21,8 @@ use crate::compatible_wire::{
     CompatibleWireError, LogInput, ReplyOptions, transform_response as openai_transform_response,
 };
 use crate::edenai_common::{
-    EdenAiEnv, EdenAiError, PROVIDER, catalog_reply_error, cost_number, endpoint_url,
-    parse_model_catalog, reported_cost, reported_cost_from_bytes, resolve_api_base,
-    resolve_api_key, set_response_cost,
+    EdenAiEnv, EdenAiError, PROVIDER, catalog_reply_error, cost_number, parse_model_catalog,
+    reported_cost, reported_cost_from_bytes, resolve_api_base, resolve_api_key, set_response_cost,
 };
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
@@ -224,8 +223,8 @@ pub fn get_models(reply: &CatalogReply<'_>) -> Result<Vec<String>, EdenAiError> 
         .collect())
 }
 
-// the GET itself is the caller's: LiteLLM sends it without an Authorization header
+// LiteLLM formats the unmodified resolved base with "/models"; the GET sends no Authorization header
 #[must_use]
 pub fn models_url(api_base: Option<&str>, env: &EdenAiEnv) -> String {
-    endpoint_url(api_base, "models", env)
+    format!("{}/models", resolve_api_base(api_base, env))
 }

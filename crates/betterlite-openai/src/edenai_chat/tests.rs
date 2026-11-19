@@ -533,10 +533,10 @@ fn get_models_turns_a_bad_catalog_body_into_a_500_naming_the_field() {
     Some("https://gateway.example/v3"),
     "https://gateway.example/v3/models"
 )]
-#[case::trailing_slashes(
+#[case::trailing_slash(
     Some("https://proxy.example/v3/"),
     None,
-    "https://proxy.example/v3/models"
+    "https://proxy.example/v3//models"
 )]
 fn models_url_is_the_resolved_base_then_models(
     #[case] api_base: Option<&str>,
