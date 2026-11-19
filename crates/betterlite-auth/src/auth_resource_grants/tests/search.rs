@@ -217,21 +217,19 @@ fn authorize_denies_on_the_key_before_the_team() {
 #[test]
 fn team_check_runs_only_with_a_team_id() {
     let restricted_team = team(RESTRICTED_TEAM);
-    let solo = user_key(
-        r#"{"token":"key-solo","object_permission":{"object_permission_id":"perm-key","search_tools":["allowed-tool"]}}"#,
-    );
-    assert!(authorize_search_tool("allowed-tool", &solo, Some(&restricted_team)).is_ok());
-    let member = user_key(
-        r#"{"token":"key-member","team_id":"team-1","object_permission":{"object_permission_id":"perm-key","search_tools":["allowed-tool"]}}"#,
-    );
-    let denial = authorize_search_tool("allowed-tool", &member, Some(&restricted_team))
+    // without a team id the team row never decides, even where it would deny
+    let solo = user_key(r#"{"token":"key-solo"}"#);
+    assert!(authorize_search_tool("other", &solo, Some(&restricted_team)).is_ok());
+    // the key is unrestricted, so only the team decides; the team does not allow this tool
+    let member = user_key(r#"{"token":"key-member","team_id":"team-1"}"#);
+    let denial = authorize_search_tool("other", &member, Some(&restricted_team))
         .expect_err("the joined key answers to its team");
     assert!(
         denial
             .message
-            .starts_with("Team not allowed to access search tool: allowed-tool."),
+            .starts_with("Team not allowed to access search tool: other."),
         "{}",
         denial.message
     );
-    assert!(authorize_search_tool("allowed-tool", &member, None).is_ok());
+    assert!(authorize_search_tool("other", &member, None).is_ok());
 }

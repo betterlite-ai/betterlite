@@ -118,13 +118,21 @@ fn row_projection_precedence() {
         .expect("the model_dump projection")
         .expect("the projected row");
     assert_eq!(projected_dump.vector_store_id, "dump");
-    let empty_dump = row(
-        r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    let dict_row = row(
+        r#"{"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
     );
-    let projected_dict = project_row(&empty_dump)
+    let projected_dict = project_row(&dict_row)
         .expect("the dict projection")
         .expect("the projected row");
     assert_eq!(projected_dict.vector_store_id, "dict");
+    // LiteLLM's empty model_dump() is falsy, so it falls straight to dict(row), the iterable form
+    let empty_dump = row(
+        r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    );
+    let projected_empty_dump = project_row(&empty_dump)
+        .expect("the empty dump falls back")
+        .expect("the projected row");
+    assert_eq!(projected_empty_dump.vector_store_id, "fields");
     let iterable = row(
         r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
     );
