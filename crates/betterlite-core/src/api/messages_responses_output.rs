@@ -47,21 +47,18 @@ pub fn messages_responses_output(
     input: &MessagesResponsesOutpuInput,
     limits: &ApiLimits,
 ) -> Result<MessagesResponsesOutpuResult, MessagesResponsesOutputError> {
-    Ok(MessagesResponsesOutpuResult {
-        request: match input.request.as_ref() {
-            Some(request) => Some(translate_request(
-                request,
-                &input.settings,
-                input.include_encrypted_reasoning.unwrap_or(true),
-                limits,
-            )?),
-            None => None,
-        },
-        response: match input.response.as_ref() {
-            Some(response) => Some(translate_response(response, limits)?),
-            None => None,
-        },
-    })
+    let include = input.include_encrypted_reasoning.unwrap_or(true);
+    let request = input
+        .request
+        .as_ref()
+        .map(|request| translate_request(request, &input.settings, include, limits))
+        .transpose()?;
+    let response = input
+        .response
+        .as_ref()
+        .map(|response| translate_response(response, limits))
+        .transpose()?;
+    Ok(MessagesResponsesOutpuResult { request, response })
 }
 
 // json.loads of a Responses function call's arguments, at the size the JSON boundary allows

@@ -21,6 +21,7 @@ const JSON_SCHEMA_TYPE: &str = "json_schema";
 const STRUCTURED_OUTPUT_NAME: &str = "structured_output";
 const AUTO_SUMMARY: &str = "detailed";
 
+#[must_use]
 pub fn translate_tools(tools: &[ToolRecord]) -> Vec<ResponsesTool> {
     let mut translated = Vec::with_capacity(tools.len());
     for tool in tools {
@@ -38,6 +39,7 @@ pub fn translate_tools(tools: &[ToolRecord]) -> Vec<ResponsesTool> {
     translated
 }
 
+#[must_use]
 pub fn translate_tool_choice(choice: &ToolChoiceRecord) -> ResponsesToolChoice {
     match choice.kind {
         ToolChoiceKind::Any => ResponsesToolChoice::Mode(ToolChoiceMode::Required),

@@ -68,9 +68,11 @@ fn match_refusal_items<'item>(
     output
         .iter()
         .zip(wire)
-        .map(|(item, raw)| match item {
-            ResponseOutputItem::Sdk(sdk) => OutputItem::Typed(sdk.as_ref()),
-            _ => OutputItem::Raw(raw),
+        .map(|(item, raw)| {
+            let ResponseOutputItem::Sdk(sdk) = item else {
+                return OutputItem::Raw(raw);
+            };
+            OutputItem::Typed(sdk.as_ref())
         })
         .collect()
 }
@@ -192,15 +194,12 @@ impl Translation<'_> {
     }
 
     fn append_raw_reasoning(&mut self, fields: &WireFields) {
-        let summary: Vec<SummaryPart> = match fields.get("summary") {
-            Some(WireJson::List(parts)) => parts
-                .iter()
-                .map(|part| SummaryPart {
-                    text: summary_text(part).to_owned(),
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
+        let mut summary: Vec<SummaryPart> = Vec::new();
+        if let Some(WireJson::List(parts)) = fields.get("summary") {
+            summary.extend(parts.iter().map(|part| SummaryPart {
+                text: summary_text(part).to_owned(),
+            }));
+        }
         let encrypted = field_text(fields.get("encrypted_content"));
         self.push_thinking(thinking_block(&summary, encrypted));
     }
@@ -274,7 +273,7 @@ fn arguments_input(
     }
 }
 
-fn field_text(value: Option<&WireJson>) -> Option<&str> {
+const fn field_text(value: Option<&WireJson>) -> Option<&str> {
     match value {
         Some(WireJson::Text(text)) => Some(text.as_str()),
         Some(
@@ -289,12 +288,8 @@ fn field_text(value: Option<&WireJson>) -> Option<&str> {
 }
 
 fn summary_text(part: &WireJson) -> &str {
-    match part {
-        WireJson::Object(fields) => field_text(fields.get("text")).unwrap_or(""),
-        WireJson::Null
-        | WireJson::Bool(_)
-        | WireJson::Number(_)
-        | WireJson::Text(_)
-        | WireJson::List(_) => "",
+    if let WireJson::Object(fields) = part {
+        return field_text(fields.get("text")).unwrap_or("");
     }
+    ""
 }
