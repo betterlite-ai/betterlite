@@ -1,6 +1,5 @@
 from typing import cast
 
-import litellm
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
 from litellm.llms.bedrock_mantle.common_utils import resolve_mantle_region
@@ -8,7 +7,7 @@ from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 
 from .models import BASE_PAYLOAD, BaseCase
-from .support import environment
+from .support import LITELLM, environment
 from .views import ChatApi
 
 
@@ -41,7 +40,7 @@ def base_cases(payload: JsonValue) -> JsonValue:
     model_cost: dict[str, JsonValue] = {} if quoted is None else quoted
     signers: list[JsonValue] = []
     outcomes: list[tuple[JsonValue, JsonValue]] = []
-    litellm.model_cost = model_cost
+    LITELLM.model_cost = model_cost
     for case in parsed["cases"]:
         env = case.get("environment")
         values = {} if env is None else env

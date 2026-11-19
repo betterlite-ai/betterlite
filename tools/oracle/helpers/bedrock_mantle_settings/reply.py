@@ -59,7 +59,7 @@ def reply_cases(payload: JsonValue) -> JsonValue:
     results: list[JsonValue] = []
     for case in parsed["cases"]:
         config = RecordingMantlePassthrough()
-        config.logging_non_streaming_response(
+        _ = config.logging_non_streaming_response(
             model="fixture-model",
             custom_llm_provider=case["custom_llm_provider"],
             httpx_response=httpx.Response(200),

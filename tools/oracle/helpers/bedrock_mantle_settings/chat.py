@@ -1,11 +1,10 @@
 from typing import Literal, cast
 
-import litellm
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
 from pydantic import JsonValue
 
 from .models import CHAT_PAYLOAD, ChatCase
-from .support import JSON, environment
+from .support import JSON, LITELLM, environment
 from .views import ChatApi
 
 
@@ -73,15 +72,15 @@ def chat_cases(payload: JsonValue) -> JsonValue:
     config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L143
         "ChatApi", BedrockMantleChatConfig()
     )
-    litellm.open_ai_chat_completion_models = set(chat_models)
-    litellm.open_ai_text_completion_models = set(text_models)
+    LITELLM.open_ai_chat_completion_models = set(chat_models)
+    LITELLM.open_ai_text_completion_models = set(text_models)
     results: list[JsonValue] = []
     for case in parsed["cases"]:
         env = case.get("environment")
         values = {} if env is None else env
         answer = case.get("reasoning")
         recorder = ReasoningRecorder("unsupported" if answer is None else answer)
-        litellm.supports_reasoning = recorder
+        LITELLM.supports_reasoning = recorder
         with environment(values):
             results.append(chat_result(config, case, recorder))
     return {"results": results}

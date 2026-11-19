@@ -1,4 +1,4 @@
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Literal, Protocol
 
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
@@ -14,6 +14,13 @@ class ErrorView(Protocol):
 
 class HandlerView(Protocol):
     json_mode: bool | None
+
+
+class LitellmGlobals(Protocol):
+    model_cost: dict[str, JsonValue]
+    open_ai_chat_completion_models: set[str]
+    open_ai_text_completion_models: set[str]
+    supports_reasoning: Callable[[str, str | None], bool]
 
 
 class ChatApi(Protocol):

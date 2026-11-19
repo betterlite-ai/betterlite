@@ -11,6 +11,7 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 from .models import Keys
+from .views import LitellmGlobals
 
 JSON: Final = TypeAdapter(JsonValue)
 AUTH_FAILURE_MESSAGE: Final = (
@@ -49,6 +50,9 @@ EXCEPTIONS = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fca
 )
 AUTH_MODULE = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1697-L1701
     "AuthClockModule", import_module("botocore.auth")
+)
+LITELLM = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
+    "LitellmGlobals", import_module("litellm")
 )
 
 
