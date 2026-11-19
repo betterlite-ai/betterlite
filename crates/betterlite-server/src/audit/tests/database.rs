@@ -87,6 +87,7 @@ async fn a_record_without_actor_or_key_keeps_the_column_defaults() {
         .expect("the partial row inserts");
     let client = pool.get().await.unwrap();
     let row = client.query_one(SELECT, &[&"audit-1"]).await.unwrap();
+    drop(client);
     assert_eq!(row.get::<_, String>(0), "updated");
     assert_eq!(row.get::<_, String>(1), "LiteLLM_TeamTable");
     assert_eq!(row.get::<_, String>(2), "team-1");
@@ -95,7 +96,6 @@ async fn a_record_without_actor_or_key_keeps_the_column_defaults() {
     assert!(row.get::<_, Option<String>>(5).is_none());
     assert!(row.get::<_, Option<String>>(6).is_none());
     assert_eq!(row.get::<_, NaiveDateTime>(7), row_timestamp());
-    drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
 }
@@ -113,6 +113,7 @@ async fn a_full_record_round_trips_through_the_partial_insert() {
         .expect("the full row inserts");
     let client = pool.get().await.unwrap();
     let row = client.query_one(SELECT, &[&"audit-1"]).await.unwrap();
+    drop(client);
     assert_eq!(row.get::<_, String>(3), "admin");
     assert_eq!(row.get::<_, String>(4), "sk-key");
     assert_eq!(
@@ -124,7 +125,6 @@ async fn a_full_record_round_trips_through_the_partial_insert() {
         json(r#"{"api_key": "sk-1*****7890"}"#)
     );
     assert_eq!(row.get::<_, NaiveDateTime>(7), row_timestamp());
-    drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
 }
