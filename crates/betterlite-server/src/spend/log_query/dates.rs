@@ -42,9 +42,9 @@ pub fn parse_date(text: &str, formats: DateFormats) -> Result<DateTime<Utc>, Dat
 
 // strptime's %Y-%m-%d %H:%M:%S: four-digit year, 1-2 digit fields, whitespace for the format's space.
 fn parse_seconds(text: &str) -> Option<DateTime<Utc>> {
-    let (date_text, time_text) = split_date_and_time(text)?;
+    let (date_text, rest) = text.split_once(char::is_whitespace)?;
     let date = parse_date_fields(date_text)?;
-    let mut parts = time_text.split(':');
+    let mut parts = rest.trim_start().split(':');
     let (Some(hour), Some(minute), Some(second)) = (parts.next(), parts.next(), parts.next())
     else {
         return None;
@@ -63,11 +63,6 @@ fn parse_date_only(text: &str) -> Option<DateTime<Utc>> {
     let date = parse_date_fields(text)?;
     let midnight = date.and_hms_opt(0, 0, 0)?;
     Some(DateTime::from_naive_utc_and_offset(midnight, Utc))
-}
-
-fn split_date_and_time(text: &str) -> Option<(&str, &str)> {
-    let (date_text, rest) = text.split_once(char::is_whitespace)?;
-    Some((date_text, rest.trim_start()))
 }
 
 fn parse_date_fields(text: &str) -> Option<NaiveDate> {
