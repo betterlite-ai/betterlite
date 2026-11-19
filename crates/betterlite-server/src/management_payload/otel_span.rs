@@ -191,7 +191,7 @@ fn sanitized_response(result: &Json) -> Option<JsonObject> {
 }
 
 // The response arrives as betterlite's JSON tree; this walk projects it onto the span's value type
-fn metadata_map(fields: impl IntoIterator<Item = (String, Json)>) -> MetadataMap {
+fn metadata_map(fields: JsonObject) -> MetadataMap {
     fields
         .into_iter()
         .map(|(key, value)| (key, metadata_value(value)))
