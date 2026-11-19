@@ -1,0 +1,115 @@
+kind: helper
+name: plain-effort-requires-chat
+call:
+  messages_reasoning_route:
+    calls:
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: null, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: responses, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: "", summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: null
+        bridge: {mode: responses, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: litellm_proxy, api_base: null}
+        bridge: {mode: responses, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: 7, api_base: [], api_key: {}, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, api_base: https://proxy.test, api_key: sk-test, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: https://api.test}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, web_search_options: {search_context_size: high}, tools: [{type: function}], reasoning_effort: {effort: high, summary: concise, extra: [1]}}
+        thinking: {type: enabled}
+        provider: {local: local-o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, web_search_options: high, tools: {type: function}, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: 5, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: high}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: "", reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: null, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: null
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: {}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: enabled
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+      - function: plain_effort
+        kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
+        thinking: []
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: chat, fails: false}
+calls:
+  - messages_reasoning_route:
+      calls:
+        - function: plain_effort
+          kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: null}}
+          thinking: {type: enabled}
+          provider: {local: o3, provider: openai, api_base: null}
+          bridge: {mode: chat, fails: true}
+env: {}
+compare: {ignore: []}
