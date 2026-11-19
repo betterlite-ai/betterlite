@@ -8,7 +8,7 @@ use super::super::config::{
 };
 use super::super::error::SearchError;
 use super::logging::log_direct;
-use crate::api::vector_store_http_write::service::LogContext;
+use crate::api::vector_store_http_write::service::{ClientKind, LogContext};
 
 pub struct DirectCall<'call> {
     pub provider: &'call str,
@@ -20,36 +20,33 @@ pub struct DirectCall<'call> {
     pub embedding_executor: Option<&'call dyn QueryEmbeddingExecutor>,
 }
 
-// The direct handler logs the synthetic endpoint and runs the store's own search; no HTTP client is selected
-pub fn execute_direct_search<C>(
+// The direct handler logs the synthetic endpoint and lets the store run its own search; no HTTP client is selected
+pub async fn execute_direct_search<C>(
     config: &C,
     call: &DirectCall<'_>,
+    mode: ClientKind,
     log: &mut LogContext<'_, '_>,
 ) -> Result<VectorStoreSearchResponse, SearchError>
 where
     C: DirectSearchConfig + ?Sized,
 {
-    log_direct(call.provider, call.vector_store_id, call.query, log)?;
     let mut logging = VectorStoreLogging::default();
-    config
-        .execute_search_request(direct_request(call, &mut logging))
-        .map_err(SearchError::Direct)
+    let request = prepare_direct(call, log, &mut logging)?;
+    let answer = match mode {
+        ClientKind::Sync => config.execute_search_request(request),
+        ClientKind::Asynchronous => config.aexecute_search_request(request).await,
+    };
+    answer.map_err(SearchError::Direct)
 }
 
-pub async fn aexecute_direct_search<C>(
-    config: &C,
-    call: &DirectCall<'_>,
+// log_direct runs first, so a failed pre-call never reaches the store
+fn prepare_direct<'call>(
+    call: &'call DirectCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<VectorStoreSearchResponse, SearchError>
-where
-    C: DirectSearchConfig + ?Sized,
-{
+    logging: &'call mut VectorStoreLogging,
+) -> Result<DirectSearchRequest<'call>, SearchError> {
     log_direct(call.provider, call.vector_store_id, call.query, log)?;
-    let mut logging = VectorStoreLogging::default();
-    config
-        .aexecute_search_request(direct_request(call, &mut logging))
-        .await
-        .map_err(SearchError::Direct)
+    Ok(direct_request(call, logging))
 }
 
 // dict(litellm_params) is the params copy the store receives; extra_headers and extra_body never reach a direct store

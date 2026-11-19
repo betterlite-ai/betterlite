@@ -57,11 +57,10 @@ async fn direct_search(mode: ClientKind) {
         Some(&embeddings),
     );
     let mut fixture = Fixture::new("vector_store_search", &events);
-    let answer = match mode {
-        ClientKind::Sync => fixture.execute_direct(&store, &call),
-        ClientKind::Asynchronous => fixture.aexecute_direct(&store, &call).await,
-    }
-    .expect("the direct search succeeds");
+    let answer = fixture
+        .direct(&store, &call, mode)
+        .await
+        .expect("the direct search succeeds");
     assert_eq!(to_json(&answer), json(SEARCH_RESPONSE));
     assert_direct_observed(&store, &litellm_params);
     assert_direct_logging(&fixture);
@@ -103,10 +102,7 @@ async fn direct_failure(mode: ClientKind) {
     let store = DirectStore::new(true);
     let call = direct_call(&query, &optional_params, &litellm_params, None, None);
     let mut fixture = Fixture::new("vector_store_search", &events);
-    let result = match mode {
-        ClientKind::Sync => fixture.execute_direct(&store, &call),
-        ClientKind::Asynchronous => fixture.aexecute_direct(&store, &call).await,
-    };
+    let result = fixture.direct(&store, &call, mode).await;
     let Err(SearchError::Direct(error)) = result else {
         panic!("the store's failure is passed through");
     };

@@ -36,9 +36,7 @@ use crate::api::vector_search_execution::config::{
     SearchRequest, SignRequest, StoreFailure, VectorStoreLogging, VectorStoreResponse,
 };
 use crate::api::vector_search_execution::error::{DirectFailure, SearchError, SigningFailure};
-use crate::api::vector_search_execution::service::direct::{
-    DirectCall, aexecute_direct_search, execute_direct_search,
-};
+use crate::api::vector_search_execution::service::direct::{DirectCall, execute_direct_search};
 use crate::api::vector_search_execution::service::signing::{SignFuture, SignInput, SigningSeam};
 use crate::api::vector_search_execution::service::{SearchCall, SearchDeps, prepare, send};
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
@@ -152,23 +150,8 @@ impl Fixture {
         S::Client: WriteTransport,
         G: SigningSeam + ?Sized,
     {
-        let prepared = self.prepare(deps, seam, mode, call).await?;
-        send(prepared).await
-    }
-
-    pub(crate) async fn prepare<'deps, S, G>(
-        &mut self,
-        deps: &'deps SearchDeps<'deps, S>,
-        seam: &G,
-        mode: ClientKind,
-        call: &SearchCall<'_>,
-    ) -> Result<PreparedSearch<'deps, S::Client>, SearchError>
-    where
-        S: ClientSource,
-        G: SigningSeam + ?Sized,
-    {
         let env = pre_post_env(&self.redactor, &self.sink, self.logger.as_ref(), self.now);
-        prepare(
+        let prepared = prepare(
             deps,
             seam,
             mode,
@@ -178,13 +161,15 @@ impl Fixture {
                 env: &env,
             },
         )
-        .await
+        .await?;
+        send(prepared).await
     }
 
-    pub(crate) fn execute_direct<C>(
+    pub(crate) async fn direct<C>(
         &mut self,
         config: &C,
         call: &DirectCall<'_>,
+        mode: ClientKind,
     ) -> Result<VectorStoreSearchResponse, SearchError>
     where
         C: DirectSearchConfig + ?Sized,
@@ -193,25 +178,7 @@ impl Fixture {
         execute_direct_search(
             config,
             call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-    }
-
-    pub(crate) async fn aexecute_direct<C>(
-        &mut self,
-        config: &C,
-        call: &DirectCall<'_>,
-    ) -> Result<VectorStoreSearchResponse, SearchError>
-    where
-        C: DirectSearchConfig + ?Sized,
-    {
-        let env = pre_post_env(&self.redactor, &self.sink, self.logger.as_ref(), self.now);
-        aexecute_direct_search(
-            config,
-            call,
+            mode,
             &mut LogContext {
                 state: &mut self.state,
                 env: &env,
@@ -263,7 +230,6 @@ pub(crate) struct Wire {
     failure: Arc<Mutex<Option<TransportError>>>,
     requests: Arc<Mutex<Vec<WriteRequest>>>,
     events: Events,
-    default_timeout: Duration,
 }
 
 impl Wire {
@@ -273,7 +239,6 @@ impl Wire {
             failure: Arc::default(),
             requests: Arc::default(),
             events: events.clone(),
-            default_timeout: Duration::from_secs(60),
         }
     }
 
@@ -290,7 +255,7 @@ impl Wire {
 
 impl WriteTransport for Wire {
     fn default_timeout(&self) -> Duration {
-        self.default_timeout
+        Duration::from_secs(60)
     }
 
     fn send(
@@ -540,20 +505,23 @@ impl QueryEmbeddingConfig for RecordingConfig {
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        let mut record = self.record(&request.search);
-        record.executor = request.embedding_executor.is_some();
-        self.recorded().query_transforms.push(record);
-        Ok((self.url.clone(), self.body.clone()))
+        Ok(self.record_query(&request))
     }
 
     async fn atransform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
+        Ok(self.record_query(&request))
+    }
+}
+
+impl RecordingConfig {
+    fn record_query(&self, request: &QuerySearchRequest<'_>) -> PreparedSearch {
         let mut record = self.record(&request.search);
         record.executor = request.embedding_executor.is_some();
         self.recorded().query_transforms.push(record);
-        Ok((self.url.clone(), self.body.clone()))
+        (self.url.clone(), self.body.clone())
     }
 }
 

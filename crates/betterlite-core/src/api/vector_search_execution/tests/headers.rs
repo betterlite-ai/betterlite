@@ -8,7 +8,7 @@ use super::support::{
     Wire, caller_headers, params, sent_header,
 };
 use super::{TEXT_SEARCH_BODY, json, openai_search_config};
-use crate::api::vector_search_execution::config::{Params, SearchQuery};
+use crate::api::vector_search_execution::config::{Params, SearchConfig, SearchQuery};
 use crate::api::vector_search_execution::error::SearchError;
 use crate::api::vector_search_execution::service::{SearchCall, SearchDeps};
 use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
@@ -52,9 +52,9 @@ async fn header_case(case: HeaderCase) {
         HeaderCase::SuppliedClient => supplied_client_used().await,
         HeaderCase::SuppliedMismatch => supplied_mismatch().await,
         HeaderCase::NullVerify => null_verify_absent().await,
-        HeaderCase::BadName => bad_header_name().await,
-        HeaderCase::BadValue => bad_header_value().await,
-        HeaderCase::BadUrl => bad_url().await,
+        HeaderCase::BadName => invalid_header_case(InvalidCase::BadName).await,
+        HeaderCase::BadValue => invalid_header_case(InvalidCase::BadValue).await,
+        HeaderCase::BadUrl => invalid_header_case(InvalidCase::BadUrl).await,
         HeaderCase::TransformFailure => transform_failure().await,
         HeaderCase::RawRequest => raw_request_capture().await,
         HeaderCase::SigningFailure => signing_failure().await,
@@ -236,80 +236,83 @@ async fn null_verify_absent() {
     assert_eq!(source.calls(), [None]);
 }
 
-async fn bad_header_name() {
-    let query = SearchQuery::Text("a".to_owned());
-    let optional_params = params("{}");
-    let litellm_params = keyed_params();
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
-    let source = Source::new(wire.clone());
-    let deps = SearchDeps {
-        config: Arc::new(openai_search_config()),
-        source: &source,
-        supplied: None,
-    };
-    let bad_name = caller_headers(&[("bad name", "ok")]);
-    let call = search_call(&query, &optional_params, &litellm_params, Some(&bad_name));
-    let mut fixture = Fixture::new("vector_store_search", &events);
-    let Err(SearchError::HeaderName { name, .. }) = fixture
-        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
-        .await
-    else {
-        panic!("a header name HTTP cannot carry fails the header name");
-    };
-    assert_eq!(name, "bad name");
-    assert_eq!(events.recorded(), ["log"]);
-    assert!(wire.requests().is_empty());
+#[derive(Debug, Clone, Copy)]
+enum InvalidCase {
+    BadName,
+    BadValue,
+    BadUrl,
 }
 
-async fn bad_header_value() {
-    let query = SearchQuery::Text("a".to_owned());
-    let optional_params = params("{}");
-    let litellm_params = keyed_params();
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
-    let source = Source::new(wire.clone());
-    let deps = SearchDeps {
-        config: Arc::new(openai_search_config()),
-        source: &source,
-        supplied: None,
-    };
-    let bad_value = caller_headers(&[("X-Trace", "bad\nvalue")]);
-    let call = search_call(&query, &optional_params, &litellm_params, Some(&bad_value));
-    let mut fixture = Fixture::new("vector_store_search", &events);
-    let Err(SearchError::HeaderValue { name, .. }) = fixture
-        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
-        .await
-    else {
-        panic!("a header value HTTP cannot carry fails the header value");
-    };
-    assert_eq!(name, "X-Trace");
-    assert!(wire.requests().is_empty());
-}
-
-async fn bad_url() {
+async fn invalid_header_case(case: InvalidCase) {
     let query = SearchQuery::Text("a".to_owned());
     let empty = params("{}");
+    let litellm_params = keyed_params();
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
     let source = Source::new(wire.clone());
-    let config = RecordingConfig::new("http://mock.test/v1", &events).with_url("not a url");
     let deps = SearchDeps {
-        config: Arc::new(config),
+        config: config_for(case, &events),
         source: &source,
         supplied: None,
     };
-    let call = search_call(&query, &empty, &empty, None);
+    let headers = headers_for(case);
+    let call = search_call(&query, &empty, &litellm_params, headers.as_ref());
     let mut fixture = Fixture::new("vector_store_search", &events);
-    let Err(SearchError::RequestUrl { url, .. }) = fixture
-        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
-        .await
-    else {
-        panic!("a url that is not a URL fails the request URL");
-    };
-    assert_eq!(url, "not a url");
+    let error = failure_of(
+        fixture
+            .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
+            .await,
+    );
+    assert_invalid_error(&error, case);
     assert_eq!(events.recorded(), ["log"]);
     assert!(wire.requests().is_empty());
+}
+
+fn config_for(case: InvalidCase, events: &Events) -> Arc<dyn SearchConfig> {
+    match case {
+        InvalidCase::BadName | InvalidCase::BadValue => Arc::new(openai_search_config()),
+        InvalidCase::BadUrl => {
+            Arc::new(RecordingConfig::new("http://mock.test/v1", events).with_url("not a url"))
+        }
+    }
+}
+
+fn headers_for(case: InvalidCase) -> Option<BTreeMap<String, String>> {
+    match case {
+        InvalidCase::BadName => Some(caller_headers(&[("bad name", "ok")])),
+        InvalidCase::BadValue => Some(caller_headers(&[("X-Trace", "bad\nvalue")])),
+        InvalidCase::BadUrl => None,
+    }
+}
+
+fn failure_of<T>(result: Result<T, SearchError>) -> SearchError {
+    match result {
+        Err(error) => error,
+        Ok(_) => panic!("the invalid call fails before the send"),
+    }
+}
+
+fn assert_invalid_error(error: &SearchError, case: InvalidCase) {
+    match case {
+        InvalidCase::BadName => {
+            let SearchError::HeaderName { name, .. } = error else {
+                panic!("a header name HTTP cannot carry fails the header name");
+            };
+            assert_eq!(name, "bad name");
+        }
+        InvalidCase::BadValue => {
+            let SearchError::HeaderValue { name, .. } = error else {
+                panic!("a header value HTTP cannot carry fails the header value");
+            };
+            assert_eq!(name, "X-Trace");
+        }
+        InvalidCase::BadUrl => {
+            let SearchError::RequestUrl { url, .. } = error else {
+                panic!("a url that is not a URL fails the request URL");
+            };
+            assert_eq!(url, "not a url");
+        }
+    }
 }
 
 async fn transform_failure() {

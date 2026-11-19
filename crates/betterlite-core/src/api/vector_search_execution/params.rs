@@ -43,19 +43,16 @@ pub(super) fn present(json: &Json) -> Option<&Json> {
 }
 
 pub(super) fn integer(json: &Json, name: &'static str) -> Result<Option<i64>, SearchError> {
-    match json {
-        Json::Null => Ok(None),
-        Json::Number(number) => number.as_i64().map(Some).ok_or(SearchError::Field {
+    if json.is_null() {
+        return Ok(None);
+    }
+    if let Json::Number(number) = json {
+        return number.as_i64().map(Some).ok_or(SearchError::Field {
             field: name,
             expected: "an integer",
-        }),
-        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(SearchError::Field {
-                field: name,
-                expected: "an integer",
-            })
-        }
+        });
     }
+    wrong_type(name, "an integer")
 }
 
 pub(super) fn boolean(json: &Json, name: &'static str) -> Result<Option<bool>, SearchError> {
@@ -63,10 +60,14 @@ pub(super) fn boolean(json: &Json, name: &'static str) -> Result<Option<bool>, S
         Json::Null => Ok(None),
         Json::Bool(flag) => Ok(Some(*flag)),
         Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(SearchError::Field {
-                field: name,
-                expected: "a boolean",
-            })
+            wrong_type(name, "a boolean")
         }
     }
+}
+
+fn wrong_type<T>(name: &'static str, expected: &'static str) -> Result<Option<T>, SearchError> {
+    Err(SearchError::Field {
+        field: name,
+        expected,
+    })
 }
