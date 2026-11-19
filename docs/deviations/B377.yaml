@@ -1,0 +1,18 @@
+task: B377
+deviations:
+  - what: Auto-router capability counts and tuning quotas do not restrict configuration.
+    why: The accepted product decision enables all MIT features without a paid tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L147-L174
+  - what: A written complexity_router_config can be accepted while LiteLLM's model rejects it, because the write check reuses the loader's resolver and the loader does not model every key. Unmodeled keys are not type-checked, classifier_llm_config, classifier_plugin, capability_classifier_config, jev_classifier_config and llm_v2_config are never required or forbidden by classifier kind, and their contents are unchecked.
+    why: The config sections for those keys belong to the config-key tasks that model them, and the write check gains each rule when the loader does instead of porting pydantic's model a second time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1622-L1740
+  - what: The field bounds on stall_escalation_window (above 0) and stall_escalation_repeat_threshold (at least 2) are not enforced on a write, so a router that would refuse to load is accepted.
+    why: Those bounds sit on keys the complexity config section only carries as plain numbers, and the resolver reads them without checking the field constraints.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1253-L1272
+  - what: A keyword_tier_rules entry whose keywords list is empty or all blank is accepted, where LiteLLM rejects it.
+    why: The resolver reads a rule only for its tier name, and the keyword list constraints belong to the config section that owns the keyword rule keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L100-L129
+  - what: A rejected write names the decode path the typed section read (for example tiers.SIMPLE or custom_dimensions.0.weight), or complexity_router_config when the resolver's rule has no field of its own, and it carries betterlite's rule wording. LiteLLM reports pydantic's first error location and message, whose model-level errors read "Value error, " followed by the validator's text.
+    why: betterlite decodes the write into the loader's sections and reports the resolver's error, so pydantic's locations and messages have no counterpart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L347-L372
+kept_bugs: []
