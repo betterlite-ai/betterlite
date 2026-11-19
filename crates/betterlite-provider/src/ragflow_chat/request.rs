@@ -14,8 +14,7 @@ pub struct RequestInput<'request> {
 
 mod tests;
 
-// LiteLLM's RAGFlowConfig.transform_request picks the actual model and calls OpenAIConfig.transform_request, which
-// merges {model, messages, **optional_params} and leaves the messages untouched, since its _transform_messages is the identity.
+// LiteLLM's RAGFlowConfig.transform_request calls OpenAIConfig.transform_request, which merges {model, messages, **optional_params} untouched.
 pub fn transform_request(input: &RequestInput<'_>) -> Result<Object, RagflowError> {
     let actual_model = actual_model(input.model, input.litellm_params)?;
     let messages: Json = serde_json::from_value(
