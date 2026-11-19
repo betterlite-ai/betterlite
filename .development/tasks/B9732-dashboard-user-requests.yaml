@@ -60,7 +60,7 @@ description: >-
   switch STORE_MODEL_IN_DB=true for saves, default false otherwise. GET /sso/get/ui_settings
   supplies PROXY_BASE_URL and sso_configured to invitation presentation; B9735 covers its request.
 
-  Use B860 isolated Postgres with fixed seed users/keys/teams and B5076's actual Prisma-backed
+  Use B860 isolated Postgres with fixed seed users/keys/teams and B9942's actual Prisma-backed
   gateway startup. The ordinary admin is a seeded virtual key, not a fabricated JWT. Each case
   uses Authorization unless exercising the discovered custom header, JSON bodies, real HTTP
   steps and process-local captures for new invitation ids. Compare all stable fields, status,
