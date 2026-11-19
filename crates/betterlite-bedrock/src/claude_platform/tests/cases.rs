@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each named case states one LiteLLM behavior as a single scenario"
+    )
+)]
+
 use std::collections::BTreeSet;
 
 use betterlite_anthropic::headers::AnthropicHeaders;
