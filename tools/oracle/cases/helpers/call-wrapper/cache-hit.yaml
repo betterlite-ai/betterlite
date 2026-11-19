@@ -41,5 +41,5 @@ calls:
 env: {}
 compare:
   ignore:
-    - pointer: /result
+    - pointer: /value/result
       why: LiteLLM turns the stored dict into a ModelResponse and serializes that back with pydantic's defaults, while betterlite returns the stored response unchanged; the stub count and the empty seen list prove the hit.

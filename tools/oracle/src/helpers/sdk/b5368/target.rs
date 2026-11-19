@@ -108,8 +108,7 @@ impl CallTarget for Target {
         request: RequestMap,
         _logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        self.record(&request);
-        self.next()
+        CallTarget::call(self, request, _logging).await
     }
 }
 

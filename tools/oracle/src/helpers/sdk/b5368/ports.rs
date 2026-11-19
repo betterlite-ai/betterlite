@@ -23,6 +23,8 @@ use betterlite_sdk::call_wrapper::state::{KnownCallback, LoggingHandle};
 use betterlite_sdk::call_wrapper::stream::StreamAssembly;
 use chrono::{DateTime, FixedOffset};
 
+type Stored = Result<(), CallError>;
+
 // The cases configure no rules, so every check stops at the first index
 pub(super) struct NoRules;
 
@@ -185,13 +187,7 @@ impl CacheHandler for ScriptedCache {
         }))
     }
 
-    async fn store(
-        &self,
-        _request: &RequestMap,
-        _outcome: &CallOutcome,
-        _call_type: &str,
-        _mode: CacheMode,
-    ) -> Result<(), CallError> {
+    async fn store(&self, _r: &RequestMap, _o: &CallOutcome, _t: &str, _m: CacheMode) -> Stored {
         Ok(())
     }
 

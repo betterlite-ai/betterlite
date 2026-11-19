@@ -12,6 +12,7 @@ use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::fields::field;
 use crate::call_wrapper::logging::{DispatchFlags, dispatch_success_logging, success_result};
 use crate::call_wrapper::post_call::{PostCallInput, Validation, run as post_call_processing};
+use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::steps::{self, CallView};
 
 pub(super) async fn stream_result<E>(
@@ -148,9 +149,12 @@ fn combine_embedding<E>(run: &AsyncRun<'_, E>, outcome: CallOutcome) -> CallOutc
 }
 
 fn log_success<E>(run: &AsyncRun<'_, E>, outcome: &CallOutcome) {
-    let Some(handle) = &run.logging else {
-        return;
-    };
+    if let Some(handle) = &run.logging {
+        dispatch_success(run, handle, outcome);
+    }
+}
+
+fn dispatch_success<E>(run: &AsyncRun<'_, E>, handle: &LoggingHandle, outcome: &CallOutcome) {
     let times = steps::times(run.start, run.end, run.wrapper.clock.as_ref());
     dispatch_success_logging(
         &run.wrapper.logging,

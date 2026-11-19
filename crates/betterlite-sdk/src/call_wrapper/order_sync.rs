@@ -64,7 +64,7 @@ where
         steps::debug_request(&self.call_type, &self.request, self.wrapper.debugging);
         match self.execute() {
             Ok(outcome) => Ok(outcome),
-            Err(error) => failure::handle(self, error),
+            Err(error) => self.handle(error),
         }
     }
 

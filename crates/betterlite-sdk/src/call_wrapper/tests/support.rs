@@ -8,6 +8,7 @@ use betterlite_core::rules::{RuleDecision, RuleEvaluator};
 use betterlite_core::schema::SchemaLimits;
 use betterlite_error::error::details::{ApiDetails, RateLimitDetails, ResponseDetails};
 use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::logging_state::correlation::CorrelationSettings;
@@ -93,9 +94,13 @@ pub(crate) fn context_window(message: &str) -> CallError {
 }
 
 pub(crate) fn rate_limit(message: &str) -> CallError {
+    rate_limited(message, RateLimitCategory::VendorRateLimit)
+}
+
+fn rate_limited(message: &str, category: RateLimitCategory) -> CallError {
     CallError::from(ErrorClass::RateLimit(Box::new(RateLimitDetails {
         context: context(message),
-        category: betterlite_error::rate_limit::RateLimitCategory::VendorRateLimit,
+        category,
         dimension: None,
         headers: BTreeMap::new(),
     })))
@@ -121,44 +126,42 @@ pub(crate) fn responses_stream(body: Json) -> CallOutcome {
     CallOutcome::ResponsesStream(body)
 }
 
-pub(crate) fn cache_hit(cached: CallOutcome) -> CacheOutcome {
+fn cache_outcome(
+    cached: Option<CallOutcome>,
+    final_embedding: Option<Json>,
+    all_embeddings_cached: bool,
+    uncached_input: Option<Json>,
+    preset_cache_key: Option<String>,
+) -> CacheOutcome {
     CacheOutcome {
-        cached: Some(cached),
-        final_embedding: None,
-        all_embeddings_cached: false,
-        uncached_input: None,
-        preset_cache_key: None,
+        cached,
+        final_embedding,
+        all_embeddings_cached,
+        uncached_input,
+        preset_cache_key,
     }
+}
+
+pub(crate) fn cache_hit(cached: CallOutcome) -> CacheOutcome {
+    cache_outcome(Some(cached), None, false, None, None)
 }
 
 pub(crate) fn cache_all_embeddings(final_embedding: Json) -> CacheOutcome {
-    CacheOutcome {
-        cached: None,
-        final_embedding: Some(final_embedding),
-        all_embeddings_cached: true,
-        uncached_input: None,
-        preset_cache_key: None,
-    }
+    cache_outcome(None, Some(final_embedding), true, None, None)
 }
 
 pub(crate) fn cache_partial_embedding(final_embedding: Json, uncached_input: Json) -> CacheOutcome {
-    CacheOutcome {
-        cached: None,
-        final_embedding: Some(final_embedding),
-        all_embeddings_cached: false,
-        uncached_input: Some(uncached_input),
-        preset_cache_key: None,
-    }
+    cache_outcome(
+        None,
+        Some(final_embedding),
+        false,
+        Some(uncached_input),
+        None,
+    )
 }
 
 pub(crate) fn cache_with_preset_key(key: &str) -> CacheOutcome {
-    CacheOutcome {
-        cached: None,
-        final_embedding: None,
-        all_embeddings_cached: false,
-        uncached_input: None,
-        preset_cache_key: Some(key.to_owned()),
-    }
+    cache_outcome(None, None, false, None, Some(key.to_owned()))
 }
 
 pub(crate) struct NoRules;
@@ -231,6 +234,7 @@ fn default_outcome() -> Result<CallOutcome, CallError> {
     Ok(CallOutcome::Response(Json::Object(IndexMap::new())))
 }
 
+#[derive(Default)]
 pub(crate) struct Stub {
     name: String,
     outcomes: Mutex<VecDeque<Result<CallOutcome, CallError>>>,
@@ -243,15 +247,12 @@ pub(crate) struct Stub {
 
 impl Stub {
     pub(crate) fn new(name: &str) -> Self {
-        Self {
-            name: name.to_owned(),
-            outcomes: Mutex::new(VecDeque::new()),
-            retry_outcomes: Mutex::new(VecDeque::new()),
-            calls: Mutex::new(Vec::new()),
-            retries: Mutex::new(Vec::new()),
-            handles: Mutex::new(Vec::new()),
-            capture: Mutex::new(None),
-        }
+        Self::default().with_name(name)
+    }
+
+    fn with_name(mut self, name: &str) -> Self {
+        self.name = name.to_owned();
+        self
     }
 
     pub(crate) fn scripted(name: &str, outcomes: Vec<Result<CallOutcome, CallError>>) -> Self {
@@ -326,6 +327,31 @@ impl Stub {
     }
 }
 
+fn record_request(
+    requests: &Mutex<Vec<RequestMap>>,
+    handles: &Mutex<Vec<Option<LoggingHandle>>>,
+    request: RequestMap,
+    logging: Option<&LoggingHandle>,
+) {
+    requests
+        .lock()
+        .expect("the request lock is free")
+        .push(request);
+    handles
+        .lock()
+        .expect("the handle lock is free")
+        .push(logging.cloned());
+}
+
+fn take_outcome(
+    outcomes: &Mutex<VecDeque<Result<CallOutcome, CallError>>>,
+) -> Option<Result<CallOutcome, CallError>> {
+    outcomes
+        .lock()
+        .expect("the outcome lock is free")
+        .pop_front()
+}
+
 #[async_trait]
 impl CallTarget for Stub {
     fn name(&self) -> &str {
@@ -337,14 +363,7 @@ impl CallTarget for Stub {
         request: RequestMap,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        self.calls
-            .lock()
-            .expect("the call lock is free")
-            .push(request);
-        self.handles
-            .lock()
-            .expect("the handle lock is free")
-            .push(logging.cloned());
+        record_request(&self.calls, &self.handles, request, logging);
         let capture = self
             .capture
             .lock()
@@ -356,12 +375,7 @@ impl CallTarget for Stub {
                 .model_call_details
                 .insert("raw_request_typed_dict".to_owned(), value);
         }
-        let scripted = self
-            .outcomes
-            .lock()
-            .expect("the outcome lock is free")
-            .pop_front();
-        scripted.unwrap_or_else(default_outcome)
+        take_outcome(&self.outcomes).unwrap_or_else(default_outcome)
     }
 
     async fn retry(
@@ -369,20 +383,8 @@ impl CallTarget for Stub {
         request: RequestMap,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        self.retries
-            .lock()
-            .expect("the retry lock is free")
-            .push(request);
-        self.handles
-            .lock()
-            .expect("the handle lock is free")
-            .push(logging.cloned());
-        let scripted = self
-            .retry_outcomes
-            .lock()
-            .expect("the retry outcome lock is free")
-            .pop_front();
-        scripted.unwrap_or_else(default_outcome)
+        record_request(&self.retries, &self.handles, request, logging);
+        take_outcome(&self.retry_outcomes).unwrap_or_else(default_outcome)
     }
 }
 
@@ -489,6 +491,10 @@ impl RecordingLogging {
             .push(event);
     }
 
+    fn record_labelled(&self, prefix: &str, result: &SuccessResult) {
+        self.record(format!("{prefix}:{}", result_label(result)));
+    }
+
     pub(crate) fn events(&self) -> Vec<String> {
         self.events.lock().expect("the event lock is free").clone()
     }
@@ -506,16 +512,11 @@ fn result_label(result: &SuccessResult) -> &'static str {
 #[async_trait]
 impl CallLogging for RecordingLogging {
     fn success(&self, _handle: &LoggingHandle, result: SuccessResult, _times: CallTimes) {
-        self.record(format!("success:{}", result_label(&result)));
+        self.record_labelled("success", &result);
     }
 
-    async fn async_success(
-        &self,
-        _handle: &LoggingHandle,
-        result: SuccessResult,
-        _times: CallTimes,
-    ) {
-        self.record(format!("async_success:{}", result_label(&result)));
+    async fn async_success(&self, _h: &LoggingHandle, result: SuccessResult, _t: CallTimes) {
+        self.record_labelled("async_success", &result);
     }
 
     fn sync_success_callbacks_for_async_calls(
@@ -524,7 +525,7 @@ impl CallLogging for RecordingLogging {
         result: SuccessResult,
         _times: CallTimes,
     ) {
-        self.record(format!("sync_callbacks:{}", result_label(&result)));
+        self.record_labelled("sync_callbacks", &result);
     }
 
     fn failure_sync(&self, _handle: &LoggingHandle, error: &CallError, _times: CallTimes) {
@@ -665,6 +666,11 @@ impl MarkingHook {
             marker: marker.to_owned(),
         }
     }
+
+    fn mark(&self, mut fields: IndexMap<String, Json>) -> IndexMap<String, Json> {
+        fields.insert(self.marker.clone(), Json::Bool(true));
+        fields
+    }
 }
 
 #[async_trait]
@@ -681,8 +687,7 @@ impl DeploymentHook for MarkingHook {
         request: &mut RequestMap,
         _call_type: Option<CallType>,
     ) -> Result<Option<RequestMap>, HookError> {
-        let mut modified = request.clone();
-        modified.insert(self.marker.clone(), Json::Bool(true));
+        let modified = self.mark(request.clone());
         Ok(Some(modified))
     }
 
@@ -692,11 +697,10 @@ impl DeploymentHook for MarkingHook {
         response: &Json,
         _call_type: Option<CallType>,
     ) -> Result<Option<Json>, HookError> {
-        let Json::Object(mut fields) = response.clone() else {
+        let Json::Object(fields) = response.clone() else {
             return Ok(None);
         };
-        fields.insert(self.marker.clone(), Json::Bool(true));
-        Ok(Some(Json::Object(fields)))
+        Ok(Some(Json::Object(self.mark(fields))))
     }
 }
 
@@ -731,19 +735,6 @@ pub(crate) fn run_sync(
     let outcome = fixture
         .wrapper
         .call_blocking(stub, request, WrapperOptions::default(), &runtime);
-    outcome
-}
-
-pub(crate) fn run_sync_with(
-    fixture: &mut Fixture,
-    stub: &Stub,
-    request: RequestMap,
-    options: WrapperOptions,
-) -> Result<CallOutcome, CallError> {
-    let runtime = tokio::runtime::Runtime::new().expect("the test runtime builds");
-    let outcome = fixture
-        .wrapper
-        .call_blocking(stub, request, options, &runtime);
     outcome
 }
 

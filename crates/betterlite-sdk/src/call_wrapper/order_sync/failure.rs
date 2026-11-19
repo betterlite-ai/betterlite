@@ -12,119 +12,90 @@ use crate::call_wrapper::retry::{
 };
 use crate::call_wrapper::steps;
 
-// The except block: a completion retries or falls back, responses only retries, then failure logging and the error
-pub(super) fn handle<E, B>(
-    run: &mut SyncRun<'_, E, B>,
-    error: CallError,
-) -> Result<CallOutcome, CallError>
+impl<'run, E, B> SyncRun<'run, E, B>
 where
     E: RuleEvaluator,
     B: BlockingBridge,
 {
-    let retried = match run.call_type.as_str() {
-        "completion" => retry_previous(run, &error, true)?,
-        "responses" => retry_previous(run, &error, false)?,
-        _ => None,
-    };
-    if let Some(outcome) = retried {
-        return Ok(outcome);
+    // The except block: a completion retries or falls back, responses only retries, then failure logging and the error
+    pub(super) fn handle(&mut self, error: CallError) -> Result<CallOutcome, CallError> {
+        let call_type = self.call_type.clone();
+        let retried = match call_type.as_str() {
+            "completion" => self.retry_previous(&error, true)?,
+            "responses" => self.retry_previous(&error, false)?,
+            _ => None,
+        };
+        if let Some(outcome) = retried {
+            return Ok(outcome);
+        }
+        self.log_failure(&error);
+        Err(error)
     }
-    log_failure(run, &error);
-    Err(error)
-}
 
-// A context window error only falls back when the retry branch above wasn't entered
-fn retry_previous<E, B>(
-    run: &mut SyncRun<'_, E, B>,
-    error: &CallError,
-    context_fallback_allowed: bool,
-) -> Result<Option<CallOutcome>, CallError>
-where
-    E: RuleEvaluator,
-    B: BlockingBridge,
-{
-    let count = resolve_count(run, error)?;
-    let router = is_router_call(&run.request)?;
-    if let Some(count) = count.filter(|value| *value != 0) {
-        if router || !is_api_error(&error.class) {
+    // A context window error only falls back when the retry branch above wasn't entered
+    fn retry_previous(
+        &mut self,
+        error: &CallError,
+        context_fallback_allowed: bool,
+    ) -> Result<Option<CallOutcome>, CallError> {
+        let count = self.resolve_count(error)?;
+        let router = is_router_call(&self.request)?;
+        if let Some(count) = count.filter(|value| *value != 0) {
+            if router || !is_api_error(&error.class) {
+                return Ok(None);
+            }
+            return self.retry_call(count);
+        }
+        if router || !context_fallback_allowed {
             return Ok(None);
         }
-        return retry_call(run, count);
+        self.context_fallback(error)
     }
-    if router || !context_fallback_allowed {
-        return Ok(None);
+
+    // the request's count, then litellm.num_retries, then a retry policy; the default is cleared so a retry can't loop
+    fn resolve_count(&mut self, error: &CallError) -> Result<Option<i64>, CallError> {
+        let count = num_retries(
+            &mut self.request,
+            self.wrapper.retry.num_retries,
+            error,
+            RetryMode::Sync,
+        )?;
+        self.wrapper.retry.num_retries = None;
+        Ok(count)
     }
-    context_fallback(run, error)
-}
 
-// the request's count, then litellm.num_retries, then a retry policy; the default is cleared so a retry can't loop
-fn resolve_count<E, B>(
-    run: &mut SyncRun<'_, E, B>,
-    error: &CallError,
-) -> Result<Option<i64>, CallError>
-where
-    E: RuleEvaluator,
-    B: BlockingBridge,
-{
-    let count = num_retries(
-        &mut run.request,
-        run.wrapper.retry.num_retries,
-        error,
-        RetryMode::Sync,
-    )?;
-    run.wrapper.retry.num_retries = None;
-    Ok(count)
-}
-
-fn retry_call<E, B>(
-    run: &mut SyncRun<'_, E, B>,
-    count: i64,
-) -> Result<Option<CallOutcome>, CallError>
-where
-    E: RuleEvaluator,
-    B: BlockingBridge,
-{
-    run.request
-        .insert("num_retries".to_owned(), Json::Number(Number::from(count)));
-    let request = run.request.clone();
-    let bridge = run.bridge;
-    let target = run.target;
-    let outcome = bridge.block_on(target.retry(request, run.logging.as_ref()))?;
-    Ok(Some(outcome))
-}
-
-fn context_fallback<E, B>(
-    run: &mut SyncRun<'_, E, B>,
-    error: &CallError,
-) -> Result<Option<CallOutcome>, CallError>
-where
-    E: RuleEvaluator,
-    B: BlockingBridge,
-{
-    if !matches!(&error.class, ErrorClass::ContextWindowExceeded(_))
-        || is_router_call(&run.request)?
-    {
-        return Ok(None);
+    fn retry_call(&mut self, count: i64) -> Result<Option<CallOutcome>, CallError> {
+        self.request
+            .insert("num_retries".to_owned(), Json::Number(Number::from(count)));
+        let request = self.request.clone();
+        let bridge = self.bridge;
+        let target = self.target;
+        let outcome = bridge.block_on(target.retry(request, self.logging.as_ref()))?;
+        Ok(Some(outcome))
     }
-    let Some(model) = context_window_model(&run.request, run.model.as_deref())? else {
-        return Ok(None);
-    };
-    run.request.insert("model".to_owned(), Json::Text(model));
-    let request = run.request.clone();
-    let bridge = run.bridge;
-    let target = run.target;
-    let outcome = bridge.block_on(target.call(request, run.logging.as_ref()))?;
-    Ok(Some(outcome))
-}
 
-fn log_failure<E, B>(run: &SyncRun<'_, E, B>, error: &CallError)
-where
-    E: RuleEvaluator,
-    B: BlockingBridge,
-{
-    let Some(handle) = &run.logging else {
-        return;
-    };
-    let times = steps::times(run.start, run.end, run.wrapper.clock.as_ref());
-    run.wrapper.logging.failure_sync(handle, error, times);
+    fn context_fallback(&mut self, error: &CallError) -> Result<Option<CallOutcome>, CallError> {
+        if !matches!(&error.class, ErrorClass::ContextWindowExceeded(_))
+            || is_router_call(&self.request)?
+        {
+            return Ok(None);
+        }
+        let Some(model) = context_window_model(&self.request, self.model.as_deref())? else {
+            return Ok(None);
+        };
+        self.request.insert("model".to_owned(), Json::Text(model));
+        let request = self.request.clone();
+        let bridge = self.bridge;
+        let target = self.target;
+        let outcome = bridge.block_on(target.call(request, self.logging.as_ref()))?;
+        Ok(Some(outcome))
+    }
+
+    fn log_failure(&self, error: &CallError) {
+        let Some(handle) = &self.logging else {
+            return;
+        };
+        let times = steps::times(self.start, self.end, self.wrapper.clock.as_ref());
+        self.wrapper.logging.failure_sync(handle, error, times);
+    }
 }

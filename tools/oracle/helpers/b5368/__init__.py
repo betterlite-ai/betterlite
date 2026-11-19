@@ -38,27 +38,19 @@ def answer(result: JsonValue, error: Exception | None) -> Answer:
 
 
 def run_sync(input_value: Input) -> Answer:
-    request = prepare(input_value)
     wrapper = SYNC_CLIENT(stubs.completion)
-    result: JsonValue = None
-    error: Exception | None = None
     try:
-        result = wrapper(**request)
+        return answer(wrapper(**prepare(input_value)), None)
     except Exception as caught:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1899-L1930
-        error = caught
-    return answer(result, error)
+        return answer(None, caught)
 
 
 async def run_async(input_value: Input) -> Answer:
-    request = prepare(input_value)
     wrapper = ASYNC_CLIENT(stubs.acompletion)
-    result: JsonValue = None
-    error: Exception | None = None
     try:
-        result = await wrapper(**request)
+        return answer(await wrapper(**prepare(input_value)), None)
     except Exception as caught:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2196-L2315
-        error = caught
-    return answer(result, error)
+        return answer(None, caught)
 
 
 def run(input_value: Input) -> Answer:
