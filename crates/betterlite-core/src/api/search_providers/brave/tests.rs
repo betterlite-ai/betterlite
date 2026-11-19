@@ -568,7 +568,8 @@ fn brave_search_reply_defaults_missing_text_and_maps_the_fields() {
             {"title": "t", "url": "https://x.test", "description": "s",
              "page_age": "2024-03-05T23:30:00-0500", "age": "2020-01-01",
              "fetched_content_timestamp": 1700000000},
-            {}
+            {},
+            {"title": null, "url": null, "description": null}
         ]}
     }"#;
 
@@ -585,6 +586,9 @@ fn brave_search_reply_defaults_missing_text_and_maps_the_fields() {
     assert_eq!(response.results[1].snippet, "");
     assert_eq!(response.results[1].date, None);
     assert_eq!(response.results[1].last_updated, None);
+    assert_eq!(response.results[2].title, "");
+    assert_eq!(response.results[2].url, "");
+    assert_eq!(response.results[2].snippet, "");
 }
 
 #[test]
