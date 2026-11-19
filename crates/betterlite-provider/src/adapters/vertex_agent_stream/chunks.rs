@@ -65,6 +65,8 @@ fn chunk_of(model: &str, ids: &dyn IdSource, chunk: &AgentEngineChunk<'_>) -> Ch
                 refusal: None,
                 tool_calls: None,
                 function_call: None,
+                reasoning_content: None,
+                thinking_blocks: None,
             },
             finish_reason: chunk.finish_reason.map(str::to_owned),
             logprobs: None,
