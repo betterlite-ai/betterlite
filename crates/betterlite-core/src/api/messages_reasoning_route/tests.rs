@@ -667,6 +667,18 @@ fn route_reads_capabilities_before_rewriting_the_model() {
     None,
     r#"{"model":"deployment-a","custom_llm_provider":"openai","reasoning_effort":{"effort":7}}"#
 )]
+#[case::list_effort_in_dict_unchanged(
+    r#"{"model":"deployment-a","custom_llm_provider":"openai","reasoning_effort":{"effort":["max"]}}"#,
+    Some(r#"{"supports_reasoning":true,"reasoning_effort_levels":["high"]}"#),
+    None,
+    r#"{"model":"deployment-a","custom_llm_provider":"openai","reasoning_effort":{"effort":["max"]}}"#
+)]
+#[case::object_effort_in_dict_unchanged(
+    r#"{"model":"deployment-a","custom_llm_provider":"openai","reasoning_effort":{"effort":{"tier":"max"}}}"#,
+    Some(r#"{"supports_reasoning":true,"reasoning_effort_levels":["high"]}"#),
+    None,
+    r#"{"model":"deployment-a","custom_llm_provider":"openai","reasoning_effort":{"effort":{"tier":"max"}}}"#
+)]
 fn normalize_before_route(
     #[case] kwargs: &str,
     #[case] info: Option<&str>,
