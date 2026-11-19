@@ -16,29 +16,21 @@ for root, dirs, filenames in os.walk('/sandbox'):
 print(json.dumps(files))
 ";
 
+const PIP_INSTALL_HEADER: &str = "\nimport subprocess\nimport sys\nsubprocess.run(\n";
+
 pub fn pip_install_code(filename: &str) -> String {
     format!(
-        "
-import subprocess
-import sys
-subprocess.run(
-    [sys.executable, '-m', 'pip', 'install', '-r', '{filename}'],
-    check=True,
-    cwd='/sandbox',
-)
-"
+        "{PIP_INSTALL_HEADER}    [sys.executable, '-m', 'pip', 'install', '-r', '{filename}'],\n    check=True,\n    cwd='/sandbox',\n)\n"
     )
 }
+
+const CODE_HEADER: &str =
+    "\nimport os\nos.chdir('/sandbox')\nimport sys\nsys.path.insert(0, '/sandbox')\n\n";
 
 pub fn wrapped_code(code: &str) -> String {
     format!(
         "
-import os
-os.chdir('/sandbox')
-import sys
-sys.path.insert(0, '/sandbox')
-
-{code}
+{CODE_HEADER}{code}
 "
     )
 }
