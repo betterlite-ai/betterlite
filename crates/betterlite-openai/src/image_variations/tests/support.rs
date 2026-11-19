@@ -352,7 +352,7 @@ impl LogSink for Sink {
 }
 
 type Snapshots = Arc<Mutex<Vec<Json>>>;
-type SnapshotLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError>>;
+type SnapshotLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>;
 
 fn logging() -> (Redactor, LoggingState, Sink, Snapshots, SnapshotLogger) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();

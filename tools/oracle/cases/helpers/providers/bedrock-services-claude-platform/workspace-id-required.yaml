@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-services-claude-platform-workspace-id-required
+call:
+  bedrock_services_claude_platform:
+    workspace_id_required:
+      model: claude-sonnet-4-5
+      cases:
+        - optional_params: {workspace_id: request-workspace}
+          deployment: {workspace_id: deployment-workspace}
+          litellm_settings: {workspace_id: module-workspace}
+          environment: {ANTHROPIC_AWS_WORKSPACE_ID: environment-workspace}
+        - deployment: {workspace_id: deployment-workspace}
+          litellm_settings: {workspace_id: module-workspace}
+        - litellm_settings: {workspace_id: module-workspace}
+        - optional_params: {aws_workspace_id: aws-workspace}
+        - optional_params: {anthropic-workspace-id: hyphen-workspace}
+        - optional_params: {anthropic_workspace_id: underscore-workspace}
+        - optional_params: {anthropic-workspace-id: ''}
+          environment: {ANTHROPIC_AWS_WORKSPACE_ID: environment-workspace}
+        - optional_params: {workspace_id: ''}
+          environment: {ANTHROPIC_WORKSPACE_ID: environment-workspace}
+        - environment: {ANTHROPIC_AWS_WORKSPACE_ID: '', ANTHROPIC_WORKSPACE_ID: environment-workspace}
+        - {}
+env: {}
+compare: {ignore: []}

@@ -209,7 +209,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     }
 }
 
-fn fixture_config(setup: &Setup) -> FixtureConfig {
+pub(super) fn fixture_config(setup: &Setup) -> FixtureConfig {
     FixtureConfig {
         body: setup.body.clone(),
         transform_failure: setup.transform_failure.map(str::to_owned),
@@ -220,7 +220,7 @@ fn fixture_config(setup: &Setup) -> FixtureConfig {
     }
 }
 
-fn settings_of(setup: &Setup) -> AnthropicSettings {
+pub(super) fn settings_of(setup: &Setup) -> AnthropicSettings {
     settings_with_key(
         setup
             .settings_key
@@ -228,7 +228,7 @@ fn settings_of(setup: &Setup) -> AnthropicSettings {
     )
 }
 
-fn call_of<'setup>(
+pub(super) fn call_of<'setup>(
     setup: &'setup Setup,
     api_key: Option<&'setup SecretString>,
     settings: &'setup AnthropicSettings,
@@ -252,7 +252,7 @@ fn call_of<'setup>(
     }
 }
 
-fn deps_of<'deps>(
+pub(super) fn deps_of<'deps>(
     config: &'deps FixtureConfig,
     clients: ChatClients<'deps, FixtureTransport>,
     env: &'deps PrePostEnv<'deps>,
@@ -272,7 +272,7 @@ fn deps_of<'deps>(
     }
 }
 
-fn outcome_of(
+pub(super) fn outcome_of(
     result: Result<ChatOutcome<FixtureFailure, FixtureCounter>, CallError>,
 ) -> Result<Outcome, Box<CallError>> {
     match result {

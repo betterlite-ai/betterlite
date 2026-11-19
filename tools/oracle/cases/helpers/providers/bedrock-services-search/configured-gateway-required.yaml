@@ -1,0 +1,22 @@
+kind: helper
+name: configured-gateway-required
+call:
+  bedrock_services_search:
+    scenario: configured_gateway_required
+    runs:
+      - api_base: 'https://explicit.example.com/mcp'
+        gateway_url: 'https://configured.example.com/mcp'
+      - api_base: null
+        gateway_url: 'https://configured.example.com/mcp'
+      - api_base: ''
+        gateway_url: 'https://configured.example.com/mcp'
+      - api_base: ' '
+        gateway_url: null
+      - api_base: null
+        gateway_url: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com'
+      - api_base: null
+        gateway_url: null
+      - api_base: ''
+        gateway_url: ''
+env: {}
+compare: {ignore: []}

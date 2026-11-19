@@ -4,7 +4,7 @@ use super::legacy::Transport;
 use super::{ClientHandle, Counter, Failure, Native, Reply, Runtime, config::Config};
 use betterlite_anthropic::chat_call::transport::{ChatTransport, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{
-    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, ChatResult, chat_call,
+    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
 };
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
@@ -12,7 +12,6 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_tokenizer::engine::Engine;
-use futures_util::future::LocalBoxFuture;
 use secrecy::ExposeSecret as _;
 use std::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
@@ -57,24 +56,20 @@ where
             disable_add_prefix_to_prompt: runtime.disable_add_prefix_to_prompt,
             model_response: call.model_response.clone(),
         };
-        runtime
-            .send(native, call, config, log)
+        let deps = runtime.deps(call, config, log);
+        chat_call(native, deps)
             .await
             .map_err(|source| Failure::Chat(Box::new(source)))
     })
 }
 
-impl<Client> Runtime<'_, Client>
-where
-    Client: ChatTransport,
-{
-    fn send<'call>(
+impl<Client> Runtime<'_, Client> {
+    fn deps<'call, 'matrix>(
         &'call self,
-        request: ChatCall<'call>,
         call: &'call CompletionCall<ClientHandle<Client>, Engine>,
-        config: &'call Config<'_>,
+        config: &'call Config<'matrix>,
         log: &'call mut CallLogging<'_, '_>,
-    ) -> LocalBoxFuture<'call, ChatResult<Client, Counter>> {
+    ) -> ChatDeps<'call, Config<'matrix>, Client, Counter> {
         let clients = ChatClients {
             pooled: self.pooled,
             supplied: call.client.as_ref().map(|client| SuppliedChatClient {
@@ -82,7 +77,7 @@ where
                 transport: &client.transport,
             }),
         };
-        let deps = ChatDeps {
+        ChatDeps {
             config,
             clients,
             state: log.state,
@@ -92,8 +87,7 @@ where
             ids: self.ids,
             max_event_bytes: self.max_event_bytes,
             max_error_body_bytes: self.max_error_body_bytes,
-        };
-        chat_call(request, deps)
+        }
     }
 }
 

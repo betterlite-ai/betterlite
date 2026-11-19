@@ -1,0 +1,119 @@
+kind: helper
+name: bedrock-services-realtime-transport-python-sdk-boundary
+call:
+  bedrock_services_realtime_transport:
+    runs:
+    - model: custom.model-v2:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: fixture-session-token
+      api_base: https://api.fixture.test
+      endpoint: null
+      region: eu-central-1
+      committed: false
+      failure: null
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: fixture-session-token
+      api_base: null
+      endpoint: https://configured.fixture.test
+      region: null
+      committed: false
+      failure: null
+    - model: arn:aws:bedrock:ap-southeast-2:123456789012:provisioned-model/fixture
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: fixture-session-token
+      api_base: null
+      endpoint: null
+      region: null
+      committed: false
+      failure: null
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: null
+      api_base: null
+      endpoint: null
+      region: us-east-1
+      committed: false
+      failure: null
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: fixture-session-token
+      api_base: null
+      endpoint: null
+      region: us-east-1
+      committed: true
+      failure: null
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: absent
+      auth: null
+      api_base: null
+      endpoint: null
+      region: us-east-1
+      committed: false
+      failure: null
+env: {}
+compare:
+  ignore: []

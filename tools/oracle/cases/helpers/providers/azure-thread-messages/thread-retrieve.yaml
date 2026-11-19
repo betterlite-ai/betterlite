@@ -1,0 +1,15 @@
+kind: helper
+name: azure-thread-messages-thread-retrieve
+call:
+  azure_thread_messages:
+    thread_retrieve:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: "a/b c!$&'()*+,;=:@-._~%"
+env: {}
+compare: {ignore: []}

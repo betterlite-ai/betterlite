@@ -1,0 +1,19 @@
+task: B964
+deviations:
+  - what: >-
+      A conversation entry, or a user content-list entry, that is not an object is skipped instead of
+      failing the request.
+    why: >-
+      LiteLLM subscripts or calls .get on the entry, so a string or a number raises TypeError or
+      AttributeError and becomes a 500 for a request the client got wrong; the request layer types both
+      lists as objects, and the task's own rule is that unknown content blocks produce no message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L498
+  - what: >-
+      A text, thinking, signature, data, name, id or tool_use_id value that is not a string reads as an
+      empty string instead of being carried through verbatim.
+    why: >-
+      LiteLLM copies any value it finds into the chat message, so a number in a text block reaches the
+      provider and later breaks the "".join that concatenates assistant text; these fields are declared
+      as strings, so a wrong type has no meaning to carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L499
+kept_bugs: []

@@ -4,7 +4,6 @@ use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use url::Url;
 
@@ -26,51 +25,47 @@ struct ReplyFacts<'call> {
     optional_params: IndexMap<String, Json>,
     json_mode: bool,
 }
-pub fn buffered<'call, Config, Client, Counter>(
+pub async fn buffered<'call, Config, Client, Counter>(
     call: CallFacts<'call>,
     prepared: Prepared,
     deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
+) -> ChatResult<Client, Counter>
 where
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter + 'call,
+    Counter: ReasoningTokenCounter + Send + 'call,
 {
-    Box::pin(async move {
-        let counter = deps.counter;
-        // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
-        let client = match deps.clients.supplied.as_ref() {
-            Some(supplied)
-                if call.style == CallStyle::Async || supplied.kind == ClientKind::Sync =>
-            {
-                supplied.transport
-            }
-            _ => deps.clients.pooled,
-        };
-        let reply = client
-            .post_buffered(StreamPost {
-                url: Url::parse(call.api_base)?,
-                headers: prepared.header_map,
-                body: python_json::dumps_object(&prepared.body).into_bytes(),
-                stream: false,
-                deadline: call.timeout,
-            })
-            .await;
-        let logging = Logging {
-            state: &mut *deps.state,
-            env: deps.env,
-        };
-        let facts = ReplyFacts {
-            call,
-            body: prepared.body,
-            optional_params: prepared.optional_params,
-            json_mode: prepared.json_mode,
-        };
-        match reply {
-            Ok(answer) => reply_outcome(deps.config, facts, answer, logging, &counter),
-            Err(failure) => Err(buffered_failure(failure, &facts.call, &facts.body, logging)),
+    let counter = deps.counter;
+    // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
+    let client = match deps.clients.supplied.as_ref() {
+        Some(supplied) if call.style == CallStyle::Async || supplied.kind == ClientKind::Sync => {
+            supplied.transport
         }
-    })
+        _ => deps.clients.pooled,
+    };
+    let reply = client
+        .post_buffered(StreamPost {
+            url: Url::parse(call.api_base)?,
+            headers: prepared.header_map,
+            body: python_json::dumps_object(&prepared.body).into_bytes(),
+            stream: false,
+            deadline: call.timeout,
+        })
+        .await;
+    let logging = Logging {
+        state: &mut *deps.state,
+        env: deps.env,
+    };
+    let facts = ReplyFacts {
+        call,
+        body: prepared.body,
+        optional_params: prepared.optional_params,
+        json_mode: prepared.json_mode,
+    };
+    match reply {
+        Ok(answer) => reply_outcome(deps.config, facts, answer, logging, &counter),
+        Err(failure) => Err(buffered_failure(failure, &facts.call, &facts.body, logging)),
+    }
 }
 fn reply_outcome<Config, ClientFailure, Counter>(
     config: &Config,
