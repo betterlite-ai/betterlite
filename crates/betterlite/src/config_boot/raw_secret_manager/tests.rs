@@ -41,7 +41,7 @@ fn project_map(config: &ConfigMap) -> BootstrapSettings {
 }
 
 struct RecordingReader {
-    reads: Mutex<Vec<String>>,
+    reads: Arc<Mutex<Vec<String>>>,
     value: &'static str,
 }
 
@@ -55,9 +55,9 @@ impl SyncSecretReader for RecordingReader {
     }
 }
 
-fn recording_manager(reader: &Arc<RecordingReader>) -> ManagerState {
+fn recording_manager(client: Arc<dyn SyncSecretReader>) -> ManagerState {
     ManagerState {
-        client: SecretManagerClient::Vault(Arc::clone(reader)),
+        client: SecretManagerClient::Vault(client),
         settings: Some(SecretManagerSettings {
             primary_secret_name: None,
             optional_params: CustomParams::new(),
@@ -164,11 +164,11 @@ fn literal_system_errors_are_reported() {
 
 #[test]
 fn existing_client_skips_new_settings() {
-    let reader = Arc::new(RecordingReader {
-        reads: Mutex::new(Vec::new()),
+    let client: Arc<dyn SyncSecretReader> = Arc::new(RecordingReader {
+        reads: Arc::new(Mutex::new(Vec::new())),
         value: "sk-manager",
     });
-    let mut state = RawSecretManager::new(secret_lookup(Some(recording_manager(&reader))));
+    let mut state = RawSecretManager::new(secret_lookup(Some(recording_manager(client))));
     let projection = project(
         "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings:\n    access_mode: bogus\n",
         &env(&[]),
@@ -366,11 +366,12 @@ fn manager_only_credential_resolves_on_first_load() {
         Some(KeyManagementSystem::HashicorpVault)
     );
     // a Vault read needs its server, so the shared lookup serves the staged load from this reader instead
-    let reader = Arc::new(RecordingReader {
-        reads: Mutex::new(Vec::new()),
+    let reads: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let client: Arc<dyn SyncSecretReader> = Arc::new(RecordingReader {
+        reads: Arc::clone(&reads),
         value: "sk-manager",
     });
-    state.lookup.manager = Some(recording_manager(&reader));
+    state.lookup.manager = Some(recording_manager(client));
     let config = ConfigLoader {
         lookup: StagedLookup {
             secrets: &state.lookup,
@@ -384,11 +385,11 @@ fn manager_only_credential_resolves_on_first_load() {
             .litellm_params
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(|key| key.expose_secret()),
         Some("sk-manager")
     );
     {
-        let recorded = reader.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        let recorded = reads.lock().unwrap_or_else(PoisonError::into_inner);
         assert_eq!(*recorded, vec![String::from("MODEL_KEY")]);
     }
     state

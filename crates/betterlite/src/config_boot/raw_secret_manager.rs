@@ -47,7 +47,7 @@ pub enum RawSecretManagerError {
 
 pub struct RawSecretManager {
     pub lookup: SecretLookup,
-    settings: Option<KeySettings>,
+    pub settings: Option<KeySettings>,
 }
 
 impl RawSecretManager {

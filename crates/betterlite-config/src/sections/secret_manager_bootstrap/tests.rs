@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader, parse_view};
-use crate::sections::Section;
+use crate::sections::Section as _;
 
 use super::{Raw, Settings};
 
