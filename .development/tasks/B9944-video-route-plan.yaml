@@ -129,6 +129,7 @@ pitfalls:
   - "Step 5 uses is_recognized_model, which also matches a deployment id and a model_group_alias; a model in model_names that an admin with a team does not match falls through to NotFound."
   - "specific_deployment=True is added only for the deployment_names branch; the default-deployment and wildcard branch above it plans Router without it."
   - "The api_key or api_base check runs before the model checks, so a status call with api_base in data goes to the router even when the model is empty."
+  - "VideoRouterError::Mapped keeps the class and the client-facing text side by side: core cannot name the SDK and generic call errors, and ErrorClass has no message accessor. The message is the text of an exception that is already classified, not a wrapped error, so rule typed-errors is met by class; do not replace it with a #[source] to an SDK type."
 review_level: standard
 budget:
   max_changed_lines: 500
