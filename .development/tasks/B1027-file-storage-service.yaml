@@ -26,6 +26,8 @@ description: >-
   125 tests, 105 cases, 115 adapters and 35 wiring lines: 530 total.
 scope:
   paths:
+  - "tools/oracle/sdk_http/storage_backend_service.py"
+  - "tools/oracle/sdk_http/**"
   - "tools/oracle/sdk_http/registered.py"
   - "tools/oracle/sdk_http"
   - "tools/oracle/helpers/operations.txt"
