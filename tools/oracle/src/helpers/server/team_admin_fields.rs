@@ -30,6 +30,7 @@ use serde_json::from_value;
 use serde_json::json;
 use serde_json::to_value;
 
+// the JSON rows dwarf the settings maps, so they are boxed to stay within 3x, the limit variant_size_differences enforces
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -41,31 +42,31 @@ pub(crate) enum Input {
         general_settings: BTreeMap<String, JsonValue>,
     },
     ChangedTeam {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
     },
     TeamVerdict {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
         permitted: Vec<String>,
     },
     TeamRequest {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
         permitted: Vec<String>,
     },
     ChangedKey {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
     },
     KeyVerdict {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
         enabled: bool,
     },
     KeyRequest {
-        request: JsonData,
-        existing: JsonData,
+        request: Box<JsonData>,
+        existing: Box<JsonData>,
         enabled: bool,
     },
 }
@@ -120,8 +121,13 @@ const fn warning_kind(warning: &SettingWarning) -> &'static str {
 fn resolve(general_settings: &BTreeMap<String, JsonValue>, supported: &[String]) -> Value {
     let names: Vec<&str> = supported.iter().map(String::as_str).collect();
     let resolved = resolve_editable_fields(general_settings.get(EDITABLE_FIELDS_SETTING), &names);
-    let kinds: Vec<&str> = resolved.warnings.iter().map(warning_kind).collect();
-    json!({"fields": resolved.fields.into_iter().collect::<Vec<_>>(), "warnings": kinds.into_iter().map(|kind| json!({"kind": kind})).collect::<Vec<_>>()})
+    let fields: Vec<String> = resolved.fields.into_iter().collect();
+    let warnings: Vec<Value> = resolved
+        .warnings
+        .iter()
+        .map(|warning| json!({"kind": warning_kind(warning)}))
+        .collect();
+    json!({"fields": fields, "warnings": warnings})
 }
 
 fn changed_team(request: &JsonData, existing: &JsonData) -> HelperResult {
@@ -151,7 +157,7 @@ fn team_verdict(request: &JsonData, existing: &JsonData, permitted: &[String]) -
     let stored = TeamRow::try_from(existing.clone()).or_value_error()?;
     let verdict = team::edit_verdict(&submitted, &stored, &permitted.iter().cloned().collect())
         .or_value_error()?;
-    Ok(team_verdict_view(&verdict))
+    team_verdict_view(&verdict)
 }
 
 fn team_request(request: &JsonData, existing: &JsonData, permitted: &[String]) -> HelperResult {
@@ -159,7 +165,7 @@ fn team_request(request: &JsonData, existing: &JsonData, permitted: &[String]) -
     let stored = TeamRow::try_from(existing.clone()).or_value_error()?;
     let verdict = team::edit_verdict(&submitted, &stored, &permitted.iter().cloned().collect())
         .or_value_error()?;
-    Ok(team_request_view(team::request_or_raise(verdict)))
+    team_request_view(team::request_or_raise(verdict))
 }
 
 fn key_verdict(request: &JsonData, existing: &JsonData, enabled: bool) -> HelperResult {
