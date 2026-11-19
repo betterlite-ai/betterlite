@@ -1,4 +1,26 @@
-use super::*;
+use betterlite_bedrock::passthrough::collector::StreamLogAssembler;
+use betterlite_bedrock::passthrough::reply::{NativeReplyRequest, NativeReplyTransform};
+use betterlite_bedrock::passthrough::url::PassthroughEnvironment;
+use betterlite_bedrock::passthrough::{
+    BedrockPassthroughPlan, CollectorClock, PassthroughIdentity,
+};
+use betterlite_context::chat_config_selection::selection::ChatConfigError;
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_models::decisions::Json;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_openai::error::ProviderError;
+use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use betterlite_openai::passthrough::transformation::types::{
+    PassthroughLogging, PassthroughSigning, PassthroughTarget, PassthroughUrlRequest, RelayCallType,
+};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_provider::bedrock_interactive_dispatch::passthrough;
+use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSelection;
+use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
+
+use super::{PassthroughRun, shared};
 
 struct Selector;
 
@@ -30,7 +52,7 @@ impl StreamLogAssembler for Assembler {
         chunks: &[StreamChunk],
         _logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<Json> {
-        (!chunks.is_empty()).then(|| json!({"id": "assembled"}))
+        (!chunks.is_empty()).then(|| shared::json!({"id": "assembled"}))
     }
 }
 
@@ -56,9 +78,9 @@ impl PassthroughServices {
                 runtime_endpoint: None,
             },
             identity: PassthroughIdentity {
-                credentials: Some(credentials()),
+                credentials: Some(shared::credentials()),
                 bearer_token: None,
-                now: fixture_time(),
+                now: shared::fixture_time(),
             },
             selector: &self.selector,
             transform: &self.transform,
@@ -83,7 +105,7 @@ fn passthrough_url_request<'call>(
         api_base: None,
         api_key: None,
         target: PassthroughTarget {
-            model: PASSTHROUGH_MODEL,
+            model: shared::PASSTHROUGH_MODEL,
             custom_llm_provider: "bedrock",
             endpoint,
         },
@@ -92,15 +114,17 @@ fn passthrough_url_request<'call>(
     }
 }
 
-fn passthrough_transport(run: &PassthroughRun) -> Result<Scripted, Box<HelperError>> {
-    let mut scripted = reply(run.status, &run.reply);
+fn passthrough_transport(
+    run: &PassthroughRun,
+) -> Result<shared::Scripted, Box<shared::HelperError>> {
+    let mut scripted = shared::reply(run.status, &run.reply);
     for chunk in &run.chunks {
         scripted.chunks.push(hex::decode(chunk).or_value_error()?);
     }
-    Ok(Scripted(scripted))
+    Ok(shared::Scripted(scripted))
 }
 
-pub(crate) fn passthrough_row(run: &PassthroughRun) -> HelperResult {
+pub(crate) fn passthrough_row(run: &PassthroughRun) -> shared::HelperResult {
     let services = PassthroughServices {
         selector: Selector,
         transform: Transform { result: Json::Null },
@@ -110,7 +134,7 @@ pub(crate) fn passthrough_row(run: &PassthroughRun) -> HelperResult {
     let params = Object::new();
     let url_request = passthrough_url_request(&params, &run.endpoint);
     let Ok((url, endpoint_url)) = plan.get_complete_url(&url_request) else {
-        return Ok(error_row("leaf", None));
+        return Ok(shared::error_row("leaf", None));
     };
     let signed_base = url.to_string();
     let data = run
@@ -122,7 +146,7 @@ pub(crate) fn passthrough_row(run: &PassthroughRun) -> HelperResult {
         litellm_params: &params,
         request_data: data.as_ref(),
         api_base: &signed_base,
-        model: Some(PASSTHROUGH_MODEL),
+        model: Some(shared::PASSTHROUGH_MODEL),
     };
     let mut logging = Logging;
     let operation = passthrough::Operation {
@@ -133,25 +157,25 @@ pub(crate) fn passthrough_row(run: &PassthroughRun) -> HelperResult {
         logging: &mut logging,
     };
     let transport = passthrough_transport(run)?;
-    match block_on(operation.run(&transport))? {
-        Ok(outcome) => Ok(passthrough_success(&outcome, &endpoint_url)),
-        Err(error) => Ok(passthrough_failure(&error)),
+    match shared::block_on(operation.run(&transport))? {
+        Ok(outcome) => Ok(success(&outcome, &endpoint_url)),
+        Err(error) => Ok(failure(&error)),
     }
 }
 
-fn passthrough_success(outcome: &passthrough::Outcome, endpoint_url: &str) -> Value {
-    let mut row = success_row(&outcome.request);
-    row.insert("endpoint_url".to_owned(), json!(endpoint_url));
-    row.insert("streaming".to_owned(), json!(outcome.streaming));
-    row.insert("status".to_owned(), json!(outcome.status));
-    row.insert("logged".to_owned(), json!(outcome.logged.is_some()));
-    Value::Object(row)
+fn success(outcome: &passthrough::Outcome, endpoint_url: &str) -> shared::Value {
+    let mut row = shared::success_row(&outcome.request);
+    row.insert("endpoint_url".to_owned(), shared::json!(endpoint_url));
+    row.insert("streaming".to_owned(), shared::json!(outcome.streaming));
+    row.insert("status".to_owned(), shared::json!(outcome.status));
+    row.insert("logged".to_owned(), shared::json!(outcome.logged.is_some()));
+    shared::Value::Object(row)
 }
 
-fn passthrough_failure(error: &passthrough::Error) -> Value {
+fn failure(error: &passthrough::Error) -> shared::Value {
     match error {
-        passthrough::Error::Leaf(_) => error_row("leaf", None),
-        passthrough::Error::Transport(_) => error_row("transport", None),
-        passthrough::Error::Collector { .. } => error_row("collector", None),
+        passthrough::Error::Leaf(_) => shared::error_row("leaf", None),
+        passthrough::Error::Transport(_) => shared::error_row("transport", None),
+        passthrough::Error::Collector { .. } => shared::error_row("collector", None),
     }
 }

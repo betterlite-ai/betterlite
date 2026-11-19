@@ -1,4 +1,13 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use betterlite_bedrock::signing::target::RegionInputs;
+use betterlite_bedrock::vector_stores::request::{SearchOptionalParams, SearchQuery};
+use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_provider::bedrock_interactive_dispatch::vector_retrieve;
+use indexmap::IndexMap;
+
+use super::{VectorRun, shared};
 
 struct VectorFixture {
     query: SearchQuery,
@@ -9,10 +18,12 @@ struct VectorFixture {
 
 impl VectorFixture {
     fn new(run: &VectorRun) -> Result<Self, Box<HelperError>> {
+        let optional = run.optional.clone().unwrap_or_else(|| shared::json!({}));
+        let litellm_params = shared::json!({"aws_region_name": "us-east-1"});
         Ok(Self {
             query: SearchQuery::Text(run.query.clone()),
-            optional: serde_json::from_value(run.optional.clone().unwrap_or_else(|| json!({})))?,
-            litellm_params: serde_json::from_value(json!({"aws_region_name": "us-east-1"}))?,
+            optional: serde_json::from_value(optional)?,
+            litellm_params: serde_json::from_value(litellm_params)?,
             extra_body: run
                 .extra_body
                 .clone()
@@ -23,7 +34,7 @@ impl VectorFixture {
 
     fn operation(&self) -> vector_retrieve::Operation<'_> {
         vector_retrieve::Operation {
-            vector_store_id: VECTOR_ID,
+            vector_store_id: shared::VECTOR_ID,
             query: &self.query,
             optional: &self.optional,
             litellm_params: &self.litellm_params,
@@ -38,33 +49,31 @@ impl VectorFixture {
             signing_params: BTreeMap::new(),
             api_key: None,
             configured_bearer: None,
-            credentials: credentials(),
+            credentials: shared::credentials(),
             region_inputs: RegionInputs::default(),
-            now: fixture_time(),
+            now: shared::fixture_time(),
         }
     }
 }
 
-pub(crate) fn vector_row(run: &VectorRun) -> HelperResult {
+pub(crate) fn vector_row(run: &VectorRun) -> shared::HelperResult {
     let fixture = VectorFixture::new(run)?;
-    let transport = Scripted(reply(run.status, &run.reply));
-    let outcome = block_on(fixture.operation().run(&transport))?;
-    Ok(outcome_row(outcome, vector_failure, vector_success))
+    let transport = shared::Scripted(shared::reply(run.status, &run.reply));
+    let outcome = shared::block_on(fixture.operation().run(&transport))?;
+    Ok(shared::outcome_row(outcome, failure, success))
 }
 
-fn vector_success(outcome: &vector_retrieve::Outcome) -> Value {
-    let mut row = empty_row();
-    row.insert(
-        "request".to_owned(),
-        request_row("POST", &outcome.request.url, &[], &outcome.request.body),
-    );
-    row.insert("response".to_owned(), json!(outcome.response));
-    Value::Object(row)
+fn success(outcome: &vector_retrieve::Outcome) -> shared::Value {
+    let mut request = outcome.request.clone();
+    request.headers = Vec::new();
+    let mut row = shared::success_row(&request);
+    row.insert("response".to_owned(), shared::json!(outcome.response));
+    shared::Value::Object(row)
 }
 
-fn vector_failure(error: &vector_retrieve::Error) -> Value {
+fn failure(error: &vector_retrieve::Error) -> shared::Value {
     match error {
-        vector_retrieve::Error::Leaf(_) => error_row("leaf", None),
-        vector_retrieve::Error::Transport(_) => error_row("transport", None),
+        vector_retrieve::Error::Leaf(_) => shared::error_row("leaf", None),
+        vector_retrieve::Error::Transport(_) => shared::error_row("transport", None),
     }
 }

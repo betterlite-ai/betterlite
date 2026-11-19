@@ -29,25 +29,7 @@ from bedrock_services_vector_stores import (
     retrieval_configuration,
 )
 
-from .inputs import (
-    COLLECT_VIEW,
-    KEYS,
-    LOGGED_VIEW,
-    MAPPED_RESULT,
-    REALTIME_RESULT,
-    RESPONSES_SOURCE,
-    URL_VIEW,
-    VECTOR_CALLS,
-    VECTOR_RESULT,
-    Case,
-    JsonObject,
-    PassthroughRun,
-    RealtimeRun,
-    ResponsesRun,
-    SearchRun,
-    VectorRun,
-    request_view,
-)
+from . import inputs
 
 JsonAdapter: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
@@ -64,13 +46,13 @@ SEARCH_ENVIRONMENT: Final = (
     "AGENTCORE_SEARCH_TOOL_NAME", "AGENTCORE_GATEWAY_TOKEN", "AGENTCORE_GATEWAY_URL"
 )
 
-def error_row(kind: str, status: int | None) -> JsonObject:
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
+def error_row(kind: str, status: int | None) -> inputs.JsonObject:
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
     row["error"] = {"kind": kind, "status": status}
     return row
 
 
-def responses_row(run: ResponsesRun) -> JsonValue:
+def responses_row(run: inputs.ResponsesRun) -> JsonValue:
     fixture = Fixture({})
     config = BedrockOpenAIResponsesConfig(
         fetch_image=fixture.fetch, async_fetch_image=fixture.fetch_async
@@ -78,12 +60,12 @@ def responses_row(run: ResponsesRun) -> JsonValue:
     return responses_request(config, run)
 
 
-def responses_request(calls: Calls, run: ResponsesRun) -> JsonValue:
+def responses_request(calls: Calls, run: inputs.ResponsesRun) -> JsonValue:
     api_key = run.get("api_key")
     try:
-        source = RESPONSES_SOURCE.validate_python(run["input"])
+        source = inputs.RESPONSES_SOURCE.validate_python(run["input"])
         payload: JsonValue = [{"params": run["params"], "drop_params": False}]
-        validated = MAPPED_RESULT.validate_python(option_cases(calls, payload))
+        validated = inputs.MAPPED_RESULT.validate_python(option_cases(calls, payload))
         mapped = validated["results"][0]["params"]
         url = calls.get_complete_url(RESPONSES_HOST, {})
         params = GenericLiteLLMParams(api_key=api_key)
@@ -94,24 +76,24 @@ def responses_request(calls: Calls, run: ResponsesRun) -> JsonValue:
     except (KeyError, TypeError, ValueError):
         return error_row("leaf", None)
     signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=api_key)
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
-    row["request"] = request_view("POST", url, signed, body)
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
+    row["request"] = inputs.request_view("POST", url, signed, body)
     row["status"] = run["status"]
     row["reply"] = JsonAdapter.validate_json(run["reply"])
     return row
 
 
-def passthrough_row(run: PassthroughRun) -> JsonValue:
+def passthrough_row(run: inputs.PassthroughRun) -> JsonValue:
     region = run.get("region")
     if region is None:
         region = "us-east-1"
     try:
-        view = URL_VIEW.validate_python(
+        view = inputs.URL_VIEW.validate_python(
             url_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"], "region": region})
         )
     except ValueError:
         return error_row("leaf", None)
-    params: JsonObject = {
+    params: inputs.JsonObject = {
         "aws_region_name": region,
         "aws_access_key_id": ACCESS,
         "aws_secret_access_key": SEED,
@@ -124,27 +106,29 @@ def passthrough_row(run: PassthroughRun) -> JsonValue:
         model=PASSTHROUGH_MODEL,
     )
     text = b"{}" if body is None else body
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
-    row["request"] = request_view("POST", view["url"], signed, JsonAdapter.validate_json(text))
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
+    row["request"] = inputs.request_view(
+        "POST", view["url"], signed, JsonAdapter.validate_json(text)
+    )
     row["endpoint_url"] = view["endpoint_url"]
     row["streaming"] = view["streaming"]
     row["status"] = run["status"]
     chunks = run.get("chunks")
     if chunks:
         data = bytes.fromhex("".join(chunks))
-        collected = COLLECT_VIEW.validate_python(
+        collected = inputs.COLLECT_VIEW.validate_python(
             collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]}, data)
         )
         row["logged"] = collected["decoded"]
     else:
-        logged = LOGGED_VIEW.validate_python(
+        logged = inputs.LOGGED_VIEW.validate_python(
             reply_run({"provider": "bedrock", "endpoint": run["endpoint"], "body": run["reply"]})
         )
         row["logged"] = logged["logged"]
     return row
 
 
-def search_row(run: SearchRun) -> JsonValue:
+def search_row(run: inputs.SearchRun) -> JsonValue:
     for name in SEARCH_ENVIRONMENT:
         os.environ.pop(name, None)
     tool_name = run.get("tool_name")
@@ -161,8 +145,8 @@ def search_row(run: SearchRun) -> JsonValue:
     finally:
         for name in SEARCH_ENVIRONMENT:
             os.environ.pop(name, None)
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
-    row["request"] = request_view("POST", GATEWAY, signed, JsonAdapter.validate_python(body))
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
+    row["request"] = inputs.request_view("POST", GATEWAY, signed, JsonAdapter.validate_python(body))
     try:
         row["response"] = JsonAdapter.validate_python(
             search_reply({"status": run["status"], "headers": [], "body": run["reply"]})
@@ -172,7 +156,7 @@ def search_row(run: SearchRun) -> JsonValue:
     return row
 
 
-def vector_row(run: VectorRun) -> JsonValue:
+def vector_row(run: inputs.VectorRun) -> JsonValue:
     supplied = VectorInput(
         operation="retrieval_configuration",
         requests=[
@@ -187,7 +171,7 @@ def vector_row(run: VectorRun) -> JsonValue:
         ],
     )
     try:
-        calls = VECTOR_CALLS.validate_python(
+        calls = inputs.VECTOR_CALLS.validate_python(
             retrieval_configuration(BedrockVectorStoreConfig(), supplied)
         )
     except ValueError:
@@ -195,11 +179,11 @@ def vector_row(run: VectorRun) -> JsonValue:
     if not calls["calls"]:
         return error_row("leaf", None)
     call = calls["calls"][0]
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
-    row["request"] = request_view(
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
+    row["request"] = inputs.request_view(
         "POST", call["url"], {}, JsonAdapter.validate_python(call["body"])
     )
-    decoded = VECTOR_RESULT.validate_python(
+    decoded = inputs.VECTOR_RESULT.validate_python(
         decoded_responses(
             BedrockVectorStoreConfig(),
             VectorInput(
@@ -214,7 +198,7 @@ def vector_row(run: VectorRun) -> JsonValue:
     return row
 
 
-def realtime_row(run: RealtimeRun) -> JsonValue:
+def realtime_row(run: inputs.RealtimeRun) -> JsonValue:
     region = run.get("region")
     if region is None:
         region = "us-east-1"
@@ -244,9 +228,9 @@ def realtime_row(run: RealtimeRun) -> JsonValue:
             )
         ]
     )
-    result = REALTIME_RESULT.validate_python(realtime_transport_run(scenario))
+    result = inputs.REALTIME_RESULT.validate_python(realtime_transport_run(scenario))
     seen = result["runs"][0]
-    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
+    row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
     row["response"] = {
         "outcome": seen["outcome"],
         "error_kind": seen["error_kind"],
@@ -256,7 +240,7 @@ def realtime_row(run: RealtimeRun) -> JsonValue:
     return row
 
 
-def run(input_value: Case) -> JsonValue:
+def run(input_value: inputs.Case) -> JsonValue:
     if input_value["case"] == "responses":
         return {"runs": [responses_row(item) for item in input_value["runs"]]}
     if input_value["case"] == "passthrough":

@@ -1,4 +1,32 @@
-use super::*;
+use std::future::{Future, ready};
+use std::io;
+
+use betterlite_bedrock::agentcore_stream::IdSource;
+use betterlite_bedrock::aws_settings::AuthParams;
+use betterlite_bedrock::credentials::error::CredentialError;
+use betterlite_bedrock::realtime_events::client::{ClientError, RealtimeClientWebSocket};
+use betterlite_bedrock::realtime_events::scope::EventScope;
+use betterlite_bedrock::realtime_events::stream::StreamError;
+use betterlite_bedrock::realtime_transport::error::{ProviderClass, RealtimeTransportError};
+use betterlite_bedrock::realtime_transport::prepare::RealtimeCredentials;
+use betterlite_bedrock::realtime_transport::runtime::{
+    RealtimeClient, RealtimeRuntime, RuntimeConfig,
+};
+use betterlite_bedrock::realtime_transport::session::RealtimeCall;
+use betterlite_bedrock::signing::target::RegionInputs;
+use betterlite_config::api::realtime_session_state::LoggedEventTypes;
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::realtime_session_state::logging::{
+    RealtimeLogging, SessionInput, SuccessWork,
+};
+use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_provider::bedrock_interactive_dispatch::realtime_bridge;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
+
+use super::{RealtimeRun, shared};
 
 #[derive(Debug, thiserror::Error)]
 #[error("open failed")]
@@ -16,19 +44,16 @@ impl ProviderClass for Failing {
 
 struct FailingRuntime;
 
+type Opened = Result<Box<dyn RealtimeClient<Error = Failing>>, StreamError<Failing>>;
+
 impl RealtimeRuntime for FailingRuntime {
     type Error = Failing;
 
-    fn connect(
-        &self,
-        _config: RuntimeConfig,
-    ) -> impl Future<Output = Result<Box<dyn RealtimeClient<Error = Failing>>, StreamError<Failing>>>
-    + Send {
-        let outcome: Result<Box<dyn RealtimeClient<Error = Failing>>, StreamError<Failing>> =
-            Err(StreamError {
-                message: "the websocket could not open".to_owned(),
-                source: Some(Failing),
-            });
+    fn connect(&self, _config: RuntimeConfig) -> impl Future<Output = Opened> + Send {
+        let outcome: Opened = Err(StreamError {
+            message: "the websocket could not open".to_owned(),
+            source: Some(Failing),
+        });
         ready(outcome)
     }
 }
@@ -40,8 +65,8 @@ impl RealtimeCredentials for Resolver {
         &self,
         _settings: &AwsSettings,
         _region: &str,
-    ) -> impl Future<Output = Result<Option<Credentials>, CredentialError>> + Send {
-        ready(Ok(Some(credentials())))
+    ) -> impl Future<Output = Result<Option<shared::Credentials>, CredentialError>> + Send {
+        ready(Ok(Some(shared::credentials())))
     }
 }
 
@@ -85,7 +110,7 @@ impl IdSource for NullIds {
     }
 }
 
-fn transport_kind(error: &RealtimeTransportError<Failing, io::Error>) -> &'static str {
+const fn transport_kind(error: &RealtimeTransportError<Failing, io::Error>) -> &'static str {
     match error {
         RealtimeTransportError::Committed(_) => "committed",
         RealtimeTransportError::Endpoint(_) => "endpoint",
@@ -100,7 +125,7 @@ fn transport_kind(error: &RealtimeTransportError<Failing, io::Error>) -> &'stati
     }
 }
 
-pub(crate) fn realtime_row(run: &RealtimeRun) -> HelperResult {
+pub(crate) fn realtime_row(run: &RealtimeRun) -> shared::HelperResult {
     let runtime = FailingRuntime;
     let resolver = Resolver;
     let socket = Socket;
@@ -114,7 +139,7 @@ pub(crate) fn realtime_row(run: &RealtimeRun) -> HelperResult {
         committed_failure: Json::Null,
     };
     let call = RealtimeCall {
-        model: REALTIME_MODEL,
+        model: shared::REALTIME_MODEL,
         client: &socket,
         logging: &logging,
         logging_worker: None,
@@ -129,22 +154,22 @@ pub(crate) fn realtime_row(run: &RealtimeRun) -> HelperResult {
         logged_types: &logged_types,
         trace_id: "trace-interactive",
     };
-    let result = block_on(realtime_bridge::session(&runtime, &resolver, call))?;
-    let mut row = empty_row();
+    let result = shared::block_on(realtime_bridge::session(&runtime, &resolver, call))?;
+    let mut row = shared::empty_row();
     row.insert("response".to_owned(), realtime_response(result, &scope)?);
-    Ok(Value::Object(row))
+    Ok(shared::Value::Object(row))
 }
 
 fn realtime_response(
     result: Result<realtime_bridge::Outcome, realtime_bridge::Error>,
     scope: &EventScope,
-) -> Result<Value, Box<HelperError>> {
+) -> Result<shared::Value, Box<HelperError>> {
     let committed = matches!(&scope.session_committed, Json::Bool(true));
     match result {
-        Ok(_) => Ok(json!({
+        Ok(_) => Ok(shared::json!({
             "outcome": "ok",
-            "error_kind": Value::Null,
-            "status_code": Value::Null,
+            "error_kind": shared::Value::Null,
+            "status_code": shared::Value::Null,
             "committed": committed,
         })),
         Err(realtime_bridge::Error::Session { source }) => {
@@ -160,7 +185,7 @@ fn realtime_response(
                         message: "the realtime session error is not a transport error".to_owned(),
                     })
                 })?;
-            Ok(json!({
+            Ok(shared::json!({
                 "outcome": "error",
                 "error_kind": transport_kind(transport),
                 "status_code": transport.status_code(),
