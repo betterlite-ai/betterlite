@@ -26,7 +26,7 @@ use crate::caching::hit_callbacks::job::CacheHitSuccessJob;
 use super::async_lookup::AsyncLookup;
 use super::error::{HitError, LookupError};
 use super::hit::{HitLogging, HitPass, HitTimes, log_hit_async, resolve_provider};
-use super::json::{cache_value_of, kwargs_json};
+use super::json::kwargs_json;
 use super::response::LookupResponse;
 use super::services::ResponseTokens;
 
@@ -42,7 +42,8 @@ where
     Conv: ReplayConversions + Sync,
 {
     if pass.services.cache_type == LiteLlmCacheType::S3 {
-        let raw = cache_value_of(entries)?;
+        let rendered = serde_json::to_value(entries)?;
+        let raw = serde_json::from_value(rendered)?;
         return Ok(AsyncLookup {
             response: Some(LookupResponse::cached(Replayed::Unchanged(raw))),
             logging: Some(logging),

@@ -1,4 +1,3 @@
-use std::ops::Mul as _;
 use std::time::Duration;
 
 use betterlite_cache::cache_key::derive::get_cache_key;
@@ -136,13 +135,6 @@ impl HitRecord {
             is_embedding: kind == HitKind::AsyncEmbedding,
         }
     }
-}
-
-// LiteLLM's (cache_check_end_time - cache_check_start_time) * 1000, in milliseconds
-#[must_use]
-pub fn cache_duration(timing: CacheTiming) -> f64 {
-    let elapsed = timing.finished.saturating_sub(timing.started);
-    elapsed.as_secs_f64().mul(1000.0_f64)
 }
 
 pub fn hit_record(

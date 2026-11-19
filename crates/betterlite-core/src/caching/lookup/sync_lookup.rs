@@ -1,3 +1,4 @@
+use betterlite_cache::handler::call_types::call_type_supported;
 use betterlite_cache::handler::retrieve::{
     AsyncSupport, CacheSource, Retrieval, retrieve_from_cache,
 };
@@ -10,12 +11,10 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 
 use crate::caching::hit_callbacks::context::record_cache_hit_context;
 
-use super::eligibility::cache_supports_call;
 use super::error::{HitError, LookupError};
 use super::hit::{
     HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record, log_hit_sync,
 };
-use super::json::cache_value_of;
 use super::request::{CacheLookup, replay_request};
 use super::response::LookupResponse;
 use super::services::LookupServices;
@@ -34,11 +33,12 @@ where
     Conv: ReplayConversions + Sync,
     Conv::Response: HitResponse,
 {
-    if !cache_supports_call(
-        services.cache.is_some(),
-        &handler.original_function.name,
-        services.supported_call_types,
-    ) {
+    let supports_call = services.cache.is_some()
+        && call_type_supported(
+            &handler.original_function.name,
+            services.supported_call_types,
+        );
+    if !supports_call {
         return Ok(LookupResponse::default());
     }
     let source = services.cache.map(|cache| CacheSource {
@@ -62,9 +62,11 @@ where
     };
     match retrieval {
         Retrieval::Miss => Ok(LookupResponse::default()),
-        Retrieval::Embeddings(entries) => Ok(LookupResponse::cached(Replayed::Unchanged(
-            cache_value_of(&entries)?,
-        ))),
+        Retrieval::Embeddings(entries) => {
+            let rendered = serde_json::to_value(&entries)?;
+            let stored = serde_json::from_value(rendered)?;
+            Ok(LookupResponse::cached(Replayed::Unchanged(stored)))
+        }
         // a cached error keeps its detail instead of being converted into a response
         Retrieval::Hit(value) if matches!(&value, CacheValue::Object(fields) if fields.contains_key("detail")) => {
             Ok(LookupResponse::cached(Replayed::Unchanged(value)))

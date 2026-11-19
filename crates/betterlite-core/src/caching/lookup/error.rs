@@ -73,7 +73,7 @@ pub enum LookupError {
     },
     #[error("the cached embeddings could not be rendered")]
     Render {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
 }

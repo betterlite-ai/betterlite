@@ -1,4 +1,7 @@
+use std::ops::Mul as _;
+
 use betterlite_cache::cache_key::value::KeyObject;
+use betterlite_cache::handler::call_types::call_type_supported;
 use betterlite_cache::handler::retrieve::{Retrieval, retrieve_from_cache};
 use betterlite_cache::handler::state::CachingHandler;
 use betterlite_cache::replay::{
@@ -7,12 +10,12 @@ use betterlite_cache::replay::{
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 
-use super::eligibility::{async_cache_enabled, cache_supports_call};
+use super::eligibility::async_cache_enabled;
 use super::embedding::partial_embedding_hit;
 use super::error::LookupError;
 use super::hit::{
-    CacheTiming, HitKind, HitLogging, HitPass, HitResponse, HitTimes, cache_duration,
-    hit_cache_key, hit_record, log_converted_hit,
+    CacheTiming, HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record,
+    log_converted_hit,
 };
 use super::parent_span::add_parent_otel_span;
 use super::request::{CacheLookup, replay_request};
@@ -52,11 +55,12 @@ where
     if !async_cache_enabled(&request.kwargs, services.cache.is_some())? {
         return Ok(AsyncLookup::new(None, logging));
     }
-    if !cache_supports_call(
-        services.cache.is_some(),
-        &handler.original_function.name,
-        services.supported_call_types,
-    ) {
+    let supports_call = services.cache.is_some()
+        && call_type_supported(
+            &handler.original_function.name,
+            services.supported_call_types,
+        );
+    if !supports_call {
         return Ok(AsyncLookup::new(Some(LookupResponse::default()), logging));
     }
     let (kwargs, retrieval, timing) = async_fetch(handler, request, services).await?;
@@ -79,11 +83,15 @@ where
     }
 }
 
-async fn async_fetch(
+async fn async_fetch<L, C>(
     handler: &mut CachingHandler,
     request: &CacheLookup,
-    services: &LookupServices<'_, impl LoggerSink + Send + Sync, impl ConsoleSink + Send + Sync>,
-) -> Result<(KeyObject, Retrieval, CacheTiming), LookupError> {
+    services: &LookupServices<'_, L, C>,
+) -> Result<(KeyObject, Retrieval, CacheTiming), LookupError>
+where
+    L: LoggerSink + Send + Sync,
+    C: ConsoleSink + Send + Sync,
+{
     let started = (services.perf)();
     let mut kwargs = request.kwargs.clone();
     add_parent_otel_span(&mut kwargs);
@@ -113,12 +121,13 @@ where
     Conv::Response: HitResponse,
 {
     let end_time = pass.services.wall.now();
+    let elapsed = timing.finished.saturating_sub(timing.started);
     let record = hit_record(
         pass.services.resolution,
         &pass.request.model,
         pass.kwargs,
         &value,
-        Some(cache_duration(timing)),
+        Some(elapsed.as_secs_f64().mul(1000.0_f64)),
     )?;
     let replay = replay_request(pass.request, pass.kwargs, &record.provider.model, end_time)?;
     let mut replayed = replay_cached_result(

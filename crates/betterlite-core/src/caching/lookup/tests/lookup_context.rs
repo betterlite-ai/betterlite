@@ -12,9 +12,7 @@ use super::support::{
 };
 use crate::caching::lookup::async_lookup::async_get_cache;
 use crate::caching::lookup::error::HitError;
-use crate::caching::lookup::hit::{
-    CacheTiming, HitKind, cache_duration, hit_cache_key, hit_record, resolve_provider,
-};
+use crate::caching::lookup::hit::{HitKind, hit_cache_key, hit_record, resolve_provider};
 use crate::caching::lookup::parent_span::add_parent_otel_span;
 use crate::caching::lookup::sync_lookup::sync_get_cache;
 
@@ -244,22 +242,41 @@ fn the_cache_key_stays_none_without_a_cache_to_compute_from() {
     assert_eq!(key, None);
 }
 
-#[test]
-fn the_cache_duration_is_the_elapsed_milliseconds() {
-    let timing = CacheTiming {
-        started: Duration::from_millis(250),
-        finished: Duration::from_millis(1_000),
-    };
-    assert_eq!(cache_duration(timing), 750.0);
-}
-
-#[test]
-fn a_backwards_cache_timing_counts_no_time() {
-    let timing = CacheTiming {
-        started: Duration::from_millis(250),
-        finished: Duration::from_millis(100),
-    };
-    assert_eq!(cache_duration(timing), 0.0);
+#[tokio::test]
+async fn a_backwards_cache_timing_counts_no_time() {
+    let fixture = Fixture::new();
+    let request_kwargs = chat_kwargs();
+    let key = computed_key(&fixture.cache, &request_kwargs);
+    fixture.backend.seed(&key, cached_chat());
+    let mut handler = handler_named(
+        "acompletion",
+        &["model", "messages"],
+        request_kwargs.clone(),
+    );
+    let source = fixture.source();
+    let resolution = fixture.resolution.context();
+    let tokens = Tokens::default();
+    let worker = worker();
+    let services = services(
+        Some(&source),
+        &resolution,
+        &worker,
+        &tokens,
+        perf_clock(&[Duration::from_millis(250), Duration::from_millis(100)]),
+    );
+    async_get_cache(
+        &mut handler,
+        &lookup(CachingSupportedCallType::Acompletion, request_kwargs),
+        fixture.hit_logging(),
+        &services,
+        &fixture.conversions,
+    )
+    .await
+    .expect("the async lookup runs");
+    worker.flush().await;
+    let snapshots = fixture.snapshots();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(duration_field(&snapshots[0].caching_details), Some(0.0));
 }
 
 #[test]

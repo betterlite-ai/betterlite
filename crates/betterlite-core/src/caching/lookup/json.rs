@@ -2,9 +2,8 @@ use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::Serialize;
 
-use super::error::{HitError, LookupError};
+use super::error::HitError;
 
 #[must_use]
 pub fn key_value_json(value: &KeyValue) -> Json {
@@ -29,12 +28,6 @@ pub fn cache_value_json(value: &CacheValue) -> Json {
     serde_json::to_value(value)
         .and_then(serde_json::from_value)
         .unwrap_or(Json::Null)
-}
-
-// The stored value as the cache holds it: an entry list handed back to the caller keeps the shape it had before the read
-pub fn cache_value_of<T: Serialize + ?Sized>(value: &T) -> Result<CacheValue, LookupError> {
-    let rendered = serde_json::to_value(value).map_err(|source| LookupError::Render { source })?;
-    serde_json::from_value(rendered).map_err(|source| LookupError::Render { source })
 }
 
 #[must_use]
