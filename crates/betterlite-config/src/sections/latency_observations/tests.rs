@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::Args;
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
+use crate::sections::Section as _;
 
 fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Args, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
@@ -25,6 +26,7 @@ fn load(source: &str) -> Args {
 enum Rejection {
     Unsupported,
     InvalidInteger,
+    InvalidFloat,
     InvalidScalar,
     MissingEnvironment,
 }
@@ -33,11 +35,11 @@ fn rejection(error: &ConfigError) -> Rejection {
     match error {
         ConfigError::Unsupported { .. } => Rejection::Unsupported,
         ConfigError::InvalidInteger { .. } => Rejection::InvalidInteger,
+        ConfigError::InvalidFloat { .. } => Rejection::InvalidFloat,
         ConfigError::InvalidScalar { .. } => Rejection::InvalidScalar,
         ConfigError::MissingEnvironment { .. } => Rejection::MissingEnvironment,
         ConfigError::Environment { .. }
         | ConfigError::Yaml { .. }
-        | ConfigError::InvalidFloat { .. }
         | ConfigError::LoadThread { .. }
         | ConfigError::CustomDimensions(_) => panic!("unexpected rejection {error:?}"),
     }
@@ -99,7 +101,7 @@ fn rejection(error: &ConfigError) -> Rejection {
     }
 )]
 #[case::another_strategy_keeps_the_defaults(
-    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120\n    lowest_latency_buffer: 0.2\n    max_latency_list_size: 5\n    ttft_percentile: 0.9\n",
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120\n    lowest_latency_buffer: [0.2]\n    max_latency_list_size: [5]\n    ttft_percentile: [0.9]\n",
     Args::default()
 )]
 #[case::no_strategy_keeps_the_defaults(
@@ -164,9 +166,58 @@ fn resolves_environment(
     "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    lowest_latency_buffer: os.environ/ROUTER_BUFFER\n",
     Rejection::MissingEnvironment
 )]
+#[case::list_buffer(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    lowest_latency_buffer: [0.2]\n",
+    Rejection::InvalidScalar
+)]
+#[case::list_size(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    max_latency_list_size: [5]\n",
+    Rejection::InvalidScalar
+)]
+#[case::list_percentile(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: [0.9]\n",
+    Rejection::InvalidScalar
+)]
 fn rejects(#[case] source: &str, #[case] expected: Rejection) {
     let error = load_with(source, &[]).expect_err("the section rejects the source");
     assert_eq!(rejection(&error), expected);
+}
+
+#[rstest]
+#[case::list_ttl(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: [60]\n",
+    Rejection::InvalidScalar
+)]
+#[case::words_ttl(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: soon\n",
+    Rejection::InvalidFloat
+)]
+#[case::boolean_ttl(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: true\n",
+    Rejection::InvalidScalar
+)]
+fn rejects_a_bad_ttl(#[case] source: &str, #[case] expected: Rejection) {
+    let error = load_with(source, &[]).expect_err("the section rejects the ttl");
+    assert_eq!(rejection(&error), expected);
+    assert!(
+        matches!(
+            &error,
+            ConfigError::InvalidFloat { path, .. } | ConfigError::InvalidScalar { path, .. }
+                if path == "router_settings.routing_strategy_args.ttl"
+        ),
+        "the rejection names the ttl argument, got {error:?}"
+    );
+}
+
+// the loader's usage_v2_accounting section refuses the fraction until B9940 gates it, so the section alone proves the float
+#[test]
+fn a_fractional_ttl_is_read_as_float_seconds() {
+    let source = "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: 1.5\n";
+    let (raw, _ignored) = parse_view::<super::Raw>(source).expect("the section parses the source");
+    let settings = raw
+        .convert(&BTreeMap::<String, String>::new())
+        .expect("the section accepts a fractional ttl");
+    assert_eq!(settings.ttl_seconds, Some(1.5_f64));
 }
 
 #[rstest]

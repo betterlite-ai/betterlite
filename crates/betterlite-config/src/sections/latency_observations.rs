@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -31,16 +33,16 @@ struct RawRouter {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawArgs {
-    ttl: Option<RawTtl>,
-    lowest_latency_buffer: Option<RawNumber>,
-    max_latency_list_size: Option<RawNumber>,
-    ttft_percentile: Option<RawNumber>,
+    ttl: Option<RawArg>,
+    lowest_latency_buffer: Option<RawArg>,
+    max_latency_list_size: Option<RawArg>,
+    ttft_percentile: Option<RawArg>,
 }
 
-// RoutingArgs.ttl is a float, and any other shape is an error that names the field
+// a number is the argument and any other shape is an error that names the field
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum RawTtl {
+enum RawArg {
     Number(RawNumber),
     Other(IgnoredAny),
 }
@@ -70,22 +72,12 @@ impl Section for Raw {
         let Some(args) = self.router_settings.routing_strategy_args else {
             return Ok(Box::default());
         };
-        let ttl = match args.ttl {
-            None => None,
-            Some(RawTtl::Other(_ignored)) => {
-                return Err(ConfigError::InvalidScalar {
-                    path: TTL_PATH.to_owned(),
-                    value: false,
-                });
-            }
-            Some(RawTtl::Number(number)) => {
-                resolve_number(Some(number), TTL_PATH, lookup, parse_float)?
-            }
-        };
-        let buffer = resolve_number(args.lowest_latency_buffer, BUFFER_PATH, lookup, parse_float)?;
-        let size = resolve_number(args.max_latency_list_size, SIZE_PATH, lookup, parse_size)?;
+        let ttl = resolve_argument(args.ttl, TTL_PATH, lookup, parse_float)?;
+        let buffer =
+            resolve_argument(args.lowest_latency_buffer, BUFFER_PATH, lookup, parse_float)?;
+        let size = resolve_argument(args.max_latency_list_size, SIZE_PATH, lookup, parse_size)?;
         let percentile =
-            resolve_number(args.ttft_percentile, PERCENTILE_PATH, lookup, parse_float)?;
+            resolve_argument(args.ttft_percentile, PERCENTILE_PATH, lookup, parse_float)?;
         // Field(gt=0, le=1) rejects a fraction outside the interval, NaN and an infinity
         if percentile.is_some_and(|value| !value.is_finite() || value <= 0.0_f64 || value > 1.0_f64)
         {
@@ -100,6 +92,27 @@ impl Section for Raw {
             max_latency_list_size: size,
             ttft_percentile: percentile,
         }))
+    }
+}
+
+// a number reaches the field's parser and any other shape is a load error that names the field
+fn resolve_argument<T, F>(
+    value: Option<RawArg>,
+    path: &str,
+    lookup: &dyn EnvironmentLookup,
+    parser: F,
+) -> Result<Option<T>, ConfigError>
+where
+    T: FromStr,
+    F: Fn(&str, &str) -> Result<T, ConfigError>,
+{
+    match value {
+        None => Ok(None),
+        Some(RawArg::Other(_ignored)) => Err(ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
+        }),
+        Some(RawArg::Number(number)) => resolve_number(Some(number), path, lookup, parser),
     }
 }
 
