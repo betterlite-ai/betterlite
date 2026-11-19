@@ -112,10 +112,15 @@ pub fn parse_key_alias_pattern(value: JsonValue) -> Result<Option<AliasPattern>,
             return Err(invalid());
         }
     };
-    match Regex::new(&format!(r"\A(?:{source})\z")) {
-        Ok(regex) => Ok(Some(AliasPattern { source, regex })),
-        Err(_invalid) => Err(invalid()),
+    // the bare compile rejects what Python's re rejects; the wrapper alone would turn x)|(.* into a match-all
+    if Regex::new(&source).is_err() {
+        return Err(invalid());
     }
+    let anchored = format!(r"\A(?:{source})\z");
+    let Ok(regex) = Regex::new(&anchored) else {
+        return Err(invalid());
+    };
+    Ok(Some(AliasPattern { source, regex }))
 }
 
 // ProxyConfig resolves os.environ/ strings before parse_key_alias_pattern sees the value
