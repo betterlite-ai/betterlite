@@ -16,7 +16,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::ProxyException;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
