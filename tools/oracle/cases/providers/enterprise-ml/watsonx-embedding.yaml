@@ -1,0 +1,20 @@
+kind: helper
+name: watsonx-embedding
+call:
+  b8331:
+    op: watsonx_embedding
+    model: ibm/granite-embedding-107m-multilingual
+    input: hi
+    api_base: "{{upstream}}"
+    api_key: oracle-wx-key
+    env:
+      WATSONX_IAM_URL: "{{upstream}}/identity/token"
+      WATSONX_PROJECT_ID: project
+    upstream:
+      - status: 200
+        body: '{"access_token":"iam-token","expires_in":3600}'
+      - status: 200
+        body: '{"results":[{"embedding":[0.1,0.2]}],"input_token_count":2}'
+env: {}
+compare:
+  ignore: []

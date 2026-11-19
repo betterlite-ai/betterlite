@@ -92,6 +92,8 @@ pub fn handle_cohere_stream_chunk(
             refusal: None,
             tool_calls,
             function_call: None,
+            reasoning_content: None,
+            thinking_blocks: None,
         },
         finish_reason: normalize_oci_finish_reason(typed.finish_reason.as_deref()),
         logprobs: None,

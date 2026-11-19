@@ -1,0 +1,12 @@
+kind: helper
+name: duckduckgo-search-unicode-title
+call:
+  duckduckgo_search:
+    environment: {}
+    calls:
+      - kind: reply
+        query: unicode
+        optional_params: {}
+        body: '{"RelatedTopics":[{"Text":"àéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüx","FirstURL":"https://long.test"},{"Text":"東京の天気 - 今日は晴れ","FirstURL":"https://jp.test"},{"Text":"àéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõüàéîõü","FirstURL":"https://exact.test"}]}'
+env: {}
+compare: {ignore: []}

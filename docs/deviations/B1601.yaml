@@ -1,0 +1,62 @@
+task: B1601
+deviations:
+  - what: >-
+      A credential store or encryption failure answers 500 with a fixed message, "credential
+      storage failed" or "credential encryption failed", where LiteLLM puts str(e) of the
+      caught exception in the error body.
+    why: >-
+      The database or encryption error text can carry connection strings, table names and row
+      values, and the status stays 500 with the same envelope shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L138-L140
+  - what: >-
+      A credential request body over 1 MiB is refused with 400 before it is parsed, where
+      LiteLLM hands the whole body to its JSON parser.
+    why: >-
+      Parsing is work proportional to untrusted input, and the bounded-inputs rule requires a
+      cap; a body at or under the cap decodes exactly as LiteLLM's.
+    link: ""
+  - what: >-
+      Masking walks objects and arrays below any key, masks the strings of an array under a
+      sensitive key, and replaces a container that reaches depth 20 with "*****", where LiteLLM
+      masks only a value whose own key matches a keyword (recursing into a dict there), leaves
+      arrays and the contents of plain keys as given, and answers the raw value past its depth
+      limit.
+    why: >-
+      A valid credential_values object can carry a complete key under a plain key or inside an
+      array, and GET would answer it in plaintext; the keyword match and the four-character
+      format stay identical for every sensitive value at every depth LiteLLM masks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4346-L4404
+  - what: >-
+      Every string leaf of credential_values is encrypted, including strings inside nested
+      objects and arrays, and decrypt_credential_values opens the same tree, where LiteLLM
+      encrypts only top-level strings and keeps nested values in plaintext in the table.
+    why: >-
+      A credential such as vertex_credentials carries private_key inside an object, and storing
+      that object as given persists the key in plaintext; a value that does not decrypt stays as
+      stored, as on every other reading path here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L126-L148
+  - what: >-
+      A PATCH applies its resident-list merge, rename and replacement under one registry write
+      lock once the database write succeeds, where LiteLLM snapshots the resident entry, merges
+      the patch into that snapshot and upserts the result as separate steps, so two PATCHes that
+      overlap can drop one caller's value from the resident list until it is reloaded.
+    why: >-
+      The resident list answers every credential lookup, and a dropped value stays wrong until
+      the next load from the database; a PATCH that does not overlap another produces the same
+      values, name and info as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L373-L396
+kept_bugs:
+  - what: >-
+      A PATCH keeps the stored credential_info only when that map already carries a literal
+      credential_info key, so any other old info is dropped instead of merged into.
+    why: >-
+      The membership test reads the map's own field name, not the patch, which looks like a
+      mistake, but the task keeps it so a setup that patches info sees the same reset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L315-L319
+  - what: >-
+      An upsert of two credentials with one name appends both, because the name snapshot is
+      taken before the loop, and the first of the two answers every later lookup.
+    why: >-
+      A setup can rely on both entries staying in the list; the task keeps the snapshot and
+      first-match lookup behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/credential_accessor.py#L28-L38
