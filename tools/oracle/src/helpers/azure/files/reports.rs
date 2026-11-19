@@ -124,8 +124,8 @@ pub(super) fn raised(error: &AzureFilesError) -> Value {
         }),
         AzureFilesError::Files {
             source: FilesError::Decode { .. },
-        } => plain("ValidationError", Value::Null),
-        AzureFilesError::MissingCredentials => plain("OpenAIError", json!(error.to_string())),
+        } => plain("ValidationError", &Value::Null),
+        AzureFilesError::MissingCredentials => plain("OpenAIError", &json!(error.to_string())),
         AzureFilesError::ClientMissing
         | AzureFilesError::NotAsyncClient
         | AzureFilesError::UnableToHandleAuth
@@ -136,11 +136,11 @@ pub(super) fn raised(error: &AzureFilesError) -> Value {
         | AzureFilesError::Header { .. }
         | AzureFilesError::Timeout { .. }
         | AzureFilesError::Endpoint { .. }
-        | AzureFilesError::Files { .. } => plain("ValueError", json!(error.to_string())),
+        | AzureFilesError::Files { .. } => plain("ValueError", &json!(error.to_string())),
     }
 }
 
-fn plain(class: &'static str, message: Value) -> Value {
+fn plain(class: &'static str, message: &Value) -> Value {
     json!({
         "class": class, "status": Value::Null, "type": Value::Null,
         "param": Value::Null, "code": Value::Null, "message": message,

@@ -5,8 +5,8 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
-    pub(super) steps: Vec<Step>,
+pub(crate) struct Input {
+    pub(crate) steps: Vec<Step>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -75,7 +75,7 @@ pub(super) struct Reply {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Step {
+pub(crate) struct Step {
     pub(super) action: Action,
     pub(super) args: Values,
     #[serde(default)]

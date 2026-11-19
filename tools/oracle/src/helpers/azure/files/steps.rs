@@ -91,9 +91,9 @@ async fn perform(
         Checked::Client => return Ok(reports::client(&opened.client)),
         Checked::Create(data) => Operation::Create(data),
         Checked::Content(request) => Operation::Content(request),
-        Checked::Retrieve(file_id) => Operation::Retrieve(*file_id),
+        Checked::Retrieve(file_id) => Operation::Retrieve(file_id),
         Checked::List(purpose) => Operation::List(*purpose),
-        Checked::Delete(file_id) => Operation::Delete(*file_id),
+        Checked::Delete(file_id) => Operation::Delete(file_id),
     };
     match call(&opened, transport, operation).await? {
         Reply::Object(object) => Ok(reports::object(&object)),
