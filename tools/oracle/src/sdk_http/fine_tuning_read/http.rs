@@ -112,14 +112,24 @@ impl HttpDispatch {
             call.api_base.clone()
         };
         let (url, query) = openai_target(&base, &call.values)?;
-        Ok(OutboundRequest {
-            method: Method::GET,
-            url,
-            query,
-            headers,
-            body: RequestBody::Empty,
-            deadline: deadline(&call.values),
-        })
+        Ok(read_outbound(url, query, headers, &call.values))
+    }
+}
+
+// every read is a GET with no body, and its deadline is the read's timeout
+fn read_outbound(
+    url: Url,
+    query: Vec<(String, String)>,
+    headers: HeaderMap,
+    values: &ReadValues<'_>,
+) -> OutboundRequest {
+    OutboundRequest {
+        method: Method::GET,
+        url,
+        query,
+        headers,
+        body: RequestBody::Empty,
+        deadline: deadline(values),
     }
 }
 
@@ -144,37 +154,21 @@ fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireEr
         .api_version
         .filter(|value| !value.is_empty())
         .unwrap_or(AZURE_DEFAULT_API_VERSION);
-    let headers = azure_headers(call.api_key, version)?;
-    let (url, query) = azure_target(api_base, version, call.values.operation)?;
-    Ok(OutboundRequest {
-        method: Method::GET,
-        url,
-        query,
-        headers,
-        body: RequestBody::Empty,
-        deadline: deadline(&call.values),
-    })
-}
-
-// the v1 surface is a plain OpenAI client, and its bearer token replaces Azure's api-key header
-fn azure_headers(
-    api_key: Option<&SecretString>,
-    version: &str,
-) -> Result<HeaderMap, ReadWireError> {
+    // the v1 surface is a plain OpenAI client, and its bearer token replaces Azure's api-key header
     let mut headers = HeaderMap::new();
-    let Some(key) = api_key else {
-        return Ok(headers);
-    };
-    if V1_API_VERSIONS.contains(&version) {
-        insert_header(
-            &mut headers,
-            "authorization",
-            &format!("Bearer {}", key.expose_secret()),
-        )?;
-    } else {
-        insert_header(&mut headers, "api-key", key.expose_secret())?;
+    if let Some(key) = call.api_key {
+        if V1_API_VERSIONS.contains(&version) {
+            insert_header(
+                &mut headers,
+                "authorization",
+                &format!("Bearer {}", key.expose_secret()),
+            )?;
+        } else {
+            insert_header(&mut headers, "api-key", key.expose_secret())?;
+        }
     }
-    Ok(headers)
+    let (url, query) = azure_target(api_base, version, call.values.operation)?;
+    Ok(read_outbound(url, query, headers, &call.values))
 }
 
 // the v1 surface carries no api-version in the query, and every other version names it
