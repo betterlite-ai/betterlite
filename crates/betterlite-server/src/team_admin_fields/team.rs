@@ -13,7 +13,7 @@ use crate::team_request_contracts::update::UpdateTeamRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeamAdminEditVerdict {
-    Allowed { request: UpdateTeamRequest },
+    Allowed { request: Box<UpdateTeamRequest> },
     Disabled,
     FieldNotPermitted { field: String },
 }
@@ -74,13 +74,13 @@ pub fn edit_verdict(
         });
     }
     Ok(TeamAdminEditVerdict::Allowed {
-        request: only_changes(data, &changed)?,
+        request: Box::new(only_changes(data, &changed)?),
     })
 }
 
 pub fn request_or_raise(verdict: TeamAdminEditVerdict) -> Result<UpdateTeamRequest, Forbidden> {
     match verdict {
-        TeamAdminEditVerdict::Allowed { request } => Ok(request),
+        TeamAdminEditVerdict::Allowed { request } => Ok(*request),
         TeamAdminEditVerdict::Disabled => Err(Forbidden::EditingDisabled),
         TeamAdminEditVerdict::FieldNotPermitted { field } => {
             Err(Forbidden::FieldNotPermitted { field })

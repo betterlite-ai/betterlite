@@ -357,6 +357,24 @@ fn aliases_from_embedded_table() {
         )),
         vec!["model_aliases"]
     );
+    assert!(
+        team_changes(
+            r#"{"team_id": "t", "model_aliases": {}}"#,
+            r#"{"team_id": "t"}"#
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        changed_names(&team_changes(
+            r#"{"team_id": "t", "model_aliases": {"a": "b"}}"#,
+            r#"{"team_id": "t"}"#
+        )),
+        vec!["model_aliases"]
+    );
+}
+
+#[test]
+fn aliases_from_embedded_text_table() {
     let text = r#"{"team_id": "t", "litellm_model_table": {"model_aliases": "{\"gpt\": \"gpt-4\"}", "created_by": "c", "updated_by": "u"}}"#;
     assert!(
         team_changes(
@@ -369,20 +387,6 @@ fn aliases_from_embedded_table() {
         changed_names(&team_changes(
             r#"{"team_id": "t", "model_aliases": {"gpt": "gpt-3"}}"#,
             text
-        )),
-        vec!["model_aliases"]
-    );
-    assert!(
-        team_changes(
-            r#"{"team_id": "t", "model_aliases": {}}"#,
-            r#"{"team_id": "t"}"#
-        )
-        .is_empty()
-    );
-    assert_eq!(
-        changed_names(&team_changes(
-            r#"{"team_id": "t", "model_aliases": {"a": "b"}}"#,
-            r#"{"team_id": "t"}"#
         )),
         vec!["model_aliases"]
     );
@@ -439,14 +443,15 @@ fn first_sorted_blocked_field() {
             field: "max_budget".to_owned(),
         }
     );
-    let request = r#"{"team_id": "t", "tpm_limit": 1, "rpm_limit": 2, "team_member_rpm_limit": 3}"#;
-    let verdict = team_edit_verdict(
-        &team_request(request),
+    let second_request =
+        r#"{"team_id": "t", "tpm_limit": 1, "rpm_limit": 2, "team_member_rpm_limit": 3}"#;
+    let second_verdict = team_edit_verdict(
+        &team_request(second_request),
         &team_row(stored),
         &permitted(&["tpm_limit"]),
     );
     assert_eq!(
-        verdict.unwrap(),
+        second_verdict.unwrap(),
         TeamAdminEditVerdict::FieldNotPermitted {
             field: "rpm_limit".to_owned(),
         }
@@ -460,12 +465,15 @@ fn unchanged_team_values_removed() {
     let filtered = allowed_team_edit(request, stored, &["rpm_limit"]);
     assert_eq!(keys(&filtered), vec!["rpm_limit", "team_id"]);
     assert_eq!(filtered.get("rpm_limit"), Some(&parse("5")));
-    let filtered = allowed_team_edit(
+    let with_metadata = allowed_team_edit(
         r#"{"team_id": "t", "rpm_limit": 5, "metadata": {"x": 1, "y": 2}}"#,
         stored,
         &["metadata", "rpm_limit"],
     );
-    assert_eq!(keys(&filtered), vec!["metadata", "rpm_limit", "team_id"]);
+    assert_eq!(
+        keys(&with_metadata),
+        vec!["metadata", "rpm_limit", "team_id"]
+    );
 }
 
 #[test]
@@ -567,9 +575,9 @@ fn unchanged_spend_still_forbidden() {
             field: "spend".to_owned(),
         }
     );
-    let verdict = key_edit_verdict(&key_request(r#"{"key": "sk-1"}"#), &key_row(stored), true);
+    let noop_verdict = key_edit_verdict(&key_request(r#"{"key": "sk-1"}"#), &key_row(stored), true);
     assert_eq!(
-        verdict.unwrap(),
+        noop_verdict.unwrap(),
         TeamAdminKeyEditVerdict::Allowed {
             changed: BTreeSet::new(),
         }
@@ -662,9 +670,11 @@ fn unhashable_window_pair_error() {
         r#"{"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": [1, 2]}]}"#;
     let error = changed_key_fields(&key_request(request), &key_row(stored)).unwrap_err();
     assert!(matches!(error, TeamAdminError::UnhashableWindow));
-    let stored = r#"{"token": "sk-1", "budget_limits": [{"budget_duration": {"nested": 1}}]}"#;
-    let error = changed_key_fields(&key_request(request), &key_row(stored)).unwrap_err();
-    assert!(matches!(error, TeamAdminError::UnhashableWindow));
+    let nested_stored =
+        r#"{"token": "sk-1", "budget_limits": [{"budget_duration": {"nested": 1}}]}"#;
+    let nested_error =
+        changed_key_fields(&key_request(request), &key_row(nested_stored)).unwrap_err();
+    assert!(matches!(nested_error, TeamAdminError::UnhashableWindow));
 }
 
 #[test]
@@ -674,27 +684,28 @@ fn four_exact_403_details() {
     let error = team_request_or_raise(verdict.unwrap()).unwrap_err();
     assert_eq!(error, Forbidden::EditingDisabled);
     assert_eq!(error.to_string(), EDITING_DISABLED);
-    let request = r#"{"team_id": "t", "rpm_limit": 2}"#;
-    let verdict = team_edit_verdict(
-        &team_request(request),
+    let team_blocked = r#"{"team_id": "t", "rpm_limit": 2}"#;
+    let team_verdict = team_edit_verdict(
+        &team_request(team_blocked),
         &team_row(noop),
         &permitted(&["tpm_limit"]),
     );
-    let error = team_request_or_raise(verdict.unwrap()).unwrap_err();
+    let team_error = team_request_or_raise(team_verdict.unwrap()).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        team_error.to_string(),
         "Team admins on this proxy do not have permission to update 'rpm_limit'. Ask a proxy \
         admin to add it under Settings > UI > Team admin editable fields."
     );
     let key = r#"{"token": "sk-1"}"#;
-    let verdict = key_edit_verdict(&key_request(r#"{"key": "sk-1"}"#), &key_row(key), false);
-    let error = key_request_or_raise(verdict.unwrap()).unwrap_err();
-    assert_eq!(error.to_string(), KEY_EDITING_DISABLED);
-    let request = r#"{"key": "sk-1", "tpm_limit": 3}"#;
-    let verdict = key_edit_verdict(&key_request(request), &key_row(key), true);
-    let error = key_request_or_raise(verdict.unwrap()).unwrap_err();
+    let key_noop_verdict =
+        key_edit_verdict(&key_request(r#"{"key": "sk-1"}"#), &key_row(key), false);
+    let key_noop_error = key_request_or_raise(key_noop_verdict.unwrap()).unwrap_err();
+    assert_eq!(key_noop_error.to_string(), KEY_EDITING_DISABLED);
+    let key_blocked = r#"{"key": "sk-1", "tpm_limit": 3}"#;
+    let key_field_verdict = key_edit_verdict(&key_request(key_blocked), &key_row(key), true);
+    let key_field_error = key_request_or_raise(key_field_verdict.unwrap()).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        key_field_error.to_string(),
         "Team admins on this proxy may only update budget fields on other members' keys, not \
         'tpm_limit'. Ask a proxy admin to add it under Settings > UI > Team admin editable fields."
     );
@@ -708,11 +719,11 @@ fn replays_the_team_admin_object_corpus(#[files("fuzz/corpus/team_admin_object/*
 
 #[test]
 fn native_object_limits_become_empty() {
-    let at_limit = format!(r#"{{"a": "{}"}}"#, "x".repeat(1_048_567));
-    assert_eq!(at_limit.len(), 1_048_576);
+    let at_limit = format!(r#"{{"a": "{}"}}"#, "x".repeat(0x000F_FFF7));
+    assert_eq!(at_limit.len(), 0x0010_0000);
     assert_eq!(decode_team_admin_object(&at_limit).len(), 1);
-    let over = format!(r#"{{"a": "{}"}}"#, "x".repeat(1_048_568));
-    assert_eq!(over.len(), 1_048_577);
+    let over = format!(r#"{{"a": "{}"}}"#, "x".repeat(0x000F_FFF8));
+    assert_eq!(over.len(), 0x0010_0001);
     assert!(decode_team_admin_object(&over).is_empty());
     let at_depth = format!(r#"{{"a": {}{}}}"#, "[".repeat(63), "]".repeat(63));
     assert_eq!(decode_team_admin_object(&at_depth).len(), 1);

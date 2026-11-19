@@ -46,12 +46,12 @@ pub fn edit_verdict(
     if supplied.contains_key("spend") {
         blocked.insert("spend");
     }
-    match blocked.first() {
-        Some(field) => Ok(TeamAdminKeyEditVerdict::FieldNotPermitted {
-            field: (*field).to_owned(),
-        }),
-        None => Ok(TeamAdminKeyEditVerdict::Allowed { changed }),
-    }
+    let Some(field) = blocked.first() else {
+        return Ok(TeamAdminKeyEditVerdict::Allowed { changed });
+    };
+    Ok(TeamAdminKeyEditVerdict::FieldNotPermitted {
+        field: (*field).to_owned(),
+    })
 }
 
 pub fn request_or_raise(verdict: TeamAdminKeyEditVerdict) -> Result<(), Forbidden> {

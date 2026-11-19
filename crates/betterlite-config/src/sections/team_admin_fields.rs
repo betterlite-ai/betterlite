@@ -27,7 +27,7 @@ struct RawGeneralSettings {
 }
 
 // The setting stays unparsed: which names a proxy supports depends on the caller, so resolution warns at use.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub editable_team_fields: Option<JsonValue>,
 }
@@ -45,7 +45,7 @@ impl Section for Raw {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingWarning {
     NotAList {
         raw: JsonValue,
@@ -57,6 +57,7 @@ pub enum SettingWarning {
 }
 
 impl SettingWarning {
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::NotAList { raw } => {
@@ -72,31 +73,18 @@ impl SettingWarning {
 }
 
 // The names a setting grants out of `supported`, plus what it rejected so the caller can log or report it.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Resolution {
     pub fields: BTreeSet<String>,
     pub warnings: Vec<SettingWarning>,
 }
 
+#[must_use]
 pub fn resolve_editable_fields(value: Option<&JsonValue>, supported: &[&str]) -> Resolution {
-    let Some(raw) = value.filter(|value| !value.is_null()) else {
+    let Some(raw) = value.filter(|found| !found.is_null()) else {
         return Resolution::default();
     };
-    let configured = match raw {
-        JsonValue::Array(items) => items
-            .iter()
-            .map(|item| match item {
-                JsonValue::String(name) => Some(name.clone()),
-                _ => None,
-            })
-            .collect::<Option<BTreeSet<String>>>(),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Object(_) => None,
-    };
-    let Some(configured) = configured else {
+    let Some(configured) = configured_names(raw) else {
         let warning = SettingWarning::NotAList { raw: raw.clone() };
         tracing::warn!("{}", warning.message());
         return Resolution {
@@ -104,7 +92,37 @@ pub fn resolve_editable_fields(value: Option<&JsonValue>, supported: &[&str]) ->
             warnings: vec![warning],
         };
     };
-    let unsupported: Vec<String> = configured
+    let unsupported = unsupported_names(&configured, supported);
+    let mut warnings = Vec::new();
+    if !unsupported.is_empty() {
+        warnings.push(unsupported_warning(unsupported, supported));
+    }
+    let fields: BTreeSet<String> = configured
+        .into_iter()
+        .filter(|name| supported.contains(&name.as_str()))
+        .collect();
+    Resolution { fields, warnings }
+}
+
+fn configured_names(raw: &JsonValue) -> Option<BTreeSet<String>> {
+    let JsonValue::Array(items) = raw else {
+        return None;
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            JsonValue::String(name) => Some(name.clone()),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Object(_)
+            | JsonValue::Array(_) => None,
+        })
+        .collect()
+}
+
+fn unsupported_names(configured: &BTreeSet<String>, supported: &[&str]) -> Vec<String> {
+    configured
         .iter()
         .filter(|name| {
             !supported.contains(&name.as_str())
@@ -114,31 +132,25 @@ pub fn resolve_editable_fields(value: Option<&JsonValue>, supported: &[&str]) ->
                 )
         })
         .cloned()
+        .collect()
+}
+
+fn unsupported_warning(names: Vec<String>, supported: &[&str]) -> SettingWarning {
+    let accepted: BTreeSet<&str> = supported
+        .iter()
+        .copied()
+        .chain([PROJECTS_PERMISSION, MEMBER_KEY_BUDGETS_PERMISSION])
         .collect();
-    let mut warnings = Vec::new();
-    if !unsupported.is_empty() {
-        let accepted: BTreeSet<&str> = supported
-            .iter()
-            .copied()
-            .chain([PROJECTS_PERMISSION, MEMBER_KEY_BUDGETS_PERMISSION])
-            .collect();
-        let warning = SettingWarning::Unsupported {
-            names: unsupported,
-            supported: accepted.iter().map(|name| (*name).to_owned()).collect(),
-        };
-        tracing::warn!("{}", warning.message());
-        warnings.push(warning);
-    }
-    let mut fields = BTreeSet::new();
-    for name in &configured {
-        if supported.contains(&name.as_str()) {
-            fields.insert(name.clone());
-        }
-    }
-    Resolution { fields, warnings }
+    let warning = SettingWarning::Unsupported {
+        names,
+        supported: accepted.iter().map(|name| (*name).to_owned()).collect(),
+    };
+    tracing::warn!("{}", warning.message());
+    warning
 }
 
 // Whether team admins may edit budgets on the keys of other team members.
+#[must_use]
 pub fn may_edit_member_key_budgets(value: Option<&JsonValue>) -> bool {
     resolve_editable_fields(value, &[MEMBER_KEY_BUDGETS_PERMISSION])
         .fields

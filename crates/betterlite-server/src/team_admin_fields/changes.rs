@@ -75,28 +75,27 @@ fn model_aliases_changed(submitted: &Fields, stored: &Fields) -> bool {
 fn budget_limits_changed(submitted: &Fields, stored: &Fields) -> Result<bool, TeamAdminError> {
     let sent = budget_windows(submitted.get("budget_limits"))?;
     let held = budget_windows(stored.get("budget_limits"))?;
-    if let (Some(sent), Some(held)) = (&sent, &held) {
-        return Ok(!same_windows(sent, held));
+    if let (Some(sent_windows), Some(held_windows)) = (&sent, &held) {
+        return Ok(!same_windows(sent_windows, held_windows));
     }
     Ok(stored_value_changed("budget_limits", submitted, stored))
 }
 
 fn stored_value_changed(name: &str, submitted: &Fields, stored: &Fields) -> bool {
-    match stored.get(name) {
-        Some(value) => !value_eq(submitted.get(name), Some(value)),
-        None => true,
-    }
+    stored
+        .get(name)
+        .is_none_or(|value| !value_eq(submitted.get(name), Some(value)))
 }
 
 // The caller-owned pairs of a window list, or None when the value needs a plain comparison.
 fn budget_windows(value: Option<&JsonData>) -> Result<Option<Vec<WindowPair>>, TeamAdminError> {
-    let Some(value) = value else {
+    let Some(found) = value else {
         return Ok(Some(Vec::new()));
     };
-    if matches!(value, JsonData::Null) {
+    if matches!(found, JsonData::Null) {
         return Ok(Some(Vec::new()));
     }
-    let JsonData::Array(items) = value else {
+    let JsonData::Array(items) = found else {
         return Ok(None);
     };
     let mut windows = Vec::with_capacity(items.len());

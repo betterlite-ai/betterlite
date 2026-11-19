@@ -15,7 +15,7 @@ pub(crate) type Fields = BTreeMap<String, JsonData>;
 pub(crate) fn value_eq(left: Option<&JsonData>, right: Option<&JsonData>) -> bool {
     match (left, right) {
         (None | Some(JsonData::Null), None | Some(JsonData::Null)) => true,
-        (Some(left), Some(right)) => json_eq(left, right),
+        (Some(left_value), Some(right_value)) => json_eq(left_value, right_value),
         (None, Some(_)) | (Some(_), None) => false,
     }
 }
@@ -23,17 +23,21 @@ pub(crate) fn value_eq(left: Option<&JsonData>, right: Option<&JsonData>) -> boo
 fn json_eq(left: &JsonData, right: &JsonData) -> bool {
     match (left, right) {
         (JsonData::Null, JsonData::Null) => true,
-        (JsonData::Bool(left), JsonData::Bool(right)) => left == right,
-        (JsonData::Number(left), JsonData::Number(right)) => number_eq(left, right),
-        (JsonData::String(left), JsonData::String(right)) => left == right,
-        (JsonData::Array(left), JsonData::Array(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|(left, right)| json_eq(left, right))
+        (JsonData::Bool(left_value), JsonData::Bool(right_value)) => left_value == right_value,
+        (JsonData::Number(left_value), JsonData::Number(right_value)) => {
+            number_eq(left_value, right_value)
         }
-        (JsonData::Object(left), JsonData::Object(right)) => object_eq(left, right),
+        (JsonData::String(left_value), JsonData::String(right_value)) => left_value == right_value,
+        (JsonData::Array(left_items), JsonData::Array(right_items)) => {
+            left_items.len() == right_items.len()
+                && left_items
+                    .iter()
+                    .zip(right_items)
+                    .all(|(left_item, right_item)| json_eq(left_item, right_item))
+        }
+        (JsonData::Object(left_fields), JsonData::Object(right_fields)) => {
+            object_eq(left_fields, right_fields)
+        }
         (
             JsonData::Null
             | JsonData::Bool(_)
@@ -57,7 +61,7 @@ fn number_eq(left: &Number, right: &Number) -> bool {
         left.as_str().parse::<Decimal>(),
         right.as_str().parse::<Decimal>(),
     ) {
-        (Ok(left), Ok(right)) => left == right,
+        (Ok(left_value), Ok(right_value)) => left_value == right_value,
         _ => left.as_str() == right.as_str(),
     }
 }
@@ -84,10 +88,9 @@ pub(crate) fn as_object(value: Option<&JsonData>) -> Fields {
 // `_metadata_changes`: the metadata as it would be stored against the stored one, key by key.
 pub(crate) fn metadata_changes(supplied: &Fields, existing: &Fields) -> BTreeSet<String> {
     let stored = as_object(existing.get("metadata"));
-    let mut merged = match supplied.get("metadata") {
-        Some(value) => as_object(Some(value)),
-        None => stored.clone(),
-    };
+    let mut merged = supplied
+        .get("metadata")
+        .map_or_else(|| stored.clone(), |value| as_object(Some(value)));
     for (name, value) in supplied {
         if FOLDED_FIELDS.contains(&name.as_str()) {
             merged.insert(name.clone(), value.clone());
