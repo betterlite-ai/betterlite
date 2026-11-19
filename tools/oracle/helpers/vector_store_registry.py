@@ -1,12 +1,12 @@
 import asyncio
-from typing import Generic, Literal, NotRequired, TypedDict, TypeVar, cast
+from typing import Generic, Literal, NotRequired, TypeAlias, TypedDict, TypeVar, cast
 
 import litellm
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient
 from litellm.types.utils import CredentialItem
 from litellm.types.vector_stores import (
-    LiteLLM_ManagedVectorStore,
+    LiteLLM_ManagedVectorStore as StoreRecord,
 )
 from litellm.types.vector_stores import (
     LiteLLM_ManagedVectorStoreIndex as ManagedIndex,
@@ -70,6 +70,7 @@ class Input(TypedDict):
 
 JSON_VALUE = TypeAdapter(JsonValue)
 STORES = TypeAdapter(list[Store])
+StoreList: TypeAlias = list[StoreRecord]
 
 
 class FakeTable(Generic[Row]):
@@ -140,9 +141,10 @@ def step_value(
 ) -> dict[str, JsonValue]:
     match step["kind"]:
         case "add":
-            registry.add_vector_store_to_registry(vector_store=cast("LiteLLM_ManagedVectorStore", step["store"]))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
+            registry.add_vector_store_to_registry(vector_store=cast("StoreRecord", step["store"]))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
         case "update":
-            registry.update_vector_store_in_registry(vector_store_id=step["id"], updated_data=cast("LiteLLM_ManagedVectorStore", step["store"]))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
+            registry.update_vector_store_in_registry(vector_store_id=step["id"],
+                updated_data=cast("StoreRecord", step["store"]))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
         case "delete":
             registry.delete_vector_store_from_registry(vector_store_id=step["id"])
         case "is_config":
@@ -177,7 +179,7 @@ def config_records(input_value: Input) -> dict[str, JsonValue]:
 
 def mutations(input_value: Input) -> dict[str, JsonValue]:
     seed = input_value.get("stores")
-    registry = VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
+    registry = VectorStoreRegistry(vector_stores=cast("StoreList", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
     registered = input_value.get("indexes")
     listed = [] if registered is None else registered
     models = [ManagedIndex.model_validate(index) for index in listed]
@@ -190,7 +192,7 @@ def mutations(input_value: Input) -> dict[str, JsonValue]:
 
 def database_lookup(input_value: Input) -> dict[str, JsonValue]:
     seed = input_value.get("stores")
-    registry = VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
+    registry = VectorStoreRegistry(vector_stores=cast("StoreList", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
     calls: list[JsonValue] = []
     database = input_value.get("database")
     db: PrismaClient | None = None if database is None else FakeClient(database, calls)
@@ -270,9 +272,9 @@ def named_credentials(input_value: Input) -> dict[str, JsonValue]:
     ]
     previous = litellm.credential_list
     litellm.credential_list = TypeAdapter(list[CredentialItem]).validate_python(records)
+    seed = input_value.get("stores")
+    registry = VectorStoreRegistry(vector_stores=cast("StoreList", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
     try:
-        seed = input_value.get("stores")
-        registry = VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", [] if seed is None else seed))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
         credentials: list[JsonValue] = [
             JSON_VALUE.validate_python(registry.get_credentials_for_vector_store(identifier))
             for identifier in input_value["ids"]
