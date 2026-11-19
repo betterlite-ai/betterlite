@@ -120,6 +120,19 @@ async fn async_call_runs_the_pre_call_hook_before_the_stub() {
 }
 
 #[tokio::test]
+async fn async_call_marks_the_response_through_the_success_hook() {
+    let hook: Arc<dyn DeploymentHook> = Arc::new(MarkingHook::new("marker", "hooked"));
+    let mut fixture = fixture().with_hooks(vec![hook]);
+    let stub = Stub::responding("acompletion", response(value(r#"{"id":"chat-1"}"#)));
+    let outcome = fixture
+        .wrapper
+        .call(&stub, chat_request("{}"), WrapperOptions::default())
+        .await
+        .expect("the call succeeds");
+    assert_eq!(outcome, response(value(r#"{"id":"chat-1","hooked":true}"#)));
+}
+
+#[tokio::test]
 async fn async_call_logs_success_in_the_background() {
     let mut fixture = fixture();
     let stub = Stub::new("acompletion");
@@ -171,6 +184,18 @@ fn sync_async_flagged_complete_stream_is_assembled() {
     let outcome = run_sync(&mut fixture, &stub, request).expect("the short path answers");
     assert_eq!(outcome, response(value(r#"{"assembled":true}"#)));
     assert_eq!(stub.call_count(), 1);
+}
+
+#[test]
+fn sync_aspeech_flagged_request_returns_before_the_post_call_steps() {
+    let mut fixture = fixture().with_cache();
+    let stub = Stub::responding("completion", response(value(r#"{"id":"chat-1"}"#)));
+    let outcome = run_sync(&mut fixture, &stub, chat_request(r#"{"aspeech":true}"#))
+        .expect("the call succeeds");
+    assert_eq!(outcome, response(value(r#"{"id":"chat-1"}"#)));
+    assert!(fixture.cache.stored().is_empty());
+    assert_eq!(fixture.metadata.count(), 0);
+    assert!(fixture.logging.events().is_empty());
 }
 
 #[tokio::test]
