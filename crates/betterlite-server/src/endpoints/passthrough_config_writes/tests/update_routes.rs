@@ -29,7 +29,7 @@ async fn update_merges_only_the_sent_fields_over_the_stored_entry() {
     assert_eq!(updated.path, "/two");
     assert_eq!(updated.target, "https://new.example.com");
     assert!(!updated.auth);
-    assert_eq!(updated.timeout, Some(15.0));
+    assert_eq!(updated.timeout, Some(15.0_f64));
     assert_eq!(updated.methods, Some(vec!["GET".to_owned()]));
     assert_eq!(updated.headers.get("x-key"), Some(&support::json(r#""v""#)));
     assert_eq!(
@@ -59,7 +59,7 @@ async fn update_replaces_a_sent_field_and_a_null_keeps_the_stored_one() {
     assert!(updated.auth);
     assert!(updated.headers.contains_key("y-key"));
     assert!(!updated.headers.contains_key("x-key"));
-    assert_eq!(updated.timeout, Some(15.0));
+    assert_eq!(updated.timeout, Some(15.0_f64));
 }
 
 #[rstest]
@@ -230,6 +230,7 @@ async fn update_installs_a_subpath_route_when_the_entry_asks_for_it() {
     let request = support::post(UPDATE, BODY, Some(&support::admin()));
     let reply = support::call(support::app(&store, &routes, &[]), request).await;
     assert_eq!(reply.status, StatusCode::OK);
+    assert!(support::endpoint_of(&reply).include_subpath);
     let registrations = support::registered(&routes);
     let registration = registrations.first().expect("one route");
     assert_eq!(registration.route_type, PassThroughRouteType::Subpath);
@@ -285,7 +286,7 @@ async fn update_registers_the_optional_fields_in_the_route() {
     let reply = support::call(support::app(&store, &routes, &[]), request).await;
     assert_eq!(reply.status, StatusCode::OK);
     let params = support::params_of(&routes, "ep1");
-    assert_eq!(params.timeout, Some(30.0));
+    assert_eq!(params.timeout, Some(30.0_f64));
     assert_eq!(
         params.cost_per_request,
         Some(rust_decimal::Decimal::new(25, 2))

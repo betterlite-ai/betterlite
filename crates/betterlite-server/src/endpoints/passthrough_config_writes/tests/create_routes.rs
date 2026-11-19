@@ -20,7 +20,7 @@ async fn create_gives_a_missing_id_a_uuid_and_appends_the_entry() {
     assert_eq!(reply.status, StatusCode::OK);
     let created = support::endpoint_of(&reply);
     let id = created.id.expect("a generated id");
-    assert!(uuid::Uuid::parse_str(&id).is_ok());
+    uuid::Uuid::parse_str(&id).unwrap();
     assert_eq!(created.path, "/hook");
     assert!(created.auth);
     assert_eq!(store.stored_ids(), vec![id.clone()]);
@@ -99,6 +99,7 @@ async fn create_registers_a_subpath_route_when_asked() {
     let request = support::post(CREATE, body, Some(&support::admin()));
     let reply = support::call(support::app(&store, &routes, &[]), request).await;
     assert_eq!(reply.status, StatusCode::OK);
+    assert!(support::endpoint_of(&reply).include_subpath);
     let registrations = support::registered(&routes);
     let registration = registrations.first().expect("one route");
     assert_eq!(registration.route_type, PassThroughRouteType::Subpath);
@@ -139,7 +140,7 @@ async fn create_carries_the_optional_fields_into_the_route() {
     let reply = support::call(support::app(&store, &routes, &[]), request).await;
     assert_eq!(reply.status, StatusCode::OK);
     let params = support::params_of(&routes, "new");
-    assert_eq!(params.timeout, Some(20.0));
+    assert_eq!(params.timeout, Some(20.0_f64));
     assert_eq!(
         params.cost_per_request,
         Some(rust_decimal::Decimal::new(15, 1))

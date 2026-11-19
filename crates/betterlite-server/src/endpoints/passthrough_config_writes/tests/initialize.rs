@@ -180,7 +180,7 @@ async fn initialize_gives_a_stored_entry_without_an_id_a_generated_one() {
     .expect("initialize");
     let registrations = support::registered(&routes);
     let registration = registrations.first().expect("the route");
-    assert!(uuid::Uuid::parse_str(&registration.endpoint_id).is_ok());
+    uuid::Uuid::parse_str(&registration.endpoint_id).unwrap();
 }
 
 #[tokio::test]

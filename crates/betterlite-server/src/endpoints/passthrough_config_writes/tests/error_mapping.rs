@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 
 use crate::endpoints::passthrough_config_writes::error::LookupKind;
 use crate::endpoints::passthrough_config_writes::error::PassthroughWriteError;
