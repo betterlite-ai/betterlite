@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use rstest::rstest;
 
 use crate::router_dependencies::config_write::validate_config_write;
@@ -137,9 +139,9 @@ fn a_write_missing_settings_names_every_group(
         StrategyRouterWriteError::MissingSettings { requirements, .. } => {
             assert_eq!(requirements, expected);
         }
-        other @ StrategyRouterWriteError::UnexpectedSettings { .. }
-        | other @ StrategyRouterWriteError::RepeatedPrefix { .. }
-        | other @ StrategyRouterWriteError::MissingRouterName { .. } => {
+        other @ (StrategyRouterWriteError::UnexpectedSettings { .. }
+        | StrategyRouterWriteError::RepeatedPrefix { .. }
+        | StrategyRouterWriteError::MissingRouterName { .. }) => {
             panic!("expected missing settings, got {other:?}")
         }
     }
@@ -300,7 +302,7 @@ fn a_config_write_message_names_the_key_and_the_load() {
     );
     let unreadable = validate_config_write(Some(&json(r#"{"classifier_type":"nope"}"#)))
         .expect_err("the classifier type is unknown");
-    assert!(std::error::Error::source(&unreadable).is_some());
+    assert!(unreadable.source().is_some());
     let message = unreadable.to_string();
     assert!(message.starts_with("complexity_router_config is invalid at classifier_type: "));
     assert!(message.contains("unknown variant `nope`"));
@@ -355,9 +357,9 @@ fn a_config_write_rule_error_keeps_the_rule_as_its_cause() {
             assert_eq!(location, "complexity_router_config");
             assert!(source.to_string().contains("plan_mode_min_tier"));
         }
-        other @ ComplexityConfigWriteError::NotAnObject
-        | other @ ComplexityConfigWriteError::InvalidField { .. }
-        | other @ ComplexityConfigWriteError::Unreadable { .. } => {
+        other @ (ComplexityConfigWriteError::NotAnObject
+        | ComplexityConfigWriteError::InvalidField { .. }
+        | ComplexityConfigWriteError::Unreadable { .. }) => {
             panic!("expected an invalid config, got {other:?}")
         }
     }
