@@ -1,3 +1,4 @@
+from types import MethodType
 from typing import NotRequired, Protocol, TypedDict
 
 from litellm.llms.custom_llm import CustomLLM, custom_chat_llm_router
@@ -12,14 +13,14 @@ class Input(TypedDict):
     cases: dict[str, Call]
 
 
-class _Router(Protocol):
+class Router(Protocol):
     def __call__(
         self, *, async_fn: bool, stream: bool | None, custom_llm: CustomLLM
-    ) -> object: ...
+    ) -> MethodType: ...
 
 
-# custom_chat_llm_router has no return annotation at the pin; it answers one of CustomLLM's four bound methods
-router: _Router = custom_chat_llm_router
+# the pin declares no return type; custom_chat_llm_router answers one CustomLLM method
+router: Router = custom_chat_llm_router
 
 
 def select(*, async_fn: bool, stream: bool | None) -> str:

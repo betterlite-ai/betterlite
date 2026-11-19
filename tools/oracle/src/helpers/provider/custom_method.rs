@@ -9,7 +9,7 @@ pub(crate) struct Input {
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct Call {
+pub(crate) struct Call {
     async_fn: bool,
     #[serde(default)]
     stream: Option<bool>,

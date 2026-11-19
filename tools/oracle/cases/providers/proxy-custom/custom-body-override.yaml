@@ -36,5 +36,5 @@ compare:
   headers_present: []
   upstream_headers: [content-type]
   ignore:
-    - {pointer: /id, why: both sides generate a new completion id, so the value never matches}
+    - {pointer: /id, why: LiteLLM generates a fresh chatcmpl id and betterlite leaves the optional id unset}
     - {pointer: /created, why: the completion time is read from the clock on each side}
