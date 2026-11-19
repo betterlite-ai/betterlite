@@ -72,23 +72,23 @@ pub async fn initialize_vantage_export_job<F>(
 where
     F: FocusEngineFactory,
 {
-    let lease = match logger.pod_lock.as_ref() {
-        Some(pod_lock) if pod_lock.has_cache() => {
-            if pod_lock.acquire_lock(VANTAGE_USAGE_DATA_JOB_NAME).await != Some(true) {
-                tracing::debug!("Vantage export: unable to acquire pod lock");
-                return Ok(());
-            }
-            Some(PodLockRelease {
-                pod_lock: Some(Arc::clone(pod_lock)),
-                tasks: logger.tasks.clone(),
-            })
-        }
-        _ => None,
+    let Some(pod_lock) = logger
+        .pod_lock
+        .as_ref()
+        .filter(|pod_lock| pod_lock.has_cache())
+    else {
+        return scheduled_export(logger).await;
+    };
+    if pod_lock.acquire_lock(VANTAGE_USAGE_DATA_JOB_NAME).await != Some(true) {
+        tracing::debug!("Vantage export: unable to acquire pod lock");
+        return Ok(());
+    }
+    let lease = PodLockRelease {
+        pod_lock: Some(Arc::clone(pod_lock)),
+        tasks: logger.tasks.clone(),
     };
     let result = scheduled_export(logger).await;
-    if let Some(held) = lease {
-        held.release().await;
-    }
+    lease.release().await;
     result
 }
 
