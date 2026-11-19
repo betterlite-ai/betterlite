@@ -1629,6 +1629,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-azure",
  "betterlite-cache",
  "betterlite-compression",
  "betterlite-config",
