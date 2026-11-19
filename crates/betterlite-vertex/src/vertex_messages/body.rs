@@ -38,7 +38,7 @@ where
         body: &'body mut IndexMap<String, ContractJson>,
         model: &'body str,
     ) -> impl Future<Output = ()> + Send + 'body {
-        sanitize_output_params(body, model, &mut *self.environment, &*self.catalogs)
+        sanitize_output_params(body, model, self.environment, self.catalogs)
     }
 }
 
