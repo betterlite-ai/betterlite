@@ -1,0 +1,21 @@
+task: B9720
+deviations:
+  - what: The iterator hook, the per-chunk hook, the failure hook, the cost injection, the reservation release and the cleanup reach the generator through ports and constructor values instead of proxy_logging_obj and litellm module globals.
+    why: betterlite wires dependencies through constructors; the frames a client sees are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3867-L3876
+  - what: The reservation release and the cleanup of a dropped body are handed to sync ports that the server runs on its task tracker, so they run side by side instead of the release finishing before the cleanup starts.
+    why: Rust cannot await in Drop and rules.yaml async-hygiene forbids detached tasks; the two touch different state (the budget counter, and the logging object and parallel-request slot).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3962-L3977
+  - what: An HTTP failure ends the body with a StreamAbort value that the route turns into a cut connection, where LiteLLM raises the HTTPException out of the generator.
+    why: A Rust stream cannot raise; once the status line is sent both cut the connection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3995
+  - what: An Anthropic error frame that B958 cannot build (a WireDecodeError) ends the body with a StreamAbort of 500.
+    why: LiteLLM's frame builder cannot fail; betterlite's checks decode limits, and cutting the stream is the only honest answer left.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4047-L4051
+  - what: The failure log line corrects the spelling of the word occurred in LiteLLM's exception prefix.
+    why: the repository's spelling check rejects the misspelling; the log text is not part of the response and the message after the dash is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3981
+kept_bugs:
+  - what: A text chunk whose characters equal the ping event still counts as delivered provider output, as it does in LiteLLM.
+    why: LiteLLM compares the chunk against the ping bytes with !=, and a Python str never equals bytes, so a working setup sees a text ping as a delivered chunk and keeps its reservation charged; betterlite copies that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3953

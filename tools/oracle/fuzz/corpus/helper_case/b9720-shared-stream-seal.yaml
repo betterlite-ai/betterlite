@@ -1,0 +1,12 @@
+kind: helper
+name: b9720-shared-stream-seal-seed
+call:
+  b9720:
+    kind: seal
+    writes:
+      - "data: {\"x\": 1}\r\n\r\n"
+      - "data: {\"y\":"
+      - "\r"
+env: {}
+compare:
+  ignore: []

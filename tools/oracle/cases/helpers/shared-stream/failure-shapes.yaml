@@ -1,0 +1,78 @@
+kind: helper
+name: shared-stream-failure-shapes
+call:
+  b9720:
+    kind: failure
+    failure: {message: "boom", type: null, param: null, status_code: 429}
+calls:
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 401}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 403}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 404}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 500}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 529}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 400}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 418}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: 200}
+  - b9720:
+      kind: failure
+      failure: {message: "boom", type: null, param: null, status_code: null}
+  - b9720:
+      kind: failure
+      failure: {message: "slow down", type: RateLimitError, param: messages, status_code: 429}
+  - b9720:
+      kind: failure
+      failure: {message: "slow down", type: "None", param: "None", status_code: 429}
+  - b9720:
+      kind: failure
+      failure:
+        message: No deployments available for selected model
+        type: null
+        param: null
+        status_code: 500
+  - b9720:
+      kind: failure
+      failure:
+        message: No healthy deployment available
+        type: null
+        param: null
+        status_code: 502
+  - b9720:
+      kind: failure
+      failure:
+        message: Not allowed to access model due to tags configuration
+        type: null
+        param: null
+        status_code: 400
+  - b9720:
+      kind: failure
+      failure:
+        message: Bearer abcdefghij1234567890
+        type: null
+        param: null
+        status_code: 400
+  - b9720:
+      kind: failure
+      failure:
+        message: "upstream http://service.internal:8080/v1 failed"
+        type: null
+        param: null
+        status_code: 400
+env: {}
+compare:
+  ignore: []
