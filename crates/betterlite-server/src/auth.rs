@@ -68,7 +68,6 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, denial_response,
     rule_for_request as grant_rule_for_request,
 };
-use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
@@ -131,72 +130,49 @@ async fn stage_input(
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            model_patterns_stage(backend, request, authenticated, resolver)
-        }
-        AuthBackend::AuthResourceGrants => {
             let context = authenticated
                 .cloned()
                 .ok_or(AuthenticationFailure::Missing)?;
-            let stage = ResourceGrantStageInput {
-                context,
-                rule: grant_rule_for_request(request),
-                database: database_for_request(request),
+            let stage = model_stage_input(request, context.clone(), resolver);
+            if backend == AuthBackend::AuthRequestModels {
+                return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+            }
+            let requested = match resolve(&stage) {
+                Ok(requested) => requested,
+                Err(error) => {
+                    tracing::debug!(error = %error, "the request model stage failed");
+                    return Err(StageFailure::from(AuthenticationFailure::Missing));
+                }
             };
-            Ok(StageInput::AuthResourceGrants(Box::new(stage)))
+            let rule = rule_for_request(request);
+            let depth = max_recurse_depth_for_request(request);
+            Ok(StageInput::AuthModelPatterns(Box::new(
+                ModelPatternStageInput {
+                    context,
+                    requested,
+                    rule,
+                    max_recurse_depth: depth,
+                },
+            )))
         }
-        AuthBackend::AuthTagBudgets => tag_budget_stage_input(request, authenticated).await,
+        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        AuthBackend::AuthTagBudgets => auth_tag_budgets::stage_input(request, authenticated).await,
     }
 }
 
-fn model_patterns_stage(
-    backend: AuthBackend,
+fn resource_grant_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
-    resolver: &Arc<RequestModelResolver>,
-) -> Result<StageInput, StageFailure> {
+) -> Result<StageInput, AuthenticationFailure> {
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    let stage = model_stage_input(request, context.clone(), resolver);
-    if backend == AuthBackend::AuthRequestModels {
-        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-    }
-    let requested = match resolve(&stage) {
-        Ok(requested) => requested,
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            return Err(StageFailure::from(AuthenticationFailure::Missing));
-        }
-    };
-    let rule = rule_for_request(request);
-    let depth = max_recurse_depth_for_request(request);
-    Ok(StageInput::AuthModelPatterns(Box::new(
-        ModelPatternStageInput {
-            context,
-            requested,
-            rule,
-            max_recurse_depth: depth,
-        },
-    )))
-}
-
-// the batch reads are asynchronous, so this stage resolves its rows while its input is assembled
-async fn tag_budget_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, StageFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let stage = TagBudgetStageInput {
+    let stage = ResourceGrantStageInput {
         context,
-        rule: auth_tag_budgets::rule_for_request(request),
-        database: auth_tag_budgets::database_for_request(request),
+        rule: grant_rule_for_request(request),
+        database: database_for_request(request),
     };
-    auth_tag_budgets::prefetch(&stage)
-        .await
-        .map_err(StageFailure::TagBudgets)?;
-    Ok(StageInput::AuthTagBudgets(Box::new(stage)))
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {

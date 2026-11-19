@@ -10,7 +10,8 @@ use betterlite_auth::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
+use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
 mod tests;
@@ -72,6 +73,23 @@ pub(crate) async fn prefetch(stage: &TagBudgetStageInput) -> Result<(), Box<Prox
     resolve(lookup, rule, stage.database)
         .await
         .map_err(|error| Box::new(auth_error(&error)))
+}
+
+// the batch reads are asynchronous, so the stage resolves its rows while its input is assembled
+pub(crate) async fn stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let stage = TagBudgetStageInput {
+        context,
+        rule: rule_for_request(request),
+        database: database_for_request(request),
+    };
+    prefetch(&stage).await.map_err(StageFailure::TagBudgets)?;
+    Ok(StageInput::AuthTagBudgets(Box::new(stage)))
 }
 
 // The tag read runs first: LiteLLM gathers both checks and raises the tag failure before the group one.
