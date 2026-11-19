@@ -149,7 +149,7 @@ out_of_scope:
   - "The lifespan order that calls start_shutdown and wait_for_drain: B8374. The ShutdownState in ServerState, the area aggregator calls and the move of B003's handlers out of routes.rs: B8610."
 pitfalls:
   - B8610 moves B003's three health handlers into the app/health.rs stub; replace them there in the same change, or the merged router panics on a duplicate /health/readiness.
-  - The auth exemption for /health/liveliness, /health/liveness and /health/readiness lives in auth.rs and must not move into the health router, since B052's auth layer runs before it.
+  - The auth exemption for /health/liveliness, /health/liveness and /health/readiness lives in auth.rs and must not move into the health router, since the auth layer in auth.rs (B003's middleware) runs before it.
   - openmeter, braintrust and generic_api run the mock completion even when they are not in success_callback, so the MockRequests adapter must not check the callback list itself.
   - The response cache and the coordination Redis are different objects; redis_configured is true when either one or the router's own Redis exists.
 review_level: standard
