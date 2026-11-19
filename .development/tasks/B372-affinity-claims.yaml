@@ -2,7 +2,7 @@ id: B372
 title: Affinity identity and atomic pin claims
 description: 'Implement AffinityKey and AffinityPin, caller-key hashing, model-map identity and local/shared
   first-writer claims. Preserve legacy string pins, TTL refresh and local fallback on Redis outage. Use
-  B360 atomic operations and B052 identity; fuzz persisted pin bytes before typed decoding and never expose
+  B360 atomic operations and the caller identity already in the request metadata (user_api_key_hash, else user_api_key_user_id); fuzz persisted pin bytes before typed decoding and never expose
   keys. Implement the owned native service in crates/betterlite-router/src/affinity_claims.rs. B301 registers ProbeOperation::AffinityClaims and its Python entry as stubs, so fill only tools/oracle/src/router_probes/affinity_claims.rs and tools/oracle/litellm/probes/affinity_claims.py and leave mod.rs and registry.py as they are;
   the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
