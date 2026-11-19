@@ -1,4 +1,4 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
@@ -11,8 +11,8 @@ use crate::plugin_routes::claim::{SALT_VARIABLE, verify_plugin_session_claim};
 use crate::plugin_routes::config::PluginRegistry;
 use crate::plugin_routes::proxy::PluginState;
 use crate::plugin_routes::test_support::{
-    ENV_LOCK, FakeUpstream, PLUGIN, SALT, authorized, caller, json, key_caller, master_key,
-    registry, reply, send, state, text, user_caller,
+    FakeUpstream, PLUGIN, SALT, authorized, caller, json, key_caller, master_key, registry, reply,
+    send, state, text, user_caller,
 };
 
 fn application(state: PluginState) -> Router {
@@ -89,7 +89,6 @@ async fn auth_token_requires_a_caller() {
 
 #[tokio::test]
 async fn auth_token_answers_503_when_the_salt_is_unset() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, None::<&str>)], async {
         let app = application(idle_state());
         let request = authorized(
@@ -108,7 +107,6 @@ async fn auth_token_answers_503_when_the_salt_is_unset() {
 
 #[tokio::test]
 async fn auth_token_answers_503_when_the_salt_is_empty() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(""))], async {
         let app = application(idle_state());
         let request = authorized(get_request("/api/plugins/auth-token"), master_key());
@@ -124,7 +122,6 @@ async fn auth_token_answers_503_when_the_salt_is_empty() {
 
 #[tokio::test]
 async fn auth_token_answers_404_for_an_unregistered_plugin() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let app = application(idle_state());
         let request = authorized(
@@ -140,7 +137,6 @@ async fn auth_token_answers_404_for_an_unregistered_plugin() {
 
 #[tokio::test]
 async fn auth_token_issues_a_claim_for_the_master_key() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let app = application(idle_state());
         let request = authorized(get_request("/api/plugins/auth-token"), master_key());
@@ -157,7 +153,6 @@ async fn auth_token_issues_a_claim_for_the_master_key() {
 
 #[tokio::test]
 async fn auth_token_uses_the_key_identity() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let app = application(idle_state());
         let request = authorized(
@@ -175,7 +170,6 @@ async fn auth_token_uses_the_key_identity() {
 }
 
 async fn claim_role_for(roles: Vec<Role>) -> String {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async move {
         let app = application(idle_state());
         let request = authorized(
@@ -194,7 +188,6 @@ async fn claim_role_for(roles: Vec<Role>) -> String {
 
 #[tokio::test]
 async fn auth_token_uses_the_user_record_id_when_the_caller_has_no_key() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let app = application(idle_state());
         let request = authorized(
@@ -237,7 +230,6 @@ async fn auth_token_falls_back_to_the_internal_user_role() {
 
 #[tokio::test]
 async fn auth_token_prefers_the_key_role_over_the_principal_roles() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let mut context = key_caller(r#"{"user_id":"u9","user_role":"internal_user"}"#);
         context.principal.roles = vec![Role::PlatformAdmin];

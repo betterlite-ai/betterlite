@@ -1,4 +1,4 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
@@ -8,8 +8,8 @@ use super::claim::{SALT_VARIABLE, verify_plugin_session_claim};
 use super::config::PluginRegistry;
 use super::router::router;
 use super::test_support::{
-    ENV_LOCK, FakeUpstream, PLUGIN, SALT, authorized, json, key_caller, master_key, registry,
-    reply, send, state, text,
+    FakeUpstream, PLUGIN, SALT, authorized, json, key_caller, master_key, registry, reply, send,
+    state, text,
 };
 
 fn platform_registry() -> Arc<PluginRegistry> {
@@ -42,7 +42,6 @@ async fn oneshot_lists_the_configured_plugins() {
 
 #[tokio::test]
 async fn oneshot_issues_a_claim_for_the_platform_plugin() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let app = application(FakeUpstream::answering(reply(StatusCode::OK, "")));
         let request = authorized(
@@ -103,7 +102,6 @@ async fn oneshot_rejects_a_non_admin_on_the_proxy() {
 
 #[tokio::test]
 async fn oneshot_answers_503_without_a_salt() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, None::<&str>)], async {
         let app = application(FakeUpstream::answering(reply(StatusCode::OK, "")));
         let request = authorized(get_request("/api/plugins/auth-token"), master_key());

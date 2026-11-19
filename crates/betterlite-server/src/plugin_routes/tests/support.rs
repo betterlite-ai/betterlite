@@ -16,9 +16,6 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 use tower::ServiceExt as _;
 
-// tests that set or unset LITELLM_SALT_KEY hold this lock: the environment is process-wide
-pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
-
 use super::config::PluginRegistry;
 use super::headers::KeyHeaderName;
 use super::proxy::{PluginReply, PluginRequest, PluginSendError, PluginState, PluginUpstream};

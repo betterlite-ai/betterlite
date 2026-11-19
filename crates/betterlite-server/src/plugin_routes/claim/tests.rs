@@ -1,5 +1,3 @@
-use std::sync::PoisonError;
-
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use betterlite_pyhost::json_values::JsonObject;
@@ -11,7 +9,7 @@ use super::{
 use crate::plugin_routes::error::PluginError;
 use crate::plugin_routes::fernet::{self, FernetKey};
 use crate::plugin_routes::test_support::{
-    CLAIM_IV, CLAIM_TIMESTAMP, CLAIM_TOKEN, EMPTY_SALT_KEY_HEX, ENV_LOCK, KEY_HEX, LONG_SALT,
+    CLAIM_IV, CLAIM_TIMESTAMP, CLAIM_TOKEN, EMPTY_SALT_KEY_HEX, KEY_HEX, LONG_SALT,
     LONG_SALT_KEY_HEX, PLUGIN, SALT,
 };
 
@@ -193,7 +191,6 @@ fn saturates_the_claim_expiry_at_the_end_of_time() {
 
 #[tokio::test]
 async fn issues_and_verifies_through_the_environment() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async {
         let token = issue_plugin_session_claim(PLUGIN, Some("u1"), Some("proxy_admin")).unwrap();
         let claim = verify_plugin_session_claim(PLUGIN, &token).unwrap();
