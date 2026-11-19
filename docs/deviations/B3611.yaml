@@ -44,6 +44,16 @@ deviations:
       The placeholder carries no value, so the typed return value holds only the data a caller can read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1939-L1980
   - what: >-
+      non_streaming_request_handler and make_multipart_http_request take the decoded form from the caller, and
+      a multipart call that reaches the handler with forward_multipart set and no form fails with an
+      UndecodedForm error. LiteLLM's make_multipart_http_request calls await request.form() itself and decodes
+      the request body there.
+    why: >-
+      The form is decoded once in the pass-through request path owned by B1101, which keeps the ordered items
+      the rebuilt body needs; the handler has no request body to decode a second time.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L519
+  - what: >-
       upstream_close_to_relay takes the upstream close frame the relay already found. LiteLLM scans an iterable
       of asyncio task results for the first Close instance and then applies the same close-code rules.
     why: >-
