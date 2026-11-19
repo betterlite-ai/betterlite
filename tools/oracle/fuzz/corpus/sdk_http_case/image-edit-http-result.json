@@ -1,0 +1,1 @@
+{"image_edit_http":{"value":{"result":{"created":1,"data":[{"b64_json":"YQ=="}]},"provider_headers":{"content-type":"application/json"},"failure":null,"logged":{"input":"change","complete_input_dict":{"image":{"filename":"a.png","content":"abc","content_type":"image/png"}},"header_names":["authorization","x"],"api_base_path":"/v1/images/edits"}}}}

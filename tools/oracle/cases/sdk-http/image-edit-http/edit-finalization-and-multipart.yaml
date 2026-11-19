@@ -1,0 +1,30 @@
+kind: sdk_http
+name: image-edit-http-finalization-and-multipart
+env: {}
+call:
+  image_edit_http:
+    mode: sync
+    model: gpt-image-1
+    prompt: change
+    image:
+      filename: a.png
+      content: abc
+      content_type: image/png
+    optional_params:
+      extra_headers: {x: option}
+    api_key: key
+    extra_headers: {x: caller}
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: edit_1}
+    body: {created: 1, data: [{b64_json: YQ==}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x]
+  ignore:
+    - pointer: /upstream/0/body
+      why: each side encodes multipart with its own boundary, so the bytes differ while the logged file mapping compares the fields
+    - pointer: /image_edit_http/value/provider_headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
