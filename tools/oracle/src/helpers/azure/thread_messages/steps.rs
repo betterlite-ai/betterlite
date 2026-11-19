@@ -65,16 +65,14 @@ fn thread_call(runtime: &Runtime, step: &Step, only: Only) -> HelperResult {
             "a thread_retrieve step carries no thread_id",
         )));
     }
-    match step.thread_id.as_deref() {
-        Some(thread_id) => thread_step(runtime, step, ThreadOperation::Retrieve(thread_id)),
-        None => {
-            let data = ThreadCreate {
-                messages: step.messages.clone(),
-                metadata: step.metadata.clone(),
-            };
-            thread_step(runtime, step, ThreadOperation::Create(&data))
-        }
-    }
+    let Some(thread_id) = step.thread_id.as_deref() else {
+        let data = ThreadCreate {
+            messages: step.messages.clone(),
+            metadata: step.metadata.clone(),
+        };
+        return thread_step(runtime, step, ThreadOperation::Create(&data));
+    };
+    thread_step(runtime, step, ThreadOperation::Retrieve(thread_id))
 }
 
 fn thread_step(runtime: &Runtime, step: &Step, operation: ThreadOperation<'_>) -> HelperResult {
