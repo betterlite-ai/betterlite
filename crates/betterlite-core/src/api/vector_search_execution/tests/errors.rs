@@ -26,13 +26,19 @@ pub(super) enum ErrorCase {
     Transform,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FailureKind {
+    Transport,
+    Transform,
+}
+
 pub(super) async fn errors_case(case: ErrorCase) {
     match case {
         ErrorCase::SyncTimeout => timeout_case(ClientKind::Sync).await,
         ErrorCase::AsyncTimeout => timeout_case(ClientKind::Asynchronous).await,
         ErrorCase::Status => status_case().await,
-        ErrorCase::Transport => transport_case().await,
-        ErrorCase::Transform => transform_case().await,
+        ErrorCase::Transport => provider_failure_case(FailureKind::Transport).await,
+        ErrorCase::Transform => provider_failure_case(FailureKind::Transform).await,
     }
 }
 
@@ -133,9 +139,9 @@ fn assert_masked_headers(error: &BaseLlmException) {
     );
 }
 
-async fn transport_case() {
+async fn provider_failure_case(kind: FailureKind) {
     let events = Events::new();
-    let wire = Wire::failing(TransportError::Closed, &events);
+    let wire = wire_for(kind, &events);
     let source = Source::new(wire.clone());
     let deps = SearchDeps {
         config: Arc::new(openai_search_config()),
@@ -148,40 +154,41 @@ async fn transport_case() {
     let call = error_call(&query, &optional_params, &litellm_params);
     let mut fixture = Fixture::new("vector_store_search", &events);
     let Err(SearchError::Provider(error)) = fixture
-        .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
+        .search(&deps, &ThreadedSeam, mode_for(kind), &call)
         .await
     else {
-        panic!("a transport failure is a provider error");
+        panic!("a failed search is a provider error");
     };
-    assert_eq!(error.status_code, 500);
-    assert!(error.status_code_is_synthesized);
-    assert!(!error.message.is_empty());
+    assert_provider_failure(&error, kind);
     assert_eq!(wire.requests().len(), 1);
     assert_eq!(events.recorded(), ["log", "send"]);
 }
 
-async fn transform_case() {
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, "\"slow\""), &events);
-    let source = Source::new(wire.clone());
-    let deps = SearchDeps {
-        config: Arc::new(openai_search_config()),
-        source: &source,
-        supplied: None,
-    };
-    let litellm_params = params(r#"{"api_base":"http://mock.test/v1"}"#);
-    let query = SearchQuery::Text("a".to_owned());
-    let optional_params = params("{}");
-    let call = error_call(&query, &optional_params, &litellm_params);
-    let mut fixture = Fixture::new("vector_store_search", &events);
-    let Err(SearchError::Provider(error)) = fixture
-        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
-        .await
-    else {
-        panic!("a body the transform rejects is a provider error");
-    };
-    assert_eq!(error.status_code, 200);
-    assert!(!error.status_code_is_synthesized);
-    assert!(error.message.contains("invalid type"));
-    assert_eq!(wire.requests().len(), 1);
+fn wire_for(kind: FailureKind, events: &Events) -> Wire {
+    match kind {
+        FailureKind::Transport => Wire::failing(TransportError::Closed, events),
+        FailureKind::Transform => Wire::replying(Reply::json(200, "\"slow\""), events),
+    }
+}
+
+const fn mode_for(kind: FailureKind) -> ClientKind {
+    match kind {
+        FailureKind::Transport => ClientKind::Asynchronous,
+        FailureKind::Transform => ClientKind::Sync,
+    }
+}
+
+fn assert_provider_failure(error: &BaseLlmException, kind: FailureKind) {
+    match kind {
+        FailureKind::Transport => {
+            assert_eq!(error.status_code, 500);
+            assert!(error.status_code_is_synthesized);
+            assert!(!error.message.is_empty());
+        }
+        FailureKind::Transform => {
+            assert_eq!(error.status_code, 200);
+            assert!(!error.status_code_is_synthesized);
+            assert!(error.message.contains("invalid type"));
+        }
+    }
 }
