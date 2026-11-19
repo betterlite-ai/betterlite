@@ -13,6 +13,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use betterlite_redact::structured::REDACTED;
 use chrono::SecondsFormat;
 
 use support::{
@@ -93,6 +94,26 @@ fn config_records_keep_every_field() {
     assert_eq!(store.created_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.updated_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.is_config, Some(true));
+
+    let mut raw_metadata = JsonObject::new();
+    required(&mut raw_metadata);
+    raw_metadata.insert("vector_store_metadata".to_owned(), text("raw"));
+    let mut string_metadata = registry(Vec::new());
+    string_metadata
+        .load_vector_stores_from_config(&[entry(None, Some(raw_metadata))])
+        .unwrap();
+    assert_eq!(
+        string_metadata
+            .stores
+            .first()
+            .unwrap()
+            .vector_store_metadata
+            .as_ref()
+            .map(encoded)
+            .as_deref(),
+        Some("\"raw\""),
+        "a string metadata is kept as the declared dict | str | None union"
+    );
 }
 
 fn assert_config_record_json(store: &LiteLlmManagedVectorStore) {
@@ -518,16 +539,23 @@ fn vector_store_ids_collect_in_order() {
         "vector_store_ids",
         Json::List(vec![text("vs_b"), text("vs_a"), text("vs_b")]),
     )]);
-    let tools = vec![params(&[
-        ("type", text("file_search")),
-        (
-            "vector_store_ids",
-            Json::List(vec![text("vs_c"), text("vs_a")]),
-        ),
-    ])];
+    let tools = vec![
+        params(&[("type", text("function")), ("name", text("weather"))]),
+        params(&[
+            ("type", text("file_search")),
+            (
+                "vector_store_ids",
+                Json::List(vec![text("vs_c"), text("vs_a")]),
+            ),
+        ]),
+    ];
     let before = tools.clone();
     let collected = ids_to_run(&non_default, Some(&tools)).unwrap();
-    assert_eq!(collected, vec!["vs_b", "vs_a", "vs_c"]);
+    assert_eq!(
+        collected,
+        vec!["vs_b", "vs_a", "vs_c"],
+        "a tool without a vector_store_ids key is skipped, not rejected"
+    );
     assert_eq!(tools, before, "the tools are left as sent");
 
     let scalar = params(&[("vector_store_ids", text("vs_a"))]);
@@ -549,6 +577,8 @@ fn vector_store_ids_collect_in_order() {
 
 fn tool_params_extract_declared_fields() {
     let tool = params(&[
+        ("type", text("file_search")),
+        ("vector_store_ids", Json::List(vec![text("vs_c")])),
         ("filters", Json::Object(params(&[("kind", text("doc"))]))),
         (
             "max_num_results",
@@ -559,7 +589,11 @@ fn tool_params_extract_declared_fields() {
     let extracted = extract_tool_params(&tool).unwrap();
     assert_eq!(extracted.filters, Some(params(&[("kind", text("doc"))])));
     assert_eq!(extracted.max_num_results, Some(0));
-    assert_eq!(extracted.ranking_options, Some(JsonObject::new()));
+    assert_eq!(
+        extracted.ranking_options,
+        Some(JsonObject::new()),
+        "type and vector_store_ids are ignored, since only the three declared params are read"
+    );
     let sized = extract_tool_params(&params(&[(
         "max_num_results",
         Json::Number(serde_json::Number::from(25_u8)),
@@ -586,13 +620,11 @@ fn rewrite_query_is_rejected() {
     let error = extract_tool_params(&rewrite).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "VectorStoreToolParams.__init__() got an unexpected keyword argument 'rewrite_query'"
+        "rewrite_query is not a supported tool parameter"
     );
     assert!(matches!(
         error,
-        VectorStoreRegistryError::UnexpectedToolParam {
-            name: "rewrite_query"
-        }
+        VectorStoreRegistryError::RewriteQueryNotSupported
     ));
 }
 
@@ -608,7 +640,7 @@ fn named_credentials_read_the_accessor() {
         "cred".to_owned(),
         params(&[("api_key", text("secret-value"))]),
     )])));
-    let credentials: Arc<dyn VectorStoreCredentials> = Arc::clone(&accessor);
+    let credentials: Arc<dyn VectorStoreCredentials> = accessor.clone();
     let registry = registry_with_credentials(vec![named_store("vs_cred", "cred")], credentials);
     assert_eq!(
         registry.credentials_for_vector_store("vs_cred"),
@@ -630,7 +662,7 @@ fn named_credentials_read_the_accessor() {
 
 fn named_credentials_skip_empty_and_inline_names() {
     let empty_accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::new()));
-    let empty_credentials: Arc<dyn VectorStoreCredentials> = Arc::clone(&empty_accessor);
+    let empty_credentials: Arc<dyn VectorStoreCredentials> = empty_accessor.clone();
     let empty_registry = registry_with_credentials(
         vec![
             named_store("vs_empty", ""),
@@ -713,10 +745,10 @@ fn registry_debug_redacts_credentials() {
     let registry = registry(vec![documented]);
     let printed = format!("{registry:?}");
     assert!(printed.contains("vs_secret"));
-    assert!(printed.contains("[REDACTED]"));
+    assert!(printed.contains(REDACTED));
     assert!(!printed.contains(secret));
     let diagnostics = diagnostics::redacted_stores(&registry.stores);
-    assert!(diagnostics.contains("[REDACTED]"));
+    assert!(diagnostics.contains(REDACTED));
     assert!(!diagnostics.contains(secret));
 }
 
@@ -738,7 +770,7 @@ fn config_load_diagnostic_redacts_credentials() {
             .any(|message| message.contains("all loaded vector stores ="))
     );
     assert!(!debug.iter().any(|message| message.contains(secret)));
-    assert!(debug.iter().any(|message| message.contains("[REDACTED]")));
+    assert!(debug.iter().any(|message| message.contains(REDACTED)));
 }
 
 #[test]

@@ -8,7 +8,11 @@ call:
     tools:
       - type: file_search
         vector_store_ids: [vs_c, vs_a]
+      - type: function
+        name: weather
     tool:
+      type: file_search
+      vector_store_ids: [vs_c]
       filters: {}
       max_num_results: 0
       ranking_options: {}
@@ -41,4 +45,7 @@ calls:
         max_num_results: null
         ranking_options: null
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/raised
+      why: betterlite writes its own message
