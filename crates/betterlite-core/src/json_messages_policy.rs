@@ -41,12 +41,12 @@ pub struct MessagesCredentials<'call> {
 
 // strip every trailing slash, keep a complete /v1/messages, otherwise drop one final /v1 and append the path
 fn complete_messages_url(base: &str) -> String {
-    let base = base.trim_end_matches('/');
-    if base.ends_with(MESSAGES_PATH) {
-        return base.to_owned();
+    let trimmed = base.trim_end_matches('/');
+    if trimmed.ends_with(MESSAGES_PATH) {
+        return trimmed.to_owned();
     }
-    let base = base.strip_suffix("/v1").unwrap_or(base);
-    format!("{base}{MESSAGES_PATH}")
+    let stripped = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
+    format!("{stripped}{MESSAGES_PATH}")
 }
 
 // auth, version and content type are matched case-insensitively and injected in lowercase
@@ -106,7 +106,7 @@ fn synthesize_betas(
 }
 
 // the two native classes differ only in their provider slug, billing strip and ttl handling
-fn native_request<'call>(
+const fn native_request<'call>(
     model: &'call str,
     messages: Vec<Json>,
     optional_params: Object,
@@ -141,10 +141,10 @@ where
 
 // the generic OpenAILikeAnthropicMessagesConfig: the caller's base is required and its key is used as given
 pub fn generic_complete_url(api_base: Option<&str>) -> Result<String, JsonMessagesPolicyError> {
-    match api_base.filter(|value| !value.is_empty()) {
-        Some(base) => Ok(complete_messages_url(base)),
-        None => Err(JsonMessagesPolicyError::BaseRequired),
-    }
+    let Some(base) = api_base.filter(|value| !value.is_empty()) else {
+        return Err(JsonMessagesPolicyError::BaseRequired);
+    };
+    Ok(complete_messages_url(base))
 }
 
 pub fn generic_validate_environment(
@@ -251,8 +251,8 @@ impl JsonMessagesPolicy {
         messages: &[Json],
     ) -> Result<Headers, JsonMessagesPolicyError> {
         let key = self.resolve_api_key(credentials);
-        let headers = default_anthropic_headers(headers, key);
-        synthesize_betas(headers, optional_params, messages)
+        let with_defaults = default_anthropic_headers(headers, key);
+        synthesize_betas(with_defaults, optional_params, messages)
     }
 
     // B962 does the native preparation and billing strip, then B571 reduces cache hints unless ttl is on

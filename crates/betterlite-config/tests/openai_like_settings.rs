@@ -54,11 +54,9 @@ fn responses_base_required(
     #[case] explicit: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    assert_eq!(required_from(environment, explicit).as_deref(), expected);
-}
-
-fn required_from(environment: &[(&str, &str)], explicit: Option<&str>) -> Option<String> {
-    settings(environment).responses_base_required(explicit)
+    // the generic Responses URL takes the base resolve returns and raises when it is None
+    let (base, _) = settings(environment).resolve(explicit, None);
+    assert_eq!(base.as_deref(), expected);
 }
 
 #[rstest]

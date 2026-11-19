@@ -11,7 +11,7 @@ use betterlite_models::json_provider_registry::{
     BaseClass, Constraints, JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
 };
 use betterlite_prompts::arguments::json::{Json, Object};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use super::{
     DEFAULT_ANTHROPIC_API_VERSION, JsonMessagesPolicy, MessagesCredentials, generic_complete_url,
@@ -97,7 +97,7 @@ fn descriptor(provider: ProviderId, base_url: &str) -> ProviderDescriptor {
     }
 }
 
-fn messages_policy(descriptor: ProviderDescriptor) -> JsonMessagesPolicy {
+const fn messages_policy(descriptor: ProviderDescriptor) -> JsonMessagesPolicy {
     JsonMessagesPolicy { descriptor }
 }
 
@@ -128,8 +128,8 @@ fn messages(source: &str) -> Vec<Json> {
 }
 
 fn assert_object(actual: &Object, expected: &str) {
-    let expected = object(expected);
-    assert_eq!(actual, &expected);
+    let expected_object = object(expected);
+    assert_eq!(actual, &expected_object);
 }
 
 #[test]
@@ -199,6 +199,12 @@ fn generic_url_requires_a_truthy_base(#[case] api_base: Option<&str>) {
     &[(KEY_ENV, "sk-env"), (BASE_ENV, "https://env.invalid/v1/")],
     "https://env.invalid/v1/messages"
 )]
+#[case::empty_explicit_falls_through(
+    Some(""),
+    &[(BASE_ENV, "https://env.invalid/v1")],
+    "https://env.invalid/v1/messages"
+)]
+#[case::empty_environment_falls_through(None, &[(BASE_ENV, "")], "https://descriptor.invalid/v1/messages")]
 #[case::descriptor_base(None, &[], "https://descriptor.invalid/v1/messages")]
 fn json_url_resolves_the_base_chain(
     #[case] api_base: Option<&str>,
@@ -238,7 +244,7 @@ fn json_url_rejects_an_empty_resolved_base() {
 #[test]
 fn generic_headers_get_lowercase_defaults() {
     let key = SecretString::from("sk-explicit");
-    let headers = generic_validate_environment(
+    let built = generic_validate_environment(
         headers(&[("X-Trace", "1")]),
         Some(&key),
         &Object::new(),
@@ -246,7 +252,7 @@ fn generic_headers_get_lowercase_defaults() {
     )
     .expect("the headers build");
     assert_eq!(
-        headers,
+        built,
         headers(&[
             ("X-Trace", "1"),
             ("authorization", "Bearer sk-explicit"),
@@ -257,9 +263,22 @@ fn generic_headers_get_lowercase_defaults() {
 }
 
 #[test]
+fn generic_headers_never_write_an_empty_key() {
+    let empty = SecretString::from("");
+    let built = generic_validate_environment(
+        headers(&[("X-Trace", "1")]),
+        Some(&empty),
+        &Object::new(),
+        &messages("[]"),
+    )
+    .expect("the headers build");
+    assert!(!built.contains_key("authorization"));
+}
+
+#[test]
 fn existing_auth_headers_are_matched_case_insensitively() {
     let key = SecretString::from("sk-explicit");
-    let headers = generic_validate_environment(
+    let built = generic_validate_environment(
         headers(&[
             ("X-Api-Key", "sk-given"),
             ("Anthropic-Version", "2024-01-01"),
@@ -271,7 +290,7 @@ fn existing_auth_headers_are_matched_case_insensitively() {
     )
     .expect("the headers build");
     assert_eq!(
-        headers,
+        built,
         headers(&[
             ("X-Api-Key", "sk-given"),
             ("Anthropic-Version", "2024-01-01"),
@@ -304,6 +323,7 @@ fn generic_headers_accept_an_existing_authorization() {
     Some("sk-global"),
     "Bearer sk-explicit"
 )]
+#[case::empty_explicit_falls_through(Some(""), &[(KEY_ENV, "sk-env")], None, "Bearer sk-env")]
 #[case::declared_environment(None, &[(KEY_ENV, "sk-env")], Some("sk-global"), "Bearer sk-env")]
 #[case::global(None, &[(KEY_ENV, "")], Some("sk-global"), "Bearer sk-global")]
 fn json_headers_resolve_the_key_chain(
@@ -315,11 +335,11 @@ fn json_headers_resolve_the_key_chain(
     let policy = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1");
     let lookup = environment(environment_pairs);
     let explicit = api_key.map(SecretString::from);
-    let global = global.map(SecretString::from);
+    let global_key = global.map(SecretString::from);
     let credentials = MessagesCredentials {
         api_base: Some("https://explicit.invalid/v1"),
         api_key: explicit.as_ref(),
-        global_api_key: global.as_ref(),
+        global_api_key: global_key.as_ref(),
         lookup: &lookup,
     };
     let headers = policy
@@ -340,10 +360,11 @@ fn json_headers_resolve_the_key_chain(
 fn json_headers_never_write_a_key_that_is_nowhere() {
     let policy = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1");
     let lookup = environment(&[(KEY_ENV, "")]);
+    let empty_global = SecretString::from("");
     let credentials = MessagesCredentials {
         api_base: None,
         api_key: None,
-        global_api_key: None,
+        global_api_key: Some(&empty_global),
         lookup: &lookup,
     };
     let headers = policy
