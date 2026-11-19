@@ -5,6 +5,7 @@ use betterlite_openai::passthrough::transformation::logged_relay_shape;
 use betterlite_openai::passthrough::transformation::types::RelayedResponse;
 
 use crate::passthrough::logging::{FOUNDRY_RELAY_SHAPES, FoundryRelayedLog};
+use crate::passthrough::plan::FoundryLogInput;
 use crate::passthrough::tests::{RecordingLogging, build_plan, object, reply, target};
 
 use super::RES;
@@ -74,20 +75,24 @@ fn relay_fallbacks_log_the_standard_body() {
     let plan = build_plan(None, None, Some(RES), None, Object::new());
     let mut logging = RecordingLogging::default();
     let logged = plan.logging_relayed_response(
-        &target("gpt-x", "/providers/blackforestlabs/v1/flux-2-pro"),
-        &reply(200_u16, &Headers::new(), FLUX_BODY),
-        &object("{}"),
-        "https://res.test/flux",
+        &FoundryLogInput {
+            target: &target("gpt-x", "/providers/blackforestlabs/v1/flux-2-pro"),
+            reply: &reply(200_u16, &Headers::new(), FLUX_BODY),
+            request_data: &object("{}"),
+            request_url: "https://res.test/flux",
+        },
         &mut logging,
     );
     assert!(matches!(logged, Some(FoundryRelayedLog::Relay(_))));
     assert_eq!(logging.call_type.as_deref(), Some("aimage_generation"));
     let mut standard_logging = RecordingLogging::default();
     let standard_logged = plan.logging_relayed_response(
-        &target("gpt-x", "unknown/route"),
-        &reply(200_u16, &Headers::new(), b"[]"),
-        &object("{}"),
-        "https://res.test/unknown",
+        &FoundryLogInput {
+            target: &target("gpt-x", "unknown/route"),
+            reply: &reply(200_u16, &Headers::new(), b"[]"),
+            request_data: &object("{}"),
+            request_url: "https://res.test/unknown",
+        },
         &mut standard_logging,
     );
     let Some(FoundryRelayedLog::Standard(response)) = standard_logged else {
@@ -99,10 +104,12 @@ fn relay_fallbacks_log_the_standard_body() {
 fn undecodable_standard_bodies_log_nothing() {
     let plan = build_plan(None, None, Some(RES), None, Object::new());
     let logged = plan.logging_relayed_response(
-        &target("gpt-x", "unknown/route"),
-        &reply(200_u16, &Headers::new(), b"\xff\xfe"),
-        &object("{}"),
-        "https://res.test/unknown",
+        &FoundryLogInput {
+            target: &target("gpt-x", "unknown/route"),
+            reply: &reply(200_u16, &Headers::new(), b"\xff\xfe"),
+            request_data: &object("{}"),
+            request_url: "https://res.test/unknown",
+        },
         &mut RecordingLogging::default(),
     );
     assert!(logged.is_none());

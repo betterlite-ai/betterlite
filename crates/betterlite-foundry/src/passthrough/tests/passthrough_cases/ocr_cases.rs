@@ -6,6 +6,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::RelayedResponse;
 
 use crate::passthrough::logging::FoundryRelayedLog;
+use crate::passthrough::plan::FoundryLogInput;
 use crate::passthrough::tests::{
     OCR_ENDPOINT, OCR_MODEL, OcrScript, RecordingChat, RecordingLogging, RecordingOcr, build_plan,
     capture_warnings, object, plan_with_reply, reply, target,
@@ -40,10 +41,12 @@ fn azure_chat_projection_runs_first() {
     projecting.ocr = Some(scripted_ocr());
     let mut logging = RecordingLogging::default();
     let logged = projecting.logging_relayed_response(
-        &target("gpt-4o", "chat/completions"),
-        &reply(200_u16, &headers, OCR_BODY.as_bytes()),
-        &empty,
-        "https://res.test/chat/completions",
+        &FoundryLogInput {
+            target: &target("gpt-4o", "chat/completions"),
+            reply: &reply(200_u16, &headers, OCR_BODY.as_bytes()),
+            request_data: &empty,
+            request_url: "https://res.test/chat/completions",
+        },
         &mut logging,
     );
     assert!(matches!(
@@ -63,14 +66,16 @@ fn azure_relay_projection_runs_before_ocr() {
     plan.ocr = Some(ocr.clone());
     let mut logging = RecordingLogging::default();
     let logged = plan.logging_relayed_response(
-        &target("gpt-x", "deployments/d/embeddings"),
-        &reply(
-            200_u16,
-            &Headers::new(),
-            br#"{"object": "list", "data": []}"#,
-        ),
-        &object("{}"),
-        "https://res.test/embeddings",
+        &FoundryLogInput {
+            target: &target("gpt-x", "deployments/d/embeddings"),
+            reply: &reply(
+                200_u16,
+                &Headers::new(),
+                br#"{"object": "list", "data": []}"#,
+            ),
+            request_data: &object("{}"),
+            request_url: "https://res.test/embeddings",
+        },
         &mut logging,
     );
     assert!(matches!(
@@ -93,10 +98,12 @@ fn ocr_route_logs_the_decoded_reply() {
     let endpoint = format!("group-one/{OCR_ENDPOINT}");
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let logged = plan.logging_relayed_response(
-        &target(OCR_MODEL, &endpoint),
-        &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
-        &object("{}"),
-        &request_url,
+        &FoundryLogInput {
+            target: &target(OCR_MODEL, &endpoint),
+            reply: &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
+            request_data: &object("{}"),
+            request_url: &request_url,
+        },
         &mut logging,
     );
     assert!(matches!(logged, Some(FoundryRelayedLog::Ocr(_))));
@@ -113,10 +120,12 @@ fn native_ocr_binding_decodes() {
     let mut logging = RecordingLogging::default();
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let logged = plan.logging_relayed_response(
-        &target(OCR_MODEL, OCR_ENDPOINT),
-        &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
-        &object("{}"),
-        &request_url,
+        &FoundryLogInput {
+            target: &target(OCR_MODEL, OCR_ENDPOINT),
+            reply: &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
+            request_data: &object("{}"),
+            request_url: &request_url,
+        },
         &mut logging,
     );
     assert!(
@@ -133,10 +142,12 @@ fn ocr_decodes_only_a_200() {
     let mut logging = RecordingLogging::default();
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let logged = plan.logging_relayed_response(
-        &target(OCR_MODEL, OCR_ENDPOINT),
-        &reply(201_u16, &Headers::new(), OCR_BODY.as_bytes()),
-        &object("{}"),
-        &request_url,
+        &FoundryLogInput {
+            target: &target(OCR_MODEL, OCR_ENDPOINT),
+            reply: &reply(201_u16, &Headers::new(), OCR_BODY.as_bytes()),
+            request_data: &object("{}"),
+            request_url: &request_url,
+        },
         &mut logging,
     );
     assert!(matches!(logged, Some(FoundryRelayedLog::Standard(_))));
@@ -152,10 +163,12 @@ fn ocr_failure_warns_and_falls_back() {
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let (logged, warnings) = capture_warnings(|| {
         plan.logging_relayed_response(
-            &target(OCR_MODEL, OCR_ENDPOINT),
-            &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
-            &object("{}"),
-            &request_url,
+            &FoundryLogInput {
+                target: &target(OCR_MODEL, OCR_ENDPOINT),
+                reply: &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
+                request_data: &object("{}"),
+                request_url: &request_url,
+            },
             &mut logging,
         )
     });
@@ -180,10 +193,12 @@ fn an_absent_ocr_body_logs_nothing() {
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let (logged, warnings) = capture_warnings(|| {
         plan.logging_relayed_response(
-            &target(OCR_MODEL, OCR_ENDPOINT),
-            &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
-            &object("{}"),
-            &request_url,
+            &FoundryLogInput {
+                target: &target(OCR_MODEL, OCR_ENDPOINT),
+                reply: &reply(200_u16, &Headers::new(), OCR_BODY.as_bytes()),
+                request_data: &object("{}"),
+                request_url: &request_url,
+            },
             &mut logging,
         )
     });
@@ -219,10 +234,12 @@ fn a_malformed_ocr_body_warns() {
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let (logged, warnings) = capture_warnings(|| {
         plan.logging_relayed_response(
-            &target(OCR_MODEL, OCR_ENDPOINT),
-            &reply(200_u16, &Headers::new(), br#"{"pages": "nope"}"#),
-            &object("{}"),
-            &request_url,
+            &FoundryLogInput {
+                target: &target(OCR_MODEL, OCR_ENDPOINT),
+                reply: &reply(200_u16, &Headers::new(), br#"{"pages": "nope"}"#),
+                request_data: &object("{}"),
+                request_url: &request_url,
+            },
             &mut logging,
         )
     });

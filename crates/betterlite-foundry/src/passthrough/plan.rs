@@ -34,6 +34,14 @@ use super::url::{
 
 const STREAM: &str = "stream";
 
+// one relayed reply with the route it came from: LiteLLM's logging methods read these beside each other
+pub struct FoundryLogInput<'data> {
+    pub target: &'data PassthroughTarget<'data>,
+    pub reply: &'data ResponseReply<'data>,
+    pub request_data: &'data Object,
+    pub request_url: &'data str,
+}
+
 // AzureAIPassthroughConfig: the Azure projection, the native OCR binding and the deployment params in one plan
 pub struct FoundryPassthroughPlan<Reply = NoChatReplyProjection, Stream = NoChatStreamAssembly> {
     pub global_api_base: Option<String>,
@@ -79,19 +87,23 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
     // logged_ocr_response: a 200 whose body the OCR projector decodes sets call_type=aocr, and a failure warns
     pub fn logged_ocr_response(
         &self,
-        model: &str,
-        status_code: u16,
-        body: &[u8],
-        request_url: &str,
-        endpoint: &str,
+        relayed: &FoundryLogInput<'_>,
         logging_obj: &mut dyn FoundryPassthroughLogging,
     ) -> Option<OCRResponse> {
-        if status_code != 200 {
+        if relayed.reply.status != 200 {
             return None;
         }
         let group = model_group_from(&self.litellm_params);
-        let native_endpoint = strip_leading_model_segment(endpoint, &[model.to_owned(), group]);
-        match decode_logged_ocr_reply(self.ocr.as_deref(), model, &native_endpoint, body) {
+        let native_endpoint = strip_leading_model_segment(
+            relayed.target.endpoint,
+            &[relayed.target.model.to_owned(), group],
+        );
+        match decode_logged_ocr_reply(
+            self.ocr.as_deref(),
+            relayed.target.model,
+            &native_endpoint,
+            relayed.reply.body,
+        ) {
             Ok(Some(response)) => {
                 logging_obj.set_ocr_call_type();
                 Some(response)
@@ -100,7 +112,7 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
             Err(error) => {
                 tracing::warn!(
                     "azure_ai passthrough: OCR body from {} is not costable: {}",
-                    request_url,
+                    relayed.request_url,
                     error
                 );
                 None
@@ -111,10 +123,7 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
     // logging_non_streaming_response: the Azure projection first, then OCR, the Foundry relay shapes and the relayed body
     pub fn logging_relayed_response(
         &self,
-        target: &PassthroughTarget<'_>,
-        reply: &ResponseReply<'_>,
-        request_data: &Object,
-        request_url: &str,
+        relayed: &FoundryLogInput<'_>,
         logging_obj: &mut dyn FoundryPassthroughLogging,
     ) -> Option<FoundryRelayedLog>
     where
@@ -122,36 +131,33 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
     {
         let azure = {
             let trait_logging: &mut dyn PassthroughLogging = &mut *logging_obj;
-            self.azure
-                .logging_reply_with_headers(target, reply, request_data, trait_logging)
+            self.azure.logging_reply_with_headers(
+                relayed.target,
+                relayed.reply,
+                relayed.request_data,
+                trait_logging,
+            )
         };
         if let Some(azure) = azure {
             return Some(FoundryRelayedLog::Azure(azure));
         }
-        if let Some(ocr) = self.logged_ocr_response(
-            target.model,
-            reply.status,
-            reply.body,
-            request_url,
-            target.endpoint,
-            logging_obj,
-        ) {
+        if let Some(ocr) = self.logged_ocr_response(relayed, logging_obj) {
             return Some(FoundryRelayedLog::Ocr(Box::new(ocr)));
         }
-        let relayed = {
+        let shaped = {
             let trait_logging: &mut dyn PassthroughLogging = &mut *logging_obj;
             logged_relay_shape(
                 &FOUNDRY_RELAY_SHAPES,
-                reply.status,
-                reply.body,
+                relayed.reply.status,
+                relayed.reply.body,
                 trait_logging,
-                target.endpoint,
+                relayed.target.endpoint,
             )
         };
-        if let Some(relayed) = relayed {
-            return Some(FoundryRelayedLog::Relay(relayed));
+        if let Some(shaped) = shaped {
+            return Some(FoundryRelayedLog::Relay(shaped));
         }
-        standard_response(reply.body).map(FoundryRelayedLog::Standard)
+        standard_response(relayed.reply.body).map(FoundryRelayedLog::Standard)
     }
 }
 
@@ -207,14 +213,14 @@ where
             headers: &headers,
             body: response.body,
         };
-        let mut foundry_logging = TraitFoundryLogging(logging_obj);
-        self.logging_relayed_response(
+        let relayed = FoundryLogInput {
             target,
-            &reply,
+            reply: &reply,
             request_data,
-            target.endpoint,
-            &mut foundry_logging,
-        )
+            request_url: target.endpoint,
+        };
+        let mut foundry_logging = TraitFoundryLogging(logging_obj);
+        self.logging_relayed_response(&relayed, &mut foundry_logging)
     }
 
     // handle_logging_collected_chunks: the Azure assembly is used unchanged

@@ -8,7 +8,7 @@ use betterlite_foundry::chat::sources::NoSources;
 use betterlite_foundry::passthrough::auth::{ValidateEnvironmentRequest, validate_environment};
 use betterlite_foundry::passthrough::logging::FoundryRelayedLog;
 use betterlite_foundry::passthrough::ocr::NativeOcrPassthrough;
-use betterlite_foundry::passthrough::plan::FoundryPassthroughPlan;
+use betterlite_foundry::passthrough::plan::{FoundryLogInput, FoundryPassthroughPlan};
 use betterlite_foundry::passthrough::url::{
     foundry_root, relay_query_params, without_repeated_native_prefix,
 };
@@ -197,16 +197,16 @@ fn nonstream_step(step: &NonStreamStep) -> Value {
     };
     let passthrough_target = target(&step.model, &step.endpoint);
     let request_url = step.request_url.as_deref().unwrap_or(&step.endpoint);
+    let request_data = Object::new();
+    let input = FoundryLogInput {
+        target: &passthrough_target,
+        reply: &reply,
+        request_data: &request_data,
+        request_url,
+    };
     let mut logging = RecordingLogging::default();
-    let (outcome, warnings) = capture_warnings(|| {
-        plan.logging_relayed_response(
-            &passthrough_target,
-            &reply,
-            &Object::new(),
-            request_url,
-            &mut logging,
-        )
-    });
+    let (outcome, warnings) =
+        capture_warnings(|| plan.logging_relayed_response(&input, &mut logging));
     let (kind, detail) = outcome_fields(&outcome);
     let calls = recorder
         .as_ref()
