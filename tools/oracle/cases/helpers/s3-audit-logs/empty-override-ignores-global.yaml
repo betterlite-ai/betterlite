@@ -1,0 +1,22 @@
+kind: helper
+name: s3-audit-logs-empty-override-ignores-global
+call:
+  b115:
+    global_params:
+      s3_bucket_name: global-bucket
+      s3_region_name: us-east-1
+      s3_path: global
+    override_params: {}
+    record:
+      id: req-6
+      updated_at: "2026-03-04T05:06:07Z"
+      changed_by: admin
+      changed_by_api_key: hashed-key
+      action: created
+      table_name: LiteLLM_VerificationToken
+      object_id: object-6
+      before_value: null
+      updated_values: "{}"
+    now: "2026-03-04T05:06:07+00:00"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: auth-resource-grants-empty-permissions
+call:
+  auth_resource_grants:
+    function: search_key
+    search_tool_name: any-tool
+    key: {}
+calls:
+  - auth_resource_grants:
+      function: search_team
+      search_tool_name: any-tool
+      team:
+        team_id: team-1
+        permission:
+          object_permission_id: op-empty
+          search_tools: []
+  - auth_resource_grants:
+      function: search_key
+      search_tool_name: any-tool
+      key:
+        object_permission_id: op-null
+        permission:
+          object_permission_id: op-null
+          search_tools: null
+env: {}
+compare:
+  ignore: []

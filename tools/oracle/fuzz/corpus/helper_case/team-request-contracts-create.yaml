@@ -1,0 +1,8 @@
+kind: helper
+name: team_request_contracts_create_seed
+call:
+  team_request_contracts:
+    operation: create
+    document: {"team_id": "team-1", "team_alias": "Alias", "max_budget": 10.5, "members_with_roles": [{"user_id": "u", "role": "admin"}], "model_max_budget": {"gpt": {"budget_limit": 4.5, "time_period": "1d"}}}
+env: {}
+compare: {ignore: []}
