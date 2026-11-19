@@ -28,18 +28,6 @@ mock_provider "google" {
     }
   }
 
-  mock_resource "google_sql_database_instance" {
-    defaults = {
-      private_ip_address = "10.10.0.2"
-    }
-  }
-
-  mock_resource "google_secret_manager_secret" {
-    defaults = {
-      id = "projects/test-project/secrets/tenant-test-betterlite-master-key"
-    }
-  }
-
   mock_resource "google_cloud_run_v2_service" {
     defaults = {
       uri = "https://tenant-test-betterlite-abc123.us-central1.run.app"
@@ -62,6 +50,43 @@ mock_provider "random" {
       hex = "deadbeef"
     }
   }
+}
+
+# A mock_resource default is shared by every instance of its type, so the instances the assertions tell apart get their own
+override_resource {
+  target          = google_sql_database_instance.writer
+  values          = { private_ip_address = "10.10.0.2" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_sql_database_instance.reader
+  values          = { private_ip_address = "10.10.0.3" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_secret_manager_secret.master_key
+  values          = { id = "projects/test-project/secrets/tenant-test-betterlite-master-key" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_secret_manager_secret.db_password
+  values          = { id = "projects/test-project/secrets/tenant-test-betterlite-db-password" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_secret_manager_secret.license
+  values          = { id = "projects/test-project/secrets/tenant-test-betterlite-license" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_secret_manager_secret.ui_password
+  values          = { id = "projects/test-project/secrets/tenant-test-betterlite-ui-password" }
+  override_during = plan
 }
 
 variables {

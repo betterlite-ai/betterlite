@@ -34,12 +34,6 @@ mock_provider "google" {
     }
   }
 
-  mock_resource "google_compute_url_map" {
-    defaults = {
-      id = "projects/test-project/global/urlMaps/tenant-test-betterlite"
-    }
-  }
-
   mock_resource "google_compute_target_http_proxy" {
     defaults = {
       id = "projects/test-project/global/targetHttpProxies/tenant-test-betterlite-http"
@@ -68,6 +62,19 @@ mock_provider "random" {
       hex = "deadbeef"
     }
   }
+}
+
+# A mock_resource default is shared by every instance of its type, so each URL map gets its own id here and the proxies can be told apart
+override_resource {
+  target          = google_compute_url_map.betterlite
+  values          = { id = "projects/test-project/global/urlMaps/tenant-test-betterlite" }
+  override_during = plan
+}
+
+override_resource {
+  target          = google_compute_url_map.https_redirect
+  values          = { id = "projects/test-project/global/urlMaps/tenant-test-betterlite-redirect" }
+  override_during = plan
 }
 
 variables {
