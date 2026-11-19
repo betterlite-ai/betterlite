@@ -1,0 +1,54 @@
+kind: helper
+name: serialization-and-error-drop
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy: []
+    serialize:
+    - json
+    - text
+    - number
+    - 'null'
+    - bool
+    - list
+    errors:
+    - message: quota exceeded
+      error_type: null
+      fail: false
+    - message: bad request
+      error_type: invalid_request_error
+      fail: false
+    - message: refused
+      error_type: null
+      fail: true
+    - message: refused
+      error_type: invalid_request_error
+      fail: true
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+env: {}
+compare:
+  ignore: []

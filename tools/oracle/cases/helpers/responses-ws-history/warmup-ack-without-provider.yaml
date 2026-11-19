@@ -1,0 +1,60 @@
+kind: helper
+name: warmup-ack-without-provider
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: group-alias
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy: []
+    serialize: []
+    errors: []
+    parse: []
+    warmup:
+    - type: response.create
+      generate: false
+      model: warm-model
+    - type: response.create
+      response:
+        generate: false
+        model: ''
+    - type: response.create
+      response: {}
+      generate: false
+    - type: response.create
+      generate: 0
+    - type: response.create
+      response:
+        generate: true
+      generate: false
+    - type: response.create
+      generate: false
+    warmup_ids:
+    - resp_warmup_0123456789abcdef0123456789abcdef
+    - null
+    - ''
+    - resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==
+    - resp_warmup_0123456789abcdef0123456789abcdef
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+env: {}
+compare:
+  ignore: []

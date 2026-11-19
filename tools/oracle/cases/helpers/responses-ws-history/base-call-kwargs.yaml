@@ -1,0 +1,110 @@
+kind: helper
+name: base-call-kwargs
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy: []
+    serialize: []
+    errors: []
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs:
+    - type: response.create
+      input: hello
+      model: openai/gpt-4o-mini
+      store: false
+      unknown: true
+      tools: null
+    - type: response.create
+      model: flat-model
+      input: flat
+      response:
+        input: nested
+        model: nested-model
+        temperature: 0.5
+    - type: response.create
+      model: flat-model
+      input: flat
+      response: null
+    - type: response.create
+      model: flat-model
+      input: flat
+      response: []
+    - type: response.create
+      model: flat-model
+      input: flat
+      response: {}
+    - type: response.create
+      input: null
+      store: null
+      parallel_tool_calls: false
+      user: u1
+      context_management:
+        edits: []
+    - type: response.create
+      unknown: dropped
+      input:
+      - x
+      model: m
+      include:
+      - reasoning.encrypted_content
+      instructions: ins
+      max_output_tokens: 16
+      metadata:
+        k: v
+      parallel_tool_calls: true
+      previous_response_id: prev
+      reasoning:
+        effort: low
+      store: false
+      background: true
+      stream: true
+      temperature: 0.5
+      text:
+        format:
+          type: text
+      tool_choice: auto
+      tools: []
+      top_p: 0.9
+      truncation: auto
+      user: u
+      service_tier: default
+      safety_identifier: s
+      prompt:
+        id: p
+      max_tool_calls: 2
+      prompt_cache_key: k
+      prompt_cache_retention: 24h
+      prompt_cache_options:
+        mode: explicit
+      stream_options:
+        include_usage: true
+      top_logprobs: 1
+      partial_images: 1
+      context_management:
+        edits: []
+    apply: []
+env: {}
+compare:
+  ignore: []

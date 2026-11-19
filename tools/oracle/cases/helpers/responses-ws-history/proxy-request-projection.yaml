@@ -1,0 +1,135 @@
+kind: helper
+name: proxy-request-projection
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy:
+    - input:
+      - hello
+      store: null
+      tools: null
+      tool_choice: auto
+      instructions: null
+      metadata:
+        tenant: t1
+    - litellm_metadata:
+        proxy_server_request:
+          body:
+            tenant: old
+            model: old-model
+          headers:
+            x-test: y
+        trace_id: t1
+      input: hi
+      store: true
+      instructions: ins
+    - litellm_metadata:
+        proxy_server_request: not-a-dict
+      input: hi
+    - litellm_metadata:
+        proxy_server_request: {}
+      input: hi
+    - litellm_metadata: {}
+      input: hi
+    - input: hi
+      store: false
+      tools:
+      - type: function
+    - input: null
+    serialize: []
+    errors: []
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+calls:
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy:
+    - litellm_metadata: not-a-dict
+      input: hi
+    serialize: []
+    errors: []
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy:
+    - litellm_metadata:
+        proxy_server_request:
+          body: x
+      input: hi
+    serialize: []
+    errors: []
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+env: {}
+compare:
+  ignore: []
