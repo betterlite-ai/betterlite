@@ -18,8 +18,7 @@ pub const MISSING_PERMISSION_STATUS: u16 = 403;
 #[error(transparent)]
 pub struct PermissionCacheError(#[from] AuthCacheError);
 pub type PermissionAnswer = Result<Option<LiteLLMObjectPermissionTable>, PermissionCacheError>;
-// async_get_cache(key, model_type) and async_set_cache(key, value, model_type, ttl) over B733;
-// the names skip get and set, which clippy's same_name_method refuses on AuthCache
+// async_get_cache/async_set_cache over B733; read/write dodge clippy's same_name_method on AuthCache
 #[async_trait]
 pub trait ObjectPermissionCache: Send + Sync {
     async fn read(&self, key: &str) -> PermissionAnswer;
