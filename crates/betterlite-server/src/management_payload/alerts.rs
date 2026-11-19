@@ -98,7 +98,8 @@ where
         alert_type: AlertType,
         event_name: &str,
     ) -> Result<(), Self::Error> {
-        KeyEventAlerts::send_virtual_key_event_slack(self, key_event, alert_type, event_name).await;
+        self.send_virtual_key_event_slack(key_event, alert_type, event_name)
+            .await;
         Ok(())
     }
 }
