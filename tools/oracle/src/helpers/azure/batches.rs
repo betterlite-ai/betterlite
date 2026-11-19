@@ -31,8 +31,7 @@ impl Helper for Op {
         let reports: Vec<Value> = input
             .steps
             .iter()
-            .cloned()
-            .map(|step| steps::run_step(&runtime, &step))
+            .map(|step| steps::run_step(&runtime, step))
             .collect();
         Ok(json!({ "steps": reports }))
     }

@@ -518,10 +518,7 @@ fn operation<'step>(step: &'step Step) -> Operation<'step> {
 fn with_connection<T>(
     step: &Step,
     materializer: &Materializer,
-    work: for<'cache, 'data, 'request> fn(
-        Connection<'cache, 'data, Materializer>,
-        &'request Step,
-    ) -> T,
+    work: fn(Connection<'_, '_, Materializer>, &Step) -> T,
 ) -> T {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
@@ -607,7 +604,10 @@ fn answered(reply: Reply) -> Answered {
     }
 }
 
-fn lock<T: Clone>(log: &Mutex<Vec<T>>) -> Vec<T> {
+fn lock<T>(log: &Mutex<Vec<T>>) -> Vec<T>
+where
+    T: Clone,
+{
     log.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 

@@ -3,6 +3,7 @@ pub mod error;
 
 use betterlite_openai::batches::decode::decode_batch_object;
 use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchPage, BatchQuery};
+use betterlite_openai::batches::sdk::BatchesSdk as _;
 
 use self::client::{ClientCheck, ClientMaterializer, Connection};
 use self::error::AzureBatchesError;

@@ -33,7 +33,16 @@ fn sdk_raised(source: &SdkError) -> Value {
             "class": "APIStatusError", "status": status, "type": error_type,
             "param": param, "code": code, "message": message,
         } }),
-        other => json!({ "raised": { "class": "APIError", "message": other.to_string() } }),
+        SdkError::InvalidTimeout { .. }
+        | SdkError::UnsupportedTimeoutPhase { .. }
+        | SdkError::Transport { .. }
+        | SdkError::Path { .. }
+        | SdkError::HeaderName { .. }
+        | SdkError::Encode { .. }
+        | SdkError::Body { .. }
+        | SdkError::BaseUrl { .. } => {
+            json!({ "raised": { "class": "APIError", "message": source.to_string() } })
+        }
     }
 }
 

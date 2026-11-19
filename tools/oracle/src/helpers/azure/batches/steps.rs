@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 
-use betterlite_azure::batches::client::{ClientSettings, Connection};
+use betterlite_azure::batches::client::{ClientMaterializer as _, ClientSettings, Connection};
 use betterlite_azure::batches::error::AzureBatchesError;
 use betterlite_azure::batches::{Operation, Reply, call};
 use betterlite_azure::credentials::cache::RefreshProviderCache;
