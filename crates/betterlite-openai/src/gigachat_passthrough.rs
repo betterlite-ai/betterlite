@@ -155,7 +155,7 @@ impl BasePassthroughConfig for GigachatPassthroughConfig {
         let mut chunks = Vec::new();
         for chunk in all_chunks {
             let line = chunk.trim();
-            if line.is_empty() || line == DONE {
+            if line == DONE {
                 continue;
             }
             let payload = line.strip_prefix(DATA_PREFIX).unwrap_or(line);

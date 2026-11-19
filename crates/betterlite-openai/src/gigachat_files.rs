@@ -333,7 +333,7 @@ fn decode_payload(payload: &str) -> Option<Vec<u8>> {
         None => (filtered.as_str(), false),
     };
     let remainder = data.len() % 4;
-    if remainder == 1 || (remainder != 0 && !padded) {
+    if remainder != 0 && !padded {
         return None;
     }
     let mut canonical = String::from(data);
