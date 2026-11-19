@@ -161,7 +161,8 @@ impl AzureSearchConfig<'_> {
     ) -> Result<SearchResponse, AzureSearchError> {
         let envelope = reply::decode_grounding_reply(reply)?;
         if envelope.status.as_deref() == Some("failed") {
-            let detail = response::failed_detail(&envelope);
+            let detail =
+                response::present_or(envelope.error_message(), "the grounded search failed");
             return Err(provider_error(detail, UPSTREAM_ERROR_STATUS, reply.headers));
         }
         let results = response::capped(
@@ -171,7 +172,7 @@ impl AzureSearchConfig<'_> {
         if results.is_empty() && envelope.status.as_deref() == Some("incomplete") {
             let detail = format!(
                 "the grounded search was incomplete: {}",
-                response::incomplete_reason(&envelope)
+                response::present_or(envelope.incomplete_text(), "unknown reason")
             );
             return Err(provider_error(
                 &detail,

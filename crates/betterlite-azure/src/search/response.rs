@@ -7,21 +7,14 @@ use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchRes
 use super::reply::{Annotation, GroundingEnvelope};
 use super::{RESPONSE_COST_HEADER, SNIPPET_FALLBACK_LENGTH};
 
-const fn present_or<'text>(message: Option<&'text str>, fallback: &'text str) -> &'text str {
+pub(super) const fn present_or<'text>(
+    message: Option<&'text str>,
+    fallback: &'text str,
+) -> &'text str {
     match message {
         Some(message) if !message.is_empty() => message,
         Some(_) | None => fallback,
     }
-}
-
-#[must_use]
-pub fn failed_detail(envelope: &GroundingEnvelope) -> &str {
-    present_or(envelope.error_message(), "the grounded search failed")
-}
-
-#[must_use]
-pub fn incomplete_reason(envelope: &GroundingEnvelope) -> &str {
-    present_or(envelope.incomplete_text(), "unknown reason")
 }
 
 #[must_use]
