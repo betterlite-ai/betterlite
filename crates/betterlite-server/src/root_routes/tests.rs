@@ -283,7 +283,8 @@ impl AdaptiveRouterSnapshots for FakeAdaptiveRouters {
 
 fn route_state(groups: Vec<Vec<StateSnapshot>>) -> (RootRouteState, Arc<FakeAdaptiveRouters>) {
     let fake_routers = FakeAdaptiveRouters::answering(groups);
-    let adaptive_routers: Arc<dyn AdaptiveRouterSnapshots> = Arc::clone(&fake_routers);
+    let shared: Arc<FakeAdaptiveRouters> = Arc::clone(&fake_routers);
+    let adaptive_routers: Arc<dyn AdaptiveRouterSnapshots> = shared;
     (RootRouteState { adaptive_routers }, fake_routers)
 }
 
@@ -329,7 +330,10 @@ struct Reply {
 }
 
 impl Reply {
-    fn json<T: DeserializeOwned>(&self) -> T {
+    fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
         serde_json::from_slice(&self.body).expect("json body")
     }
 }

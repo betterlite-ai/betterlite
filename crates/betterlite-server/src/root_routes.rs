@@ -42,10 +42,10 @@ pub fn routes(state: RootRouteState) -> Router {
         .route(
             ADAPTIVE_ROUTER_STATE_PATH,
             get(
-                |State(state): State<RootRouteState>,
+                |State(root_state): State<RootRouteState>,
                  caller: Option<Extension<AuthContext>>| async move {
                     adaptive_router_state(
-                        &state,
+                        &root_state,
                         caller.as_ref().map(|extension| &extension.0.principal),
                     )
                 },
