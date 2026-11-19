@@ -1,0 +1,22 @@
+kind: helper
+name: json-native-api-policy-responses-headers-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: responses_headers
+        model: veniceai/any
+        environment: {}
+        descriptor:
+          base_url: "https://responses.invalid/v1"
+          api_key_env: PROBE_KEY
+        api_key: sk-resp
+        headers: {X-Custom: "1"}
+      - kind: responses_headers
+        model: xiaomi_mimo/any
+        environment: {PROBE_KEY: sk-env}
+        descriptor:
+          base_url: "https://envkey.invalid/v1"
+          api_key_env: PROBE_KEY
+        headers: {}
+env: {}
+compare: {ignore: []}

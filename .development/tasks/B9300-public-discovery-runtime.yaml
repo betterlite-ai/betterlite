@@ -21,7 +21,7 @@ description: >-
   passthrough member representation, not a map that restricts every value to text.
   Links are display data and are never fetched. Read DOCS_TITLE, default LiteLLM API,
   without a license gate, per the product decision. Expose these through
-  config.sections.public_discovery. B8614 seeds its registry settings from this
+  config.sections.public_discovery. B9997 seeds its registry settings from this
   section and B077 passes the live values to the handlers. public_model_groups
   stays with B839's model_public_settings section and public_agent_groups with
   B8647's agent_routes section; do not parse those keys a second time here.
