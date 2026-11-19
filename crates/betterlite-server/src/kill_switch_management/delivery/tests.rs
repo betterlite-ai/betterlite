@@ -126,6 +126,15 @@ async fn delivering_marks_only_2xx_as_succeeded(#[case] status: u16, #[case] suc
 }
 
 #[tokio::test]
+async fn delivering_records_the_body_of_a_failed_status() {
+    let client = FakeClient::scripted(500, vec![Ok(String::from("boom"))]);
+    let result = fire_agent(&client).await;
+    assert_eq!(result.status_code, Some(500));
+    assert_eq!(result.response_body.as_deref(), Some("boom"));
+    assert!(!result.succeeded());
+}
+
+#[tokio::test]
 async fn delivering_sends_without_redirects_and_with_streaming() {
     let client = FakeClient::scripted(200, Vec::new());
     fire_agent(&client).await;
