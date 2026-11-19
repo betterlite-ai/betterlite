@@ -1,0 +1,9 @@
+kind: helper
+name: auth-pubsub-shutdown-closes-pubsub
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: block}
+env: {}
+compare: {ignore: []}
