@@ -748,6 +748,7 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::year_month("2024-03", Some("2024-03-05"))]
 #[case::month_year("Mar 2024", Some("2024-03-05"))]
 #[case::month_day("Mar 5", Some("2024-03-05"))]
+#[case::day_before_month("7 Jan", Some("2024-01-07"))]
 #[case::day_month_year("5 Jan 2024", Some("2024-01-05"))]
 #[case::invalid_day("2024-02-30", None)]
 #[case::invalid_month("2024-13-05", None)]
