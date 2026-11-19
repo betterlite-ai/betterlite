@@ -14,12 +14,14 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-cache = { path = "../../../../../crates/betterlite-cache" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-error = { path = "../../../../../crates/betterlite-error" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 chrono.workspace = true
 hex = "0.4.3"

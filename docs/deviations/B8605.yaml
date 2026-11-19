@@ -1,0 +1,24 @@
+task: B8605
+deviations:
+  - what: A cleanup that runs with client_disconnected false never records a disconnect, where LiteLLM asks Starlette's request.is_disconnected() whenever the stream did not complete.
+    why: hyper gives a handler no way to ask whether the client left while its body is still being polled; B8604 reports a dropped body as client_disconnected, which is the case LiteLLM's probe exists for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L293-L306
+  - what: The logging object, the stream builder, success dispatch, the baseline cache and the limiter release are reached through the RequestLogging and SlotRelease ports, and litellm.disable_streaming_logging is a constructor value.
+    why: betterlite wires dependencies through constructors instead of proxy_server globals; the order of the calls and their arguments are LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3808-L3847
+  - what: 'An Err from a port that LiteLLM would let escape its finally block is logged at error "stream cleanup failed: {error}" by the task the tracker runs, and the steps after the failure are skipped as in LiteLLM.'
+    why: The cleanup runs on the server's task tracker (rules.yaml async-hygiene), so there is no generator left to raise into.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3808-L3864
+  - what: later_chunk_model answers false for an empty chunk list, where LiteLLM's _assembled_model_came_from_a_later_chunk raises IndexError on chunks[0].
+    why: owned-behavior-is-built fixes a crash no working setup can rely on; the function is only called with the chunks a stream collected, and an empty list means there is no later chunk to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L366-L367
+  - what: A request whose metadata, litellm_params or inner metadata holds a non-object, non-null value is left unmarked, where LiteLLM's _apply_client_disconnect_metadata raises TypeError on item assignment.
+    why: docs/compatibility.md keeps Python duck typing out of parity; the declared request-data types hold an object or null there, so no working setup sends anything else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L286-L290
+  - what: A null litellm_params in the logging details is replaced with a fresh object, where LiteLLM's setdefault keeps the None and the next metadata read raises AttributeError.
+    why: docs/compatibility.md makes absent and null take the default; the task text asks for the container to be created when it is missing or null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L310-L315
+  - what: An assembled partial whose usage value does not read as a Usage is dispatched without backfilled cache counts, where LiteLLM's stream_chunk_builder would have refused the usage and the caught exception would skip the disconnect billing event.
+    why: The port hands over a JSON partial, so reading its usage is a best-effort refinement; dropping the spend event over a count that does not parse is worse than billing the partial as it came.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L441-L454
+kept_bugs: []

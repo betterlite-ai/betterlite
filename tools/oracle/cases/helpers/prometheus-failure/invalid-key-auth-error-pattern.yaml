@@ -1,0 +1,54 @@
+kind: helper
+name: prometheus-failure-invalid-key-auth-error-pattern
+call:
+  b3880:
+    function: is_invalid_api_key_request
+    status_code: null
+    exception:
+      kind: scripted
+      message: "Virtual Key expected for this request"
+      status_code: null
+      code: null
+calls:
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception:
+        kind: scripted
+        message: "key expected to start with 'sk-' prefix"
+        status_code: null
+        code: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception:
+        kind: scripted
+        message: "Authentication Error: missing header"
+        status_code: null
+        code: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception:
+        kind: scripted
+        message: "Invalid API Key provided"
+        status_code: null
+        code: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception:
+        kind: scripted
+        message: "The API Key not valid. Please pass a valid API key."
+        status_code: null
+        code: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception:
+        kind: scripted
+        message: "model overloaded, try again"
+        status_code: null
+        code: null
+env: {}
+compare: {ignore: []}

@@ -121,6 +121,10 @@ name = "rubrik_payloads"
 path = "src/rubrik/tests.rs"
 
 [[test]]
+name = "rubrik_event_logging"
+path = "src/rubrik_event_logging/tests.rs"
+
+[[test]]
 name = "s3_v2_params"
 path = "src/s3_v2/tests/suite.rs"
 
@@ -151,3 +155,7 @@ path = "src/otel/v2_callback/tests/suite.rs"
 [[test]]
 name = "legacy_lifecycle"
 path = "src/otel/legacy_lifecycle/tests/suite.rs"
+
+[[test]]
+name = "levo_partial"
+path = "src/otel/callbacks/levo/partial_target/tests.rs"

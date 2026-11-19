@@ -1,7 +1,7 @@
 id: B375
 milestone: M2 routing
 title: Classifier prompts and tier verdicts
-status: todo
+status: done
 depends_on: [B374, B328, B301, B361]
 file: tasks/B375-classifier-verdict.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_strategy/complexity_router/classification_rubrics.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2439

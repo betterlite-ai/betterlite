@@ -22,7 +22,7 @@ description: >-
   B733's cache under user_id using get_management_object_ttl. Next compute claim-team sets: with
   fallback_to_db_teams off use only plural claims, with it on use the combined singular/plural reader.
   Add missing teams and remove stored teams absent from claims, except that fallback enabled with no
-  claims preserves database teams. If any difference exists call B064.patch_team_membership with its
+  claims preserves database teams. If any difference exists call B1637's patch_team_membership with its
   default raise_on_error=False, then assign the user object's teams to the claim set and cache it. The
   SCIM helper attempts every add/remove and logs roster failures; its success return does not prove all
   writes landed. Preserve this possible partial database/cache divergence, not an invented transaction.
@@ -38,9 +38,12 @@ description: >-
   (L2009-L2057; 43 source lines), JWTAuthManager.sync_user_role_and_teams (L2060-L2130; 59 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.user_allowed_email_domain=None;
+  Pinned settings read by this component: litellm_jwtauth.user_allowed_email_domain=None;
   litellm_jwtauth.sync_user_role_and_teams=False; litellm_jwtauth.fallback_to_db_teams=False;
-  litellm_jwtauth.user_id_upsert=False. B760 owns claim-path settings and B890 owns role mapping settings.
+  litellm_jwtauth.user_id_upsert=False. All of them are LiteLLM_JWTAuth fields, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object; read the typed values from there. This
+  task adds no config section and parses none of these keys again. The claim-path
+  settings B760's readers take and the role-mapping settings B890 reads come from the same section.
 
 
   Add the pure get_user_info projection as jwt_provisioning under B856 Management::jwt. Python calls that
@@ -73,13 +76,8 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::jwt_provisioning::tests::provisioning_defaults, loads_provisioning_settings,
-  boolean_setting_coercion and malformed_provisioning_settings. Assert accepted YAML booleans and the
-  pinned bool string coercion, and validation errors for unrecognized strings rather than a default fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, defaults and invalid values of these settings, so this task writes no
+  config tests and no config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -93,8 +91,8 @@ description: >-
 
 
   Sizing: 214 nonblank, noncomment pinned lines after removing the uncalled canonical-id wrapper. Allow
-  215 production, 300 behavior/Postgres tests, 45 helper adapters, 65 stage wiring and 65 config lines,
-  690 changed lines within a 750-line gate. Only the repository fixture/corpus/lock
+  215 production, 300 behavior/Postgres tests, 45 helper adapters and 65 stage wiring lines,
+  625 changed lines within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -122,12 +120,8 @@ scope:
     - tools/oracle/cases/auth/jwt-provisioning/**
     - crates/betterlite-auth/src/jwt_provisioning/fixtures.rs
     - crates/betterlite-auth/src/jwt_provisioning/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-provisioning-*
     - crates/betterlite-server/src/auth/jwt_provisioning.rs
     - crates/betterlite-server/src/auth/jwt_provisioning/**
-    - crates/betterlite-config/src/sections/jwt_provisioning.rs
-    - crates/betterlite-config/src/sections/jwt_provisioning/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1753-L1887
@@ -151,7 +145,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5395-L5436
     why: user_id_upsert and sync_user_role_and_teams defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2288-L2322
-    why: B064's awaited roster patch and default suppression of collected write failures.
+    why: B1637's awaited roster patch and default suppression of collected write failures.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
@@ -179,11 +173,6 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -211,15 +200,6 @@ checks:
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/jwt_provisioning::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/jwt_provisioning::tests::postgres_failure_effects$/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_provisioning::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-provisioning-*")"
-        && grep -rlq "user_allowed_email_domain" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-provisioning-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_provisioning::tests::/)
@@ -239,7 +219,7 @@ deviations: []
 out_of_scope:
   - JWTAuthManager._canonical_user_id_from_db has no caller at the pin; live identity canonicalization is B871's.
   - B891 owns team_id_upsert and single/database-team fallback selection; B877 owns provisional header-team authorization.
-  - B064 owns SCIM roster patching in scim_v2.py; B808 owns the team_member_add service and its effects.
+  - B1637 owns SCIM roster patching (patch_team_membership) in scim_v2.py; B808 owns the team_member_add service and its effects.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin

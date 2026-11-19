@@ -1,0 +1,6 @@
+general_settings:
+  spend_capture_rate_check:
+    providers: [openai]
+    threshold: 0.75
+    lookback_days: 14
+    openai_project_ids: [proj_a, proj_b]

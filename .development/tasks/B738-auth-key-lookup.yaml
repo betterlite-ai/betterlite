@@ -209,7 +209,7 @@ out_of_scope:
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 (betterlite-auth auth_read) owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -227,7 +227,8 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
+    (L415-L435).'
+  - 'litellm/proxy/auth/auth_checks.py: B735 owns get_object_permission (L3982-L4034).'
   - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
     (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
     _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions

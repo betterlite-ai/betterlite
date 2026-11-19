@@ -18,8 +18,12 @@ description: >-
   39 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_allowed_routes=['management_routes',
-  'spend_tracking_routes', 'global_spend_tracking_routes', 'info_routes']; litellm_jwtauth.enforce_rbac=False.
+  Pinned settings read by this component: litellm_jwtauth.admin_allowed_routes=['management_routes',
+  'spend_tracking_routes', 'global_spend_tracking_routes', 'info_routes']; litellm_jwtauth.enforce_rbac=False. All of them are LiteLLM_JWTAuth fields, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object; read the typed values from there. This
+  task adds no config section and parses none of these keys again. This enforce_rbac
+  is litellm_jwtauth.enforce_rbac (handle_jwt.py L1438). general_settings.enforce_rbac is a different key;
+  B877's jwt_team_authorization section parses it for validate_object_id.
 
   B736 supplies get_role_based_models/get_role_based_routes from general_settings.role_permissions
   (absent means unrestricted); B742 supplies _allowed_routes_check, allowed_routes_check and
@@ -63,11 +67,8 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::jwt_permissions::tests::loads_settings, defaults_and_precedence and invalid_type_rejected.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, defaults and invalid values of these settings, so this task writes no
+  config tests and no config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -82,7 +83,7 @@ description: >-
 
   Sizing: 132 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
   132 production, 245 behavior tests, 70 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 562 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  and 0 config lines, 512 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -108,12 +109,8 @@ scope:
     - crates/betterlite-server/src/state/jwt_permissions.rs
     - crates/betterlite-server/src/state/jwt_permissions/**
     - tools/oracle/cases/auth/jwt-permissions/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*
     - crates/betterlite-server/src/auth/jwt_permissions.rs
     - crates/betterlite-server/src/auth/jwt_permissions/**
-    - crates/betterlite-config/src/sections/jwt_permissions.rs
-    - crates/betterlite-config/src/sections/jwt_permissions/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1345-L1496
@@ -157,11 +154,6 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -185,15 +177,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-permissions-*")"
         && grep -rlq "jwt_permissions" tools/oracle/fuzz/corpus/helper_case/jwt-permissions-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_permissions::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*")"
-        && grep -rlq "admin_allowed_routes" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_permissions::tests::/)

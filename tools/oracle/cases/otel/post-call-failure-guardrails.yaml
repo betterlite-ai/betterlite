@@ -1,0 +1,62 @@
+kind: "helper"
+name: "post-call-failure-guardrails"
+call:
+  b3858:
+    function: "post_call_failure"
+    start_time: 1704067200.0
+    end_time: 1704067202.0
+    parent:
+      name: "proxy"
+      start: 1704067200.0
+    kwargs:
+      model: "gpt-4o"
+      messages:
+        - role: "user"
+          content: "hello"
+      call_type: "completion"
+      optional_params: {}
+      litellm_params:
+        custom_llm_provider: "openai"
+        metadata:
+          litellm_call_id: "call-1"
+          litellm_received_at: 1704067200.0
+      standard_logging_object:
+        id: "chatcmpl-1"
+        call_type: "completion"
+        status: "failure"
+        metadata:
+          litellm_call_id: "call-1"
+        guardrail_information:
+          - guardrail_name: "pii"
+            guardrail_mode: "pre_call"
+            guardrail_status: "success"
+            start_time: 1704067200.5
+            end_time: 1704067200.75
+    request_data:
+      first_api_call_start_time: 1704067201.5
+      metadata:
+        litellm_call_id: "call-1"
+        litellm_received_at: 1704067200.0
+        standard_logging_guardrail_information:
+          - guardrail_name: "pii"
+            guardrail_mode: "pre_call"
+            guardrail_status: "success"
+            start_time: 1704067200.5
+            end_time: 1704067200.75
+    exception:
+      kind: "authentication"
+      message: "bad key"
+    traceback: "Traceback (most recent call last):\n  File \"handler.py\", line 7, in <module>\n    raise ValueError\nValueError: boom\n"
+    team:
+      id: "team-a"
+      alias: "team-alias"
+    after_failure_log: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spans/1/end
+      why: the failure hook ends the SERVER span at its own wall clock
+    - pointer: /value/spans/3/start
+      why: the exception child span opens at the wall clock
+    - pointer: /value/spans/3/end
+      why: the exception child span closes at the wall clock
