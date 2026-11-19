@@ -162,44 +162,39 @@ impl Recorder {
         self.builds.load(Ordering::SeqCst)
     }
 
+    fn collected<T, P>(&self, pick: P) -> Vec<T>
+    where
+        P: Fn(EngineCall) -> Option<T>,
+    {
+        self.calls().into_iter().filter_map(pick).collect()
+    }
+
     pub(super) fn delivered(&self) -> Vec<Vec<u8>> {
-        self.calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                EngineCall::Deliver { content, .. } => Some(content),
-                _ => None,
-            })
-            .collect()
+        self.collected(|call| match call {
+            EngineCall::Deliver { content, .. } => Some(content),
+            _ => None,
+        })
     }
 
     pub(super) fn windows(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
-        self.calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                EngineCall::Deliver { start, end, .. } => Some((start, end)),
-                _ => None,
-            })
-            .collect()
+        self.collected(|call| match call {
+            EngineCall::Deliver { start, end, .. } => Some((start, end)),
+            _ => None,
+        })
     }
 
     pub(super) fn frequencies(&self) -> Vec<String> {
-        self.calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                EngineCall::Deliver { frequency, .. } => Some(frequency),
-                _ => None,
-            })
-            .collect()
+        self.collected(|call| match call {
+            EngineCall::Deliver { frequency, .. } => Some(frequency),
+            _ => None,
+        })
     }
 
     pub(super) fn limits(&self) -> Vec<i64> {
-        self.calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                EngineCall::Rows { limit, .. } => Some(limit),
-                _ => None,
-            })
-            .collect()
+        self.collected(|call| match call {
+            EngineCall::Rows { limit, .. } => Some(limit),
+            _ => None,
+        })
     }
 
     pub(super) fn record(&self, call: EngineCall) {

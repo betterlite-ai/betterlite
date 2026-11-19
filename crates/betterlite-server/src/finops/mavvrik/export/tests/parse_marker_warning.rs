@@ -12,7 +12,7 @@ use crate::finops::mavvrik::support::capture_logs;
 #[case::impossible_month("2024-13-45")]
 #[case::unknown_day("2024-02-30")]
 #[case::time_only("12:34:56")]
-fn an_unparseable_text_marker_warns_and_parses_to_none(#[case] text: &str) {
+fn an_unparsable_text_marker_warns_and_parses_to_none(#[case] text: &str) {
     let (logs, _guard) = capture_logs();
     assert_eq!(
         parse_metrics_marker(&MetricsMarker::Text(text.to_owned())),

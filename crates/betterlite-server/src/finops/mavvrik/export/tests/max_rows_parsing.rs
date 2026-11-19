@@ -32,13 +32,13 @@ fn a_configured_row_cap_is_read_as_an_integer(#[case] value: &str, #[case] expec
 #[case::text("many")]
 #[case::fraction("1.5")]
 #[case::exponent("1e3")]
-fn an_unparseable_row_cap_fails_construction(#[case] value: &str) {
+fn an_unparsable_row_cap_fails_construction(#[case] value: &str) {
     let error = try_build(
         &environment(&[("MAVVRIK_FOCUS_MAX_ROWS", value)]),
         &Recorder::default(),
         None,
     )
     .err()
-    .expect("an unparseable row cap fails construction");
+    .expect("an unparsable row cap fails construction");
     assert!(error.to_string().contains("MAVVRIK_FOCUS_MAX_ROWS"));
 }

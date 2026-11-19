@@ -10,7 +10,7 @@ use crate::finops::mavvrik::support::{Recorder, build, day, environment};
 #[case::behind_yesterday(MetricsMarker::Text(String::from("2024-03-07")), 2)]
 #[case::at_yesterday(MetricsMarker::Text(String::from("2024-03-09")), 1)]
 #[case::today(MetricsMarker::Text(String::from("2024-03-10")), 1)]
-#[case::unparseable(MetricsMarker::Text(String::from("unknown")), 1)]
+#[case::unparsable(MetricsMarker::Text(String::from("unknown")), 1)]
 #[case::fresh_connector(MetricsMarker::Epoch(0), 7)]
 #[case::zero_text(MetricsMarker::Text(String::from("0")), 1)]
 #[tokio::test]
