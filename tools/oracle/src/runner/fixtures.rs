@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use betterlite_oracle_runner::helpers::{generate_prisma_client, sync_litellm};
+use betterlite_oracle_runner::helpers::{fill_key_models, generate_prisma_client, sync_litellm};
 use betterlite_postgres_fixture::connection::{
     DatabaseNameGenerator, PostgresFixture, RandomDatabaseName,
 };
 use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::OracleError;
 use crate::case::Case;
@@ -81,6 +81,26 @@ where
                 return Err(OracleError::DatabaseFixture(error));
             }
         };
+    if !database.seed.keys.is_empty() {
+        let first_url = first.options.url.expose_secret();
+        let second_url = second.options.url.expose_secret();
+        let filled = fill_key_models(&root, first_url)
+            .and_then(|()| fill_key_models(&root, second_url))
+            .map_err(OracleError::HelperRun);
+        if let Err(operation) = filled {
+            let closed = FixtureGuard {
+                databases: Some((first, second)),
+            }
+            .close();
+            return Err(match closed {
+                Ok(()) => operation,
+                Err(cleanup) => OracleError::OperationCleanup {
+                    operation: Box::new(operation),
+                    cleanup,
+                },
+            });
+        }
+    }
     Ok(FixtureGuard {
         databases: Some((first, second)),
     })

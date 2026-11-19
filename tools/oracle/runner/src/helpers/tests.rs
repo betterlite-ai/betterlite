@@ -272,3 +272,26 @@ fn prisma_generate_reports_a_missing_schema() {
             .unwrap_err();
     assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
 }
+
+#[test]
+fn fill_key_models_reports_a_missing_venv() {
+    let error = super::fill_key_models(
+        Path::new("/definitely-missing-betterlite-oracle-project"),
+        "postgresql://oracle@127.0.0.1:1/oracle",
+    )
+    .unwrap_err();
+    assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
+}
+
+#[test]
+fn fill_key_models_reports_a_missing_schema() {
+    let root = env::temp_dir().join(format!("betterlite-fill-{}-venv", process::id()));
+    fs::create_dir_all(
+        root.join("tools/oracle/litellm/.venv/lib/python3.13/site-packages/litellm/proxy"),
+    )
+    .unwrap();
+    let error =
+        super::fill_key_models(&root, "postgresql://oracle@127.0.0.1:1/oracle").unwrap_err();
+    fs::remove_dir_all(&root).unwrap();
+    assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
+}

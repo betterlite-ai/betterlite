@@ -56,6 +56,12 @@ pub enum HelperRunError {
     PrismaGenerate(#[source] io::Error),
     #[error("prisma generate exited with {0}")]
     PrismaGenerateExited(ExitStatus),
+    #[error("cannot run prisma db execute: {0}")]
+    PrismaExecute(#[source] io::Error),
+    #[error("prisma db execute exited with {0}")]
+    PrismaExecuteExited(ExitStatus),
+    #[error("prisma db execute stdin is unavailable")]
+    PrismaStdin,
     #[error("cannot write progress: {0}")]
     Output(#[source] io::Error),
     #[error("filesystem error at {path}: {source}")]
