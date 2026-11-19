@@ -571,6 +571,13 @@ fn date_rejects_non_ascii_digits() {
 }
 
 #[test]
+fn date_rejects_a_three_digit_year_month_or_day() {
+    assert_eq!(parse_date("202-01-05"), None);
+    assert_eq!(parse_date("2024-001-05"), None);
+    assert_eq!(parse_date("2024-01-005"), None);
+}
+
+#[test]
 fn date_rejects_year_zero() {
     assert_eq!(parse_date("0000-01-01"), None);
 }
@@ -595,6 +602,11 @@ fn date_repr_switches_to_double_quotes_for_a_single_quote() {
 #[test]
 fn date_repr_escapes_backslashes_and_control_characters() {
     assert_eq!(quoted_value("a\\b\n\t\r\u{1}"), r"'a\\b\n\t\r\x01'");
+}
+
+#[test]
+fn date_repr_keeps_a_space_as_written() {
+    assert_eq!(quoted_value("a b"), "'a b'");
 }
 
 #[test]
