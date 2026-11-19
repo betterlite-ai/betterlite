@@ -54,7 +54,7 @@ pub fn dispatch<R>(
     }
 }
 
-// _complete_ragflow: the provider info pair, the context headers and no provider_config, then the failure record
+// _complete_ragflow: the provider info pair, the caller's headers and provider_config, then the failure record
 fn complete_ragflow<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
