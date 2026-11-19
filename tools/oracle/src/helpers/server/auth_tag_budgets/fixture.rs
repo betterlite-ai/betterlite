@@ -5,15 +5,16 @@ use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_cache::payload::PayloadError;
 use betterlite_auth::auth_read::table::AuthReadError;
-use betterlite_auth::auth_tag_budgets::cache::TagBudgetCache;
+use betterlite_auth::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use betterlite_auth::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use betterlite_auth::auth_tag_budgets::rows::{
-    GroupRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure, TagRows,
+    BudgetRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure,
 };
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_models::decisions::Json;
-use serde_json::json;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 
 use super::{Generated, Input};
 
@@ -23,7 +24,7 @@ const TAG_PREFIX: &str = "tag:";
 const GROUP_PREFIX: &str = "model_access_group:";
 
 // every cache and row effect of one case, in the order the production module made it
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Effects {
     pub(super) reads: Vec<String>,
     pub(super) writes: Vec<(String, f64)>,
@@ -40,14 +41,6 @@ pub(super) struct Fixture {
     fail_query: bool,
 }
 
-fn generated_names(generated: Option<&Generated>) -> Vec<String> {
-    generated.map_or_else(Vec::new, |generated| {
-        (0..generated.count)
-            .map(|index| format!("{}-{index}", generated.prefix))
-            .collect()
-    })
-}
-
 impl Fixture {
     pub(super) fn new(input: &Input) -> Result<Self, serde_json::Error> {
         let mut fixture = Self {
@@ -58,42 +51,41 @@ impl Fixture {
             group_rows: Vec::new(),
             fail_query: input.fail_query,
         };
-        if input.function.tags() {
-            for value in &input.cached {
-                let tag: TagTable = serde_json::from_value(value.clone())?;
-                let _previous = fixture.tags.insert(tag.tag_name.clone(), tag);
-            }
-            for value in &input.rows {
-                fixture
-                    .tag_rows
-                    .push(serde_json::from_value(value.clone())?);
-            }
-            for name in generated_names(input.generated.as_ref()) {
-                let row = json!({"tag_name": name, "models": [], "spend": 0});
-                fixture.tag_rows.push(serde_json::from_value(row)?);
-            }
+        if matches!(
+            input.function,
+            super::Function::Tags | super::Function::TagRegistry
+        ) {
+            seed(
+                &mut fixture.tags,
+                &mut fixture.tag_rows,
+                input,
+                |tag: &TagTable| tag.tag_name.clone(),
+                |name| json!({"tag_name": name, "models": [], "spend": 0}),
+            )?;
         } else {
-            for value in &input.cached {
-                let budget: ModelAccessGroupBudget = serde_json::from_value(value.clone())?;
-                let _previous = fixture
-                    .groups
-                    .insert(budget.access_group_name.clone(), budget);
-            }
-            for value in &input.rows {
-                fixture
-                    .group_rows
-                    .push(serde_json::from_value(value.clone())?);
-            }
-            for name in generated_names(input.generated.as_ref()) {
-                let row = json!({"access_group_name": name, "spend": 0});
-                fixture.group_rows.push(serde_json::from_value(row)?);
-            }
+            seed(
+                &mut fixture.groups,
+                &mut fixture.group_rows,
+                input,
+                |budget: &ModelAccessGroupBudget| budget.access_group_name.clone(),
+                |name| json!({"access_group_name": name, "spend": 0}),
+            )?;
         }
         Ok(fixture)
     }
 
-    pub(super) fn effects(&self) -> MutexGuard<'_, Effects> {
-        self.effects.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(super) fn snapshot(&self) -> Effects {
+        self.effects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn tracked(&self) -> MutexGuard<'_, Effects> {
+        match self.effects.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
     }
 
     fn probe<Value: Clone>(
@@ -102,59 +94,67 @@ impl Fixture {
         key: &str,
         prefix: &str,
     ) -> Option<Value> {
-        self.effects().reads.push(key.to_owned());
+        self.tracked().reads.push(key.to_owned());
         table.get(key.strip_prefix(prefix).unwrap_or(key)).cloned()
     }
 
-    fn record_write(&self, key: &str, ttl: f64) {
-        self.effects().writes.push((key.to_owned(), ttl));
+    fn queried<Row: Clone>(
+        &self,
+        rows: &[Row],
+        names: &[String],
+        name: fn(&Row) -> &str,
+    ) -> Result<Vec<Row>, TagBudgetRowsFailure> {
+        self.tracked().queries.push(names.to_vec());
+        if self.fail_query {
+            return Err(failure());
+        }
+        Ok(rows
+            .iter()
+            .filter(|row| names.iter().any(|wanted| wanted.as_str() == name(row)))
+            .cloned()
+            .collect())
+    }
+
+    fn fetched<Row: Clone>(
+        &self,
+        rows: &[Row],
+        take: i64,
+    ) -> Result<Vec<Row>, TagBudgetRowsFailure> {
+        self.tracked().takes.push(take);
+        if self.fail_query {
+            return Err(failure());
+        }
+        let limit = usize::try_from(take).unwrap_or(usize::MAX);
+        Ok(rows.iter().take(limit).cloned().collect())
     }
 }
 
-#[async_trait]
-impl TagBudgetCache for Fixture {
-    async fn read_tag(&self, key: &str) -> Result<Option<TagTable>, PayloadError> {
-        Ok(self.probe(&self.tags, key, TAG_PREFIX))
+// what a case scripts: cached values, database rows, and one row per generated name
+fn seed<Cached, Row>(
+    cached: &mut BTreeMap<String, Cached>,
+    rows: &mut Vec<Row>,
+    input: &Input,
+    name: fn(&Cached) -> String,
+    wire: fn(&str) -> Value,
+) -> Result<(), serde_json::Error>
+where
+    Cached: DeserializeOwned,
+    Row: DeserializeOwned,
+{
+    for value in &input.cached {
+        let item: Cached = serde_json::from_value(value.clone())?;
+        let _previous = cached.insert(name(&item), item);
     }
-
-    async fn write_tag(&self, key: &str, _tag: &TagTable, ttl: f64) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl);
-        Ok(())
+    for value in &input.rows {
+        rows.push(serde_json::from_value(value.clone())?);
     }
-
-    async fn read_group(&self, key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
-        Ok(self.probe(&self.groups, key, GROUP_PREFIX))
+    if let Some(generated) = &input.generated {
+        for index in 0..generated.count {
+            let generated_name = format!("{}-{index}", generated.prefix);
+            rows.push(serde_json::from_value(wire(&generated_name))?);
+        }
     }
-
-    async fn write_group(
-        &self,
-        key: &str,
-        _budget: &ModelAccessGroupBudget,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl);
-        Ok(())
-    }
-
-    // the fixture starts with no cached registry, so every load queries the rows
-    async fn read_registry(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
-        self.effects().reads.push(key.to_owned());
-        Ok(None)
-    }
-
-    async fn write_registry(
-        &self,
-        key: &str,
-        _answer: &Json,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl);
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        MANAGEMENT_TTL_SECONDS
-    }
+    Ok(())
 }
 
 // the one failure a fake database raises: a query that could not reach a database
@@ -164,70 +164,54 @@ fn failure() -> TagBudgetRowsFailure {
     }
 }
 
-fn take_limit(take: i64) -> usize {
-    usize::try_from(take).unwrap_or(usize::MAX)
-}
-
 #[async_trait]
-impl TagRows for Fixture {
-    async fn by_names(&self, names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
-        self.effects().queries.push(names.clone());
-        if self.fail_query {
-            return Err(failure());
-        }
-        Ok(self
-            .tag_rows
-            .iter()
-            .filter(|row| names.contains(&row.tag_name))
-            .cloned()
-            .collect())
+impl TagBudgetCache for Fixture {
+    async fn read_tag(&self, key: &str) -> Result<Option<TagTable>, PayloadError> {
+        Ok(self.probe(&self.tags, key, TAG_PREFIX))
     }
 
-    async fn registry_rows(&self, take: i64) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
-        self.effects().takes.push(take);
-        if self.fail_query {
-            return Err(failure());
-        }
-        Ok(self
-            .tag_rows
-            .iter()
-            .take(take_limit(take))
-            .cloned()
-            .collect())
+    async fn read_group(&self, key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
+        Ok(self.probe(&self.groups, key, GROUP_PREFIX))
+    }
+
+    // the fixture starts with no cached registry, so every load queries the rows
+    async fn read_registry(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
+        self.tracked().reads.push(key.to_owned());
+        Ok(None)
+    }
+
+    async fn write(
+        &self,
+        key: &str,
+        _value: CachedValue<'_>,
+        ttl: f64,
+    ) -> Result<(), AuthCacheError> {
+        self.tracked().writes.push((key.to_owned(), ttl));
+        Ok(())
+    }
+
+    fn management_ttl(&self) -> f64 {
+        MANAGEMENT_TTL_SECONDS
     }
 }
 
-#[async_trait]
-impl GroupRows for Fixture {
-    async fn by_names(
-        &self,
-        names: Vec<String>,
-    ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        self.effects().queries.push(names.clone());
-        if self.fail_query {
-            return Err(failure());
-        }
-        Ok(self
-            .group_rows
-            .iter()
-            .filter(|row| names.contains(&row.access_group_name))
-            .cloned()
-            .collect())
-    }
+macro_rules! fixture_rows {
+    ($model:ty, $rows:ident, $name:ident) => {
+        #[async_trait]
+        impl BudgetRows<$model> for Fixture {
+            async fn by_names(
+                &self,
+                names: Vec<String>,
+            ) -> Result<Vec<$model>, TagBudgetRowsFailure> {
+                self.queried(&self.$rows, &names, |row| &row.$name)
+            }
 
-    async fn registry_rows(
-        &self,
-        take: i64,
-    ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        self.effects().takes.push(take);
-        if self.fail_query {
-            return Err(failure());
+            async fn registry_rows(&self, take: i64) -> Result<Vec<$model>, TagBudgetRowsFailure> {
+                self.fetched(&self.$rows, take)
+            }
         }
-        Ok(self
-            .group_rows
-            .iter()
-            .take(take_limit(take))
-            .cloned()
-            .collect())
-    }
+    };
 }
+
+fixture_rows!(TagTable, tag_rows, tag_name);
+fixture_rows!(ModelAccessGroupBudgetRow, group_rows, access_group_name);

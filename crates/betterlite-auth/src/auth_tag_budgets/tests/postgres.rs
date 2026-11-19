@@ -11,10 +11,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
+use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::table::ReadContext;
+use crate::auth_resource_grants::postgres::open_grant_rows;
 use crate::auth_tag_budgets::groups::model_access_group_budget;
-use crate::auth_tag_budgets::postgres::{open_group_rows, open_tag_rows};
-use crate::auth_tag_budgets::rows::{GroupRows, ModelAccessGroupBudgetRow, TagRows};
+use crate::auth_tag_budgets::rows::group::ModelAccessGroupBudgetTable;
+use crate::auth_tag_budgets::rows::tag::TagBudgetTable;
+use crate::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow};
 
 const SEED: &str = r#"
 INSERT INTO "LiteLLM_BudgetTable" ("budget_id", "max_budget", "created_by", "updated_by")
@@ -151,7 +154,12 @@ async fn postgres_batch_relations() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
     let client = Arc::new(pool.get().await.expect("the database connection"));
-    let tags = open_tag_rows(Arc::clone(&client), context());
+    let tags = open_grant_rows(
+        Arc::clone(&client),
+        TagBudgetTable,
+        AuthReadAdapter::Tag,
+        context(),
+    );
     let found = tags
         .by_names(names(&["tag-a", "tag-b", "tag-c", "tag-missing"]))
         .await
@@ -162,7 +170,12 @@ async fn postgres_batch_relations() {
         .await
         .expect("the tag registry rows");
     assert_eq!(registry.len(), 3);
-    let groups = open_group_rows(client, context());
+    let groups = open_grant_rows(
+        client,
+        ModelAccessGroupBudgetTable,
+        AuthReadAdapter::ModelAccessGroupBudget,
+        context(),
+    );
     let budgets = groups
         .by_names(names(&["group-a", "group-b", "group-missing"]))
         .await

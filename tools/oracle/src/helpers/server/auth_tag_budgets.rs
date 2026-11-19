@@ -1,11 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use betterlite_auth::auth_tag_budgets::groups::{
-    ModelAccessGroupBudget, get_model_access_group_budgets_batch,
-};
-use betterlite_auth::auth_tag_budgets::registry::{
-    load_model_access_group_registry, load_tag_registry,
-};
+use betterlite_auth::auth_tag_budgets::groups::{ModelAccessGroupBudget, group_budgets_batch};
+use betterlite_auth::auth_tag_budgets::registry::{RegistryKind, load_registry};
+use betterlite_auth::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow, RowName};
 use betterlite_auth::auth_tag_budgets::tags::get_tag_objects_batch;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -29,17 +26,11 @@ pub(crate) enum Function {
     GroupRegistry,
 }
 
-impl Function {
-    pub(super) const fn tags(&self) -> bool {
-        matches!(self, Self::Tags | Self::TagRegistry)
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     function: Function,
-    #[serde(default = "yes")]
+    #[serde(default = "default_database")]
     database: bool,
     #[serde(default)]
     names: Vec<String>,
@@ -61,7 +52,7 @@ pub(crate) struct Generated {
     count: usize,
 }
 
-const fn yes() -> bool {
+const fn default_database() -> bool {
     true
 }
 
@@ -92,39 +83,41 @@ async fn answer(input: &Input, fixture: &Fixture) -> HelperResult {
             }
         }
         Function::Groups => {
-            let found = get_model_access_group_budgets_batch(
-                &input.names,
-                input.database,
-                fixture,
-                fixture,
-            )
-            .await
-            .or_value_error()?;
+            let found = group_budgets_batch(&input.names, input.database, fixture, fixture)
+                .await
+                .or_value_error()?;
             for (name, budget) in found {
                 groups.insert(name, group_view(&budget)?);
             }
         }
         Function::TagRegistry => {
-            let loaded = load_tag_registry(fixture, fixture).await.or_value_error()?;
-            registry = registry_view(loaded);
+            registry = registry_answer::<TagTable>(RegistryKind::Tag, fixture).await?;
         }
         Function::GroupRegistry => {
-            let loaded = load_model_access_group_registry(fixture, fixture)
-                .await
-                .or_value_error()?;
-            registry = registry_view(loaded);
+            registry =
+                registry_answer::<ModelAccessGroupBudgetRow>(RegistryKind::Group, fixture).await?;
         }
     }
-    let effects = fixture.effects();
+    let effects = fixture.snapshot();
     Ok(json!({
         "tags": tags,
         "groups": groups,
         "registry": registry,
-        "reads": effects.reads.clone(),
-        "writes": effects.writes.clone(),
-        "queries": effects.queries.clone(),
-        "takes": effects.takes.clone(),
+        "reads": effects.reads,
+        "writes": effects.writes,
+        "queries": effects.queries,
+        "takes": effects.takes,
     }))
+}
+
+// LiteLLM's _load_tag_registry and _load_model_access_group_registry: the names one row read can prove exist.
+async fn registry_answer<Row: RowName>(kind: RegistryKind, fixture: &Fixture) -> HelperResult
+where
+    Fixture: BudgetRows<Row>,
+{
+    let table: &dyn BudgetRows<Row> = fixture;
+    let loaded = load_registry(kind, fixture, table).await.or_value_error()?;
+    Ok(loaded.map_or(Value::Null, |names| json!(names)))
 }
 
 // the fields both sides compare: the projection keeps the ceiling as the float LiteLLM returns
@@ -146,8 +139,4 @@ fn group_view(budget: &ModelAccessGroupBudget) -> Result<Value, serde_json::Erro
         "spend": row.get("spend").and_then(Value::as_f64),
         "max_budget": row.get("max_budget").and_then(Value::as_f64),
     }))
-}
-
-fn registry_view(loaded: Option<BTreeSet<String>>) -> Value {
-    loaded.map_or(Value::Null, |names| json!(names))
 }

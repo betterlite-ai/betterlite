@@ -29,13 +29,14 @@ use crate::routes::tests::state_for;
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Answer {
     Resolved,
     TagFailure,
     GroupFailure,
 }
 
+#[derive(Debug)]
 struct ScriptedLookup {
     answer: Answer,
     tag_calls: Mutex<Vec<Vec<String>>>,
@@ -49,6 +50,23 @@ impl ScriptedLookup {
             tag_calls: Mutex::new(Vec::new()),
             group_calls: Mutex::new(Vec::new()),
         })
+    }
+
+    fn recorded<Value>(
+        &self,
+        kind: Kind,
+        values: &[String],
+        database: bool,
+    ) -> Result<BTreeMap<String, Value>, TagBudgetError> {
+        assert!(database, "the absent database never reaches the lookup");
+        kind.calls(self)
+            .lock()
+            .expect("the lookup calls lock")
+            .push(values.to_vec());
+        if self.answer == kind.failing() {
+            return Err(kind.failure());
+        }
+        Ok(BTreeMap::new())
     }
 
     fn tag_calls(&self) -> Vec<Vec<String>> {
@@ -71,39 +89,55 @@ fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-#[async_trait]
-impl TagBudgetLookup for ScriptedLookup {
-    async fn tag_objects(
-        &self,
-        values: &[String],
-        database: bool,
-    ) -> Result<BTreeMap<String, TagTable>, TagBudgetError> {
-        assert!(database, "the absent database never reaches the lookup");
-        self.tag_calls
-            .lock()
-            .expect("the tag calls lock")
-            .push(values.to_vec());
-        match self.answer {
-            Answer::TagFailure => Err(TagBudgetError::TagPayload(Box::new(payload_error()))),
-            Answer::Resolved | Answer::GroupFailure => Ok(BTreeMap::new()),
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Tag,
+    Group,
+}
+
+impl Kind {
+    const fn calls(self, lookup: &ScriptedLookup) -> &Mutex<Vec<Vec<String>>> {
+        match self {
+            Self::Tag => &lookup.tag_calls,
+            Self::Group => &lookup.group_calls,
         }
     }
 
-    async fn group_budgets(
-        &self,
-        values: &[String],
-        database: bool,
-    ) -> Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetError> {
-        assert!(database, "the absent database never reaches the lookup");
-        self.group_calls
-            .lock()
-            .expect("the group calls lock")
-            .push(values.to_vec());
-        match self.answer {
-            Answer::GroupFailure => Err(TagBudgetError::GroupPayload(Box::new(payload_error()))),
-            Answer::Resolved | Answer::TagFailure => Ok(BTreeMap::new()),
+    const fn failing(self) -> Answer {
+        match self {
+            Self::Tag => Answer::TagFailure,
+            Self::Group => Answer::GroupFailure,
         }
     }
+
+    fn failure(self) -> TagBudgetError {
+        match self {
+            Self::Tag => tag_payload(),
+            Self::Group => group_payload(),
+        }
+    }
+}
+
+type TagAnswer = Result<BTreeMap<String, TagTable>, TagBudgetError>;
+type GroupAnswer = Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetError>;
+
+#[async_trait]
+impl TagBudgetLookup for ScriptedLookup {
+    async fn tag_objects(&self, values: &[String], database: bool) -> TagAnswer {
+        self.recorded(Kind::Tag, values, database)
+    }
+
+    async fn group_budgets(&self, values: &[String], database: bool) -> GroupAnswer {
+        self.recorded(Kind::Group, values, database)
+    }
+}
+
+fn tag_payload() -> TagBudgetError {
+    TagBudgetError::TagPayload(Box::new(payload_error()))
+}
+
+fn group_payload() -> TagBudgetError {
+    TagBudgetError::GroupPayload(Box::new(payload_error()))
 }
 
 fn rule(lookup: Arc<ScriptedLookup>, tags: &[&str], groups: &[&str]) -> Arc<TagBudgetRule> {

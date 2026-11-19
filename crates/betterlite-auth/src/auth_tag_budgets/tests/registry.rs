@@ -12,13 +12,11 @@ use super::support::{
     TTL, group_row, named_group_rows, named_tags, registry_names, tag,
 };
 use crate::auth_tag_budgets::TagBudgetError;
-use crate::auth_tag_budgets::groups::get_model_access_group_budgets_batch;
+use crate::auth_tag_budgets::groups::group_budgets_batch;
 use crate::auth_tag_budgets::registry::{
-    GROUP_REGISTRY_TAKE, TAG_REGISTRY_TAKE, load_model_access_group_registry, load_tag_registry,
+    GROUP_REGISTRY_TAKE, RegistryKind, TAG_REGISTRY_TAKE, load_registry,
 };
-use crate::auth_tag_budgets::rows::{
-    GroupRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure, TagRows,
-};
+use crate::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure};
 use crate::auth_tag_budgets::tags::get_tag_objects_batch;
 
 fn names(values: &[&str]) -> Vec<String> {
@@ -29,7 +27,8 @@ fn names(values: &[&str]) -> Vec<String> {
 async fn tag_registry_take_5001() {
     let cache = RecordingCache::new(TTL);
     let rows = RecordingRows::new(named_tags(2), Vec::new());
-    let known = load_tag_registry(&cache, &rows)
+    let table: &dyn BudgetRows<TagTable> = &rows;
+    let known = load_registry(RegistryKind::Tag, &cache, table)
         .await
         .expect("the tag registry loads");
     assert_eq!(rows.registry_takes(), [TAG_REGISTRY_TAKE]);
@@ -49,7 +48,8 @@ async fn tag_registry_take_5001() {
 async fn group_registry_take_5001() {
     let cache = RecordingCache::new(TTL);
     let rows = RecordingRows::new(Vec::new(), named_group_rows(1));
-    let known = load_model_access_group_registry(&cache, &rows)
+    let table: &dyn BudgetRows<ModelAccessGroupBudgetRow> = &rows;
+    let known = load_registry(RegistryKind::Group, &cache, table)
         .await
         .expect("the group registry loads");
     assert_eq!(rows.group_registry_takes(), [GROUP_REGISTRY_TAKE]);
@@ -66,7 +66,7 @@ struct GatedRows {
 }
 
 #[async_trait]
-impl TagRows for GatedRows {
+impl BudgetRows<TagTable> for GatedRows {
     async fn by_names(&self, _names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
         Ok(Vec::new())
     }
@@ -79,7 +79,7 @@ impl TagRows for GatedRows {
 }
 
 #[async_trait]
-impl GroupRows for GatedRows {
+impl BudgetRows<ModelAccessGroupBudgetRow> for GatedRows {
     async fn by_names(
         &self,
         _names: Vec<String>,
@@ -104,10 +104,12 @@ async fn distinct_registry_keys_locks() {
         tag_started: Arc::new(Notify::new()),
         group_started: Arc::new(Notify::new()),
     };
+    let tags_table: &dyn BudgetRows<TagTable> = &rows;
+    let groups_table: &dyn BudgetRows<ModelAccessGroupBudgetRow> = &rows;
     let loads = async {
         tokio::join!(
-            load_tag_registry(&cache, &rows),
-            load_model_access_group_registry(&cache, &rows)
+            load_registry(RegistryKind::Tag, &cache, tags_table),
+            load_registry(RegistryKind::Group, &cache, groups_table)
         )
     };
     let (tags, groups) = tokio::time::timeout(Duration::from_secs(2), loads)
@@ -181,7 +183,8 @@ async fn overflow_fetches_all() {
 async fn group_overflow_sentinel() {
     let cache = RecordingCache::new(TTL);
     let rows = RecordingRows::new(Vec::new(), named_group_rows(5001));
-    let known = load_model_access_group_registry(&cache, &rows)
+    let table: &dyn BudgetRows<ModelAccessGroupBudgetRow> = &rows;
+    let known = load_registry(RegistryKind::Group, &cache, table)
         .await
         .expect("the group registry loader");
     assert_eq!(known, None);
@@ -205,7 +208,8 @@ async fn registry_error_propagates() {
 async fn group_registry_error_propagates() {
     let cache = RecordingCache::new(TTL).failing_registry_read();
     let rows = RecordingRows::new(Vec::new(), named_group_rows(1));
-    let error = load_model_access_group_registry(&cache, &rows)
+    let table: &dyn BudgetRows<ModelAccessGroupBudgetRow> = &rows;
+    let error = load_registry(RegistryKind::Group, &cache, table)
         .await
         .expect_err("the group registry failure reaches the caller");
     assert_eq!(
@@ -219,7 +223,7 @@ async fn group_registry_error_propagates() {
 async fn group_fetch_does_not_load_registry() {
     let cache = RecordingCache::new(TTL);
     let rows = RecordingRows::new(Vec::new(), vec![group_row(GROUP_A)]);
-    let found = get_model_access_group_budgets_batch(&names(&["group-a"]), true, &cache, &rows)
+    let found = group_budgets_batch(&names(&["group-a"]), true, &cache, &rows)
         .await
         .expect("the batch read");
     assert_eq!(found.len(), 1);

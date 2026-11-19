@@ -27,14 +27,9 @@ pub(super) fn merged<Value>(
     probed: Vec<(String, Option<Value>)>,
     fetched: Vec<(String, Value)>,
 ) -> BTreeMap<String, Value> {
-    let mut result = BTreeMap::new();
-    let entries = probed
+    probed
         .into_iter()
-        .chain(fetched.into_iter().map(|(name, value)| (name, Some(value))));
-    for (name, value) in entries {
-        if let Some(value) = value {
-            let _previous = result.insert(name, value);
-        }
-    }
-    result
+        .filter_map(|(name, value)| value.map(|value| (name, value)))
+        .chain(fetched)
+        .collect()
 }

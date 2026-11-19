@@ -4,9 +4,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::TagBudgetError;
-use super::cache::TagBudgetCache;
+use super::cache::{CachedValue, TagBudgetCache};
 use super::merged;
-use super::rows::{GroupRows, ModelAccessGroupBudgetRow};
+use super::rows::{BudgetRows, ModelAccessGroupBudgetRow};
 use crate::auth_cache::keys::CacheKey;
 
 // LiteLLM's ModelAccessGroupBudget: the flattened row both enforcement paths read from the cache.
@@ -33,37 +33,36 @@ pub fn model_access_group_budget(row: &ModelAccessGroupBudgetRow) -> ModelAccess
 }
 
 // LiteLLM's get_model_access_group_budgets_batch: probe every name, then one read for the misses.
-pub async fn get_model_access_group_budgets_batch(
+pub async fn group_budgets_batch(
     access_group_names: &[String],
     database: bool,
     cache: &dyn TagBudgetCache,
-    rows: &dyn GroupRows,
+    rows: &dyn BudgetRows<ModelAccessGroupBudgetRow>,
 ) -> Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetError> {
     if !database || access_group_names.is_empty() {
         return Ok(BTreeMap::new());
     }
     let mut probed = Vec::with_capacity(access_group_names.len());
+    let mut misses = Vec::new();
     for name in access_group_names {
         let cached = cache
             .read_group(&CacheKey::ModelAccessGroup(name).render())
             .await
             .map_err(|error| TagBudgetError::GroupPayload(Box::new(error)))?;
+        if cached.is_none() {
+            misses.push(name.clone());
+        }
         probed.push((name.clone(), cached));
     }
-    let misses: Vec<String> = probed
-        .iter()
-        .filter(|(_, budget)| budget.is_none())
-        .map(|(name, _)| name.clone())
-        .collect();
-    let fetched = fetch_uncached_model_access_group_budgets(&misses, cache, rows).await?;
+    let fetched = fetch_missing_groups(&misses, cache, rows).await?;
     Ok(merged(probed, fetched))
 }
 
 // LiteLLM's _fetch_uncached_model_access_group_budgets: no registry gate, since the caller intersected already.
-async fn fetch_uncached_model_access_group_budgets(
+async fn fetch_missing_groups(
     uncached_groups: &[String],
     cache: &dyn TagBudgetCache,
-    rows: &dyn GroupRows,
+    rows: &dyn BudgetRows<ModelAccessGroupBudgetRow>,
 ) -> Result<Vec<(String, ModelAccessGroupBudget)>, TagBudgetError> {
     if uncached_groups.is_empty() {
         return Ok(Vec::new());
@@ -83,7 +82,7 @@ async fn fetch_uncached_model_access_group_budgets(
     for row in db_rows {
         let budget = model_access_group_budget(&row);
         let key = CacheKey::ModelAccessGroup(&budget.access_group_name).render();
-        if let Err(error) = cache.write_group(&key, &budget, ttl).await {
+        if let Err(error) = cache.write(&key, CachedValue::Group(&budget), ttl).await {
             tracing::debug!(
                 error = %error,
                 "Error batch fetching model access group budgets from database"

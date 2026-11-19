@@ -9,7 +9,7 @@ use super::support::{
 use crate::auth_read::include::{Including, IncludingQuery};
 use crate::auth_tag_budgets::TagBudgetError;
 use crate::auth_tag_budgets::groups::{
-    ModelAccessGroupBudget, get_model_access_group_budgets_batch, model_access_group_budget,
+    ModelAccessGroupBudget, group_budgets_batch, model_access_group_budget,
 };
 use crate::auth_tag_budgets::rows::BudgetInclude;
 use crate::auth_tag_budgets::rows::group::ModelAccessGroupBudgetTable;
@@ -20,7 +20,7 @@ async fn batch(
     names: &[&str],
 ) -> Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetError> {
     let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
-    get_model_access_group_budgets_batch(&names, true, cache, rows).await
+    group_budgets_batch(&names, true, cache, rows).await
 }
 
 #[tokio::test]
@@ -28,7 +28,7 @@ async fn absent_db_empty() {
     let cache = RecordingCache::new(TTL);
     let rows = RecordingRows::new(Vec::new(), Vec::new());
     let names = vec!["group-a".to_owned()];
-    let found = get_model_access_group_budgets_batch(&names, false, &cache, &rows)
+    let found = group_budgets_batch(&names, false, &cache, &rows)
         .await
         .expect("the absent database fails open");
     assert!(found.is_empty());

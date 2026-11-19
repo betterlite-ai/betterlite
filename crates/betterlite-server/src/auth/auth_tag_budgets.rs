@@ -17,7 +17,7 @@ mod tests;
 
 // The batch reads both budget checks share, so the stage resolves from whatever cache and rows the proxy wired.
 #[async_trait]
-pub trait TagBudgetLookup: Send + Sync {
+pub trait TagBudgetLookup: Send + Sync + fmt::Debug {
     async fn tag_objects(
         &self,
         names: &[String],
@@ -32,22 +32,11 @@ pub trait TagBudgetLookup: Send + Sync {
 }
 
 // What the request asks to price: the tags it carries and the model access groups that matched it.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TagBudgetRule {
     pub tag_names: Vec<String>,
     pub model_access_group_names: Vec<String>,
     pub lookup: Option<Arc<dyn TagBudgetLookup>>,
-}
-
-impl fmt::Debug for TagBudgetRule {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("TagBudgetRule")
-            .field("tag_names", &self.tag_names)
-            .field("model_access_group_names", &self.model_access_group_names)
-            .field("lookup", &self.lookup.is_some())
-            .finish()
-    }
 }
 
 #[derive(Clone, Debug)]

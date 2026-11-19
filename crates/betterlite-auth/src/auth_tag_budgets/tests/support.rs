@@ -7,17 +7,16 @@ use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_db::postgres_store::errors::DbError as RepositoryFault;
 use betterlite_models::decisions::Json;
+use serde::de::DeserializeOwned;
 
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::keys::CacheKey;
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::rows::RowError;
-use crate::auth_tag_budgets::cache::TagBudgetCache;
+use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use crate::auth_tag_budgets::groups::ModelAccessGroupBudget;
-use crate::auth_tag_budgets::rows::{
-    GroupRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure, TagRows,
-};
+use crate::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure};
 
 pub(super) const TTL: f64 = 60.0;
 pub(super) const TAG_REGISTRY_KEY: &str = "tag_registry";
@@ -66,23 +65,19 @@ pub(super) fn group_budget(text: &str) -> ModelAccessGroupBudget {
 }
 
 pub(super) fn named_tags(count: usize) -> Vec<TagTable> {
-    (0..count)
-        .map(|index| {
-            let wire =
-                serde_json::json!({"tag_name": format!("tag-{index}"), "models": [], "spend": 0});
-            serde_json::from_value(wire).expect("the generated tag row decodes")
-        })
-        .collect()
+    let wires = (0..count).map(
+        |index| serde_json::json!({"tag_name": format!("tag-{index}"), "models": [], "spend": 0}),
+    );
+    let rows = wires.map(|wire| serde_json::from_value(wire).expect("the generated tag row"));
+    rows.collect()
 }
 
 pub(super) fn named_group_rows(count: usize) -> Vec<ModelAccessGroupBudgetRow> {
-    (0..count)
-        .map(|index| {
-            let wire =
-                serde_json::json!({"access_group_name": format!("group-{index}"), "spend": 0});
-            serde_json::from_value(wire).expect("the generated group row decodes")
-        })
-        .collect()
+    let wires = (0..count).map(
+        |index| serde_json::json!({"access_group_name": format!("group-{index}"), "spend": 0}),
+    );
+    let rows = wires.map(|wire| serde_json::from_value(wire).expect("the generated group row"));
+    rows.collect()
 }
 
 fn no_database() -> DbError {
@@ -113,12 +108,18 @@ pub(super) fn decode_failure() -> TagBudgetRowsFailure {
     }
 }
 
+// The cached value for one write, as the json the read side would decode.
+fn stored(value: CachedValue<'_>) -> Json {
+    match value {
+        CachedValue::Tag(tag) => serde_json::to_value(tag).expect("the tag serializes"),
+        CachedValue::Group(group) => serde_json::to_value(group).expect("the group serializes"),
+        CachedValue::Registry(answer) => answer.clone(),
+    }
+}
+
 pub(super) struct RecordingCache {
-    tags: BTreeMap<String, TagTable>,
-    groups: BTreeMap<String, ModelAccessGroupBudget>,
-    registries: BTreeMap<String, Json>,
-    once_tag: Mutex<Option<(String, TagTable)>>,
-    once_group: Mutex<Option<(String, ModelAccessGroupBudget)>>,
+    values: Mutex<BTreeMap<String, Json>>,
+    once: Mutex<BTreeMap<String, Json>>,
     reads: Mutex<Vec<String>>,
     writes: Mutex<Vec<(String, f64)>>,
     ttl: f64,
@@ -131,11 +132,8 @@ pub(super) struct RecordingCache {
 impl RecordingCache {
     pub(super) fn new(ttl: f64) -> Self {
         Self {
-            tags: BTreeMap::new(),
-            groups: BTreeMap::new(),
-            registries: BTreeMap::new(),
-            once_tag: Mutex::new(None),
-            once_group: Mutex::new(None),
+            values: Mutex::new(BTreeMap::new()),
+            once: Mutex::new(BTreeMap::new()),
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
             ttl,
@@ -146,29 +144,47 @@ impl RecordingCache {
         }
     }
 
-    pub(super) fn with_tag(mut self, row: TagTable) -> Self {
-        self.tags.insert(tag_key(&row.tag_name), row);
+    pub(super) fn with_tag(self, row: TagTable) -> Self {
+        let key = tag_key(&row.tag_name);
+        self.cached(key, CachedValue::Tag(&row))
+    }
+
+    pub(super) fn with_tag_hit_once(self, row: TagTable) -> Self {
+        let key = tag_key(&row.tag_name);
+        self.once
+            .lock()
+            .expect("the scripted values lock")
+            .insert(key, stored(CachedValue::Tag(&row)));
         self
     }
 
-    pub(super) fn with_tag_hit_once(mut self, row: TagTable) -> Self {
-        self.once_tag = Mutex::new(Some((tag_key(&row.tag_name), row)));
-        self
+    pub(super) fn with_group(self, budget: ModelAccessGroupBudget) -> Self {
+        let key = group_key(&budget.access_group_name);
+        self.cached(key, CachedValue::Group(&budget))
     }
 
-    pub(super) fn with_group(mut self, budget: ModelAccessGroupBudget) -> Self {
-        self.groups
-            .insert(group_key(&budget.access_group_name), budget);
-        self
-    }
-
-    pub(super) fn with_group_hit_once(mut self, budget: ModelAccessGroupBudget) -> Self {
-        self.once_group = Mutex::new(Some((group_key(&budget.access_group_name), budget)));
+    pub(super) fn with_group_hit_once(self, budget: ModelAccessGroupBudget) -> Self {
+        let key = group_key(&budget.access_group_name);
+        self.once
+            .lock()
+            .expect("the scripted values lock")
+            .insert(key, stored(CachedValue::Group(&budget)));
         self
     }
 
     pub(super) fn with_registry(mut self, key: &str, answer: Json) -> Self {
-        self.registries.insert(key.to_owned(), answer);
+        self.values
+            .lock()
+            .expect("the cache values lock")
+            .insert(key.to_owned(), answer);
+        self
+    }
+
+    fn cached(self, key: String, value: CachedValue<'_>) -> Self {
+        self.values
+            .lock()
+            .expect("the cache values lock")
+            .insert(key, stored(value));
         self
     }
 
@@ -197,7 +213,8 @@ impl RecordingCache {
     }
 
     pub(super) fn tagged_reads(&self, prefix: &str) -> Vec<String> {
-        self.reads()
+        let reads = self.reads();
+        reads
             .into_iter()
             .filter(|key| key.starts_with(prefix))
             .collect()
@@ -208,11 +225,16 @@ impl RecordingCache {
     }
 
     pub(super) fn registry_answer(&self, key: &str) -> Option<Json> {
-        self.registries.get(key).cloned()
+        self.values
+            .lock()
+            .expect("the cache values lock")
+            .get(key)
+            .cloned()
     }
 
     pub(super) fn prefixed_writes(&self, prefix: &str) -> Vec<(String, f64)> {
-        self.writes()
+        let writes = self.writes();
+        writes
             .into_iter()
             .filter(|(key, _)| key.starts_with(prefix))
             .collect()
@@ -223,6 +245,27 @@ impl RecordingCache {
             .lock()
             .expect("the cache reads lock")
             .push(key.to_owned());
+    }
+
+    fn probe(&self, key: &str, fail: bool) -> Result<Option<Json>, PayloadError> {
+        self.record_read(key);
+        if fail {
+            return Err(payload_error());
+        }
+        let scripted = self
+            .once
+            .lock()
+            .expect("the scripted values lock")
+            .remove(key);
+        if scripted.is_some() {
+            return Ok(scripted);
+        }
+        Ok(self
+            .values
+            .lock()
+            .expect("the cache values lock")
+            .get(key)
+            .cloned())
     }
 
     fn record_write(&self, key: &str, ttl: f64) -> Result<(), AuthCacheError> {
@@ -238,62 +281,44 @@ impl RecordingCache {
     }
 }
 
+fn decoded<Value: DeserializeOwned>(value: Option<Json>) -> Result<Option<Value>, PayloadError> {
+    match value {
+        None => Ok(None),
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(PayloadError::Json),
+    }
+}
+
 #[async_trait]
 impl TagBudgetCache for RecordingCache {
     async fn read_tag(&self, key: &str) -> Result<Option<TagTable>, PayloadError> {
-        self.record_read(key);
-        if self.fail_tag_read {
-            return Err(payload_error());
-        }
-        let mut once = self.once_tag.lock().expect("the scripted tag lock");
-        if once.as_ref().is_some_and(|(once_key, _)| once_key == key) {
-            let scripted = once.take();
-            return Ok(scripted.map(|(_, row)| row));
-        }
-        Ok(self.tags.get(key).cloned())
-    }
-
-    async fn write_tag(&self, key: &str, _tag: &TagTable, ttl: f64) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl)
+        decoded(self.probe(key, self.fail_tag_read)?)
     }
 
     async fn read_group(&self, key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
-        self.record_read(key);
-        if self.fail_group_read {
-            return Err(payload_error());
-        }
-        let mut once = self.once_group.lock().expect("the scripted group lock");
-        if once.as_ref().is_some_and(|(once_key, _)| once_key == key) {
-            let scripted = once.take();
-            return Ok(scripted.map(|(_, budget)| budget));
-        }
-        Ok(self.groups.get(key).cloned())
-    }
-
-    async fn write_group(
-        &self,
-        key: &str,
-        _budget: &ModelAccessGroupBudget,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl)
+        decoded(self.probe(key, self.fail_group_read)?)
     }
 
     async fn read_registry(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
-        self.record_read(key);
-        if self.fail_registry_read {
-            return Err(AuthCacheError::Payload(Box::new(payload_error())));
-        }
-        Ok(self.registries.get(key).cloned())
+        let found = self
+            .probe(key, self.fail_registry_read)
+            .map_err(|error| AuthCacheError::Payload(Box::new(error)))?;
+        Ok(found)
     }
 
-    async fn write_registry(
+    async fn write(
         &self,
         key: &str,
-        _answer: &Json,
+        value: CachedValue<'_>,
         ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        self.record_write(key, ttl)
+        self.record_write(key, ttl)?;
+        self.values
+            .lock()
+            .expect("the cache values lock")
+            .insert(key.to_owned(), stored(value));
+        Ok(())
     }
 
     fn management_ttl(&self) -> f64 {
@@ -306,6 +331,21 @@ pub(super) enum Failure {
     None,
     Query,
     Decode,
+}
+
+fn matching<Row: Clone>(rows: &[Row], names: &[String], name: fn(&Row) -> &str) -> Vec<Row> {
+    rows.iter()
+        .filter(|row| names.iter().any(|wanted| wanted.as_str() == name(row)))
+        .cloned()
+        .collect()
+}
+
+fn limited<Row: Clone>(rows: &[Row], take: i64) -> Vec<Row> {
+    rows.iter().take(take_of(take)).cloned().collect()
+}
+
+fn take_of(take: i64) -> usize {
+    usize::try_from(take).unwrap_or(usize::MAX)
 }
 
 pub(super) struct RecordingRows {
@@ -389,73 +429,55 @@ impl RecordingRows {
         }
     }
 
-    fn take(take: i64) -> usize {
-        usize::try_from(take).unwrap_or(usize::MAX)
+    fn record(log: &Mutex<Vec<Vec<String>>>, names: Vec<String>) {
+        log.lock().expect("the queries lock").push(names);
+    }
+
+    fn record_take(log: &Mutex<Vec<i64>>, take: i64) {
+        log.lock().expect("the takes lock").push(take);
     }
 }
 
 #[async_trait]
-impl TagRows for RecordingRows {
+impl BudgetRows<TagTable> for RecordingRows {
     async fn by_names(&self, names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
-        self.tag_queries
-            .lock()
-            .expect("the tag queries lock")
-            .push(names.clone());
+        Self::record(&self.tag_queries, names.clone());
         if let Some(failure) = self.failure(self.tag_failure) {
             return Err(failure);
         }
-        Ok(self
-            .tags
-            .iter()
-            .filter(|row| names.contains(&row.tag_name))
-            .cloned()
-            .collect())
+        Ok(matching(&self.tags, &names, |row| &row.tag_name))
     }
 
     async fn registry_rows(&self, take: i64) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
-        self.registry_takes
-            .lock()
-            .expect("the registry takes lock")
-            .push(take);
+        Self::record_take(&self.registry_takes, take);
         if let Some(failure) = self.failure(self.tag_failure) {
             return Err(failure);
         }
-        Ok(self.tags.iter().take(Self::take(take)).cloned().collect())
+        Ok(limited(&self.tags, take))
     }
 }
 
 #[async_trait]
-impl GroupRows for RecordingRows {
+impl BudgetRows<ModelAccessGroupBudgetRow> for RecordingRows {
     async fn by_names(
         &self,
         names: Vec<String>,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        self.group_queries
-            .lock()
-            .expect("the group queries lock")
-            .push(names.clone());
+        Self::record(&self.group_queries, names.clone());
         if let Some(failure) = self.failure(self.group_failure) {
             return Err(failure);
         }
-        Ok(self
-            .groups
-            .iter()
-            .filter(|row| names.contains(&row.access_group_name))
-            .cloned()
-            .collect())
+        Ok(matching(&self.groups, &names, |row| &row.access_group_name))
     }
 
     async fn registry_rows(
         &self,
         take: i64,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        self.group_registry_takes
-            .lock()
-            .expect("the group registry takes lock")
-            .push(take);
+        Self::record_take(&self.group_registry_takes, take);
         if let Some(failure) = self.failure(self.group_failure) {
             return Err(failure);
         }
-        Ok(self.groups.iter().take(Self::take(take)).cloned().collect())
+        Ok(limited(&self.groups, take))
     }
 }

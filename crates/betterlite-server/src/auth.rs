@@ -142,7 +142,7 @@ async fn stage_input(
                 Ok(requested) => requested,
                 Err(error) => {
                     tracing::debug!(error = %error, "the request model stage failed");
-                    return Err(AuthenticationFailure::Missing.into());
+                    return Err(StageFailure::from(AuthenticationFailure::Missing));
                 }
             };
             let rule = rule_for_request(request);
@@ -159,27 +159,20 @@ async fn stage_input(
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
         // the batch reads are asynchronous, so this stage resolves its rows while its input is assembled
         AuthBackend::AuthTagBudgets => {
-            let stage = tag_budget_stage_input(request, authenticated)?;
+            let context = authenticated
+                .cloned()
+                .ok_or(AuthenticationFailure::Missing)?;
+            let stage = TagBudgetStageInput {
+                context,
+                rule: auth_tag_budgets::rule_for_request(request),
+                database: auth_tag_budgets::database_for_request(request),
+            };
             auth_tag_budgets::prefetch(&stage)
                 .await
                 .map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(Box::new(stage)))
         }
     }
-}
-
-fn tag_budget_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<TagBudgetStageInput, AuthenticationFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    Ok(TagBudgetStageInput {
-        context,
-        rule: auth_tag_budgets::rule_for_request(request),
-        database: auth_tag_budgets::database_for_request(request),
-    })
 }
 
 fn resource_grant_stage_input(
