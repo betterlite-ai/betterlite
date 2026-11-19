@@ -12,23 +12,35 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
 use super::fakes::{RecordingFetch, RecordingOcr};
-use super::inputs::{InitInput, OcrInput, UploadInput, build, decode_content, state};
+use super::inputs::{ChunkInput, InitInput, OcrInput, UploadInput, build, decode_content, state};
 
 pub(super) fn init(input: &InitInput) -> HelperResult {
     let built = state(&input.options, &input.credentials)?;
     let suffix = built.ingest_id.strip_prefix("ingest_").unwrap_or_default();
-    Ok(json!({
-        "ingest_id": {
+    let mut report = Map::new();
+    report.insert(
+        "ingest_id".to_owned(),
+        json!({
             "prefixed": built.ingest_id.starts_with("ingest_"),
             "suffix_len": suffix.len(),
-        },
-        "ingest_name": built.ingest_name,
-        "ocr_config": built.ocr_config,
-        "chunking_strategy": serde_json::from_str::<Value>(built.chunking_strategy.get())?,
-        "embedding_config": built.embedding_config,
-        "vector_store_config": raw_values(&built.vector_store_config)?,
-        "supports_existing_file_id": IngestionState::SUPPORTS_EXISTING_FILE_ID,
-    }))
+        }),
+    );
+    report.insert("ingest_name".to_owned(), json!(built.ingest_name));
+    report.insert("ocr_config".to_owned(), json!(built.ocr_config));
+    report.insert(
+        "chunking_strategy".to_owned(),
+        serde_json::from_str::<Value>(built.chunking_strategy.get())?,
+    );
+    report.insert("embedding_config".to_owned(), json!(built.embedding_config));
+    report.insert(
+        "vector_store_config".to_owned(),
+        raw_values(&built.vector_store_config)?,
+    );
+    report.insert(
+        "supports_existing_file_id".to_owned(),
+        json!(IngestionState::SUPPORTS_EXISTING_FILE_ID),
+    );
+    Ok(Value::Object(report))
 }
 
 pub(super) fn upload(input: &UploadInput) -> HelperResult {
@@ -88,6 +100,19 @@ pub(super) fn ocr(input: &OcrInput) -> HelperResult {
         })
         .collect();
     Ok(json!({ "text": text, "calls": calls }))
+}
+
+pub(super) fn chunk(input: &ChunkInput) -> HelperResult {
+    let built = state(&input.options, &[])?;
+    let content = decode_content(input.file_content_base64.as_deref())?;
+    let chunks = built
+        .chunk(
+            input.text.as_deref(),
+            content.as_deref(),
+            input.ocr_was_used,
+        )
+        .or_value_error()?;
+    Ok(json!({ "chunks": chunks }))
 }
 
 fn document_value(document: &OcrDocument) -> Value {

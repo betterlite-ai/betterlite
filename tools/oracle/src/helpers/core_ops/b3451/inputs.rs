@@ -92,16 +92,6 @@ pub(crate) struct ChunkInput {
     pub(super) ocr_was_used: bool,
 }
 
-impl ChunkInput {
-    pub(super) fn chunks(&self) -> Result<Vec<String>, Box<HelperError>> {
-        let built = state(&self.options, &[])?;
-        let content = decode_content(self.file_content_base64.as_deref())?;
-        built
-            .chunk(self.text.as_deref(), content.as_deref(), self.ocr_was_used)
-            .or_value_error()
-    }
-}
-
 fn raw_map(
     entries: Option<BTreeMap<String, Value>>,
 ) -> Result<Option<BTreeMap<String, Box<RawValue>>>, Box<HelperError>> {
@@ -169,8 +159,8 @@ pub(super) fn state(
 }
 
 pub(super) fn decode_content(encoded: Option<&str>) -> Result<Option<Vec<u8>>, Box<HelperError>> {
-    let Some(encoded) = encoded else {
+    let Some(value) = encoded else {
         return Ok(None);
     };
-    Ok(Some(BASE64.decode(encoded).or_value_error()?))
+    Ok(Some(BASE64.decode(value).or_value_error()?))
 }
