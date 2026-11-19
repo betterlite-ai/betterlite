@@ -2,6 +2,7 @@
 
 use std::future::{Future, ready};
 
+use betterlite_error::error::ErrorClass;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_prompts::arguments::json::Object;
@@ -142,7 +143,11 @@ async fn a_conflicting_tier_and_caller_window_fail_with_the_sail_class() {
     .await
     .unwrap_err();
     assert_eq!(error.status_code(), 400);
-    assert!(error.class().is_some());
+    let Some(ErrorClass::UnsupportedParams(context)) = error.class() else {
+        panic!("a sail conflict is an unsupported params error");
+    };
+    assert_eq!(context.provider.as_deref(), Some("sail"));
+    assert_eq!(context.model.as_deref(), Some(MODEL));
 }
 
 #[tokio::test]

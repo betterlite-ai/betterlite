@@ -593,6 +593,24 @@ fn responses_without_a_tier_rewrite_a_caller_window_alone() {
 }
 
 #[test]
+fn responses_read_the_caller_asap_and_balanced_windows() {
+    let asap = object(json!({
+        "service_tier": "flex",
+        "metadata": {"completion_window": "ASAP"},
+    }));
+    let error =
+        responses_params_with_completion_window(&asap, MODEL, false, &settings(false)).unwrap_err();
+    assert_eq!(error.status_code(), 400);
+    let balanced = object(json!({"metadata": {"completion_window": "Balanced"}}));
+    let rewritten =
+        responses_params_with_completion_window(&balanced, MODEL, false, &settings(false)).unwrap();
+    assert_eq!(
+        value(&rewritten),
+        json!({"metadata": {"completion_window": "balanced"}, "service_tier": "balanced"})
+    );
+}
+
+#[test]
 fn responses_ignore_a_tier_whose_window_is_auto() {
     let params = object(json!({"service_tier": "auto"}));
     let rewritten =
