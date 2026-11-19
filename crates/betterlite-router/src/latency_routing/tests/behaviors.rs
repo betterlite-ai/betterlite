@@ -15,6 +15,12 @@ use super::support::{Case, LimitValue, MINUTE, Outcome, Source, Spec, check};
     stream: false, input_tokens: 0, buffer: 0.0_f64, percentile: None, draw: 0,
     outcome: Outcome::Ranked { scores: &[2.0_f64, 6.0_f64], candidates: &["a", "b"], valid: &["a"], selected: Some("a") },
 })]
+// only a streaming request reads the first-token window: a non-streaming one scores the latency window even when the samples exist
+#[case::non_stream_ignores_first_token_samples(Case {
+    specs: vec![Spec::stored(MINUTE,"a", &[10.0_f64], &[1.0_f64], (0, 0)), Spec::stored(MINUTE,"b", &[2.0_f64], &[3.0_f64], (0, 0))],
+    stream: false, input_tokens: 0, buffer: 0.0_f64, percentile: None, draw: 0,
+    outcome: Outcome::Ranked { scores: &[10.0_f64, 2.0_f64], candidates: &["b", "a"], valid: &["b"], selected: Some("b") },
+})]
 // a streaming request reads the first-token window, so the slower total latency does not matter
 #[case::stream_first_token_mean(Case {
     specs: vec![Spec::stored(MINUTE,"a", &[10.0_f64], &[1.0_f64], (0, 0)), Spec::stored(MINUTE,"b", &[2.0_f64], &[3.0_f64], (0, 0))],
