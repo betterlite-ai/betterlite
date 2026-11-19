@@ -5,7 +5,7 @@ from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatCon
 from pydantic import JsonValue
 
 from .models import SIGN_PAYLOAD
-from .support import JSON, FixedCredentials, environment, signing_harness
+from .support import AUTH_MODULE, JSON, FixedCredentials, FrozenClock, environment
 from .views import ChatApi
 
 
@@ -40,12 +40,11 @@ def sign_cases(payload: JsonValue) -> JsonValue:
         signed_headers: dict[str, str | None] = {}
         body: bytes | None = None
         config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L143
-            "ChatApi", BedrockMantleChatConfig()
+            "ChatApi",
+            BedrockMantleChatConfig(aws_signer=FixedCredentials(case["credentials"])),
         )
-        with (
-            environment(values),
-            signing_harness(FixedCredentials(case["credentials"]), case["now"]),
-        ):
+        with environment(values):
+            AUTH_MODULE.get_current_datetime = FrozenClock(case["now"])
             try:
                 signed_headers, body = config.sign_request(
                     {} if headers is None else dict(headers),

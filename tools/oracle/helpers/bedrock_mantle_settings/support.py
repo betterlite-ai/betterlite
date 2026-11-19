@@ -4,11 +4,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Final, Protocol, cast
-from unittest.mock import patch
 
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.types.llms.bedrock import AwsAuthParams
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 from .models import Keys
 
@@ -52,21 +52,31 @@ AUTH_MODULE = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fc
 )
 
 
-class FixedCredentials:
+class FixedCredentials(BaseAWSLLM):
     def __init__(self, keys: Keys) -> None:
+        super().__init__()
         self.access_key = keys["access_key_id"]
         self.secret_key = keys["secret_access_key"]
         self.token: str | None = keys.get("session_token")
 
-    def __call__(self, _auth_params: AwsAuthParams, _region: str | None) -> "FixedCredentials":
+    @override
+    def resolve_credentials(
+        self, auth_params: AwsAuthParams, aws_region_name: str | None
+    ) -> "FixedCredentials":
+        _ = (auth_params, aws_region_name)
         return self
 
 
-class FailingCredentials:
+class FailingCredentials(BaseAWSLLM):
     def __init__(self, error: Exception) -> None:
+        super().__init__()
         self.error = error
 
-    def __call__(self, _auth_params: AwsAuthParams, _region: str | None) -> FixedCredentials:
+    @override
+    def resolve_credentials(
+        self, auth_params: AwsAuthParams, aws_region_name: str | None
+    ) -> FixedCredentials:
+        _ = (auth_params, aws_region_name)
         raise self.error
 
 
@@ -88,15 +98,6 @@ def environment(values: Mapping[str, str]) -> Iterator[None]:
         for name in values:
             _ = os.environ.pop(name, None)
         os.environ.update({name: value for name, value in saved.items() if value is not None})
-
-
-@contextmanager
-def signing_harness(credentials: FixedCredentials | FailingCredentials, now: int) -> Iterator[None]:
-    with (
-        patch.object(BaseAWSLLM, "resolve_credentials", credentials),
-        patch.object(AUTH_MODULE, "get_current_datetime", FrozenClock(now)),
-    ):
-        yield
 
 
 def region_params(region: str | None) -> dict[str, JsonValue]:

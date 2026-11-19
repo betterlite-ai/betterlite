@@ -6,11 +6,12 @@ from pydantic import JsonValue
 from .models import FAILURE_PAYLOAD, FailureKind
 from .support import (
     AUTH_FAILURE_MESSAGE,
+    AUTH_MODULE,
     EXCEPTIONS,
     FailingCredentials,
+    FrozenClock,
     environment,
     region_params,
-    signing_harness,
 )
 from .views import ChatApi
 
@@ -27,20 +28,18 @@ def credential_failure(kind: FailureKind) -> Exception:
 
 def failure_cases(payload: JsonValue) -> JsonValue:
     parsed = FAILURE_PAYLOAD.validate_python(payload)
-    config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L143
-        "ChatApi", BedrockMantleChatConfig()
-    )
     results: list[JsonValue] = []
     for case in parsed["cases"]:
         env = case.get("environment")
         values = {} if env is None else env
         given = case.get("api_base")
         api_base = "https://bedrock-mantle.us-east-1.api.aws/v1" if given is None else given
-        failure = credential_failure(case["kind"])
-        with (
-            environment(values),
-            signing_harness(FailingCredentials(failure), 1_700_000_000),
-        ):
+        config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L143
+            "ChatApi",
+            BedrockMantleChatConfig(aws_signer=FailingCredentials(credential_failure(case["kind"]))),
+        )
+        with environment(values):
+            AUTH_MODULE.get_current_datetime = FrozenClock(1_700_000_000)
             try:
                 _ = config.sign_request(
                     {},

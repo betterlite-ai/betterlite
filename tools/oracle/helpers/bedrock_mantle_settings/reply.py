@@ -1,6 +1,5 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import cast
-from unittest.mock import patch
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -8,33 +7,46 @@ from litellm.llms.bedrock.passthrough.transformation import BedrockPassthroughCo
 from litellm.llms.bedrock_mantle.passthrough.transformation import (
     BedrockMantlePassthroughConfig,
 )
+from litellm.types.utils import CostResponseTypes
 from pydantic import JsonValue
+from typing_extensions import override
 
 from .models import REPLY_PAYLOAD
 from .support import JSON
-from .views import ReplyApi
 
 
-class ReplyRecorder:
+class RecordingPassthrough(BedrockPassthroughConfig):
     def __init__(self) -> None:
-        self.seen: list[JsonValue] = []
+        super().__init__()
+        self.forwarded: list[JsonValue] = []
 
-    def __call__(self, **kwargs: JsonValue) -> JsonValue:
-        record: dict[str, JsonValue] = {
-            "model": kwargs["model"],
-            "provider": kwargs["custom_llm_provider"],
-            "endpoint": kwargs["endpoint"],
-            "request_data": kwargs["request_data"],
-        }
-        self.seen.append(record)
-        return record
+    @override
+    def logging_non_streaming_response(
+        self,
+        model: str,
+        custom_llm_provider: str,
+        httpx_response: httpx.Response,
+        request_data: Mapping[str, JsonValue],
+        logging_obj: Logging,
+        endpoint: str,
+    ) -> CostResponseTypes | None:
+        self.forwarded.append(
+            {
+                "model": model,
+                "provider": custom_llm_provider,
+                "endpoint": endpoint,
+                "request_data": JSON.validate_python(request_data),
+            }
+        )
+        return None
+
+
+class RecordingMantlePassthrough(BedrockMantlePassthroughConfig, RecordingPassthrough):
+    pass
 
 
 def reply_cases(payload: JsonValue) -> JsonValue:
     parsed = REPLY_PAYLOAD.validate_python(payload)
-    config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L19-L71
-        "ReplyApi", BedrockMantlePassthroughConfig()
-    )
     logging_obj = Logging(
         model="fixture-model",
         messages=None,
@@ -46,15 +58,14 @@ def reply_cases(payload: JsonValue) -> JsonValue:
     )
     results: list[JsonValue] = []
     for case in parsed["cases"]:
-        recorder = ReplyRecorder()
-        with patch.object(BedrockPassthroughConfig, "logging_non_streaming_response", recorder):
-            value = config.logging_non_streaming_response(
-                model="fixture-model",
-                custom_llm_provider=case["custom_llm_provider"],
-                httpx_response=httpx.Response(200),
-                request_data={"stream": False},
-                logging_obj=logging_obj,
-                endpoint=case["endpoint"],
-            )
-        results.append(JSON.validate_python(value))
+        config = RecordingMantlePassthrough()
+        config.logging_non_streaming_response(
+            model="fixture-model",
+            custom_llm_provider=case["custom_llm_provider"],
+            httpx_response=httpx.Response(200),
+            request_data={"stream": False},
+            logging_obj=logging_obj,
+            endpoint=case["endpoint"],
+        )
+        results.append(config.forwarded[0])
     return {"results": results}

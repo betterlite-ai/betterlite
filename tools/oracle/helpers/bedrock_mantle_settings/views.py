@@ -1,11 +1,8 @@
 from collections.abc import Iterator, Mapping
 from typing import Literal, Protocol
 
-import httpx
-from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.utils import CostResponseTypes
 from pydantic import JsonValue
 
 
@@ -111,15 +108,3 @@ class PassthroughApi(Protocol):
     def get_bedrock_bearer_token(
         self, litellm_params: Mapping[str, JsonValue]
     ) -> str | None: ...
-
-
-class ReplyApi(Protocol):
-    def logging_non_streaming_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L53-L71
-        self,
-        model: str,
-        custom_llm_provider: str,
-        httpx_response: httpx.Response,
-        request_data: Mapping[str, JsonValue],
-        logging_obj: Logging,
-        endpoint: str,
-    ) -> CostResponseTypes | None: ...

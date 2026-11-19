@@ -1,5 +1,4 @@
 from typing import Literal, cast
-from unittest.mock import patch
 
 import litellm
 from litellm.llms.bedrock_mantle.chat.transformation import BedrockMantleChatConfig
@@ -74,17 +73,15 @@ def chat_cases(payload: JsonValue) -> JsonValue:
     config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L143
         "ChatApi", BedrockMantleChatConfig()
     )
+    litellm.open_ai_chat_completion_models = set(chat_models)
+    litellm.open_ai_text_completion_models = set(text_models)
     results: list[JsonValue] = []
     for case in parsed["cases"]:
         env = case.get("environment")
         values = {} if env is None else env
         answer = case.get("reasoning")
         recorder = ReasoningRecorder("unsupported" if answer is None else answer)
-        with (
-            environment(values),
-            patch.object(litellm, "open_ai_chat_completion_models", chat_models),
-            patch.object(litellm, "open_ai_text_completion_models", text_models),
-            patch.object(litellm, "supports_reasoning", recorder),
-        ):
+        litellm.supports_reasoning = recorder
+        with environment(values):
             results.append(chat_result(config, case, recorder))
     return {"results": results}

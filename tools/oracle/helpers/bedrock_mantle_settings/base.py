@@ -1,5 +1,4 @@
 from typing import cast
-from unittest.mock import patch
 
 import litellm
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
@@ -42,14 +41,12 @@ def base_cases(payload: JsonValue) -> JsonValue:
     model_cost: dict[str, JsonValue] = {} if quoted is None else quoted
     signers: list[JsonValue] = []
     outcomes: list[tuple[JsonValue, JsonValue]] = []
+    litellm.model_cost = model_cost
     for case in parsed["cases"]:
         env = case.get("environment")
         values = {} if env is None else env
         signer = BaseAWSLLM()
-        with (
-            environment(values),
-            patch.object(litellm, "model_cost", model_cost),
-        ):
+        with environment(values):
             config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L41-L43
                 "ChatApi",
                 BedrockMantleChatConfig(
