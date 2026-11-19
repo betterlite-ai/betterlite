@@ -1,0 +1,21 @@
+kind: helper
+name: auth-prefetch-references-and-entries
+call:
+  auth_prefetch:
+    op: references_and_entries
+    management_ttl: 60.0
+    tokens:
+      - user_id: user-1
+        team_id: team-1
+        org_id: org-1
+        project_id: project-1
+      - user_id: user-2
+        team_id: null
+        org_id: null
+        project_id: null
+      - user_id: null
+        team_id: team-1
+        org_id: null
+        project_id: null
+env: {}
+compare: {ignore: []}
