@@ -24,7 +24,7 @@ deviations:
   - what: A window key past the value store's key length limit fails the selection with KeyError::TooLong naming the deployment. The pinned selector builds the key string whatever its length and hands it to the cache.
     why: Betterlite's store rejects a key past its bound instead of growing without limit, and the caller is told which deployment could not be tracked rather than the read silently missing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L454-L465
-  - what: The no-deployment message is the text LiteLLM passes to its exception. The pinned RateLimitError prepends "litellm.RateLimitError: " to that text, so the raised error's message and str carry the Python class name in front of it.
+  - what: 'The no-deployment message is the text LiteLLM passes to its exception. The pinned RateLimitError prepends "litellm.RateLimitError: " to that text, so the message and str of the raised error carry the Python class name in front of it.'
     why: Betterlite's typed error names its own category, status, code and type, and its Display carries the message the selector passed rather than the Python class prefix; the exact-message behavior test pins the betterlite text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L470-L471
 kept_bugs:
