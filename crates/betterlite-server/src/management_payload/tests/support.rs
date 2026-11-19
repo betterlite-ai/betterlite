@@ -133,7 +133,7 @@ pub(crate) enum SpanHook {
     Failure,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct SentManagementSpan {
     pub(crate) hook: SpanHook,
     pub(crate) route: String,
