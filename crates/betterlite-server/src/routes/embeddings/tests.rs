@@ -6,6 +6,7 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -13,7 +14,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -21,6 +22,7 @@ use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_routes, render};
+use crate::route_read_through::ModelReadThrough;
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
 use async_trait::async_trait;
@@ -565,4 +567,173 @@ async fn another_provider_never_reaches_the_vertex_call() {
         status_with_vertex("model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k").await;
     assert_eq!(calls, 0);
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+}
+
+struct RecordingReadThrough {
+    answer: bool,
+    asked: Mutex<Vec<String>>,
+}
+
+impl RecordingReadThrough {
+    fn new(answer: bool) -> Arc<Self> {
+        Arc::new(Self {
+            answer,
+            asked: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl ModelReadThrough for RecordingReadThrough {
+    async fn attempt_model(&self, model: &str) -> bool {
+        self.asked.lock().unwrap().push(model.to_owned());
+        self.answer
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct NotFoundReply {
+    error: NotFoundFields,
+}
+
+#[derive(serde::Deserialize)]
+struct NotFoundFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: String,
+    provider_specific_fields: Option<RouterFields>,
+}
+
+#[derive(serde::Deserialize)]
+struct RouterFields {
+    error: String,
+}
+
+fn litellm_text(model: &str) -> String {
+    format!(
+        "/embeddings: Invalid model name passed in model={model}. Call `/v1/models` to view available models for your key."
+    )
+}
+
+fn embedding_executor() -> Arc<ChatExecutor> {
+    let source = "model_list:\n  - model_name: embed-model\n    litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:9/v1', api_key: oracle-key}\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    Arc::new(chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor"))
+}
+
+async fn ask(
+    path: &str,
+    body: &str,
+    read_through: Option<Arc<dyn ModelReadThrough>>,
+) -> (StatusCode, NotFoundReply) {
+    let request = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .expect("request");
+    let response = embedding_routes(embedding_executor(), None, read_through)
+        .oneshot(request)
+        .await
+        .expect("response");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
+    (status, serde_json::from_slice(&bytes).expect("error body"))
+}
+
+#[tokio::test]
+async fn unknown_model_answers_litellm_text_on_the_v1_path() {
+    let (status, reply) = ask("/v1/embeddings", r#"{"model":"nope","input":"hi"}"#, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = litellm_text("nope");
+    assert_eq!(reply.error.message, text);
+    assert_eq!(reply.error.error_type, "invalid_request_error");
+    assert_eq!(reply.error.param, None);
+    assert_eq!(reply.error.code, "400");
+    assert_eq!(
+        reply
+            .error
+            .provider_specific_fields
+            .map(|fields| fields.error),
+        Some(text)
+    );
+}
+
+#[tokio::test]
+async fn unknown_model_answers_litellm_text_on_an_engines_path() {
+    let (status, reply) = ask(
+        "/engines/nope/embeddings",
+        r#"{"model":"body-model","input":"hi"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+}
+
+#[tokio::test]
+async fn unknown_model_retries_once_when_the_read_through_answers() {
+    let recorder = RecordingReadThrough::new(true);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask(
+        "/v1/embeddings",
+        r#"{"model":"nope","input":"hi"}"#,
+        Some(port),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+    assert_eq!(recorder.asked(), vec![String::from("nope")]);
+}
+
+#[tokio::test]
+async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
+    let recorder = RecordingReadThrough::new(false);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask(
+        "/v1/embeddings",
+        r#"{"model":"nope","input":"hi"}"#,
+        Some(port),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+    assert_eq!(recorder.asked(), vec![String::from("nope")]);
+}
+
+#[tokio::test]
+async fn unknown_model_without_a_model_never_asks_the_read_through() {
+    let recorder = RecordingReadThrough::new(true);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask("/v1/embeddings", r#"{"input":"hi"}"#, Some(port)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("None"));
+    assert!(recorder.asked().is_empty());
+}
+
+#[tokio::test]
+async fn unknown_model_redacts_a_key_like_model() {
+    let (status, reply) = ask(
+        "/v1/embeddings",
+        r#"{"model":"Bearer sk-secretsecretsecretsecret","input":"hi"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let repeated = reply
+        .error
+        .provider_specific_fields
+        .map(|fields| fields.error);
+    assert_eq!(repeated.as_deref(), Some(reply.error.message.as_str()));
+    assert!(!reply.error.message.contains("sk-secretsecretsecretsecret"));
 }

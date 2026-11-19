@@ -2,16 +2,19 @@
 
 use std::collections::BTreeMap;
 use std::str;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -20,9 +23,12 @@ use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use super::routes;
+use crate::route_read_through::ModelReadThrough;
 use crate::routes::router;
 use crate::routes::tests::state_for;
+use crate::server::chat_setup::chat_executor;
 use crate::state::ServerState;
+use crate::state::shared::Shared;
 
 const ANSWER: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 
@@ -694,4 +700,173 @@ async fn assert_missing_key_is_internal_server_error(response: Response) {
         str::from_utf8(&body).expect("utf8 body"),
         "Internal Server Error"
     );
+}
+
+struct RecordingReadThrough {
+    answer: bool,
+    asked: Mutex<Vec<String>>,
+}
+
+impl RecordingReadThrough {
+    fn new(answer: bool) -> Arc<Self> {
+        Arc::new(Self {
+            answer,
+            asked: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl ModelReadThrough for RecordingReadThrough {
+    async fn attempt_model(&self, model: &str) -> bool {
+        self.asked.lock().unwrap().push(model.to_owned());
+        self.answer
+    }
+}
+
+#[derive(Deserialize)]
+struct NotFoundReply {
+    error: NotFoundFields,
+}
+
+#[derive(Deserialize)]
+struct NotFoundFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: String,
+    provider_specific_fields: Option<RouterFields>,
+}
+
+#[derive(Deserialize)]
+struct RouterFields {
+    error: String,
+}
+
+fn litellm_text(model: &str) -> String {
+    format!(
+        "/completions: Invalid model name passed in model={model}. Call `/v1/models` to view available models for your key."
+    )
+}
+
+fn state_with_read_through(read_through: Option<Arc<dyn ModelReadThrough>>) -> Arc<ServerState> {
+    let source = "model_list:\n  - model_name: text-model\n    litellm_params: {model: openai/gpt-3.5-turbo-instruct, api_base: 'http://127.0.0.1:9/v1', api_key: oracle-key}\n";
+    let config = config(source);
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let shared = Arc::new(Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+    });
+    let mut state = ServerState::new(&config, Arc::new(executor), shared);
+    state.model_read_through.read_through = read_through;
+    Arc::new(state)
+}
+
+async fn ask(
+    path: &str,
+    body: &str,
+    read_through: Option<Arc<dyn ModelReadThrough>>,
+) -> (StatusCode, NotFoundReply) {
+    let state = state_with_read_through(read_through);
+    let request = Request::post(path)
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer oracle-master")
+        .body(Body::from(body.to_owned()))
+        .expect("request");
+    let response = routes(&state).oneshot(request).await.expect("response");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
+    (status, serde_json::from_slice(&bytes).expect("error body"))
+}
+
+#[tokio::test]
+async fn unknown_model_answers_litellm_text_on_the_v1_path() {
+    let (status, reply) = ask("/v1/completions", r#"{"model":"nope","prompt":"hi"}"#, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = litellm_text("nope");
+    assert_eq!(reply.error.message, text);
+    assert_eq!(reply.error.error_type, "invalid_request_error");
+    assert_eq!(reply.error.param, None);
+    assert_eq!(reply.error.code, "400");
+    assert_eq!(
+        reply
+            .error
+            .provider_specific_fields
+            .map(|fields| fields.error),
+        Some(text)
+    );
+}
+
+#[tokio::test]
+async fn unknown_model_answers_litellm_text_on_an_engines_path() {
+    let (status, reply) = ask(
+        "/engines/nope/completions",
+        r#"{"model":"body-model","prompt":"hi"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+}
+
+#[tokio::test]
+async fn unknown_model_retries_once_when_the_read_through_answers() {
+    let recorder = RecordingReadThrough::new(true);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask(
+        "/v1/completions",
+        r#"{"model":"nope","prompt":"hi"}"#,
+        Some(port),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+    assert_eq!(recorder.asked(), vec![String::from("nope")]);
+}
+
+#[tokio::test]
+async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
+    let recorder = RecordingReadThrough::new(false);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask(
+        "/v1/completions",
+        r#"{"model":"nope","prompt":"hi"}"#,
+        Some(port),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("nope"));
+    assert_eq!(recorder.asked(), vec![String::from("nope")]);
+}
+
+#[tokio::test]
+async fn unknown_model_without_a_model_never_asks_the_read_through() {
+    let recorder = RecordingReadThrough::new(true);
+    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let (status, reply) = ask("/v1/completions", r#"{"prompt":"hi"}"#, Some(port)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.error.message, litellm_text("None"));
+    assert!(recorder.asked().is_empty());
+}
+
+#[tokio::test]
+async fn unknown_model_redacts_a_key_like_model() {
+    let (status, reply) = ask(
+        "/v1/completions",
+        r#"{"model":"Bearer sk-secretsecretsecretsecret","prompt":"hi"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let repeated = reply
+        .error
+        .provider_specific_fields
+        .map(|fields| fields.error);
+    assert_eq!(repeated.as_deref(), Some(reply.error.message.as_str()));
+    assert!(!reply.error.message.contains("sk-secretsecretsecretsecret"));
 }
