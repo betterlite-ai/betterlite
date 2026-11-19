@@ -1,0 +1,37 @@
+kind: helper
+name: unknown-versus-empty-served-groups
+call:
+  spend_entities:
+    steps:
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 2.0
+        attributed: [a, b]
+        served_model_id: dep-unknown
+        deployments:
+          dep-known:
+            model_info: {}
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 2.0
+        attributed: [a, b]
+        served_model_id: dep-known
+        deployments:
+          dep-known:
+            model_info: {}
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 2.0
+        attributed: [a, b]
+        served_model_id: dep-empty
+        deployments:
+          dep-empty:
+            model_info: {access_groups: []}
+      - kind: enqueue
+        entity: team
+        response_cost: 1.0
+        team_id: team-1
+        user_id: user-1
+        database: false
+env: {}
+compare: {ignore: []}

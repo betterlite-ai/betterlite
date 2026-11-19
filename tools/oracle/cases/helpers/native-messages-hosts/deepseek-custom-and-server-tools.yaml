@@ -1,0 +1,64 @@
+kind: helper
+name: native-messages-hosts-deepseek-custom-and-server-tools
+call:
+  native_messages_hosts:
+    calls:
+      - function: transform
+        host: deepseek
+        model: deepseek-chat
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 64
+        system: null
+        tools:
+          - type: custom
+            name: run
+            input_schema:
+              type: object
+          - type: web_search_20250305
+            name: web_search
+          - name: plain
+          - passthrough
+      - function: transform
+        host: deepseek
+        model: deepseek-chat
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 64
+        system: null
+        tools: "not-a-list"
+      - function: transform
+        host: deepseek
+        model: deepseek-chat
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 64
+        system: "x-anthropic-billing-header: cc_version=2"
+        tools: null
+      - function: transform
+        host: tencent
+        model: hunyuan-t1
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 64
+        system: null
+        tools:
+          - type: custom
+            name: run
+      - function: transform
+        host: minimax
+        model: MiniMax-M2.1
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 64
+        system: null
+        tools:
+          - type: custom
+            name: run
+env: {}
+compare: {ignore: []}

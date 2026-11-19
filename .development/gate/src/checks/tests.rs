@@ -370,3 +370,29 @@ fn the_lint_lane_names_the_clippy_check_and_that_check_calls_the_lane() {
             .all(|command| command.run.contains(".development/flow/lint-lane.sh"))
     );
 }
+
+#[test]
+fn every_check_the_dispatcher_runs_before_the_review_is_in_the_catalog() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let catalog: Catalog = read_yaml(&source.join("checks.yaml")).unwrap();
+    let known: Vec<&str> = catalog
+        .base
+        .builtin
+        .iter()
+        .map(|check| <&str>::from(check.id))
+        .chain(
+            catalog
+                .base
+                .commands
+                .iter()
+                .map(|command| command.id.as_str()),
+        )
+        .collect();
+    let unbuilt = selection::unbuilt();
+    let unknown: Vec<&String> = unbuilt
+        .only
+        .iter()
+        .filter(|id| !known.contains(&id.as_str()))
+        .collect();
+    assert!(unknown.is_empty(), "{unknown:?}");
+}

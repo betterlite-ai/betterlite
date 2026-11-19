@@ -92,13 +92,16 @@ pub(crate) fn lint(id: &str) -> bool {
     }
 }
 
-// stage 3: CI runs every check that builds; these need none and took 2 to 61 s on six task heads on 11-16, while a push that fails only them costs a CI round, 39 minutes median
+// stage 3: CI runs every check that builds; these need none and took 2 to 61 s on six task heads on 11-16, while a push that fails only them costs a CI round, 39 minutes median; scope, diff-budget and file-size failed 14 CI rounds 11-17 to 11-19
 pub(crate) fn unbuilt() -> Selection {
     Selection {
         only: vec![
             "committed".to_owned(),
             "hooks".to_owned(),
             "similarity".to_owned(),
+            "scope".to_owned(),
+            "diff-budget".to_owned(),
+            "file-size".to_owned(),
         ],
         skip: Vec::new(),
         beside: Vec::new(),

@@ -1,14 +1,14 @@
 id: B165
 milestone: M12 python
 title: Embedded Python in the proxy for callbacks, hooks and providers that config.yaml names
-status: todo
+status: done
 depends_on: [B5369, B4143, B8040, B8041, B8042, B8043]
 file: tasks/B165-embedded-python-wiring.yaml
 covers:
   - "litellm/proxy/common_utils/callback_utils.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2500
