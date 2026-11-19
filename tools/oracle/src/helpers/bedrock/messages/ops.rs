@@ -73,12 +73,6 @@ fn metadata_params(call: &InvokeUrl) -> MetadataParams {
     params
 }
 
-// The invoke configs take Box<RawValue>, which serde's Content buffering cannot rebuild, so the case sends plain JSON.
-fn invoke_params(call: &InvokeUrl) -> Result<Params, Box<HelperError>> {
-    let value = serde_json::to_value(&call.optional_params).map_err(failure)?;
-    serde_json::from_value(value).map_err(failure)
-}
-
 fn environment(call: &InvokeUrl) -> InvokeEnvironment<'_> {
     InvokeEnvironment {
         region_name: call.environment.get("AWS_REGION_NAME").map(String::as_str),
@@ -175,7 +169,7 @@ fn header_object(headers: &IndexMap<String, String>) -> serde_json::Map<String, 
 
 fn invoke_url(call: &InvokeUrl) -> HelperResult {
     let (headers, unchanged) = messages_environment(call)?;
-    let params = invoke_params(call)?;
+    let params = call.invoke_params().map_err(failure)?;
     let url = complete_url(call, &params)?;
     let signed = signed_request(call, &url, &headers, &params)?;
     Ok(json!({
