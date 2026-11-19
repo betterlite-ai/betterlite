@@ -1,0 +1,2 @@
+# the openai_like settings section reads OPENAI_LIKE_API_KEY and OPENAI_LIKE_API_BASE from the environment
+model_list: []
