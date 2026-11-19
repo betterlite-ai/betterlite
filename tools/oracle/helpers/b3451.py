@@ -1,20 +1,22 @@
 import asyncio
 import base64
+import importlib
 from functools import partial
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import httpx
 import litellm
 from litellm.constants import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
+from litellm.litellm_core_utils import url_utils
 from litellm.llms.base_llm.ocr.transformation import OCRPage, OCRResponse
 from litellm.models.credentials import CredentialItem
+from litellm.rag import text_splitters
 from litellm.rag.ingestion import base_ingestion
 from litellm.rag.ingestion.base_ingestion import BaseRAGIngestion
 from litellm.rag.text_splitters.recursive_character_text_splitter import (
     RecursiveCharacterTextSplitter,
 )
 from litellm.types.rag import (
-    RAGChunkingStrategy,
     RAGIngestEmbeddingOptions,
     RAGIngestOCROptions,
     RAGIngestOptions,
@@ -112,7 +114,7 @@ class ChunkView(TypedDict):
 
 class TestIngestion(BaseRAGIngestion):
     @override
-    async def store(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L269-L294
+    async def store(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L269-L294
         self,
         file_content: bytes | None,
         filename: str | None,
@@ -150,13 +152,10 @@ class OcrRecorder:
 
     async def aocr(self, model: str, document: dict[str, JsonValue]) -> OCRResponse:
         self.calls.append({"model": model, "document": dict(document)})
-        return OCRResponse(
-            model=model,
-            pages=[
-                OCRPage(index=index, markdown=text)
-                for index, text in enumerate(self.pages)
-            ],
-        )
+        pages = [
+            OCRPage(index=index, markdown=text) for index, text in enumerate(self.pages)
+        ]
+        return OCRResponse(model=model, pages=pages)
 
 
 class FetchAnswer:
@@ -170,12 +169,9 @@ class FetchAnswer:
 
     async def answer(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
         del client
-        return httpx.Response(
-            self._status,
-            headers=self._headers,
-            content=self._body,
-            request=httpx.Request("GET", url),
-        )
+        reply = httpx.Response(self._status, headers=self._headers, content=self._body)
+        reply.request = httpx.Request("GET", url)
+        return reply
 
 
 def run(input_value: Input) -> InitView | UploadView | OcrView | ChunkView:
@@ -191,11 +187,12 @@ def run(input_value: Input) -> InitView | UploadView | OcrView | ChunkView:
 def _build(
     options: RAGIngestOptions, credentials: list[CredentialInput] | None
 ) -> TestIngestion:
+    info: dict[str, str] = {"source": "b3451"}
     listed = (
         [
             CredentialItem(
                 credential_name=credential["name"],
-                credential_info={},
+                credential_info=info,
                 credential_values=credential["values"],
             )
             for credential in credentials
@@ -248,7 +245,8 @@ def _init(input_value: InitInput) -> InitView:
 def _upload(input_value: UploadInput) -> UploadView:
     fetch = input_value.get("fetch")
     if fetch is not None:
-        base_ingestion.async_safe_get = partial(FetchAnswer(fetch).answer)
+        url_utils.async_safe_get = partial(FetchAnswer(fetch).answer)
+        importlib.reload(base_ingestion)
     instance = _build(input_value["options"], None)
     file_data_option = input_value.get("file_data")
     if file_data_option is None:
@@ -288,7 +286,8 @@ def _ocr(input_value: OcrInput) -> OcrView:
 
 
 def _chunk(input_value: ChunkInput) -> ChunkView:
-    base_ingestion.RecursiveCharacterTextSplitter = GuardedSplitter
+    text_splitters.RecursiveCharacterTextSplitter = GuardedSplitter
+    importlib.reload(base_ingestion)
     instance = _build(input_value["options"], None)
     encoded = input_value.get("file_content_base64")
     content = None if encoded is None else base64.b64decode(encoded)

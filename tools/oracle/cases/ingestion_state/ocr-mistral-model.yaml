@@ -4,7 +4,8 @@ call:
   b3451:
     mode: ocr
     options:
-      ocr: {}
+      ocr:
+        model: mistral/mistral-ocr-latest
     file_content_base64: aGVsbG8gb2Ny
     content_type: application/pdf
     pages:
