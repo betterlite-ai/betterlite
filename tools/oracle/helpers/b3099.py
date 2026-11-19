@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from litellm.proxy.analytics_endpoints.analytics_endpoints import router
 from pydantic import JsonValue, TypeAdapter
 
-PATHS = TypeAdapter(dict[str, JsonValue])
+PATHS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
 app = FastAPI()
 app.include_router(router)
@@ -19,4 +19,8 @@ def run(input_value: Input) -> JsonValue:
     response = TestClient(app).get("/openapi.json")
     document = PATHS.validate_json(response.text)
     paths = PATHS.validate_python(document["paths"])
-    return {"path": input_value["path"], "documented": input_value["path"] in paths}
+    answer: dict[str, JsonValue] = {
+        "path": input_value["path"],
+        "documented": input_value["path"] in paths,
+    }
+    return answer
