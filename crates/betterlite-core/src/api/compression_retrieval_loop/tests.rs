@@ -265,6 +265,11 @@ fn resolve_returns_no_key_text_for_inputs_without_a_string_key() {
         retrieval_content(&null_key, &cache).expect("resolves"),
         expected
     );
+    let number_key = object(vec![("input", object(vec![("key", number(1))]))]);
+    assert_eq!(
+        retrieval_content(&number_key, &cache).expect("resolves"),
+        expected
+    );
     let empty_key = object(vec![("input", object(vec![("key", text(""))]))]);
     assert_eq!(
         retrieval_content(&empty_key, &cache).expect("resolves"),
