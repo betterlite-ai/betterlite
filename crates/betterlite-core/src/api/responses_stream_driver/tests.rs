@@ -958,10 +958,9 @@ fn a_known_completed_event_is_terminal() {
 
 #[test]
 fn a_generic_completed_event_is_terminal() {
-    let event: Event = serde_json::from_str(
-        r#"{"type":"response.completed","response":"not a response body"}"#,
-    )
-    .expect("the fixture event decodes");
+    let event: Event =
+        serde_json::from_str(r#"{"type":"response.completed","response":"not a response body"}"#)
+            .expect("the fixture event decodes");
     assert!(is_completed(&event));
 }
 

@@ -198,13 +198,8 @@ where
                 )
                 .await
         };
-        outcome.map_err(|error| {
-            DriverError::Class {
-                class: error.error_class(
-                    &self.state.model,
-                    self.state.custom_llm_provider.as_deref(),
-                ),
-            }
+        outcome.map_err(|error| DriverError::Class {
+            class: error.error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
         })
     }
 
