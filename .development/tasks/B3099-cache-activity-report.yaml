@@ -70,6 +70,12 @@ description: >-
   database; row grouping, totals and the error breakdown are covered by the native Postgres tests.
 scope:
   paths:
+    - "tools/oracle/src/gateway.rs"
+    - "crates/betterlite-server/src/routes.rs"
+    - "crates/betterlite-server/src/lib.rs"
+    - "crates/betterlite-server/src/app/spend.rs"
+    - "crates/betterlite-server/src/app.rs"
+    - "crates/betterlite-server/src/app"
     - crates/betterlite-server/src/cache_activity_routes.rs
     - crates/betterlite-server/src/cache_activity_routes/**
     - tools/oracle/cases/management/cache-activity/**

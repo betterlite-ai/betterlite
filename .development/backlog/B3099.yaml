@@ -1,7 +1,7 @@
 id: B3099
 milestone: M4 keys, spend and management
 title: Report cache activity, errors and available filters
-status: todo
+status: in-progress
 depends_on: [B003, B700, B868]
 file: tasks/B3099-cache-activity-report.yaml
 covers:
