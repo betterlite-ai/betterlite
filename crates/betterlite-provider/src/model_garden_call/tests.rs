@@ -22,7 +22,7 @@ use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_vertex::model_policy::error::VertexAiError;
 use chrono::DateTime;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -173,7 +173,7 @@ fn answer<'call>(
     listener: &'call TcpListener,
     status: u16,
     reply: &'call [u8],
-) -> LocalBoxFuture<'call, (String, Result<CompatibleChatOutcome, VertexAiError>)> {
+) -> BoxFuture<'call, (String, Result<CompatibleChatOutcome, VertexAiError>)> {
     Box::pin(async move {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
         let (mut state, env) = logging(&redactor);
