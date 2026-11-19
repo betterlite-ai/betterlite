@@ -63,7 +63,7 @@ fn every_router_param_field_is_recognized_on_a_regular_model(#[case] field: &str
 
 #[test]
 fn a_non_router_field_on_a_regular_model_is_accepted() {
-    assert!(validate_model_write("gpt-4o", &names(&["embedding_model"])).is_ok());
+    validate_model_write("gpt-4o", &names(&["embedding_model"])).unwrap();
 }
 
 #[test]
@@ -137,7 +137,11 @@ fn a_write_missing_settings_names_every_group(
         StrategyRouterWriteError::MissingSettings { requirements, .. } => {
             assert_eq!(requirements, expected);
         }
-        other => panic!("expected missing settings, got {other:?}"),
+        other @ StrategyRouterWriteError::UnexpectedSettings { .. }
+        | other @ StrategyRouterWriteError::RepeatedPrefix { .. }
+        | other @ StrategyRouterWriteError::MissingRouterName { .. } => {
+            panic!("expected missing settings, got {other:?}")
+        }
     }
 }
 
@@ -188,8 +192,8 @@ fn a_placement_violation_lists_every_key_in_sorted_order() {
 fn a_clean_placement_is_accepted() {
     let unrelated =
         params(r#"{"model":"gpt-4o","complexity_router_config":{"tiers":{}},"api_key":"x"}"#);
-    assert!(validate_config_placement(Some(&unrelated)).is_ok());
-    assert!(validate_config_placement(Some(&params("{}"))).is_ok());
+    validate_config_placement(Some(&unrelated)).unwrap();
+    validate_config_placement(Some(&params("{}"))).unwrap();
 }
 
 #[rstest]
@@ -349,6 +353,10 @@ fn a_config_write_rule_error_keeps_the_rule_as_its_cause() {
             assert_eq!(location, "complexity_router_config");
             assert!(source.to_string().contains("plan_mode_min_tier"));
         }
-        other => panic!("expected an invalid config, got {other:?}"),
+        other @ ComplexityConfigWriteError::NotAnObject
+        | other @ ComplexityConfigWriteError::InvalidField { .. }
+        | other @ ComplexityConfigWriteError::Unreadable { .. } => {
+            panic!("expected an invalid config, got {other:?}")
+        }
     }
 }

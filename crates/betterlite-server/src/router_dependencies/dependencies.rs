@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::tier_definitions::checks::ClassifierKind;
 
-use super::values::{classifier_kind, field, object, text};
+use super::values::{classifier_kind, object, text};
 use super::{
     StrategyRouterDependency, StrategyRouterDependencyRole, StrategyRouterKind,
     classify_strategy_router_model,
@@ -24,10 +24,8 @@ pub fn strategy_router_dependencies(litellm_params: &JsonObject) -> Vec<Strategy
         StrategyRouterKind::Semantic => semantic_dependencies(litellm_params),
         StrategyRouterKind::Complexity => complexity_dependencies(litellm_params),
         StrategyRouterKind::Adaptive => pool(
-            field(
-                object(litellm_params.get("adaptive_router_config")),
-                "available_models",
-            ),
+            object(litellm_params.get("adaptive_router_config"))
+                .and_then(|fields| fields.get("available_models")),
             StrategyRouterDependencyRole::Tier,
         ),
         StrategyRouterKind::Quality => quality_dependencies(litellm_params),
@@ -56,11 +54,11 @@ fn quality_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDepend
     // an absent or null deployment default takes the config default_model; a written value stays as given
     let declared = litellm_params.get("quality_router_default_model");
     let default_model = match declared {
-        None | Some(Json::Null) => field(quality, "default_model"),
+        None | Some(Json::Null) => quality.and_then(|fields| fields.get("default_model")),
         Some(_) => declared,
     };
     let available = pool(
-        field(quality, "available_models"),
+        quality.and_then(|fields| fields.get("available_models")),
         StrategyRouterDependencyRole::Tier,
     );
     let default = named(default_model, StrategyRouterDependencyRole::Default);
@@ -74,14 +72,16 @@ fn complexity_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDep
         litellm_params.get("complexity_router_default_model"),
         StrategyRouterDependencyRole::Default,
     ));
+    let compaction = object(config.and_then(|fields| fields.get("context_compaction")));
     dependencies.extend(named(
-        field(object(field(config, "context_compaction")), "model"),
+        compaction.and_then(|fields| fields.get("model")),
         StrategyRouterDependencyRole::Compactor,
     ));
     let classifier = classifier_kind(config);
     if classifier.is_some_and(ClassifierKind::uses_llm) {
+        let llm_config = object(config.and_then(|fields| fields.get("classifier_llm_config")));
         dependencies.extend(named(
-            field(object(field(config, "classifier_llm_config")), "model"),
+            llm_config.and_then(|fields| fields.get("model")),
             StrategyRouterDependencyRole::Classifier,
         ));
     }
@@ -89,11 +89,11 @@ fn complexity_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDep
         dependencies.push(jev_dependency(config));
     }
     if matches!(
-        field(config, "semantic_keyword_matching"),
+        config.and_then(|fields| fields.get("semantic_keyword_matching")),
         Some(Json::Bool(true))
     ) {
         dependencies.extend(named(
-            field(config, "embedding_model"),
+            config.and_then(|fields| fields.get("embedding_model")),
             StrategyRouterDependencyRole::Embedding,
         ));
     }
@@ -101,7 +101,7 @@ fn complexity_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDep
 }
 
 fn tier_dependencies(config: Option<&JsonObject>) -> Vec<StrategyRouterDependency> {
-    let Some(tiers) = object(field(config, "tiers")) else {
+    let Some(tiers) = object(config.and_then(|fields| fields.get("tiers"))) else {
         return Vec::new();
     };
     tiers
@@ -112,15 +112,16 @@ fn tier_dependencies(config: Option<&JsonObject>) -> Vec<StrategyRouterDependenc
 
 // without a deployment_name the jev classifier calls the bundled evaluation model through typesafe/
 fn jev_dependency(config: Option<&JsonObject>) -> StrategyRouterDependency {
-    let jev = object(field(config, "jev_classifier_config"));
-    let deployment = text(field(jev, "deployment_name")).filter(|name| !name.is_empty());
+    let jev = object(config.and_then(|fields| fields.get("jev_classifier_config")));
+    let deployment =
+        text(jev.and_then(|fields| fields.get("deployment_name"))).filter(|name| !name.is_empty());
     if let Some(name) = deployment {
         return StrategyRouterDependency {
             model_name: name.to_owned(),
             role: StrategyRouterDependencyRole::Classifier,
         };
     }
-    let model = text(field(jev, "model")).unwrap_or(JEV_DEFAULT_MODEL);
+    let model = text(jev.and_then(|fields| fields.get("model"))).unwrap_or(JEV_DEFAULT_MODEL);
     StrategyRouterDependency {
         model_name: format!("typesafe/{model}"),
         role: StrategyRouterDependencyRole::Evaluation,

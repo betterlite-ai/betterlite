@@ -433,40 +433,36 @@ fn carries_complexity_router_settings_reads_the_name_or_the_key_set(
 #[case::quality("auto_router/quality_router", vec!["quality_router_default_model"])]
 #[case::regular("gpt-4o", vec![])]
 fn a_coherent_write_is_accepted(#[case] model: &str, #[case] present: Vec<&str>) {
-    assert!(validate_model_write(model, &names(&present)).is_ok());
+    validate_model_write(model, &names(&present)).unwrap();
 }
 
 #[test]
 fn a_placement_clean_deployment_is_accepted() {
-    assert!(validate_config_placement(None).is_ok());
+    validate_config_placement(None).unwrap();
     let litellm_params = params(r#"{"model":"gpt-4o","complexity_router_config":{"tiers":{}}}"#);
-    assert!(validate_config_placement(Some(&litellm_params)).is_ok());
+    validate_config_placement(Some(&litellm_params)).unwrap();
 }
 
 #[test]
 fn a_config_write_is_judged_like_the_load() {
-    assert!(validate_config_write(None).is_ok());
-    assert!(validate_config_write(Some(&json("null"))).is_ok());
-    assert!(validate_config_write(Some(&json("{}"))).is_ok());
-    assert!(
-        validate_config_write(Some(&json(
-            r#"{"classifier_type":"llm","fallback_tier":"ECO",
-                "tier_definitions":[{"name":"ECO","description":"cheap asks"},
-                                    {"name":"DEEP","description":"hard asks"}],
-                "tiers":{"ECO":"eco-mini","DEEP":"deep"}}"#
-        )))
-        .is_ok()
-    );
+    validate_config_write(None).unwrap();
+    validate_config_write(Some(&json("null"))).unwrap();
+    validate_config_write(Some(&json("{}"))).unwrap();
+    validate_config_write(Some(&json(
+        r#"{"classifier_type":"llm","fallback_tier":"ECO",
+            "tier_definitions":[{"name":"ECO","description":"cheap asks"},
+                                {"name":"DEEP","description":"hard asks"}],
+            "tiers":{"ECO":"eco-mini","DEEP":"deep"}}"#,
+    )))
+    .unwrap();
 }
 
 #[test]
 fn a_top_level_null_takes_the_default() {
-    assert!(
-        validate_config_write(Some(&json(
-            r#"{"plan_mode_min_tier":null,"tiers":null,"adaptive":null}"#
-        )))
-        .is_ok()
-    );
+    validate_config_write(Some(&json(
+        r#"{"plan_mode_min_tier":null,"tiers":null,"adaptive":null}"#,
+    )))
+    .unwrap();
 }
 
 #[test]

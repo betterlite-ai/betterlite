@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::tier_definitions::checks::ClassifierKind;
 
-use super::values::{classifier_kind, field, object, text};
+use super::values::{classifier_kind, object, text};
 use super::{complexity_router_fields, is_complexity_router_model};
 
 // LiteLLM's DEFAULT_JEV_INSTRUCTIONS: instructions equal to it are the shipped prompt, not an operator's
@@ -24,7 +24,7 @@ pub fn uses_heuristic_v2_classifier(complexity_router_config: Option<&JsonObject
 #[must_use]
 pub fn defines_custom_tiers(complexity_router_config: Option<&JsonObject>) -> bool {
     matches!(
-        field(complexity_router_config, "tier_definitions"),
+        complexity_router_config.and_then(|fields| fields.get("tier_definitions")),
         Some(Json::List(_))
     )
 }
@@ -33,22 +33,22 @@ pub fn defines_custom_tiers(complexity_router_config: Option<&JsonObject>) -> bo
 pub fn defines_custom_prompt(complexity_router_config: Option<&JsonObject>) -> bool {
     match classifier_kind(complexity_router_config) {
         Some(ClassifierKind::Jev) => {
-            let instructions = text(field(
-                object(field(complexity_router_config, "jev_classifier_config")),
-                "instructions",
-            ));
+            let jev_config = object(
+                complexity_router_config.and_then(|fields| fields.get("jev_classifier_config")),
+            );
+            let instructions = text(jev_config.and_then(|fields| fields.get("instructions")));
             instructions.is_some_and(|written| written != DEFAULT_JEV_INSTRUCTIONS)
         }
         Some(kind) if kind.uses_llm() => {
             // an explicit null is not a written prompt, matching LiteLLM's "is not None" reads
-            let system_prompt = field(
-                object(field(complexity_router_config, "classifier_llm_config")),
-                "system_prompt",
+            let llm_config = object(
+                complexity_router_config.and_then(|fields| fields.get("classifier_llm_config")),
             );
+            let system_prompt = llm_config.and_then(|fields| fields.get("system_prompt"));
             is_written(system_prompt)
-                || OPERATOR_PROMPT_FIELDS
-                    .iter()
-                    .any(|name| is_written(field(complexity_router_config, name)))
+                || OPERATOR_PROMPT_FIELDS.iter().any(|name| {
+                    is_written(complexity_router_config.and_then(|fields| fields.get(*name)))
+                })
         }
         _ => false,
     }

@@ -19,16 +19,9 @@ pub(super) const fn object(value: Option<&Json>) -> Option<&JsonObject> {
     }
 }
 
-pub(super) fn field<'json>(source: Option<&'json JsonObject>, key: &str) -> Option<&'json Json> {
-    match source {
-        Some(fields) => fields.get(key),
-        _ => None,
-    }
-}
-
 // LiteLLM compares the raw classifier_type spelling, so an unknown or non-text value classifies as none
 pub(super) fn classifier_kind(config: Option<&JsonObject>) -> Option<ClassifierKind> {
-    let name = text(field(config, "classifier_type"))?;
+    let name = text(config.and_then(|fields| fields.get("classifier_type")))?;
     let declared = StrDeserializer::<Error>::new(name);
     ClassifierKind::deserialize(declared).ok()
 }
