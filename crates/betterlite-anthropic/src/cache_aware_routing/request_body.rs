@@ -1,7 +1,5 @@
 use url::Url;
 
-use crate::cache_prediction_targets::messages_url::MESSAGES_PATH;
-
 // urlparse().path keeps everything before the query and fragment, whether or not the URL names a scheme.
 pub(super) fn url_path(url: &str) -> String {
     let Ok(parsed) = Url::parse(url) else {
