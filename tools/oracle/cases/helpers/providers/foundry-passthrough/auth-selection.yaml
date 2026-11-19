@@ -1,0 +1,31 @@
+kind: helper
+name: foundry-passthrough-auth-selection
+call:
+  foundry_passthrough:
+    validations:
+      - {api_key: fixture-key, api_base: https://res.services.ai.azure.com}
+      - {api_key: fixture-key, api_base: https://my-res.services.ai.azure.com, headers: {x-caller: kept}}
+      - {api_key: fixture-key, api_base: https://my.openai.azure.com}
+      - {api_key: fixture-key, api_base: https://my.openai.azure.com, headers: {api-key: caller}}
+      - {api_key: fixture-key, api_base: https://res.services.ai.azure.com, headers: {Authorization: caller}}
+      - {params: {azure_ad_token: fixture-token}, api_base: https://res.services.ai.azure.com}
+      - {environment: {AZURE_AD_TOKEN: env-token}, api_base: https://res.services.ai.azure.com}
+      - {api_key: "", api_base: https://res.services.ai.azure.com}
+      - {}
+      - {api_key: fixture-key}
+      - {api_key: fixture-key, params: {azure_ad_token: fixture-token}, api_base: https://res.services.ai.azure.com}
+    bases:
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: https://res.services.ai.azure.com}
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, environment_api_base: https://res.services.ai.azure.com}
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, global_api_base: https://res.services.ai.azure.com}
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr}
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: https://explicit.example, environment_api_base: https://env.example, global_api_base: https://global.example}
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: "", global_api_base: https://global.example}
+    streams:
+      - {model: gpt-4o, endpoint: rerank, request_data: {stream: true}}
+      - {model: gpt-4o, endpoint: rerank, request_data: {stream: false}}
+      - {model: gpt-4o, endpoint: rerank}
+      - {model: gpt-4o, endpoint: rerank, request_data: {stream: 0}}
+      - {model: gpt-4o, endpoint: rerank, request_data: {stream: "x"}}
+env: {}
+compare: {ignore: []}

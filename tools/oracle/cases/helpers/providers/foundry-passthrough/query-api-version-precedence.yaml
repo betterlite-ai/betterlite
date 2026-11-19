@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-passthrough-query-api-version-precedence
+call:
+  foundry_passthrough:
+    queries:
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1&x=1", request_query_params: {api-version: caller}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1", request_query_params: {api-version: null}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1", request_query_params: {api-version: ""}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1&x=2", deployment_api_version: dep-1, request_query_params: {a: b}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1"}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1&api-version=base-2"}
+      - {api_base: "https://res.services.ai.azure.com?x=1"}
+      - {api_base: "https://res.services.ai.azure.com?x=1", request_query_params: {}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=base-1", deployment_api_version: ""}
+    bases:
+      - {model: m, endpoint: routes/x, api_base: "https://res.services.ai.azure.com?api-version=base-1", litellm_params: {api_version: 2025}}
+      - {model: m, endpoint: routes/x, api_base: "https://res.services.ai.azure.com?api-version=base-1", litellm_params: {api_version: dep-2}}
+      - {model: m, endpoint: routes/x, api_base: "https://res.services.ai.azure.com?api-version=base-1", litellm_params: {api_version: ""}}
+      - {model: m, endpoint: routes/x, api_base: "https://res.services.ai.azure.com?x=1"}
+      - {model: m, endpoint: routes/x, api_base: https://res.services.ai.azure.com, request_query_params: {api-version: caller}}
+env: {}
+compare: {ignore: []}

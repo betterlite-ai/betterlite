@@ -1,0 +1,20 @@
+kind: helper
+name: foundry-passthrough-repeated-native-prefix
+call:
+  foundry_passthrough:
+    prefixes:
+      - {root: https://res.services.ai.azure.com/openai, native_endpoint: openai/v1/chat}
+      - {root: https://res.services.ai.azure.com/providers/mistral/azure/ocr, native_endpoint: providers/mistral/azure/ocr}
+      - {root: https://res.services.ai.azure.com/OpenAI, native_endpoint: openai/v1}
+      - {root: https://res.services.ai.azure.com/Providers/Mistral, native_endpoint: providers/mistral/azure/ocr}
+      - {root: https://res.services.ai.azure.com/a/providers/mistral, native_endpoint: providers/mistral/azure}
+      - {root: https://res.services.ai.azure.com/openai/v1, native_endpoint: openai/v1}
+      - {root: https://res.services.ai.azure.com/OpenAI/V1, native_endpoint: openai/v1}
+      - {root: https://res.services.ai.azure.com/x/openai, native_endpoint: openai}
+      - {root: https://res.services.ai.azure.com/x/openai/chat, native_endpoint: openai}
+      - {root: https://res.services.ai.azure.com/zzz, native_endpoint: openai/v1}
+    bases:
+      - {model: mistral-ocr-latest, endpoint: mistral-ocr-latest/providers/mistral/azure/ocr, api_base: https://res.services.ai.azure.com/providers/mistral/azure/ocr}
+      - {model: m, endpoint: grp/providers/mistral/azure/ocr, api_base: https://res.services.ai.azure.com/providers/mistral/azure/ocr, litellm_params: {litellm_metadata: {model_group: grp}}}
+env: {}
+compare: {ignore: []}

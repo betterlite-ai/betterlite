@@ -1,0 +1,25 @@
+kind: helper
+name: foundry-passthrough-logs
+call:
+  foundry_passthrough:
+    validations:
+      - api_key: fixture-key
+        api_base: https://res.services.ai.azure.com
+        headers: {x-caller: kept}
+    nonstreams:
+      - status: 200
+        body: '{"pages":[{"index":0,"markdown":"# page"}],"model":"mistral-ocr-latest"}'
+        model: mistral-ocr-latest
+        endpoint: providers/mistral/azure/ocr
+        ocr: {response: '{"pages":[{"index":0,"markdown":"# page"}],"model":"mistral-ocr-latest"}'}
+      - status: 200
+        body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}]}'
+        model: cohere-rerank
+        endpoint: rerank
+    streams:
+      - model: gpt-4o
+        endpoint: responses
+        chunks: ['data: {"type":"response.completed","response":{"id":"resp_1","created_at":7,"output":[],"status":"completed"}}']
+        request_data: {stream: true}
+env: {}
+compare: {ignore: []}

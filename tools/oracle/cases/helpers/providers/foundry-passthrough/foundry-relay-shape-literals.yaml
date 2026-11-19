@@ -1,0 +1,35 @@
+kind: helper
+name: foundry-passthrough-foundry-relay-shape-literals
+call:
+  foundry_passthrough:
+    nonstreams:
+      - status: 200
+        model: cohere-rerank
+        endpoint: rerank
+        body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}],"meta":{"billed_units":{"search_units":1}}}'
+      - status: 200
+        model: flux-2-pro
+        endpoint: providers/blackforestlabs/v1/flux-2-pro
+        body: '{"created":7,"data":[{"url":"https://img.example/x.png"}]}'
+      - status: 200
+        model: cohere-rerank
+        endpoint: /v1/rerank
+        body: '{"id":"r2","results":[{"index":1,"relevance_score":0.25}]}'
+      - status: 200
+        model: cohere-rerank
+        endpoint: rerank
+        body: '{"id":"r3","results":[{"index":0}]}'
+      - status: 201
+        model: cohere-rerank
+        endpoint: rerank
+        body: '{"id":"r4","results":[{"index":0,"relevance_score":0.75}]}'
+      - status: 200
+        model: text-embedding-3-small
+        endpoint: embeddings
+        body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,-1.5]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":8,"total_tokens":8}}'
+      - status: 200
+        model: flux-2-pro
+        endpoint: providers/blackforestlabs/v1/flux-2-pro
+        body: '{"created":"yesterday"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,41 @@
+kind: helper
+name: foundry-passthrough-ocr-usage-log
+call:
+  foundry_passthrough:
+    nonstreams:
+      - status: 200
+        model: mistral-ocr-latest
+        endpoint: providers/mistral/azure/ocr
+        body: '{"pages":[{"index":0,"markdown":"# page"}],"model":"mistral-ocr-latest","usage_info":{"pages_processed":2,"credits":1.5,"doc_size_bytes":9}}'
+        ocr:
+          response: '{"pages":[{"index":0,"markdown":"# page"}],"model":"mistral-ocr-latest","usage_info":{"pages_processed":2,"credits":1.5,"doc_size_bytes":9}}'
+      - status: 200
+        model: mistral-ocr-latest
+        endpoint: mistral-ocr-latest/providers/mistral/azure/ocr
+        body: '{"pages":[],"model":"mistral-ocr-latest"}'
+        ocr:
+          response: '{"pages":[],"model":"mistral-ocr-latest"}'
+      - status: 200
+        model: cohere-rerank
+        endpoint: rerank
+        body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}]}'
+        ocr: {malformed: true}
+      - status: 201
+        model: mistral-ocr-latest
+        endpoint: providers/mistral/azure/ocr
+        body: '{"pages":[],"model":"mistral-ocr-latest"}'
+        ocr:
+          response: '{"pages":[],"model":"mistral-ocr-latest"}'
+      - status: 200
+        model: mistral-ocr-latest
+        endpoint: providers/mistral/azure/ocr
+        body: '{"ok":true}'
+        ocr: {}
+      - status: 200
+        model: mistral-ocr-latest
+        endpoint: providers/mistral/azure/ocr
+        body: '{"model":"mistral-ocr-latest"}'
+        ocr:
+          response: '{"model":"mistral-ocr-latest"}'
+env: {}
+compare: {ignore: []}
