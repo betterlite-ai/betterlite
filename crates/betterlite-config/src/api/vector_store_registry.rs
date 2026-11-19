@@ -8,8 +8,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
 
-// one vector_store_registry entry: the name sits at the top level, every store parameter under
-// litellm_params, exactly the two keys LiteLLM_VectorStoreConfig declares
+// one vector_store_registry entry: the name sits at the top level, every store parameter under litellm_params, exactly the two keys LiteLLM_VectorStoreConfig declares
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct RegistryEntry {
     #[serde(default)]
@@ -18,7 +17,6 @@ pub struct RegistryEntry {
     pub litellm_params: Option<JsonObject>,
 }
 
-// an absent section leaves no configured registry, and an empty list loads no entries
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub stores: Vec<RegistryEntry>,

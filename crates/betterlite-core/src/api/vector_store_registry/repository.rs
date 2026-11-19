@@ -16,12 +16,10 @@ use deadpool_postgres::GenericClient as _;
 use deadpool_postgres::tokio_postgres::Row;
 use serde::de::DeserializeOwned;
 
-// Prisma's find_many(order={"created_at": "desc"}) shapes every row the same way for both tables
-const STORES_SQL: &str = "SELECT to_jsonb(row)::text FROM \"LiteLLM_ManagedVectorStoresTable\" AS row \
-     ORDER BY row.created_at DESC";
+// find_many(order={"created_at": "desc"}) shapes both tables the same way
+const STORES_SQL: &str = "SELECT to_jsonb(row)::text FROM \"LiteLLM_ManagedVectorStoresTable\" AS row ORDER BY row.created_at DESC";
 
-const INDEXES_SQL: &str = "SELECT to_jsonb(row)::text FROM \"LiteLLM_ManagedVectorStoreIndexTable\" AS row \
-     ORDER BY row.created_at DESC";
+const INDEXES_SQL: &str = "SELECT to_jsonb(row)::text FROM \"LiteLLM_ManagedVectorStoreIndexTable\" AS row ORDER BY row.created_at DESC";
 
 // the two table reads the registry makes, so a test answers them without Postgres
 pub trait VectorStoreDatabase: Send + Sync {

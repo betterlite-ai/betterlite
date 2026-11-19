@@ -171,10 +171,9 @@ fn tool_params_fields(tool: Option<&JsonObject>) -> (Value, Value) {
 }
 
 fn tool_params_record(params: &VectorStoreToolParams) -> Value {
-    let results = match params.max_num_results {
-        Some(results) => json!(results),
-        None => Value::Null,
-    };
+    let results = params
+        .max_num_results
+        .map_or(Value::Null, |results| json!(results));
     json!({
         "filters": object_value(params.filters.as_ref()),
         "max_num_results": results,

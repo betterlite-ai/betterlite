@@ -26,7 +26,6 @@ impl VectorStoreCredentials for CredentialSnapshot {
     }
 }
 
-// VectorStoreRegistry: the ordered in-memory registry the proxy reads before it reaches the database
 pub struct VectorStoreRegistry {
     pub stores: Vec<LiteLlmManagedVectorStore>,
     clock: RegistryClock,
@@ -58,8 +57,7 @@ impl VectorStoreRegistry {
         }
     }
 
-    // load_vector_stores_from_config: an entry is appended as it converts, so a later bad entry
-    // leaves the earlier records in place and raises without logging
+    // load_vector_stores_from_config: each entry appends as it converts, so a bad one leaves the earlier records and raises without logging
     pub fn load_vector_stores_from_config(
         &mut self,
         entries: &[RegistryEntry],
@@ -86,8 +84,7 @@ impl VectorStoreRegistry {
         None
     }
 
-    // get_litellm_managed_vector_store_from_registry_or_db: memory first, then a database hit that
-    // joins the registry, and a database failure logs at debug and answers None
+    // get_litellm_managed_vector_store_from_registry_or_db: memory first, then a database hit that joins the registry, and a failure logs at debug and answers None
     pub async fn lookup_or_database<D>(
         &mut self,
         vector_store_id: &str,
@@ -116,7 +113,6 @@ impl VectorStoreRegistry {
         found
     }
 
-    // is_config_vector_store
     #[must_use]
     pub fn is_config(&self, vector_store_id: &str) -> bool {
         for store in &self.stores {
@@ -147,8 +143,7 @@ impl VectorStoreRegistry {
         }
     }
 
-    // update_vector_store_in_registry: the whole record is replaced in place, a config-owned one is
-    // left untouched, and a missing id appends the update under the id it carries
+    // update_vector_store_in_registry: the record is replaced in place, a config-owned one is left untouched, and a missing id appends the update under the id it carries
     pub fn update_store(&mut self, vector_store_id: &str, updated: LiteLlmManagedVectorStore) {
         let position = self
             .stores
@@ -166,9 +161,7 @@ impl VectorStoreRegistry {
         }
     }
 
-    // get_credentials_for_vector_store: every record carrying the id is tried in order, the first
-    // nonempty litellm_credential_name reaches the accessor, and inline litellm_params.api_key is
-    // never returned
+    // get_credentials_for_vector_store: the first nonempty litellm_credential_name reaches the accessor, and inline litellm_params.api_key is never returned
     #[must_use]
     pub fn credentials_for_vector_store(&self, vector_store_id: &str) -> JsonObject {
         for store in &self.stores {

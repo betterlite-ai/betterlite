@@ -126,9 +126,7 @@ def step_value(step: Step, registry: VectorStoreRegistry, indexes: VectorStoreIn
             registry.add_vector_store_to_registry(vector_store=step["store"])
             result = {"stores": [store_value(store) for store in registry.vector_stores]}
         case "update":
-            registry.update_vector_store_in_registry(
-                vector_store_id=step["id"], updated_data=step["store"]
-            )
+            registry.update_vector_store_in_registry(vector_store_id=step["id"], updated_data=step["store"])
             result = {"stores": [store_value(store) for store in registry.vector_stores]}
         case "delete":
             registry.delete_vector_store_from_registry(vector_store_id=step["id"])
@@ -156,12 +154,6 @@ def step_value(step: Step, registry: VectorStoreRegistry, indexes: VectorStoreIn
     return result
 
 
-def client_for(database: DatabaseFields | None, calls: list[JsonValue]) -> PrismaClient | None:
-    if database is None:
-        return None
-    return FakeClient(database, calls)
-
-
 def config_records(input_value: Input) -> JsonValue:
     registry = VectorStoreRegistry()
     raised: str | None = None
@@ -186,7 +178,8 @@ def mutations(input_value: Input) -> JsonValue:
 def database_lookup(input_value: Input) -> JsonValue:
     registry = VectorStoreRegistry(vector_stores=input_value["stores"])
     calls: list[JsonValue] = []
-    client = client_for(input_value.get("database"), calls)
+    database = input_value.get("database")
+    client = None if database is None else FakeClient(database, calls)
     results: list[JsonValue] = []
     for lookup in input_value["lookups"]:
         found = asyncio.run(
@@ -200,7 +193,8 @@ def database_lookup(input_value: Input) -> JsonValue:
 
 def database_rows(input_value: Input) -> JsonValue:
     calls: list[JsonValue] = []
-    client = client_for(input_value.get("database"), calls)
+    database = input_value.get("database")
+    client = None if database is None else FakeClient(database, calls)
     stores: list[JsonValue] = []
     stores_failed = False
     try:
@@ -215,13 +209,9 @@ def database_rows(input_value: Input) -> JsonValue:
         indexes = [index_value(index) for index in index_rows]
     except RuntimeError:
         indexes_failed = True
-    return {
-        "stores": stores,
-        "stores_failed": stores_failed,
-        "indexes": indexes,
-        "indexes_failed": indexes_failed,
-        "database_calls": calls,
-    }
+    return {"stores": stores, "stores_failed": stores_failed,
+            "indexes": indexes, "indexes_failed": indexes_failed,
+            "database_calls": calls}
 
 
 def ids_and_tool_params(input_value: Input) -> JsonValue:
@@ -243,13 +233,9 @@ def ids_and_tool_params(input_value: Input) -> JsonValue:
         }
     except TypeError as error:
         raised = str(error)
-    return {
-        "ids": ids,
-        "params": input_value["non_default_params"],
-        "tools": JSON_VALUE.validate_python(input_value["tools"]),
-        "tool_params": params,
-        "raised": raised,
-    }
+    return {"ids": ids, "params": input_value["non_default_params"],
+            "tools": JSON_VALUE.validate_python(input_value["tools"]),
+            "tool_params": params, "raised": raised}
 
 
 def named_credentials(input_value: Input) -> JsonValue:
@@ -261,12 +247,11 @@ def named_credentials(input_value: Input) -> JsonValue:
         ]
         litellm.credential_list = CREDENTIALS.validate_python(records)
         registry = VectorStoreRegistry(vector_stores=input_value["stores"])
-        return {
-            "credentials": [
-                OBJECT.validate_python(registry.get_credentials_for_vector_store(identifier))
-                for identifier in input_value["ids"]
-            ]
-        }
+        credentials = [
+            OBJECT.validate_python(registry.get_credentials_for_vector_store(identifier))
+            for identifier in input_value["ids"]
+        ]
+        return {"credentials": credentials}
     finally:
         litellm.credential_list = previous
 

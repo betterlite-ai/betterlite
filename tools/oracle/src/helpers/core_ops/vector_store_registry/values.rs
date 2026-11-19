@@ -6,11 +6,7 @@ use serde_json::{Value, json};
 // the record projection both sides compare: the two clock stamps are left out because each side
 // reads its own clock, and the native tests prove the injected instant
 pub(super) fn stores_value(stores: &[LiteLlmManagedVectorStore]) -> Value {
-    let mut values = Vec::with_capacity(stores.len());
-    for store in stores {
-        values.push(store_value(store));
-    }
-    Value::Array(values)
+    Value::Array(stores.iter().map(store_value).collect())
 }
 
 pub(super) fn store_value(store: &LiteLlmManagedVectorStore) -> Value {
@@ -29,11 +25,7 @@ pub(super) fn store_value(store: &LiteLlmManagedVectorStore) -> Value {
 }
 
 pub(super) fn indexes_value(indexes: &[LiteLlmManagedVectorStoreIndex]) -> Value {
-    let mut values = Vec::with_capacity(indexes.len());
-    for index in indexes {
-        values.push(index_value(index));
-    }
-    Value::Array(values)
+    Value::Array(indexes.iter().map(index_value).collect())
 }
 
 pub(super) fn index_value(index: &LiteLlmManagedVectorStoreIndex) -> Value {
@@ -55,29 +47,17 @@ pub(super) fn index_value(index: &LiteLlmManagedVectorStoreIndex) -> Value {
 }
 
 pub(super) fn object_value(value: Option<&JsonObject>) -> Value {
-    match value {
-        Some(fields) => json!(fields),
-        None => Value::Null,
-    }
+    value.map_or(Value::Null, |fields| json!(fields))
 }
 
 fn text(value: Option<&str>) -> Value {
-    match value {
-        Some(found) => Value::String(found.to_owned()),
-        None => Value::Null,
-    }
+    value.map_or(Value::Null, |found| Value::String(found.to_owned()))
 }
 
 fn flag(value: Option<bool>) -> Value {
-    match value {
-        Some(enabled) => Value::Bool(enabled),
-        None => Value::Null,
-    }
+    value.map_or(Value::Null, Value::Bool)
 }
 
 fn payload(value: Option<&Value>) -> Value {
-    match value {
-        Some(found) => found.clone(),
-        None => Value::Null,
-    }
+    value.cloned().unwrap_or(Value::Null)
 }

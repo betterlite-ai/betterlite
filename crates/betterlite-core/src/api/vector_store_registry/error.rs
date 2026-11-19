@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-// every failure the registry raises while it reads a config record or a tool definition
 #[derive(Debug, Error)]
 pub enum VectorStoreRegistryError {
     #[error("vector_store_id is required for initializing vector store, got vector_store_id=None")]

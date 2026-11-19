@@ -1,6 +1,5 @@
 use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 
-// VectorStoreIndexRegistry: ordered records; the first record carrying a name answers a lookup
 #[derive(Debug, Default)]
 pub struct VectorStoreIndexRegistry {
     pub indexes: Vec<LiteLlmManagedVectorStoreIndex>,

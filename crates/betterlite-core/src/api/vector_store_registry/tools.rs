@@ -13,8 +13,7 @@ pub struct VectorStoreToolParams {
     pub ranking_options: Option<JsonObject>,
 }
 
-// _extract_tool_params: every declared VECTOR_STORE_OPENAI_PARAMS name the tool carries, except
-// rewrite_query, which VectorStoreToolParams never accepted and whose presence raises TypeError
+// _extract_tool_params: every declared VECTOR_STORE_OPENAI_PARAMS name the tool carries, except rewrite_query, which VectorStoreToolParams never accepted and whose presence raises TypeError
 pub fn extract_tool_params(
     tool: &JsonObject,
 ) -> Result<VectorStoreToolParams, VectorStoreRegistryError> {
@@ -59,9 +58,7 @@ fn integer_param(
     }
 }
 
-// get_vector_store_ids_to_run: the request-level ids first, then the ids every tool carries, each
-// kept at its first position; a top-level value that is not a list is ignored, as the source's
-// isinstance check does, while the tool type itself is never consulted
+// get_vector_store_ids_to_run: request-level ids first, then the ids every tool carries, each kept at its first position; a non-list top-level value is ignored and the tool type is never consulted
 pub fn ids_to_run(
     params: &JsonObject,
     tools: Option<&[JsonObject]>,
