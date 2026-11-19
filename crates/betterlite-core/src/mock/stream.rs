@@ -38,6 +38,8 @@ pub fn chunks<'stream>(
                         refusal: None,
                         tool_calls: None,
                         function_call: None,
+                        reasoning_content: None,
+                        thinking_blocks: None,
                     },
                     finish_reason: None,
                     logprobs: None,
