@@ -1,0 +1,68 @@
+task: B3611
+deviations:
+  - what: >-
+      A multipart call is sent as one body built from the form's items: non-file fields grouped by name and
+      written before the file parts, repeated names kept in order, and the caller's content-type dropped so
+      the rebuilt boundary wins. A form without file parts still goes through the file-part path with no
+      filename, so it stays multipart/form-data instead of being downgraded to application/x-www-form-urlencoded.
+      LiteLLM hands the same grouping to httpx as data= and files= arguments and lets httpx build the body.
+    why: >-
+      betterlite builds outbound bodies in its own transport (B173), so the httpx argument shapes become
+      MultipartPart entries. The grouping and the file-less rule are the ones LiteLLM applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L507-L550
+  - what: >-
+      An upload part the client sent without a content type is sent with one guessed from its file name through
+      mime_guess, falling back to application/octet-stream, and a part with an empty file name gets no content
+      type at all. LiteLLM forwards the upload's own content type to httpx, which guesses from the name only
+      when the type is None.
+    why: >-
+      Python's mimetypes reads the host's mime.types, so no fixed table matches it everywhere. mime_guess gives
+      the same answer on every machine, and the files and video endpoints in betterlite already make this exact
+      choice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L491-L496
+  - what: >-
+      A request whose application/json body parses as JSON but is not an object (an array, a string, a number
+      or null) is rejected with an error that names the body. LiteLLM reads query_params, custom_body and
+      stream off the parsed value with body.get, which raises AttributeError on anything but a dict, and the
+      request fails with a 500.
+    why: >-
+      A malformed client body is a 4xx, and a 500 raised while reading three optional fields is a bug no
+      working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1944-L1951
+  - what: >-
+      A JSON body that is not valid UTF-8 under an application/json content type is treated like any body that
+      fails to parse, as no envelope at all. LiteLLM's json.loads raises UnicodeDecodeError, which the except
+      clause does not catch, and the request fails with a 500.
+    why: >-
+      Same as the entry above: the 500 comes from an unhandled exception on a body no working client sends,
+      and betterlite treats an unparseable body the way LiteLLM treats a syntax error in one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1944-L1951
+  - what: >-
+      parse_request_by_content_type returns query_params, custom_body and stream. LiteLLM returns a 4-tuple
+      whose third element is typed None and never populated (file_data).
+    why: >-
+      The placeholder carries no value, so the typed return value holds only the data a caller can read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1939-L1980
+  - what: >-
+      upstream_close_to_relay takes the upstream close frame the relay already found. LiteLLM scans an iterable
+      of asyncio task results for the first Close instance and then applies the same close-code rules.
+    why: >-
+      The task-result scan is Python asyncio plumbing; in Rust the relay holds the close frame it read from the
+      upstream socket, so only the filtering rules stay in the helper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2283-L2297
+  - what: >-
+      client_socket_is_open takes the two connection states LiteLLM compares (client_state and
+      application_state) instead of a Starlette WebSocket object.
+    why: >-
+      The WebSocket types betterlite's relay uses carry no Starlette state halves, so the states are the
+      parameter; the rule that both halves must be live is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2273-L2280
+kept_bugs:
+  - what: >-
+      A model path that ends with /models/ yields an empty model name instead of no model, because LiteLLM
+      takes model_path.split("/models/")[-1] after checking only that the separator occurs.
+    why: >-
+      Copied so the extractor returns exactly what LiteLLM returns. LiteLLM's callers test the name for
+      truthiness (for example if extracted_model:), so an empty name means no model there; a betterlite caller
+      must apply the same check before using the name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2869-L2872
