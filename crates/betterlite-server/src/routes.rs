@@ -253,6 +253,7 @@ macro_rules! stub_router {
             .merge(organization_activity::routes($state))
             .merge(organization_read::routes($state))
             .merge(realtime_websocket::routes($state))
+            .merge(crate::release_info::routes($state))
             .merge(responses_read::routes($state))
             .merge(shadow_eval_lifecycle::routes($state))
             .merge(team_activity::routes($state))
