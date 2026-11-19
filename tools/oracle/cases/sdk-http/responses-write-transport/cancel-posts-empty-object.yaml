@@ -1,0 +1,32 @@
+kind: sdk_http
+name: responses-write-transport-cancel-posts-empty-object
+env: {}
+call:
+  responses_write_transport:
+    operation: cancel
+    mode: sync
+    response_id: resp_a
+    api_key: sk-provider
+    extra_body: {reason: ignored}
+    extra_headers:
+      Authorization: "Bearer sk-caller"
+      X-Trace: trace-a
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      created_at: 1735689600
+      object: response
+      status: cancelled
+      model: gpt-5
+      output: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-trace]
+  ignore:
+    - pointer: /responses_write_transport/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
+    - pointer: /responses_write_transport/value/result/additional_headers/llm_provider-date
+      why: the prefixed copy of the same server-stamped date differs between the two mocks
