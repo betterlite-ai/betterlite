@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use betterlite_core::routes::CallType;
 use betterlite_models::decisions::Json;
@@ -103,11 +104,11 @@ pub struct Outcome {
 }
 
 impl CallKind for Call {
-    async fn send(
+    fn send(
         &self,
         api_base: &str,
         env: &BTreeMap<String, String>,
-    ) -> Result<SdkResult, SdkHttpError> {
-        run::send(self, api_base, env).await
+    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
+        run::send(self, api_base, env)
     }
 }

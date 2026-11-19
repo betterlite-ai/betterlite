@@ -22,7 +22,7 @@ pub(super) const CALL_ID_FIELD: &str = "litellm_call_id";
 pub(super) const GENERATED_ID: &str = "<generated>";
 
 #[derive(Debug, Error)]
-enum ScriptedEngineError {
+pub(super) enum ScriptedEngineError {
     #[error("the case scripted no compression result for this call")]
     Unscripted,
 }

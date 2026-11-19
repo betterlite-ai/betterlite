@@ -53,12 +53,12 @@ impl Session {
             if let Some(source) = &step.settings {
                 interception = Some(self.interception(source)?);
             }
-            let Some(interception) = &interception else {
+            let Some(active) = &interception else {
                 return Err(SdkHttpError::Invalid(
                     "the first step names no settings".to_owned(),
                 ));
             };
-            steps.push(self.run_step(step, interception).await?);
+            steps.push(self.run_step(step, active).await?);
         }
         Ok(Outcome { steps })
     }
@@ -76,10 +76,10 @@ impl Session {
     }
 
     fn stage_output(&self, scripted: Option<&ScriptedResult>) -> Result<(), SdkHttpError> {
-        let Some(scripted) = scripted else {
+        let Some(step_result) = scripted else {
             return Ok(());
         };
-        let output = scripted_output(scripted)?;
+        let output = scripted_output(step_result)?;
         *self
             .engine
             .pending
@@ -151,7 +151,7 @@ fn load_settings(
     }
     .load(&document)
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    Ok(config.sections.compression_interception_state.clone())
+    Ok(config.sections.compression_interception_state)
 }
 
 fn record_of(settings: &Settings) -> SettingsRecord {
@@ -193,7 +193,7 @@ fn normalize_generated_id(request: &mut IndexMap<String, Json>, previous: Option
         return;
     };
     let kept = match previous {
-        Some(Json::Text(previous)) => previous == current,
+        Some(Json::Text(existing)) => existing == current,
         None
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             false
