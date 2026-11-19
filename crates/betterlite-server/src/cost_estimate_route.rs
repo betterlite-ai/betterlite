@@ -8,5 +8,4 @@ pub(crate) mod router;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-#[cfg(test)]
 mod tests;
