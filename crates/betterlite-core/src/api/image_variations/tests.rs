@@ -367,8 +367,8 @@ async fn an_empty_declared_provider_is_unset() {
 
 #[rstest]
 #[case(None, Duration::from_secs(600))]
-#[case(Some(0.0), Duration::ZERO)]
-#[case(Some(3.0), Duration::from_secs(3))]
+#[case(Some(0.0_f64), Duration::ZERO)]
+#[case(Some(3.0_f64), Duration::from_secs(3))]
 #[tokio::test]
 async fn openai_receives_the_timeout_unchanged(
     #[case] timeout: Option<f64>,
@@ -399,9 +399,9 @@ async fn openai_receives_the_timeout_unchanged(
 }
 
 #[rstest]
-#[case(None, 6000.0)]
-#[case(Some(0.0), 6000.0)]
-#[case(Some(3.0), 3.0)]
+#[case(None, 6000.0_f64)]
+#[case(Some(0.0_f64), 6000.0_f64)]
+#[case(Some(3.0_f64), 3.0_f64)]
 #[tokio::test]
 async fn topaz_falls_back_to_the_default_request_timeout(
     #[case] timeout: Option<f64>,
@@ -434,8 +434,8 @@ async fn topaz_falls_back_to_the_default_request_timeout(
 }
 
 #[rstest]
-#[case(None, 7.0)]
-#[case(Some(0.0), 7.0)]
+#[case(None, 7.0_f64)]
+#[case(Some(0.0_f64), 7.0_f64)]
 #[tokio::test]
 async fn topaz_uses_the_configured_request_timeout(
     #[case] timeout: Option<f64>,
@@ -684,7 +684,7 @@ async fn negative_timeouts_are_rejected() {
         VariationPolicies::default(),
     );
     let mut call = variation_call();
-    call.timeout = Some(-1.0);
+    call.timeout = Some(-1.0_f64);
     let error = image_variation(&service, &call)
         .await
         .expect_err("a negative timeout is not a duration");
@@ -836,15 +836,15 @@ async fn response_answers_pass_through() {
 #[tokio::test]
 async fn unexpected_answers_repeat_the_sync_call() {
     let operation = ScriptedOperation::new(vec![
-        Scripted::Unexpected(Json::Number(Number::from(5))),
-        Scripted::Unexpected(Json::Number(Number::from(7))),
+        Scripted::Unexpected(Json::Number(Number::from(5_i32))),
+        Scripted::Unexpected(Json::Number(Number::from(7_i32))),
     ]);
     let answer = aimage_variation(&operation, &variation_call())
         .await
         .expect("the second answer is returned unchecked");
     assert_eq!(
         answer,
-        VariationAnswer::Unexpected(Json::Number(Number::from(7)))
+        VariationAnswer::Unexpected(Json::Number(Number::from(7_i32)))
     );
     let calls = recorded_calls(&operation);
     assert_eq!(calls.len(), 2, "the sync call runs twice");

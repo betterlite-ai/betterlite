@@ -141,7 +141,7 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     }
 }
 
-const fn field(wire: WireField) -> Nullable {
+fn field(wire: WireField) -> Nullable {
     match wire {
         WireField::Missing(_) => None,
         WireField::Null => Some(None),

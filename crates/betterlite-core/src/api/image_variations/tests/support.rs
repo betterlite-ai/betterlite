@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::future::{Future, ready};
+use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -181,24 +183,24 @@ impl RecordingTransport {
 
     pub(super) fn take(&self) -> Vec<OutboundRequest> {
         let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *requests)
+        mem::take(&mut *requests)
     }
 }
 
 impl ImageVariationTransport for RecordingTransport {
-    async fn create_variation(
+    fn create_variation(
         &self,
         request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: self.status,
             headers: http::HeaderMap::new(),
             body: self.body.clone(),
-        })
+        }))
     }
 }
 
@@ -217,7 +219,7 @@ impl RecordingTopaz {
 
     pub(super) fn take(&self) -> Vec<TopazVariationRequest> {
         let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *requests)
+        mem::take(&mut *requests)
     }
 }
 
@@ -245,7 +247,10 @@ impl TopazVariationExecutor for NoTopaz {
         &self,
         _request: TopazVariationRequest,
     ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
-        unreachable!("the openai path never reaches topaz")
+        Err(ImageVariationError::Topaz(TopazVariationError {
+            status_code: None,
+            message: "the openai path never reaches topaz".to_owned(),
+        }))
     }
 }
 
