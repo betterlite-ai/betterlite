@@ -100,15 +100,11 @@ impl AzureSearchConfig<'_> {
             drop(CREDENTIAL.resolve(None, Some(base), &probe)?);
         }
         let Some(minter) = self.minter else {
-            return Err(AzureSearchError::NoCredential {
-                detail: String::from("no Entra token minter is configured"),
-            });
+            return Err(AzureSearchError::NoMinter);
         };
         minter
             .mint()
-            .map_err(|error| AzureSearchError::NoCredential {
-                detail: error.to_string(),
-            })
+            .map_err(|source| AzureSearchError::MintFailed { source })
     }
 
     pub fn complete_url(&self, api_base: Option<&str>) -> Result<String, AzureSearchError> {
@@ -160,8 +156,12 @@ impl AzureSearchConfig<'_> {
     ) -> Result<SearchResponse, AzureSearchError> {
         let envelope = reply::decode_grounding_reply(reply)?;
         if envelope.status.as_deref() == Some("failed") {
-            let detail =
-                response::present_or(envelope.error_message(), "the grounded search failed");
+            let detail = envelope
+                .error
+                .as_ref()
+                .map_or("the grounded search failed", |error| {
+                    response::present_or(error.message.as_deref(), "the grounded search failed")
+                });
             return Err(provider_error(detail, UPSTREAM_ERROR_STATUS, reply.headers));
         }
         let results = response::capped(
@@ -169,10 +169,13 @@ impl AzureSearchConfig<'_> {
             response::requested_max_results(optional_params),
         );
         if results.is_empty() && envelope.status.as_deref() == Some("incomplete") {
-            let detail = format!(
-                "the grounded search was incomplete: {}",
-                response::present_or(envelope.incomplete_text(), "unknown reason")
-            );
+            let reason = envelope
+                .incomplete_details
+                .as_ref()
+                .map_or("unknown reason", |details| {
+                    response::present_or(details.reason.as_deref(), "unknown reason")
+                });
+            let detail = format!("the grounded search was incomplete: {reason}");
             return Err(provider_error(
                 &detail,
                 UPSTREAM_ERROR_STATUS,

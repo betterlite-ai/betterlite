@@ -14,7 +14,7 @@ pub(crate) fn settings(environment: &BTreeMap<String, String>) -> Settings {
         project_endpoint: environment.get(PROJECT_ENDPOINT_ENV).cloned(),
         model: environment.get(MODEL_ENV).cloned(),
         connection_id: environment.get(CONNECTION_ID_ENV).cloned(),
-        token: environment.get(TOKEN_ENV).map(SecretString::from),
+        token: environment.get(TOKEN_ENV).cloned().map(SecretString::from),
     }
 }
 
@@ -35,11 +35,11 @@ impl FixtureMinter {
 impl EntraTokenMinter for FixtureMinter {
     fn mint(&self) -> Result<SecretString, MintError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        match &self.spec.error {
-            Some(detail) => Err(MintError::Detail {
-                detail: detail.clone(),
-            }),
-            None => Ok(SecretString::from(self.spec.token.clone())),
-        }
+        let Some(detail) = &self.spec.error else {
+            return Ok(SecretString::from(self.spec.token.clone()));
+        };
+        Err(MintError::Detail {
+            detail: detail.clone(),
+        })
     }
 }

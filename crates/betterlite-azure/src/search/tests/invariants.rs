@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::loader::EnvironmentLookup as _;
 use betterlite_config::sections::azure_default_chain::AzureCredentialType;
 use betterlite_config::sections::azure_search::{
     CONNECTION_ID_ENV, MODEL_ENV, PROJECT_ENDPOINT_ENV, Settings, TOKEN_ENV,
@@ -18,11 +18,11 @@ use crate::azure_default_chain::provider::{AzureTokenProvider, ProviderInner};
 use crate::search::environment::{ProbeEnvironment, SettingsEnvironment};
 use crate::search::error::AzureSearchError;
 use crate::search::minter::{
-    EntraTokenMinter, MintError, NativeMinter, default_entra_token_minter,
+    EntraTokenMinter as _, MintError, NativeMinter, default_entra_token_minter,
 };
 use crate::search::{AzureSearchConfig, ENTRA_SCOPE, UI_FRIENDLY_NAME};
 
-use super::support::{PanicMinter, minter, model_settings, token_settings};
+use super::support::{ForbiddenMinter, minter, model_settings, token_settings};
 
 #[test]
 fn azure_search_credential_identity_isolation() {
@@ -113,10 +113,10 @@ fn minters_stay_with_their_config() {
 
 fn untrusted_bases_never_mint() {
     let settings = model_settings();
-    let panicking = PanicMinter;
+    let forbidden = ForbiddenMinter;
     let config = AzureSearchConfig {
         settings: &settings,
-        minter: Some(&panicking),
+        minter: Some(&forbidden),
     };
     let refused = config
         .validate_environment(Headers::new(), None, Some("https://evil.example"))

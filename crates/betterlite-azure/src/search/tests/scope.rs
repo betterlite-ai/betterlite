@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::azure_search::TOKEN_ENV;
@@ -5,6 +6,7 @@ use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
 use crate::search::error::AzureSearchError;
+use crate::search::minter::MintError;
 
 use crate::search::{AzureSearchConfig, ENTRA_SCOPE};
 
@@ -141,6 +143,13 @@ fn mint_failure_gives_advice() {
     assert!(message.contains("no identity source"));
     assert_eq!(error.status_code(), None);
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(&error, AzureSearchError::MintFailed { .. }));
+    let cause = error.source().unwrap();
+    assert!(matches!(
+        cause.downcast_ref::<MintError>(),
+        Some(MintError::Detail { .. })
+    ));
+    assert!(cause.to_string().contains("no identity source"));
 }
 
 fn missing_minter_is_a_value_error() {
@@ -153,7 +162,7 @@ fn missing_minter_is_a_value_error() {
         .validate_environment(Headers::new(), None, None)
         .unwrap_err();
     assert_eq!(error.status_code(), None);
-    assert!(matches!(error, AzureSearchError::NoCredential { .. }));
+    assert!(matches!(error, AzureSearchError::NoMinter));
 }
 
 fn trusted_base_allows_the_env_token() {

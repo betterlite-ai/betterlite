@@ -24,7 +24,11 @@ pub(super) fn params(source: &str) -> Object {
 pub(super) fn object(value: JsonValue) -> Object {
     match value {
         JsonValue::Object(map) => map,
-        other => panic!("expected a JSON object, got {other}"),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)) => panic!("expected a JSON object, got {other}"),
     }
 }
 
@@ -88,11 +92,13 @@ pub(super) const fn minter(result: Result<&'static str, &'static str>) -> Fixtur
     FixtureMinter { result, calls }
 }
 
-pub(super) struct PanicMinter;
+pub(super) struct ForbiddenMinter;
 
-impl EntraTokenMinter for PanicMinter {
+impl EntraTokenMinter for ForbiddenMinter {
     fn mint(&self) -> Result<SecretString, MintError> {
-        panic!("minted a token no trusted destination asked for");
+        Err(MintError::Detail {
+            detail: String::from("minted a token no trusted destination asked for"),
+        })
     }
 }
 

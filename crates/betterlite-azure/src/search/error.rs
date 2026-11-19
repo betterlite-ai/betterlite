@@ -5,6 +5,7 @@ use betterlite_openai::search::credentials::CredentialError;
 use serde::Deserialize;
 use thiserror::Error;
 
+use super::minter::MintError;
 use super::{DOCS_URL, ENTRA_SCOPE};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,11 +33,20 @@ pub enum AzureSearchError {
     )]
     MissingModel,
     #[error(
-        "Grounding with Bing Search: no credential available. Pass api_key, set {} to an Entra bearer token, or configure azure-identity (AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID or any DefaultAzureCredential source) for scope {}. Underlying error: {detail}",
+        "Grounding with Bing Search: no credential available. Pass api_key, set {} to an Entra bearer token, or configure azure-identity (AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID or any DefaultAzureCredential source) for scope {}. Underlying error: {source}",
         TOKEN_ENV,
         ENTRA_SCOPE
     )]
-    NoCredential { detail: String },
+    MintFailed {
+        #[source]
+        source: MintError,
+    },
+    #[error(
+        "Grounding with Bing Search: no credential available. Pass api_key, set {} to an Entra bearer token, or configure azure-identity (AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID or any DefaultAzureCredential source) for scope {}.",
+        TOKEN_ENV,
+        ENTRA_SCOPE
+    )]
+    NoMinter,
     #[error(transparent)]
     Credential(#[from] CredentialError),
     #[error("Grounding with Bing Search: {detail}. See {} for details.", DOCS_URL)]
@@ -54,7 +64,8 @@ impl AzureSearchError {
             Self::Provider { status_code, .. } => Some(*status_code),
             Self::MissingProjectEndpoint
             | Self::MissingModel
-            | Self::NoCredential { .. }
+            | Self::MintFailed { .. }
+            | Self::NoMinter
             | Self::Credential(_) => None,
         }
     }
