@@ -241,7 +241,9 @@ fn typed_and_dict_candidates() {
 #[test]
 fn malformed_candidate_propagates() {
     let no_model = spec("broken", "d1", &[("api_key", text("sk-key"))], &[]);
-    let report = credential_deployment(&catalog_of(vec![no_model]), "broken", None).unwrap_err();
+    let report = credential_deployment(&catalog_of(vec![no_model]), "broken", None)
+        .err()
+        .unwrap();
     assert!(matches!(
         report,
         CredentialError::Deployment(DeploymentReadError::MissingModel)
@@ -259,7 +261,9 @@ fn malformed_candidate_propagates() {
         &[],
     );
     let provider_report =
-        credential_deployment(&catalog_of(vec![bad_provider]), "openai/gpt-4o", None).unwrap_err();
+        credential_deployment(&catalog_of(vec![bad_provider]), "openai/gpt-4o", None)
+            .err()
+            .unwrap();
     assert!(matches!(
         provider_report,
         CredentialError::Deployment(DeploymentReadError::NotText {
@@ -272,7 +276,9 @@ fn malformed_candidate_propagates() {
 fn stale_index_reports_the_row() {
     let mut catalog = catalog_of(vec![row("known", "d1", "openai/gpt-4o")]);
     catalog.id_index.insert("ghost".to_owned(), 7);
-    let report = credential_deployment(&catalog, "ghost", None).unwrap_err();
+    let report = credential_deployment(&catalog, "ghost", None)
+        .err()
+        .unwrap();
     assert!(matches!(report, CredentialError::InvalidRow { index: 7 }));
 }
 
