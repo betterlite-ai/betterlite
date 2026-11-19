@@ -22,14 +22,14 @@ pub(crate) async fn apply_side_operations(
 ) -> Result<(), TokenAdjustmentError> {
     match operations {
         SideOperations::Empty => Ok(()),
-        SideOperations::Plain(operations) => {
-            if !operations.is_empty() {
-                adjustments.usage.increment_pipeline(&operations).await;
+        SideOperations::Plain(increments) => {
+            if !increments.is_empty() {
+                adjustments.usage.increment_pipeline(&increments).await;
             }
             Ok(())
         }
-        SideOperations::ReservationAware(operations) => {
-            apply_reservation_aware_tokens(adjustments, &operations).await
+        SideOperations::ReservationAware(guarded) => {
+            apply_reservation_aware_tokens(adjustments, &guarded).await
         }
     }
 }

@@ -4,8 +4,9 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use crate::request_stash::{RequestStash, RequestStashSlot};
 
 use super::batch_enqueued::BatchEnqueuedCall;
-use super::header_merge::{merge_statuses_into, rate_limit_statuses};
+use super::header_merge::merge_statuses_into;
 use super::settlement::PostCallSettlement;
+use super::snapshot::rate_limit_statuses;
 
 pub struct SuccessHook<'request> {
     pub stash: &'request RequestStashSlot,
@@ -37,12 +38,12 @@ impl PostCallSettlement<'_> {
 }
 
 // the post-call hook's header block reads the unfiltered stash and writes into the response's headers in place
-fn merge_response_headers(target: Option<&mut AdditionalHeaders>, stash: Option<&RequestStash>) {
-    let Some(target) = target else {
+fn merge_response_headers(headers: Option<&mut AdditionalHeaders>, stash: Option<&RequestStash>) {
+    let Some(response_headers) = headers else {
         return;
     };
     let Some(statuses) = rate_limit_statuses(stash) else {
         return;
     };
-    merge_statuses_into(target, &statuses);
+    merge_statuses_into(response_headers, &statuses);
 }

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -85,7 +85,7 @@ pub(crate) fn header_tuples(headers: &AdditionalHeaders) -> Vec<(String, Json)> 
         .collect()
 }
 
-pub(crate) fn scopes(pairs: &[(&str, &str)]) -> std::collections::BTreeSet<(String, String)> {
+pub(crate) fn scopes(pairs: &[(&str, &str)]) -> BTreeSet<(String, String)> {
     pairs
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
@@ -355,7 +355,10 @@ pub(crate) struct FakeCounterCache {
     values: Mutex<BTreeMap<String, CacheCounterValue>>,
 }
 
-fn seed_map<T: Clone>(entries: &[(&str, T)]) -> BTreeMap<String, T> {
+fn seed_map<T>(entries: &[(&str, T)]) -> BTreeMap<String, T>
+where
+    T: Clone,
+{
     entries
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
@@ -654,6 +657,10 @@ impl SuccessFixture {
 
     pub(crate) fn with_usage(usage: Usage) -> Self {
         Self::bare(Some(usage), None)
+    }
+
+    pub(crate) fn with_call_id(call_id: &str) -> Self {
+        Self::bare(None, Some(call_id.to_owned()))
     }
 
     pub(crate) fn callback(&self, io: &RerankIo) -> SuccessCallback<'_> {

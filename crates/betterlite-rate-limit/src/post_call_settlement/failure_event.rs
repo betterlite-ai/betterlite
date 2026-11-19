@@ -27,11 +27,11 @@ impl PostCallSettlement<'_> {
         &self,
         event: &FailureEvent<'_>,
     ) -> Result<(), PostCallSettlementError> {
-        let stash = event.stash.for_call(event.call_id);
+        let call_stash = event.stash.for_call(event.call_id);
         self.gauges
-            .release_stashed_parallel_slot(stash.as_deref(), true)
+            .release_stashed_parallel_slot(call_stash.as_deref(), true)
             .await;
-        let Some(stash) = stash else {
+        let Some(stash) = call_stash else {
             return Ok(());
         };
         let snapshot = stash_snapshot(&stash);

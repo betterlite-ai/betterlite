@@ -38,7 +38,8 @@ impl PostCallSettlement<'_> {
             increment_tokens_keeping_ttl(self.adjustments, &tpm_operations).await;
         }
         let io_operations = io_token_reservation_ops(event.stash, event.call_id, &callback.io)?;
-        apply_io_operations(self.adjustments, event.stash, event.call_id, io_operations).await
+        apply_io_operations(self.adjustments, event.stash, event.call_id, io_operations).await?;
+        Ok(())
     }
 }
 
