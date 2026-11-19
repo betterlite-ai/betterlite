@@ -57,20 +57,22 @@ deviations:
       init reads the same flag for all three signals, so the callbacks cannot isolate the tracer alone.
       Every provider still uses the callback's config and exporter, so the metrics and events that leave
       the process keep their destination; only which process-wide slot a later integration reuses changes.
+      Covered by arize_keeps_its_tracer_out_of_the_global_slot and phoenix_keeps_its_tracer_out_of_the_global_slot.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L665-L695
   - what: An injected tracer provider does not disable Phoenix's per-project routing. LiteLLM's injected-provider branch makes get_tracer_to_use_for_request return the injected tracer for every span.
     why: >-
       LegacyOtel carries no marker for an injected provider, and the lifecycle's tracer router runs before
       its fallback, so a phoenix lifecycle built from an injected provider still sends request spans to the
       project providers. Environment-based registration never injects a provider; only an embedder that
-      passes one sees the difference.
+      passes one sees the difference. Covered by phoenix_routes_to_the_project_even_with_an_injected_provider.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L70-L76
   - what: Phoenix builds the default project's provider on the first request instead of at initialization. LiteLLM's _init_tracing seeds the per-project cache with the resolved default project.
     why: >-
       The provider and its exporter are built without holding a lock and may fail, so the lifecycle
       constructor stays infallible and free of exporter I/O; the first request for the default project
       builds the same provider. The cache therefore starts empty instead of holding "default", which only
-      changes which provider the sixty-fifth distinct project evicts.
+      changes which provider the sixty-fifth distinct project evicts. Covered by
+      phoenix_project_resolution_defaults_to_default and phoenix_routes_the_request_to_its_project_provider.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L83-L84
   - what: Phoenix ends its proxy parent span even when the request lifecycle returns an error. LiteLLM's _handle_phoenix_trace has no error path, so an exception from guardrail parsing or metric recording leaves the parent unended and it never reaches the exporter.
     why: >-
@@ -83,6 +85,5 @@ kept_bugs:
     why: >-
       A deployment that exports PHOENIX_API_KEY empty keeps the same credential header it has today;
       betterlite copies the check instead of turning the header into a missing credential. Covered by
-      phoenix_otel_config_points_at_the_configured_endpoint and
-      phoenix_health_check_accepts_an_api_key.
+      config_builds_the_auth_header.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L431-L434
