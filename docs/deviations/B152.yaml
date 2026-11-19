@@ -1,0 +1,6 @@
+task: B152
+deviations:
+  - what: No enterprise billing metrics section in the README.
+    why: The chart has no billingMetrics block; betterlite has no enterprise tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/README.md
+kept_bugs: []

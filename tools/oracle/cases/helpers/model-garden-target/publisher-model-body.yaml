@@ -1,0 +1,22 @@
+kind: helper
+name: publisher-model-body
+call:
+  model_garden_target:
+    targets:
+      - model: meta/llama-3.3-70b-instruct-maas
+        api_base: null
+        vertex_location: null
+        vertex_project: proj
+        resolved_project: auth-proj
+      - model: openai/meta/llama-3.3-70b-instruct-maas
+        api_base: null
+        vertex_location: null
+        vertex_project: proj
+        resolved_project: auth-proj
+      - model: xai/grok-4.1-fast-non-reasoning
+        api_base: null
+        vertex_location: null
+        vertex_project: proj
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

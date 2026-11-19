@@ -1,0 +1,154 @@
+kind: helper
+name: summary-options-preserve-presence
+call:
+  messages_reasoning_route:
+    calls:
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: "true"
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: "TRUE"
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: "yes"
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled, summary: concise}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: concise}
+        model_info: null
+        provider: null
+        global_value: null
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled, summary: concise}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, generate_summary: false}}
+        thinking: {type: enabled, summary: concise}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high, summary: ""}}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: ""}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: 0}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: 7}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: []}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: ""}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: null}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: 7}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: openai/responses/o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled}
+        model_info: null
+        provider: null
+        global_value: true
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled, summary: concise}
+        model_info: {supports_reasoning: false}
+        provider: null
+        global_value: true
+        environment: null
+env: {}
+compare: {ignore: []}

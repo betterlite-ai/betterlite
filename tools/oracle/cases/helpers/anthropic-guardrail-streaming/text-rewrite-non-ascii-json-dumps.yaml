@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-streaming-text-rewrite-non-ascii-json-dumps
+call:
+  b3676: {"function": "text_rewrite", "scenarios": [{"responses_so_far": [{"bytes": "data: {\"delta\": {\"text\": \"old\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"}], "rewritten_text": "héllo 😀 \"\\", "guardrail_name": "guard"}]}
+env: {}
+compare: {ignore: []}

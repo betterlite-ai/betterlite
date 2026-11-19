@@ -1,0 +1,24 @@
+task: B3011
+deviations:
+  - what: Enduser cache invalidation is split into keyset-paged reads that do not enumerate all customer IDs at once, instead fetching and invalidating one page of cached spend at a time.
+    why: Invalidating all customers in a single query would materialize every user ID matching the budget filters, requiring all those IDs in a single bind parameter set. Keyset pagination on user_id bounds memory use and makes each query independent of page count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L680-L730
+  - what: The success event is handed to the injected PhaseSuccessSink inside report_phase_success, where LiteLLM schedules async_service_success_hook on a detached asyncio task and returns at once.
+    why: betterlite bans detached tasks because they outlive shutdown and lose their errors; the sink is the service-logging hook from B012, and it owns whether delivery is queued or awaited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L901
+  - what: The failure event is handed to the injected PhaseFailureSink inside report_phase_failure, where LiteLLM schedules async_service_failure_hook on a detached asyncio task as well.
+    why: same reason as the success hook; the sink owns delivery, and the phase reports the failure before returning no progress so the tiers stay due.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L925
+  - what: The error text a failed chunk hands to the failure hook is the repo's DbError display or the schedule error's source chain, where LiteLLM passes the raw exception object and its traceback.
+    why: DbError and DriverError keep the fields typed and stop the source chain before driver diagnostics can expose parameter or row values; the event still names the failure and the phase stops the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L929
+  - what: A failed chunk is reported through the injected PhaseFailureSink only, where LiteLLM also logs the exception through verbose_proxy_logger at error level before sending the failure hook.
+    why: Service logging and its delivery belong to the injected sink (B012), which owns whether the failure is logged, queued or awaited; the failure event already carries the error text, and the customer page failure keeps its own tracing warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L918-L924
+kept_bugs:
+  - what: The tier phase's failure event carries call_type "reset_budget_endusers", the enduser phase's name, so a failure here is logged under the customers call type.
+    why: LiteLLM sends that literal from this phase, and an alert or dashboard that groups failure events by call_type already reads these failures under that name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L930
+  - what: A truncated customer walk still reports num_endusers_failed 0, so the event claims no customer failed even though a page read failed and the customers past it keep their cached spend.
+    why: LiteLLM hardcodes 0 there and reports the failure only through enduser_invalidation_truncated; a consumer that treats num_endusers_failed as the page failure count would change behavior if betterlite started counting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L911

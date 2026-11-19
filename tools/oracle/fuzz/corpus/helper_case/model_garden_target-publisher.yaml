@@ -1,0 +1,17 @@
+kind: helper
+name: model-garden-target-publisher-seed
+call:
+  model_garden_target:
+    targets:
+      - model: google/gemma-3-12b-it
+        api_base: null
+        vertex_location: null
+        vertex_project: seed-proj
+        resolved_project: auth-proj
+      - model: bge/123456
+        api_base: null
+        vertex_location: europe-west1
+        vertex_project: seed-proj
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

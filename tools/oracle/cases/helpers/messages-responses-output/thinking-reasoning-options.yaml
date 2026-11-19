@@ -1,0 +1,32 @@
+kind: helper
+name: messages-responses-output-thinking-reasoning-options
+call:
+  messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages:
+      - role: user
+        content: question
+      thinking:
+        type: enabled
+        budget_tokens: 1500
+    response: null
+    include_encrypted_reasoning: true
+    settings:
+      reasoning_auto_summary: true
+calls:
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      thinking:
+        type: adaptive
+      output_config:
+        effort: high
+    response: null
+    include_encrypted_reasoning: false
+    settings:
+      reasoning_auto_summary: true
+env:
+  LITELLM_REASONING_AUTO_SUMMARY: "true"
+compare: {ignore: []}

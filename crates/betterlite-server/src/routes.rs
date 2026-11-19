@@ -127,6 +127,7 @@ use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;
 use crate::error_body::json_error;
 use crate::model_list::model_routes;
+use crate::scim::scim_router;
 use crate::state::ServerState;
 use axum::Json;
 use axum::Router;
@@ -278,7 +279,8 @@ pub(crate) fn router(
         .merge(model_routes(&state.config.model_list))
         .merge(chat)
         .merge(embeddings)
-        .merge(stub_router!(&state));
+        .merge(stub_router!(&state))
+        .merge(scim_router(&state));
     application
         .layer(middleware::from_fn_with_state(
             auth.clone(),
