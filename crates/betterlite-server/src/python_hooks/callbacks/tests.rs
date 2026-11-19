@@ -2,9 +2,9 @@
 
 use rstest::rstest;
 
+use super::super::HooksError;
 use super::super::slots::{HookSlot, ListKey, LoadedCallback};
 use super::super::test_support;
-use super::super::{HooksError, PythonHooks};
 
 const CALLBACKS: &str = "class Logger:\n    pass\n\nnot_callable = 3\n\n\
 def handler(**kwargs):\n    return \"ran\"\n";
@@ -111,7 +111,7 @@ async fn the_other_lists_take_a_class_without_checking(#[case] key: ListKey) {
 
 #[tokio::test]
 async fn load_callback_keeps_the_python_error_for_a_missing_module() {
-    let service: PythonHooks = test_support::service(None);
+    let service = test_support::service(None);
     let error = match service
         .load_callback(ListKey::Callbacks, "b165_absent_module.thing")
         .await
@@ -124,6 +124,14 @@ async fn load_callback_keeps_the_python_error_for_a_missing_module() {
             assert_eq!(slot, "callbacks");
             assert_eq!(value, "b165_absent_module.thing");
         }
-        other => panic!("expected a load error, got {other:?}"),
+        other @ (HooksError::Interpreter { .. }
+        | HooksError::InterpreterTask { .. }
+        | HooksError::InterpreterMissing
+        | HooksError::CallbackIsClass { .. }
+        | HooksError::CallbackNotDispatchable { .. }
+        | HooksError::Validate { .. }
+        | HooksError::Call(_)
+        | HooksError::StartupSpec { .. }
+        | HooksError::Startup { .. }) => panic!("expected a load error, got {other:?}"),
     }
 }

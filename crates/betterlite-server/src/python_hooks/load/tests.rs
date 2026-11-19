@@ -91,7 +91,10 @@ async fn a_sync_hook_next_to_the_config_file_runs() {
         .call(vec![JsonValue::from("sk-1")], JsonObject::new())
         .await
         .unwrap();
-    assert_eq!(result, json!({"key": "sk-1"}));
+    assert_eq!(
+        result,
+        serde_json::from_str::<JsonValue>(r#"{"key": "sk-1"}"#).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -107,7 +110,10 @@ async fn an_async_hook_next_to_the_config_file_is_awaited() {
         .call(vec![JsonValue::from("sk-2")], JsonObject::new())
         .await
         .unwrap();
-    assert_eq!(result, json!({"key": "sk-2", "async": true}));
+    assert_eq!(
+        result,
+        serde_json::from_str::<JsonValue>(r#"{"key": "sk-2", "async": true}"#).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -147,7 +153,15 @@ async fn a_load_error_names_the_slot_and_the_value() {
                 "got: {source}"
             );
         }
-        other => panic!("expected a load error, got {other:?}"),
+        other @ (HooksError::Interpreter { .. }
+        | HooksError::InterpreterTask { .. }
+        | HooksError::InterpreterMissing
+        | HooksError::CallbackIsClass { .. }
+        | HooksError::CallbackNotDispatchable { .. }
+        | HooksError::Validate { .. }
+        | HooksError::Call(_)
+        | HooksError::StartupSpec { .. }
+        | HooksError::Startup { .. }) => panic!("expected a load error, got {other:?}"),
     }
 }
 
@@ -232,7 +246,15 @@ async fn custom_validate_refuses_a_function_without_literal_true() {
                 "got: {text}"
             );
         }
-        other => panic!("expected a validate error, got {other:?}"),
+        other @ (HooksError::Interpreter { .. }
+        | HooksError::InterpreterTask { .. }
+        | HooksError::InterpreterMissing
+        | HooksError::Load { .. }
+        | HooksError::CallbackIsClass { .. }
+        | HooksError::CallbackNotDispatchable { .. }
+        | HooksError::Call(_)
+        | HooksError::StartupSpec { .. }
+        | HooksError::Startup { .. }) => panic!("expected a validate error, got {other:?}"),
     }
 }
 
@@ -243,8 +265,8 @@ async fn startup_hooks_run_in_order_and_await_coroutines() {
     let service = test_support::service(Some(workspace.config_path.clone()));
     let (captured, _guard) = test_support::capture();
     let specs = vec![
-        format!("{module}.record_first"),
-        format!("{module}.record_second"),
+        format!("{module}:record_first"),
+        format!("{module}:record_second"),
     ];
     service.run_startup_hooks(&specs).await.unwrap();
     assert_eq!(
@@ -267,7 +289,7 @@ async fn a_sync_startup_hook_that_returns_a_coroutine_is_awaited() {
 def lazy():\n    return _mark()\n",
     );
     let service = test_support::service(Some(workspace.config_path.clone()));
-    let specs = vec![format!("{module}.lazy")];
+    let specs = vec![format!("{module}:lazy")];
     service.run_startup_hooks(&specs).await.unwrap();
     assert_eq!(recorded(&service, &module), vec!["awaited".to_owned()]);
 }
@@ -290,8 +312,8 @@ async fn a_failing_hook_reports_litellms_line_and_stops_the_later_specs() {
     let service = test_support::service(Some(workspace.config_path.clone()));
     let (captured, _guard) = test_support::capture();
     let specs = vec![
-        format!("{module}.failing"),
-        format!("{module}.record_after_failure"),
+        format!("{module}:failing"),
+        format!("{module}:record_after_failure"),
     ];
     let error = service.run_startup_hooks(&specs).await.unwrap_err();
     match error {
@@ -307,7 +329,15 @@ async fn a_failing_hook_reports_litellms_line_and_stops_the_later_specs() {
                 StartupFailure::Call(CallError::Python(_))
             ));
         }
-        other => panic!("expected a startup error, got {other:?}"),
+        other @ (HooksError::Interpreter { .. }
+        | HooksError::InterpreterTask { .. }
+        | HooksError::InterpreterMissing
+        | HooksError::Load { .. }
+        | HooksError::CallbackIsClass { .. }
+        | HooksError::CallbackNotDispatchable { .. }
+        | HooksError::Validate { .. }
+        | HooksError::Call(_)
+        | HooksError::StartupSpec { .. }) => panic!("expected a startup error, got {other:?}"),
     }
     assert_eq!(recorded(&service, &module), vec!["failed".to_owned()]);
     let logs = captured.text();
@@ -323,7 +353,7 @@ async fn a_startup_hook_that_cannot_be_imported_reports_the_python_message() {
     let workspace = test_support::workspace();
     let module = workspace.module("b165_startup_import", "def present():\n    return None\n");
     let service = test_support::service(Some(workspace.config_path.clone()));
-    let specs = vec![format!("{module}.absent")];
+    let specs = vec![format!("{module}:absent")];
     let error = service.run_startup_hooks(&specs).await.unwrap_err();
     match error {
         HooksError::Startup {
@@ -335,7 +365,15 @@ async fn a_startup_hook_that_cannot_be_imported_reports_the_python_message() {
             assert!(message.contains("absent"), "got: {message}");
             assert!(matches!(*source, StartupFailure::Import(_)));
         }
-        other => panic!("expected a startup error, got {other:?}"),
+        other @ (HooksError::Interpreter { .. }
+        | HooksError::InterpreterTask { .. }
+        | HooksError::InterpreterMissing
+        | HooksError::Load { .. }
+        | HooksError::CallbackIsClass { .. }
+        | HooksError::CallbackNotDispatchable { .. }
+        | HooksError::Validate { .. }
+        | HooksError::Call(_)
+        | HooksError::StartupSpec { .. }) => panic!("expected a startup error, got {other:?}"),
     }
 }
 

@@ -9,17 +9,27 @@ use pyo3::types::PyAnyMethods as _;
 
 use super::{HOOK_DEADLINE, LOAD_DEADLINE};
 use crate::python_hooks::PythonHooks;
-use crate::python_hooks::slots::HookSlot;
+use crate::python_hooks::slots::{HookSlot, LoadedHook};
 use crate::python_hooks::test_support;
 
 const GATED: &str = "import threading\n\n_gate = threading.Event()\n\n\
 def blocked():\n    _gate.wait()\n    return \"done\"\n\n\
 def release():\n    _gate.set()\n";
 
-fn release(service: &PythonHooks, module: &str) {
+fn release(service: &PythonHooks, hook: &LoadedHook) {
+    // the loader execs the file without registering it, so release reaches the same module
     let runtime = service.inner.get().unwrap();
     runtime.host.attach(|py| {
-        py.import(module).unwrap().call_method0("release").unwrap();
+        hook.object
+            .loaded
+            .object
+            .bind(py)
+            .getattr("__globals__")
+            .unwrap()
+            .getattr("release")
+            .unwrap()
+            .call0()
+            .unwrap();
     });
 }
 
@@ -64,9 +74,12 @@ async fn a_hook_that_passes_its_deadline_gives_a_timeout_error() {
         .call_within(deadline, Vec::new(), JsonObject::new())
         .await
         .unwrap_err();
-    release(&service, &module);
+    release(&service, &hook);
     match error {
         CallError::Work(WorkError::TimedOut { after }) => assert_eq!(after, deadline),
-        other => panic!("expected the pool timeout, got {other:?}"),
+        other @ (CallError::TimedOut { .. }
+        | CallError::Python(_)
+        | CallError::Value(_)
+        | CallError::Work(_)) => panic!("expected the pool timeout, got {other:?}"),
     }
 }

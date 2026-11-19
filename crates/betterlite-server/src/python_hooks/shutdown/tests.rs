@@ -8,7 +8,7 @@ use pyo3::types::PyAnyMethods as _;
 use tokio::task::yield_now;
 
 use crate::python_hooks::HooksRuntime;
-use crate::python_hooks::slots::HookSlot;
+use crate::python_hooks::slots::{HookSlot, LoadedHook};
 use crate::python_hooks::test_support;
 
 const GATED: &str = "import threading\n\n_gate = threading.Event()\n\n\
@@ -17,9 +17,19 @@ def release():\n    _gate.set()\n";
 
 const WAIT_LIMIT: Duration = Duration::from_secs(10);
 
-fn release(runtime: &HooksRuntime, module: &str) {
+fn release(runtime: &HooksRuntime, hook: &LoadedHook) {
+    // the loader execs the file without registering it, so release reaches the same module
     runtime.host.attach(|py| {
-        py.import(module).unwrap().call_method0("release").unwrap();
+        hook.object
+            .loaded
+            .object
+            .bind(py)
+            .getattr("__globals__")
+            .unwrap()
+            .getattr("release")
+            .unwrap()
+            .call0()
+            .unwrap();
     });
 }
 
@@ -66,6 +76,6 @@ async fn shutdown_reports_the_jobs_still_running_after_the_grace() {
     let logs = captured.text();
     assert!(logs.contains("shutdown grace elapsed"), "logs were: {logs}");
     assert!(logs.contains("jobs=1"), "logs were: {logs}");
-    release(runtime, &module);
+    release(runtime, &hook);
     wait_for_idle(runtime).await;
 }

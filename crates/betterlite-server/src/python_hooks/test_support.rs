@@ -91,6 +91,7 @@ impl FakeS3 {
         for request in seen.iter() {
             urls.push(request.url.clone());
         }
+        drop(seen);
         urls
     }
 }
