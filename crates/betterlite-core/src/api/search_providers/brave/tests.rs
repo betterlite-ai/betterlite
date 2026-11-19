@@ -326,6 +326,17 @@ fn brave_search_request_caps_max_results_only_above(#[case] given: i64, #[case] 
 }
 
 #[test]
+fn brave_search_request_treats_a_null_max_results_as_absent() {
+    let config = config(&[]);
+    let params = options(&[("max_results", JsonValue::Null)]);
+
+    let body = request_body(&config, "q", &params);
+
+    let sent = body["_brave_params"].as_object().unwrap();
+    assert!(!sent.contains_key("count"));
+}
+
+#[test]
 fn brave_search_request_wraps_domains_into_the_query() {
     let config = config(&[]);
     let params = options(&[("search_domain_filter", json(r#"["a.test", "b.test"]"#))]);
@@ -583,7 +594,11 @@ fn brave_search_reply_falls_back_to_age_only_when_page_age_is_empty() {
         "web": {"results": [
             {"page_age": 0, "age": "2024-03-05"},
             {"page_age": "", "age": "2024-03-05"},
-            {"page_age": "0", "age": "2024-03-05"}
+            {"page_age": "0", "age": "2024-03-05"},
+            {"page_age": 0.0, "age": "2024-03-05"},
+            {"page_age": 1700000000.5, "age": "2020-01-01"},
+            {"page_age": [], "age": "2024-03-05"},
+            {"page_age": [1], "age": "2024-03-05"}
         ]}
     }"#;
 
@@ -592,6 +607,10 @@ fn brave_search_reply_falls_back_to_age_only_when_page_age_is_empty() {
     assert_eq!(response.results[0].date.as_deref(), Some("2024-03-05"));
     assert_eq!(response.results[1].date.as_deref(), Some("2024-03-05"));
     assert_eq!(response.results[2].date.as_deref(), Some("1970-01-01"));
+    assert_eq!(response.results[3].date.as_deref(), Some("2024-03-05"));
+    assert_eq!(response.results[4].date.as_deref(), Some("2023-11-14"));
+    assert_eq!(response.results[5].date.as_deref(), Some("2024-03-05"));
+    assert_eq!(response.results[6].date, None);
 }
 
 #[test]
@@ -734,6 +753,10 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::trailing_word("2024-03-05extra", Some("2024-03-05"))]
 #[case::leading_word("extra2024-03-05", Some("2024-03-05"))]
 #[case::short_year("99-03-05", Some("1999-03-05"))]
+#[case::short_year_slash("05/03/24", Some("2024-05-03"))]
+#[case::four_char_junk_year_is_not_iso("99a9-05-03", Some("2003-09-05"))]
+#[case::iso_leading_zeros("0099-03-05", Some("0099-03-05"))]
+#[case::time_with_seconds("10:00:30", Some("2024-03-05"))]
 #[case::fraction_and_offset("2024-03-05T10:00:00.5-05:00", Some("2024-03-05"))]
 #[case::leap_day("2024-02-29T23:59:59.999Z", Some("2024-02-29"))]
 fn brave_search_dates_read_text(#[case] value: &str, #[case] expected: Option<&str>) {
