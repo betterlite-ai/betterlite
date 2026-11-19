@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import litellm
 import openai
@@ -77,24 +77,23 @@ class AssistantReadDeleteCall(Strict):
     runs: list[Run]
 
 
-class CallArgs(TypedDict, total=False):
+class CallArgs(TypedDict):
     custom_llm_provider: Literal["openai", "azure"]
     client: AsyncOpenAI | None
-    assistant_id: str
     api_key: str | None
     api_base: str | None
     api_version: str | None
     max_retries: int | None
-    timeout: str | float
     request_timeout: float | None
-    azure_ad_token: str
     after: str | None
     before: str | None
     limit: int | None
     order: str | None
-    extra_body: dict[str, JsonValue] | None
     aget_assistants: JsonValue
     async_delete_assistants: JsonValue
+    timeout: NotRequired[str | float]
+    extra_body: NotRequired[dict[str, JsonValue] | None]
+    azure_ad_token: NotRequired[str]
 
 
 class AssistantView(BaseModel):
@@ -141,7 +140,7 @@ class RunOutcome(BaseModel):
 
 
 class Outcome(BaseModel):
-    runs: list[RunOutcome]
+    assistant_read_delete: dict[Literal["value"], dict[Literal["runs"], list[RunOutcome]]]
 
 
 class AssistantReadDeleteRequest(Strict):
@@ -149,7 +148,8 @@ class AssistantReadDeleteRequest(Strict):
 
     def serialize(self, api_base: str) -> str:
         runs = [run_once(run, api_base) for run in self.assistant_read_delete.runs]
-        return Outcome(runs=runs).model_dump_json(by_alias=True, exclude_none=True)
+        outcome = Outcome(assistant_read_delete={"value": {"runs": runs}})
+        return outcome.model_dump_json(by_alias=True, exclude_none=True)
 
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
@@ -209,8 +209,6 @@ def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> C
         "aget_assistants": invocation.aget_assistants,
         "async_delete_assistants": invocation.async_delete_assistants,
     }
-    if invocation.assistant_id is not None:
-        args["assistant_id"] = invocation.assistant_id
     if params.timeout is not None:
         args["timeout"] = params.timeout
     if params.azure_ad_token is not None:
@@ -220,49 +218,61 @@ def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> C
     return args
 
 
+def required_assistant_id(invocation: Input) -> str:
+    assistant_id = invocation.assistant_id
+    if assistant_id is None:
+        raise TypeError("assistant_id is required for delete_assistant")
+    return assistant_id
+
+
 def run_mode(
     invocation: Input, client: AsyncOpenAI | None, api_base: str, mode: Literal["sync", "async"]
 ) -> Mode:
-    args = call_args(invocation, client, api_base)
     entry = run_async if mode == "async" else entry_sync
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(entry, invocation, args)
+        future = executor.submit(entry, invocation, client, api_base)
     error = future.exception()
     if error is not None:
         return Mode(failure=failure_view(error))
     return value_mode(future.result())
 
 
-def entry_sync(invocation: Input, args: CallArgs) -> Answer:
+def entry_sync(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
+    args = call_args(invocation, client, api_base)
     if invocation.operation == "list":
         page: SyncCursorPage[Assistant] = get_assistants(**args)
         return page
-    deleted: AssistantDeleted | Coroutine[None, None, AssistantDeleted] = delete_assistant(**args)
+    deleted: AssistantDeleted | Coroutine[None, None, AssistantDeleted] = delete_assistant(
+        **args, assistant_id=required_assistant_id(invocation)
+    )
     return deleted
 
 
-async def entry_async(invocation: Input, args: CallArgs) -> Answer:
+async def entry_async(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
+    args = call_args(invocation, client, api_base)
     if invocation.operation == "list":
         page: AsyncCursorPage[Assistant] = await aget_assistants(**args)
         return page
-    deleted: AssistantDeleted = await adelete_assistant(**args)
+    deleted: AssistantDeleted = await adelete_assistant(
+        **args, assistant_id=required_assistant_id(invocation)
+    )
     return deleted
 
 
-def run_async(invocation: Input, args: CallArgs) -> Answer:
+def run_async(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
     with asyncio.Runner() as runner:
-        return runner.run(entry_async(invocation, args))
+        return runner.run(entry_async(invocation, client, api_base))
 
 
 def value_mode(value: Answer) -> Mode:
-    if asyncio.iscoroutine(value):
-        value.close()
-        return Mode(coroutine=True)
     match value:
         case SyncCursorPage() | AsyncCursorPage():
             return Mode(page=TypeAdapter(PageView).validate_json(value.model_dump_json()))
         case AssistantDeleted():
             return Mode(deleted=TypeAdapter(DeletedView).validate_json(value.model_dump_json()))
+        case Coroutine():
+            value.close()
+            return Mode(coroutine=True)
 
 
 def failure_view(error: BaseException) -> FailureView:
