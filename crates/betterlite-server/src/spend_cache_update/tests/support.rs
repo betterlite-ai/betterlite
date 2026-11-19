@@ -18,7 +18,6 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
-use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
@@ -287,12 +286,14 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
         .expect("a free local port");
     let port = listener.local_addr().expect("the bound address").port();
     drop(listener);
-    let redis = connect(
-        unreachable_options(port),
-        &BTreeMap::<String, String>::new(),
-    )
-    .await
-    .expect("the cache builds against a closed port");
+    let env = BTreeMap::from([
+        ("REDIS_HOST".to_owned(), "127.0.0.1".to_owned()),
+        ("REDIS_PORT".to_owned(), port.to_string()),
+        ("REDIS_SOCKET_CONNECT_TIMEOUT".to_owned(), "0.05".to_owned()),
+    ]);
+    let redis = connect(unreachable_options(), &env)
+        .await
+        .expect("the cache builds against a closed port");
     gateway_cache(
         memory(),
         memory(),
@@ -302,45 +303,10 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
     )
 }
 
-// The overrides are typed here rather than parsed: betterlite-server builds serde_json with arbitrary_precision, and that feature's private number map cannot deserialize a fractional literal into the untagged Scalar enum.
-fn unreachable_overrides(port: u16) -> RedisOverrides {
-    RedisOverrides {
-        host: Some("127.0.0.1".to_owned()),
-        port: Some(IntOrText::Value(i64::from(port))),
-        db: None,
-        username: None,
-        password: None,
-        url: None,
-        ssl: None,
-        socket_timeout: Some(FloatOrText::Value(0.05_f64)),
-        socket_connect_timeout: Some(FloatOrText::Value(0.05_f64)),
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
-        credential_provider: false,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        gcp_service_account: None,
-        gcp_ssl_ca_certs: None,
-        azure_redis_ad_token: None,
-        azure_client_id: None,
-        azure_tenant_id: None,
-        azure_client_secret: None,
-        aws_iam_auth: None,
-        aws_iam_user_name: None,
-        aws_iam_cache_name: None,
-        aws_iam_region: None,
-        aws_iam_serverless: None,
-        passthrough: BTreeMap::new(),
-    }
-}
-
-fn unreachable_options(port: u16) -> RedisCacheOptions {
+// The overrides stay at their defaults; the closed port and the short connect timeout arrive through the REDIS_* lookup LiteLLM's RedisCache resolves.
+fn unreachable_options() -> RedisCacheOptions {
     RedisCacheOptions {
-        overrides: unreachable_overrides(port),
+        overrides: RedisOverrides::default(),
         family: RedisCacheFamily::Standalone,
         namespace: None,
         default_ttl: 60,
