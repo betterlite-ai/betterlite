@@ -98,8 +98,7 @@ fn request_tags(context: &Context<'_>) -> Result<String, SpendPayloadError> {
     let stored = context
         .standard
         .as_ref()
-        .and_then(|source| source.request_tags.as_ref())
-        .filter(|tags| !matches!(tags, Json::Null));
+        .and_then(|source| source.request_tags.as_ref());
     if let Some(tags) = stored {
         return dumps(tags, "request_tags");
     }

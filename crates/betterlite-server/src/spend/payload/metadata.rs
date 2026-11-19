@@ -94,7 +94,7 @@ fn router_metadata(
             .then(|| attribution.model_group.clone()),
         selected_model: (!attribution.model_name.is_empty())
             .then(|| attribution.model_name.clone()),
-        selected_provider: attribution.provider.clone().filter(|name| !name.is_empty()),
+        selected_provider: attribution.provider.clone(),
         router_correlation_id: attribution.call_id.clone(),
     }))
 }
