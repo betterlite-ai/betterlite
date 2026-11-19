@@ -1,7 +1,7 @@
 task: B1742
 deviations:
   - what: request_tags is read through a bounded reader that refuses a payload over 1 MiB or nested deeper than 64 containers; LiteLLM loads it unbounded.
-    why: A spent log column is caller-influenced and the proxy must not allocate or recurse without a limit; the bounds are the ones B192's reader already uses.
+    why: A spent log column is caller-influenced and the proxy must not allocate or recurse without a limit; the bounds are the ones B192's reader already uses, and that reader sits in betterlite-logging, which depends on betterlite-db, so decode_enqueue_tags carries the same bounds here rather than calling it across a dependency cycle.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1400
   - what: A startTime parses as RFC 3339, a space-separated timestamp, minute precision or a date alone; the compact ISO form datetime.fromisoformat also accepts ("20240102T030405") does not parse.
     why: Spend logs write startTime from datetime.isoformat(), so the compact form is not a value a working proxy produces.
