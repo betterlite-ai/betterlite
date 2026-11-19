@@ -102,7 +102,7 @@ impl TeamListEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TeamListResponse {
     pub teams: Vec<TeamListEntry>,
     pub total: i64,
