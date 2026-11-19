@@ -1,0 +1,16 @@
+kind: helper
+name: spend-cache-update-tags-filtered
+call:
+  b8376:
+    user_id: user-3
+    tags: ["qa", "", 7, null, "prod"]
+    response_cost: 2
+calls:
+  - b8376:
+      tags: ["qa", "qa"]
+      response_cost: 1
+  - b8376:
+      tags: []
+      response_cost: 1
+env: {}
+compare: {ignore: []}

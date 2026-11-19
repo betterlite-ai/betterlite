@@ -1,0 +1,15 @@
+kind: helper
+name: management-payload-unchanged-caller-response
+call:
+  management_payload:
+    function: redact_env_vars
+    response:
+      server_id: s1
+      env_vars:
+        - {name: TOP, value: top-secret, scope: global}
+      items:
+        - server_id: alpha
+          env_vars:
+            - {name: ALPHA, value: alpha-secret, description: the alpha key}
+env: {}
+compare: {ignore: []}

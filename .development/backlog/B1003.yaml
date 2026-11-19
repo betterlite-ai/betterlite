@@ -1,7 +1,7 @@
 id: B1003
 milestone: M5 api families
 title: Speech chat bridge
-status: todo
+status: done
 depends_on: [B004, B011, B1128, B171, B1087, B2401, B9952]
 file: tasks/B1003-speech-chat-bridge.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/litellm_core_utils/audio_utils/utils.py"
 parent: B083
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2482

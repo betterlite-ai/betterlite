@@ -1,0 +1,22 @@
+kind: helper
+name: acquire_in_memory-integer-mirror
+call:
+  b3035:
+    function: gauge_check
+    descriptors:
+      - key: api-key
+        value: k1
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 3
+          window_size: null
+    slot_id: slot-i
+    read_only: false
+    fail_closed: false
+    now: 1700000000
+    cache:
+      "{api-key:k1}:max_parallel_requests": 1
+    replies: null
+env: {}
+compare: {ignore: []}

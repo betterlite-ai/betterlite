@@ -1,0 +1,64 @@
+kind: helper
+name: normalize-before-route
+call:
+  messages_reasoning_route:
+    calls:
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: max}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: {effort: max, summary: concise, extra: 1}}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: xhigh}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: minimal}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [low]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: max}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: max}
+        model_info: {}
+      - function: normalize_effort
+        kwargs: {reasoning_effort: max}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, reasoning_effort: max}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: null, reasoning_effort: max}
+        model_info: {supports_reasoning: true}
+      - function: normalize_effort
+        kwargs: {model: openai/responses/o3, custom_llm_provider: openai, reasoning_effort: max}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: high}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [low]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: bogus}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: ""}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: null}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: 5}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: [max]}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: {summary: concise}}
+        model_info: null
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: {effort: 7}}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: normalize_effort
+        kwargs: {model: deployment-a, custom_llm_provider: openai, reasoning_effort: {effort: max, summary: null}}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [xhigh, high]}
+env: {}
+compare: {ignore: []}
