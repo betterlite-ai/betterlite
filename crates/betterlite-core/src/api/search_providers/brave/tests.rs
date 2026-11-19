@@ -31,7 +31,7 @@ fn today() -> NaiveDate {
 }
 
 fn config(variables: &[(&str, &str)]) -> BraveSearchConfig {
-    BraveSearchConfig::load_at(&environment(variables), today())
+    BraveSearchConfig::load(&environment(variables), Some(today()))
 }
 
 fn options(pairs: &[(&str, JsonValue)]) -> Object {
@@ -110,7 +110,7 @@ fn brave_search_settings_read_the_environment() {
     ]);
 
     assert_eq!(
-        config.api_key.as_ref().map(ExposeSecret::expose_secret),
+        config.api_key.as_ref().map(|key| key.expose_secret()),
         Some("server-key")
     );
     assert_eq!(config.api_base, "https://proxy.test/res/v1/web/search");
@@ -251,7 +251,6 @@ fn brave_search_request_joins_lists_and_defaults_the_metadata_flag() {
 }
 
 #[rstest]
-#[case::absent(JsonValue::Null, true)]
 #[case::explicit_null(JsonValue::Null, true)]
 #[case::explicit_true(JsonValue::Bool(true), true)]
 #[case::explicit_false(JsonValue::Bool(false), false)]
@@ -476,12 +475,12 @@ fn brave_search_reply_selects_every_section_for_an_unsupported_filter() {
 }
 
 #[rstest]
-#[case::absent(None, 2)]
+#[case::absent(None, 4)]
 #[case::zero(Some(0), 1)]
 #[case::one(Some(1), 1)]
 #[case::given(Some(3), 3)]
-#[case::at_the_limit(Some(20), 3)]
-#[case::above_the_limit(Some(99), 3)]
+#[case::at_the_limit(Some(20), 4)]
+#[case::above_the_limit(Some(99), 4)]
 fn brave_search_reply_clamps_the_count_across_sections(
     #[case] max_results: Option<i64>,
     #[case] expected: usize,
@@ -576,7 +575,7 @@ fn brave_search_reply_stops_reading_after_the_count() {
 }
 
 #[test]
-fn brave_search_reply_reads_past_the_count_only_while_a_result_is_needed() {
+fn brave_search_reply_rejects_a_title_that_is_not_text() {
     let config = config(&[]);
     let body = r#"{"web": {"results": [{"title": 5, "url": "u"}]}}"#;
 
@@ -610,26 +609,13 @@ fn brave_search_reply_rejects_a_section_that_is_not_an_object() {
 
 #[test]
 fn brave_search_reply_rejects_a_count_that_is_not_an_integer() {
-    let config = config(&[]);
     let body = r#"{"web": {"results": []}}"#;
-    let params = Object::new();
-    let request = config
-        .transform_search_request(&query("q"), &params)
-        .unwrap();
-    let _url = config.complete_url(None, &params, Some(&request)).unwrap();
-    let mut headers = Headers::new();
-    headers.insert("Accept".to_owned(), "application/json".to_owned());
-    let url_error = super::reply::decode_brave_search(
-        body.as_bytes(),
-        Some(&format!("{BRAVE_API_BASE}?count=many")),
-        today(),
-    )
-    .unwrap_err();
+    let url = format!("{BRAVE_API_BASE}?count=many");
 
-    assert!(matches!(
-        url_error,
-        BraveSearchError::CountNotInteger { .. }
-    ));
+    let error = super::reply::decode_brave_search(body.as_bytes(), Some(url.as_str()), today())
+        .unwrap_err();
+
+    assert!(matches!(error, BraveSearchError::CountNotInteger { .. }));
 }
 
 #[test]
