@@ -1,0 +1,36 @@
+kind: helper
+name: login-undecodable
+call:
+  b10003:
+    function: login
+    id_token: not-a-jwt
+env: {}
+compare: {ignore: []}
+calls:
+  - b10003:
+      function: login
+      id_token: a.b
+  - b10003:
+      function: login
+      id_token: a.b.c.d
+  - b10003:
+      function: login
+      id_token: "###.e30.c2ln"
+  - b10003:
+      function: login
+      id_token: bm90LWpzb24.e30.c2ln
+  - b10003:
+      function: login
+      id_token: W10.e30.c2ln
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.bm90IGpzb24.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.WzFd.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.!!!"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOjV9.c2lnbmF0dXJl"

@@ -1,0 +1,9 @@
+task: B10003
+deviations:
+  - what: An id_token over 1048576 bytes or with JSON nested deeper than 64 is treated as undecodable, so it is not retained and the fixed warning is logged. LiteLLM has no such limit.
+    why: Every decoder of outside bytes is bounded, and B760's decoder sets these two limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L146-L152
+  - what: decode_payload reads expires_at as RFC 3339 text, or as YYYY-MM-DDTHH:MM:SS with an optional fraction and no offset, which is read as UTC. LiteLLM's pydantic field also accepts other ISO 8601 spellings, such as a space between the date and the time, so a row written in one of those opens in LiteLLM but is refused here with the error enum.
+    why: Rule typed-errors reads a timestamp through one named parser and reports the text it refused; a row the store writes is always produced by datetime.isoformat(), which is RFC 3339 with an offset, so no row betterlite writes falls outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L239-L250
+kept_bugs: []
