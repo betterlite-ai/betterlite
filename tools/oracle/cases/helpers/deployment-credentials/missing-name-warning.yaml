@@ -1,0 +1,50 @@
+kind: helper
+name: deployment-credentials-missing-name-warning
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+          api_key: sk-deployment
+          litellm_credential_name: absent
+        model_info:
+          id: d1
+    arguments:
+      model_id: d1
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-deployment
+            litellm_credential_name: absent
+          model_info:
+            id: d1
+      credentials:
+        - credential_name: other
+          credential_values:
+            api_key: sk-other
+      arguments:
+        model_id: d1
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-deployment
+            litellm_credential_name: ""
+          model_info:
+            id: d1
+      credentials:
+        - credential_name: ""
+          credential_values:
+            api_key: sk-empty-name
+      arguments:
+        model_id: d1
+env: {}
+compare: {ignore: []}
