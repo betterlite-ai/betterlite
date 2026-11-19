@@ -107,7 +107,9 @@ fn other_system_names_do_not_parse(#[case] name: &str) {
 
 #[test]
 fn the_local_system_is_refused() {
-    let error = select_secret_manager(Some("local"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("local"), &settings(), None, &env(&[])) else {
+        panic!("the local key management system was accepted");
+    };
     assert_eq!(error.to_string(), "Invalid Key Management System selected");
     assert!(matches!(error, ConfigBootError::InvalidKeyManagementSystem));
 }
@@ -176,8 +178,10 @@ fn vault_reaches_the_real_client() {
 
 #[test]
 fn vault_without_credentials_is_refused() {
-    let error =
-        select_secret_manager(Some("hashicorp_vault"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("hashicorp_vault"), &settings(), None, &env(&[]))
+    else {
+        panic!("a vault without credentials was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "initializing the Vault secret manager failed"
@@ -200,7 +204,9 @@ fn cyberark_reaches_the_real_client() {
 
 #[test]
 fn cyberark_without_credentials_is_refused() {
-    let error = select_secret_manager(Some("cyberark"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("cyberark"), &settings(), None, &env(&[])) else {
+        panic!("cyberark without credentials was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "initializing the CyberArk secret manager failed"
@@ -210,7 +216,9 @@ fn cyberark_without_credentials_is_refused() {
 
 #[test]
 fn aws_kms_without_a_region_is_refused() {
-    let error = select_secret_manager(Some("aws_kms"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("aws_kms"), &settings(), None, &env(&[])) else {
+        panic!("aws kms without a region was accepted");
+    };
     assert_eq!(error.to_string(), "initializing the AWS KMS client failed");
     assert!(
         source_text(&error).contains("Missing required environment variable - AWS_REGION_NAME")
@@ -232,8 +240,9 @@ fn aws_kms_with_a_region_is_accepted() {
 
 #[test]
 fn google_kms_without_credentials_is_refused() {
-    let error =
-        select_secret_manager(Some("google_kms"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("google_kms"), &settings(), None, &env(&[])) else {
+        panic!("google kms without credentials was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "initializing the Google KMS client failed"
@@ -246,13 +255,14 @@ fn google_kms_without_credentials_is_refused() {
 
 #[test]
 fn google_kms_without_a_resource_name_is_refused() {
-    let error = select_secret_manager(
+    let Err(error) = select_secret_manager(
         Some("google_kms"),
         &settings(),
         None,
         &env(&[("GOOGLE_APPLICATION_CREDENTIALS", "/creds.json")]),
-    )
-    .unwrap_err();
+    ) else {
+        panic!("google kms without a resource name was accepted");
+    };
     assert!(
         source_text(&error)
             .contains("Missing required environment variable - GOOGLE_KMS_RESOURCE_NAME")
@@ -301,8 +311,11 @@ fn aws_secret_manager_accepts_any_region_variable() {
 
 #[test]
 fn google_secret_manager_without_a_project_is_refused() {
-    let error = select_secret_manager(Some("google_secret_manager"), &settings(), None, &env(&[]))
-        .unwrap_err();
+    let Err(error) =
+        select_secret_manager(Some("google_secret_manager"), &settings(), None, &env(&[]))
+    else {
+        panic!("google secret manager without a project was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "initializing the Google Secret Manager client failed"
@@ -327,7 +340,9 @@ fn google_secret_manager_with_a_project_is_accepted() {
 
 #[test]
 fn custom_without_a_config_path_is_refused() {
-    let error = select_secret_manager(Some("custom"), &settings(), None, &env(&[])).unwrap_err();
+    let Err(error) = select_secret_manager(Some("custom"), &settings(), None, &env(&[])) else {
+        panic!("a custom manager without a config path was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "CustomSecretManagerException - config_file_path is required to load custom secret manager"
@@ -336,13 +351,14 @@ fn custom_without_a_config_path_is_refused() {
 
 #[test]
 fn custom_without_the_manager_field_is_refused() {
-    let error = select_secret_manager(
+    let Err(error) = select_secret_manager(
         Some("custom"),
         &settings(),
         Some(Path::new("/config.yaml")),
         &env(&[]),
-    )
-    .unwrap_err();
+    ) else {
+        panic!("a custom manager without its manager field was accepted");
+    };
     assert_eq!(
         error.to_string(),
         "CustomSecretManagerException - custom_secret_manager field is required in key_management_settings"
