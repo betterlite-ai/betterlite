@@ -34,13 +34,10 @@ fn refs_user(user_id: &str) -> AuthObjectRefs {
 }
 
 fn refs_user_team() -> AuthObjectRefs {
-    AuthObjectRefs {
-        user_id: Some("user-1".to_owned()),
-        team_id: Some("team-1".to_owned()),
-        membership_user_id: Some("user-1".to_owned()),
-        organization_id: None,
-        project_id: None,
-    }
+    let mut refs = refs_user("user-1");
+    refs.team_id = Some("team-1".to_owned());
+    refs.membership_user_id = Some("user-1".to_owned());
+    refs
 }
 
 fn refs_all() -> AuthObjectRefs {
