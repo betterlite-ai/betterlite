@@ -25,6 +25,7 @@ class Config(Protocol):
         litellm_params: JsonObject,
     ) -> str: ...
 
+    # ast-grep-ignore: no-long-names
     def validate_anthropic_messages_environment(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/messages/transformation.py#L45-L72
         self,
         headers: Headers,
@@ -36,11 +37,11 @@ class Config(Protocol):
         api_base: str | None = None,
     ) -> tuple[JsonObject, str | None]: ...
 
-    def transform_anthropic_messages_request(
+    def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         messages: list[JsonObject],
-        anthropic_messages_optional_request_params: JsonObject,
+        anthropic_messages_optional_request_params: JsonObject,  # ast-grep-ignore: no-long-names
         litellm_params: GenericLiteLLMParams,
         headers: JsonObject,
     ) -> JsonObject: ...
