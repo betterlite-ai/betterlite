@@ -219,9 +219,10 @@ def log_attempt(arguments: JsonObject) -> JsonValue:
     body = TypeAdapter(str).validate_python(arguments["body"])
     region = TypeAdapter(str | None).validate_python(arguments.get("aws_region_name"))
     response = httpx.Response(status_code, content=body.encode("utf-8"))
+    json_response = TypeAdapter(JsonObject).validate_python(arguments["response"])
     guardrail._log_apply_guardrail_attempt(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1280
         response,
-        response_of(arguments),
+        json_response,
         request_data,
         GuardrailEventHooks.during_call,
         START_TIME,
