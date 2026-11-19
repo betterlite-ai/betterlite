@@ -112,7 +112,7 @@ class ChunkView(TypedDict):
 
 class TestIngestion(BaseRAGIngestion):
     @override
-    async def store(
+    async def store(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L269-L294
         self,
         file_content: bytes | None,
         filename: str | None,
