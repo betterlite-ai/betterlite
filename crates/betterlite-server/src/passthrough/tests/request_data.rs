@@ -5,6 +5,7 @@ use crate::passthrough::request_data::{
 };
 
 mod passthrough_parse_content_type;
+mod passthrough_request_data_corpus;
 
 fn parse(
     content_type: &str,
