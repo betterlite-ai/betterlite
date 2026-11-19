@@ -9,6 +9,7 @@ use crate::search::tests::support::{
 pub(super) fn assert_gateway_host_signing() {
     assert_gateway_host_is_sigv4_signed();
     assert_signing_host_matches_botocore();
+    assert_userinfo_is_not_signed();
     assert_configured_hostname_allows_a_custom_host();
     assert_untrusted_signing_host_is_refused();
     assert_spoofed_signing_hosts_need_configuration();
@@ -69,6 +70,27 @@ fn assert_signing_host_matches_botocore() {
             "Signature=2f866d794281e427008bc83a7bcccbf030e39101bb4d1e5a860d6601d77b7159"
         )
     );
+}
+
+fn assert_userinfo_is_not_signed() {
+    // botocore signs the hostname alone, so api_base userinfo and a default port never reach it
+    let api_bases = [
+        "https://user:password@gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
+        "https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com:443/mcp",
+    ];
+    for api_base in api_bases {
+        let signed = sign(&baseline(api_base), &lookup(&[]), resolver()).unwrap();
+        assert_eq!(signed.url, api_base);
+        assert_eq!(header(&signed.headers, "host"), None);
+        assert_eq!(
+            authorization(&signed),
+            concat!(
+                "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request, ",
+                "SignedHeaders=content-type;host;x-amz-date, ",
+                "Signature=a180f7b31111afc22786853455d626f0df8abc3a46b5c5bd3721046b3d760661"
+            )
+        );
+    }
 }
 
 fn assert_configured_hostname_allows_a_custom_host() {

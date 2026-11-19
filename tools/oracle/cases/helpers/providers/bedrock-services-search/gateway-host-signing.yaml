@@ -104,5 +104,15 @@ call:
         credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
         session_region: us-east-1
         now: 1767225600
+      - api_base: 'https://user:pass@gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: null
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
 env: {}
 compare: {ignore: []}

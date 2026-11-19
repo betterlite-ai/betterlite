@@ -159,7 +159,7 @@ where
     Ok(signed)
 }
 
-// botocore signs the host it derives from the URL, urlsplit's lowercase hostname
+// botocore signs urlsplit's lowercase hostname and a non-default port, with userinfo left out
 fn inject_signing_host(
     request: &SignRequest<'_>,
     headers: &mut Vec<(String, Option<String>)>,
@@ -171,7 +171,7 @@ fn inject_signing_host(
         return None;
     }
     let parsed = Url::parse(request.api_base).ok()?;
-    let host = parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase();
+    let host = parsed[Position::BeforeHost..Position::AfterPort].to_lowercase();
     headers.push(("host".to_owned(), Some(host.clone())));
     Some(host)
 }
