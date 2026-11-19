@@ -177,7 +177,7 @@ impl RecordingFetch {
         Ok(Self {
             status: fetch.status,
             content_type: fetch.content_type.clone(),
-            body: decode_base64(&fetch.body_base64)?,
+            body: BASE64.decode(&fetch.body_base64).or_value_error()?,
         })
     }
 
@@ -293,7 +293,7 @@ fn init(options_input: &OptionsInput, credential_inputs: &[CredentialInput]) -> 
         },
         "ingest_name": built.ingest_name,
         "ocr_config": built.ocr_config,
-        "chunking_strategy": raw_value(&built.chunking_strategy)?,
+        "chunking_strategy": serde_json::from_str::<Value>(built.chunking_strategy.get())?,
         "embedding_config": built.embedding_config,
         "vector_store_config": raw_values(&built.vector_store_config)?,
         "supports_existing_file_id": IngestionState::SUPPORTS_EXISTING_FILE_ID,
@@ -317,7 +317,7 @@ fn upload(
     let data = match file_data {
         Some(data) => Some(FileData {
             filename: data.filename.clone(),
-            content: decode_base64(&data.content_base64)?,
+            content: BASE64.decode(&data.content_base64).or_value_error()?,
             content_type: data.content_type.clone(),
         }),
         None => None,
@@ -350,7 +350,7 @@ fn ocr(
         Arc::new(RecordingFetch::answer(None)?),
     )?;
     let content = match file_content_base64 {
-        Some(encoded) => Some(decode_base64(encoded)?),
+        Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
         None => None,
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
@@ -385,7 +385,7 @@ fn chunk(
         Arc::new(RecordingFetch::answer(None)?),
     )?;
     let content = match file_content_base64 {
-        Some(encoded) => Some(decode_base64(encoded)?),
+        Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
         None => None,
     };
     let chunks = built
@@ -407,18 +407,10 @@ fn document_value(document: &OcrDocument) -> Value {
     Value::Object(fields)
 }
 
-fn raw_value(raw: &RawValue) -> Result<Value, Box<HelperError>> {
-    Ok(serde_json::from_str(raw.get())?)
-}
-
 fn raw_values(config: &VectorStoreConfig) -> Result<Value, Box<HelperError>> {
     let mut fields = Map::new();
     for (key, value) in config {
-        fields.insert(key.clone(), raw_value(value)?);
+        fields.insert(key.clone(), serde_json::from_str::<Value>(value.get())?);
     }
     Ok(Value::Object(fields))
-}
-
-fn decode_base64(text: &str) -> Result<Vec<u8>, Box<HelperError>> {
-    BASE64.decode(text).or_value_error()
 }
