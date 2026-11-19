@@ -142,18 +142,11 @@ fn headers_answer(input: &HeaderInput, route: Route) -> HelperResult {
         &input.environment,
     )?;
     match route {
-        Route::Chat => chat_header_view(&fixture, input, &platform),
+        Route::Chat => Ok(chat_outcome(
+            fixture.chat_headers(&chat_request(input, &platform)),
+        )),
         Route::Native => native_header_view(&fixture, input, &platform),
     }
-}
-
-fn chat_header_view(
-    fixture: &Fixture,
-    input: &HeaderInput,
-    platform: &PlatformInputsCase,
-) -> HelperResult {
-    let request = chat_request(input, platform);
-    Ok(chat_outcome(fixture.chat_headers(&request)))
 }
 
 const fn chat_request<'input>(
