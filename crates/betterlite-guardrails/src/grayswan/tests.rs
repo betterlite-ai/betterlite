@@ -281,7 +281,7 @@ fn connection_refused() -> reqwest::Error {
 )]
 #[case::http_status_out_of_range(
     GraySwanFailure::HttpStatus { status: StatusCode::MOVED_PERMANENTLY },
-    StatusCode::INTERNAL_SERVER_ERROR,
+    StatusCode::MOVED_PERMANENTLY,
     Some(301)
 )]
 #[case::blocked(

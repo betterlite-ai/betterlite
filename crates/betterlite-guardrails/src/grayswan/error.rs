@@ -41,13 +41,7 @@ impl GraySwanFailure {
                 StatusCode::REQUEST_TIMEOUT,
                 Some(StatusCode::REQUEST_TIMEOUT.as_u16()),
             ),
-            Self::HttpStatus { status } => {
-                if matches!(status.as_u16(), 400..=599) {
-                    (*status, Some(status.as_u16()))
-                } else {
-                    (StatusCode::INTERNAL_SERVER_ERROR, Some(status.as_u16()))
-                }
-            }
+            Self::HttpStatus { status } => (*status, Some(status.as_u16())),
             Self::Blocked { .. } => (
                 StatusCode::BAD_REQUEST,
                 Some(StatusCode::BAD_REQUEST.as_u16()),

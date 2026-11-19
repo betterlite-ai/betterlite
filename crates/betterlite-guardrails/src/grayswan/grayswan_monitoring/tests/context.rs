@@ -57,16 +57,18 @@ fn post_call_context_prefers_the_logging_call_type_over_the_request_one() {
     let embedding = FakeTranslation {
         messages: Some(vec![message("user", "from-embedding")]),
     };
+    let completion_source: &dyn StructuredMessageSource = &completion;
+    let embedding_source: &dyn StructuredMessageSource = &embedding;
     let registry = TranslationRegistry {
         entries: vec![
             TranslationEntry {
                 call_type: CallType::Completion,
-                translation: &completion as &dyn StructuredMessageSource,
+                translation: completion_source,
                 chat_completions: false,
             },
             TranslationEntry {
                 call_type: CallType::Embedding,
-                translation: &embedding as &dyn StructuredMessageSource,
+                translation: embedding_source,
                 chat_completions: false,
             },
         ],

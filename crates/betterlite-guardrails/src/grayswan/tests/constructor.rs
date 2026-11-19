@@ -421,7 +421,7 @@ fn grayswan_config_model_keeps_explicit_values() {
         model
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().clone()),
+            .map(|key| key.expose_secret().to_owned()),
         Some("model-key".to_owned())
     );
     assert_eq!(model.api_base.as_deref(), Some("https://model.example"));

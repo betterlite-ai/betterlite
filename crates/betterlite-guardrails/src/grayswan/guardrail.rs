@@ -9,10 +9,11 @@ use reqwest::Client;
 
 use crate::generic_guardrail_contracts::{GuardrailExtraValue, GuardrailInputType};
 use crate::guardrail_base::GuardrailBase;
-use crate::guardrail_selection::GuardrailSelection;
 use crate::guardrail_selection::error::GuardrailSelectionError;
+use crate::guardrail_selection::gate::GuardrailSelection;
 use crate::third_party_init_a::grayswan::GraySwanArgs;
 
+use super::GraySwanGuardrail;
 use super::construction::{
     DEFAULT_FAIL_OPEN, GraySwanGuardrailSetupError, resolve_api_base, resolve_api_key,
     resolve_on_flagged_action, resolve_reasoning_mode, resolve_sampling_rate, resolve_threshold,
@@ -211,6 +212,16 @@ impl GraySwanGuardrail {
                 tool_calls: tool_calls.to_vec(),
             });
         }
+        self.flagged_result(response, input_type, texts, tool_calls)
+    }
+
+    fn flagged_result(
+        &self,
+        response: &GraySwanResponse,
+        input_type: GuardrailInputType,
+        texts: &[String],
+        tool_calls: &[GuardrailExtraValue],
+    ) -> Result<GraySwanResult, GraySwanGuardrailAPIError> {
         let is_output = input_type == GuardrailInputType::Response;
         let violation_message = format_violation_message(response, is_output);
         match self.settings.on_flagged_action {

@@ -23,7 +23,8 @@ pub struct GraySwanConfigOptionalParams {
     pub guardrail_timeout: Option<f64>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+// A key held as a SecretString cannot be serialized back out without exposing it, and nothing writes this model
+#[derive(Debug, Clone, Deserialize)]
 pub struct GraySwanGuardrailConfigModel {
     #[serde(default)]
     pub api_key: Option<SecretString>,

@@ -17,8 +17,8 @@ fn prepare_payload_keeps_the_messages_and_omits_absent_fields() {
 
 #[test]
 fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
-    let mut settings = settings();
-    settings.categories = BTreeMap::from([("configured".to_owned(), "monitor".to_owned())]);
+    let mut configured = settings();
+    configured.categories = BTreeMap::from([("configured".to_owned(), "monitor".to_owned())]);
     let empty = Object::new();
     let dynamic_categories = GraySwanDynamicParams {
         categories: Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())])),
@@ -28,7 +28,7 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
     };
     assert_eq!(
         prepare_payload(
-            &settings,
+            &configured,
             request_with(Vec::new(), &dynamic_categories, &empty)
         )
         .categories,
@@ -36,7 +36,7 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
     );
     let dynamic = GraySwanDynamicParams::default();
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic, &empty)).categories,
+        prepare_payload(&configured, request_with(Vec::new(), &dynamic, &empty)).categories,
         Some(BTreeMap::from([(
             "configured".to_owned(),
             "monitor".to_owned()
@@ -49,7 +49,11 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
         metadata: None,
     };
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic_empty, &empty)).categories,
+        prepare_payload(
+            &configured,
+            request_with(Vec::new(), &dynamic_empty, &empty)
+        )
+        .categories,
         Some(BTreeMap::from([(
             "configured".to_owned(),
             "monitor".to_owned()
@@ -64,8 +68,8 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
 
 #[test]
 fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
-    let mut settings = settings();
-    settings.policy_id = "configured".to_owned();
+    let mut configured = settings();
+    configured.policy_id = "configured".to_owned();
     let empty = Object::new();
     let dynamic_policy = GraySwanDynamicParams {
         categories: None,
@@ -74,14 +78,17 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
         metadata: None,
     };
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic_policy, &empty))
-            .policy_id
-            .as_deref(),
+        prepare_payload(
+            &configured,
+            request_with(Vec::new(), &dynamic_policy, &empty)
+        )
+        .policy_id
+        .as_deref(),
         Some("dynamic")
     );
     let dynamic = GraySwanDynamicParams::default();
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic, &empty))
+        prepare_payload(&configured, request_with(Vec::new(), &dynamic, &empty))
             .policy_id
             .as_deref(),
         Some("configured")
@@ -93,9 +100,12 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
         metadata: None,
     };
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic_empty, &empty))
-            .policy_id
-            .as_deref(),
+        prepare_payload(
+            &configured,
+            request_with(Vec::new(), &dynamic_empty, &empty)
+        )
+        .policy_id
+        .as_deref(),
         Some("configured")
     );
     assert!(
@@ -107,8 +117,8 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
 
 #[test]
 fn prepare_payload_prefers_the_dynamic_reasoning_mode_and_falls_back_to_configured() {
-    let mut settings = settings();
-    settings.reasoning_mode = Some(ReasoningMode::Off);
+    let mut configured = settings();
+    configured.reasoning_mode = Some(ReasoningMode::Off);
     let empty = Object::new();
     let dynamic_thinking = GraySwanDynamicParams {
         categories: None,
@@ -118,7 +128,7 @@ fn prepare_payload_prefers_the_dynamic_reasoning_mode_and_falls_back_to_configur
     };
     assert_eq!(
         prepare_payload(
-            &settings,
+            &configured,
             request_with(Vec::new(), &dynamic_thinking, &empty)
         )
         .reasoning_mode,
@@ -126,7 +136,7 @@ fn prepare_payload_prefers_the_dynamic_reasoning_mode_and_falls_back_to_configur
     );
     let dynamic = GraySwanDynamicParams::default();
     assert_eq!(
-        prepare_payload(&settings, request_with(Vec::new(), &dynamic, &empty)).reasoning_mode,
+        prepare_payload(&configured, request_with(Vec::new(), &dynamic, &empty)).reasoning_mode,
         Some(ReasoningMode::Off)
     );
     assert!(

@@ -74,7 +74,7 @@ async fn call_grayswan_api_rejects_a_redirect_response() {
         Some(GraySwanFailure::HttpStatus { .. })
     ));
     assert_eq!(error.status_code, Some(302));
-    assert_eq!(error.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error.http_status(), StatusCode::FOUND);
 }
 
 #[tokio::test]
