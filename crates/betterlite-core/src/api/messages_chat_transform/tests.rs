@@ -152,11 +152,14 @@ async fn compose(
 #[tokio::test]
 async fn both_required_keys_leave_kwargs_before_either_is_checked() {
     let mut missing_model = object(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
-    let error = wrap(&mut missing_model, &mut Capabilities::new(&[]))
+    let model_error = wrap(&mut missing_model, &mut Capabilities::new(&[]))
         .await
         .expect_err("a request without a model cannot compose");
-    assert!(matches!(error, TransformError::MissingKey { key: "model" }));
-    assert_eq!(error.to_string(), "'model'");
+    assert!(matches!(
+        model_error,
+        TransformError::MissingKey { key: "model" }
+    ));
+    assert_eq!(model_error.to_string(), "'model'");
     assert_eq!(
         missing_model,
         object(r#"{"messages": [{"role": "user", "content": "hi"}]}"#),
@@ -164,14 +167,14 @@ async fn both_required_keys_leave_kwargs_before_either_is_checked() {
     );
 
     let mut missing_messages = object(r#"{"model": "gpt-4o"}"#);
-    let error = wrap(&mut missing_messages, &mut Capabilities::new(&[]))
+    let messages_error = wrap(&mut missing_messages, &mut Capabilities::new(&[]))
         .await
         .expect_err("a request without messages cannot compose");
     assert!(matches!(
-        error,
+        messages_error,
         TransformError::MissingKey { key: "messages" }
     ));
-    assert_eq!(error.to_string(), "'messages'");
+    assert_eq!(messages_error.to_string(), "'messages'");
     assert!(
         missing_messages.is_empty(),
         "model was popped before the missing messages key raised"
@@ -182,23 +185,23 @@ async fn both_required_keys_leave_kwargs_before_either_is_checked() {
 async fn empty_required_keys_raise_litellms_value_errors() {
     let mut empty_model =
         object(r#"{"model": "", "messages": [{"role": "user", "content": "hi"}]}"#);
-    let error = wrap(&mut empty_model, &mut Capabilities::new(&[]))
+    let model_error = wrap(&mut empty_model, &mut Capabilities::new(&[]))
         .await
         .expect_err("an empty model is refused");
-    assert!(matches!(error, TransformError::ModelRequired));
-    assert_eq!(error.to_string(), MODEL_REQUIRED);
+    assert!(matches!(model_error, TransformError::ModelRequired));
+    assert_eq!(model_error.to_string(), MODEL_REQUIRED);
 
     let mut empty_messages = object(r#"{"model": "gpt-4o", "messages": []}"#);
-    let error = wrap(&mut empty_messages, &mut Capabilities::new(&[]))
+    let messages_error = wrap(&mut empty_messages, &mut Capabilities::new(&[]))
         .await
         .expect_err("empty messages are refused");
-    assert!(matches!(error, TransformError::MessagesRequired));
-    assert_eq!(error.to_string(), MESSAGES_REQUIRED);
+    assert!(matches!(messages_error, TransformError::MessagesRequired));
+    assert_eq!(messages_error.to_string(), MESSAGES_REQUIRED);
 
     let declared = Declared;
     let mut convenience =
         object(r#"{"model": "", "messages": [{"role": "user", "content": "hi"}]}"#);
-    let error = adapter()
+    let convenience_error = adapter()
         .translate_completion_input_params(
             &mut convenience,
             &AdapterSettings::new(&declared),
@@ -206,23 +209,23 @@ async fn empty_required_keys_raise_litellms_value_errors() {
         )
         .await
         .expect_err("the convenience wrapper validates the same way");
-    assert!(matches!(error, TransformError::ModelRequired));
+    assert!(matches!(convenience_error, TransformError::ModelRequired));
 }
 
 #[tokio::test]
 async fn non_text_required_keys_are_typed_errors() {
     let mut numeric_model =
         object(r#"{"model": 7, "messages": [{"role": "user", "content": "hi"}]}"#);
-    let error = wrap(&mut numeric_model, &mut Capabilities::new(&[]))
+    let numeric_error = wrap(&mut numeric_model, &mut Capabilities::new(&[]))
         .await
         .expect_err("a numeric model is refused");
-    assert!(matches!(error, TransformError::ModelNotText));
+    assert!(matches!(numeric_error, TransformError::ModelNotText));
 
     let mut text_messages = object(r#"{"model": "gpt-4o", "messages": "hi"}"#);
-    let error = wrap(&mut text_messages, &mut Capabilities::new(&[]))
+    let text_error = wrap(&mut text_messages, &mut Capabilities::new(&[]))
         .await
         .expect_err("a string messages value is refused");
-    assert!(matches!(error, TransformError::MessagesNotList));
+    assert!(matches!(text_error, TransformError::MessagesNotList));
 }
 
 #[tokio::test]
@@ -400,8 +403,8 @@ async fn preserve_midturn_system_reaches_the_conversation_translation() {
         ]
     }"#;
     let mut preserved = object(request_json);
-    let mut capabilities = Capabilities::new(&[]);
-    let (kept, _mapping) = compose(&mut preserved, true, &mut capabilities)
+    let mut preserved_capabilities = Capabilities::new(&[]);
+    let (kept, _preserved_mapping) = compose(&mut preserved, true, &mut preserved_capabilities)
         .await
         .expect("the request composes");
     assert_eq!(
@@ -411,13 +414,13 @@ async fn preserve_midturn_system_reaches_the_conversation_translation() {
         ))
     );
     assert!(
-        capabilities.probes.is_empty(),
+        preserved_capabilities.probes.is_empty(),
         "the preserve flag decides before any capability lookup"
     );
 
     let mut converted = object(request_json);
-    let mut capabilities = Capabilities::new(&[]);
-    let (folded, _mapping) = compose(&mut converted, false, &mut capabilities)
+    let mut folded_capabilities = Capabilities::new(&[]);
+    let (folded, _folded_mapping) = compose(&mut converted, false, &mut folded_capabilities)
         .await
         .expect("the request composes");
     assert_eq!(
@@ -432,7 +435,7 @@ async fn preserve_midturn_system_reaches_the_conversation_translation() {
         "an unsupported trailing system turn becomes a user turn"
     );
     assert_eq!(
-        capabilities.probes,
+        folded_capabilities.probes,
         ["gpt-4o".to_owned()],
         "the model reaches the capability lookup"
     );

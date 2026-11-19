@@ -355,10 +355,13 @@ fn polyfilled_events(events: &[(String, Json)]) {
 #[tokio::test]
 async fn stream_factory_passes_the_polyfill_output_to_both_modes() {
     let polyfill = polyfill();
-    let mut options = StreamOptions::new("gpt-4o");
-    options.polyfill_result = Some(&polyfill);
-    let output =
-        adapter().translate_completion_output_params_streaming(text_stream(), options, FixedIds);
+    let mut async_options = StreamOptions::new("gpt-4o");
+    async_options.polyfill_result = Some(&polyfill);
+    let output = adapter().translate_completion_output_params_streaming(
+        text_stream(),
+        async_options,
+        FixedIds,
+    );
     let StreamOutput::Async(mut view) = output else {
         panic!("is_async defaults to true");
     };
@@ -380,16 +383,19 @@ async fn stream_factory_passes_the_polyfill_output_to_both_modes() {
     );
     polyfilled_events(&events);
 
-    let mut options = StreamOptions::new("gpt-4o");
-    options.polyfill_result = Some(&polyfill);
-    options.is_async = false;
-    let output =
-        adapter().translate_completion_output_params_streaming(text_stream(), options, FixedIds);
-    let StreamOutput::Sync(driver) = output else {
+    let mut sync_options = StreamOptions::new("gpt-4o");
+    sync_options.polyfill_result = Some(&polyfill);
+    sync_options.is_async = false;
+    let sync_output = adapter().translate_completion_output_params_streaming(
+        text_stream(),
+        sync_options,
+        FixedIds,
+    );
+    let StreamOutput::Sync(driver) = sync_output else {
         panic!("is_async=false returns the sync iterator");
     };
-    let (collected, message_id) = drain_sync(*driver);
-    polyfilled_events(&frames(&collected, &message_id));
+    let (sync_collected, sync_message_id) = drain_sync(*driver);
+    polyfilled_events(&frames(&sync_collected, &sync_message_id));
 }
 
 #[tokio::test]
