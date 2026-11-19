@@ -106,9 +106,9 @@ impl CallTarget for Target {
     async fn retry(
         &self,
         request: RequestMap,
-        _logging: Option<&LoggingHandle>,
+        logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        CallTarget::call(self, request, _logging).await
+        CallTarget::call(self, request, logging).await
     }
 }
 
