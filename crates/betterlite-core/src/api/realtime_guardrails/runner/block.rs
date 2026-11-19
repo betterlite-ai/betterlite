@@ -1,3 +1,5 @@
+#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
+
 mod backend;
 mod notice;
 

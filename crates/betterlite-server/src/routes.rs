@@ -125,6 +125,7 @@ mod video_edit;
 
 use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;
+use crate::cost_estimate_route::router as cost_estimate_router;
 use crate::error_body::json_error;
 use crate::model_list::model_routes;
 use crate::scim::scim_router;
@@ -276,6 +277,10 @@ pub(crate) fn router(
         master_key: state.config.general_settings.master_key.clone(),
         routes: state.config.sections.auth_route_patterns.clone(),
     };
+    let quote = cost_estimate_router::routes(&state).route_layer(middleware::from_fn_with_state(
+        auth.clone(),
+        auth_route_patterns::stage,
+    ));
     let application = base_application(shutting_down)
         .merge(model_routes(&state.config.model_list))
         .merge(chat)
@@ -289,6 +294,8 @@ pub(crate) fn router(
         ))
         .layer(middleware::from_fn(stage))
         .layer(Extension(state))
+        // /cost/estimate lives in the spend-tracking route table, which the route-match gate does not admit
+        .merge(quote)
 }
 
 fn base_application(shutting_down: Arc<AtomicBool>) -> Router {
