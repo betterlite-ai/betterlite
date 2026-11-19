@@ -1,0 +1,27 @@
+kind: helper
+name: pii-truncated-is-violation
+call:
+  b3725:
+    source: INPUT
+    messages:
+      - {role: user, content: my email}
+    response: null
+    logging_event_type: null
+    checks: {sensitiveInformation: {}}
+    content_filter_threshold: null
+    prompt_attack_threshold: null
+    pii_confidence_threshold: 0.5
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 200
+      body:
+        results:
+          sensitiveInformation:
+            truncated: true
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"

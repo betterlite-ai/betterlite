@@ -1,0 +1,12 @@
+task: B3725
+deviations:
+  - what: A Bedrock transport failure (a timeout, an unreachable endpoint) becomes HTTP 500 whose detail is "the Bedrock guardrail request could not be sent", and the failed-to-respond record carries that same text; LiteLLM writes the transport error's own message into the record and re-raises the transport exception.
+    why: betterlite reports every guardrail call failure as one typed HTTP failure with a record, so a transport failure reaches the caller as a JSON 500 instead of an uncaught exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1803-L1815
+  - what: The failed-to-respond record written for a malformed 200 holds betterlite's deserializer text where LiteLLM holds pydantic's validation message; the returned 500 detail is the same fixed string on both sides.
+    why: The two sides decode the response with different libraries, and the record keeps the decoder's own message so the log names what was rejected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1947-L1964
+  - what: Keys a checks response carries outside the Bedrock TypedDicts stay in the logged copy at every level; LiteLLM's pydantic validation drops them before the copy is made.
+    why: betterlite's wire records keep undeclared keys so a response serializes back to what was read, and no such key reaches a violation, a status or an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1948
+kept_bugs: []
