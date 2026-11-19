@@ -288,6 +288,33 @@ fn unrepresentable_numbers_compare_by_text() {
 }
 
 #[test]
+fn arrays_compare_by_length_and_items() {
+    let stored = r#"{"team_id": "t", "metadata": {"a": [1, 2]}}"#;
+    assert_eq!(
+        changed_names(&team_changes(
+            r#"{"team_id": "t", "metadata": {"a": [1]}}"#,
+            stored
+        )),
+        vec!["metadata"]
+    );
+    assert_eq!(
+        changed_names(&team_changes(
+            r#"{"team_id": "t", "metadata": {"a": [1, 2, 3]}}"#,
+            stored
+        )),
+        vec!["metadata"]
+    );
+    assert_eq!(
+        changed_names(&team_changes(
+            r#"{"team_id": "t", "metadata": {"a": [2, 1]}}"#,
+            stored
+        )),
+        vec!["metadata"]
+    );
+    assert!(team_changes(r#"{"team_id": "t", "metadata": {"a": [1, 2]}}"#, stored).is_empty());
+}
+
+#[test]
 fn unknown_metadata_attributed_to_metadata() {
     let stored = r#"{"team_id": "t", "metadata": {"custom": 1, "nested": {"a": 1}}}"#;
     assert!(
