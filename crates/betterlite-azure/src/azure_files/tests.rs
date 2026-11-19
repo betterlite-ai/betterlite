@@ -501,32 +501,27 @@ fn report(class: &'static str, error: &AzureFilesError) -> Raised {
 }
 
 fn raised_files(source: &FilesError, error: &AzureFilesError) -> Raised {
-    match source {
-        FilesError::Status(status) => Raised {
+    if let FilesError::Status(status) = source {
+        return Raised {
             class: "APIStatusError",
             message: Some(status.message.clone()),
             status: Some(status.status),
             error_type: status.error_type.clone(),
             param: status.param.clone(),
             code: status.code.clone(),
-        },
-        FilesError::Decode { .. } => Raised {
+        };
+    }
+    if matches!(source, FilesError::Decode { .. }) {
+        return Raised {
             class: "ValidationError",
             message: None,
             status: None,
             error_type: None,
             param: None,
             code: None,
-        },
-        FilesError::NotInitialized
-        | FilesError::NotAsync
-        | FilesError::EmptyValue { .. }
-        | FilesError::DotSegment { .. }
-        | FilesError::BaseUrl { .. }
-        | FilesError::Header { .. }
-        | FilesError::Transport { .. }
-        | FilesError::Body { .. } => report("ValueError", error),
+        };
     }
+    report("ValueError", error)
 }
 
 struct Fixtures {

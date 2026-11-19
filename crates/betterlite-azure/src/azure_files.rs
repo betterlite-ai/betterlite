@@ -57,7 +57,7 @@ where
     T: FileTransport,
 {
     match operation {
-        Operation::Create(data) => create(opened, transport, data).await,
+        Operation::Create(data) => create(&opened.client, opened.is_async, transport, data).await,
         Operation::Content(request) => Ok(Reply::Content(
             api(&opened.client, transport, Some(&request.extra_headers))
                 .file_content(&opened.client.files, request)
@@ -78,20 +78,21 @@ where
                     .await?,
             ))
         }
-        Operation::Delete(file_id) => delete(opened, transport, file_id).await,
+        Operation::Delete(file_id) => delete(&opened.client, transport, file_id).await,
     }
 }
 
 // LiteLLM's two debug records hold the whole data and response objects; only their metadata is kept
 async fn create<T>(
-    opened: &Opened,
+    client: &SelectedClient,
+    is_async: bool,
     transport: &T,
     data: &FileCreate,
 ) -> Result<Reply, AzureFilesError>
 where
     T: FileTransport,
 {
-    if opened.is_async {
+    if is_async {
         tracing::debug!(
             purpose = data.purpose.wire_name(),
             filename = data.file.filename.as_deref().unwrap_or_default(),
@@ -100,10 +101,10 @@ where
             "create_file_data"
         );
     }
-    let object = api(&opened.client, transport, Some(&data.extra_headers))
-        .create_file(&opened.client.files, data)
+    let object = api(client, transport, Some(&data.extra_headers))
+        .create_file(&client.files, data)
         .await?;
-    if opened.is_async {
+    if is_async {
         tracing::debug!(
             id = %object.id,
             bytes = object.bytes,
@@ -116,22 +117,33 @@ where
 }
 
 // Azure answers delete with an empty body; LiteLLM replaces anything that is not a FileDeleted
-async fn delete<T>(opened: &Opened, transport: &T, file_id: &str) -> Result<Reply, AzureFilesError>
+async fn delete<T>(
+    client: &SelectedClient,
+    transport: &T,
+    file_id: &str,
+) -> Result<Reply, AzureFilesError>
 where
     T: FileTransport,
 {
-    let deleted = api(&opened.client, transport, None)
-        .delete_file(&opened.client.files, file_id)
+    let record = api(client, transport, None)
+        .delete_file(&client.files, file_id)
         .await;
-    Ok(Reply::Deleted(match deleted {
-        Ok(record) => record,
-        Err(FilesError::Decode { .. }) => FileDeleted {
+    Ok(Reply::Deleted(deleted_record(file_id, record)?))
+}
+
+fn deleted_record(
+    file_id: &str,
+    record: Result<FileDeleted, FilesError>,
+) -> Result<FileDeleted, AzureFilesError> {
+    match record {
+        Ok(record) => Ok(record),
+        Err(FilesError::Decode { .. }) => Ok(FileDeleted {
             id: file_id.to_owned(),
             object: FileKind::File,
             deleted: true,
-        },
-        Err(error) => return Err(AzureFilesError::from(error)),
-    }))
+        }),
+        Err(error) => Err(AzureFilesError::from(error)),
+    }
 }
 
 mod tests;

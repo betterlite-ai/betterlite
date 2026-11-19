@@ -226,19 +226,23 @@ fn versioned_base_query() {
 }
 
 pub(super) fn azure_file_client_errors() {
-    missing_client();
-    async_needs_an_async_client();
-    async_client_passes();
-    sync_call_ignores_client_kind();
-    status_error_passes_through();
-    missing_credential();
-    explicit_empty_key();
-    provider_refusals();
-    provider_failure();
-    provider_token_wins();
-    ad_token_wins_over_provider();
-    missing_base_url();
-    empty_file_id();
+    let errors: [fn(); 12] = [
+        missing_client,
+        async_needs_an_async_client,
+        async_client_passes,
+        sync_call_ignores_client_kind,
+        status_error_passes_through,
+        missing_credential,
+        explicit_empty_key,
+        provider_refusals,
+        provider_failure,
+        token_routes,
+        missing_base_url,
+        empty_file_id,
+    ];
+    for check in errors {
+        check();
+    }
 }
 
 // a builder that answers with no client
@@ -359,21 +363,16 @@ fn provider_failure() {
     assert_eq!(raised.message.as_deref(), Some("the token call failed"));
 }
 
-// a provider token wins over the api key and rides on the request
-fn provider_token_wins() {
+// a provider token wins over the api key, and the ad token wins over the provider
+fn token_routes() {
     let mut provided = retrieve("file-1", json_reply(FILE_JSON));
     provided.provider = Some(callable(ProviderReply::Text("provider-token".to_owned())));
-    let observation = run(&provided);
-    let request = only_call(&observation);
+    let provider_call = run(&provided);
     assert_eq!(
-        header(request, "authorization"),
+        header(only_call(&provider_call), "authorization"),
         Some("Bearer provider-token")
     );
-    assert_eq!(header(request, "api-key"), None);
-}
-
-// the ad token wins over the provider: the SDK only calls the provider without a static token
-fn ad_token_wins_over_provider() {
+    assert_eq!(header(only_call(&provider_call), "api-key"), None);
     let mut static_token = retrieve("file-1", json_reply(FILE_JSON));
     static_token.provider = Some(callable(ProviderReply::Text("provider-token".to_owned())));
     static_token.params = LiteLlmParams {
@@ -382,9 +381,8 @@ fn ad_token_wins_over_provider() {
         timeout: None,
         max_retries: None,
     };
-    let observation = run(&static_token);
     assert_eq!(
-        header(only_call(&observation), "authorization"),
+        header(only_call(&run(&static_token)), "authorization"),
         Some("Bearer ad-token")
     );
 }
@@ -416,8 +414,7 @@ fn empty_file_id() {
 pub(super) fn azure_file_routes() {
     deployment_route();
     v1_route();
-    supplied_azure_route();
-    supplied_openai_route();
+    supplied_routes();
     async_route();
 }
 
@@ -453,8 +450,8 @@ fn v1_route() {
     assert!(request.query.is_empty());
 }
 
-// a supplied Azure client keeps its own base, version and key
-fn supplied_azure_route() {
+// a supplied Azure client keeps its own base, version and key, while a supplied OpenAI client is used as it is
+fn supplied_routes() {
     let mut supplied = step(Action::List);
     supplied.client = Some(Supplied::Azure);
     supplied.purpose = Some("batch".to_owned());
@@ -471,26 +468,22 @@ fn supplied_azure_route() {
             ("purpose".to_owned(), "batch".to_owned()),
         ]
     );
-}
-
-// a supplied OpenAI client is used as it is: no Azure prefix and no version
-fn supplied_openai_route() {
     let mut plain = step(Action::Delete);
     plain.client = Some(Supplied::OpenAi);
     plain.file_id = Some("file-1".to_owned());
     plain.reply = Some(json_reply(r#""""#));
-    let observation = run(&plain);
+    let plain_observation = run(&plain);
     assert_eq!(
-        observation.outcome,
+        plain_observation.outcome,
         Outcome::Deleted(synthesized_record("file-1"))
     );
-    let request = only_call(&observation);
-    assert_eq!(request.url.path(), "/v1/files/file-1");
+    let plain_request = only_call(&plain_observation);
+    assert_eq!(plain_request.url.path(), "/v1/files/file-1");
     assert_eq!(
-        header(request, "authorization"),
+        header(plain_request, "authorization"),
         Some("Bearer supplied-key")
     );
-    assert!(request.query.is_empty());
+    assert!(plain_request.query.is_empty());
 }
 
 // an async call reaches the same route
