@@ -102,8 +102,7 @@ async fn refusal(
     ));
     let error = upload_file_to_storage_backend(upload_with(target_storage, targets), deps)
         .await
-        .err()
-        .expect("the upload is refused");
+        .expect_err("the upload is refused");
     refused(error)
 }
 
@@ -172,8 +171,7 @@ async fn assert_storage_error() {
     ));
     let error = upload_file_to_storage_backend(upload_with("azure_storage", &[]), deps)
         .await
-        .err()
-        .expect("the storage error");
+        .expect_err("the storage error");
     assert!(matches!(
         error,
         StorageServiceError::Upload(boxed) if matches!(*boxed, StorageUploadError::Azure(_))
@@ -376,8 +374,7 @@ async fn storage_targets_before_write() {
     let deps = upload_deps(backend_deps(&recorder, Some(repository), environment()));
     let failure = upload_file_to_storage_backend(upload_with("azure_storage", &targets), deps)
         .await
-        .err()
-        .expect("the managed files refusal");
+        .expect_err("the managed files refusal");
     let proxy = refused(failure);
     assert_invalid_request(&proxy, TARGETS_UNAVAILABLE, "target_model_names");
     assert!(recorder.calls().is_empty());
@@ -455,8 +452,7 @@ async fn managed_storage_unavailable() {
     ));
     let failure = upload_file_to_storage_backend(upload_with("azure_storage", &targets), deps)
         .await
-        .err()
-        .expect("the managed files refusal");
+        .expect_err("the managed files refusal");
     let proxy = refused(failure);
     assert_invalid_request(&proxy, TARGETS_UNAVAILABLE, "target_model_names");
     assert!(recorder.calls().is_empty());
