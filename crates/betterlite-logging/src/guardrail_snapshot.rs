@@ -29,7 +29,6 @@ const REPLAY_SAFE_GUARDRAIL_MODES: [&str; 5] = [
 ];
 
 #[must_use]
-// ast-grep-ignore: no-long-names
 pub fn request_mutating_guardrail_ran(metadata: &IndexMap<String, Json>) -> bool {
     guardrail_entries(metadata)
         .any(|entry| !guardrail_is_non_mutating(entry, &NON_MUTATING_GUARDRAIL_MODES))
@@ -51,7 +50,6 @@ impl GuardrailRequestSnapshot {
         body: &IndexMap<String, Json>,
         metadata: &IndexMap<String, Json>,
     ) -> Option<Self> {
-        // ast-grep-ignore: no-long-names
         if !request_mutating_guardrail_ran(metadata) {
             return None;
         }

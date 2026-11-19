@@ -1,15 +1,12 @@
 use betterlite_logging::callback_logger::event::GuardrailRequestSnapshot;
 use betterlite_logging::guardrail_snapshot::{
-    request_guardrail_fingerprint,
-    // ast-grep-ignore: no-long-names
-    request_mutating_guardrail_ran,
+    request_guardrail_fingerprint, request_mutating_guardrail_ran,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Deserialize)]
@@ -43,8 +40,7 @@ impl Helper for Op {
 }
 
 fn mutating_ran_answer(metadata: &Map<String, Value>) -> HelperResult {
-    let fields = typed_fields(metadata)?;
-    // ast-grep-ignore: no-long-names
+    let fields: IndexMap<String, Json> = serde_json::from_value(Value::Object(metadata.clone()))?;
     Ok(json!({"result": request_mutating_guardrail_ran(&fields)}))
 }
 
@@ -52,14 +48,19 @@ fn fingerprints_match_answer(
     first: &Map<String, Value>,
     second: &Map<String, Value>,
 ) -> HelperResult {
-    let first_fingerprint = request_guardrail_fingerprint(&typed_fields(first)?);
-    let second_fingerprint = request_guardrail_fingerprint(&typed_fields(second)?);
+    let first_fields: IndexMap<String, Json> =
+        serde_json::from_value(Value::Object(first.clone()))?;
+    let second_fields: IndexMap<String, Json> =
+        serde_json::from_value(Value::Object(second.clone()))?;
+    let first_fingerprint = request_guardrail_fingerprint(&first_fields);
+    let second_fingerprint = request_guardrail_fingerprint(&second_fields);
     Ok(json!({"result": first_fingerprint == second_fingerprint}))
 }
 
 fn capture_answer(body: &Map<String, Value>, metadata: &Map<String, Value>) -> HelperResult {
-    let typed_body = typed_fields(body)?;
-    let typed_metadata = typed_fields(metadata)?;
+    let typed_body: IndexMap<String, Json> = serde_json::from_value(Value::Object(body.clone()))?;
+    let typed_metadata: IndexMap<String, Json> =
+        serde_json::from_value(Value::Object(metadata.clone()))?;
     let Some(snapshot) = GuardrailRequestSnapshot::capture(&typed_body, &typed_metadata) else {
         return Ok(json!({"result": null}));
     };
@@ -71,8 +72,4 @@ fn capture_answer(body: &Map<String, Value>, metadata: &Map<String, Value>) -> H
             "fingerprint_matches": current.as_deref() == Some(snapshot.fingerprint.as_str()),
         }
     }))
-}
-
-fn typed_fields(fields: &Map<String, Value>) -> Result<IndexMap<String, Json>, Box<HelperError>> {
-    Ok(serde_json::from_value(Value::Object(fields.clone()))?)
 }
