@@ -46,13 +46,13 @@ pub fn exception(
 }
 
 fn blocked_model(request_data: &BTreeMap<String, GuardrailValue>) -> String {
-    match request_data.get("model") {
-        Some(GuardrailValue::Text(model)) => model.clone(),
-        _ => DEFAULT_MODEL.to_owned(),
-    }
+    let Some(GuardrailValue::Text(model)) = request_data.get("model") else {
+        return DEFAULT_MODEL.to_owned();
+    };
+    model.clone()
 }
 
-// LiteLLM hands the caller's violation dict back, so a missing label is written as an explicit null
+// LiteLLM hands the caller's violation dict back, so a missing label is an explicit null
 fn violation_value(violation: &ChecksViolation) -> GuardrailValue {
     let mut fields = BTreeMap::new();
     insert_text(&mut fields, "check", violation.check.as_deref());
@@ -70,17 +70,15 @@ fn violation_value(violation: &ChecksViolation) -> GuardrailValue {
 }
 
 fn insert_text(fields: &mut BTreeMap<String, GuardrailValue>, key: &str, value: Option<&str>) {
-    let encoded = match value {
-        Some(text) => GuardrailValue::Text(text.to_owned()),
-        _ => GuardrailValue::Null,
-    };
+    let encoded = value.map_or(GuardrailValue::Null, |text| {
+        GuardrailValue::Text(text.to_owned())
+    });
     fields.insert(key.to_owned(), encoded);
 }
 
 fn insert_number(fields: &mut BTreeMap<String, GuardrailValue>, key: &str, number: &Number) {
-    let encoded = match number.as_f64() {
-        Some(value) => GuardrailValue::Decimal(value),
-        _ => GuardrailValue::Null,
-    };
+    let encoded = number
+        .as_f64()
+        .map_or(GuardrailValue::Null, GuardrailValue::Decimal);
     fields.insert(key.to_owned(), encoded);
 }
