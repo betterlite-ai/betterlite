@@ -65,10 +65,7 @@ fn embedding_reply_value(step: &EmbeddingReplyStep) -> Value {
 }
 
 fn passthrough_url_value(step: &PassthroughUrlStep) -> Value {
-    let config = GigachatPassthroughConfig {
-        api_base_env: step.env_base.clone(),
-        api_key_env: None,
-    };
+    let settings = config(step.env_base.clone(), None);
     let params = Object::new();
     let request = PassthroughUrlRequest {
         api_base: step.api_base.as_deref(),
@@ -81,7 +78,7 @@ fn passthrough_url_value(step: &PassthroughUrlStep) -> Value {
         request_query_params: None,
         litellm_params: &params,
     };
-    match config.get_complete_url(&request) {
+    match settings.get_complete_url(&request) {
         Ok((url, base)) => json!({"ok": true, "url": url.as_str(), "base": base}),
         Err(error) => error_status(&error),
     }
@@ -101,15 +98,17 @@ fn passthrough_headers_value(runtime: &Runtime, step: &PassthroughHeadersStep) -
 }
 
 fn passthrough_key_value(step: &PassthroughKeyStep) -> Value {
-    let config = GigachatPassthroughConfig {
-        api_base_env: None,
-        api_key_env: step.env_key.clone().map(SecretString::from),
-    };
+    let settings = config(None, step.env_key.clone());
     let api_key = step.api_key.clone().map(SecretString::from);
-    let key = config
-        .get_api_key(api_key.as_ref())
-        .map(|key| key.expose_secret().to_owned());
-    json!({"ok": true, "key": key})
+    let key = settings.get_api_key(api_key.as_ref());
+    json!({"ok": true, "key": key.map(|key| key.expose_secret())})
+}
+
+fn config(base: Option<String>, key: Option<String>) -> GigachatPassthroughConfig {
+    GigachatPassthroughConfig {
+        api_base_env: base,
+        api_key_env: key.map(SecretString::from),
+    }
 }
 
 fn passthrough_streaming_value(step: &PassthroughStreamingStep) -> Value {

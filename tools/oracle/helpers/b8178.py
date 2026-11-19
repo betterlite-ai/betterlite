@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -17,21 +17,43 @@ EMPTY: Final[Object] = {}
 URL_MODEL: Final = "Embeddings"
 litellm.suppress_debug_info = True
 
-EMBEDDING: Final = GigaChatEmbeddingConfig()
+
+class NoMessages(list[AllMessageValues]): ...
+
+
+class HeadersConfig(Protocol):
+    def validate_environment(
+        self, headers: dict[str, str], model: str, messages: NoMessages,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
+        api_key: str | None, /,
+    ) -> dict[str, str]: ...
+
+
+class EmbeddingConfig(HeadersConfig, Protocol):
+    def get_complete_url(
+        self, api_base: str | None, api_key: str | None, model: str,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
+    ) -> str: ...
+
+    def transform_embedding_request(
+        self, model: str, embedding_input: AllEmbeddingInputValues,
+        optional_params: dict[str, JsonValue], headers: dict[str, JsonValue], /,
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_embedding_response(
+        self, model: str, raw_response: httpx.Response, model_response: EmbeddingResponse,
+        logging_obj: Logging, api_key: str | None, request_data: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
+    ) -> EmbeddingResponse: ...
+
+
+EMBEDDING: Final[EmbeddingConfig] = GigaChatEmbeddingConfig()
 CONFIG: Final = GigaChatPassthroughConfig()
+VALIDATE: Final[HeadersConfig] = CONFIG
 LOG: Final = Logging(
-    model="",
-    messages=None,
-    stream=False,
-    call_type="",
-    start_time=datetime.now(UTC),
-    litellm_call_id="",
-    function_id="",
+    model="", messages=None, stream=False, call_type="", start_time=datetime.now(UTC),
+    litellm_call_id="", function_id="",
 )
-
-
-class NoMessages(list[AllMessageValues]):
-    pass
 
 
 class EmbeddingRequestStep(TypedDict):
@@ -89,14 +111,8 @@ class CollectedStep(TypedDict):
 
 
 Step: TypeAlias = (
-    EmbeddingRequestStep
-    | EmbeddingReplyStep
-    | UrlStep
-    | HeadersStep
-    | KeyStep
-    | StreamingStep
-    | LoggingStep
-    | CollectedStep
+    EmbeddingRequestStep | EmbeddingReplyStep | UrlStep | HeadersStep
+    | KeyStep | StreamingStep | LoggingStep | CollectedStep
 )
 
 
@@ -156,8 +172,7 @@ def usage_value(usage: UsageDump | None) -> JsonValue:
     if usage is None:
         return None
     return {
-        "prompt_tokens": usage["prompt_tokens"],
-        "completion_tokens": usage["completion_tokens"],
+        "prompt_tokens": usage["prompt_tokens"], "completion_tokens": usage["completion_tokens"],
         "total_tokens": usage["total_tokens"],
     }
 
@@ -170,17 +185,14 @@ def embed_usage_value(usage: UsageDump | None) -> JsonValue:
 
 def choice_value(choice: ChoiceDump) -> JsonValue:
     return {
-        "index": choice["index"],
-        "finish_reason": choice["finish_reason"],
+        "index": choice["index"], "finish_reason": choice["finish_reason"],
         "message": {"role": choice["message"]["role"], "content": choice["message"]["content"]},
     }
 
 
 def chat_value(dumped: ChatDump) -> JsonValue:
     return {
-        "id": dumped["id"],
-        "created": dumped["created"],
-        "model": dumped["model"],
+        "id": dumped["id"], "created": dumped["created"], "model": dumped["model"],
         "choices": [choice_value(choice) for choice in dumped["choices"]],
         "usage": usage_value(dumped["usage"]),
     }
@@ -188,9 +200,7 @@ def chat_value(dumped: ChatDump) -> JsonValue:
 
 def embed_value(dumped: EmbedDump) -> JsonValue:
     return {
-        "object": dumped["object"],
-        "model": dumped["model"],
-        "data": dumped["data"],
+        "object": dumped["object"], "model": dumped["model"], "data": dumped["data"],
         "usage": embed_usage_value(dumped["usage"]),
     }
 
@@ -204,9 +214,7 @@ def embedding_request(step: EmbeddingRequestStep) -> JsonValue:
         step["model"], step["input"], EMPTY, EMPTY
     )
     return {
-        "ok": True,
-        "url": url,
-        "headers": JSON.validate_python(headers),
+        "ok": True, "url": url, "headers": JSON.validate_python(headers),
         "body": JSON.validate_python(body),
     }
 
@@ -227,18 +235,10 @@ def passthrough_url(step: UrlStep) -> JsonValue:
 
 
 def passthrough_headers(step: HeadersStep) -> JsonValue:
-    headers: dict[str, str] = CONFIG.validate_environment(
+    headers: dict[str, str] = VALIDATE.validate_environment(
         step["headers"], "m", NoMessages(), EMPTY, EMPTY, step["token"]
     )
     return {"ok": True, "headers": JSON.validate_python(headers)}
-
-
-def passthrough_key(step: KeyStep) -> JsonValue:
-    return {"ok": True, "key": GigaChatPassthroughConfig.get_api_key(step["api_key"])}
-
-
-def passthrough_streaming(step: StreamingStep) -> JsonValue:
-    return {"ok": True, "streaming": CONFIG.is_streaming_request("", step["request_data"])}
 
 
 def passthrough_logging(step: LoggingStep) -> JsonValue:
@@ -265,32 +265,32 @@ def passthrough_collected(step: CollectedStep) -> JsonValue:
     if not choices:
         return {"ok": True, "value": None}
     choice = choices[0]
-    return {
-        "ok": True,
-        "value": {
-            "text": choice["message"]["content"],
-            "finish_reason": choice["finish_reason"],
-            "usage": usage_value(dumped["usage"]),
-        },
+    value = {
+        "text": choice["message"]["content"], "finish_reason": choice["finish_reason"],
+        "usage": usage_value(dumped["usage"]),
     }
+    return {"ok": True, "value": value}
 
 
 def step_value(step: Step) -> JsonValue:
+    result: JsonValue
     if step["kind"] == "embedding_request":
-        return guarded(embedding_request, step)
-    if step["kind"] == "embedding_reply":
-        return guarded(embedding_reply, step)
-    if step["kind"] == "passthrough_url":
-        return guarded(passthrough_url, step)
-    if step["kind"] == "passthrough_headers":
-        return guarded(passthrough_headers, step)
-    if step["kind"] == "passthrough_key":
-        return guarded(passthrough_key, step)
-    if step["kind"] == "passthrough_streaming":
-        return guarded(passthrough_streaming, step)
-    if step["kind"] == "passthrough_logging":
-        return guarded(passthrough_logging, step)
-    return guarded(passthrough_collected, step)
+        result = guarded(embedding_request, step)
+    elif step["kind"] == "embedding_reply":
+        result = guarded(embedding_reply, step)
+    elif step["kind"] == "passthrough_url":
+        result = guarded(passthrough_url, step)
+    elif step["kind"] == "passthrough_headers":
+        result = guarded(passthrough_headers, step)
+    elif step["kind"] == "passthrough_key":
+        result = {"ok": True, "key": GigaChatPassthroughConfig.get_api_key(step["api_key"])}
+    elif step["kind"] == "passthrough_streaming":
+        result = {"ok": True, "streaming": CONFIG.is_streaming_request("", step["request_data"])}
+    elif step["kind"] == "passthrough_logging":
+        result = guarded(passthrough_logging, step)
+    else:
+        result = guarded(passthrough_collected, step)
+    return result
 
 
 def run(input_value: Input) -> JsonValue:

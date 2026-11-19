@@ -178,43 +178,38 @@ fn seen_upload(request: &OutboundRequest) -> SeenUpload {
     }
 }
 
+fn seen_download(request: &OutboundRequest) -> SeenDownload {
+    SeenDownload {
+        method: request.method.as_str().to_owned(),
+        url: request.url.to_string(),
+        deadline: request.deadline,
+    }
+}
+
+fn record<T>(queue: &Mutex<Vec<T>>, entry: T) {
+    queue.lock().unwrap().push(entry);
+}
+
+fn scripted(replies: &Mutex<VecDeque<Scripted>>) -> Result<UpstreamResponse, TransportError> {
+    let mut queue = replies.lock().unwrap();
+    queue.pop_front().expect("a scripted reply").into_result()
+}
+
 impl GigachatFileTransport for Fake {
     fn download(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.state.downloads.lock().unwrap().push(SeenDownload {
-            method: request.method.as_str().to_owned(),
-            url: request.url.to_string(),
-            deadline: request.deadline,
-        });
-        let reply = self
-            .state
-            .download_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("a scripted download reply");
-        ready(reply.into_result())
+        record(&self.state.downloads, seen_download(&request));
+        ready(scripted(&self.state.download_replies))
     }
 
     fn upload(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.state
-            .uploads
-            .lock()
-            .unwrap()
-            .push(seen_upload(&request));
-        let reply = self
-            .state
-            .upload_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("a scripted upload reply");
-        ready(reply.into_result())
+        record(&self.state.uploads, seen_upload(&request));
+        ready(scripted(&self.state.upload_replies))
     }
 }
 
@@ -493,10 +488,14 @@ async fn the_cache_drops_the_oldest_entry_first() {
     let mut given = setup();
     given.capacity = 2;
     let fixture = fixture(given);
-    for _ in 0..4 {
-        fixture.script_download(answer_with_type(200, "image/png", b"x"));
-        fixture.script_upload(id_reply("file"));
-    }
+    fixture.script_download(answer_with_type(200, "image/png", b"x"));
+    fixture.script_upload(id_reply("file"));
+    fixture.script_download(answer_with_type(200, "image/png", b"x"));
+    fixture.script_upload(id_reply("file"));
+    fixture.script_download(answer_with_type(200, "image/png", b"x"));
+    fixture.script_upload(id_reply("file"));
+    fixture.script_download(answer_with_type(200, "image/png", b"x"));
+    fixture.script_upload(id_reply("file"));
     fixture.uploader.upload("https://img.test/a").await;
     fixture.uploader.upload("https://img.test/b").await;
     fixture.uploader.upload("https://img.test/a").await;

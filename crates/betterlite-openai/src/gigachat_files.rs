@@ -91,7 +91,7 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
     }
 
     async fn try_upload(&self, image_url: &str) -> Result<String, UploadError> {
-        let key = cache_key(image_url);
+        let key = hex::encode(Sha256::digest(image_url.as_bytes()));
         let cached = self
             .cache
             .lock()
@@ -289,10 +289,6 @@ struct Image {
 struct DataUrl<'text> {
     content_type: &'text str,
     payload: &'text str,
-}
-
-fn cache_key(image_url: &str) -> String {
-    hex::encode(Sha256::digest(image_url.as_bytes()))
 }
 
 fn extension_of(content_type: &str) -> String {

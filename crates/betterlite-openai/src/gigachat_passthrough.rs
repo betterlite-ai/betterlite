@@ -63,11 +63,6 @@ pub struct GigachatPassthroughConfig {
 
 impl GigachatPassthroughConfig {
     #[must_use]
-    pub fn get_api_base(&self, api_base: Option<&str>) -> String {
-        get_api_base(api_base, self.api_base_env.as_deref())
-    }
-
-    #[must_use]
     pub fn get_api_key<'key>(
         &'key self,
         api_key: Option<&'key SecretString>,
@@ -115,7 +110,7 @@ impl BasePassthroughConfig for GigachatPassthroughConfig {
         &self,
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
-        let base = self.get_api_base(request.api_base);
+        let base = get_api_base(request.api_base, self.api_base_env.as_deref());
         let complete = format!("{base}/{}", request.target.endpoint.trim_start_matches('/'));
         let url = Url::parse(&complete).map_err(|source| PassthroughError::InvalidUrl {
             url: complete.clone(),
