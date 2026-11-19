@@ -1,5 +1,5 @@
 import os
-from typing import Any, Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.llms.openai_like.dynamic_config import create_config_class
@@ -7,14 +7,14 @@ from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimplePro
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
     handle_messages_with_content_list_to_str_conversion,
 )
-from litellm.types.llms.openai import AllMessageValues
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
+MESSAGES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 
 class ChatConfig(Protocol):
-    def get_supported_openai_params(self, model: str) -> list[str]: ...
+    def get_supported_openai_params(self, model: str) -> list[JsonValue]: ...
 
     def map_openai_params(
         self,
@@ -39,73 +39,36 @@ class ChatConfigClass(Protocol):
     def __call__(self) -> ChatConfig: ...
 
 
-class ChatConfigFactory(Protocol):
+class ChatFactory(Protocol):
     def __call__(self, provider: SimpleProviderConfig) -> ChatConfigClass: ...
 
 
+class CollapseMessages(Protocol):
+    def __call__(self, messages: list[JsonObject]) -> list[JsonObject]: ...
+
+
 # the documented entry point for a generated JSON provider config, typed through the protocol above
-FACTORY: Final[ChatConfigFactory] = create_config_class
-MESSAGES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
+FACTORY: Final[ChatFactory] = create_config_class
+# AllMessageValues carries Any, so the case's plain dicts go through a protocol instead
+COLLAPSE: Final[CollapseMessages] = cast(CollapseMessages, handle_messages_with_content_list_to_str_conversion)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L82
+
+CallKind: TypeAlias = Literal["identity", "supported", "params", "url", "messages"]
 
 
-class IdentityCall(TypedDict):
-    kind: Literal["identity"]
-    model: str
-    environment: NotRequired[dict[str, str]]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-
-
-class SupportedCall(TypedDict):
-    kind: Literal["supported"]
-    model: str
-    environment: NotRequired[dict[str, str]]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-
-
-class ParamsCall(TypedDict):
-    kind: Literal["params"]
+class Call(TypedDict):
+    kind: CallKind
     model: str
     environment: NotRequired[dict[str, str]]
     api_base: NotRequired[str | None]
     api_key: NotRequired[str | None]
     descriptor: NotRequired[JsonObject | None]
-    non_default: JsonObject
-    optional: JsonObject
-
-
-class UrlCall(TypedDict):
-    kind: Literal["url"]
-    model: str
-    environment: NotRequired[dict[str, str]]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-
-
-class MessagesCall(TypedDict):
-    kind: Literal["messages"]
-    model: str
-    environment: NotRequired[dict[str, str]]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-    # pydantic cannot validate LiteLLM's message union without materializing lazy iterables,
-    # so the case's plain message dicts reach AllMessageValues through Any
-    messages: list[Any]
-
-
-Call: TypeAlias = IdentityCall | SupportedCall | ParamsCall | UrlCall | MessagesCall
+    non_default: NotRequired[JsonObject]
+    optional: NotRequired[JsonObject]
+    messages: NotRequired[list[JsonObject]]
 
 
 class Input(TypedDict):
     calls: list[Call]
-
-
-INPUT: Final[TypeAdapter[Input]] = TypeAdapter(Input)
-
-
-def stripped_model(model: str) -> str:
-    return model.split("/", 1)[1]
 
 
 def provider_for(model: str, descriptor: JsonObject | None) -> SimpleProviderConfig:
@@ -118,57 +81,41 @@ def provider_for(model: str, descriptor: JsonObject | None) -> SimpleProviderCon
     return provider
 
 
-def chat_config(provider: SimpleProviderConfig) -> ChatConfig:
-    return FACTORY(provider)()
-
-
-def identity_value(call: IdentityCall) -> JsonValue:
+def identity_value(call: Call) -> JsonObject:
     resolved: tuple[str, str, str | None, str | None] = litellm.get_llm_provider(
         model=call["model"], api_base=call.get("api_base"), api_key=call.get("api_key")
     )
     model, provider, key, base = resolved
-    result: dict[str, JsonValue] = {
-        "model": model,
-        "provider": provider,
-        "base": base,
-        "key": key,
-    }
-    return result
+    return {"model": model, "provider": provider, "base": base, "key": key}
 
 
-def supported_value(call: SupportedCall) -> JsonValue:
-    config = chat_config(provider_for(call["model"], None))
-    names = config.get_supported_openai_params(stripped_model(call["model"]))
-    supported: list[JsonValue] = [name for name in names]
-    return supported
+def supported_value(call: Call) -> JsonValue:
+    config = FACTORY(provider_for(call["model"], None))()
+    return list(config.get_supported_openai_params(call["model"].split("/", 1)[1]))
 
 
-def params_value(call: ParamsCall) -> JsonValue:
-    config = chat_config(provider_for(call["model"], call.get("descriptor")))
-    mapped = config.map_openai_params(
-        non_default_params=dict(call["non_default"]),
-        optional_params=dict(call["optional"]),
-        model=stripped_model(call["model"]),
+def params_value(call: Call) -> JsonValue:
+    config = FACTORY(provider_for(call["model"], call.get("descriptor")))()
+    return config.map_openai_params(
+        non_default_params=call["non_default"],
+        optional_params=call["optional"],
+        model=call["model"].split("/", 1)[1],
         drop_params=False,
     )
-    return mapped
 
 
-def url_value(call: UrlCall) -> JsonValue:
-    config = chat_config(provider_for(call["model"], None))
-    url = config.get_complete_url(
-        api_base=call.get("api_base"),
-        api_key=None,
-        model=stripped_model(call["model"]),
-        optional_params={},
-        litellm_params={},
+def url_value(call: Call) -> JsonValue:
+    config = FACTORY(provider_for(call["model"], None))()
+    return config.get_complete_url(
+        api_base=call.get("api_base"), api_key=None,
+        model=call["model"].split("/", 1)[1],
+        optional_params={}, litellm_params={},
     )
-    return url
 
 
-def messages_value(call: MessagesCall) -> JsonValue:
-    converted = handle_messages_with_content_list_to_str_conversion(call["messages"])
-    return MESSAGES.validate_python(converted)
+def messages_value(call: Call) -> JsonValue:
+    collapsed = COLLAPSE(call["messages"])
+    return MESSAGES.validate_python(collapsed)
 
 
 def call_value(call: Call) -> JsonValue:
@@ -183,10 +130,9 @@ def call_value(call: Call) -> JsonValue:
     return messages_value(call)
 
 
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    parsed = INPUT.validate_python(input_value)
+def run(input_value: Input) -> JsonValue:
     results: list[JsonValue] = []
-    for call in parsed["calls"]:
+    for call in input_value["calls"]:
         os.environ.clear()
         environment = call.get("environment")
         if environment is not None:

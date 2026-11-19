@@ -5,7 +5,6 @@ use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
 use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_core::api::anthropic_beta_filter::Headers;
 use betterlite_core::api::messages_native_transform::capabilities::{
     LegacyShapes, Thinking, ThinkingCapabilities,
 };
@@ -129,13 +128,13 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
         Kind::GenericMessagesHeaders => {
             let (explicit, _) = keys(call);
             let headers = generic_validate_environment(
-                headers(call),
+                call.headers.clone(),
                 explicit.as_ref(),
                 &call.optional_params,
                 &call.messages,
             )
             .map_err(|error| helper_error("ValueError", error.to_string()))?;
-            to_value(headers)
+            serde_json::to_value(headers)
         }
         Kind::JsonMessagesHeaders => {
             let policy = messages_policy(call, registry, provider)?;
@@ -148,13 +147,13 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             };
             let headers = policy
                 .validate_environment(
-                    headers(call),
+                    call.headers.clone(),
                     &credentials,
                     &call.optional_params,
                     &call.messages,
                 )
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
-            to_value(headers)
+            serde_json::to_value(headers)
         }
         Kind::GenericMessagesTransform => {
             let runtime = runtime()?;
@@ -166,7 +165,7 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
                     call.optional_params.clone(),
                 ))
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
-            to_value(body)
+            serde_json::to_value(body)
         }
         Kind::JsonMessagesTransform => {
             let policy = messages_policy(call, registry, provider)?;
@@ -179,7 +178,7 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
                     call.optional_params.clone(),
                 ))
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
-            to_value(body)
+            serde_json::to_value(body)
         }
         Kind::ResponsesUrl => {
             let policy = responses_policy(call, registry, provider)?;
@@ -195,7 +194,7 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
                 explicit.as_ref(),
                 &call.environment,
             );
-            to_value(headers)
+            serde_json::to_value(headers)
         }
         Kind::ResponsesTransform => {
             let policy = responses_policy(call, registry, provider)?;
@@ -207,12 +206,12 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
                     None,
                 )
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
-            to_value(body)
+            serde_json::to_value(body)
         }
         Kind::ResponsesCache => cache_value(call, &slug, provider),
         Kind::GenericResponsesUrl => {
             let settings = openai_like_settings(call)?;
-            let url = OpenAiLikeResponsesPolicy::new(settings)
+            let url = OpenAiLikeResponsesPolicy { settings }
                 .complete_url(call.api_base.as_deref())
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
             Ok(Value::String(url))
@@ -220,9 +219,9 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
         Kind::GenericResponsesHeaders => {
             let settings = openai_like_settings(call)?;
             let (explicit, _) = keys(call);
-            let headers = OpenAiLikeResponsesPolicy::new(settings)
+            let headers = OpenAiLikeResponsesPolicy { settings }
                 .validate_environment(responses_headers(call), explicit.as_ref());
-            to_value(headers)
+            serde_json::to_value(headers)
         }
     }
 }
@@ -249,10 +248,6 @@ fn keys(call: &Call) -> (Option<SecretString>, Option<SecretString>) {
     )
 }
 
-fn headers(call: &Call) -> Headers {
-    call.headers.clone()
-}
-
 // the Responses policies carry the OpenAI crate's sorted header map
 fn responses_headers(call: &Call) -> OpenAiHeaders {
     call.headers
@@ -261,23 +256,28 @@ fn responses_headers(call: &Call) -> OpenAiHeaders {
         .collect()
 }
 
+fn descriptor_for(
+    call: &Call,
+    registry: &JSONProviderRegistry,
+    provider: ProviderId,
+) -> Result<ProviderDescriptor, Box<HelperError>> {
+    match &call.descriptor {
+        Some(config) => Ok(ProviderDescriptor {
+            provider,
+            config: config.clone(),
+        }),
+        None => registry.providers.get(&provider).cloned().ok_or_else(|| {
+            helper_error("ValueError", format!("{provider} is not a JSON provider"))
+        }),
+    }
+}
+
 fn messages_policy(
     call: &Call,
     registry: &JSONProviderRegistry,
     provider: ProviderId,
 ) -> Result<JsonMessagesPolicy, Box<HelperError>> {
-    if let Some(config) = &call.descriptor {
-        return Ok(JsonMessagesPolicy::new(ProviderDescriptor {
-            provider,
-            config: config.clone(),
-        }));
-    }
-    JsonMessagesPolicy::for_provider(registry, provider).ok_or_else(|| {
-        helper_error(
-            "ValueError",
-            format!("{provider} is not a JSON provider with a messages descriptor"),
-        )
-    })
+    descriptor_for(call, registry, provider).map(|descriptor| JsonMessagesPolicy { descriptor })
 }
 
 fn responses_policy(
@@ -285,14 +285,7 @@ fn responses_policy(
     registry: &JSONProviderRegistry,
     provider: ProviderId,
 ) -> Result<ResponsesPolicy, Box<HelperError>> {
-    if let Some(config) = &call.descriptor {
-        return Ok(ResponsesPolicy::new(ProviderDescriptor {
-            provider,
-            config: config.clone(),
-        }));
-    }
-    ResponsesPolicy::for_provider(registry, provider)
-        .ok_or_else(|| helper_error("ValueError", format!("{provider} is not a JSON provider")))
+    descriptor_for(call, registry, provider).map(|descriptor| ResponsesPolicy { descriptor })
 }
 
 // create_responses_config_class caches by slug for the process, so the first descriptor's class answers both
@@ -310,7 +303,7 @@ fn cache_value(call: &Call, slug: &str, provider: ProviderId) -> Result<Value, B
         )
     })?;
     let lookup = BTreeMap::<String, String>::new();
-    let mut cache = ResponsesPolicyCache::new();
+    let mut cache = ResponsesPolicyCache::default();
     let first_url = cache
         .policy_for_descriptor(ProviderDescriptor {
             provider,
@@ -326,7 +319,7 @@ fn cache_value(call: &Call, slug: &str, provider: ProviderId) -> Result<Value, B
     Ok(json!({
         "first": first_url,
         "second": second_url,
-        "cached": cache.len() == 1,
+        "cached": cache.policies.len() == 1,
     }))
 }
 
@@ -345,13 +338,6 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error.to_string()))
-}
-
-fn to_value<T>(value: T) -> Result<Value, Box<HelperError>>
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {

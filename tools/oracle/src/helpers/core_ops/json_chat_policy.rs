@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::{
     JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
 };
@@ -111,9 +112,19 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
     match call.kind {
         Kind::Identity => identity(call, &policy, &slug, &model),
         Kind::Supported => {
-            to_value(policy.supported_params(&parent_params(&model), capabilities(call)))
+            let supported = policy.supported_params(&parent_params(&model), capabilities(call));
+            serde_json::to_value(supported)
+                .map_err(|error| helper_error("ValueError", error.to_string()))
         }
-        Kind::Params => params(call, &policy, &model),
+        Kind::Params => {
+            let supported = policy.supported_params(&parent_params(&model), capabilities(call));
+            let mut optional = call.optional.clone();
+            policy
+                .map_params(&call.non_default, &mut optional, &supported)
+                .map_err(|error| helper_error("TypeError", error.to_string()))?;
+            serde_json::to_value(optional)
+                .map_err(|error| helper_error("ValueError", error.to_string()))
+        }
         Kind::Url => Ok(Value::String(policy.complete_url(call.api_base.as_deref()))),
         Kind::Messages => messages(call, &policy),
     }
@@ -130,24 +141,29 @@ fn split_model(model: &str) -> Result<(String, String), Box<HelperError>> {
     Ok((slug.to_owned(), rest.to_owned()))
 }
 
+fn provider_id(slug: &str) -> Result<ProviderId, Box<HelperError>> {
+    slug.parse()
+        .map_err(|error| helper_error("ValueError", format!("{slug}: {error}")))
+}
+
 fn policy(
     call: &Call,
     registry: &JSONProviderRegistry,
     slug: &str,
 ) -> Result<ChatPolicy, Box<HelperError>> {
+    let provider = provider_id(slug)?;
     if let Some(config) = &call.descriptor {
-        let provider = slug
-            .parse()
-            .map_err(|error| helper_error("ValueError", format!("{slug}: {error}")))?;
-        return Ok(ChatPolicy::new(ProviderDescriptor {
+        let descriptor = ProviderDescriptor {
             provider,
             config: config.clone(),
-        }));
+        };
+        return Ok(ChatPolicy { descriptor });
     }
-    let provider = slug
-        .parse()
-        .map_err(|error| helper_error("ValueError", format!("{slug}: {error}")))?;
-    ChatPolicy::for_provider(registry, provider)
+    registry
+        .providers
+        .get(&provider)
+        .cloned()
+        .map(|descriptor| ChatPolicy { descriptor })
         .ok_or_else(|| helper_error("ValueError", format!("{slug} is not a JSON provider")))
 }
 
@@ -186,27 +202,11 @@ fn identity(
     }))
 }
 
-fn params(call: &Call, policy: &ChatPolicy, model: &str) -> Result<Value, Box<HelperError>> {
-    let supported = policy.supported_params(&parent_params(model), capabilities(call));
-    let mut optional = call.optional.clone();
-    policy
-        .map_params(&call.non_default, &mut optional, &supported)
-        .map_err(|error| helper_error("TypeError", error.to_string()))?;
-    to_value(optional)
-}
-
 fn messages(call: &Call, policy: &ChatPolicy) -> Result<Value, Box<HelperError>> {
     let transformed = policy
         .transform_messages(&call.messages)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
-    to_value(transformed)
-}
-
-fn to_value<T>(value: T) -> Result<Value, Box<HelperError>>
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_err(|error| helper_error("ValueError", error.to_string()))
+    serde_json::to_value(transformed).map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
