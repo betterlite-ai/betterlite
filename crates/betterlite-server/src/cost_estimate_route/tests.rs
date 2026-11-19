@@ -37,10 +37,10 @@ use crate::state::cost_service::{Slot, SlotError};
 const AUTH: &str = "general_settings:\n  master_key: oracle-master\n";
 const ALIAS: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: gpt-4o-mini-deployment\n    litellm_params: {model: openai/gpt-4o-mini}\nrouter_settings:\n  model_group_alias:\n    quote-alias: gpt-4o-mini-deployment\n";
 const O3: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: o3-mini\n    litellm_params: {model: o3-mini}\n";
-const QWEN: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: qwen-tier\n    litellm_params: {model: dashscope/qwen3-max}\n";
+const VOLCENGINE: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: doubao-tier\n    litellm_params: {model: volcengine/doubao-seed-2-0-pro-260215}\n";
 const GPT4O: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: gpt-4o\n    litellm_params: {model: openai/gpt-4o}\n";
 const PROVIDER: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: mini-by-provider\n    litellm_params: {model: gpt-4o-mini, custom_llm_provider: openai}\n";
-const DEEPSEEK: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: deepseek-flash\n    litellm_params: {model: deepseek/deepseek-flash}\n";
+const OPENROUTER: &str = "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: openrouter-offpeak\n    litellm_params: {model: openrouter/deepseek/deepseek-v4-pro-0813}\n";
 
 fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).unwrap()
@@ -420,24 +420,28 @@ async fn scales_the_monthly_lines_but_answers_a_zero_daily_count_with_nulls() {
 #[tokio::test]
 async fn reports_the_tier_rates_the_quote_was_billed_at() {
     let response = quote(
-        r#"{"model":"qwen-tier","input_tokens":40000,"output_tokens":1000}"#,
-        QWEN,
+        r#"{"model":"doubao-tier","input_tokens":64000,"output_tokens":1000}"#,
+        VOLCENGINE,
     )
     .await;
-    assert_eq!(response.cost_per_request.0, dec("0.108"));
-    assert_eq!(response.input_cost_per_request.0, dec("0.096"));
-    assert_eq!(response.output_cost_per_request.0, dec("0.012"));
-    assert_eq!(response.input_cost_per_token.unwrap().0, dec("0.0000024"));
-    assert_eq!(response.output_cost_per_token.unwrap().0, dec("0.000012"));
+    assert_eq!(response.cost_per_request.0, dec("0.0483"));
+    assert_eq!(response.input_cost_per_request.0, dec("0.0448"));
+    assert_eq!(response.output_cost_per_request.0, dec("0.0035"));
+    assert_eq!(response.input_cost_per_token.unwrap().0, dec("0.0000007"));
+    assert_eq!(response.output_cost_per_token.unwrap().0, dec("0.0000035"));
     assert_eq!(
         response.cache_read_input_token_cost.unwrap().0,
-        dec("0.0000024")
+        dec("0.0000007")
     );
     assert_eq!(
         response.cache_creation_token_cost.unwrap().0,
-        dec("0.0000024")
+        dec("0.0000007")
     );
-    assert_eq!(response.provider.as_deref(), Some("dashscope"));
+    assert_eq!(
+        response.output_reasoning_token_cost.unwrap().0,
+        dec("0.0000035")
+    );
+    assert_eq!(response.provider.as_deref(), Some("volcengine"));
 }
 
 #[tokio::test]
@@ -689,12 +693,12 @@ async fn answers_not_found_when_the_cost_service_is_unavailable() {
 
 #[tokio::test]
 async fn selects_the_off_peak_prices_at_the_pinned_moment() {
-    let owned = config(DEEPSEEK);
+    let owned = config(OPENROUTER);
     let deployments = DeploymentSet::from_config(&owned).unwrap();
     let asset = (BundledCatalog::default().asset)().unwrap();
     let service = testing::service_from(&asset).unwrap();
     let request: JsonValue = serde_json::from_str(
-        r#"{"model":"deepseek-flash","input_tokens":1000,"output_tokens":500}"#,
+        r#"{"model":"openrouter-offpeak","input_tokens":1000,"output_tokens":500}"#,
     )
     .unwrap();
     let parsed = CostEstimateRequest::from_value(&request).unwrap();
@@ -706,9 +710,10 @@ async fn selects_the_off_peak_prices_at_the_pinned_moment() {
     )
     .await
     .unwrap();
-    assert_eq!(off_peak.cost_per_request.0, dec("0.00045"));
-    assert_eq!(off_peak.input_cost_per_request.0, dec("0.00015"));
-    assert_eq!(off_peak.input_cost_per_token.unwrap().0, dec("0.00000015"));
+    assert_eq!(off_peak.cost_per_request.0, dec("0.00165"));
+    assert_eq!(off_peak.input_cost_per_request.0, dec("0.00066"));
+    assert_eq!(off_peak.input_cost_per_token.unwrap().0, dec("0.00000066"));
+    assert_eq!(off_peak.output_cost_per_token.unwrap().0, dec("0.00000198"));
     let standard = estimate(
         &service,
         Some(&deployments),
@@ -717,8 +722,9 @@ async fn selects_the_off_peak_prices_at_the_pinned_moment() {
     )
     .await
     .unwrap();
-    assert_eq!(standard.cost_per_request.0, dec("0.0009"));
-    assert_eq!(standard.input_cost_per_token.unwrap().0, dec("0.0000003"));
+    assert_eq!(standard.cost_per_request.0, dec("0.0033"));
+    assert_eq!(standard.input_cost_per_token.unwrap().0, dec("0.00000132"));
+    assert_eq!(standard.output_cost_per_token.unwrap().0, dec("0.00000396"));
 }
 
 #[rstest]

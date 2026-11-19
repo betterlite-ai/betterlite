@@ -3,14 +3,14 @@ config: |
   general_settings:
     master_key: oracle-master
   model_list:
-    - model_name: qwen-tier
-      litellm_params: {model: dashscope/qwen3-max}
+    - model_name: doubao-tier
+      litellm_params: {model: volcengine/doubao-seed-2-0-pro-260215}
 env: {}
 request:
   method: POST
   path: /cost/estimate
   headers: {content-type: application/json, authorization: Bearer oracle-master}
-  body: {model: qwen-tier, input_tokens: 40000, output_tokens: 1000}
+  body: {model: doubao-tier, input_tokens: 64000, output_tokens: 1000}
 upstream: []
 compare:
   headers: []
