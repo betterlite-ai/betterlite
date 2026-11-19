@@ -72,7 +72,7 @@ description: >-
   GET /health/readiness: unauthenticated. If shutting down: 503 and `{"status": "shutting_down"}`, checked first. Else
   if allow_public_health_readiness_details: the detailed body above (same 503 rule). Else `{"status": "healthy", "db":
   <resolve_public_db>}`.
-  GET /health/readiness/details: authenticated with B052's user_api_key_auth; always the detailed body, and it does not
+  GET /health/readiness/details: authenticated by the key check in auth.rs (B003's middleware); always the detailed body, and it does not
   look at the shutdown flag.
   GET /health/backlog: authenticated; `{"in_flight_requests", "admitted_requests", "queued_requests",
   "rejected_requests"}` from the B022 in-flight count and admission stats (rejected_requests is the stats' total

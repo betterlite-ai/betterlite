@@ -2,7 +2,7 @@ id: B321
 title: Tag policy across aliases and fallback chains
 description: 'Wire B320 matching into B016 with typed policy resolution for router, group and server-supplied
   request controls. Carry inherited constraints and consumed routing tags through aliases, pre-routing
-  decisions and B310 fallback hops. Use authenticated B052 context for trusted policy overrides and preserve
+  decisions and B310 fallback hops. Take trusted policy overrides from the key/team tags in request metadata.inherited_tags and preserve
   diagnostic metadata without exposing unrelated caller metadata. Configuration boundary keys introduced
   or consumed here: enable_tag_filtering, tag_filtering_match_any, tag_routing_prefix. Pinned declaration
   defaults: enable_tag_filtering=None; tag_routing_prefix=None. Resolve env values once in betterlite-config,

@@ -1,0 +1,18 @@
+kind: helper
+name: file-upload-options-repeated-targets
+call:
+  file_upload_options:
+    calls:
+      - function: extract
+        request_body: {}
+        form_parts:
+          - {kind: text, name: "target_model_names[]", text: a}
+          - {kind: text, name: "target_model_names[0]", text: " b,a "}
+          - {kind: text, name: target_model_names, text: a}
+          - {kind: text, name: "target_model_names[xyz]", text: b}
+          - {kind: text, name: target_model_names_extra, text: c}
+          - {kind: text, name: "target_model_names[unterminated", text: d}
+          - {kind: text, name: "target_model_names[]", text: a}
+          - {kind: upload, name: "target_model_names[]", filename: f.txt}
+env: {}
+compare: {ignore: []}

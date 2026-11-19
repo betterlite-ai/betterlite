@@ -105,6 +105,17 @@ impl VantageLoggers {
             .ordered()
     }
 
+    // LiteLLM's isinstance search over one list: the general list reports whether any Vantage instance is registered
+    #[must_use]
+    pub fn has_registered_in(&self, list: VantageCallbackList) -> bool {
+        !self
+            .lists
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .slot(list)
+            .is_empty()
+    }
+
     // LiteLLM's remove_callbacks_by_type over one list: the instances in the other lists stay selectable
     #[must_use]
     pub fn remove_from_list(&self, list: VantageCallbackList) -> usize {

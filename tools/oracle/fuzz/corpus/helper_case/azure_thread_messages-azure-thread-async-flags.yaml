@@ -1,0 +1,5 @@
+kind: helper
+name: azure-thread-messages-seed-azure-thread-async-flags
+call: {azure_thread_messages: {azure_thread_async_flags: [{api_key: sk-seed, api_base: 'https://example.test', api_version: '2024-02-01', thread_id: thread_1, flag: true}, {supplied: {kind: async}, flag: true, messages: []}]}}
+env: {}
+compare: {ignore: []}

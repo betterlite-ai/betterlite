@@ -1,0 +1,20 @@
+kind: helper
+name: messages-chat-content-conversation-seed
+call:
+  messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: text
+        text: before
+      - type: tool_result
+        tool_use_id: t
+        content: ok
+      - type: text
+        text: after
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: [claude-sonnet-5]
+env: {}
+compare: {ignore: []}

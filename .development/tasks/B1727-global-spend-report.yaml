@@ -8,7 +8,7 @@ description: >-
   check; date conversion occurs outside the catch block. Unlike the scoped reports, this
   handler imposes neither reversal nor 366-day validation. Database and query errors inside
   its catch become HTTP 400 with detail.error. Remove only the premium_user requirement,
-  following the README; B052's existing global-route authorization still applies.
+  following the README; the auth layer's global-route authorization (GLOBAL_SPEND_TRACKING_ROUTES in betterlite-auth) still applies outside the handler.
   Preserve branch priority by non-null presence: api_key first (hash only sk- prefixes),
   internal_user_id second, team_id plus customer_id third. Key/user reports group by key
   and model, summing cost and input/output tokens, then rank keys by total_cost. An explicitly
