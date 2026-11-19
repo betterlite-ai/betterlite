@@ -1,10 +1,12 @@
-use betterlite_models::decisions::Json;
 use rand::{Rng, RngExt as _};
 
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::io_token_reservations::error::IoPreCallError;
 use crate::latency_observations::samples::{LatencySamples, ModelGroupSamples};
 use crate::latency_rank_math;
 use crate::latency_sample_math;
+use crate::model_rate_limits::deployment::model_limits;
+use crate::model_rate_limits::error::ModelRateLimitError;
 use crate::router_core::error::RoutingError;
 
 // the one zero LiteLLM seeds an unused deployment's latency window with
@@ -121,31 +123,26 @@ fn available(
         .and_then(|samples| samples.minutes.get(selection.minute))
         .copied()
         .unwrap_or_default();
+    // _deployment.get("tpm"), then litellm_params.tpm, then model_info.tpm, read together for the rpm too
+    let limits = match model_limits(deployment) {
+        Ok(limits) => limits,
+        Err(ModelRateLimitError::Limit { field }) => return Err(RoutingError::Metric { field }),
+        Err(ModelRateLimitError::Exceeded(spent)) => {
+            return Err(RoutingError::Metric {
+                field: spent.channel.label(),
+            });
+        }
+        Err(ModelRateLimitError::IoToken(IoPreCallError::OutputCap { field })) => {
+            return Err(RoutingError::Metric { field });
+        }
+        Err(ModelRateLimitError::IoToken(IoPreCallError::RateLimit(reserved))) => {
+            return Err(RoutingError::Metric {
+                field: reserved.channel.label(),
+            });
+        }
+    };
     let tokens = i128::from(usage.tpm).saturating_add(i128::from(selection.input_tokens));
     let requests = i128::from(usage.rpm).saturating_add(1);
-    Ok(tokens <= limit(deployment, "tpm")?.unwrap_or(i128::MAX)
-        && requests <= limit(deployment, "rpm")?.unwrap_or(i128::MAX))
-}
-
-// _deployment.get("tpm"), then litellm_params.tpm, then model_info.tpm; a null or absent limit is unbounded
-fn limit(deployment: &DeploymentSpec, field: &'static str) -> Result<Option<i128>, RoutingError> {
-    for source in [
-        &deployment.extra,
-        &deployment.litellm_params,
-        &deployment.model_info,
-    ] {
-        match source.get(field) {
-            None | Some(Json::Null) => {}
-            Some(Json::Number(number)) => {
-                return number
-                    .as_i128()
-                    .map(Some)
-                    .ok_or(RoutingError::Metric { field });
-            }
-            Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-                return Err(RoutingError::Metric { field });
-            }
-        }
-    }
-    Ok(None)
+    Ok(tokens <= limits.tpm.map_or(i128::MAX, i128::from)
+        && requests <= limits.rpm.map_or(i128::MAX, i128::from))
 }
