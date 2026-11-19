@@ -10,6 +10,18 @@ deviations:
       under a stream of edited configurations.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L83-L84
+  - what: >-
+      delete removes the per-user entry from the injected TokenCacheBackend only; it does not call
+      evict_and_broadcast, so a peer worker keeps its in-memory copy until that entry's TTL.
+    why: >-
+      The broadcast needs the shared user_api_key_cache and its local eviction target, which B733
+      owns, plus the entity-key eviction actions B734 supplies; wiring that cache and a pubsub
+      endpoint into the MCP cache is not part of this task. LiteLLM's current store invalidates the
+      same key through the backend alone
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L192-L195),
+      so a working setup on that path relies on no more than the backend delete.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L297-L313
 kept_bugs:
   - what: >-
       A failed per-user cache read, write or delete is logged at debug and treated as a miss or a
