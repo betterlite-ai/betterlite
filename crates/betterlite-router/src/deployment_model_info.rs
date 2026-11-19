@@ -7,7 +7,5 @@ pub mod listing;
 pub mod metadata;
 pub mod refresh;
 pub mod router_info;
-pub mod types;
-pub mod value;
-
 mod tests;
+pub mod types;

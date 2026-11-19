@@ -1,21 +1,12 @@
+use super::cache::DiscoveryCache;
+use super::discovery::{CatalogSnapshot, holds, merged_model_info};
+use super::types::DeploymentModelListingInfo;
+use crate::deployment_identity::spec::DeploymentSpec;
+use crate::model_catalog_lookup::error::LookupError;
 use betterlite_models::call_helpers::token_limit::coerce_token_limit;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-
-use crate::deployment_identity::spec::DeploymentSpec;
-use crate::model_catalog_lookup::error::LookupError;
-
-use super::cache::DiscoveryCache;
-use super::discovery::{CatalogSnapshot, merged_model_info};
-use super::types::DeploymentModelListingInfo;
-use super::value::holds;
-
-struct ListedRow<'catalog> {
-    deployment: &'catalog DeploymentSpec,
-    model_info: JsonObject,
-}
-
-// Router.get_model_listing_info: what the deployments behind an exact model name contribute to its /v1/models entry.
+type ListedRow<'row> = (&'row DeploymentSpec, JsonObject);
 pub fn get_model_listing_info(
     snapshot: &CatalogSnapshot<'_>,
     discovery: &DiscoveryCache,
@@ -27,15 +18,13 @@ pub fn get_model_listing_info(
     if indices.is_empty() {
         return Ok(None);
     }
-    let mut rows = Vec::with_capacity(indices.len());
+    let mut rows: Vec<ListedRow<'_>> = Vec::with_capacity(indices.len());
     for index in indices {
         let Some(deployment) = snapshot.catalog.models.get(*index) else {
             return Err(LookupError::InvalidRow { index: *index });
         };
-        rows.push(ListedRow {
-            deployment,
-            model_info: merged_model_info(snapshot, discovery, &deployment.model_info),
-        });
+        let model_info = merged_model_info(snapshot, discovery, &deployment.model_info);
+        rows.push((deployment, model_info));
     }
     Ok(Some(DeploymentModelListingInfo {
         cost_map_keys: cost_map_keys(&rows),
@@ -43,14 +32,12 @@ pub fn get_model_listing_info(
         max_output_tokens: widest_limit(&rows, "max_output_tokens"),
     }))
 }
-
-// Each row's truthy model_info.base_model, then params.base_model, then params.model, kept when nonempty text and deduplicated in config order.
 fn cost_map_keys(rows: &[ListedRow<'_>]) -> Vec<String> {
     let mut keys: Vec<String> = Vec::new();
-    for row in rows {
-        let params = &row.deployment.litellm_params;
+    for (deployment, model_info) in rows {
+        let params = &deployment.litellm_params;
         let chosen = [
-            row.model_info.get("base_model"),
+            model_info.get("base_model"),
             params.get("base_model"),
             params.get("model"),
         ]
@@ -67,12 +54,8 @@ fn cost_map_keys(rows: &[ListedRow<'_>]) -> Vec<String> {
     }
     keys
 }
-
-// Router._widest_configured_limit: the largest usable value across the group, malformed values dropped by coercion.
 fn widest_limit(rows: &[ListedRow<'_>], field: &str) -> Option<i64> {
-    let limits: Vec<i64> = rows
-        .iter()
-        .filter_map(|row| coerce_token_limit(row.model_info.get(field)))
-        .collect();
-    limits.into_iter().max()
+    rows.iter()
+        .filter_map(|(_deployment, model_info)| coerce_token_limit(model_info.get(field)))
+        .max()
 }

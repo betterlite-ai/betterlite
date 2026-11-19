@@ -1,11 +1,7 @@
-use std::error::Error;
-
-use betterlite_models::resolution::ResolutionError;
-
 use crate::deployment_credentials::error::CredentialError;
 use crate::model_catalog_lookup::error::LookupError;
-
-// What a router metadata read raises: LiteLLM's two ValueErrors, the lookups it propagates and the metadata source's failure.
+use betterlite_models::resolution::ResolutionError;
+use std::error::Error;
 #[derive(Debug, thiserror::Error)]
 pub enum RouterMetadataError<SourceError>
 where
@@ -32,8 +28,6 @@ where
         source: SourceError,
     },
 }
-
-// Why one deployment's refresh stopped before it wrote; the worker reports every variant with the same debug line.
 #[derive(Debug)]
 pub enum RefreshFailure {
     Credentials(CredentialError),

@@ -1,18 +1,13 @@
-use betterlite_models::decisions::Json;
-use betterlite_models::model_catalog_keys::ModelCostKeys;
-use betterlite_models::model_registration::JsonObject;
-use betterlite_models::model_registration::merge::update_dictionary;
-
+use super::discovery::{CatalogSnapshot, get_discovered_model_info, holds};
+use super::metadata::{ModelMetadataSource, RouterMetadata};
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::fields::text;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
-
-use super::discovery::{CatalogSnapshot, get_discovered_model_info};
-use super::metadata::{ModelMetadataSource, RouterMetadata};
-use super::value::holds;
-
-// Router.get_model_info: the row the id index names, which a caller reads without copying.
+use betterlite_models::decisions::Json;
+use betterlite_models::model_catalog_keys::ModelCostKeys;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_models::model_registration::merge::update_dictionary;
 pub fn get_model_info<'catalog>(
     snapshot: &CatalogSnapshot<'catalog>,
     model_id: &str,
@@ -25,8 +20,6 @@ pub fn get_model_info<'catalog>(
         None => Err(LookupError::InvalidRow { index: *index }),
     }
 }
-
-// Router.get_model_group: the same-name group of the deployment the id names, through B844's listing.
 pub fn get_model_group(
     lookup: &CatalogLookup<'_>,
     model_id: &str,
@@ -36,8 +29,6 @@ pub fn get_model_group(
     };
     lookup.get_model_list(Some(&row.model_name), None).map(Some)
 }
-
-// Router.get_deployment_model_info: the custom cost entry, the built-in entry and the custom entry's base model, each tried in turn.
 pub async fn get_deployment_model_info<Source>(
     metadata: &RouterMetadata<'_, '_, '_, Source>,
     model_id: &str,
@@ -48,14 +39,19 @@ where
     Source: ModelMetadataSource,
 {
     let mut custom = custom_entry(metadata, model_id);
-    let builtin = match metadata.source.get_model_info(model_name, keys).await {
-        Ok(info) => info,
-        Err(_failure) => None,
-    };
-    let builtin_key = builtin.as_ref().and_then(|info| text(info, "key"));
+    let builtin = metadata
+        .source
+        .get_model_info(model_name, keys)
+        .await
+        .ok()
+        .flatten();
+    let builtin_key = builtin
+        .as_ref()
+        .and_then(|info| text(info, "key"))
+        .map(str::to_owned);
     let base_key = base_defaults(metadata, &mut custom, keys).await;
     let mut info = combine(custom, builtin)?;
-    let price_keys: Vec<&str> = [Some(model_id), builtin_key, base_key.as_deref()]
+    let price_keys: Vec<&str> = [Some(model_id), builtin_key.as_deref(), base_key.as_deref()]
         .into_iter()
         .flatten()
         .collect();
@@ -65,31 +61,29 @@ where
     }
     Some(info)
 }
-
-// litellm.model_cost.get(model_id) spread with the discovered limits, when the id is in the raw cost map at all.
-fn custom_entry(
-    metadata: &RouterMetadata<'_, '_, '_, impl ModelMetadataSource>,
+fn custom_entry<Source>(
+    metadata: &RouterMetadata<'_, '_, '_, Source>,
     model_id: &str,
-) -> Option<JsonObject> {
-    match metadata.registry.model_cost.get(model_id) {
+) -> Option<JsonObject>
+where
+    Source: ModelMetadataSource,
+{
+    let raw = metadata.registry.model_cost.get(model_id);
+    let discovered =
+        get_discovered_model_info(metadata.snapshot, metadata.discovery, Some(model_id));
+    match raw {
         None => None,
         Some(Json::Object(fields)) => {
             let mut custom = fields.clone();
-            for (key, value) in
-                get_discovered_model_info(metadata.snapshot, metadata.discovery, Some(model_id))
-            {
-                custom.insert(key, value);
-            }
+            custom.extend(discovered);
             Some(custom)
         }
         Some(other) if holds(other) => None,
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => Some(
-            get_discovered_model_info(metadata.snapshot, metadata.discovery, Some(model_id)),
-        ),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Some(discovered)
+        }
     }
 }
-
-// The custom entry's non-null base_model, whose cost entry becomes the custom entry's defaults; failures are swallowed.
 async fn base_defaults<Source>(
     metadata: &RouterMetadata<'_, '_, '_, Source>,
     custom: &mut Option<JsonObject>,
@@ -114,16 +108,14 @@ where
     *custom = Some(merged);
     base_key
 }
-
-// The three mutually exclusive sources: custom over built-in, built-in alone, custom alone, or none.
 fn combine(custom: Option<JsonObject>, builtin: Option<JsonObject>) -> Option<JsonObject> {
     match (custom, builtin) {
-        (Some(custom), Some(mut builtin)) => {
-            update_dictionary(&mut builtin, &custom);
-            Some(builtin)
+        (Some(custom_fields), Some(mut builtin_info)) => {
+            update_dictionary(&mut builtin_info, &custom_fields);
+            Some(builtin_info)
         }
-        (Some(custom), None) => Some(custom),
-        (None, Some(builtin)) => Some(builtin),
+        (Some(custom_fields), None) => Some(custom_fields),
+        (None, Some(builtin_info)) => Some(builtin_info),
         (None, None) => None,
     }
 }

@@ -1,40 +1,26 @@
-use std::error::Error;
-
+use super::deployment_info::get_model_info;
+use super::discovery::{CatalogSnapshot, copy_configured, get_discovered_model_info};
+use super::error::RouterMetadataError;
+use super::metadata::{ModelMetadataSource, RouterMetadata};
+use crate::model_catalog_lookup::fields::text;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::{JsonObject, ModelRegistry};
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, ResolvedModel, resolve};
 use secrecy::SecretString;
-
-use crate::deployment_identity::spec::DeploymentSpec;
-use crate::model_catalog_lookup::fields::text;
-
-use super::deployment_info::get_model_info;
-use super::discovery::{copy_configured, get_discovered_model_info};
-use super::error::RouterMetadataError;
-use super::metadata::{ModelMetadataSource, RouterMetadata};
-
+use std::error::Error;
 const AZURE_ADVICE: &str =
     "https://docs.litellm.ai/docs/proxy/cost_tracking#spend-tracking-for-azure-openai-models";
-
-// A deployment the caller supplied: the model_info and litellm_params raw enough for the merge to read.
 #[derive(Clone, Copy, Debug)]
 pub struct SuppliedDeployment<'row> {
     pub model_info: &'row JsonObject,
     pub litellm_params: Option<&'row JsonObject>,
 }
-
-impl<'row> SuppliedDeployment<'row> {
-    #[must_use]
-    pub fn from_spec(spec: &'row DeploymentSpec) -> Self {
-        Self {
-            model_info: &spec.model_info,
-            litellm_params: Some(&spec.litellm_params),
-        }
-    }
+struct MergedInputs<'row> {
+    deployment: SuppliedDeployment<'row>,
+    resolved: ResolvedModel,
+    base_model: Option<String>,
 }
-
-// Router.get_router_model_info: the deployment's cost-map entry, discovery and configured model_info merged.
 pub async fn get_router_model_info<Source>(
     metadata: &RouterMetadata<'_, '_, '_, Source>,
     deployment: Option<SuppliedDeployment<'_>>,
@@ -45,62 +31,65 @@ pub async fn get_router_model_info<Source>(
 where
     Source: ModelMetadataSource,
 {
-    let supplied = resolve_inputs(metadata, deployment, id)?;
-    let (deployment, params, resolved) = supplied;
-    let base_model = base_model_text(deployment.model_info, params)?;
+    let inputs = resolve_inputs(metadata, deployment, id)?;
     let model = lookup_model(
         metadata.snapshot,
         metadata.registry,
-        resolved,
-        base_model,
-        deployment,
+        &inputs,
         received_model_name,
     );
-    let Some(mut info) = source_info(metadata, &model, keys).await? else {
+    let looked_up = metadata
+        .source
+        .get_model_info(&model, keys)
+        .await
+        .map_err(|source| RouterMetadataError::Source { source })?;
+    let Some(mut info) = looked_up else {
         return Ok(None);
     };
-    for (key, value) in get_discovered_model_info(
+    let discovered = get_discovered_model_info(
         metadata.snapshot,
         metadata.discovery,
-        text(deployment.model_info, "id"),
-    ) {
-        info.insert(key, value);
-    }
-    copy_configured(&mut info, deployment.model_info);
+        text(inputs.deployment.model_info, "id"),
+    );
+    info.extend(discovered);
+    copy_configured(&mut info, inputs.deployment.model_info);
     Ok(Some(info))
 }
-
-type ResolvedInputs<'row> = (SuppliedDeployment<'row>, &'row JsonObject, ResolvedModel);
-
-// The id override, the missing-deployment error, the params check and B174's resolution.
-fn resolve_inputs<'row, SourceError>(
-    metadata: &RouterMetadata<'_, '_, '_, impl ModelMetadataSource>,
+fn resolve_inputs<'row, Source, SourceError>(
+    metadata: &RouterMetadata<'_, '_, '_, Source>,
     deployment: Option<SuppliedDeployment<'row>>,
     id: Option<&str>,
-) -> Result<ResolvedInputs<'row>, RouterMetadataError<SourceError>>
+) -> Result<MergedInputs<'row>, RouterMetadataError<SourceError>>
 where
+    Source: ModelMetadataSource,
     SourceError: Error + 'static,
 {
-    let deployment = match id {
+    let chosen = match id {
         Some(model_id) => match get_model_info(metadata.snapshot, model_id)? {
-            Some(spec) => Some(SuppliedDeployment::from_spec(spec)),
+            Some(spec) => Some(SuppliedDeployment {
+                model_info: &spec.model_info,
+                litellm_params: Some(&spec.litellm_params),
+            }),
             None => deployment,
         },
         None => deployment,
     };
-    let Some(deployment) = deployment else {
+    let Some(resolved_deployment) = chosen else {
         return Err(RouterMetadataError::DeploymentNotFound);
     };
-    let params = checked_params(deployment)?;
+    let params = checked_params(resolved_deployment)?;
+    let configured = field_text(resolved_deployment.model_info, "base_model")?;
+    let base_model = match configured {
+        Some(base_model) => Some(base_model.to_owned()),
+        None => field_text(params, "base_model")?.map(str::to_owned),
+    };
     let resolved = resolve_params(params, metadata.resolution)?;
-    Ok((deployment, params, resolved))
+    Ok(MergedInputs {
+        deployment: resolved_deployment,
+        resolved,
+        base_model,
+    })
 }
-
-fn deployment_id(model_info: &JsonObject) -> String {
-    text(model_info, "id").unwrap_or("unknown").to_owned()
-}
-
-// deployment.get("litellm_params") as LiteLLM_Params sees it: an object with a model, or the ValueError.
 fn checked_params<'row, SourceError>(
     deployment: SuppliedDeployment<'row>,
 ) -> Result<&'row JsonObject, RouterMetadataError<SourceError>>
@@ -109,17 +98,20 @@ where
 {
     match deployment.litellm_params {
         Some(params) if params.contains_key("model") => Ok(params),
-        Some(_) => Err(RouterMetadataError::InvalidParameters {
+        Some(_params) => Err(RouterMetadataError::InvalidParameters {
             params_type: "dict",
-            deployment_id: deployment_id(deployment.model_info),
+            deployment_id: text(deployment.model_info, "id")
+                .unwrap_or("unknown")
+                .to_owned(),
         }),
         None => Err(RouterMetadataError::InvalidParameters {
             params_type: "NoneType",
-            deployment_id: deployment_id(deployment.model_info),
+            deployment_id: text(deployment.model_info, "id")
+                .unwrap_or("unknown")
+                .to_owned(),
         }),
     }
 }
-
 fn field_text<'params, SourceError>(
     params: &'params JsonObject,
     field: &'static str,
@@ -135,7 +127,6 @@ where
         }
     }
 }
-
 fn resolve_params<SourceError>(
     params: &JsonObject,
     resolution: &ResolutionContext<'_>,
@@ -143,9 +134,8 @@ fn resolve_params<SourceError>(
 where
     SourceError: Error + 'static,
 {
-    let model = match field_text(params, "model")? {
-        Some(model) => model,
-        None => return Err(RouterMetadataError::FieldNotText { field: "model" }),
+    let Some(model) = field_text(params, "model")? else {
+        return Err(RouterMetadataError::FieldNotText { field: "model" });
     };
     let custom_llm_provider = field_text(params, "custom_llm_provider")?;
     let api_base = field_text(params, "api_base")?;
@@ -158,54 +148,36 @@ where
     };
     Ok(resolve(&request, resolution)?)
 }
-
-// model_info.base_model unless null, then litellm_params.base_model, as get_router_model_info reads the pair.
-fn base_model_text<SourceError>(
-    model_info: &JsonObject,
-    params: &JsonObject,
-) -> Result<Option<String>, RouterMetadataError<SourceError>>
-where
-    SourceError: Error + 'static,
-{
-    let configured = field_text(model_info, "base_model")?;
-    match configured {
-        Some(base_model) => Ok(Some(base_model.to_owned())),
-        None => Ok(field_text(params, "base_model")?.map(str::to_owned)),
-    }
-}
-
-// The cost-map name the source receives: the resolved model for every provider but azure, and the provider prefix once.
-fn lookup_model<SourceError>(
+fn lookup_model(
     snapshot: &CatalogSnapshot<'_>,
     registry: &ModelRegistry,
-    resolved: ResolvedModel,
-    base_model: Option<String>,
-    deployment: SuppliedDeployment<'_>,
+    inputs: &MergedInputs<'_>,
     received_model_name: &str,
-) -> Result<String, RouterMetadataError<SourceError>>
-where
-    SourceError: Error + 'static,
-{
-    let provider = resolved.provider.slug();
-    let mut model = base_model;
-    if provider == "azure" {
-        if model.is_none() {
-            log_azure_fallback(&resolved, registry);
+) -> String {
+    let provider = inputs.resolved.provider.slug();
+    if provider != "azure" {
+        let mut model = inputs.resolved.model.clone();
+        if model.contains('*') {
+            model =
+                wildcard_model(snapshot, inputs.deployment, received_model_name).unwrap_or(model);
         }
-    } else {
-        model = Some(resolved.model.clone());
-        if resolved.model.contains('*') {
-            model = wildcard_model(snapshot, deployment, received_model_name).or(model);
-        }
+        return prefixed(provider, &model);
     }
-    let model = model.unwrap_or_else(|| resolved.model.clone());
-    if model.starts_with(&format!("{provider}/")) {
-        return Ok(model);
+    if inputs.base_model.is_none() {
+        log_azure_fallback(&inputs.resolved, registry);
     }
-    Ok(format!("{provider}/{model}"))
+    let model = inputs
+        .base_model
+        .clone()
+        .unwrap_or_else(|| inputs.resolved.model.clone());
+    prefixed(provider, &model)
 }
-
-// The first expansion of received_model_name that carries this deployment's id, silently skipping the rest.
+fn prefixed(provider: &str, model: &str) -> String {
+    if model.starts_with(&format!("{provider}/")) {
+        return model.to_owned();
+    }
+    format!("{provider}/{model}")
+}
 fn wildcard_model(
     snapshot: &CatalogSnapshot<'_>,
     deployment: SuppliedDeployment<'_>,
@@ -221,7 +193,6 @@ fn wildcard_model(
         .filter(|candidate| !candidate.model.is_empty())
         .map(|candidate| candidate.model)
 }
-
 fn positive(value: Option<&Json>) -> bool {
     match value {
         None | Some(Json::Null) => false,
@@ -230,31 +201,22 @@ fn positive(value: Option<&Json>) -> bool {
         Some(Json::Text(_) | Json::List(_) | Json::Object(_)) => false,
     }
 }
-
-// The azure deployment without a base_model gets a debug hint or the error that names the advice.
 fn log_azure_fallback(resolved: &ResolvedModel, registry: &ModelRegistry) {
     let model = resolved.model.as_str();
-    let fallback_key = match model.starts_with("azure/") {
-        true => model.to_owned(),
-        false => format!("azure/{model}"),
+    let fallback_key = if model.starts_with("azure/") {
+        model.to_owned()
+    } else {
+        format!("azure/{model}")
     };
-    let entry = match registry.model_cost.get(&fallback_key) {
-        Some(Json::Object(fields)) => Some(fields),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => None,
-    };
-    let usable = entry.is_some_and(|fields| {
-        ["max_input_tokens", "max_tokens", "input_cost_per_token"]
+    let usable = match registry.model_cost.get(&fallback_key) {
+        Some(Json::Object(fields)) => ["max_input_tokens", "max_tokens", "input_cost_per_token"]
             .into_iter()
-            .any(|field| positive(fields.get(field)))
-    });
+            .any(|field| positive(fields.get(field))),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            false
+        }
+    };
     if usable {
         tracing::debug!(
             "Azure deployment '{model}' has no base_model set; using '{fallback_key}' from the model cost map for max tokens, cost tracking, etc."
@@ -264,20 +226,4 @@ fn log_azure_fallback(resolved: &ResolvedModel, registry: &ModelRegistry) {
             "Could not identify azure model '{model}'. Set azure 'base_model' for accurate max tokens, cost tracking, etc.- {AZURE_ADVICE}"
         );
     }
-}
-
-// The source's answer, its failure propagated with the lookup name.
-async fn source_info<Source>(
-    metadata: &RouterMetadata<'_, '_, '_, Source>,
-    model: &str,
-    keys: &mut ModelCostKeys,
-) -> Result<Option<JsonObject>, RouterMetadataError<Source::Error>>
-where
-    Source: ModelMetadataSource,
-{
-    metadata
-        .source
-        .get_model_info(model, keys)
-        .await
-        .map_err(|source| RouterMetadataError::Source { source })
 }

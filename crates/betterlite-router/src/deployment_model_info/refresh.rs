@@ -1,6 +1,11 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
+use super::cache::DiscoveryCache;
+use super::discovery::holds;
+use super::error::RefreshFailure;
+use super::types::DiscoveredDeploymentModelInfo;
+use crate::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
+use crate::deployment_credentials::resolve::credentials_with_provider;
+use crate::deployment_identity::spec::DeploymentSpec;
+use crate::model_catalog_lookup::cache::CacheClear;
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
@@ -12,18 +17,9 @@ use betterlite_openai::compatible_models::{
 };
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::{ExposeSecret as _, SecretString};
-
-use crate::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
-use crate::deployment_credentials::resolve::credentials_with_provider;
-use crate::deployment_identity::spec::DeploymentSpec;
-use crate::model_catalog_lookup::cache::CacheClear;
-
-use super::cache::DiscoveryCache;
-use super::error::RefreshFailure;
-use super::types::DiscoveredDeploymentModelInfo;
-use super::value::holds;
-
-// Everything Router.arefresh_model_info reads: the published catalog, the caches it fills and B174's resolution inputs.
+use std::array::from_fn;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct RefreshContext<'call, 'resolution> {
     pub catalogs: &'call CatalogHandle,
     pub discovery: &'call DiscoveryCache,
@@ -33,20 +29,16 @@ pub struct RefreshContext<'call, 'resolution> {
     pub client: &'call ProxiedClient,
     pub model_list_cache: &'call dyn ModelListCache,
 }
-
-// Router.arefresh_model_info: one snapshot, eight workers pulling it, then the model-group metadata invalidation.
 pub async fn refresh_model_info(context: &RefreshContext<'_, '_>) {
     let snapshot = context.catalogs.load_full();
     let cursor = AtomicUsize::new(0);
-    let workers = std::array::from_fn::<_, MODEL_INFO_REFRESH_CONCURRENCY, _>(|_| {
+    let workers = from_fn::<_, MODEL_INFO_REFRESH_CONCURRENCY, _>(|_| {
         refresh_worker(context, &snapshot, &cursor)
     });
     let [w0, w1, w2, w3, w4, w5, w6, w7] = workers;
     tokio::join!(w0, w1, w2, w3, w4, w5, w6, w7);
     context.invalidation.clear();
 }
-
-// One worker of arefresh_model_info.refresh_worker: it pulls until the snapshot is spent and reports each failure with the same debug line.
 async fn refresh_worker(
     context: &RefreshContext<'_, '_>,
     snapshot: &Arc<DeploymentCatalog>,
@@ -65,8 +57,6 @@ async fn refresh_worker(
         }
     }
 }
-
-// Router._arefresh_deployment_model_info for one row: the skip checks, the discovery and the guarded write.
 async fn refresh_deployment(
     context: &RefreshContext<'_, '_>,
     snapshot: &Arc<DeploymentCatalog>,
@@ -81,10 +71,7 @@ async fn refresh_deployment(
     let Some(api_base) = resolved.api_base.as_deref() else {
         return Ok(());
     };
-    if resolved.model.contains('*') {
-        return Ok(());
-    }
-    if params.get("use_clientside_credentials").is_some_and(holds) {
+    if resolved.model.contains('*') || params.get("use_clientside_credentials").is_some_and(holds) {
         return Ok(());
     }
     let api_key = params_api_key(&params)?.or_else(|| resolved.api_key.clone());
@@ -100,8 +87,6 @@ async fn refresh_deployment(
     write_discovery(context, snapshot, deployment, index, limits);
     Ok(())
 }
-
-// The overlay of B2306's credentials on the deployment params, with the params' null fields left out.
 fn merged_params(
     catalog: &DeploymentCatalog,
     deployment: &DeploymentSpec,
@@ -110,21 +95,20 @@ fn merged_params(
     let mut params: JsonObject = deployment
         .litellm_params
         .iter()
-        .filter(|(_, value)| !matches!(value, Json::Null))
+        .filter(|(_key, value)| !matches!(value, Json::Null))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    let overlay = credentials_with_provider(
+    let granted = credentials_with_provider(
         catalog,
         deployment.id().unwrap_or_default(),
         None,
         credentials,
     );
-    if let Some(overlay) = overlay.map_err(RefreshFailure::Credentials)? {
+    if let Some(overlay) = granted.map_err(RefreshFailure::Credentials)? {
         params.extend(overlay.fields);
     }
     Ok(params)
 }
-
 fn optional_text<'params>(
     params: &'params JsonObject,
     field: &str,
@@ -137,8 +121,6 @@ fn optional_text<'params>(
         }
     }
 }
-
-// get_llm_provider(model=params.model, litellm_params=params) through B174's resolver.
 fn resolve_deployment(
     params: &JsonObject,
     resolution: &ResolutionContext<'_>,
@@ -157,20 +139,12 @@ fn resolve_deployment(
     };
     resolve(&request, resolution).map_err(RefreshFailure::Resolution)
 }
-
-// params.api_key as LiteLLM_Params types it: a non-empty string, with anything else not text a validation failure.
 fn params_api_key(params: &JsonObject) -> Result<Option<SecretString>, RefreshFailure> {
-    match params.get("api_key") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(key)) if key.is_empty() => Ok(None),
-        Some(Json::Text(key)) => Ok(Some(SecretString::from(key.clone()))),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(RefreshFailure::Params)
-        }
+    match optional_text(params, "api_key")? {
+        Some(key) if !key.is_empty() => Ok(Some(SecretString::from(key))),
+        None | Some(_) => Ok(None),
     }
 }
-
-// The authorization header first, then the truthy extra_headers or headers lowercased over it, so an explicit Authorization wins.
 fn discovery_headers(
     params: &JsonObject,
     api_key: Option<&SecretString>,
@@ -180,26 +154,25 @@ fn discovery_headers(
         let bearer = key.expose_secret();
         headers.insert("authorization".to_owned(), format!("Bearer {bearer}"));
     }
-    let chosen = match params.get("extra_headers").is_some_and(holds) {
-        true => params.get("extra_headers"),
-        false => params.get("headers").filter(|value| holds(value)),
+    let chosen = if params.get("extra_headers").is_some_and(holds) {
+        params.get("extra_headers")
+    } else {
+        params.get("headers").filter(|value| holds(value))
     };
-    let Some(chosen) = chosen else {
+    let Some(selected) = chosen else {
         return Ok(headers);
     };
-    let Json::Object(fields) = chosen else {
+    let Json::Object(fields) = selected else {
         return Err(RefreshFailure::Headers);
     };
     for (name, value) in fields {
-        let Json::Text(value) = value else {
+        let Json::Text(text) = value else {
             return Err(RefreshFailure::Headers);
         };
-        headers.insert(name.to_lowercase(), value.clone());
+        headers.insert(name.to_lowercase(), text.clone());
     }
     Ok(headers)
 }
-
-// The write guard: empty limits, a missing id and a replaced catalog or row all leave the cache untouched.
 fn write_discovery(
     context: &RefreshContext<'_, '_>,
     snapshot: &Arc<DeploymentCatalog>,
@@ -213,7 +186,11 @@ fn write_discovery(
     let Some(model_id) = deployment.id() else {
         return;
     };
-    let record = DiscoveredDeploymentModelInfo::new(Arc::clone(snapshot), index, limits);
+    let record = DiscoveredDeploymentModelInfo {
+        catalog: Arc::clone(snapshot),
+        index,
+        limits,
+    };
     let live = context.catalogs.load_full();
     if !record.is_current(&live, model_id) {
         return;

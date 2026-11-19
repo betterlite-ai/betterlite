@@ -1,14 +1,10 @@
+use super::cache::DiscoveryCache;
+use super::discovery::{CatalogSnapshot, merged_model_info};
+use crate::model_catalog_lookup::error::LookupError;
+use crate::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_models::call_helpers::token_limit::coerce_token_limit;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-
-use crate::model_catalog_lookup::error::LookupError;
-use crate::model_catalog_lookup::lookup::CatalogLookup;
-
-use super::cache::DiscoveryCache;
-use super::discovery::{CatalogSnapshot, merged_model_info};
-
-// Router.get_configured_token_limits: one B844-selected deployment's limits, discovery overlaid but never aggregated.
 pub fn get_configured_token_limits(
     snapshot: &CatalogSnapshot<'_>,
     lookup: &CatalogLookup<'_>,
@@ -24,41 +20,29 @@ pub fn get_configured_token_limits(
         coerce_token_limit(model_info.get("max_output_tokens")),
     ))
 }
-
-// Router.get_configured_mode: the configured mode, a non-blank string returned untrimmed.
-pub fn get_configured_mode(
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ConfiguredStrings {
+    pub mode: Option<String>,
+    pub display_name: Option<String>,
+}
+pub fn get_configured_strings(
     lookup: &CatalogLookup<'_>,
     model_name: &str,
-) -> Result<Option<String>, LookupError> {
+) -> Result<ConfiguredStrings, LookupError> {
     let Some(deployment) = lookup.deployment_by_group_name(model_name)? else {
-        return Ok(None);
+        return Ok(ConfiguredStrings::default());
     };
-    Ok(configured_text(&deployment.model_info, "mode"))
+    Ok(ConfiguredStrings {
+        mode: configured_text(&deployment.model_info, "mode"),
+        display_name: configured_text(&deployment.model_info, "display_name"),
+    })
 }
-
-// Router.get_configured_display_name: the configured display name, a non-blank string returned untrimmed.
-pub fn get_configured_display_name(
-    lookup: &CatalogLookup<'_>,
-    model_name: &str,
-) -> Result<Option<String>, LookupError> {
-    let Some(deployment) = lookup.deployment_by_group_name(model_name)? else {
-        return Ok(None);
-    };
-    Ok(configured_text(&deployment.model_info, "display_name"))
-}
-
-// isinstance(value, str) and value.strip(): the original text comes back, not the trimmed one.
 fn configured_text(model_info: &JsonObject, field: &str) -> Option<String> {
-    match model_info.get(field) {
-        Some(Json::Text(value)) if !value.trim().is_empty() => Some(value.clone()),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Text(_),
-        ) => None,
+    let Some(Json::Text(value)) = model_info.get(field) else {
+        return None;
+    };
+    if value.trim().is_empty() {
+        return None;
     }
+    Some(value.clone())
 }
