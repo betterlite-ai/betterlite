@@ -184,7 +184,7 @@ fn credential_empty_values_skip_the_merge_and_removal() {
 fn credential_name_must_be_a_string() {
     let parsed = serde_json::from_str(r#"{"vector_store": {"litellm_credential_name": 5}}"#)
         .expect("the options parse");
-    let error = match IngestionState::new(
+    let Err(error) = IngestionState::new(
         parsed,
         None,
         IngestionPorts {
@@ -192,9 +192,8 @@ fn credential_name_must_be_a_string() {
             uploader: Arc::new(FakeFetch::default()),
             credentials: Arc::new(FakeCredentials::default()),
         },
-    ) {
-        Ok(_) => panic!("the name is rejected"),
-        Err(error) => error,
+    ) else {
+        panic!("the name is rejected");
     };
     assert!(matches!(
         error,

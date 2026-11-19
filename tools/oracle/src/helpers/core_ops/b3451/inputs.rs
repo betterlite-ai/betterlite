@@ -15,7 +15,7 @@ use serde_json::value::{RawValue, to_raw_value};
 use super::fakes::FixedCredentials;
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(super) struct OptionsInput {
+pub(crate) struct OptionsInput {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
@@ -29,20 +29,20 @@ pub(super) struct OptionsInput {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(super) struct CredentialInput {
+pub(crate) struct CredentialInput {
     name: String,
     values: Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(super) struct FileDataInput {
+pub(crate) struct FileDataInput {
     pub(super) filename: String,
     pub(super) content_base64: String,
     pub(super) content_type: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(super) struct FetchInput {
+pub(crate) struct FetchInput {
     pub(super) status: u16,
     pub(super) content_type: Option<String>,
     pub(super) body_base64: String,

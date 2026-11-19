@@ -105,8 +105,8 @@ async fn ocr_without_a_content_type_uses_an_empty_mime() {
 #[tokio::test]
 async fn ocr_prefers_the_router_operation() {
     let harness = Harness::default();
-    let routed = Arc::new(FakeOcr::returning(vec!["router".to_owned()]));
-    let router: Arc<dyn OcrOperation> = Arc::<FakeOcr>::clone(&routed);
+    let shared = Arc::new(FakeOcr::returning(vec!["router".to_owned()]));
+    let router: Arc<dyn OcrOperation> = Arc::<FakeOcr>::clone(&shared);
     let state = harness.routed(
         serde_json::from_str(r#"{"ocr": {}}"#).expect("the options parse"),
         Some(router),
@@ -116,7 +116,7 @@ async fn ocr_prefers_the_router_operation() {
         .await
         .expect("ocr");
     assert_eq!(text.as_deref(), Some("router"));
-    assert_eq!(routed.calls.lock().unwrap().len(), 1);
+    assert_eq!(shared.calls.lock().unwrap().len(), 1);
     assert!(harness.ocr.calls.lock().unwrap().is_empty());
 }
 

@@ -4,7 +4,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_core::rag::ingestion::IngestionState;
 use betterlite_core::rag::ingestion::config::VectorStoreConfig;
-use betterlite_core::rag::ingestion::ocr::OcrDocument;
+use betterlite_core::rag::ingestion::ocr::{OcrDocument, OcrOperation};
 use betterlite_core::rag::ingestion::upload::FileData;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -82,10 +82,11 @@ pub(super) fn ocr(
     pages: &[String],
 ) -> HelperResult {
     let recorder = Arc::new(RecordingOcr::with_pages(pages));
+    let ocr_port: Arc<dyn OcrOperation> = Arc::<RecordingOcr>::clone(&recorder);
     let built = build(
         options_input,
         &[],
-        Arc::clone(&recorder),
+        ocr_port,
         Arc::new(RecordingFetch::answer(None)?),
     )?;
     let content = match file_content_base64 {
