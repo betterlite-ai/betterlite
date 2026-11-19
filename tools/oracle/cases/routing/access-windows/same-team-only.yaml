@@ -1,0 +1,37 @@
+kind: probe
+name: same-team-only
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: team
+        team_id: t1
+        deployments:
+          - {model_name: gpt, id: shared}
+          - {model_name: gpt, id: ours, team_id: t1}
+          - {model_name: gpt, id: theirs, team_id: t2}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: team
+        team_id: t2
+        deployments:
+          - {model_name: gpt, id: shared}
+          - {model_name: gpt, id: ours, team_id: t1}
+          - {model_name: gpt, id: theirs, team_id: t2}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: team
+        deployments:
+          - {model_name: gpt, id: shared}
+          - {model_name: gpt, id: ours, team_id: t1}
+          - {model_name: gpt, id: theirs, team_id: t2}
+compare:
+  ignore: []

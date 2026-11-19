@@ -1,0 +1,27 @@
+kind: probe
+name: forged-team-metadata
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: team
+        team_id: t1
+        deployments:
+          - {model_name: gpt, id: ours, team_id: t1}
+          - {model_name: gpt, id: claimed, team_id: t2, team_public_model_name: gpt}
+          - {model_name: gpt, id: open}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: team
+        proxy_admin: true
+        deployments:
+          - {model_name: gpt, id: ours, team_id: t1}
+          - {model_name: gpt, id: claimed, team_id: t2, team_public_model_name: gpt}
+          - {model_name: gpt, id: open}
+compare:
+  ignore: []

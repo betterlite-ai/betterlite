@@ -1,0 +1,43 @@
+kind: probe
+name: no-team-active-reservation
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        now_unix_millis: 1767614400000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "09:00", end: "17:00", timezone: UTC, team_ids: [t1]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        now_unix_millis: 1767643200000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "09:00", end: "17:00", timezone: UTC, team_ids: [t1]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1767614400000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "09:00", end: "17:00", timezone: UTC, team_ids: [t1]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: ""
+        now_unix_millis: 1767614400000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "09:00", end: "17:00", timezone: UTC, team_ids: [t1]}]}
+compare:
+  ignore: []
