@@ -18,7 +18,7 @@ use tokio::runtime::Runtime;
 use super::fixture::{Cache, Log, Materializer, Planned, Sources};
 use super::reports::{projection, raised};
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) steps: Vec<Step>,

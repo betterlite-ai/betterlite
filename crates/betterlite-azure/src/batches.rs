@@ -22,6 +22,7 @@ pub enum Operation<'request> {
 
 impl Operation<'_> {
     // Which class the open step checks; cancel names both async classes
+    #[must_use]
     pub const fn check(&self) -> ClientCheck {
         match self {
             Self::Cancel(_) => ClientCheck::Cancel,
