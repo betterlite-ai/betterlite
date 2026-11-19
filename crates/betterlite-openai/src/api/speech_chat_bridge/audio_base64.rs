@@ -51,7 +51,8 @@ pub fn decode_chat_audio_base64(data: &str) -> Result<Vec<u8>, SpeechAudioError>
         };
         pads = 0;
         data_chars = data_chars.saturating_add(1);
-        left = (left << BITS_PER_CHARACTER) | u32::from(value);
+        // the masked leftover holds only bits above the six value bits, so adding the value appends it and never carries
+        left = (left << BITS_PER_CHARACTER).saturating_add(u32::from(value));
         leftbits = leftbits.saturating_add(BITS_PER_CHARACTER);
         if leftbits >= BITS_PER_BYTE {
             leftbits = leftbits.saturating_sub(BITS_PER_BYTE);
