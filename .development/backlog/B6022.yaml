@@ -1,7 +1,7 @@
 id: B6022
 milestone: M12 python
 title: Native router calls in the Python crate
-status: todo
+status: blocked
 depends_on: [B302, B016, B5369, B5659, B6020, B6021, B6460]
 file: tasks/B6022-native-router-calls.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B162
 split_from: B5078
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python Router parity waits on the Python layer"
 pr: null

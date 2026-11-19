@@ -1,7 +1,7 @@
 id: B5078
 milestone: M12 python
 title: Router anthropic_messages and completion dispatch
-status: todo
+status: blocked
 depends_on: [B158, B163, B6020, B6021, B6022]
 file: tasks/B5078-router-dispatch.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B162
 split_from: B162
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python Router parity waits on the Python layer"
 pr: null
