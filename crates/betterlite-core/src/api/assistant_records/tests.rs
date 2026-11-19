@@ -22,7 +22,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::value::RawValue;
+use serde_json::{json, value::RawValue};
 use tokio::task::yield_now;
 
 use super::call::{
@@ -984,11 +984,12 @@ fn assistant_create_retry_values() {
 
 #[test]
 fn assistant_create_timeout_values_parse() {
-    let number: CreateTimeout = serde_json::from_str("0").expect("a number");
+    // serde_json's arbitrary_precision breaks untagged decimals off a string stream
+    let number: CreateTimeout = serde_json::from_value(json!(0)).expect("a number");
     assert_eq!(number, CreateTimeout::Seconds(0.0));
-    let arguments: CreateTimeout = serde_json::from_str("\"7.5\"").expect("text");
+    let arguments: CreateTimeout = serde_json::from_value(json!("7.5")).expect("text");
     assert_eq!(arguments, CreateTimeout::Text(String::from("7.5")));
-    let phases: CreateTimeout = serde_json::from_str(r#"{"read": 9.0}"#).expect("phases");
+    let phases: CreateTimeout = serde_json::from_value(json!({"read": 9.0})).expect("phases");
     match phases {
         CreateTimeout::Phases(given) => assert_eq!(given.read, Some(9.0_f64)),
         CreateTimeout::Seconds(_) | CreateTimeout::Text(_) => panic!("a phase map parsed as plain"),
