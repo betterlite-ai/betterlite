@@ -441,3 +441,36 @@ fn a_redis_outage_falls_back_to_the_local_claim_and_recovers() {
         assert_eq!(recovered.fallback, None);
     });
 }
+
+#[test]
+fn a_different_shared_pin_is_returned_without_rewriting_its_ttl() {
+    runtime().block_on(async {
+        let server = FakeRedis::try_start().await.unwrap();
+        let clock = TestClock::default();
+        clock.at(1_700_000_000.0);
+        let service = AffinityClaims {
+            local: local_pins(&clock),
+            shared: Some(shared_store(&server)),
+        };
+        let cache_key = key("deployment_affinity:v1:group:caller");
+        service
+            .claim(&cache_key, &pin("model_id", "dep-a"), 60, None)
+            .await
+            .unwrap();
+        let losing = service
+            .claim(&cache_key, &pin("model_id", "dep-b"), 30, None)
+            .await
+            .unwrap();
+        assert_eq!(losing.pin, StoredPin::Pin(pin("model_id", "dep-a")));
+        assert_eq!(losing.fallback, None);
+        let ttl = service
+            .shared
+            .as_ref()
+            .unwrap()
+            .get_ttl(&cache_key.0)
+            .await
+            .unwrap()
+            .value;
+        assert_eq!(ttl, Some(60));
+    });
+}

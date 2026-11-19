@@ -7,12 +7,12 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    TestClock, key, local_pins, metadata, pin, pin_fields, runtime, shared_store,
+    TestClock, deployment, key, local_pins, metadata, pin, pin_fields, runtime, shared_store,
 };
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::identity::{
-    AffinityKey, hash_user_key, looks_like_sha256_hex, marker_session_affinity_ttl,
-    session_id_from_request_kwargs, user_key_from_request_kwargs,
+    AffinityFlag, AffinityKey, hash_user_key, looks_like_sha256_hex, marker_session_affinity_ttl,
+    model_map_key_from_deployment, session_id_from_request_kwargs, user_key_from_request_kwargs,
 };
 use crate::affinity_claims::pin::{MAX_PIN_BYTES, PinError, StoredPin};
 use crate::affinity_claims::shared::{MAX_CLAIM_ATTEMPTS, SharedFallback};
@@ -381,4 +381,67 @@ fn a_pin_over_the_local_item_limit_is_not_kept() {
     let winner = pins.claim_in_memory(&cache_key, &huge, 60, None).unwrap();
     assert_eq!(winner, StoredPin::Pin(huge));
     assert_eq!(pins.read(&cache_key).unwrap(), None);
+}
+
+#[test]
+fn the_pin_byte_limit_is_one_mebibyte() {
+    let limit = MAX_PIN_BYTES;
+    assert_eq!(limit, 1024 * 1024);
+}
+
+#[test]
+fn each_listed_affinity_flag_name_maps_to_its_flag() {
+    assert_eq!(
+        AffinityFlag::from_name("deployment_affinity"),
+        Some(AffinityFlag::Deployment)
+    );
+    assert_eq!(
+        AffinityFlag::from_name("responses_api_deployment_check"),
+        Some(AffinityFlag::ResponsesApi)
+    );
+    assert_eq!(
+        AffinityFlag::from_name("session_affinity"),
+        Some(AffinityFlag::Session)
+    );
+    assert_eq!(AffinityFlag::from_name("unlisted_flag"), None);
+}
+
+#[test]
+fn a_stored_pin_decodes_to_the_json_it_holds() {
+    let stored = StoredPin::Pin(pin_fields(&[("model_id", "dep-a")]));
+    assert_eq!(
+        stored.decoded(),
+        Json::Object(IndexMap::from([(
+            "model_id".to_owned(),
+            Json::Text("dep-a".to_owned())
+        )]))
+    );
+    assert_eq!(
+        StoredPin::Text("dep-a".to_owned()).decoded(),
+        Json::Text("dep-a".to_owned())
+    );
+    assert_eq!(
+        StoredPin::Other(Json::List(Vec::new())).decoded(),
+        Json::List(Vec::new())
+    );
+}
+
+#[test]
+fn a_deployment_base_model_in_model_info_names_the_map_key() {
+    let mut named = deployment("", &[("model", "openai/gpt-4o")], "dep-a");
+    named
+        .model_info
+        .insert("base_model".to_owned(), Json::Text("model-x".to_owned()));
+    assert_eq!(
+        model_map_key_from_deployment(&named),
+        Some("model-x".to_owned())
+    );
+    let mut empty = deployment("", &[("model", "openai/gpt-4o")], "dep-b");
+    empty
+        .model_info
+        .insert("base_model".to_owned(), Json::Text(String::new()));
+    assert_eq!(
+        model_map_key_from_deployment(&empty),
+        Some("gpt-4o".to_owned())
+    );
 }
