@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use super::Chunk;
+use betterlite_models::controls::json_value::JsonValue;
+
+use super::{Chunk, ThinkingKind};
 
 #[test]
 fn stream_maps_model_and_omits_null_finish() {
@@ -45,6 +47,47 @@ fn stream_suppresses_inline_usage() {
     let chunk = Chunk::parse(input, "group", false).unwrap().unwrap();
     assert!(chunk.usage.is_none());
     assert_eq!(chunk.choices.len(), 1);
+}
+
+#[test]
+fn stream_parses_reasoning_delta_fields() {
+    let input = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig","cache_control":{"type":"ephemeral","ttl":"5m"}},{"type":"redacted_thinking","data":"cipher","cache_control":{"custom":true}}]}}]}"#;
+    let chunk = Chunk::parse(input, "group", false).unwrap().unwrap();
+    let delta = &chunk.choices.first().expect("the chunk has a choice").delta;
+    assert_eq!(delta.reasoning_content.as_deref(), Some("thinking"));
+    let blocks = delta
+        .thinking_blocks
+        .as_ref()
+        .expect("the thinking blocks are kept");
+    assert_eq!(blocks.len(), 2);
+    let thinking = blocks.first().expect("the thinking block");
+    assert_eq!(thinking.kind, ThinkingKind::Thinking);
+    assert_eq!(thinking.thinking.as_deref(), Some("step"));
+    assert_eq!(thinking.signature.as_deref(), Some("sig"));
+    assert!(thinking.data.is_none());
+    let control = thinking
+        .cache_control
+        .as_ref()
+        .expect("the thinking block keeps its cache control");
+    let ephemeral = JsonValue::Text("ephemeral".to_owned());
+    assert_eq!(control.get("type"), Some(&ephemeral));
+    assert_eq!(control.get("ttl"), Some(&JsonValue::Text("5m".to_owned())));
+    let redacted = blocks.get(1).expect("the redacted block");
+    assert_eq!(redacted.kind, ThinkingKind::RedactedThinking);
+    assert_eq!(redacted.data.as_deref(), Some("cipher"));
+    assert!(redacted.thinking.is_none());
+    assert!(redacted.signature.is_none());
+    let redacted_control = redacted
+        .cache_control
+        .as_ref()
+        .expect("the redacted block keeps its cache control");
+    assert_eq!(redacted_control.get("custom"), Some(&JsonValue::Bool(true)));
+    assert_eq!(
+        serde_json::to_string(&chunk).unwrap(),
+        r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig","cache_control":{"type":"ephemeral","ttl":"5m"}},{"type":"redacted_thinking","data":"cipher","cache_control":{"custom":true}}]}}]}"#
+    );
+    let unknown = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"thinking_blocks":[{"type":"thinking","bogus":true}]}}]}"#;
+    Chunk::parse(unknown, "group", false).unwrap_err();
 }
 
 #[test]
