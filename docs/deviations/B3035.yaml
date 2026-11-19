@@ -30,4 +30,10 @@ deviations:
   - what: A gauge status carries descriptor_value as null and a gauge-only response carries reservation_windows as null, where LiteLLM's status dict has no descriptor_value key and its gauge response has no reservation_windows key.
     why: RateLimitStatus and RateLimitResponse are shared with the windowed paths, where descriptor_value and reservation_windows are set; the gauge path leaves them unset, and a JSON client reading the fields gets null instead of a missing key.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1716-L1723
+  - what: A count that does not fit an i64, such as a float of 1e30 in a script reply or local mirror, is GaugeError::NotWholeNumber; Python's int() carries it as an arbitrary-precision integer and the gauge reads as over limit.
+    why: The counts come from ZCARD or from the integer mirror, so a value this large is malformed gauge data. The read-only path reports it through the conversion-error fallback to the local mirror, and the acquire paths name it instead of mirroring a count betterlite cannot store as an integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1766
+  - what: An in-memory release that reads an integer mirror which is not a whole number leaves that gauge untouched and releases the remaining keys; LiteLLM's max(0, int(raw_value) - 1) raises ValueError and aborts the release for every remaining key.
+    why: A malformed mirror is not a reason to stop releasing the other gauges or to turn a logging-callback release into an exception that leaks the slot; the slot TTL prunes the leftover entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2015
 kept_bugs: []
