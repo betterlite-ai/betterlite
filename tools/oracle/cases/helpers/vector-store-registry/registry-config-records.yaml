@@ -1,0 +1,77 @@
+kind: helper
+name: vector-store-registry-config-records
+call:
+  vector_store_registry:
+    operation: config_records
+    entries:
+      - vector_store_name: notes
+        litellm_params:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_description: d
+          vector_store_metadata:
+            tag: x
+calls:
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - litellm_params:
+            vector_store_id: vs_b
+            custom_llm_provider: bedrock
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: notes
+          litellm_params: null
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: notes
+          litellm_params:
+            custom_llm_provider: openai
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: notes
+          litellm_params:
+            vector_store_id: vs_a
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: ""
+          litellm_params:
+            vector_store_id: ""
+            custom_llm_provider: ""
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: first
+          litellm_params:
+            vector_store_id: vs_a
+            custom_llm_provider: openai
+        - vector_store_name: second
+          litellm_params:
+            vector_store_id: vs_a
+            custom_llm_provider: openai
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: first
+          litellm_params:
+            vector_store_id: vs_a
+            custom_llm_provider: openai
+        - vector_store_name: broken
+          litellm_params: null
+  - vector_store_registry:
+      operation: config_records
+      entries:
+        - vector_store_name: notes
+          litellm_params:
+            vector_store_id: vs_a
+            custom_llm_provider: openai
+            vector_store_metadata: raw
+env: {}
+compare:
+  ignore:
+    - pointer: /value/raised
+      why: betterlite writes its own message
