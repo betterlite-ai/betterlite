@@ -1,0 +1,98 @@
+kind: helper
+name: edenai-messages-key-url-and-cost
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params: []
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models: []
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments:
+      - headers: {}
+        api_key: "eden"
+        global_api_key: null
+        api_base: null
+        environment: {}
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments:
+        - headers: {x-api-key: "caller"}
+          api_key: "eden"
+          global_api_key: null
+          api_base: null
+          environment: {}
+        - headers: {Content-Type: "text/plain"}
+          api_key: "eden"
+          global_api_key: null
+          api_base: "https://proxy.example/v3/"
+          environment: {}
+        - headers: {}
+          api_key: null
+          global_api_key: "global"
+          api_base: null
+          environment: {EDENAI_API_BASE: "https://gateway.example/v3/v1"}
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments:
+        - headers: {}
+          api_key: null
+          global_api_key: null
+          api_base: null
+          environment: {}
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies:
+        - '{"id": "msg_1", "type": "message", "role": "assistant", "model": "m", "content": [{"type": "text", "text": "hi"}], "stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 1, "output_tokens": 2}, "cost": 0.25}'
+        - '{"id": "msg_2", "type": "message", "role": "assistant", "model": "m", "content": [], "stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 1, "output_tokens": 2}}'
+        - '{"id": "msg_3", "type": "message", "role": "assistant", "model": "m", "content": [], "stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 0, "output_tokens": 0}, "cost": 0}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,79 @@
+kind: helper
+name: edenai-chat-supported-params-and-stream-options
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params:
+      - {model: "m", reasoning: true}
+      - {model: "m", reasoning: false}
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models: []
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests:
+        - {model: "m", optional_params: {stream: true}}
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests:
+        - {model: "m", optional_params: {stream: true, stream_options: {include_usage: false, foo: 1}}}
+        - {model: "m", optional_params: {stream: true, stream_options: null}}
+        - {model: "m", optional_params: {stream: true, stream_options: {}}}
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests:
+        - {model: "m", optional_params: {temperature: 0.5}}
+        - {model: "m", optional_params: {stream: false}}
+        - {model: "m", optional_params: {}}
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,90 @@
+kind: helper
+name: edenai-model-catalog
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params: []
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models:
+      - status: 200
+        text: '{"data": [{"id": "a"}, {"id": "b"}]}'
+        headers: {}
+        api_base: null
+        environment: {}
+      - status: 200
+        text: '{"data": [], "object": "list"}'
+        headers: {}
+        api_base: null
+        environment: {}
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models:
+        - {status: 500, text: "boom", headers: {x-request-id: "req-1"}, api_base: null, environment: {}}
+        - {status: 404, text: "", headers: {}, api_base: null, environment: {}}
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models:
+        - {status: 200, text: "not json", headers: {}, api_base: null, environment: {}}
+        - {status: 200, text: '{"data": [{"id": 1}]}', headers: {}, api_base: null, environment: {}}
+        - {status: 200, text: "null", headers: {}, api_base: null, environment: {}}
+        - {status: 200, text: '{"data": {}}', headers: {}, api_base: null, environment: {}}
+        - {status: 200, text: '{"data": [{}]}', headers: {}, api_base: null, environment: {}}
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models:
+        - {status: 200, text: '{"data": [{"id": "a"}]}', headers: {}, api_base: "https://proxy.example/v3", environment: {}}
+        - {status: 200, text: '{"data": [{"id": "a"}]}', headers: {}, api_base: null, environment: {EDENAI_API_BASE: "https://gateway.example/v3"}}
+        - {status: 200, text: '{"data": [{"id": "a"}]}', headers: {}, api_base: "https://proxy.example/v3///", environment: {}}
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}

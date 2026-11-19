@@ -1,0 +1,99 @@
+kind: helper
+name: edenai-embedding-request-and-url
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params: []
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models: []
+    embedding_plans:
+      - model: "m"
+        input: "hello"
+        optional_params: {dimensions: 8, user: "alice", encoding_format: "float"}
+        non_default_params: {dimensions: 8, user: "alice", other: 1}
+        headers: {x-trace: "1"}
+        api_key: "eden"
+        global_api_key: null
+        api_base: null
+        environment: {}
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans:
+        - model: "m"
+          input: ["a", "b"]
+          optional_params: {}
+          non_default_params: {user: "bob", encoding_format: "base64", drop: 1}
+          headers: {}
+          api_key: null
+          global_api_key: null
+          api_base: null
+          environment: {EDENAI_API_KEY: "environment", EDENAI_API_BASE: "https://gateway.example/v3"}
+        - model: "m"
+          input: [1, 2, 3]
+          optional_params: {dimensions: 4}
+          non_default_params: {}
+          headers: {Content-Type: "text/plain"}
+          api_key: "eden"
+          global_api_key: null
+          api_base: "https://proxy.example/v3///"
+          environment: {}
+        - model: "m"
+          input: [[1, 2], [3, 4]]
+          optional_params: {}
+          non_default_params: {}
+          headers: {}
+          api_key: null
+          global_api_key: "global"
+          api_base: null
+          environment: {}
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans:
+        - model: "m"
+          input: "hello"
+          optional_params: {model: "other", input: "replaced"}
+          non_default_params: {}
+          headers: {}
+          api_key: "eden"
+          global_api_key: null
+          api_base: null
+          environment: {}
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}

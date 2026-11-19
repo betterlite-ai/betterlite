@@ -1,0 +1,9 @@
+kind: helper
+name: edenai-wire-catalog-seed
+call:
+  b6100:
+    models:
+      - {status: 200, text: '{"data": [{"id": "a"}]}', headers: {}, api_base: null, environment: {}}
+      - {status: 500, text: "boom", headers: {}, api_base: null, environment: {}}
+env: {}
+compare: {ignore: []}

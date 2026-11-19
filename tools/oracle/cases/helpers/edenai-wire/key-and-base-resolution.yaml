@@ -1,0 +1,121 @@
+kind: helper
+name: edenai-key-and-base-resolution
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials:
+      - headers: {}
+        api_key: "explicit"
+        global_api_key: null
+        api_base: "https://proxy.example/v3"
+        environment: {}
+    chat_params: []
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models: []
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials:
+        - headers: {}
+          api_key: null
+          global_api_key: null
+          api_base: null
+          environment: {EDENAI_API_KEY: "environment", EDENAI_API_BASE: "https://gateway.example/v3"}
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials:
+        - headers: {}
+          api_key: null
+          global_api_key: "global"
+          api_base: null
+          environment: {}
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials:
+        - headers: {}
+          api_key: "explicit"
+          global_api_key: "global"
+          api_base: null
+          environment: {EDENAI_API_KEY: "environment", EDENAI_API_BASE: "https://gateway.example/v3"}
+        - headers: {}
+          api_key: ""
+          global_api_key: null
+          api_base: ""
+          environment: {EDENAI_API_KEY: "environment", EDENAI_API_BASE: "https://gateway.example/v3"}
+        - headers: {}
+          api_key: null
+          global_api_key: ""
+          api_base: null
+          environment: {EDENAI_API_KEY: "environment"}
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials:
+        - headers: {}
+          api_key: null
+          global_api_key: null
+          api_base: null
+          environment: {EDENAI_API_BASE: "https://gateway.example/v3///"}
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}
