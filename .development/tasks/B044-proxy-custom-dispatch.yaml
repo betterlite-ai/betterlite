@@ -31,7 +31,9 @@ description: >-
 
   HTTP fixtures boot the proxy and exercise POST /v1/chat/completions and /chat/completions for proxy,
   aleph_alpha, custom and aiohttp_openai deployments, plus /v1/embeddings and /embeddings for proxy and
-  a fixture custom handler. Capture upstream bodies/headers and downstream status, error type/param/code
+  a fixture custom handler. Write that handler as a plain Python class with embedding and aembedding
+  methods and no CustomLLM base: LiteLLM only calls the methods, and betterlite's CustomLLM class is
+  B164's and comes later. Capture upstream bodies/headers and downstream status, error type/param/code
   and headers; error cases ignore only /error/message with the betterlite wording reason. Use model
   litellm_proxy/gemini/gemini-1.5-pro to prove nested prefixes survive and aleph_alpha/luminous-base-control
   for prompt formatting. Include bearer rejection, missing custom base, missing handler and provider failure.

@@ -23,7 +23,7 @@ use crate::otel_provider_assembly::legacy_otel_init::LegacyOtel;
 use super::context::resolve_guardrail_context;
 use super::error::LegacyLifecycleError;
 use super::state::{RequestDedupe, request_key};
-use super::tracer::{BaseDynamicOtel, DynamicOtel, TracerChoice};
+use super::tracer::{BaseDynamicOtel, DynamicOtel, TracerChoice, TracerRouter};
 use super::{context, failure, guardrail, proxy, success};
 
 pub const DEFAULT_CALLBACK_NAME: &str = "opentelemetry";
@@ -50,6 +50,15 @@ pub fn litellm_params(kwargs: &MetadataMap) -> Option<&MetadataMap> {
 pub enum LifecycleEvent {
     Success,
     Failure,
+}
+
+// a vendor's sampling decision runs before the lifecycle's dedupe, where LiteLLM's hooks return early
+pub trait ExportGate: Send + Sync {
+    fn should_export(
+        &self,
+        kwargs: &MetadataMap,
+        event: LifecycleEvent,
+    ) -> Result<bool, LegacyLifecycleError>;
 }
 
 pub struct LegacyLifecycleOptions {
@@ -92,6 +101,8 @@ pub struct LegacyLifecycle {
     pub dedupe: RequestDedupe,
     pub clock: Box<dyn Clock>,
     pub use_request_span: bool,
+    pub export_gate: Option<Arc<dyn ExportGate>>,
+    pub tracer_router: Option<Arc<dyn TracerRouter>>,
 }
 
 impl LegacyLifecycle {
@@ -100,6 +111,11 @@ impl LegacyLifecycle {
         call: &LifecycleCall<'_>,
         event: LifecycleEvent,
     ) -> Result<(), LegacyLifecycleError> {
+        if let Some(gate) = &self.export_gate
+            && !gate.should_export(call.kwargs, event)?
+        {
+            return Ok(());
+        }
         let scope = match event {
             LifecycleEvent::Success => "success",
             LifecycleEvent::Failure => "failure",
@@ -190,6 +206,8 @@ impl LegacyLifecycle {
             dedupe: RequestDedupe::new(options.handler_class_name),
             clock: options.clock,
             use_request_span: options.use_request_span,
+            export_gate: None,
+            tracer_router: None,
         }
     }
 

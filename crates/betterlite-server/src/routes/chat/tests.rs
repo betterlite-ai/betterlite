@@ -660,6 +660,7 @@ async fn answers_failures_in_litellm_shape(
 
 #[path = "tests/stream/tests.rs"]
 mod stream;
+mod unknown_model_cases;
 
 #[tokio::test]
 async fn stream_error_preserves_param() {

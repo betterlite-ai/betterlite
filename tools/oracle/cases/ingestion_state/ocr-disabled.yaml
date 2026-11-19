@@ -1,0 +1,19 @@
+kind: helper
+name: ocr-disabled
+call:
+  b3451:
+    mode: ocr
+    options:
+      vector_store:
+        custom_llm_provider: openai
+    file_content_base64: aGVsbG8gb2Ny
+    content_type: text/plain
+calls:
+  - b3451:
+      mode: ocr
+      options:
+        vector_store:
+          custom_llm_provider: openai
+      content_type: text/plain
+env: {}
+compare: {ignore: []}
