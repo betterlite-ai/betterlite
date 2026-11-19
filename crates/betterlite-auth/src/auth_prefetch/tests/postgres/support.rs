@@ -94,17 +94,7 @@ pub(super) fn strings(row: &JsonData, name: &str) -> Vec<String> {
     let JsonData::Array(items) = field(row, name) else {
         panic!("{name} is not an array");
     };
-    items
-        .iter()
-        .map(|item| match item {
-            JsonData::String(text) => text.clone(),
-            other @ (JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_)) => panic!("{name} holds a non-string: {other:?}"),
-        })
-        .collect()
+    items.iter().map(|item| text(item, name)).collect()
 }
 
 pub(super) fn text(row: &JsonData, name: &str) -> String {

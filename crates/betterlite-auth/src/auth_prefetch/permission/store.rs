@@ -136,12 +136,8 @@ fn widen(error: DbError) -> DbError<TableError> {
     }
 }
 fn fault(error: TableError) -> DbError<TableError> {
-    match error {
-        TableError::Database(source) => widen(source),
-        other @ (TableError::Batch(_)
-        | TableError::Row(_)
-        | TableError::MissingRow
-        | TableError::RowCount { .. }
-        | TableError::Publish { .. }) => DbError::InvalidRecord { source: other },
+    if let TableError::Database(source) = error {
+        return widen(source);
     }
+    DbError::InvalidRecord { source: error }
 }

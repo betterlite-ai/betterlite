@@ -16,8 +16,8 @@ use crate::auth_prefetch::orchestrator::{OwnerPrefetch, ReferencedPrefetch};
 use crate::auth_prefetch::rows::RowKind;
 
 use super::support::{
-    Events, FakeCache, FakeDatabase, FakeRedis, FixedClock, HangingDatabase, Logs, ReadFailure,
-    RecordingBinder, auth, events, json, recorded,
+    Events, FakeCache, FakeDatabase, FakeRedis, FixedClock, Logs, ReadFailure, RecordingBinder,
+    auth, events, json, recorded,
 };
 
 const MANAGEMENT_TTL: f64 = 60.0;
@@ -567,9 +567,7 @@ async fn owner_prefetch_cancellation_propagates() {
     let (logs, _guard) = Logs::capture();
     let cache = FakeCache::new(MANAGEMENT_TTL);
     let dropped = Arc::new(AtomicBool::new(false));
-    let database = HangingDatabase {
-        dropped: Arc::clone(&dropped),
-    };
+    let database = FakeDatabase::hanging(Arc::clone(&dropped));
     let clock = FixedClock { now: 10.0 };
     let prefetch = OwnerPrefetch {
         cache: &cache,

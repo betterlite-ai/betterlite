@@ -395,6 +395,7 @@ pub(super) struct FakeDatabase {
     pub(super) rows: RowValues,
     calls: Mutex<Vec<Vec<RowKind>>>,
     pub(super) events: Option<Events>,
+    dropped: Option<Arc<AtomicBool>>,
 }
 
 impl FakeDatabase {
@@ -405,8 +406,15 @@ impl FakeDatabase {
         }
         Self {
             rows: values,
-            calls: Mutex::default(),
-            events: None,
+            ..Self::default()
+        }
+    }
+
+    // a lookup that never answers, holding a flag that proves the future was dropped
+    pub(super) fn hanging(dropped: Arc<AtomicBool>) -> Self {
+        Self {
+            dropped: Some(dropped),
+            ..Self::default()
         }
     }
 
@@ -436,24 +444,11 @@ impl PrefetchDatabase for FakeDatabase {
         if let Some(events) = &self.events {
             record(events, "db");
         }
+        if let Some(dropped) = &self.dropped {
+            let _held = DropFlag(Arc::clone(dropped));
+            return pending().await;
+        }
         Ok(self.rows.clone())
-    }
-}
-
-// a lookup that never answers, holding a flag that proves the future was dropped
-pub(super) struct HangingDatabase {
-    pub(super) dropped: Arc<AtomicBool>,
-}
-
-#[async_trait]
-impl PrefetchDatabase for HangingDatabase {
-    async fn fetch_rows(
-        &self,
-        _refs: &AuthObjectRefs,
-        _kinds: &[RowKind],
-    ) -> Result<RowValues, PrefetchDatabaseError> {
-        let _held = DropFlag(Arc::clone(&self.dropped));
-        pending().await
     }
 }
 
