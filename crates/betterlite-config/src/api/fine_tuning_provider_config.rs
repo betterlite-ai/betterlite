@@ -29,9 +29,9 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let raw = self.finetune_settings.as_ref();
         let finetune_settings =
-            set_fine_tuning_config(None, self.finetune_settings.as_ref(), lookup)
-                .map_err(FineTuningConfigError::into_config)?;
+            set_fine_tuning_config(None, raw, lookup).map_err(|error| error.into_config(raw))?;
         Ok(Settings { finetune_settings })
     }
 }
@@ -50,14 +50,14 @@ pub enum FineTuningConfigError {
 }
 
 impl FineTuningConfigError {
-    // the config value is a list because set_fine_tuning_config stored one, so the load reports the path alone
-    fn into_config(self) -> ConfigError {
+    // the loader reports the key's path, and its bool flag only when the value written was a true
+    fn into_config(self, raw: Option<&Json>) -> ConfigError {
         match self {
             Self::Environment(error) => error,
             Self::Unset | Self::NotAList | Self::NotAProviderMap { .. } => {
                 ConfigError::InvalidScalar {
                     path: FINETUNE_SETTINGS.to_owned(),
-                    value: false,
+                    value: matches!(raw, Some(Json::Bool(true))),
                 }
             }
         }
