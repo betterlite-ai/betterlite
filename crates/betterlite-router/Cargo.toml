@@ -19,6 +19,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
@@ -50,7 +51,6 @@ tracing = "0.1.44"
 unicode-general-category = "1.1.0"
 
 [dev-dependencies]
-betterlite-http = { path = "../betterlite-http" }
 prometheus-client = "0.25.1"
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
