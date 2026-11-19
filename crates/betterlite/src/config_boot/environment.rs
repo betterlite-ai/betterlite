@@ -46,32 +46,42 @@ pub fn env_overlay(
         });
     };
     for (key, entry) in entries {
-        if BLOCKED_ENV_KEYS.contains(&key.as_str()) {
-            tracing::warn!("Skipping blocked environment variable key: {key}");
-            continue;
-        }
-        if key.to_uppercase() == MCP_STDIO_ENABLED {
-            tracing::warn!(
-                "Ignoring {MCP_STDIO_ENABLED} set in the config file. Set it in the proxy's environment instead"
-            );
-            continue;
-        }
-        let Some(text) = entry.as_str() else {
-            overlay.insert(key.clone(), scalar_text(entry));
-            continue;
-        };
-        if !text.starts_with("os.environ/") {
-            overlay.insert(key.clone(), text.to_owned());
-            continue;
-        }
-        let resolved = secrets
-            .get_secret_str(&overlay, text, None)
-            .map_err(|source| ConfigBootError::Environment { source })?;
-        if let Some(secret) = resolved {
-            overlay.insert(key.clone(), secret.expose_secret().to_owned());
-        }
+        overlay_entry(&mut overlay, key, entry, secrets)?;
     }
     Ok(overlay)
+}
+
+fn overlay_entry(
+    overlay: &mut BTreeMap<String, String>,
+    key: &str,
+    entry: &JsonValue,
+    secrets: &SecretLookup,
+) -> Result<(), ConfigBootError> {
+    if BLOCKED_ENV_KEYS.contains(&key) {
+        tracing::warn!("Skipping blocked environment variable key: {key}");
+        return Ok(());
+    }
+    if key.to_uppercase() == MCP_STDIO_ENABLED {
+        tracing::warn!(
+            "Ignoring {MCP_STDIO_ENABLED} set in the config file. Set it in the proxy's environment instead"
+        );
+        return Ok(());
+    }
+    let Some(text) = entry.as_str() else {
+        overlay.insert(key.to_owned(), scalar_text(entry));
+        return Ok(());
+    };
+    if !text.starts_with("os.environ/") {
+        overlay.insert(key.to_owned(), text.to_owned());
+        return Ok(());
+    }
+    let resolved = secrets
+        .get_secret_str(overlay, text, None)
+        .map_err(|source| ConfigBootError::Environment { source })?;
+    if let Some(secret) = resolved {
+        overlay.insert(key.to_owned(), secret.expose_secret().to_owned());
+    }
+    Ok(())
 }
 
 mod tests;
