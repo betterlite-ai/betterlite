@@ -34,6 +34,7 @@ use crate::roi_routes::ports::{
     CompletionFactory, RouteSyncRun, SpendFuture, SpendReaderFactory, SpendReads, SyncManagerPort,
     SyncStorePort, SyncStoreSource,
 };
+use crate::roi_routes::routes;
 use crate::roi_routes::state::RoiRouteState;
 use crate::roi_settings::deployments::{RouterCatalog, RouterEstimatorDeployment};
 use crate::roi_settings::repository::SettingsRepository;
@@ -398,7 +399,7 @@ impl SyncManagerPort for FakeManager {
             model: run.settings.estimator_model.clone(),
             interval: run.scheduled_interval,
             coordinated: run.store.is_some(),
-            repos: run.settings.repos.clone(),
+            repos: run.settings.repos,
         });
         let accepted = self.start_result.load(Ordering::SeqCst);
         if accepted {
@@ -504,7 +505,8 @@ pub(crate) fn report_json(report: &ROIReport) -> String {
 }
 
 pub(crate) fn minutes_before(base: DateTime<Utc>, minutes: i64) -> DateTime<Utc> {
-    base - TimeDelta::minutes(minutes)
+    base.checked_sub_signed(TimeDelta::minutes(minutes))
+        .expect("a representable instant")
 }
 
 #[derive(Default, Deserialize)]
@@ -633,7 +635,7 @@ impl Harness {
     }
 
     pub(crate) fn app(&self) -> Router {
-        crate::roi_routes::routes(self.state())
+        routes(self.state())
     }
 }
 

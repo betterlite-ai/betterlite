@@ -18,7 +18,7 @@ use crate::roi_routes::manager::StoreCoordinator;
 use crate::roi_routes::ports::SyncStorePort;
 use crate::roi_routes::schedule::{next_update, run_scheduled_sync};
 use crate::roi_routes::{IDENTITY_MAP_PATH, REPORT_PATH, SETUP_RESET_PATH, SYNC_PATH};
-use crate::roi_sync::coordinator::SyncCoordinator;
+use crate::roi_sync::coordinator::SyncCoordinator as _;
 
 use self::support::{
     FakeStore, Harness, IdentityReply, ReportReply, SEALED_ESTIMATOR, SEALED_TOKEN, SummaryPeek,
