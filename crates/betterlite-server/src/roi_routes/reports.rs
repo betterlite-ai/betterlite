@@ -25,6 +25,6 @@ impl ReportRepository for Arc<dyn SettingsRepository> {
         param_value: JsonData,
     ) -> impl Future<Output = Result<(), ConfigError>> + Send {
         let repository = Arc::clone(self);
-        async move { repository.set_param(param_name, param_value).await }
+        async move { SettingsRepository::set_param(repository.as_ref(), param_name, param_value).await }
     }
 }

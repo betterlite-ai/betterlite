@@ -63,7 +63,7 @@ pub(super) async fn reset_setup(
     };
     match store.finish_claim(&owner, &finished, None).await {
         Err(error) => Err(error),
-        Ok(_) => body,
+        Ok(_) => body.map(Json),
     }
 }
 

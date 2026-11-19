@@ -342,7 +342,7 @@ impl SyncStoreSource for Arc<FakeStore> {
             .lock()
             .expect("calls lock")
             .push("store.open".to_owned());
-        let store: Arc<dyn SyncStorePort> = Arc::clone(self);
+        let store: Arc<dyn SyncStorePort> = self.clone();
         Ok(store)
     }
 }
@@ -611,10 +611,10 @@ impl Harness {
     }
 
     pub(crate) fn state(&self) -> RoiRouteState {
-        let repository: Arc<dyn SettingsRepository> = Arc::clone(&self.repository);
-        let catalog: Arc<dyn RouterCatalog> = Arc::clone(&self.catalog);
-        let store: Arc<dyn SyncStoreSource> = Arc::clone(&self.store);
-        let manager: Arc<dyn SyncManagerPort> = Arc::clone(&self.manager);
+        let repository: Arc<dyn SettingsRepository> = self.repository.clone();
+        let catalog: Arc<dyn RouterCatalog> = self.catalog.clone();
+        let store: Arc<dyn SyncStoreSource> = self.store.clone();
+        let manager: Arc<dyn SyncManagerPort> = self.manager.clone();
         let now = self.now;
         let spend_reader: SpendReaderFactory =
             Arc::new(|| -> Arc<dyn SpendReads> { Arc::new(NoSpend) });

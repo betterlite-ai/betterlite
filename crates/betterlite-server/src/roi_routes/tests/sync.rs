@@ -1,7 +1,7 @@
 #[tokio::test]
 async fn sync_coordinator_answers_the_store_status() {
     let harness = Harness::new();
-    let store: Arc<dyn SyncStorePort> = Arc::clone(&harness.store);
+    let store: Arc<dyn SyncStorePort> = harness.store.clone();
     let coordinator = StoreCoordinator { store };
     assert!(coordinator.status().await.is_none());
     harness
@@ -17,7 +17,7 @@ async fn sync_coordinator_answers_the_store_status() {
 #[tokio::test]
 async fn sync_coordinator_answers_the_store_lease_calls() {
     let harness = Harness::new();
-    let store: Arc<dyn SyncStorePort> = Arc::clone(&harness.store);
+    let store: Arc<dyn SyncStorePort> = harness.store.clone();
     let coordinator = StoreCoordinator { store };
     assert!(coordinator.acquire("owner", &idle_status(), 2.0_f64).await);
     assert!(coordinator.heartbeat("owner", &idle_status()).await);
