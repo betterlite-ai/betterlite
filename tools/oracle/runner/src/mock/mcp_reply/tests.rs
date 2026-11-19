@@ -317,8 +317,8 @@ fn loopback_marker_without_id_fails() {
 
     assert_eq!(status_of(&failed), 500);
     let (_calls, failure) = mock.finish_recording().unwrap();
-    let failure = failure.unwrap();
-    let message = failure.to_string();
+    let recorded = failure.unwrap();
+    let message = recorded.to_string();
     assert!(message.contains(PATH));
     assert!(message.contains(MARKER));
 }
