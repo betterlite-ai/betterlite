@@ -91,20 +91,17 @@ class Memory(InMemoryCache):
         self.failure = failure
         self.raw: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
-
     @override
     async def async_get_cache(self, key: str, **kwargs: JsonValue) -> str | None:
         if self.failure == "get":
             raise RuntimeError("the fake cache get failed")
         return self.raw.get(key)
-
     @override
     async def async_set_cache(self, key: str, value: str, **kwargs: JsonValue) -> None:
         if self.failure == "set":
             raise RuntimeError("the fake cache set failed")
         self.raw[key] = value
         self.ttls[key] = TypeAdapter(int).validate_python(kwargs["ttl"])
-
     @override
     def delete_cache(self, key: str) -> None:
         if self.failure == "delete":
@@ -116,6 +113,9 @@ class FakeRow(UserDict[str, JsonValue]):
     # LiteLLM reads a row's columns as attributes; a column a table does not carry reads as None.
     def __getattr__(self, name: str) -> JsonValue:
         return self.get(name)
+
+    def by_server_id(self) -> str:
+        return STRING.validate_python(self["server_id"])
 
 
 class FakeTable:
@@ -164,7 +164,7 @@ class FakeClient(PrismaClient):
 def row_views(rows: list[FakeRow], field: str) -> list[Where]:
     return [
         {"server_id": row["server_id"], field: row.get(field), "updated_by": row.get("updated_by")}
-        for row in sorted(rows, key=lambda row: STRING.validate_python(row["server_id"]))
+        for row in sorted(rows, key=FakeRow.by_server_id)
     ]
 
 
@@ -262,7 +262,7 @@ async def flow_backfill(call: Input) -> JsonValue:
     tally = await backfill_null_oauth2_flows(FakeClient(table, FakeTable(call["user_credentials"])))
     open_rows = [row for row in table.rows if row.get("oauth2_flow") is None]
     ambiguous = sorted(STRING.validate_python(row["server_id"]) for row in open_rows)
-    counts: dict[str, JsonValue] = {rule: count for rule, count in tally.items()}
+    counts: dict[str, JsonValue] = dict[str, JsonValue](tally.items())
     return {
         "counts": counts,
         "rows": list[JsonValue](row_views(table.rows, "oauth2_flow")),
