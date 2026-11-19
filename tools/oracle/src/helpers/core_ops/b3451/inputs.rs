@@ -48,6 +48,48 @@ pub(crate) struct FetchInput {
     pub(super) body_base64: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct InitInput {
+    pub(super) options: OptionsInput,
+    #[serde(default)]
+    pub(super) credentials: Vec<CredentialInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct UploadInput {
+    pub(super) options: OptionsInput,
+    #[serde(default)]
+    pub(super) file_data: Option<FileDataInput>,
+    #[serde(default)]
+    pub(super) file_url: Option<String>,
+    #[serde(default)]
+    pub(super) file_id: Option<String>,
+    #[serde(default)]
+    pub(super) fetch: Option<FetchInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct OcrInput {
+    pub(super) options: OptionsInput,
+    #[serde(default)]
+    pub(super) file_content_base64: Option<String>,
+    #[serde(default)]
+    pub(super) content_type: Option<String>,
+    #[serde(default)]
+    pub(super) pages: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ChunkInput {
+    pub(super) options: OptionsInput,
+    #[serde(default)]
+    pub(super) text: Option<String>,
+    #[serde(default)]
+    pub(super) file_content_base64: Option<String>,
+    #[serde(default)]
+    pub(super) ocr_was_used: bool,
+}
+
 fn raw_map(
     entries: Option<BTreeMap<String, Value>>,
 ) -> Result<Option<BTreeMap<String, Box<RawValue>>>, Box<HelperError>> {

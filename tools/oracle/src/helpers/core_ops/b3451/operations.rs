@@ -12,15 +12,12 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
 use super::fakes::{RecordingFetch, RecordingOcr};
-use super::inputs::{CredentialInput, FetchInput, FileDataInput, OptionsInput, build};
+use super::inputs::{ChunkInput, InitInput, OcrInput, UploadInput, build};
 
-pub(super) fn init(
-    options_input: &OptionsInput,
-    credential_inputs: &[CredentialInput],
-) -> HelperResult {
+pub(super) fn init(input: &InitInput) -> HelperResult {
     let built = build(
-        options_input,
-        credential_inputs,
+        &input.options,
+        &input.credentials,
         Arc::new(RecordingOcr::default()),
         Arc::new(RecordingFetch::answer(None)?),
     )?;
@@ -39,21 +36,15 @@ pub(super) fn init(
     }))
 }
 
-pub(super) fn upload(
-    options_input: &OptionsInput,
-    file_data: Option<&FileDataInput>,
-    file_url: Option<&str>,
-    file_id: Option<&str>,
-    fetch: Option<&FetchInput>,
-) -> HelperResult {
-    let recorder = Arc::new(RecordingFetch::answer(fetch)?);
+pub(super) fn upload(input: &UploadInput) -> HelperResult {
+    let recorder = Arc::new(RecordingFetch::answer(input.fetch.as_ref())?);
     let built = build(
-        options_input,
+        &input.options,
         &[],
         Arc::new(RecordingOcr::default()),
         recorder,
     )?;
-    let data = match file_data {
+    let data = match &input.file_data {
         Some(data) => Some(FileData {
             filename: data.filename.clone(),
             content: BASE64.decode(&data.content_base64).or_value_error()?,
@@ -63,7 +54,7 @@ pub(super) fn upload(
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let uploaded = runtime
-        .block_on(built.upload(data, file_url, file_id))
+        .block_on(built.upload(data, input.file_url.as_deref(), input.file_id.as_deref()))
         .or_value_error()?;
     Ok(json!({
         "filename": uploaded.filename,
@@ -75,27 +66,22 @@ pub(super) fn upload(
     }))
 }
 
-pub(super) fn ocr(
-    options_input: &OptionsInput,
-    file_content_base64: Option<&str>,
-    content_type: Option<&str>,
-    pages: &[String],
-) -> HelperResult {
-    let recorder = Arc::new(RecordingOcr::with_pages(pages));
+pub(super) fn ocr(input: &OcrInput) -> HelperResult {
+    let recorder = Arc::new(RecordingOcr::with_pages(&input.pages));
     let ocr_port: Arc<dyn OcrOperation> = Arc::<RecordingOcr>::clone(&recorder);
     let built = build(
-        options_input,
+        &input.options,
         &[],
         ocr_port,
         Arc::new(RecordingFetch::answer(None)?),
     )?;
-    let content = match file_content_base64 {
+    let content = match &input.file_content_base64 {
         Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
         None => None,
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let text = runtime
-        .block_on(built.ocr(content.as_deref(), content_type))
+        .block_on(built.ocr(content.as_deref(), input.content_type.as_deref()))
         .or_value_error()?;
     let calls: Vec<Value> = recorder
         .calls
@@ -112,24 +98,23 @@ pub(super) fn ocr(
     Ok(json!({ "text": text, "calls": calls }))
 }
 
-pub(super) fn chunk(
-    options_input: &OptionsInput,
-    text: Option<&str>,
-    file_content_base64: Option<&str>,
-    ocr_was_used: bool,
-) -> HelperResult {
+pub(super) fn chunk(input: &ChunkInput) -> HelperResult {
     let built = build(
-        options_input,
+        &input.options,
         &[],
         Arc::new(RecordingOcr::default()),
         Arc::new(RecordingFetch::answer(None)?),
     )?;
-    let content = match file_content_base64 {
+    let content = match &input.file_content_base64 {
         Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
         None => None,
     };
     let chunks = built
-        .chunk(text, content.as_deref(), ocr_was_used)
+        .chunk(
+            input.text.as_deref(),
+            content.as_deref(),
+            input.ocr_was_used,
+        )
         .or_value_error()?;
     Ok(json!({ "chunks": chunks }))
 }

@@ -5,46 +5,16 @@ mod operations;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
-use inputs::{CredentialInput, FetchInput, FileDataInput, OptionsInput};
+use inputs::{ChunkInput, InitInput, OcrInput, UploadInput};
 use operations::{chunk, init, ocr, upload};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Init {
-        options: OptionsInput,
-        #[serde(default)]
-        credentials: Vec<CredentialInput>,
-    },
-    Upload {
-        options: OptionsInput,
-        #[serde(default)]
-        file_data: Option<FileDataInput>,
-        #[serde(default)]
-        file_url: Option<String>,
-        #[serde(default)]
-        file_id: Option<String>,
-        #[serde(default)]
-        fetch: Option<FetchInput>,
-    },
-    Ocr {
-        options: OptionsInput,
-        #[serde(default)]
-        file_content_base64: Option<String>,
-        #[serde(default)]
-        content_type: Option<String>,
-        #[serde(default)]
-        pages: Vec<String>,
-    },
-    Chunk {
-        options: OptionsInput,
-        #[serde(default)]
-        text: Option<String>,
-        #[serde(default)]
-        file_content_base64: Option<String>,
-        #[serde(default)]
-        ocr_was_used: bool,
-    },
+    Init(InitInput),
+    Upload(UploadInput),
+    Ocr(OcrInput),
+    Chunk(ChunkInput),
 }
 
 pub(crate) struct Op;
@@ -54,45 +24,10 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Init {
-                options,
-                credentials,
-            } => init(options, credentials),
-            Input::Upload {
-                options,
-                file_data,
-                file_url,
-                file_id,
-                fetch,
-            } => upload(
-                options,
-                file_data.as_ref(),
-                file_url.as_deref(),
-                file_id.as_deref(),
-                fetch.as_ref(),
-            ),
-            Input::Ocr {
-                options,
-                file_content_base64,
-                content_type,
-                pages,
-            } => ocr(
-                options,
-                file_content_base64.as_deref(),
-                content_type.as_deref(),
-                pages,
-            ),
-            Input::Chunk {
-                options,
-                text,
-                file_content_base64,
-                ocr_was_used,
-            } => chunk(
-                options,
-                text.as_deref(),
-                file_content_base64.as_deref(),
-                *ocr_was_used,
-            ),
+            Input::Init(fields) => init(fields),
+            Input::Upload(fields) => upload(fields),
+            Input::Ocr(fields) => ocr(fields),
+            Input::Chunk(fields) => chunk(fields),
         }
     }
 }
