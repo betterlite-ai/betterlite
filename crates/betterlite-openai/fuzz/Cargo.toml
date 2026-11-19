@@ -733,3 +733,10 @@ path = "fuzz_targets/speech_audio.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "edenai_cost_reply"
+path = "fuzz_targets/edenai_cost_reply.rs"
+test = false
+doc = false
+bench = false
