@@ -1,3 +1,5 @@
+#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
+
 use betterlite_config::sections::guardrail_params::base::OnViolation;
 use betterlite_models::decisions::Json;
 use futures_util::future::LocalBoxFuture;
