@@ -80,6 +80,7 @@ mod passthrough_parse_content_type {
     #[case::unterminated(b"{")]
     #[case::empty(b"")]
     #[case::garbage(b"not json")]
+    #[case::invalid_utf8(b"{\"a\":\"\xff\"}")]
     fn a_body_that_is_not_json_is_no_envelope(#[case] body: &[u8]) {
         let parsed = parse("application/json", body, &query(&[("a", "1")])).unwrap();
         assert_eq!(parsed, ParsedRequestData::default());
