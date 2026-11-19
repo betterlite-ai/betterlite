@@ -7,6 +7,7 @@ use betterlite_error::proxy_error_types::{ProxyErrorTypes, VectorStoreObject};
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
 use super::rows::RowError;
+use super::search::GrantResult;
 use crate::auth_read::table::AuthReadError;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
@@ -19,7 +20,7 @@ pub trait VectorStoreIds: Send + Sync {
 #[error("the object permission lookup failed")]
 pub struct VectorStoreLookupFailure {
     #[source]
-    pub source: AuthReadError<RowError>,
+    pub source: Box<AuthReadError<RowError>>,
 }
 
 // B725's object permission row read fresh, so a cached token copy never decides access
@@ -34,7 +35,7 @@ pub trait ObjectPermissionRows: Send + Sync {
 #[derive(Debug, thiserror::Error)]
 pub enum VectorStoreCheckError {
     #[error(transparent)]
-    Denied(#[from] ProxyException),
+    Denied(#[from] Box<ProxyException>),
     #[error(transparent)]
     Lookup(#[from] VectorStoreLookupFailure),
 }
@@ -76,7 +77,7 @@ pub fn can_object_call_vector_stores(
     object: VectorStoreObject,
     vector_store_ids_to_run: &[String],
     object_permissions: Option<&LiteLLMObjectPermissionTable>,
-) -> Result<(), ProxyException> {
+) -> GrantResult {
     let Some(permissions) = object_permissions else {
         return Ok(());
     };
@@ -96,7 +97,7 @@ pub fn can_object_call_vector_stores(
         "User not allowed to access vector store. Tried to access {disallowed}. Only allowed to access {}",
         allowed.join(", ")
     );
-    Err(ProxyException::new(ProxyExceptionInit {
+    Err(Box::new(ProxyException::new(ProxyExceptionInit {
         message,
         error_type: ProxyErrorTypes::vector_store_access_denied_for(object).to_string(),
         param: Some("vector_store".to_owned()),
@@ -104,7 +105,7 @@ pub fn can_object_call_vector_stores(
         code: ExceptionCode::Status(401),
         openai_code: None,
         provider_specific_fields: BTreeMap::new(),
-    }))
+    })))
 }
 
 // the same key-then-team decision over rows an earlier read resolved, for callers that cannot await
@@ -113,15 +114,15 @@ pub fn permitted_vector_stores(
     key: Option<&UserAPIKeyAuth>,
     team: Option<&LiteLLMTeamTable>,
     permissions: &BTreeMap<String, LiteLLMObjectPermissionTable>,
-) -> Result<(), ProxyException> {
-    if let Some(key) = key
-        && let Some(permission_id) = key.view.token.object_permission_id.as_deref()
+) -> GrantResult {
+    if let Some(key_row) = key
+        && let Some(permission_id) = key_row.view.token.object_permission_id.as_deref()
         && let Some(row) = permissions.get(permission_id)
     {
         can_object_call_vector_stores(VectorStoreObject::Key, vector_store_ids_to_run, Some(row))?;
     }
-    if let Some(team) = team
-        && let Some(permission_id) = team.fields.object_permission_id.as_deref()
+    if let Some(team_row) = team
+        && let Some(permission_id) = team_row.fields.object_permission_id.as_deref()
         && let Some(row) = permissions.get(permission_id)
     {
         can_object_call_vector_stores(VectorStoreObject::Team, vector_store_ids_to_run, Some(row))?;

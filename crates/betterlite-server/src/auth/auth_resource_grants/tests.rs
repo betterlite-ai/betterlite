@@ -161,9 +161,9 @@ fn request_to(reached: &Arc<AtomicBool>) -> Request<Body> {
     request
 }
 
-fn application(config: Config, rule: Arc<ResourceGrantRule>) -> Router {
+fn application(config: &Config, rule: Arc<ResourceGrantRule>) -> Router {
     routes::router(
-        state_for(&config),
+        state_for(config),
         Arc::new(AtomicBool::new(false)),
         Router::new().route(MODEL_ROUTE, post(mark_called)),
         Router::new(),
@@ -171,88 +171,88 @@ fn application(config: Config, rule: Arc<ResourceGrantRule>) -> Router {
     .layer(Extension(rule))
 }
 
+async fn run_request(config: &Config, rule: Arc<ResourceGrantRule>) -> (StatusCode, String, bool) {
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application(config, rule)
+        .oneshot(request_to(&reached))
+        .await
+        .expect("the request reaches the router");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the response body is readable");
+    let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
+    (status, text, reached.load(Ordering::Acquire))
+}
+
 #[tokio::test]
 async fn failure_stops_downstream() {
-    let reached = Arc::new(AtomicBool::new(false));
-    let denied = application(config_with_database(), search_rule("other"))
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
-    let body = to_bytes(denied.into_body(), usize::MAX)
-        .await
-        .expect("the error body is readable");
-    let text = String::from_utf8(body.to_vec()).expect("the error body is UTF-8");
+    let (status, body, reached) = run_request(&config_with_database(), search_rule("other")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(
-        text.contains("\"type\":\"key_model_access_denied\""),
-        "{text}"
+        body.contains("\"type\":\"key_model_access_denied\""),
+        "{body}"
     );
-    assert!(text.contains("\"param\":\"search_tool_name\""), "{text}");
-    assert!(text.contains("\"code\":\"403\""), "{text}");
+    assert!(body.contains("\"param\":\"search_tool_name\""), "{body}");
+    assert!(body.contains("\"code\":\"403\""), "{body}");
     assert!(
-        text.contains("Key not allowed to access search tool: other."),
-        "{text}"
+        body.contains("Key not allowed to access search tool: other."),
+        "{body}"
     );
     assert!(
-        text.contains("Allowed search tools: allowed-tool"),
-        "{text}"
+        body.contains("Allowed search tools: allowed-tool"),
+        "{body}"
     );
-    assert!(!reached.load(Ordering::Acquire));
+    assert!(!reached);
 
-    let reached = Arc::new(AtomicBool::new(false));
-    let denied = application(config_with_database(), vector_rule(&["vs-1"]))
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
-    let body = to_bytes(denied.into_body(), usize::MAX)
-        .await
-        .expect("the error body is readable");
-    let text = String::from_utf8(body.to_vec()).expect("the error body is UTF-8");
+    let (vector_status, vector_body, vector_reached) =
+        run_request(&config_with_database(), vector_rule(&["vs-1"])).await;
+    assert_eq!(vector_status, StatusCode::UNAUTHORIZED);
     assert!(
-        text.contains("\"type\":\"key_vector_store_access_denied\""),
-        "{text}"
+        vector_body.contains("\"type\":\"key_vector_store_access_denied\""),
+        "{vector_body}"
     );
-    assert!(text.contains("\"param\":\"vector_store\""), "{text}");
-    assert!(text.contains("\"code\":\"401\""), "{text}");
+    assert!(!vector_reached);
+}
+
+#[tokio::test]
+async fn vector_denial_carries_its_fields() {
+    let (status, body, reached) =
+        run_request(&config_with_database(), vector_rule(&["vs-1"])).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("\"param\":\"vector_store\""), "{body}");
+    assert!(body.contains("\"code\":\"401\""), "{body}");
     assert!(
-        text.contains("User not allowed to access vector store. Tried to access vs-1."),
-        "{text}"
+        body.contains("User not allowed to access vector store. Tried to access vs-1."),
+        "{body}"
     );
-    assert!(text.contains("Only allowed to access vs-allowed"), "{text}");
-    assert!(!reached.load(Ordering::Acquire));
+    assert!(body.contains("Only allowed to access vs-allowed"), "{body}");
+    assert!(!reached);
+}
 
-    // the RAG retrieval id reaches the check even without a registry selector
-    let reached = Arc::new(AtomicBool::new(false));
-    let denied = application(config_with_database(), rag_rule("vs-1"))
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
-    assert!(!reached.load(Ordering::Acquire));
+// the RAG retrieval id reaches the check even without a registry selector
+#[tokio::test]
+async fn rag_permission_stops_downstream() {
+    let (status, _body, reached) = run_request(&config_with_database(), rag_rule("vs-1")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(!reached);
+}
 
-    let reached = Arc::new(AtomicBool::new(false));
-    let permitted = application(config_with_database(), rag_rule("vs-allowed"))
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(permitted.status(), StatusCode::OK);
-    assert!(reached.load(Ordering::Acquire));
+#[tokio::test]
+async fn permitted_requests_reach_the_handler() {
+    let (rag_status, _rag_body, rag_reached) =
+        run_request(&config_with_database(), rag_rule("vs-allowed")).await;
+    assert_eq!(rag_status, StatusCode::OK);
+    assert!(rag_reached);
 
-    let reached = Arc::new(AtomicBool::new(false));
-    let allowed = application(config_with_database(), allowed_rule())
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(allowed.status(), StatusCode::OK);
-    assert!(reached.load(Ordering::Acquire));
+    let (allowed_status, _allowed_body, allowed_reached) =
+        run_request(&config_with_database(), allowed_rule()).await;
+    assert_eq!(allowed_status, StatusCode::OK);
+    assert!(allowed_reached);
 
     // without a database LiteLLM never reads the permission rows, so the same rule passes
-    let reached = Arc::new(AtomicBool::new(false));
-    let skipped = application(config_with_master_key(), vector_rule(&["vs-1"]))
-        .oneshot(request_to(&reached))
-        .await
-        .expect("the request reaches the router");
-    assert_eq!(skipped.status(), StatusCode::OK);
-    assert!(reached.load(Ordering::Acquire));
+    let (skip_status, _skip_body, skip_reached) =
+        run_request(&config_with_master_key(), vector_rule(&["vs-1"])).await;
+    assert_eq!(skip_status, StatusCode::OK);
+    assert!(skip_reached);
 }

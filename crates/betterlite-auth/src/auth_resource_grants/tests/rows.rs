@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -9,6 +10,7 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_read::adapter::AuthReadAdapter;
@@ -68,7 +70,7 @@ async fn seed(pool: &Pool) {
     client.batch_execute(SEED).await.expect("the seeded rows");
 }
 
-async fn close(fixture: PostgresFixture, pool: Pool) {
+async fn close(fixture: PostgresFixture, pool: &Pool) {
     pool.close();
     fixture.close_async().await.expect("the fixture teardown");
 }
@@ -87,13 +89,13 @@ fn context() -> ReadContext<SystemClock> {
 #[test]
 fn list_binds_the_id_array_and_take() {
     let filter = vec!["vs-1".to_owned()];
-    let filtered = managed_store_list(Some(&filter), &Some(1));
+    let filtered = managed_store_list(Some(&filter), Some(&1));
     assert!(filtered.sql.contains("ANY($1::text[])"), "{}", filtered.sql);
     assert!(filtered.sql.contains("LIMIT $2"), "{}", filtered.sql);
     assert_eq!(filtered.parameters.len(), 2);
-    let no_limit: Option<i64> = None;
-    let bare = managed_store_list(None, &no_limit);
+    let bare = managed_store_list(None, None);
     assert!(!bare.sql.contains("ANY("), "{}", bare.sql);
+    assert!(bare.sql.contains("LIMIT $1"), "{}", bare.sql);
     assert_eq!(bare.parameters.len(), 1);
     let listed = ManagedVectorStoreTable.including(
         IncludingQuery::Listed {
@@ -106,138 +108,83 @@ fn list_binds_the_id_array_and_take() {
     assert_eq!(listed.parameters.len(), 1);
 }
 
+fn grant_key<'query>(value: &'query (dyn ToSql + Sync)) -> Key<'query, Infallible> {
+    Key {
+        column: KeyColumn::Id,
+        value,
+    }
+}
+
 #[test]
-fn table_statements_cover_every_action_and_membership() {
-    let permission_table = ObjectPermissionTable;
-    let store_table = ManagedVectorStoreTable;
+fn object_permission_statements_cover_every_action() {
+    let table = ObjectPermissionTable;
     let id = String::from("id-1");
-    let permission_find = permission_table.keyed(
-        KeyAction::Find,
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
+    let find = table.keyed(KeyAction::Find, grant_key(&id));
     assert!(
-        permission_find
-            .sql
-            .contains("FROM \"LiteLLM_ObjectPermissionTable\""),
+        find.sql.contains("FROM \"LiteLLM_ObjectPermissionTable\""),
         "{}",
-        permission_find.sql
+        find.sql
     );
+    assert!(find.sql.starts_with("SELECT "), "{}", find.sql);
+    assert_eq!(find.parameters.len(), 1);
+    let delete = table.keyed(KeyAction::Delete, grant_key(&id));
     assert!(
-        permission_find.sql.starts_with("SELECT "),
-        "{}",
-        permission_find.sql
-    );
-    assert_eq!(permission_find.parameters.len(), 1);
-    let permission_delete = permission_table.keyed(
-        KeyAction::Delete,
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
-    assert!(
-        permission_delete
+        delete
             .sql
             .starts_with("DELETE FROM \"LiteLLM_ObjectPermissionTable\""),
         "{}",
-        permission_delete.sql
+        delete.sql
     );
-    let permission_update = permission_table.keyed(
-        KeyAction::Update(&()),
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
+    let update = table.keyed(KeyAction::Update(&()), grant_key(&id));
     assert!(
-        permission_update
+        update
             .sql
             .starts_with("UPDATE \"LiteLLM_ObjectPermissionTable\""),
         "{}",
-        permission_update.sql
+        update.sql
     );
-    let permission_membership = permission_table.membership(KeyColumn::Id);
-    assert!(
-        permission_membership.contains("ANY($1::text[])"),
-        "{permission_membership}"
-    );
+    let membership = table.membership(KeyColumn::Id);
+    assert!(membership.contains("ANY($1::text[])"), "{membership}");
+}
 
-    let store_find = store_table.keyed(
-        KeyAction::Find,
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
+#[test]
+fn managed_store_statements_cover_every_action() {
+    let table = ManagedVectorStoreTable;
+    let id = String::from("id-1");
+    let find = table.keyed(KeyAction::Find, grant_key(&id));
     assert!(
-        store_find
-            .sql
+        find.sql
             .contains("FROM \"LiteLLM_ManagedVectorStoresTable\""),
         "{}",
-        store_find.sql
+        find.sql
     );
-    assert!(store_find.sql.starts_with("SELECT "), "{}", store_find.sql);
-    assert_eq!(store_find.parameters.len(), 1);
-    let store_delete = store_table.keyed(
-        KeyAction::Delete,
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
+    assert!(find.sql.starts_with("SELECT "), "{}", find.sql);
+    assert_eq!(find.parameters.len(), 1);
+    let delete = table.keyed(KeyAction::Delete, grant_key(&id));
     assert!(
-        store_delete
+        delete
             .sql
             .starts_with("DELETE FROM \"LiteLLM_ManagedVectorStoresTable\""),
         "{}",
-        store_delete.sql
+        delete.sql
     );
-    let store_update = store_table.keyed(
-        KeyAction::Update(&()),
-        Key {
-            column: KeyColumn::Id,
-            value: &id,
-        },
-    );
+    let update = table.keyed(KeyAction::Update(&()), grant_key(&id));
     assert!(
-        store_update
+        update
             .sql
             .starts_with("UPDATE \"LiteLLM_ManagedVectorStoresTable\""),
         "{}",
-        store_update.sql
+        update.sql
     );
-    let store_membership = store_table.membership(KeyColumn::Id);
+    let membership = table.membership(KeyColumn::Id);
+    assert!(membership.contains("ANY($1::text[])"), "{membership}");
     assert!(
-        store_membership.contains("ANY($1::text[])"),
-        "{store_membership}"
-    );
-    assert!(
-        store_membership.contains("\"LiteLLM_ManagedVectorStoresTable\""),
-        "{store_membership}"
+        membership.contains("\"LiteLLM_ManagedVectorStoresTable\""),
+        "{membership}"
     );
 }
 
-#[tokio::test]
-async fn postgres_vector_rows() {
-    let (fixture, pool) = database().await;
-    seed(&pool).await;
-    let client = Arc::new(pool.get().await.expect("the database connection"));
-    let permissions = open_grant_rows(
-        Arc::clone(&client),
-        ObjectPermissionTable,
-        AuthReadAdapter::ObjectPermission,
-        context(),
-    );
-    let stores = open_grant_rows(
-        Arc::clone(&client),
-        ManagedVectorStoreTable,
-        AuthReadAdapter::VectorStore,
-        context(),
-    );
-
+async fn assert_permission_rows(permissions: &dyn ObjectPermissionRows) {
     let permission = permissions
         .by_id("perm-db")
         .await
@@ -258,7 +205,9 @@ async fn postgres_vector_rows() {
             .expect("the missing permission read")
             .is_none()
     );
+}
 
+async fn assert_store_queries(stores: &dyn ManagedVectorStoreRows) {
     let one = stores
         .by_uuids(ManagedRowsQuery {
             uuids: vec!["vs-1".to_owned()],
@@ -285,13 +234,15 @@ async fn postgres_vector_rows() {
             .expect("the missing read")
             .is_empty()
     );
+}
 
+async fn assert_store_projection(stores: &dyn ManagedVectorStoreRows) {
     let cache = RecordingCache::new(60.0);
     let projected = vector_store_rows_by_uuids(
         &["vs-1".to_owned(), "vs-2".to_owned()],
         true,
         &cache,
-        &stores,
+        stores,
     )
     .await
     .expect("the projected lookup");
@@ -313,9 +264,39 @@ async fn postgres_vector_rows() {
         Some(&JsonData::String("cred-1".to_owned()))
     );
     assert_eq!(cache.writes().len(), 2);
+}
 
-    drop(stores);
-    drop(permissions);
-    drop(client);
-    close(fixture, pool).await;
+#[tokio::test]
+async fn postgres_permission_rows() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    {
+        let client = Arc::new(pool.get().await.expect("the database connection"));
+        let permissions = open_grant_rows(
+            client,
+            ObjectPermissionTable,
+            AuthReadAdapter::ObjectPermission,
+            context(),
+        );
+        assert_permission_rows(&permissions).await;
+    }
+    close(fixture, &pool).await;
+}
+
+#[tokio::test]
+async fn postgres_vector_rows() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    {
+        let client = Arc::new(pool.get().await.expect("the database connection"));
+        let stores = open_grant_rows(
+            client,
+            ManagedVectorStoreTable,
+            AuthReadAdapter::VectorStore,
+            context(),
+        );
+        assert_store_queries(&stores).await;
+        assert_store_projection(&stores).await;
+    }
+    close(fixture, &pool).await;
 }

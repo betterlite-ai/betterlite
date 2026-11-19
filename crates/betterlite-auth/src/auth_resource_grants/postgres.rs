@@ -57,7 +57,9 @@ where
         };
         self.find_unique(request)
             .await
-            .map_err(|source| VectorStoreLookupFailure { source })
+            .map_err(|source| VectorStoreLookupFailure {
+                source: Box::new(source),
+            })
     }
 }
 
@@ -78,6 +80,8 @@ where
         };
         self.find_many(request)
             .await
-            .map_err(|source| VectorStoreRowsFailure { source })
+            .map_err(|source| VectorStoreRowsFailure {
+                source: Box::new(source),
+            })
     }
 }

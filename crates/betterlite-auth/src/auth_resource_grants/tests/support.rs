@@ -4,8 +4,8 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::database_failures::deadline::DbLookupError;
+use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
-use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
@@ -70,9 +70,23 @@ fn permission_rows(rows: &[(&str, &str)]) -> BTreeMap<String, LiteLLMObjectPermi
         .collect()
 }
 
+// the fault a repository answers with when the pool hands out no connection
+fn no_database() -> DbError {
+    DbError {
+        error_type: ErrorType::NoDbConnection,
+        message: "No DB Connected".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }
+}
+
 fn lookup_failure() -> VectorStoreLookupFailure {
     VectorStoreLookupFailure {
-        source: AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected)),
+        source: Box::new(AuthReadError::Lookup(
+            DbLookupError::Database(no_database()),
+        )),
     }
 }
 
@@ -233,7 +247,9 @@ impl ManagedVectorStoreCache for RecordingCache {
 
 fn rows_failure() -> VectorStoreRowsFailure {
     VectorStoreRowsFailure {
-        source: AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected)),
+        source: Box::new(AuthReadError::Lookup(
+            DbLookupError::Database(no_database()),
+        )),
     }
 }
 
@@ -315,9 +331,9 @@ impl SearchToolGrant for ScriptedGrant {
             .push(name.to_owned());
         match self.answer {
             GrantAnswer::Allow => Ok(()),
-            GrantAnswer::Deny => Err(SearchToolFailure::Denied(proxy_exception(
+            GrantAnswer::Deny => Err(SearchToolFailure::Denied(Box::new(proxy_exception(
                 "the scripted denial",
-            ))),
+            )))),
             GrantAnswer::Fail => Err(SearchToolFailure::Lookup {
                 message: "the scripted lookup failure".to_owned(),
             }),

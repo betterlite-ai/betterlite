@@ -38,7 +38,9 @@ pub struct ResourceGrantStageInput {
     pub database: bool,
 }
 
-pub(crate) fn run_stage(stage: &ResourceGrantStageInput) -> Result<AuthContext, ProxyException> {
+pub(crate) fn run_stage(
+    stage: &ResourceGrantStageInput,
+) -> Result<AuthContext, Box<ProxyException>> {
     if let (Some(name), Some(key)) = (
         stage.rule.search_tool_name.as_deref(),
         stage.rule.key.as_ref(),

@@ -152,19 +152,23 @@ fn stage_input(
                 },
             )))
         }
-        AuthBackend::AuthResourceGrants => {
-            let context = authenticated
-                .cloned()
-                .ok_or(AuthenticationFailure::Missing)?;
-            let rule = grant_rule_for_request(request);
-            let stage = ResourceGrantStageInput {
-                context,
-                rule,
-                database: database_for_request(request),
-            };
-            Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-        }
+        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
     }
+}
+
+fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let stage = ResourceGrantStageInput {
+        context,
+        rule: grant_rule_for_request(request),
+        database: database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {

@@ -93,7 +93,7 @@ impl RowCodec for ManagedVectorStoreTable {
     }
 }
 
-fn object_permission_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
+const fn object_permission_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
     match action {
         KeyAction::Find => OBJECT_PERMISSION_ONE_SQL,
         KeyAction::Delete => OBJECT_PERMISSION_DELETE_SQL,
@@ -101,7 +101,7 @@ fn object_permission_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
     }
 }
 
-fn managed_store_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
+const fn managed_store_keyed_sql(action: KeyAction<'_, ()>) -> &'static str {
     match action {
         KeyAction::Find => MANAGED_STORE_ONE_SQL,
         KeyAction::Delete => MANAGED_STORE_DELETE_SQL,
@@ -134,7 +134,7 @@ impl Table for ObjectPermissionTable {
         &'query self,
         _options: FindMany<'query, Self::Filter, Self::Order>,
     ) -> Query<'query> {
-        object_permission_listed(None, &NO_LIMIT)
+        object_permission_listed(None, None)
     }
 
     fn insert<'query>(&'query self, _data: &'query ()) -> Query<'query> {
@@ -176,7 +176,7 @@ impl Table for ManagedVectorStoreTable {
         options: FindMany<'query, Self::Filter, Self::Order>,
     ) -> Query<'query> {
         let filter = options.filter.and_then(|filters| filters.first());
-        managed_store_list(filter, &NO_LIMIT)
+        managed_store_list(filter, None)
     }
 
     fn insert<'query>(&'query self, _data: &'query ()) -> Query<'query> {
@@ -217,7 +217,7 @@ macro_rules! grant_including {
             ) -> Query<'query> {
                 match query {
                     IncludingQuery::Keyed { action, key } => self.keyed(action, key),
-                    IncludingQuery::Listed { filter, limit } => $listed(filter, limit),
+                    IncludingQuery::Listed { filter, limit } => $listed(filter, limit.as_ref()),
                     IncludingQuery::Inserted { data } => self.insert(data),
                 }
             }
@@ -228,27 +228,29 @@ macro_rules! grant_including {
 grant_including!(ObjectPermissionTable, object_permission_listed);
 grant_including!(ManagedVectorStoreTable, managed_store_list);
 
+// Prisma's absent take means no limit, and Postgres returns the same rows for the largest row count
+const NO_TAKE: i64 = i64::MAX;
+
 // the grant macro passes both tables a filter; this one has none, so only the limit binds
 fn object_permission_listed<'query>(
     _filter: Option<&'query Infallible>,
-    limit: &'query Option<i64>,
+    limit: Option<&'query i64>,
 ) -> Query<'query> {
     Query {
         sql: OBJECT_PERMISSION_LIST_SQL,
-        parameters: vec![limit],
+        parameters: vec![limit.unwrap_or(&NO_TAKE)],
     }
 }
-
-const NO_LIMIT: Option<i64> = None;
 
 #[must_use]
 pub fn managed_store_list<'query>(
     filter: Option<&'query Vec<String>>,
-    limit: &'query Option<i64>,
+    limit: Option<&'query i64>,
 ) -> Query<'query> {
-    let (sql, parameters): (&'query str, Vec<&'query (dyn ToSql + Sync)>) = match filter {
-        None => (MANAGED_STORE_LIST_SQL, vec![limit]),
-        Some(ids) => (MANAGED_STORE_IN_SQL, vec![ids, limit]),
-    };
+    let take = limit.unwrap_or(&NO_TAKE);
+    let (sql, parameters): (&'query str, Vec<&'query (dyn ToSql + Sync)>) = filter.map_or_else(
+        || (MANAGED_STORE_LIST_SQL, vec![take]),
+        |ids| (MANAGED_STORE_IN_SQL, vec![ids, take]),
+    );
     Query { sql, parameters }
 }

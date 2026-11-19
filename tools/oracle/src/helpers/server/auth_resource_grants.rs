@@ -107,7 +107,7 @@ fn search_key(search_tool_name: &str, key: &KeyFields) -> HelperResult {
     let token = UserAPIKeyAuth::construct(AuthInput::Dict(payload)).or_value_error()?;
     match can_key_call_search_tool(search_tool_name, &token) {
         Ok(()) => answer(true, None),
-        Err(denial) => answer(false, Some(&denial)),
+        Err(denial) => answer(false, Some(denial.as_ref())),
     }
 }
 
@@ -128,7 +128,7 @@ fn search_team(search_tool_name: &str, fields: Option<&TeamFields>) -> HelperRes
     };
     match can_team_call_search_tool(search_tool_name, team.as_ref()) {
         Ok(()) => answer(true, None),
-        Err(denial) => answer(false, Some(&denial)),
+        Err(denial) => answer(false, Some(denial.as_ref())),
     }
 }
 

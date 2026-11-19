@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::database_failures::deadline::DbLookupError;
-use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_error::proxy_error_types::VectorStoreObject;
 
 use crate::auth_read::table::AuthReadError;
@@ -83,14 +83,14 @@ async fn rag_without_registry() {
         "perm-key",
         r#"{"object_permission_id":"perm-key","vector_stores":["vs-other"]}"#,
     )]);
-    let request_body = body(RAG_BODY);
-    let request = VectorStoreRequest {
+    let restricted_body = body(RAG_BODY);
+    let restricted_request = VectorStoreRequest {
         database: true,
-        body: &request_body,
+        body: &restricted_body,
         key: Some(&key),
         team: None,
     };
-    match vector_store_access_check(request, None, &restricted).await {
+    match vector_store_access_check(restricted_request, None, &restricted).await {
         Err(VectorStoreCheckError::Denied(denial)) => {
             assert_eq!(denial.code, "401");
             assert!(denial.message.contains("vs-rag"), "{}", denial.message);
@@ -228,11 +228,11 @@ async fn empty_permission_id_queries() {
         vec![String::new(), String::new()],
         "an empty id is not null and still reaches the repository"
     );
+}
 
-    let empty_row = RecordingPermissions::new(&[(
-        "",
-        r#"{"object_permission_id":"","vector_stores":["vs-1"]}"#,
-    )]);
+#[tokio::test]
+async fn empty_permission_id_row_decides() {
+    let key = user_key(r#"{"token":"key-1","object_permission_id":""}"#);
     let selection = RecordingSelection::new(&["vs-2"]);
     let request_body = body("{}");
     let request = VectorStoreRequest {
@@ -241,6 +241,10 @@ async fn empty_permission_id_queries() {
         key: Some(&key),
         team: None,
     };
+    let empty_row = RecordingPermissions::new(&[(
+        "",
+        r#"{"object_permission_id":"","vector_stores":["vs-1"]}"#,
+    )]);
     match vector_store_access_check(request, Some(&selection), &empty_row).await {
         Err(VectorStoreCheckError::Denied(denial)) => {
             assert_eq!(denial.code, "401");
@@ -347,7 +351,10 @@ async fn fresh_row_beats_token_copy() {
             .is_ok(),
         "the fresh row allows what the cached token copy forbids"
     );
+}
 
+#[tokio::test]
+async fn fresh_row_denies_beyond_the_token() {
     let restrictive = RecordingPermissions::new(&[(
         "perm-key",
         r#"{"object_permission_id":"perm-key","vector_stores":["vs-a"]}"#,
@@ -412,8 +419,11 @@ async fn lookup_failure_propagates() {
     match vector_store_access_check(request, Some(&selection), &permissions).await {
         Err(VectorStoreCheckError::Lookup(failure)) => {
             assert!(matches!(
-                failure.source,
-                AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected))
+                *failure.source,
+                AuthReadError::Lookup(DbLookupError::Database(DbError {
+                    error_type: ErrorType::NoDbConnection,
+                    ..
+                }))
             ));
         }
         other => panic!("the lookup failure propagates, got {other:?}"),

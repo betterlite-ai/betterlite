@@ -133,12 +133,12 @@ fn project_denial_names_the_project() {
 #[test]
 fn view_key_before_team() {
     let key = ScriptedGrant::new(GrantAnswer::Deny);
-    let team = ScriptedGrant::new(GrantAnswer::Allow);
+    let team_grant = ScriptedGrant::new(GrantAnswer::Allow);
     let visible =
-        can_user_view_search_tool("tool", &key, &team).expect("a denial is not a failure");
+        can_user_view_search_tool("tool", &key, &team_grant).expect("a denial is not a failure");
     assert!(!visible);
     assert_eq!(key.calls(), vec!["tool".to_owned()]);
-    assert!(team.calls().is_empty());
+    assert!(team_grant.calls().is_empty());
 }
 
 #[test]
@@ -165,12 +165,12 @@ fn view_other_error_propagates() {
 fn view_trait_grants_drive_the_view() {
     let restricted = user_key(RESTRICTED_KEY);
     let plain_team = team(r#"{"team_id":"team-1"}"#);
-    let key = KeySearchGrant { token: &restricted };
-    let team = TeamSearchGrant {
+    let key_grant = KeySearchGrant { token: &restricted };
+    let team_grant = TeamSearchGrant {
         team: Some(&plain_team),
     };
-    assert!(can_user_view_search_tool("allowed-tool", &key, &team).expect("the view"));
-    assert!(!can_user_view_search_tool("other", &key, &team).expect("the view"));
+    assert!(can_user_view_search_tool("allowed-tool", &key_grant, &team_grant).expect("the view"));
+    assert!(!can_user_view_search_tool("other", &key_grant, &team_grant).expect("the view"));
 
     let unrestricted = user_key(r#"{"token":"key-2","team_id":"team-1"}"#);
     let restricted_team = team(RESTRICTED_TEAM);

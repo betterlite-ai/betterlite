@@ -19,7 +19,7 @@ pub enum SearchToolObject {
 #[derive(Debug, thiserror::Error)]
 pub enum SearchToolFailure {
     #[error(transparent)]
-    Denied(#[from] ProxyException),
+    Denied(#[from] Box<ProxyException>),
     #[error("the search tool permission source failed: {message}")]
     Lookup { message: String },
 }
@@ -63,7 +63,7 @@ pub fn can_object_call_search_tool(
     search_tool_name: &str,
     allowed: &[String],
     object: SearchToolObject,
-) -> Result<(), ProxyException> {
+) -> GrantResult {
     if allowed.is_empty() || allowed.iter().any(|tool| tool == search_tool_name) {
         return Ok(());
     }
@@ -76,7 +76,7 @@ pub fn can_object_call_search_tool(
         "{subject} not allowed to access search tool: {search_tool_name}. Allowed search tools: {}",
         allowed.join(", ")
     );
-    Err(ProxyException::new(ProxyExceptionInit {
+    Err(Box::new(ProxyException::new(ProxyExceptionInit {
         message,
         error_type: ProxyErrorTypes::KeyModelAccessDenied.to_string(),
         param: Some("search_tool_name".to_owned()),
@@ -84,11 +84,11 @@ pub fn can_object_call_search_tool(
         headers: BTreeMap::new(),
         openai_code: None,
         provider_specific_fields: BTreeMap::new(),
-    }))
+    })))
 }
 
 // every search tool check answers with the denial LiteLLM's ProxyException carries
-pub type GrantResult = Result<(), ProxyException>;
+pub type GrantResult = Result<(), Box<ProxyException>>;
 
 // the token's role is read by no check here, so a proxy admin gets no bypass from this helper
 pub fn can_key_call_search_tool(name: &str, key: &UserAPIKeyAuth) -> GrantResult {
@@ -113,7 +113,7 @@ pub fn authorize_search_tool(
     search_tool_name: &str,
     valid_token: &UserAPIKeyAuth,
     team_object: Option<&LiteLLMTeamTable>,
-) -> Result<(), ProxyException> {
+) -> GrantResult {
     can_key_call_search_tool(search_tool_name, valid_token)?;
     if valid_token.view.token.team_id.is_none() {
         return Ok(());

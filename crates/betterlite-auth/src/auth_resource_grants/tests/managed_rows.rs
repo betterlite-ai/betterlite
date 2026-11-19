@@ -3,8 +3,8 @@ use std::sync::Arc;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::database_failures::deadline::DbLookupError;
+use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
-use betterlite_db::postgres_store::errors::DbError;
 
 use crate::auth_cache::gateway_cache;
 use crate::auth_read::table::AuthReadError;
@@ -114,24 +114,24 @@ fn row_projection_precedence() {
     let dump = row(
         r#"{"model_dump":{"vector_store_id":"dump","custom_llm_provider":"openai"},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
     );
-    let projected = project_row(&dump)
+    let projected_dump = project_row(&dump)
         .expect("the model_dump projection")
         .expect("the projected row");
-    assert_eq!(projected.vector_store_id, "dump");
+    assert_eq!(projected_dump.vector_store_id, "dump");
     let empty_dump = row(
         r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
     );
-    let projected = project_row(&empty_dump)
+    let projected_dict = project_row(&empty_dump)
         .expect("the dict projection")
         .expect("the projected row");
-    assert_eq!(projected.vector_store_id, "dict");
+    assert_eq!(projected_dict.vector_store_id, "dict");
     let iterable = row(
         r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
     );
-    let projected = project_row(&iterable)
+    let projected_fields = project_row(&iterable)
         .expect("the iterable projection")
         .expect("the projected row");
-    assert_eq!(projected.vector_store_id, "fields");
+    assert_eq!(projected_fields.vector_store_id, "fields");
     let unreadable = row(r#"{"model_dump":"text","dict":{},"fields":{}}"#);
     assert!(
         project_row(&unreadable)
@@ -228,8 +228,11 @@ async fn lookup_failure_propagates() {
     match vector_store_rows_by_uuids(&["a".to_owned()], true, &cache, &rows).await {
         Err(ManagedVectorStoreLookupError::Rows(failure)) => {
             assert!(matches!(
-                failure.source,
-                AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected))
+                *failure.source,
+                AuthReadError::Lookup(DbLookupError::Database(DbError {
+                    error_type: ErrorType::NoDbConnection,
+                    ..
+                }))
             ));
         }
         other => panic!("the repository failure propagates, got {other:?}"),
@@ -265,8 +268,9 @@ async fn cache_partial_writes_survive() {
     );
 
     let failing = RecordingCache::new(60.0).failing_write_after(1);
-    let rows = RecordingRows::new(vec![fetched("a"), fetched("b")]);
-    match vector_store_rows_by_uuids(&["a".to_owned(), "b".to_owned()], true, &failing, &rows).await
+    let two_rows = RecordingRows::new(vec![fetched("a"), fetched("b")]);
+    match vector_store_rows_by_uuids(&["a".to_owned(), "b".to_owned()], true, &failing, &two_rows)
+        .await
     {
         Err(ManagedVectorStoreLookupError::CacheWrite(_)) => {}
         other => panic!("the cache write failure propagates, got {other:?}"),

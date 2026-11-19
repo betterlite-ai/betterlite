@@ -88,8 +88,7 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
     let StageInput::AuthResourceGrants(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
-    auth_resource_grants::run_stage(stage)
-        .map_err(|exception| StageFailure::ResourceGrants(Box::new(exception)))
+    auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

@@ -32,7 +32,7 @@ pub struct ManagedRowsQuery {
 #[error("the managed vector store lookup failed")]
 pub struct VectorStoreRowsFailure {
     #[source]
-    pub source: AuthReadError<RowError>,
+    pub source: Box<AuthReadError<RowError>>,
 }
 
 #[async_trait]
@@ -121,12 +121,10 @@ pub async fn vector_store_rows_by_uuids(
     if uuids.is_empty() || !database {
         return Ok(Vec::new());
     }
-    let mut found = Vec::new();
-    let mut misses = Vec::new();
+    let (mut found, mut misses) = (Vec::new(), Vec::new());
     for uuid in uuids {
-        let key = format!("{VECTOR_STORE_CACHE_PREFIX}{uuid}");
         let cached = cache
-            .read(&key)
+            .read(&format!("{VECTOR_STORE_CACHE_PREFIX}{uuid}"))
             .await
             .map_err(|source| ManagedVectorStoreLookupError::Cache(Box::new(source)))?;
         match cached {
@@ -137,11 +135,10 @@ pub async fn vector_store_rows_by_uuids(
     if misses.is_empty() {
         return Ok(found);
     }
-    let take = i64::try_from(misses.len()).unwrap_or(i64::MAX);
     let fetched = rows
         .by_uuids(ManagedRowsQuery {
+            take: i64::try_from(misses.len()).unwrap_or(i64::MAX),
             uuids: misses,
-            take,
         })
         .await
         .map_err(|source| ManagedVectorStoreLookupError::Rows(Box::new(source)))?;
@@ -150,9 +147,8 @@ pub async fn vector_store_rows_by_uuids(
             continue;
         };
         let key = format!("{VECTOR_STORE_CACHE_PREFIX}{}", row.vector_store_id);
-        let ttl = cache.management_ttl();
         cache
-            .write(&key, &row, ttl)
+            .write(&key, &row, cache.management_ttl())
             .await
             .map_err(|source| ManagedVectorStoreLookupError::CacheWrite(Box::new(source)))?;
         found.push(row);
