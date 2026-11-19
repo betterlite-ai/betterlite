@@ -77,7 +77,7 @@ fn member_counter_floor_and_membership_keys() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(7)),
+            Some(Decimal::from(7_i32)),
         ))
         .expect("the reset succeeds");
     assert_eq!(
@@ -144,7 +144,7 @@ fn reset_memory_then_redis_ttl_60() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(2)),
+            Some(Decimal::from(2_i32)),
         ))
         .expect("the reset succeeds");
     let calls = recorder.calls();
@@ -162,7 +162,7 @@ fn no_redis_still_updates_floor() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(4)),
+            Some(Decimal::from(4_i32)),
         ))
         .expect("the reset succeeds");
     assert_eq!(
@@ -190,10 +190,10 @@ fn redis_set_failure_warns_then_delete() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(5)),
+            Some(Decimal::from(5_i32)),
         ))
     });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         support::warned_subjects(&warnings),
         vec![COUNTER.to_owned()]
@@ -224,7 +224,7 @@ fn redis_delete_failure_503_after_memory_write() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(6)),
+            Some(Decimal::from(6_i32)),
         ))
     });
     let error = outcome.expect_err("both Redis steps failing surfaces the reset failure");
@@ -258,7 +258,7 @@ fn reset_503_retains_set_cause_and_skips_remaining_steps() {
         &inflight,
         "user-1",
         "team-1",
-        Some(Decimal::from(8)),
+        Some(Decimal::from(8_i32)),
     ));
     let error = outcome.expect_err("both Redis steps failing surfaces the reset failure");
     let cause = error.source().expect("the SET error stays the cause");
@@ -285,7 +285,7 @@ fn floor_local_only_ttl_5() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(9)),
+            Some(Decimal::from(9_i32)),
         ))
         .expect("the reset succeeds");
     let calls = recorder.calls();
@@ -308,7 +308,7 @@ fn counter_set_then_floor_set_publication() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(3)),
+            Some(Decimal::from(3_i32)),
         ))
         .expect("the reset succeeds");
     assert_eq!(
@@ -334,12 +334,12 @@ fn memberships_evicted_last() {
             &inflight,
             "user-1",
             "team-1",
-            Some(Decimal::from(1)),
+            Some(Decimal::from(1_i32)),
         ))
         .expect("the reset succeeds");
     let calls = recorder.calls();
     assert_eq!(calls.last(), Some(&eviction_call()));
-    let Call::Evict { keys } = &calls[calls.len() - 1] else {
+    let Some(Call::Evict { keys }) = calls.last() else {
         panic!("the last call is the membership eviction");
     };
     assert_eq!(
@@ -362,7 +362,7 @@ fn cancellation_not_warning_fallback() {
                     &inflight,
                     "user-1",
                     "team-1",
-                    Some(Decimal::from(1)),
+                    Some(Decimal::from(1_i32)),
                 ),
             )
             .await
@@ -393,7 +393,7 @@ fn inflight_pop_before_any_mutation() {
         &inflight,
         "user-1",
         "team-1",
-        Some(Decimal::from(2)),
+        Some(Decimal::from(2_i32)),
     );
     let drive = async {
         tokio::task::yield_now().await;
@@ -406,7 +406,7 @@ fn inflight_pop_before_any_mutation() {
             .expect("the load still runs");
     };
     let (outcome, ()) = runtime.block_on(async { tokio::join!(reset_future, drive) });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(inflight.get(RESERVATION).is_none());
     assert!(!recorder.calls().is_empty());
 }

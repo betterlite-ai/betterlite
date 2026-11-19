@@ -44,10 +44,10 @@ impl AuthInvalidation {
             .await;
         self.cache_management_object(&key, team).await?;
         let alias = team.team.fields.base.team_alias.clone();
-        let Some(alias) = alias.filter(|alias| !alias.is_empty()) else {
+        let Some(team_alias) = alias.filter(|value| !value.is_empty()) else {
             return Ok(());
         };
-        let alias_key = InvalidationKey::TeamAlias(&alias).render();
+        let alias_key = InvalidationKey::TeamAlias(&team_alias).render();
         self.delete_team_alias(&alias_key).await;
         self.invalidate_usage_entry(&alias_key, redis_shared, "team alias")
             .await;
@@ -124,6 +124,6 @@ fn shared_handle(auth: Option<Arc<dyn RedisMarker>>, usage: Option<Arc<dyn Redis
     match (auth, usage) {
         (Some(auth_handle), Some(usage_handle)) => Arc::ptr_eq(&auth_handle, &usage_handle),
         (None, None) => true,
-        (Some(_auth_handle), None) | (None, Some(_usage_handle)) => false,
+        (Some(_), None) | (None, Some(_)) => false,
     }
 }

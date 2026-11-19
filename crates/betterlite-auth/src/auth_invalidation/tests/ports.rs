@@ -3,7 +3,7 @@ use betterlite_cache::dual_cache::{CacheOptions, Ttl};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 
-use super::support::{self, FIXED_NOW};
+use super::support;
 use crate::auth_cache::WriteOptions;
 use crate::auth_invalidation::ports::{
     AuthInvalidationCache, SpendCounterCache, UsageInvalidationCache,
@@ -16,9 +16,15 @@ const COUNTER: &str = "spend:team_member:user-1:team-1";
 #[test]
 fn management_ttl_uses_the_ordinary_default_then_the_fallback() {
     let configured = support::auth_cache(Some(45.0_f64), 60.0_f64);
-    assert_eq!(AuthInvalidationCache::management_ttl(&configured), 45.0_f64);
+    assert_eq!(
+        AuthInvalidationCache::management_ttl(&configured).to_bits(),
+        45.0_f64.to_bits()
+    );
     let fallback = support::auth_cache(None, 60.0_f64);
-    assert_eq!(AuthInvalidationCache::management_ttl(&fallback), 60.0_f64);
+    assert_eq!(
+        AuthInvalidationCache::management_ttl(&fallback).to_bits(),
+        60.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -42,7 +48,7 @@ fn write_management_keeps_the_payload_and_its_ttl() {
     let ttl = runtime
         .block_on(cache.tier(TEAM_KEY).async_get_ttl(TEAM_KEY))
         .expect("the ttl read");
-    assert_eq!(ttl, Some(Ttl::Expiry(FIXED_NOW + 45.0_f64)));
+    assert_eq!(ttl, Some(Ttl::Expiry(1045.5_f64)));
 }
 
 #[test]
@@ -144,11 +150,11 @@ fn spend_set_memory_keeps_the_value_and_its_ttl() {
         .get_cache(COUNTER)
         .expect("the memory read");
     assert!(
-        matches!(stored, Some(CacheValue::Float(value)) if value == 7.0_f64),
+        matches!(stored, Some(CacheValue::Float(value)) if value.to_bits() == 7.0_f64.to_bits()),
         "the spend counter lands in memory as a float"
     );
     let ttl = runtime
         .block_on(cache.async_get_ttl(COUNTER))
         .expect("the ttl read");
-    assert_eq!(ttl, Some(Ttl::Expiry(FIXED_NOW + 60.0_f64)));
+    assert_eq!(ttl, Some(Ttl::Expiry(1060.5_f64)));
 }

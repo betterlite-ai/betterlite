@@ -234,7 +234,7 @@ fn access_delete_failure_propagates_without_publish() {
     let usage = Recorder::new(None);
     let invalidation = deletion(&recorder, Some(&usage));
     let outcome = runtime.block_on(invalidation.delete_cache_access_object("ag-1"));
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
     assert_eq!(
         recorder.calls(),
         vec![Call::AuthDeleteSync("access_group_id:ag-1".to_owned())]
@@ -289,7 +289,7 @@ fn self_delivery_keeps_new_values() {
         new_value: Some(3.0),
         ttl: Some(60.0),
     });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(
         recorder.calls().is_empty(),
         "a self-delivered SET writes into the additional caches, never erasing the local value"

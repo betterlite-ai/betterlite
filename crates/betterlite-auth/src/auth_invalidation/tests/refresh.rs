@@ -229,7 +229,7 @@ fn usage_none_noop() {
     let mut team = support::team("team-1", Some("alias-1"));
     let (outcome, warnings) =
         support::capture(|| runtime.block_on(invalidation.cache_team_object("team-1", &mut team)));
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(warnings.is_empty());
     assert_eq!(
         recorder.calls().len(),
@@ -309,7 +309,7 @@ fn usage_failure_warns_then_team_write() {
     let mut team = support::team("team-1", None);
     let (outcome, warnings) =
         support::capture(|| runtime.block_on(invalidation.cache_team_object("team-1", &mut team)));
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         support::warned_subjects(&warnings),
         vec!["team_id:team-1".to_owned()]
@@ -334,7 +334,7 @@ fn usage_warning_strips_cr_lf() {
     let (outcome, warnings) = support::capture(|| {
         runtime.block_on(invalidation.cache_team_object("team\r\n-1", &mut team))
     });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let subjects = support::warned_subjects(&warnings);
     assert_eq!(subjects, vec!["team_id:team-1".to_owned()]);
 }
@@ -348,7 +348,7 @@ fn main_write_failure_skips_alias_after_timestamp() {
     let invalidation = refresh(&recorder, Some(&usage));
     let mut team = support::team("team-1", Some("alias-1"));
     let outcome = runtime.block_on(invalidation.cache_team_object("team-1", &mut team));
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
     assert_eq!(team.last_refreshed_at, Some(FIXED_NOW));
     assert_eq!(
         usage.calls(),
@@ -466,7 +466,7 @@ fn alias_failure_warns_then_usage() {
     let mut team = support::team("team-1", Some("alias-1"));
     let (outcome, warnings) =
         support::capture(|| runtime.block_on(invalidation.cache_team_object("team-1", &mut team)));
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         support::warned_subjects(&warnings),
         vec!["team_alias:alias-1".to_owned()]

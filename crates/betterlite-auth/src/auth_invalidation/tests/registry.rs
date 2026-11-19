@@ -16,13 +16,10 @@ fn registry_bound_does_not_cancel_load() {
         },
     );
     (1..=MAX_MEMBERSHIP_LOADS).for_each(|index| {
-        let (_sender, receiver) = watch::channel(None::<u8>);
+        let (_sender, completion) = watch::channel(None::<u8>);
         inflight.install(
             &format!("team_membership:user-1:team-{index}"),
-            InflightLoad {
-                id,
-                completion: receiver,
-            },
+            InflightLoad { id, completion },
         );
     });
     assert!(
