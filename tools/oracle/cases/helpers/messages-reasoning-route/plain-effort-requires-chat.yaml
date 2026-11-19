@@ -27,7 +27,7 @@ call:
         kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
         thinking: {type: enabled}
         provider: null
-        bridge: {mode: responses, fails: false}
+        bridge: {mode: chat, fails: false}
       - function: plain_effort
         kwargs: {model: o3, reasoning_effort: {effort: high, summary: null}}
         thinking: {type: enabled}
