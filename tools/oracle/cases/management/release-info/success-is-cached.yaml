@@ -1,0 +1,34 @@
+name: release-info-success-is-cached
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+latest_release_fixture: upstream
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      tag_name: v2.4.6
+      html_url: https://github.com/betterlite-ai/betterlite/releases/tag/v2.4.6
+      body: "* feat: add a release banner\n* fix(proxy): stop a duplicated fetch\n* chore: bump a dependency\n* @ann made their first contribution\n"
+steps:
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []

@@ -1,7 +1,7 @@
 id: B357
 title: Shadow evaluation listings and aggregate results
 description: 'Implement GET /auto_router/shadow_eval and GET /auto_router/shadow_eval/{job_id} using B381
-  aggregates and B380 response types. Apply B052 admin-viewer authorization, parameterized target filters
+  aggregates and B380 response types. Apply B345''s _require_admin_viewer authorization, parameterized target filters
   and newest-job pagination before loading all legs for each selected job. Never mutate state during reads.
   Implement the owned native service in crates/betterlite-server/src/shadow_eval_results.rs. B301 registers ProbeOperation::ShadowEvalResults and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_results.rs and tools/oracle/litellm/probes/shadow_eval_results.py and leave mod.rs and registry.py as they are;
   the adapters only call production services.

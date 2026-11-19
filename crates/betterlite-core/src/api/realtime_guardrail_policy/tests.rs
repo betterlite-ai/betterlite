@@ -538,7 +538,7 @@ struct Raising<Make>(Make);
 
 impl<Make> RealtimeGuardrailCallback for Raising<Make>
 where
-    Make: Fn(&RequestData, GuardrailEventHooks) -> GateFailure,
+    Make: Fn(&RequestData, GuardrailEventHooks) -> GateFailure + Send + Sync,
 {
     type Error = GateFailure;
 

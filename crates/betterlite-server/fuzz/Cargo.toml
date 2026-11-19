@@ -371,6 +371,34 @@ doc = false
 bench = false
 
 [[bin]]
+name = "latest_release"
+path = "fuzz_targets/latest_release.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roi_identity_body"
+path = "fuzz_targets/roi_identity_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_frames"
+path = "fuzz_targets/passthrough_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_request_data"
+path = "fuzz_targets/passthrough_request_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_estimate"
 path = "fuzz_targets/spend_estimate.rs"
 test = false

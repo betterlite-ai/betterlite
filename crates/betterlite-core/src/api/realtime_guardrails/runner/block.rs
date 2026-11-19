@@ -1,5 +1,3 @@
-#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
-
 mod backend;
 mod notice;
 
@@ -7,7 +5,7 @@ use std::error::Error;
 
 use betterlite_models::decisions::Json;
 use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrails::error::RealtimeGuardrailsError;
@@ -16,7 +14,7 @@ use crate::api::realtime_guardrails::message;
 use super::RealtimeGuardrails;
 
 type UnitFuture<'call, ConfigError, CallbackError> =
-    LocalBoxFuture<'call, Result<(), RealtimeGuardrailsError<ConfigError, CallbackError>>>;
+    BoxFuture<'call, Result<(), RealtimeGuardrailsError<ConfigError, CallbackError>>>;
 
 // The ordered steps of one block: a frame for the backend, or the client-only notice LiteLLM sends between them
 enum BlockStep {
@@ -50,7 +48,7 @@ pub(super) fn send_block_frames<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let steps = block_steps(message, pre_block_backend_message)
@@ -63,5 +61,5 @@ where
         }
         Ok(())
     }
-    .boxed_local()
+    .boxed()
 }

@@ -1,0 +1,34 @@
+kind: helper
+name: json-native-api-policy-json-messages-transform-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: json_messages_transform
+        model: nano-gpt/probe-model
+        environment: {}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+        optional_params:
+          max_tokens: 16
+          system:
+            - {type: text, text: "x-anthropic-billing-header: abc"}
+            - {type: text, text: keep}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: hello, cache_control: {type: ephemeral, ttl: 1h}}
+      - kind: json_messages_transform
+        model: poe/probe-model
+        environment: {}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {cache_control_ttl: true}
+        optional_params: {max_tokens: 16}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: hello, cache_control: {type: ephemeral, ttl: 1h}}
+env: {}
+compare: {ignore: []}

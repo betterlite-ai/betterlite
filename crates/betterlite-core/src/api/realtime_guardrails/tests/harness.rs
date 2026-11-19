@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
 
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +9,7 @@ use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -446,7 +445,7 @@ impl RealtimeGuardrail for ScriptedGuardrail {
     fn apply_guardrail(
         &self,
         input: GuardrailInput,
-    ) -> LocalBoxFuture<'_, Result<GuardrailTexts, GuardrailFailure<TestFailure>>> {
+    ) -> BoxFuture<'_, Result<GuardrailTexts, GuardrailFailure<TestFailure>>> {
         lock(&self.records).applied.push(input);
         let outcome = self.outcome;
         let violation = self.violation.clone();
@@ -572,7 +571,7 @@ fn selection_inputs() -> SelectionInputs {
     }
 }
 
-pub(super) fn selection(hooks: Option<&[GuardrailEventHooks]>) -> LocalBoxFuture<'_, Selection> {
+pub(super) fn selection(hooks: Option<&[GuardrailEventHooks]>) -> BoxFuture<'_, Selection> {
     let inputs = selection_inputs();
     async move {
         let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![
@@ -595,7 +594,7 @@ pub(super) fn selection(hooks: Option<&[GuardrailEventHooks]>) -> LocalBoxFuture
         let count = runner.state.setup.violation_count;
         selection_summary(&inputs, blocked, count)
     }
-    .boxed_local()
+    .boxed()
 }
 
 fn selection_summary(inputs: &SelectionInputs, blocked: bool, count: usize) -> Selection {
@@ -632,7 +631,7 @@ pub(super) struct BlockedMessage {
 pub(super) fn blocked_message(
     violation: GuardrailViolation,
     configured: Option<&str>,
-) -> LocalBoxFuture<'_, BlockedMessage> {
+) -> BoxFuture<'_, BlockedMessage> {
     async move {
         let fixture = Fixture::new();
         let mut guardrail = blocking_guardrail();
@@ -658,14 +657,14 @@ pub(super) fn blocked_message(
             prompt: prompt_of(&spoken),
         }
     }
-    .boxed_local()
+    .boxed()
 }
 
 pub(super) fn one_block<'run>(
     fixture: &'run Fixture,
     guardrail: &'run ScriptedGuardrail,
     transcript: &'run str,
-) -> LocalBoxFuture<'run, Result<bool, RealtimeGuardrailsError<ConfigFailure, TestFailure>>> {
+) -> BoxFuture<'run, Result<bool, RealtimeGuardrailsError<ConfigFailure, TestFailure>>> {
     async move {
         let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![guardrail];
         let mut state = fixture.state();
@@ -678,5 +677,5 @@ pub(super) fn one_block<'run>(
             .run_realtime_guardrails(transcript, None, None, None)
             .await
     }
-    .boxed_local()
+    .boxed()
 }

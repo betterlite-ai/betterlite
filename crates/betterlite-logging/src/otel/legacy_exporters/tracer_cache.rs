@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::hash::Hash;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Mutex, PoisonError};
 use std::thread::Builder;
@@ -12,9 +13,10 @@ use tracing::debug;
 
 use crate::otel::legacy_exporters::build::LegacyExporterBuilder;
 use crate::otel::legacy_exporters::error::LegacyExporterError;
-use crate::otel::legacy_exporters::headers::HeadersError;
-use crate::otel::legacy_exporters::selection::{SpanProcessorPlan, span_processor_plan};
+use crate::otel::legacy_exporters::selection::span_processor_plan;
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
+
+pub mod project;
 
 pub const MAX_DYNAMIC_TRACER_PROVIDERS: usize = 256;
 
@@ -72,6 +74,7 @@ pub struct DynamicTracerCache {
     tracer_name: String,
     max_providers: usize,
     entries: Mutex<IndexMap<CacheKey, CachedProvider>>,
+    projects: Mutex<IndexMap<String, CachedProvider>>,
     shutdowns: SyncSender<ShutdownJob>,
 }
 
@@ -91,8 +94,8 @@ fn exporter_text(exporter: &Exporter) -> String {
     }
 }
 
-fn evicted(
-    entries: &mut IndexMap<CacheKey, CachedProvider>,
+fn evicted<K>(
+    entries: &mut IndexMap<K, CachedProvider>,
     max_providers: usize,
 ) -> Option<CachedProvider> {
     if entries.len() <= max_providers {
@@ -108,6 +111,45 @@ fn shut_down(dropped: &CachedProvider, shut_down_count: &mut usize) {
         debug!(error = %error, "otel: a dropped dynamic tracer provider failed to shut down");
     }
     *shut_down_count = shut_down_count.saturating_add(1);
+}
+
+// One double-checked provider cache over any entry map: the dynamic config keys and the Phoenix projects share it
+fn cached_provider<K, F>(
+    cache: &DynamicTracerCache,
+    providers: &Mutex<IndexMap<K, CachedProvider>>,
+    key: K,
+    max_providers: usize,
+    build: F,
+) -> Result<SdkTracer, LegacyExporterError>
+where
+    K: Eq + Hash,
+    F: FnOnce() -> Result<CachedProvider, LegacyExporterError>,
+{
+    let mut entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(cached) = entries.shift_remove(&key) {
+        let tracer = cached.provider.tracer(cache.tracer_name.clone());
+        entries.insert(key, cached);
+        return Ok(tracer);
+    }
+    drop(entries);
+    // Exporter construction can block on DNS or TLS, so it runs without the cache lock.
+    let fresh = build()?;
+    let mut cache_entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
+    let racing = cache_entries.shift_remove(&key);
+    let (tracer, dropped) = if let Some(raced) = racing {
+        let tracer = raced.provider.tracer(cache.tracer_name.clone());
+        cache_entries.insert(key, raced);
+        (tracer, Some(fresh))
+    } else {
+        let tracer = fresh.provider.tracer(cache.tracer_name.clone());
+        cache_entries.insert(key, fresh);
+        (tracer, evicted(&mut cache_entries, max_providers))
+    };
+    drop(cache_entries);
+    if let Some(provider) = dropped {
+        cache.dispose(provider);
+    }
+    Ok(tracer)
 }
 
 fn start_shutdown_worker(receiver: Receiver<ShutdownJob>) {
@@ -140,6 +182,7 @@ impl DynamicTracerCache {
             max_providers: settings.max_providers.max(1),
             builder,
             entries: Mutex::new(IndexMap::new()),
+            projects: Mutex::new(IndexMap::new()),
             shutdowns,
         }
     }
@@ -173,28 +216,14 @@ impl DynamicTracerCache {
         dynamic_headers: Option<&BTreeMap<String, String>>,
     ) -> Result<SdkTracer, LegacyExporterError> {
         let owns_exporter = !matches!(exporter, Exporter::InMemory);
-        let callback_name = self.callback_name.as_deref();
-        self.tracer_for_key(key, owns_exporter, || {
-            span_processor_plan(
+        self.cached_dynamic_tracer(key, owns_exporter, move || {
+            let plan = span_processor_plan(
                 &self.config,
                 dynamic_headers,
                 config_override,
-                callback_name,
-            )
-        })
-    }
-
-    fn tracer_for_key<F>(
-        &self,
-        key: CacheKey,
-        owns_exporter: bool,
-        plan: F,
-    ) -> Result<SdkTracer, LegacyExporterError>
-    where
-        F: FnOnce() -> Result<SpanProcessorPlan, HeadersError>,
-    {
-        self.cached_dynamic_tracer(key, owns_exporter, move || {
-            let processor = self.builder.span_processor(&plan()?)?;
+                self.callback_name.as_deref(),
+            )?;
+            let processor = self.builder.span_processor(&plan)?;
             Ok(SdkTracerProvider::builder()
                 .with_resource(self.resource.clone())
                 .with_span_processor(processor)
@@ -211,34 +240,12 @@ impl DynamicTracerCache {
     where
         F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>,
     {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(cached) = entries.shift_remove(&key) {
-            let tracer = cached.provider.tracer(self.tracer_name.clone());
-            entries.insert(key, cached);
-            return Ok(tracer);
-        }
-        drop(entries);
-        // Exporter construction can block on DNS or TLS, so it runs without the cache lock.
-        let fresh = CachedProvider {
-            provider: build()?,
-            owns_exporter,
-        };
-        let mut cache_entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        let racing = cache_entries.shift_remove(&key);
-        let (tracer, dropped) = if let Some(raced) = racing {
-            let tracer = raced.provider.tracer(self.tracer_name.clone());
-            cache_entries.insert(key, raced);
-            (tracer, Some(fresh))
-        } else {
-            let tracer = fresh.provider.tracer(self.tracer_name.clone());
-            cache_entries.insert(key, fresh);
-            (tracer, evicted(&mut cache_entries, self.max_providers))
-        };
-        drop(cache_entries);
-        if let Some(provider) = dropped {
-            self.dispose(provider);
-        }
-        Ok(tracer)
+        cached_provider(self, &self.entries, key, self.max_providers, move || {
+            Ok(CachedProvider {
+                provider: build()?,
+                owns_exporter,
+            })
+        })
     }
 
     fn dispose(&self, dropped: CachedProvider) {
@@ -269,4 +276,4 @@ impl DynamicTracerCache {
 }
 
 #[path = "tracer_cache/tests.rs"]
-mod tests;
+pub(crate) mod tests;

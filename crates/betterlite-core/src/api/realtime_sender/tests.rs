@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
+use betterlite_openai::realtime::normalizer::RealtimeEventNormalizer;
 
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
 use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
@@ -15,8 +16,7 @@ use crate::api::realtime_contracts::events::{
     AudioTranscriptionUsage, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
 use crate::api::realtime_contracts::transport::{
-    ClientWebSocket, RealtimeBackend, RealtimeEventNormalizer, RealtimeMessage, ScopedWebSocket,
-    WebSocketScope,
+    ClientWebSocket, RealtimeBackend, RealtimeMessage, ScopedWebSocket, WebSocketScope,
 };
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_session_state::{
@@ -29,6 +29,7 @@ use super::{RealtimeSend, RealtimeSender};
 mod backend;
 mod client;
 mod enforce;
+mod send;
 mod setup;
 
 const SETUP_FRAME: &str = r#"{"setup":{"model":"models/gemini-live","generationConfig":{"responseModalities":["AUDIO"]}}}"#;

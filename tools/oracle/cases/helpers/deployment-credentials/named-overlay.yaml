@@ -1,0 +1,27 @@
+kind: helper
+name: deployment-credentials-named-overlay
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+          api_key: sk-deployment
+          api_base: https://deployment.test
+          litellm_credential_name: creds
+        model_info:
+          id: d1
+    credentials:
+      - credential_name: creds
+        credential_values:
+          api_key: sk-record
+          api_base: https://record.test
+          vertex_project: project-from-record
+          litellm_credential_name: inner
+          model: record/model
+          custom_llm_provider: record-provider
+    arguments:
+      model_id: d1
+env: {}
+compare: {ignore: []}

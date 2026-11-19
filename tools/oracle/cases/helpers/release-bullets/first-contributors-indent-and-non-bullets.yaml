@@ -1,0 +1,17 @@
+kind: helper
+name: release-bullets-first-contributors-indent-and-non-bullets
+call:
+  release_bullets:
+    body: |
+      * @ann made their first contribution
+      * @bob made their first contribution.
+      * @cy made their first contribution2
+      * fix: stop a crash
+      * feat: add a badge
+       * fix: an indented bullet
+      - fix: a hyphen bullet
+      *feat: no space after the asterisk
+      * plain text
+      * (ui) feat: text before the prefix
+env: {}
+compare: {ignore: []}
