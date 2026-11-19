@@ -30,6 +30,8 @@ use self::query::CacheActivityQuery;
 use self::store::CacheActivityStore;
 
 pub const CACHE_ACTIVITY_PATH: &str = "/global/activity/cache_hits";
+// LiteLLM declares this route with include_in_schema=False, so no OpenAPI document may list it.
+pub const DOCUMENTED_IN_OPENAPI: bool = false;
 
 pub fn routes(store: Option<Arc<dyn CacheActivityStore>>) -> Router {
     Router::new()

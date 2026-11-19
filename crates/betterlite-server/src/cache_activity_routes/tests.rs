@@ -761,7 +761,7 @@ async fn query_filters_apply_to_groups_and_errors_but_not_filter_options() {
     assert_eq!(rows.groups[0].api_requests, 1);
     assert_eq!(rows.error_breakdown.len(), 1);
     assert_eq!(rows.error_breakdown[0].error_code, "rate_limit");
-    let mut aliases = rows.key_aliases.clone();
+    let mut aliases = rows.key_aliases;
     aliases.sort();
     assert_eq!(
         aliases,
@@ -771,7 +771,7 @@ async fn query_filters_apply_to_groups_and_errors_but_not_filter_options() {
             "alias-b".to_owned()
         ]
     );
-    let mut models = rows.models.clone();
+    let mut models = rows.models;
     models.sort();
     assert_eq!(
         models,
@@ -793,7 +793,7 @@ async fn query_info_route_call_types_are_excluded_and_empty_models_are_skipped()
     assert_eq!(rows.groups[0].call_type, "completion");
     assert_eq!(rows.groups[0].api_requests, 2);
     assert_eq!(rows.error_breakdown.len(), 0);
-    let mut aliases = rows.key_aliases.clone();
+    let mut aliases = rows.key_aliases;
     aliases.sort();
     assert_eq!(
         aliases,

@@ -56,15 +56,15 @@ impl CacheActivityStore for DatabaseCacheActivityStore {
             client.query(MODEL_OPTIONS_SQL, &options),
         )
         .map_err(backend)?;
-        decode(group_rows, error_rows, key_alias_rows, model_rows)
+        decode(&group_rows, &error_rows, &key_alias_rows, &model_rows)
     }
 }
 
 fn decode(
-    group_rows: Vec<Row>,
-    error_rows: Vec<Row>,
-    key_alias_rows: Vec<Row>,
-    model_rows: Vec<Row>,
+    group_rows: &[Row],
+    error_rows: &[Row],
+    key_alias_rows: &[Row],
+    model_rows: &[Row],
 ) -> Result<CacheActivityRows, DbError> {
     Ok(CacheActivityRows {
         groups: group_rows
@@ -78,11 +78,13 @@ fn decode(
         key_aliases: key_alias_rows
             .iter()
             .map(KeyAliasRow::try_from)
-            .collect::<Result<Vec<_>, DbError>>()?,
+            .map(|decoded| decoded.map(|row| row.key_alias))
+            .collect::<Result<Vec<String>, DbError>>()?,
         models: model_rows
             .iter()
             .map(ModelRow::try_from)
-            .collect::<Result<Vec<_>, DbError>>()?,
+            .map(|decoded| decoded.map(|row| row.model))
+            .collect::<Result<Vec<String>, DbError>>()?,
     })
 }
 
