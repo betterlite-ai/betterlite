@@ -8,20 +8,13 @@ use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use http::header::{AUTHORIZATION, HeaderValue};
 use http::{HeaderMap, Method};
-use serde::Serialize;
+use serde_json::json;
 use url::Url;
 
 use super::call::{Call, FailureKind, RunSpec, ScriptedFailure};
 use crate::sdk_http::error::SdkHttpError;
 
 pub(super) type Opened = Vec<Result<Vec<u8>, SourceFailure>>;
-
-#[derive(Serialize)]
-struct Wire<'wire> {
-    model: &'wire str,
-    input: &'wire betterlite_models::decisions::Json,
-    stream: bool,
-}
 
 fn failure(spec: &ScriptedFailure) -> TransportFailure {
     let kind = match spec.kind {
@@ -45,33 +38,29 @@ pub(super) fn scripted(spec: &RunSpec) -> Opened {
     items
 }
 
-fn headers(call: &Call) -> Result<HeaderMap, SdkHttpError> {
-    let mut headers = HeaderMap::new();
-    let value = HeaderValue::from_bytes(format!("Bearer {}", call.api_key).as_bytes())
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    headers.insert(AUTHORIZATION, value);
-    Ok(headers)
-}
-
 // One prepared POST per live run, framed into the payloads both iterators then read
 pub(super) async fn prefetch(
     client: &ProxiedClient,
     call: &Call,
     api_base: &str,
 ) -> Result<Opened, SdkHttpError> {
-    let body = serde_json::to_vec(&Wire {
-        model: &call.model,
-        input: &call.input,
-        stream: true,
-    })
+    let body = serde_json::to_vec(&json!({
+        "model": &call.model,
+        "input": &call.input,
+        "stream": true,
+    }))
     .map_err(SdkHttpError::Serialize)?;
+    let mut headers = HeaderMap::new();
+    let bearer = HeaderValue::from_bytes(format!("Bearer {}", call.api_key).as_bytes())
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    headers.insert(AUTHORIZATION, bearer);
     let url = format!("{}/responses", api_base.trim_end_matches('/'));
     let response = client
         .send(OutboundRequest {
             method: Method::POST,
             url: Url::parse(&url).map_err(|source| SdkHttpError::Url(Box::new(source)))?,
             query: Vec::new(),
-            headers: headers(call)?,
+            headers,
             body: RequestBody::Json(body),
             deadline: Duration::from_secs(call.timeout_seconds),
         })

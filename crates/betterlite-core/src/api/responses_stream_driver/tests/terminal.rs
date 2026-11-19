@@ -232,6 +232,35 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     assert!(cache.writes().is_empty());
 }
 
+#[test]
+fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
+    let success = Arc::new(SuccessPort::default());
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    let fixture = Fixture::new(ports, fixed_clock());
+    let mut first = fixture.synthetic(Some(true), false);
+    let mut second = fixture.synthetic(Some(true), false);
+    let first_event = futures_executor::block_on(first.advance(Dispatch::Inline))
+        .expect("the first stream yields")
+        .expect("an event is returned");
+    let second_event = futures_executor::block_on(second.advance(Dispatch::Inline))
+        .expect("the second stream yields")
+        .expect("an event is returned");
+    assert_eq!(event_type(&first_event), event_type(&second_event));
+    while futures_executor::block_on(first.advance(Dispatch::Inline))
+        .expect("the first stream yields")
+        .is_some()
+    {}
+    while futures_executor::block_on(second.advance(Dispatch::Inline))
+        .expect("the second stream yields")
+        .is_some()
+    {}
+    futures_executor::block_on(await_pending_logging(&mut first.callback));
+    futures_executor::block_on(await_pending_logging(&mut second.callback));
+    assert_eq!(success.async_calls().len(), 2);
+    assert_eq!(success.sync_calls().len(), 2);
+}
+
 #[tokio::test]
 async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());

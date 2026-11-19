@@ -903,6 +903,23 @@ async fn other_http_errors_raise_even_after_a_terminal_event() {
     assert_eq!(failure.classes().len(), 1);
 }
 
+#[tokio::test]
+async fn a_framing_failure_raises_an_unclassified_error() {
+    let failure = Arc::new(FailurePort::default());
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
+    let fixture = Fixture::new(ports, fixed_clock());
+    let mut stream = fixture.stream(
+        prefetched(vec![Err(SourceFailure::Decode(
+            "the frame could not be read".to_owned(),
+        ))]),
+        None,
+    );
+    let error = stream.next_event().await.expect_err("the frame fails");
+    assert_eq!(class_of(&error).metadata().status_code, 500);
+    assert_eq!(failure.classes().len(), 1);
+}
+
 #[test]
 fn a_known_completed_event_is_terminal() {
     let event: Event = serde_json::from_str(

@@ -37,12 +37,9 @@ pub struct PrefetchedSource {
 
 impl PrefetchedSource {
     #[must_use]
-    pub fn new<Items>(items: Items) -> Self
-    where
-        Items: IntoIterator<Item = Result<Vec<u8>, SourceFailure>>,
-    {
+    pub fn new(items: Vec<Result<Vec<u8>, SourceFailure>>) -> Self {
         Self {
-            items: items.into_iter().collect(),
+            items: items.into(),
         }
     }
 }

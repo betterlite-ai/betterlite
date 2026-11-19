@@ -77,10 +77,6 @@ class Recorder(CustomLogger):
         self.start_time = datetime(2026, 1, 1, tzinfo=UTC)
         self.completion_start_time: datetime | None = None
 
-    def post_call(self, *args: Json, **kwargs: Json) -> None: ...
-    def success_handler(self, *args: Json, **kwargs: Json) -> None: ...
-    def failure_handler(self, *args: Json, **kwargs: Json) -> None: ...
-
     @override
     # ast-grep-ignore: no-long-names
     async def async_post_call_streaming_deployment_hook(

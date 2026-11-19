@@ -97,7 +97,12 @@ pub(super) async fn run(
             Box::new(PrefetchedSource::new(items)),
         ))),
         None => {
-            let response = response_of(spec)?;
+            let response = spec.response.as_ref().ok_or_else(|| {
+                SdkHttpError::Invalid("a fake or cached run needs a response".to_owned())
+            })?;
+            let value = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
+            let response: ResponsesApiResponse =
+                serde_json::from_value(value).map_err(SdkHttpError::ResultParse)?;
             if cached {
                 model = response.model.clone().unwrap_or_default();
             }
@@ -186,13 +191,4 @@ fn times() -> StreamTimes {
         now: DateTime::UNIX_EPOCH.fixed_offset(),
         created_timestamp: 0.0,
     }
-}
-
-fn response_of(spec: &RunSpec) -> Result<ResponsesApiResponse, SdkHttpError> {
-    let response = spec
-        .response
-        .as_ref()
-        .ok_or_else(|| SdkHttpError::Invalid("a fake or cached run needs a response".to_owned()))?;
-    let value = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(value).map_err(SdkHttpError::ResultParse)
 }

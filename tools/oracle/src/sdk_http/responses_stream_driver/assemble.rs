@@ -26,7 +26,6 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use thiserror::Error;
 
 use crate::sdk_http::error::SdkHttpError;
 
@@ -47,11 +46,9 @@ impl Recorder {
     }
 
     pub(super) fn take(&self) -> (Vec<String>, Vec<String>) {
-        let mut hooks =
-            std::mem::take(&mut *self.hooks.lock().unwrap_or_else(PoisonError::into_inner));
+        let hooks = std::mem::take(&mut *self.hooks.lock().unwrap_or_else(PoisonError::into_inner));
         let mut logging =
             std::mem::take(&mut *self.logging.lock().unwrap_or_else(PoisonError::into_inner));
-        hooks.sort_unstable();
         logging.sort_unstable();
         (hooks, logging)
     }
@@ -125,15 +122,11 @@ impl ResponsesApiBase for NoApiBase {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("the provider event does not decode")]
-pub(super) struct DecodeError(#[source] serde_json::Error);
-
 // B509's provider transform decodes the OpenAI wire event; the driver under test only needs a decode
 pub(super) struct Decoder;
 
 impl ResponsesEventTransform for Decoder {
-    type Error = DecodeError;
+    type Error = serde_json::Error;
 
     fn transform(
         &self,
@@ -141,8 +134,7 @@ impl ResponsesEventTransform for Decoder {
         chunk: &Json,
         _logging: &mut IndexMap<String, Json>,
     ) -> Result<Event, Self::Error> {
-        let value = serde_json::to_value(chunk).map_err(DecodeError)?;
-        serde_json::from_value(value).map_err(DecodeError)
+        serde_json::from_value(serde_json::to_value(chunk)?)
     }
 }
 
