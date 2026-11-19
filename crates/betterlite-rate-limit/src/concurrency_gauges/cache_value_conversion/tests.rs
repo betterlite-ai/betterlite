@@ -29,7 +29,7 @@ fn a_missing_cache_value_reads_as_no_requests_in_flight() {
 fn a_registry_counts_only_the_slots_inside_the_ttl_window() {
     let value = registry(&[
         ("slot-at-the-cutoff", CUTOFF),
-        ("slot-expired", 1_699_996_399.0),
+        ("slot-expired", 1_699_996_399.0_f64),
         ("slot-fresh", NOW),
     ]);
     let in_flight = gauge_in_flight(Some(&value), &gauge_times_at_now()).expect("a registry count");

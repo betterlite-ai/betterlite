@@ -19,8 +19,8 @@ async fn dict_registry_adds_the_slot_and_counts_fresh_entries() {
     cache.seed(
         "g1",
         registry(&[
-            ("slot-old", 1_699_999_000.0),
-            ("slot-stale", 1_699_000_000.0),
+            ("slot-old", 1_699_999_000.0_f64),
+            ("slot-stale", 1_699_000_000.0_f64),
         ]),
     );
     let gauges = gauges_with(Arc::clone(&cache), FixedClock::at(NOW));
@@ -34,7 +34,7 @@ async fn dict_registry_adds_the_slot_and_counts_fresh_entries() {
         cache.writes(),
         vec![CacheWrite {
             key: "g1".to_owned(),
-            value: registry(&[("slot-a", NOW), ("slot-old", 1_699_999_000.0)]),
+            value: registry(&[("slot-a", NOW), ("slot-old", 1_699_999_000.0_f64)]),
             ttl: PARALLEL_SLOT_TTL,
             local_only: true,
         }]

@@ -19,7 +19,7 @@ async fn local_counts_come_from_the_mirrors_and_registries() {
     cache.seed("g1", int_counter(2));
     cache.seed(
         "g2",
-        registry(&[("slot-a", NOW), ("slot-stale", 1_699_000_000.0)]),
+        registry(&[("slot-a", NOW), ("slot-stale", 1_699_000_000.0_f64)]),
     );
     let gauges = gauges_with(Arc::clone(&cache), FixedClock::at(NOW));
     let counts = read_local_counts(&gauges, &key_list(&["g1", "g2"]))
