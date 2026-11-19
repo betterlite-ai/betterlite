@@ -53,6 +53,24 @@ calls:
           optional_params: {}
           messages: []
           explicit_api_key: null
+          global_api_key: "global-key"
+          environment: {}
+        - function: environment
+          host: minimax
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: "global-key"
+          environment: {}
+        - function: environment
+          host: tencent
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
           global_api_key: null
           environment:
             ANTHROPIC_API_KEY: "anthropic-env-key"
@@ -105,6 +123,25 @@ calls:
           global_api_key: null
           environment:
             DEEPSEEK_API_KEY: "env-key"
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers: {}
+          optional_params: {}
+          messages: []
+          explicit_api_key: "sk-ant-oat01-token"
+          global_api_key: null
+          environment: {}
+        - function: environment
+          host: deepseek
+          api_base: null
+          headers:
+            authorization: "Bearer sk-ant-oat01-token"
+          optional_params: {}
+          messages: []
+          explicit_api_key: null
+          global_api_key: null
+          environment: {}
         - function: environment
           host: deepseek
           api_base: null

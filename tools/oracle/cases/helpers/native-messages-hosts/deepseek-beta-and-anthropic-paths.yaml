@@ -45,5 +45,15 @@ call:
         explicit_api_key: null
         global_api_key: null
         environment: {}
+      - function: environment
+        host: deepseek
+        api_base: null
+        headers: {}
+        optional_params:
+          output_format: {}
+        messages: []
+        explicit_api_key: null
+        global_api_key: null
+        environment: {}
 env: {}
 compare: {ignore: []}
