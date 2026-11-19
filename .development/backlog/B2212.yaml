@@ -1,14 +1,14 @@
 id: B2212
 milestone: M3 providers
 title: AgentCore search MCP reply parsing
-status: todo
+status: done
 depends_on: [B3274, B682, B171]
 file: tasks/B2212-agentcore-search-reply.yaml
 covers:
   - "litellm/llms/bedrock/search/transformation.py"
 parent: B030
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2473

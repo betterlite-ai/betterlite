@@ -1,0 +1,104 @@
+id: B9949
+title: Retry a not-found route once after the model registry read-through
+description: >-
+  LiteLLM's route_request (route_llm_request.py L431-L466) runs one routing attempt, and when that attempt raises
+  ProxyModelNotFoundError it asks the model registry read-through to load the missing model from the database and
+  routes once more. This covers a model another replica just added: the row is in Postgres, but this replica's
+  router has not reloaded it yet. No task owns that retry. Nothing on main ports route_request: the built
+  /chat/completions, /completions and /embeddings routes (crates/betterlite-server/src/routes/chat.rs L163,
+  routes/completions.rs L188 and routes/embeddings.rs L143) answer an unknown model at once from pick_deployment,
+  without a read-through. B8231 built the read-through
+  itself (crates/betterlite-server/src/registry_read_through), and B9800 writes its own retry for /v1/messages.
+  This task builds the retry once, in betterlite-server, next to B8231's read-through. betterlite-core cannot depend
+  on betterlite-server, so a core dispatch entry gets the retry from the server code that calls it.
+
+
+  Module `route_read_through` (crates/betterlite-server/src/route_read_through.rs, tests in
+  route_read_through/tests.rs). The plan commit already declares `pub mod route_read_through;` in
+  betterlite-server's lib.rs over an empty file.
+
+
+  The port. `ModelReadThrough` is an `#[async_trait]` trait (Send + Sync) with one method,
+  `async fn attempt(&self, model: &str) -> bool`, and `impl<R: Resync> ModelReadThrough for RegistryReadThrough<R>`
+  answers with B8231's `RegistryReadThrough::attempt`. The port exists because B8231's `Resync` returns
+  `impl Future`, so a `RegistryReadThrough<R>` cannot be held as a trait object; a route state holds
+  `Option<Arc<dyn ModelReadThrough>>` instead, and B9800's `MessagesCallSteps` takes exactly that.
+
+
+  The cause. `ModelNotFoundCause` is a trait with one method, `fn model_not_found(&self) ->
+  Option<&ProxyModelNotFoundError>`, with B9964's `ProxyModelNotFoundError` (betterlite_error::proxy_model_not_found).
+  Implement it for `ProxyModelNotFoundError` itself (Some(self)). A caller implements it for its own error enum,
+  returning Some only for the variant that wraps the not-found error.
+
+
+  The retry. `route_with_read_through<T, E, F>(model: Option<&str>, read_through: Option<&dyn ModelReadThrough>,
+  attempt: F) -> Result<T, E>` where `E: ModelNotFoundCause` and `F: AsyncFn() -> Result<T, E>` is route_request,
+  in LiteLLM's order (L449-L466). Run `attempt()` once. Return its result unless it is an error whose
+  `model_not_found()` is Some with `retryable_with_model_read_through` true, `model` is Some and not empty, and
+  `read_through` is Some. Then call `read_through.attempt(model)`. When that answers false, return the first error.
+  When it answers true, run `attempt()` a second time and return what it returns, error or not. There is never a
+  third attempt. `model` is the request data's `model` when it is a string, so a missing or non-string model is
+  None.
+
+
+  Tests. route_read_through::tests are rstest cases over a fake attempt that counts its calls and answers from a
+  list, and a real `RegistryReadThrough` built with a fake `Resync` that answers true or false and records the keys
+  it got, so the blanket impl runs too. `retry_` cases: a retryable not-found, then a read-through answering true,
+  runs the attempt twice and returns the second result; the second result is returned even when it is a not-found
+  again; the read-through gets the model text. `no_retry_` cases, each with one attempt and the first result:
+  the flag false, model None, model "", no read-through, a read-through answering false, a first attempt that
+  succeeds, and an error whose `model_not_found()` is None (the fake Resync records no call).
+
+
+  No oracle case. The retry only shows from outside when a model row lands in the database after the proxy has
+  started, behind its back. LiteLLM loads the database models at startup, and the HTTP scenario setup inserts its
+  rows before boot and has no model rows, so neither side of a case can reach the branch.
+scope:
+  paths:
+  - crates/betterlite-server/src/route_read_through.rs
+  - crates/betterlite-server/src/route_read_through/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L431-L466
+  why: route_request, the one retry after a ProxyModelNotFoundError and its four conditions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L151-L159
+  why: ProxyModelNotFoundError and its retryable_with_model_read_through flag, built by B9964.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L37-L98
+  why: RegistryReadThrough.attempt, built by B8231.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L193-L193
+  why: model_registry_read_through, the models instance route_request calls.
+dod:
+- text: >-
+    A retryable not-found with a non-empty model and a read-through that answers true runs the attempt a second
+    time and returns that result, even when it is a not-found again.
+  proof: [retry-tests]
+- text: >-
+    The attempt runs once and its result comes back when the flag is false, the model is missing or empty, no
+    read-through is set, the read-through answers false, the first attempt succeeds or its error is not a not-found.
+  proof: [no-retry-tests]
+checks:
+  optional: []
+  commands:
+  - id: retry-tests
+    why: The retry is missing, runs more than once, or drops the second attempt's result.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^route_read_through::tests::retry_/)'
+  - id: no-retry-tests
+    why: The retry runs when LiteLLM's route_request would return the first error or result.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^route_read_through::tests::no_retry_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "RegistryReadThrough, its attempt rules and ModelResync over the ModelSync port: B8231."
+- "ProxyModelNotFoundError: B9964."
+- "The production models read-through: B9948 builds it in crates/betterlite, B8613 builds it at startup and B8610 puts it in Shared and in the routes' model_read_through slot. This task uses none of it: its tests pass fakes."
+- "Calling the retry from a route: B9947 for /chat/completions, /completions and /embeddings, B9800 for /v1/messages. The other routes that reach route_request in LiteLLM are their own tasks' to wire."
+pitfalls:
+- 'The second attempt must see the router as it is after the read-through, not a handle taken before the first attempt. LiteLLM reads proxy_server.llm_router again (L462), since a resync can create the router when none existed. So the attempt reads the current router each time it runs.'
+- 'What the first attempt changes in the request data before a not-found (it drops enable_tag_filtering, it renames generationConfig) does not change the second attempt, so running it on the original or the changed data gives the same result.'
+- 'A read-through that answers false returns the first error unchanged. Do not build a new not-found error for it.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

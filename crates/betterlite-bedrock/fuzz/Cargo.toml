@@ -202,3 +202,10 @@ path = "fuzz_targets/bedrock_services_realtime_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "agentcore_search_reply"
+path = "fuzz_targets/agentcore_search_reply.rs"
+test = false
+doc = false
+bench = false
