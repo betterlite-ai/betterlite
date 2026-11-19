@@ -12,6 +12,7 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 betterlite = { path = "../../crates/betterlite" }
 betterlite-a2a = { path = "../../crates/betterlite-a2a" }
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
+betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-cli = { path = "../../crates/betterlite-cli" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
@@ -38,6 +39,7 @@ betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../crates/betterlite-transcribe" }
+betterlite-vertex = { path = "../../crates/betterlite-vertex" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 bytes = "1.12.1"
 chrono.workspace = true

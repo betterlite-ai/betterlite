@@ -1,0 +1,32 @@
+kind: sdk_http
+name: fine-tuning-create-vertex-tuning-dispatch
+env: {}
+call:
+  fine_tuning_create:
+    runs:
+      - provider: vertex_ai
+        is_async: true
+        model: gemini-1.5-pro
+        training_file: gs://bucket/train.jsonl
+        hyperparameters: {n_epochs: 2, adapter_size: 4}
+        validation_file: gs://bucket/valid.jsonl
+        suffix: custom
+        params: {vertex_project: ignored-project, vertex_location: us-central1}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      name: projects/mock-project-id/locations/us-central1/tuningJobs/12345
+      tunedModelDisplayName: custom
+      baseModel: gemini-1.5-pro
+      supervisedTuningSpec:
+        trainingDatasetUri: gs://bucket/train.jsonl
+        hyperParameters: {epoch_count: 2, adapter_size: "4"}
+      state: JOB_STATE_PENDING
+      createTime: "2024-01-01T00:00:00.000000Z"
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore:
+    - {pointer: /upstream/0/body/supervisedTuningSpec/hyperParameters/adapter_size, why: B1384 types adapter_size as the declared literal string, so the caller's number reaches Vertex as a decimal string}
