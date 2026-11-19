@@ -9,7 +9,7 @@ use betterlite_openapi::schema_transforms::tree::{JsonObject, JsonTree};
 use rstest::rstest;
 
 use crate::debug_routes::schema::DOCUMENTED_ROUTES;
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 const RUNTIME_ROUTES: [(&str, &str); 8] = [
     ("GET", "/debug/asyncio-tasks"),

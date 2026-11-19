@@ -2,7 +2,7 @@
 
 use axum::http::StatusCode;
 
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 #[tokio::test]
 async fn refuses_a_request_without_a_key() {

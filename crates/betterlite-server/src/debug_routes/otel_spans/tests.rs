@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use serde::Deserialize;
 
 use crate::debug_routes::otel_spans::RecordedSpan;
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 #[derive(Deserialize)]
 struct SpansBody {

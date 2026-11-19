@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

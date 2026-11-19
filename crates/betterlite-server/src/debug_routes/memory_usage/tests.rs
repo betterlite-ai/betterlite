@@ -4,7 +4,7 @@ use axum::Router;
 use axum::http::StatusCode;
 use rstest::rstest;
 
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 fn router_with(profile: Option<&str>) -> Router {
     test_support::protected(test_support::router(test_support::state(), profile))

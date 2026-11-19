@@ -10,10 +10,8 @@ mod memory_details;
 mod memory_summary;
 mod memory_usage;
 mod query;
+mod tests;
 mod unsupported;
-
-#[cfg(test)]
-pub(crate) mod test_support;
 
 use std::sync::Arc;
 

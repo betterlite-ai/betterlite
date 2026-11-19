@@ -14,12 +14,9 @@ const DEFAULT_INCLUDE_PROCESS_INFO: bool = true;
 
 pub(super) fn parse(uri: &Uri) -> Result<(i64, bool), QueryError> {
     let values = query::values(uri);
-    let top_n = query::integer(&values, "top_n", DEFAULT_TOP_N)?;
-    let include_process_info = query::boolean(
-        &values,
-        "include_process_info",
-        DEFAULT_INCLUDE_PROCESS_INFO,
-    )?;
+    let top_n = query::integer(&values, "top_n")?.unwrap_or(DEFAULT_TOP_N);
+    let include_process_info =
+        query::boolean(uri, "include_process_info", DEFAULT_INCLUDE_PROCESS_INFO)?;
     Ok((top_n, include_process_info))
 }
 

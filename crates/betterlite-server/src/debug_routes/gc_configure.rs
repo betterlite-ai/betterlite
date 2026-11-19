@@ -16,9 +16,9 @@ const DEFAULT_GENERATION_2: i64 = 10;
 pub(super) fn parse(uri: &Uri) -> Result<[i64; 3], QueryError> {
     let values = query::values(uri);
     Ok([
-        query::integer(&values, "generation_0", DEFAULT_GENERATION_0)?,
-        query::integer(&values, "generation_1", DEFAULT_GENERATION_1)?,
-        query::integer(&values, "generation_2", DEFAULT_GENERATION_2)?,
+        query::integer(&values, "generation_0")?.unwrap_or(DEFAULT_GENERATION_0),
+        query::integer(&values, "generation_1")?.unwrap_or(DEFAULT_GENERATION_1),
+        query::integer(&values, "generation_2")?.unwrap_or(DEFAULT_GENERATION_2),
     ])
 }
 

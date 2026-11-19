@@ -6,6 +6,8 @@ use axum::response::{IntoResponse as _, Response};
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::model_query::read_query;
+
 const INTEGER_MESSAGE: &str =
     "Input should be a valid integer, unable to parse string as an integer";
 const BOOLEAN_MESSAGE: &str = "Input should be a valid boolean, unable to interpret input";
@@ -63,29 +65,23 @@ pub(crate) fn values(uri: &Uri) -> BTreeMap<String, String> {
 pub(crate) fn integer(
     values: &BTreeMap<String, String>,
     name: &'static str,
-    default: i64,
-) -> Result<i64, QueryError> {
-    let Some(text) = values.get(name) else {
-        return Ok(default);
-    };
-    text.parse::<i64>()
-        .map_err(|_parse| QueryError::NotAnInteger { name })
+) -> Result<Option<i64>, QueryError> {
+    match values.get(name) {
+        None => Ok(None),
+        Some(text) => text
+            .parse::<i64>()
+            .map(Some)
+            .map_err(|_parse| QueryError::NotAnInteger { name }),
+    }
 }
 
-// the strings pydantic accepts as a boolean, without trimming
-pub(crate) fn boolean(
-    values: &BTreeMap<String, String>,
-    name: &'static str,
-    default: bool,
-) -> Result<bool, QueryError> {
-    let Some(text) = values.get(name) else {
-        return Ok(default);
-    };
-    match text.to_ascii_lowercase().as_str() {
-        // ast-grep-ignore: no-python-habits - pydantic's spellings for a declared query bool, not env text
-        "1" | "on" | "t" | "true" | "y" | "yes" => Ok(true),
-        // ast-grep-ignore: no-python-habits - the same for the false spellings
-        "0" | "off" | "f" | "false" | "n" | "no" => Ok(false),
-        _ => Err(QueryError::NotABoolean { name }),
-    }
+// the shared pydantic reader recognizes the same words, with no trimming
+pub(crate) fn boolean(uri: &Uri, name: &'static str, default: bool) -> Result<bool, QueryError> {
+    let (values, [value]) =
+        read_query(uri.query(), [name]).map_err(|_error| QueryError::NotABoolean { name })?;
+    Ok(if values.contains_key(name) {
+        value
+    } else {
+        default
+    })
 }

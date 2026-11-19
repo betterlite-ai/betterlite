@@ -3,7 +3,7 @@
 use axum::Router;
 use axum::http::{StatusCode, Uri};
 
-use crate::debug_routes::test_support;
+use crate::debug_routes::tests::test_support;
 
 #[test]
 fn defaults_are_twenty_and_process_info() {
