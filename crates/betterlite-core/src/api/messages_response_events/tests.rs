@@ -55,31 +55,52 @@ fn message_start_and_item_opening() {
     open_message_and_tool();
     reopen_and_empty_id();
     non_block_items();
-    item_attribute_precedes_dict();
+    item_attribute_precedence();
 }
 
-// getattr(event, "item") is truthy here, so the dict item is never read and no block opens.
-fn item_attribute_precedes_dict() {
-    let attribute_item = json("5");
-    let attributes = EventAttributes {
-        event_type: None,
-        item: Some(&attribute_item),
-        item_id: None,
-        delta: None,
-        summary_index: None,
-        response: None,
-    };
+// getattr(event, "item") is truthy for 5 and falsey for {}, so only the empty object falls back to the dict item.
+fn item_attribute_precedence() {
+    let number = json("5");
     let fields =
         mapping(r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#);
-    let mut state = state();
-    state
+    let mut preceded = state();
+    preceded
         .process_event(ParsedEvent {
-            attributes,
+            attributes: EventAttributes {
+                event_type: None,
+                item: Some(&number),
+                item_id: None,
+                delta: None,
+                summary_index: None,
+                response: None,
+            },
             mapping: Some(&fields),
         })
         .expect("the event processes");
-    assert_eq!(drained(&mut state), json("[]"));
-    assert!(state.snapshot().item_id_to_block_index.is_empty());
+    assert_eq!(drained(&mut preceded), json("[]"));
+    assert!(preceded.snapshot().item_id_to_block_index.is_empty());
+    let empty = json("{}");
+    let mut falls_back = state();
+    falls_back
+        .process_event(ParsedEvent {
+            attributes: EventAttributes {
+                event_type: None,
+                item: Some(&empty),
+                item_id: None,
+                delta: None,
+                summary_index: None,
+                response: None,
+            },
+            mapping: Some(&fields),
+        })
+        .expect("the event processes");
+    assert_eq!(
+        drained(&mut falls_back),
+        json(
+            r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}]"#
+        )
+    );
+    assert_mapped(&falls_back, "item_a", 0);
 }
 
 #[test]

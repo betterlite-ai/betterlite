@@ -68,10 +68,7 @@ impl<'event> ParsedEvent<'event> {
 
     #[must_use]
     pub(super) fn item(self) -> Option<ItemObject<'event>> {
-        let attribute = self
-            .attributes
-            .item
-            .filter(|value| matches!(value, Json::Object(_)) || is_present(value));
+        let attribute = self.attributes.item.filter(|value| is_present(value));
         if let Some(value) = attribute {
             return Some(match value {
                 Json::Object(fields) => ItemObject {
