@@ -111,17 +111,17 @@ fn untrusted_base_is_refused() {
         .unwrap_err();
     assert!(matches!(from_token, AzureSearchError::Credential(_)));
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
-    let settings = model_settings();
-    let fixture = minter(Ok("minted-bearer-token"));
-    let config = AzureSearchConfig {
-        settings: &settings,
-        minter: Some(&fixture),
+    let minting_settings = model_settings();
+    let minting_fixture = minter(Ok("minted-bearer-token"));
+    let minting_config = AzureSearchConfig {
+        settings: &minting_settings,
+        minter: Some(&minting_fixture),
     };
-    let from_minter = config
+    let from_minter = minting_config
         .validate_environment(Headers::new(), None, Some("https://evil.example"))
         .unwrap_err();
     assert!(matches!(from_minter, AzureSearchError::Credential(_)));
-    assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(minting_fixture.calls.load(Ordering::SeqCst), 0);
 }
 
 fn mint_failure_gives_advice() {

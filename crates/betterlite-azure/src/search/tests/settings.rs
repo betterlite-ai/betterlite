@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::search::error::AzureSearchError;
 use crate::search::{AzureSearchConfig, RESPONSES_PATH};
 
-use super::support::{MODEL, endpoint_settings, model_settings, object, request_body};
+use super::support::{MODEL, endpoint_settings, model_settings, request_body};
 
 const ENDPOINT: &str = "https://project.services.ai.azure.com/api/projects/example";
 
@@ -82,8 +82,9 @@ fn request_requires_a_model() {
         settings: &absent,
         minter: None,
     };
+    let optional = Object::new();
     let error = config
-        .transform_search_request(&SearchQuery::Single(String::from("query")), &Object::new())
+        .transform_search_request(&SearchQuery::Single(String::from("query")), &optional)
         .unwrap_err();
     assert!(matches!(error, AzureSearchError::MissingModel));
     assert!(error.to_string().contains(MODEL_ENV));
@@ -100,7 +101,7 @@ fn request_requires_a_model() {
     };
     assert!(matches!(
         blank_config
-            .transform_search_request(&SearchQuery::Single(String::from("query")), &Object::new())
+            .transform_search_request(&SearchQuery::Single(String::from("query")), &optional)
             .unwrap_err(),
         AzureSearchError::MissingModel
     ));
@@ -121,16 +122,16 @@ fn query_lists_join_with_one_space() {
         settings: &settings,
         minter: None,
     };
-    let params = object(json!({}));
+    let optional = Object::new();
     let joined = config
         .transform_search_request(
             &SearchQuery::Multiple(vec![String::from("first"), String::from("second")]),
-            &params,
+            &optional,
         )
         .unwrap();
     assert_eq!(joined.input, "first second");
     let empty = config
-        .transform_search_request(&SearchQuery::Multiple(Vec::new()), &params)
+        .transform_search_request(&SearchQuery::Multiple(Vec::new()), &optional)
         .unwrap();
     assert_eq!(empty.input, "");
 }

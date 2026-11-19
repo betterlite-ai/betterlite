@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::search::{AzureSearchConfig, RESPONSE_COST_HEADER};
 
 use super::support::{
-    MODEL, citation_body, connection_settings, model_settings, object, response_with_params,
+    MODEL, citation_body, connection_settings, model_settings, params, response_with_params,
 };
 
 pub(super) fn search_response_price() {
@@ -31,7 +31,7 @@ fn web_mode_zeroes_the_cost() {
     assert_eq!(response.results.len(), 2_usize);
     assert!(response.extra.is_empty());
     let additional = response.hidden_params.get("additional_headers").unwrap();
-    assert_eq!(additional[RESPONSE_COST_HEADER], json!(0.0));
+    assert_eq!(additional[RESPONSE_COST_HEADER], json!(0.0_f64));
     assert!(additional[RESPONSE_COST_HEADER].is_f64());
     assert_eq!(response.hidden_params.len(), 1_usize);
 }
@@ -61,8 +61,8 @@ fn capped_results_keep_the_metadata() {
         minter: None,
     };
     let body = citation_body(&["https://a.example", "https://b.example"]);
-    let params = object(json!({"max_results": 1}));
-    let response = response_with_params(&config, &body, Some(&params)).unwrap();
+    let optional = params(r#"{"max_results": 1}"#);
+    let response = response_with_params(&config, &body, Some(&optional)).unwrap();
     assert_eq!(response.results.len(), 1_usize);
     assert_eq!(response.results[0].url, "https://a.example");
     assert_eq!(response.object.0, "search");

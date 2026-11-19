@@ -1,5 +1,4 @@
 use betterlite_openai::search::records::SearchResponse;
-use serde_json::json;
 
 use crate::search::error::AzureSearchError;
 use crate::search::{AzureSearchConfig, DOCS_URL, UPSTREAM_ERROR_STATUS};
@@ -23,18 +22,8 @@ fn non_2xx_envelopes_are_reported_by_their_body() {
     };
     let empty = transform(&config, r#"{"output": []}"#, 500, &[]).unwrap();
     assert!(empty.results.is_empty());
-    let body = json!({
-        "output": [{
-            "type": "message",
-            "content": [{
-                "type": "output_text",
-                "text": "kept",
-                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
-            }]
-        }]
-    })
-    .to_string();
-    let found = transform(&config, &body, 404, &[]).unwrap();
+    let body = r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"kept","annotations":[{"type":"url_citation","url":"https://a.example"}]}]}]}"#;
+    let found = transform(&config, body, 404, &[]).unwrap();
     assert_eq!(found.results.len(), 1_usize);
 }
 
@@ -47,16 +36,8 @@ fn empty_outputs_succeed() {
     let empty = transform(&config, r#"{"output": []}"#, 200, &[]).unwrap();
     assert!(empty.results.is_empty());
     assert_eq!(empty.object.0, "search");
-    let completed = json!({
-        "output": [],
-        "status": "completed",
-        "id": "resp-1",
-        "error": null,
-        "incomplete_details": null,
-        "metadata": {"a": 1}
-    })
-    .to_string();
-    let response: SearchResponse = transform(&config, &completed, 200, &[]).unwrap();
+    let completed = r#"{"output":[],"status":"completed","id":"resp-1","error":null,"incomplete_details":null,"metadata":{"a":1}}"#;
+    let response: SearchResponse = transform(&config, completed, 200, &[]).unwrap();
     assert!(response.results.is_empty());
 }
 
@@ -66,33 +47,18 @@ fn failed_status_always_raises() {
         settings: &settings,
         minter: None,
     };
-    let with_message = json!({
-        "output": [],
-        "status": "failed",
-        "error": {"message": "bing connection is down."}
-    })
-    .to_string();
-    let error = transform(&config, &with_message, 200, &[]).unwrap_err();
+    let with_message =
+        r#"{"output":[],"status":"failed","error":{"message":"bing connection is down."}}"#;
+    let error = transform(&config, with_message, 200, &[]).unwrap_err();
     assert_eq!(error.status_code(), Some(UPSTREAM_ERROR_STATUS));
     assert_eq!(
         error.to_string(),
         format!("Grounding with Bing Search: bing connection is down. See {DOCS_URL} for details.")
     );
-    let without_message = json!({
-        "output": [{
-            "type": "message",
-            "content": [{
-                "type": "output_text",
-                "text": "ignored",
-                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
-            }]
-        }],
-        "status": "failed"
-    })
-    .to_string();
-    let error = transform(&config, &without_message, 200, &[]).unwrap_err();
+    let without_message = r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"ignored","annotations":[{"type":"url_citation","url":"https://a.example"}]}]}],"status":"failed"}"#;
+    let without_message_error = transform(&config, without_message, 200, &[]).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        without_message_error.to_string(),
         format!(
             "Grounding with Bing Search: the grounded search failed. See {DOCS_URL} for details."
         )
@@ -105,25 +71,15 @@ fn incomplete_without_results_raises() {
         settings: &settings,
         minter: None,
     };
-    let reasoned = json!({
-        "output": [],
-        "status": "incomplete",
-        "incomplete_details": {"reason": "max_output_tokens"}
-    })
-    .to_string();
-    assert_incomplete(&config, &reasoned, "max_output_tokens");
+    let reasoned = r#"{"output":[],"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}"#;
+    assert_incomplete(&config, reasoned, "max_output_tokens");
     assert_incomplete(
         &config,
         r#"{"output": [], "status": "incomplete"}"#,
         "unknown reason",
     );
-    let empty_reason = json!({
-        "output": [],
-        "status": "incomplete",
-        "incomplete_details": {"reason": ""}
-    })
-    .to_string();
-    assert_incomplete(&config, &empty_reason, "unknown reason");
+    let empty_reason = r#"{"output":[],"status":"incomplete","incomplete_details":{"reason":""}}"#;
+    assert_incomplete(&config, empty_reason, "unknown reason");
 }
 
 fn error_for(config: &AzureSearchConfig<'_>, body: &str, status: u16) -> AzureSearchError {
@@ -147,20 +103,8 @@ fn incomplete_with_results_succeeds() {
         settings: &settings,
         minter: None,
     };
-    let body = json!({
-        "output": [{
-            "type": "message",
-            "content": [{
-                "type": "output_text",
-                "text": "kept",
-                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
-            }]
-        }],
-        "status": "incomplete",
-        "incomplete_details": {"reason": "max_output_tokens"}
-    })
-    .to_string();
-    let response = transform(&config, &body, 200, &[]).unwrap();
+    let body = r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"kept","annotations":[{"type":"url_citation","url":"https://a.example"}]}]}],"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}"#;
+    let response = transform(&config, body, 200, &[]).unwrap();
     assert_eq!(response.results.len(), 1_usize);
 }
 

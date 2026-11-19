@@ -1,6 +1,3 @@
-use betterlite_config::sections::settings::JsonValue;
-use serde_json::json;
-
 use crate::search::AzureSearchConfig;
 use crate::search::error::AzureSearchError;
 use crate::search::{DOCS_URL, UPSTREAM_ERROR_STATUS};
@@ -11,16 +8,13 @@ pub(super) fn nested_upstream_error() {
     inner_messages_are_unwrapped();
     invalid_layers_keep_their_text();
     trailing_punctuation_is_trimmed();
-    status_and_headers_are_preserved();
+    failed_status_preserves_status_and_headers();
+    schema_failure_uses_the_raw_status();
 }
 
-fn failed_body(message: JsonValue) -> String {
-    json!({
-        "output": [],
-        "status": "failed",
-        "error": {"message": message}
-    })
-    .to_string()
+fn failed_body(message: &str) -> String {
+    let quoted = serde_json::to_string(message).unwrap();
+    format!(r#"{{"output":[],"status":"failed","error":{{"message":{quoted}}}}}"#)
 }
 
 fn message_of(config: &AzureSearchConfig<'_>, body: &str) -> String {
@@ -35,19 +29,19 @@ fn inner_messages_are_unwrapped() {
         settings: &settings,
         minter: None,
     };
-    let single = failed_body(json!(r#"{"error": {"message": "connection not found. "}}"#));
+    let single = failed_body(r#"{"error": {"message": "connection not found. "}}"#);
     assert_eq!(
         message_of(&config, &single),
         format!("Grounding with Bing Search: connection not found. See {DOCS_URL} for details.")
     );
-    let double = failed_body(json!(
-        r#"{"error": {"message": "{\"error\": \"Tool_User_Error\", \"message\": \"deep detail\", \"code\": \"invalid_tool_input\"}"}}"#
-    ));
+    let double = failed_body(
+        r#"{"error": {"message": "{\"error\": \"Tool_User_Error\", \"message\": \"deep detail\", \"code\": \"invalid_tool_input\"}"}}"#,
+    );
     assert_eq!(
         message_of(&config, &double),
         format!("Grounding with Bing Search: deep detail. See {DOCS_URL} for details.")
     );
-    let no_inner_message = failed_body(json!(r#"{"error": {"message": "{\"error\": null}"}}"#));
+    let no_inner_message = failed_body(r#"{"error": {"message": "{\"error\": null}"}}"#);
     assert_eq!(
         message_of(&config, &no_inner_message),
         format!("Grounding with Bing Search: {{\"error\": null}}. See {DOCS_URL} for details.")
@@ -60,22 +54,22 @@ fn invalid_layers_keep_their_text() {
         settings: &settings,
         minter: None,
     };
-    let broken = failed_body(json!("{oops"));
+    let broken = failed_body("{oops");
     assert_eq!(
         message_of(&config, &broken),
         format!("Grounding with Bing Search: {{oops. See {DOCS_URL} for details.")
     );
-    let no_error = failed_body(json!(r#"{"error": null}"#));
+    let no_error = failed_body(r#"{"error": null}"#);
     assert_eq!(
         message_of(&config, &no_error),
         format!("Grounding with Bing Search: {{\"error\": null}}. See {DOCS_URL} for details.")
     );
-    let empty_inner = failed_body(json!(r#"{"error": {"message": "{\"message\": \"\"}"}}"#));
+    let empty_inner = failed_body(r#"{"error": {"message": "{\"message\": \"\"}"}}"#);
     assert_eq!(
         message_of(&config, &empty_inner),
         format!("Grounding with Bing Search: {{\"message\": \"\"}}. See {DOCS_URL} for details.")
     );
-    let empty_message = failed_body(json!(""));
+    let empty_message = failed_body("");
     assert_eq!(
         message_of(&config, &empty_message),
         format!(
@@ -90,21 +84,22 @@ fn trailing_punctuation_is_trimmed() {
         settings: &settings,
         minter: None,
     };
-    let body = failed_body(json!("plain failure...  "));
+    let body = failed_body("plain failure...  ");
     assert_eq!(
         message_of(&config, &body),
         format!("Grounding with Bing Search: plain failure. See {DOCS_URL} for details.")
     );
 }
 
-fn status_and_headers_are_preserved() {
+fn failed_status_preserves_status_and_headers() {
     let settings = model_settings();
     let config = AzureSearchConfig {
         settings: &settings,
         minter: None,
     };
     let pairs = header_pairs(&[("x-request-id", "abc123"), ("Retry-After", "7")]);
-    let failed = reply(&failed_body(json!("upstream failed")), 200, &pairs);
+    let body = failed_body("upstream failed");
+    let failed = reply(&body, 200, &pairs);
     let error = config.transform_search_response(&failed, None).unwrap_err();
     let AzureSearchError::Provider {
         status_code,
@@ -121,6 +116,15 @@ fn status_and_headers_are_preserved() {
         Some("abc123")
     );
     assert_eq!(headers.get("retry-after").map(String::as_str), Some("7"));
+}
+
+fn schema_failure_uses_the_raw_status() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let pairs = header_pairs(&[("x-request-id", "abc123"), ("Retry-After", "7")]);
     let unparsed = reply("{}", 429, &pairs);
     let error = config
         .transform_search_response(&unparsed, None)

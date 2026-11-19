@@ -6,13 +6,20 @@ use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::SearchQuery;
 use betterlite_openai::search::records::{SearchResponse, SearchResult};
 use secrecy::SecretString;
-use serde_json::json;
 
 use crate::search::minter::{EntraTokenMinter, MintError};
 use crate::search::reply::AzureSearchReply;
 use crate::search::{AzureSearchConfig, AzureSearchError};
 
 pub(super) const MODEL: &str = "gpt-4.1";
+
+pub(super) fn json_value(source: &str) -> JsonValue {
+    source.parse().unwrap()
+}
+
+pub(super) fn params(source: &str) -> Object {
+    object(json_value(source))
+}
 
 pub(super) fn object(value: JsonValue) -> Object {
     match value {
@@ -76,7 +83,7 @@ pub(super) struct FixtureMinter {
     pub(super) calls: AtomicUsize,
 }
 
-pub(super) fn minter(result: Result<&'static str, &'static str>) -> FixtureMinter {
+pub(super) const fn minter(result: Result<&'static str, &'static str>) -> FixtureMinter {
     let calls = AtomicUsize::new(0);
     FixtureMinter { result, calls }
 }
@@ -154,38 +161,26 @@ pub(super) fn request_body(config: &AzureSearchConfig<'_>, params: &Object) -> J
     serde_json::to_value(&request).unwrap()
 }
 
-pub(super) fn envelope(output: JsonValue) -> String {
-    json!({ "output": output }).to_string()
+pub(super) fn envelope(output: &str) -> String {
+    format!(r#"{{"output":{output}}}"#)
 }
 
-pub(super) fn indexed(text: &str, index: JsonValue) -> String {
-    envelope(json!([{
-        "type": "message",
-        "content": [{
-            "type": "output_text",
-            "text": text,
-            "annotations": [{
-                "type": "url_citation",
-                "url": "https://x.example",
-                "start_index": index
-            }]
-        }]
-    }]))
+pub(super) fn indexed(text: &str, index: &JsonValue) -> String {
+    let quoted = serde_json::to_string(text).unwrap();
+    envelope(&format!(
+        r#"[{{"type":"message","content":[{{"type":"output_text","text":{quoted},"annotations":[{{"type":"url_citation","url":"https://x.example","start_index":{index}}}]}}]}}]"#
+    ))
 }
 
 pub(super) fn citation_body(urls: &[&str]) -> String {
-    let annotations: Vec<JsonValue> = urls
+    let annotations: Vec<String> = urls
         .iter()
-        .map(|url| json!({ "type": "url_citation", "url": url }))
+        .map(|url| format!(r#"{{"type":"url_citation","url":"{url}"}}"#))
         .collect();
-    envelope(json!([{
-        "type": "message",
-        "content": [{
-            "type": "output_text",
-            "text": "claims",
-            "annotations": annotations
-        }]
-    }]))
+    envelope(&format!(
+        r#"[{{"type":"message","content":[{{"type":"output_text","text":"claims","annotations":[{}]}}]}}]"#,
+        annotations.join(",")
+    ))
 }
 
 pub(super) fn response_with_params(

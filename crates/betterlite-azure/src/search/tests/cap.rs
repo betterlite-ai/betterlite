@@ -1,12 +1,10 @@
-use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::provider::SearchQuery;
 use serde_json::json;
 
 use crate::search::AzureSearchConfig;
 
 use super::support::{
-    citation_body, connection_settings, model_settings, object, response_with_params,
+    citation_body, connection_settings, model_settings, params, response_with_params,
 };
 
 const URLS: [&str; 3] = [
@@ -27,10 +25,10 @@ fn web_mode_caps_the_results() {
         settings: &settings,
         minter: None,
     };
-    assert_capped(&config, json!({"max_results": 2}), 2_usize);
-    assert_capped(&config, json!({"max_results": 1}), 1_usize);
-    assert_capped(&config, json!({"max_results": 3}), 3_usize);
-    assert_capped(&config, json!({"max_results": 10}), 3_usize);
+    assert_capped(&config, r#"{"max_results":2}"#, 2_usize);
+    assert_capped(&config, r#"{"max_results":1}"#, 1_usize);
+    assert_capped(&config, r#"{"max_results":3}"#, 3_usize);
+    assert_capped(&config, r#"{"max_results":10}"#, 3_usize);
 }
 
 fn connection_mode_caps_and_hints() {
@@ -39,15 +37,15 @@ fn connection_mode_caps_and_hints() {
         settings: &settings,
         minter: None,
     };
-    assert_capped(&config, json!({"max_results": 2}), 2_usize);
-    let params = object(json!({"max_results": 2}));
+    assert_capped(&config, r#"{"max_results":2}"#, 2_usize);
+    let optional = params(r#"{"max_results": 2}"#);
     let request = config
-        .transform_search_request(&SearchQuery::Single(String::from("query")), &params)
+        .transform_search_request(&SearchQuery::Single(String::from("query")), &optional)
         .unwrap();
     let body = serde_json::to_value(&request).unwrap();
     assert_eq!(
         body["tools"][0]["bing_grounding"]["search_configurations"][0]["count"],
-        json!(2)
+        json!(2_i64)
     );
 }
 
@@ -57,14 +55,14 @@ fn invalid_values_leave_the_results_alone() {
         settings: &settings,
         minter: None,
     };
-    assert_capped(&config, json!({"max_results": 0}), 3_usize);
-    assert_capped(&config, json!({"max_results": null}), 3_usize);
+    assert_capped(&config, r#"{"max_results":0}"#, 3_usize);
+    assert_capped(&config, r#"{"max_results":null}"#, 3_usize);
 }
 
-fn assert_capped(config: &AzureSearchConfig<'_>, value: JsonValue, expected: usize) {
-    let params = object(value);
+fn assert_capped(config: &AzureSearchConfig<'_>, source: &str, expected: usize) {
+    let optional = params(source);
     let body = citation_body(&URLS);
-    let response = response_with_params(config, &body, Some(&params)).unwrap();
+    let response = response_with_params(config, &body, Some(&optional)).unwrap();
     let urls: Vec<&str> = response
         .results
         .iter()

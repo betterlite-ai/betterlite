@@ -86,12 +86,9 @@ enum Scenario {
 }))]
 #[case::rejects_unrelated_key(Scenario::UnrelatedKey)]
 fn azure_search_config_cases(#[case] scenario: Scenario) {
-    let case = match scenario {
-        Scenario::Load(case) => case,
-        Scenario::UnrelatedKey => {
-            rejects_unrelated_key();
-            return;
-        }
+    let Scenario::Load(case) = scenario else {
+        rejects_unrelated_key();
+        return;
     };
     let explicit = settings(&[(case.name, case.value)]);
     assert_eq!(read(&explicit, case.field).as_deref(), Some(case.expected));
