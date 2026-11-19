@@ -1,0 +1,46 @@
+kind: helper
+name: mcp-error-precedence
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"error":{},"result":{"structuredContent":[{"title":"no"}]}}'
+calls:
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"error":false}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"error":null,"result":{"structuredContent":[{"title":"kept"}]}}'
+  - agentcore_search_reply:
+      status: 503
+      headers: [[content-type, application/json]]
+      body: '{"error":{}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"no"}],"isError":true}}'
+  - agentcore_search_reply:
+      status: 500
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"no"}],"isError":1}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"kept"}],"isError":0}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"kept"}],"isError":[]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"no"}],"isError":[0]}}'
+  - agentcore_search_reply:
+      status: 500
+      headers: [[content-type, application/json]]
+      body: '{"result":{"structuredContent":[{"title":"ok"}]}}'
+env: {}
+compare: {ignore: []}

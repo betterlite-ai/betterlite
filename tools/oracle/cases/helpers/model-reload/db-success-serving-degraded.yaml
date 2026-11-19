@@ -1,0 +1,22 @@
+kind: helper
+name: db-success-serving-degraded
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: reload_serving_verdict
+        obligation: must_serve
+        before: [old]
+        written:
+          - {id: kept, model_info: {db_model: true}}
+        still_desired: [kept, old]
+        live: {captured: [kept], router_ids: null}
+      - function: raise_if_reload_degraded_serving
+        action: update
+        before: [old]
+        written:
+          - {id: kept, model_info: {db_model: true}}
+        still_desired: [kept, old]
+        live: {captured: [kept], router_ids: null}
+env: {}
+compare: {ignore: []}

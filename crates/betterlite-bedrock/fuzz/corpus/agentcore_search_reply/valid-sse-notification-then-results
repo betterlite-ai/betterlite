@@ -1,0 +1,4 @@
+data: {"jsonrpc":"2.0","method":"notifications/progress"}
+
+data: {"result":{"content":[{"type":"text","text":"[{\"title\":\"last\"}]"}]}}
+
