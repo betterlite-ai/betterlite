@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Every case hands its leaf future to the production dispatcher, so the wiring and the leaf run together
 macro_rules! dispatched {
     ($variant:ident, $future:expr) => {

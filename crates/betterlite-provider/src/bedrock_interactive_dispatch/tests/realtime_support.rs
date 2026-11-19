@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::future::{Future, ready};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
