@@ -164,6 +164,8 @@ async fn unprojectable_result_has_no_response() {
     );
     let spans = harness.span.sent.entries();
     assert_eq!(spans[0].response, None);
+    // no http_request means the span route falls back to the wrapped function's name
+    assert_eq!(spans[0].route, "generate_key_fn");
     assert_eq!(
         harness.events.entries(),
         vec![Effect::Alert, Effect::SuccessSpan]
