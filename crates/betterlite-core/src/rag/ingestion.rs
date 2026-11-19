@@ -95,7 +95,7 @@ impl IngestionState {
         }
         if let Some(url) = file_url {
             let fetched = self.uploader.fetch(url).await?;
-            if fetched.status >= 400 {
+            if !(200..300).contains(&fetched.status) {
                 return Err(UploadError::HttpStatus {
                     status: fetched.status,
                 });

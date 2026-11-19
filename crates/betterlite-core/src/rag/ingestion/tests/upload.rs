@@ -2,7 +2,9 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_http::user_url::error::{SsrfError, UserUrlError};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 use http::HeaderValue;
@@ -151,21 +153,18 @@ async fn upload_fetch_reports_a_failed_status() {
 }
 
 #[tokio::test]
-async fn upload_fetch_accepts_a_status_below_400() {
+async fn upload_fetch_rejects_a_redirect_status() {
     let harness = Harness::default().with_fetch(FakeFetch::default().reply(
-        399,
+        302,
         HeaderMap::new(),
         b"redirected",
     ));
     let state = harness.state(IngestionOptions::default());
-    let uploaded = state
+    let error = state
         .upload(None, Some("https://host/file.txt"), None)
         .await
-        .expect("the upload succeeds");
-    assert_eq!(
-        uploaded.file_content.as_deref(),
-        Some(b"redirected".as_slice())
-    );
+        .expect_err("the redirect fails the upload");
+    assert!(matches!(error, UploadError::HttpStatus { status: 302 }));
 }
 
 #[tokio::test]
@@ -247,7 +246,13 @@ async fn upload_fetch_refuses_a_body_over_the_download_bound() {
     };
     let (result, ()) = tokio::join!(fetch.fetch(&url), serving);
     let error = result.expect_err("the body is refused");
-    assert!(matches!(error, UrlFetchError::Read(_)));
+    let UrlFetchError::Read(source) = error else {
+        panic!("the body is refused as a read error");
+    };
+    assert!(matches!(
+        *source,
+        TransportError::BodyTooLarge { limit } if limit == MAX_FETCHED_FILE_BYTES
+    ));
 }
 
 #[tokio::test]
@@ -257,5 +262,11 @@ async fn upload_fetch_refuses_a_blocked_address() {
         .fetch("http://127.0.0.1:9/file.txt")
         .await
         .expect_err("the address is blocked");
-    assert!(matches!(error, UrlFetchError::Request(_)));
+    let UrlFetchError::Request(source) = error else {
+        panic!("the address is refused as a request error");
+    };
+    assert!(matches!(
+        *source,
+        UserUrlError::Ssrf(SsrfError::BlockedAddress { .. })
+    ));
 }
