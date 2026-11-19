@@ -521,12 +521,12 @@ pub(crate) fn harness() -> Harness {
 
 impl Harness {
     pub(crate) fn limiter(&self) -> WindowedAdmission {
-        let script: Option<Arc<dyn CounterScript>> =
-            self.script_enabled.then_some(Arc::clone(&self.script));
-        let request_batch: Option<Arc<dyn RequestBatchSource>> =
-            self.batch_enabled.then_some(Arc::new(BatchSource {
-                batch: Arc::clone(&self.batch),
-            }));
+        let script: Arc<dyn CounterScript> = Arc::clone(&self.script);
+        let script = self.script_enabled.then_some(script);
+        let batch_source: Arc<dyn RequestBatchSource> = Arc::new(BatchSource {
+            batch: Arc::clone(&self.batch),
+        });
+        let request_batch = self.batch_enabled.then_some(batch_source);
         let fail_closed = self.fail_closed;
         let gauges = ConcurrencyGauges {
             cache: Arc::clone(&self.gauges),
