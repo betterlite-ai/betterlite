@@ -273,7 +273,7 @@ async fn a_stub_answers_not_built_on_both_sides() {
             monotonic_millis: 42_000,
         },
         samples: Vec::new(),
-        operation: ProbeOperation::AccessWindows(UnbuiltInput::default()),
+        operation: ProbeOperation::ComplexityTurnOverrides(UnbuiltInput::default()),
     };
     let bytes = serde_json::to_vec(&request).unwrap();
     let command = python_command(&root);
@@ -288,7 +288,7 @@ async fn a_stub_answers_not_built_on_both_sides() {
     let python: Reply = parse_message(&output.stdout.bytes).unwrap();
     let expected = Reply::Error {
         kind: ProbeFailure::UnknownOperation,
-        message: "access_windows is not built".to_owned(),
+        message: "complexity_turn_overrides is not built".to_owned(),
     };
     assert_eq!(python, expected);
     assert_eq!(execute(&request), expected);
