@@ -47,8 +47,8 @@ def _build_logger(input_value: Input) -> S3Logger:
 
 def _stop_flush_tasks() -> None:
     # LiteLLM keeps no handle on its flush loop, so the loop's task set finds it again
-    current: asyncio.Task[None] | None = asyncio.current_task()  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L232
-    tasks: set[asyncio.Task[None]] = asyncio.all_tasks()  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L232
+    current: asyncio.Task[None] | None = asyncio.current_task()  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L232
+    tasks: set[asyncio.Task[None]] = asyncio.all_tasks()  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L232
     for pending in tasks:
         if pending is not current:
             pending.cancel()
@@ -56,10 +56,10 @@ def _stop_flush_tasks() -> None:
 
 async def execute(input_value: Input) -> JsonValue:
     FrozenDatetime.instant = datetime.fromisoformat(input_value["now"])
-    previous_params: dict[str, JsonValue] | None = litellm.s3_callback_params  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L444
+    previous_params: dict[str, JsonValue] | None = litellm.s3_callback_params  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L444
     try:
         litellm.s3_callback_params = input_value["global_params"]
-        s3_v2.datetime = FrozenDatetime  # type: ignore[attr-defined]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L490
+        s3_v2.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L490
         logger = _build_logger(input_value)
         await logger.async_log_audit_log_event(input_value["record"])
         queued: list[s3BatchLoggingElement] = logger.log_queue
@@ -70,7 +70,7 @@ async def execute(input_value: Input) -> JsonValue:
             "s3_object_download_filename": element["s3_object_download_filename"],
         }
     finally:
-        s3_v2.datetime = datetime  # type: ignore[attr-defined]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L490
+        s3_v2.datetime = datetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L490
         litellm.s3_callback_params = previous_params
         _stop_flush_tasks()
 
