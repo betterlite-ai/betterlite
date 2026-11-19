@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use betterlite_anthropic::stream_decode::ChunkStream;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_core::api::messages_stream_logging::StreamDeps;
 use betterlite_core::api::messages_stream_logging::seams::StreamSeams;
 use betterlite_core::api::messages_thinking::stream::native_stream_factory;
@@ -8,28 +10,29 @@ use betterlite_models::decisions::Json as ContractJson;
 use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 
-use crate::invoke_events::{DecoderClock, DecoderOptions, InvokeStreamDecoder, stream_decoder};
+use crate::claude_platform::stream::{StreamFlags, get_model_response_iterator};
 
 use super::error::MantleMessagesError;
 
-const ANTHROPIC: &str = "anthropic";
-
-// get_model_response_iterator: B581's native Anthropic iterator, with sync_stream and json_mode exactly as supplied.
+// get_model_response_iterator: B581's native Anthropic SSE iterator over the streaming response, with sync_stream and json_mode unchanged.
 #[must_use]
-pub fn model_response_iterator(
-    model: &str,
+pub fn model_response_iterator<Source, Counter>(
+    streaming_response: Source,
     sync_stream: bool,
     json_mode: Option<bool>,
-    clock: DecoderClock,
-) -> InvokeStreamDecoder {
-    stream_decoder(
-        Some(ANTHROPIC),
-        &DecoderOptions {
-            model,
-            json_mode,
+    counter: Counter,
+    ids: &dyn IdSource,
+    max_event_bytes: usize,
+) -> ChunkStream<Source, Counter> {
+    get_model_response_iterator(
+        streaming_response,
+        StreamFlags {
             sync_stream,
-            clock,
+            json_mode,
         },
+        counter,
+        ids,
+        max_event_bytes,
     )
 }
 

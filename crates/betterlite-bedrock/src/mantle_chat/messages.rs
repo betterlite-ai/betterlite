@@ -104,10 +104,10 @@ pub(super) fn move_betas_into_header(
 
 // request.anthropic_beta or (): every falsey value counts as no betas, and a truthy non-list fails the shape check.
 fn declared_betas(value: Option<&BodyJson>) -> Result<Vec<String>, MantleMessagesError> {
-    let Some(value) = value else {
+    let Some(declared) = value else {
         return Ok(Vec::new());
     };
-    match value {
+    match declared {
         BodyJson::List(items) => {
             let mut betas = Vec::with_capacity(items.len());
             for (index, item) in items.iter().enumerate() {

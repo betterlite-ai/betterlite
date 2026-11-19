@@ -115,24 +115,24 @@ fn mantle_claude_secret_safe_failure() {
     let debug = format!("{globals:?}");
     assert!(!debug.contains(SECRET));
     assert!(!debug.contains(TOKEN));
-    let error = complete_url(
+    let region_error = complete_url(
         None,
         "claude",
         &invoke_params(r#"{"aws_region_name":"NOT A REGION"}"#),
         &globals,
     )
     .expect_err("the region is invalid");
-    assert!(!error.to_string().contains(SECRET));
-    assert!(!format!("{error:?}").contains(SECRET));
+    assert!(!region_error.to_string().contains(SECRET));
+    assert!(!format!("{region_error:?}").contains(SECRET));
     let mut headers = IndexMap::new();
     headers.insert("authorization".to_owned(), format!("Bearer {SECRET}"));
     let body = obj(r#"{"anthropic_beta":"beta"}"#);
-    let error = move_betas_into_header(&body, &mut headers).expect_err("the beta shape fails");
-    assert!(!error.to_string().contains(SECRET));
-    assert!(!format!("{error:?}").contains(SECRET));
-    let error = transform_response(br#"{"usage":"many"}"#, 200, &LIMITS)
+    let beta_error = move_betas_into_header(&body, &mut headers).expect_err("the beta shape fails");
+    assert!(!beta_error.to_string().contains(SECRET));
+    assert!(!format!("{beta_error:?}").contains(SECRET));
+    let usage_error = transform_response(br#"{"usage":"many"}"#, 200, &LIMITS)
         .expect_err("the usage shape fails");
-    assert!(!error.to_string().contains(SECRET));
+    assert!(!usage_error.to_string().contains(SECRET));
 }
 
 const MEDIA_FETCH_MESSAGES: &str = r#"[{"role":"user","content":[

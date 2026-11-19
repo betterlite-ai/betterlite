@@ -8,6 +8,9 @@ use async_trait::async_trait;
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::option_primitives::OptionDefaults;
+use betterlite_anthropic::stream_decode::TransportChunk;
+use betterlite_anthropic::stream_state::state::IdSource;
+use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
@@ -49,6 +52,7 @@ use betterlite_prompts::media_fetch::error::ImageFetchError;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
+use uuid::Uuid;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::claude_invoke::error::ClaudeInvokeError;
@@ -554,6 +558,38 @@ impl SuccessClock for FixedClock {
     fn now(&self) -> DateTime<FixedOffset> {
         time()
     }
+}
+
+pub(super) const MAX_EVENT_BYTES: usize = 0x0010_0000;
+
+pub(super) struct FixedIds(pub(super) Uuid);
+
+impl IdSource for FixedIds {
+    fn next_id(&self) -> Uuid {
+        self.0
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the case counts no reasoning tokens")]
+pub(super) struct CounterError;
+
+pub(super) struct Counting;
+
+impl ReasoningTokenCounter for Counting {
+    type Failure = CounterError;
+
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, CounterError> {
+        Ok(0)
+    }
+}
+
+// The case carries each native event's JSON; the iterator reads the SSE data: framing.
+pub(super) fn sse_chunks(events: &[&str]) -> Vec<TransportChunk> {
+    events
+        .iter()
+        .map(|event| TransportChunk::Text(format!("data: {event}\n\n")))
+        .collect()
 }
 
 pub(super) struct NoDispatch;

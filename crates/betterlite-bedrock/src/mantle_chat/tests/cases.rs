@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_anthropic::api::messages_errors::fields::Fields;
+use betterlite_anthropic::stream_decode::DecodedChunk;
+use betterlite_anthropic::stream_decode::error::ReceiveError;
 use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_models::decisions::Json as ParamJson;
@@ -10,7 +12,6 @@ use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
-use crate::invoke_events::{DecoderClock, InvokeChunk};
 use crate::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use crate::mantle_chat::environment::{chat_headers, messages_headers};
 use crate::mantle_chat::messages::{move_betas_into_header, restore_messages_fields};
@@ -22,8 +23,9 @@ use crate::mantle_inputs::records::MantleGlobals;
 use crate::request_policy::{BedrockRequestPolicy, Params as MetadataParams, RequestValue};
 
 use super::support::{
-    ChatSession, Fixture, MapFetcher, MessagesSession, Mode, Recorder, contract_of, invoke_params,
-    js, logging_object, map_of, messages_call, messages_of, obj, recorder_deps, runtime,
+    ChatSession, CounterError, Counting, FixedIds, Fixture, MAX_EVENT_BYTES, MapFetcher,
+    MessagesSession, Mode, Recorder, contract_of, invoke_params, js, logging_object, map_of,
+    messages_call, messages_of, obj, recorder_deps, runtime, sse_chunks,
 };
 
 pub(super) const LIMITS: ApiLimits = ApiLimits {
@@ -311,7 +313,7 @@ fn metadata_and_api_key_headers(empty: &IndexMap<String, String>) {
         Some(r#"{"user_api_key_alias":"team-a"}"#)
     );
     let key = SecretString::from("fixture-api-key");
-    let (merged, _) = messages_headers(
+    let (keyed, _) = messages_headers(
         empty,
         &MetadataParams::new(),
         None,
@@ -320,7 +322,7 @@ fn metadata_and_api_key_headers(empty: &IndexMap<String, String>) {
     )
     .expect("the api key never becomes a header");
     assert!(
-        merged
+        keyed
             .values()
             .all(|value| !value.contains("fixture-api-key"))
     );
@@ -372,15 +374,22 @@ fn moved_betas_through_transform() {
         Some(BETA_HEADER)
     );
     assert_eq!(body.get("model"), Some(&js(r#""fixture-tool-search""#)));
-    let (headers, body) = beta_round(
+    let (plain_headers, plain_body) = beta_round(
         &mut session,
         "mantle/fixture-plain",
         r#"{"max_tokens":8,"stream":false}"#,
         "{}",
     );
-    assert!(!headers.contains_key("anthropic-beta"));
-    assert!(!body.contains_key("stream"));
-    assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+    assert!(!plain_headers.contains_key("anthropic-beta"));
+    assert!(!plain_body.contains_key("stream"));
+    assert_eq!(plain_body.get("model"), Some(&js(r#""fixture-plain""#)));
+    let (_, stream_body) = beta_round(
+        &mut session,
+        "mantle/fixture-plain",
+        r#"{"max_tokens":8,"stream":true}"#,
+        "{}",
+    );
+    assert_eq!(stream_body.get("stream"), Some(&BodyJson::Bool(true)));
 }
 
 // A round carries the caller's lower-case and upper-case beta headers into one transform.
@@ -425,43 +434,46 @@ fn beta_lists_join() {
         Some("upper-beta")
     );
     for falsey in ["[]", "null", "false", "0", "0.0", "-0.0", r#""""#, "{}"] {
-        let mut body = obj(r#"{"anthropic_beta":[]}"#);
-        body.insert("anthropic_beta".to_owned(), js(falsey));
+        let mut falsey_body = obj(r#"{"anthropic_beta":[]}"#);
+        falsey_body.insert("anthropic_beta".to_owned(), js(falsey));
         headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
-        move_betas_into_header(&body, &mut headers).expect("a falsey list means no betas");
+        move_betas_into_header(&falsey_body, &mut headers).expect("a falsey list means no betas");
         assert!(!headers.contains_key("anthropic-beta"));
     }
 }
 
 fn beta_shape_errors() {
     let mut headers = IndexMap::new();
-    let body = obj(r#"{"anthropic_beta":"b1"}"#);
-    let error =
-        move_betas_into_header(&body, &mut headers).expect_err("a string is not a tuple of betas");
-    assert_eq!(error.status_code(), Some(400));
+    let string_body = obj(r#"{"anthropic_beta":"b1"}"#);
+    let string_error = move_betas_into_header(&string_body, &mut headers)
+        .expect_err("a string is not a tuple of betas");
+    assert_eq!(string_error.status_code(), Some(400));
     assert_eq!(
-        error.to_string(),
+        string_error.to_string(),
         "anthropic_beta must be a list of strings"
     );
-    let body = obj(r#"{"anthropic_beta":["b1",2]}"#);
-    let error =
-        move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta name");
-    assert_eq!(error.status_code(), Some(400));
-    assert_eq!(error.to_string(), "anthropic_beta[1] is not a string");
-    let body = obj(r#"{"anthropic_beta":5}"#);
-    let error =
-        move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta list");
-    assert_eq!(error.status_code(), Some(400));
+    let number_body = obj(r#"{"anthropic_beta":["b1",2]}"#);
+    let number_error = move_betas_into_header(&number_body, &mut headers)
+        .expect_err("a number is not a beta name");
+    assert_eq!(number_error.status_code(), Some(400));
     assert_eq!(
-        error.to_string(),
+        number_error.to_string(),
+        "anthropic_beta[1] is not a string"
+    );
+    let scalar_body = obj(r#"{"anthropic_beta":5}"#);
+    let scalar_error = move_betas_into_header(&scalar_body, &mut headers)
+        .expect_err("a number is not a beta list");
+    assert_eq!(scalar_error.status_code(), Some(400));
+    assert_eq!(
+        scalar_error.to_string(),
         "anthropic_beta must be a list of strings"
     );
-    let body = obj(r#"{"anthropic_beta":{"a":"b"}}"#);
-    let error =
-        move_betas_into_header(&body, &mut headers).expect_err("an object is not a beta list");
-    assert_eq!(error.status_code(), Some(400));
+    let object_body = obj(r#"{"anthropic_beta":{"a":"b"}}"#);
+    let object_error = move_betas_into_header(&object_body, &mut headers)
+        .expect_err("an object is not a beta list");
+    assert_eq!(object_error.status_code(), Some(400));
     assert_eq!(
-        error.to_string(),
+        object_error.to_string(),
         "anthropic_beta must be a list of strings"
     );
 }
@@ -528,39 +540,52 @@ fn restored_model_anywhere() {
         );
         assert!(!body.contains_key("stream"));
     }
+    let mut beta_request = fixture.chat_request(
+        "mantle/fixture-plain",
+        prompt_messages(),
+        map_of(r#"{"max_tokens":64}"#),
+    );
+    beta_request.headers.values.insert(
+        "anthropic-beta".to_owned(),
+        "fine-grained-tool-streaming-2025-05-14".to_owned(),
+    );
+    let beta_body = session
+        .transform(&beta_request, &fetcher, Mode::Sync)
+        .expect("the caller beta request transforms");
+    assert!(!beta_body.contains_key("anthropic_beta"));
 }
 
 fn restored_stream_flag() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::default();
-    let request = fixture.chat_request(
+    let stream_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
         map_of(r#"{"max_tokens":64,"stream":true}"#),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let stream_body = session
+        .transform(&stream_request, &fetcher, Mode::Sync)
         .expect("the stream request transforms");
-    assert_eq!(body.get("stream"), Some(&BodyJson::Bool(true)));
-    let request = fixture.chat_request(
+    assert_eq!(stream_body.get("stream"), Some(&BodyJson::Bool(true)));
+    let plain_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
         map_of(r#"{"max_tokens":64,"stream":false}"#),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let plain_body = session
+        .transform(&plain_request, &fetcher, Mode::Sync)
         .expect("the unstreamed request transforms");
-    assert!(!body.contains_key("stream"));
-    let request = fixture.chat_request(
+    assert!(!plain_body.contains_key("stream"));
+    let text_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
         map_of(r#"{"max_tokens":64,"stream":"true"}"#),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let text_body = session
+        .transform(&text_request, &fetcher, Mode::Sync)
         .expect("a string stream flag transforms");
-    assert!(!body.contains_key("stream"));
+    assert!(!text_body.contains_key("stream"));
 }
 
 fn restored_copy_semantics() {
@@ -590,72 +615,65 @@ fn effort_ceiling_clamped() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::default();
-    let request = fixture.chat_request(
+    let effort_request = fixture.chat_request(
         "mantle/fixture-effort-tier",
         prompt_messages(),
         map_of(r#"{"max_tokens":64,"output_config":{"effort":"xhigh"}}"#),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let effort_body = session
+        .transform(&effort_request, &fetcher, Mode::Sync)
         .expect("the effort request transforms");
-    assert_eq!(at(&body, &["output_config", "effort"]), &js(r#""high""#));
-    let request = fixture.chat_request(
+    assert_eq!(
+        at(&effort_body, &["output_config", "effort"]),
+        &js(r#""high""#)
+    );
+    let plain_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
         map_of(r#"{"max_tokens":64,"output_config":{"effort":"high"}}"#),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let plain_body = session
+        .transform(&plain_request, &fetcher, Mode::Sync)
         .expect("the unsupported effort request transforms");
-    assert!(!body.contains_key("output_config"));
+    assert!(!plain_body.contains_key("output_config"));
 }
 
 fn structured_output_kept_or_inlined() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::default();
-    let request = fixture.chat_request(
+    let supported_request = fixture.chat_request(
         "mantle/fixture-structured",
         prompt_messages(),
         map_of(STRUCTURED_PARAMS),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let supported_body = session
+        .transform(&supported_request, &fetcher, Mode::Sync)
         .expect("the supported structured request transforms");
     assert_eq!(
-        at(&body, &["output_config", "format", "type"]),
+        at(&supported_body, &["output_config", "format", "type"]),
         &js(r#""json_schema""#)
     );
-    let request = fixture.chat_request(
+    let unsupported_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
         map_of(STRUCTURED_PARAMS),
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let unsupported_body = session
+        .transform(&unsupported_request, &fetcher, Mode::Sync)
         .expect("the unsupported structured request transforms");
-    assert!(!body.contains_key("output_config"));
+    assert!(!unsupported_body.contains_key("output_config"));
 }
 
 fn fixed_id() -> Uuid {
     Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef)
 }
 
-fn fixed_now() -> i64 {
-    1_700_000_000
-}
-
-fn anthropic(chunk: InvokeChunk) -> StreamEventChunk {
+fn anthropic_decoded(chunk: DecodedChunk) -> StreamEventChunk {
     match chunk {
-        InvokeChunk::Anthropic(parsed) => *parsed,
-        InvokeChunk::Base(_) | InvokeChunk::DeepSeek(_) | InvokeChunk::OpenAiCompatible(_) => {
-            panic!("expected the Anthropic projection")
-        }
+        DecodedChunk::Event(event) => *event,
+        DecodedChunk::Generic(_) => panic!("expected the Anthropic projection"),
     }
-}
-
-fn stream_event(text: &str) -> ParamJson {
-    serde_json::from_str(text).expect("the stream event parses")
 }
 
 pub(super) fn mantle_native_sse() {
@@ -664,37 +682,58 @@ pub(super) fn mantle_native_sse() {
 }
 
 fn chat_iterator_cases() {
-    assert!(!HAS_CUSTOM_STREAM_WRAPPER);
-    let clock = DecoderClock {
-        next_id: fixed_id,
-        now: fixed_now,
-    };
-    let mut decoder = model_response_iterator("claude", false, None, clock);
-    let start = anthropic(
-        decoder
-            .chunk_parser(&stream_event(
-                r#"{"type":"message_start","message":{"model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#,
-            ))
-            .expect("the native start parses"),
+    let custom_wrapper = HAS_CUSTOM_STREAM_WRAPPER;
+    assert!(
+        !custom_wrapper,
+        "the mantle chat keeps the native SSE wrapper"
+    );
+    let ids = FixedIds(fixed_id());
+    let mut chunks = model_response_iterator(
+        sse_chunks(&[
+            r#"{"type":"message_start","message":{"model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+        ])
+        .into_iter()
+        .map(Ok::<_, ReceiveError<CounterError>>),
+        false,
+        None,
+        Counting,
+        &ids,
+        MAX_EVENT_BYTES,
+    );
+    let start = anthropic_decoded(
+        chunks
+            .next()
+            .expect("the start event arrives")
+            .expect("the start event decodes"),
     );
     assert!(start.usage.is_some());
     assert_eq!(start.model.as_deref(), Some("claude"));
-    let text = anthropic(
-        decoder
-            .chunk_parser(&stream_event(
-                r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
-            ))
-            .expect("the native delta parses"),
+    let text = anthropic_decoded(
+        chunks
+            .next()
+            .expect("the delta event arrives")
+            .expect("the delta event decodes"),
     );
     assert_eq!(text.choices[0].delta.content, "hi");
     assert_eq!(text.id, format!("chatcmpl-{}", fixed_id()));
-    let mut suppressed = model_response_iterator("claude", true, Some(true), clock);
-    let tool = anthropic(
+    let mut suppressed = model_response_iterator(
+        sse_chunks(&[
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}}"#,
+        ])
+        .into_iter()
+        .map(Ok::<_, ReceiveError<CounterError>>),
+        true,
+        Some(true),
+        Counting,
+        &ids,
+        MAX_EVENT_BYTES,
+    );
+    let tool = anthropic_decoded(
         suppressed
-            .chunk_parser(&stream_event(
-                r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}}"#,
-            ))
-            .expect("the json-mode start parses"),
+            .next()
+            .expect("the tool event arrives")
+            .expect("the tool event decodes"),
     );
     assert!(tool.choices[0].delta.tool_calls.is_none());
     assert_eq!(tool.choices[0].delta.content, "");
@@ -746,55 +785,60 @@ pub(super) fn mantle_usage_fields() {
 }
 
 fn usage_defaults_and_preservation() {
-    let fields = response_fields(
+    let counted = response_fields(
         r#"{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude","stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":4}}"#,
     );
     assert_eq!(
-        usage_of(&fields),
+        usage_of(&counted),
         js(r#"{"input_tokens":3,"output_tokens":4}"#)
     );
-    let fields = response_fields(r#"{"id":"msg_2","type":"message","model":"other","content":[]}"#);
+    let defaulted =
+        response_fields(r#"{"id":"msg_2","type":"message","model":"other","content":[]}"#);
     assert_eq!(
-        usage_of(&fields),
+        usage_of(&defaulted),
         js(r#"{"input_tokens":0,"output_tokens":0}"#)
     );
-    assert_eq!(fields.get("model").map(|raw| raw.get()), Some(r#""other""#));
+    assert_eq!(
+        defaulted.get("model").map(|raw| raw.get()),
+        Some(r#""other""#)
+    );
     let preserved = r#"{"input_tokens":null,"output_tokens":null,"cache_read_input_tokens":7,"cache_creation_input_tokens":2,"server_tool_use":{"web_search_requests":1},"extra":"x"}"#;
-    let fields = response_fields(&format!(
+    let preserved_fields = response_fields(&format!(
         r#"{{"id":"msg_3","type":"message","usage":{preserved}}}"#
     ));
-    assert_eq!(usage_of(&fields), js(preserved));
+    assert_eq!(usage_of(&preserved_fields), js(preserved));
     for falsey in ["null", "false", "0", r#""""#, "[]"] {
-        let fields = response_fields(&format!(
+        let falsey_fields = response_fields(&format!(
             r#"{{"id":"msg_4","type":"message","usage":{falsey}}}"#
         ));
         assert_eq!(
-            usage_of(&fields),
+            usage_of(&falsey_fields),
             js(r#"{"input_tokens":0,"output_tokens":0}"#)
         );
     }
 }
 
 fn usage_failures() {
-    let error = transform_response(br#"{"usage":"many"}"#, 200, &LIMITS)
+    let text_error = transform_response(br#"{"usage":"many"}"#, 200, &LIMITS)
         .expect_err("a truthy non-mapping usage fails");
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(text_error.status_code(), Some(500));
     assert_eq!(
-        error.to_string(),
+        text_error.to_string(),
         "the Messages response usage is not an object"
     );
-    let error =
+    let list_error =
         transform_response(br#"{"usage":[1]}"#, 200, &LIMITS).expect_err("a list usage fails");
-    assert_eq!(error.status_code(), Some(500));
-    let error = transform_response(br#"{"usage":5}"#, 200, &LIMITS)
+    assert_eq!(list_error.status_code(), Some(500));
+    let number_error = transform_response(br#"{"usage":5}"#, 200, &LIMITS)
         .expect_err("a truthy number usage fails");
-    assert_eq!(error.status_code(), Some(500));
-    let error = transform_response(b"bad gateway", 502, &LIMITS)
+    assert_eq!(number_error.status_code(), Some(500));
+    let status_error = transform_response(b"bad gateway", 502, &LIMITS)
         .expect_err("a non-JSON body keeps the raw status");
-    assert_eq!(error.status_code(), Some(502));
-    assert_eq!(error.to_string(), "bad gateway");
-    let error = transform_response(b"[1,2]", 200, &LIMITS).expect_err("a non-object body fails");
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(status_error.status_code(), Some(502));
+    assert_eq!(status_error.to_string(), "bad gateway");
+    let object_error =
+        transform_response(b"[1,2]", 200, &LIMITS).expect_err("a non-object body fails");
+    assert_eq!(object_error.status_code(), Some(500));
 }
 
 pub(super) fn at<'value>(body: &'value Object, path: &[&str]) -> &'value BodyJson {
@@ -839,7 +883,7 @@ pub(super) fn remote_url_inlined() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::new(MEDIA_URLS);
-    let body = media_body(
+    let async_body = media_body(
         &fixture,
         &mut session,
         &fetcher,
@@ -847,7 +891,7 @@ pub(super) fn remote_url_inlined() {
         Mode::Async,
     );
     assert_sources(
-        &body,
+        &async_body,
         [
             IMAGE_BODY,
             r#"{"data":"JVBERi0xLjQK","media_type":"application/pdf","type":"base64"}"#,
@@ -858,10 +902,10 @@ pub(super) fn remote_url_inlined() {
         vec!["http://example.test/pic.png", "http://example.test/doc.pdf"]
     );
     let quiet = MapFetcher::default();
-    let body = media_body(&fixture, &mut session, &quiet, SYNC_MESSAGES, Mode::Sync);
+    let sync_body = media_body(&fixture, &mut session, &quiet, SYNC_MESSAGES, Mode::Sync);
     assert!(quiet.calls().is_empty());
     assert_sources(
-        &body,
+        &sync_body,
         [
             r#"{"type":"url","url":"https://files.example.test/f1"}"#,
             r#"{"type":"url","url":"https://example.test/pic.png"}"#,
