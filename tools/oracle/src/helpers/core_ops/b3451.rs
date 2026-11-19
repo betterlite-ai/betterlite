@@ -19,7 +19,7 @@ use http::HeaderMap;
 use http::HeaderValue;
 use http::header::CONTENT_TYPE;
 use serde::Deserialize;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
@@ -139,6 +139,7 @@ struct RecordingOcr {
 }
 
 impl RecordingOcr {
+    #[must_use]
     fn with_pages(pages: &[String]) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
@@ -159,7 +160,6 @@ impl OcrOperation for RecordingOcr {
 }
 
 struct RecordingFetch {
-    calls: Mutex<Vec<String>>,
     status: u16,
     content_type: Option<String>,
     body: Vec<u8>,
@@ -169,14 +169,12 @@ impl RecordingFetch {
     fn answer(input: Option<&FetchInput>) -> Result<Self, Box<HelperError>> {
         let Some(fetch) = input else {
             return Ok(Self {
-                calls: Mutex::new(Vec::new()),
                 status: 200,
                 content_type: None,
                 body: Vec::new(),
             });
         };
         Ok(Self {
-            calls: Mutex::new(Vec::new()),
             status: fetch.status,
             content_type: fetch.content_type.clone(),
             body: decode_base64(&fetch.body_base64)?,
@@ -199,11 +197,7 @@ impl RecordingFetch {
 
 #[async_trait]
 impl UrlFetch for RecordingFetch {
-    async fn fetch(&self, url: &str) -> Result<FetchedResponse, UrlFetchError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(url.to_owned());
+    async fn fetch(&self, _url: &str) -> Result<FetchedResponse, UrlFetchError> {
         Ok(FetchedResponse {
             status: self.status,
             headers: self.headers()?,
@@ -238,7 +232,7 @@ fn raw_map(
     };
     let mut raws: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
     for (key, value) in entries {
-        raws.insert(key, serde_json::value::to_raw_value(&value)?);
+        raws.insert(key, to_raw_value(&value)?);
     }
     Ok(Some(raws))
 }

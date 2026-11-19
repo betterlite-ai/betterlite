@@ -8,10 +8,12 @@ use http::HeaderMap;
 use http::header::CONTENT_TYPE;
 use thiserror::Error;
 
+use crate::rag::upload_security::MAX_UPLOAD_SIZE_BYTES;
+
 pub const DEFAULT_CONTENT_TYPE: &str = "application/octet-stream";
 
 // LiteLLM bounds no download; the RAG upload ceiling is the largest file the pipeline accepts
-pub const MAX_FETCHED_FILE_BYTES: usize = crate::rag::upload_security::MAX_UPLOAD_SIZE_BYTES;
+pub const MAX_FETCHED_FILE_BYTES: usize = MAX_UPLOAD_SIZE_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileData {

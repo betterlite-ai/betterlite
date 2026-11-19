@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::rag::document::ingest::{RAGIngestEmbeddingOptions, RAGIngestOCROptions};
 use serde::Deserialize;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 use thiserror::Error;
 
 pub const DEFAULT_CHUNKING_STRATEGY: &str = r#"{"type":"auto"}"#;
@@ -53,8 +53,7 @@ pub fn chunking_strategy_value(
     let Some(strategy) = requested.filter(|strategy| !strategy.is_empty()) else {
         return default_chunking_strategy();
     };
-    serde_json::value::to_raw_value(&strategy)
-        .map_err(|source| IngestionSetupError::ChunkingStrategy { source })
+    to_raw_value(&strategy).map_err(|source| IngestionSetupError::ChunkingStrategy { source })
 }
 
 fn default_chunking_strategy() -> Result<Box<RawValue>, IngestionSetupError> {

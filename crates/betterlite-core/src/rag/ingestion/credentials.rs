@@ -1,4 +1,5 @@
 use betterlite_config::credentials::CredentialValues;
+use serde_json::value::to_raw_value;
 use thiserror::Error;
 
 use super::config::{IngestionSetupError, VectorStoreConfig};
@@ -40,13 +41,12 @@ pub fn load_from_config(
         return Ok(());
     }
     for (key, value) in &stored.0 {
-        let raw_value =
-            serde_json::value::to_raw_value(&value.expose_json()).map_err(|source| {
-                IngestionSetupError::CredentialValue {
-                    field: key.clone(),
-                    source,
-                }
-            })?;
+        let raw_value = to_raw_value(&value.expose_json()).map_err(|source| {
+            IngestionSetupError::CredentialValue {
+                field: key.clone(),
+                source,
+            }
+        })?;
         config.insert(key.clone(), raw_value);
     }
     for key in STORED_ENDPOINT_KEYS {

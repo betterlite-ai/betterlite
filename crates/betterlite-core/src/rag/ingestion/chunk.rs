@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_config::rag::document::chunking::{DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE};
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -62,7 +64,7 @@ pub fn split(text: &str, plan: ChunkPlan) -> Result<Vec<String>, ChunkError> {
 
 #[must_use]
 pub(crate) fn decode_file_content(file_content: &[u8]) -> Option<String> {
-    match std::str::from_utf8(file_content) {
+    match str::from_utf8(file_content) {
         Ok(text) => Some(text.to_owned()),
         Err(_) if file_content.starts_with(b"%PDF") => extract_text_from_pdf(file_content),
         Err(_) => None,

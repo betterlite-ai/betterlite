@@ -15,6 +15,7 @@ use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
+use serde_json::value::RawValue;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -38,6 +39,7 @@ struct FakeOcr {
 }
 
 impl FakeOcr {
+    #[must_use]
     fn returning(pages: Vec<String>) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
@@ -46,6 +48,7 @@ impl FakeOcr {
         }
     }
 
+    #[must_use]
     fn failing(message: &str) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
@@ -89,6 +92,7 @@ impl Default for FakeFetch {
 }
 
 impl FakeFetch {
+    #[must_use]
     fn reply(mut self, status: u16, headers: HeaderMap, body: &[u8]) -> Self {
         self.status = status;
         self.headers = headers;
@@ -96,6 +100,7 @@ impl FakeFetch {
         self
     }
 
+    #[must_use]
     fn failing(mut self, message: &str) -> Self {
         self.failure = Some(message.to_owned());
         self
@@ -155,16 +160,19 @@ impl Default for Harness {
 }
 
 impl Harness {
+    #[must_use]
     fn with_ocr(mut self, ocr: FakeOcr) -> Self {
         self.ocr = Arc::new(ocr);
         self
     }
 
+    #[must_use]
     fn with_fetch(mut self, fetch: FakeFetch) -> Self {
         self.fetch = Arc::new(fetch);
         self
     }
 
+    #[must_use]
     fn with_credentials(mut self, values: &str) -> Self {
         self.credentials = Arc::new(FakeCredentials {
             values: Some(serde_json::from_str(values).expect("the credential values parse")),
@@ -200,7 +208,7 @@ fn header(name: &'static str, value: &'static str) -> HeaderMap {
     headers
 }
 
-fn text_of(config: &BTreeMap<String, Box<serde_json::value::RawValue>>, key: &str) -> String {
+fn text_of(config: &BTreeMap<String, Box<RawValue>>, key: &str) -> String {
     let raw = config.get(key).expect("the key");
     serde_json::from_str(raw.get()).expect("a string")
 }
@@ -687,7 +695,7 @@ async fn upload_fetch_refuses_a_body_over_the_download_bound() {
     let address = listener.local_addr().unwrap();
     let url = format!("http://{address}/files/huge.bin");
     let fetch = http_fetch(&["127.0.0.1".to_owned()]);
-    let declared = MAX_FETCHED_FILE_BYTES + 1;
+    let declared = MAX_FETCHED_FILE_BYTES.saturating_add(1);
     let serving = async {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut buffer = [0_u8; 1024];
