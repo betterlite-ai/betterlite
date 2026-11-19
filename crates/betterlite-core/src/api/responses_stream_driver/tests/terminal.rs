@@ -183,6 +183,23 @@ fn sync_iteration_logs_a_completed_response_inline() {
 }
 
 #[tokio::test]
+async fn live_iteration_drains_pending_logging_after_completion() {
+    let success = Arc::new(SuccessPort::default());
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    let fixture = Fixture::new(ports, fixed_clock());
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(COMPLETED)]), None);
+    stream
+        .drive(Dispatch::Spawned)
+        .await
+        .expect("the terminal event yields")
+        .expect("an event is returned");
+    stream.drain_pending_logging().await;
+    assert_eq!(success.dispatches().len(), 1);
+}
+
+#[tokio::test]
 async fn fake_response_iteration_slices_text_into_chunks() {
     let success = Arc::new(SuccessPort::default());
     let cache = Arc::new(RecordingCache::default());
