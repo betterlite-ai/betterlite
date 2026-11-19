@@ -1,0 +1,125 @@
+kind: helper
+name: vector-store-registry-ordered-mutations
+call:
+  vector_store_registry:
+    operation: mutations
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+        vector_store_description: listed
+      - vector_store_id: vs_b
+        custom_llm_provider: openai
+        vector_store_name: original
+    indexes:
+      - id: i1
+        index_name: notes
+        litellm_params:
+          vector_store_index: idx-1
+          vector_store_name: notes
+      - id: i2
+        index_name: notes
+        litellm_params:
+          vector_store_index: idx-2
+          vector_store_name: notes
+    steps:
+      - kind: add
+        store:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_description: ignored
+      - kind: add
+        store:
+          vector_store_id: vs_c
+          custom_llm_provider: openai
+      - kind: update
+        id: vs_b
+        store:
+          vector_store_id: vs_b
+          custom_llm_provider: bedrock
+          vector_store_description: replaced
+          litellm_credential_name: stored-credential
+      - kind: update
+        id: vs_a
+        store:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_description: moved
+      - kind: is_config
+        id: vs_a
+      - kind: is_config
+        id: vs_c
+      - kind: add
+        store:
+          vector_store_id: vs_cfg
+          custom_llm_provider: openai
+          is_config: true
+      - kind: update
+        id: vs_cfg
+        store:
+          vector_store_id: vs_cfg
+          custom_llm_provider: bedrock
+          vector_store_description: refused
+      - kind: is_config
+        id: vs_cfg
+      - kind: update
+        id: vs_missing
+        store:
+          vector_store_id: vs_other
+          custom_llm_provider: openai
+      - kind: is_config
+        id: vs_absent
+      - kind: upsert_index
+        index:
+          id: i3
+          index_name: notes
+          litellm_params:
+            vector_store_index: idx-3
+            vector_store_name: notes
+      - kind: upsert_index
+        index:
+          id: i4
+          index_name: archive
+          litellm_params:
+            vector_store_index: idx-4
+            vector_store_name: archive
+      - kind: lookup_index
+        name: notes
+      - kind: lookup_index
+        name: absent
+      - kind: is_index
+        name: notes
+      - kind: is_index
+        name: archive
+      - kind: is_index
+        name: missing
+      - kind: defaults
+calls:
+  - vector_store_registry:
+      operation: mutations
+      stores:
+        - vector_store_id: vs_cfg
+          custom_llm_provider: openai
+          is_config: true
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          is_config: true
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_description: plain
+        - vector_store_id: vs_b
+          custom_llm_provider: openai
+      steps:
+        - kind: update
+          id: vs_cfg
+          store:
+            vector_store_id: vs_cfg
+            custom_llm_provider: bedrock
+            vector_store_description: refused
+        - kind: is_config
+          id: vs_a
+        - kind: delete
+          id: vs_a
+        - kind: is_config
+          id: vs_a
+env: {}
+compare: {ignore: []}

@@ -399,6 +399,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "team_admin_object"
+path = "fuzz_targets/team_admin_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "compliance_request"
 path = "fuzz_targets/compliance_request.rs"
 test = false
