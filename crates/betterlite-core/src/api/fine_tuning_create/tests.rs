@@ -198,6 +198,8 @@ async fn openai_supplied() {
         ("n_epochs", number(3)),
         ("learning_rate_multiplier", number(1)),
         ("extra_flag", text("x")),
+        // the Azure-only extraction never touches a non-Azure caller's map
+        ("prompt_loss_weight", number(1)),
     ]));
     call.suffix = Some(String::new());
     call.validation_file = Some(String::new());
@@ -213,6 +215,7 @@ async fn openai_supplied() {
     assert_eq!(hyperparameters.get("batch_size"), Some(&text("auto")));
     assert_eq!(hyperparameters.get("n_epochs"), Some(&number(3)));
     assert_eq!(hyperparameters.get("extra_flag"), Some(&text("x")));
+    assert_eq!(hyperparameters.get("prompt_loss_weight"), Some(&number(1)));
     assert_eq!(fields.get("suffix"), Some(&text("")));
     assert_eq!(fields.get("validation_file"), Some(&text("")));
     assert_eq!(fields.get("integrations"), Some(&Json::List(Vec::new())));
