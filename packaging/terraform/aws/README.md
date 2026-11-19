@@ -179,7 +179,7 @@ A trial or dev stack can opt into HTTP only:
 allow_plaintext_alb = true
 ```
 
-Leave both unset and the apply stops at the listener with the precondition error.
+With an empty certificate and `allow_plaintext_alb = false`, the plan stops at the listener with the precondition error.
 
 ## Migration
 
@@ -195,7 +195,7 @@ For a database you brought yourself, only the migration step runs: its URL alrea
 
 ## Autoscaling
 
-Application Auto Scaling target tracking is on by default (`autoscaling_enabled = true`). The service tracks average CPU at `cpu_target` and average memory at `memory_target`, and drops the memory policy when that target is 0. `min_capacity` and `max_capacity` bound the task count, and `desired_count` only matters until the first scaling action, because the service ignores changes to it once the target exists.
+Application Auto Scaling target tracking is on by default (`autoscaling_enabled = true`). The service tracks average CPU at `cpu_target` and average memory at `memory_target`, and drops the memory policy when that target is 0. `min_capacity` and `max_capacity` bound the task count, and `desired_count` is the starting count only: the service ignores later changes to it because Application Auto Scaling owns it.
 
 `target_requests_per_second` adds an `ALBRequestCountPerTarget` policy next to the resource ones. The ALB publishes that metric as requests per minute per registered task, so the policy targets 60 times the variable: 90 requests per second becomes a target of 5400 per minute. Application Auto Scaling follows whichever policy asks for the most tasks, so the CPU and memory targets keep acting as a floor.
 

@@ -8,6 +8,6 @@ image = "ghcr.io/your-org/betterlite:latest"
 # Replace this sample key with your own before the first apply, or set TF_VAR_litellm_master_key to keep it out of this file
 litellm_master_key = "sk-change-me"
 
-# Leave the certificate empty and set allow_plaintext_alb = true to try the stack over HTTP, and provide the certificate for real traffic
+# Leave the certificate empty for a trial stack and set allow_plaintext_alb = true; real traffic needs an ACM certificate here
 acm_certificate_arn = ""
 allow_plaintext_alb = false
