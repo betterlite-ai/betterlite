@@ -548,6 +548,32 @@ async fn timeout_chain_and_structured_passthrough() {
         FineTuningTimeout::Seconds(7.5)
     );
 
+    let alone = Fake::answering(&page());
+    run(
+        &alone,
+        &ConfiguredSettings::default(),
+        &input(json!({"list": {"timeout": 5}})),
+    )
+    .await
+    .expect("a listed page");
+    assert_eq!(
+        openai(&alone.calls()).timeout,
+        FineTuningTimeout::Seconds(5.0)
+    );
+
+    let chosen = Fake::answering(&page());
+    run(
+        &chosen,
+        &ConfiguredSettings::default(),
+        &input(json!({"list": {"timeout": "5", "request_timeout": 9}})),
+    )
+    .await
+    .expect("a listed page");
+    assert_eq!(
+        openai(&chosen.calls()).timeout,
+        FineTuningTimeout::Seconds(5.0)
+    );
+
     let structured = Fake::answering(&page());
     run(
         &structured,
