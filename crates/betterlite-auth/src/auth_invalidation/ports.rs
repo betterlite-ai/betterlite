@@ -83,7 +83,8 @@ where
     ) -> Result<(), InvalidationError> {
         let options = WriteOptions {
             ttl: ttl.map(|seconds| WriteTtl { seconds }),
-            ..WriteOptions::default()
+            local_only: false,
+            refresh_ttl: false,
         };
         self.async_set(Some(key), payload, options)
             .await

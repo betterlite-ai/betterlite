@@ -8,8 +8,7 @@ use tokio::task::Id;
 // auth_checks.py's _TEAM_MEMBERSHIP_INFLIGHT_MAX: the index keeps the newest loads and drops the oldest
 pub const MAX_MEMBERSHIP_LOADS: usize = 10_000;
 
-// one installable load: the task's id, so a reset can skip waiting on itself, and the channel the load
-// closes when it finishes, which every waiter may watch without taking the result away from the others
+// one installable load: the task id skips self-waits, and a watch channel lets every waiter see completion
 pub struct InflightLoad<Load> {
     pub id: Id,
     pub completion: watch::Receiver<Option<Load>>,

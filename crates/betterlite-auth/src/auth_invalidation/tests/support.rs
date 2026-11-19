@@ -232,14 +232,14 @@ impl UsageInvalidationCache for Recorder {
     }
 
     async fn delete_async(&self, key: &str) -> Result<(), InvalidationError> {
-        self.record(Call::UsageDeleteAsync(key.to_owned()));
         if self.has(Fault::UsagePending) {
             pending::<()>().await;
         }
-        if self.has(Fault::UsageDeleteAsync) {
-            return Err(invalidation_failure());
+        self.record(Call::UsageDeleteAsync(key.to_owned()));
+        if !self.has(Fault::UsageDeleteAsync) {
+            return Ok(());
         }
-        Ok(())
+        Err(invalidation_failure())
     }
 }
 
@@ -286,14 +286,14 @@ impl SpendCounterCache for Recorder {
     }
 
     async fn delete_redis(&self, key: &str) -> Result<(), RedisAdminError> {
-        if self.handle.is_none() {
-            self.record(Call::SpendRedisSkipped(key.to_owned()));
+        if self.handle.is_some() {
+            self.record(Call::SpendRedisDeleted(key.to_owned()));
+            if self.has(Fault::SpendDeleteRedis) {
+                return Err(admin_failure());
+            }
             return Ok(());
         }
-        self.record(Call::SpendRedisDeleted(key.to_owned()));
-        if self.has(Fault::SpendDeleteRedis) {
-            return Err(admin_failure());
-        }
+        self.record(Call::SpendRedisSkipped(key.to_owned()));
         Ok(())
     }
 }
@@ -600,7 +600,10 @@ impl Visit for SubjectVisitor {
     fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
 }
 
-pub(crate) fn capture<T>(operation: impl FnOnce() -> T) -> (T, Vec<CapturedEvent>) {
+pub(crate) fn capture<T, F>(operation: F) -> (T, Vec<CapturedEvent>)
+where
+    F: FnOnce() -> T,
+{
     let events = Arc::new(Mutex::new(Vec::new()));
     let subscriber = registry().with(CaptureLayer(Arc::clone(&events)));
     let output = with_default(subscriber, operation);

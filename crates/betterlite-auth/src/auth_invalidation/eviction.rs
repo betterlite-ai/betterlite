@@ -46,8 +46,8 @@ impl AuthInvalidation {
         &self,
         access_group_id: &str,
     ) -> Result<(), InvalidationError> {
-        let key = InvalidationKey::AccessGroupId(access_group_id).render();
-        self.delete_auth_then_usage(&key).await
+        self.delete_auth_then_usage(&InvalidationKey::AccessGroupId(access_group_id).render())
+            .await
     }
 
     pub async fn delete_cached_project_object(&self, project_id: &str) {

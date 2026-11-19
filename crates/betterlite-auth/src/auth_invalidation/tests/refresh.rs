@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{self, Call, FIXED_NOW, Fault, MANAGEMENT_TTL, Recorder};
@@ -380,30 +381,30 @@ fn alias_delete_never_alias_write() {
     );
 }
 
-#[test]
-fn falsey_alias_skips_both_caches() {
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn falsey_alias_skips_both_caches(#[case] alias: Option<&str>) {
     let runtime = support::runtime();
-    for alias in [None, Some("")] {
-        let recorder = Recorder::new(None);
-        let usage = Recorder::new(None);
-        let invalidation = refresh(&recorder, Some(&usage));
-        let mut team = support::team("team-1", alias);
-        runtime
-            .block_on(invalidation.cache_team_object("team-1", &mut team))
-            .expect("the team refresh succeeds");
-        assert!(
-            !support::call_keys(&usage.calls())
-                .iter()
-                .any(|key| key.starts_with("team_alias:")),
-            "an alias of {alias:?} skips the usage alias eviction"
-        );
-        assert!(
-            !support::call_keys(&recorder.calls())
-                .iter()
-                .any(|key| key.starts_with("team_alias:")),
-            "an alias of {alias:?} skips the auth alias delete"
-        );
-    }
+    let recorder = Recorder::new(None);
+    let usage = Recorder::new(None);
+    let invalidation = refresh(&recorder, Some(&usage));
+    let mut team = support::team("team-1", alias);
+    runtime
+        .block_on(invalidation.cache_team_object("team-1", &mut team))
+        .expect("the team refresh succeeds");
+    assert!(
+        !support::call_keys(&usage.calls())
+            .iter()
+            .any(|key| key.starts_with("team_alias:")),
+        "an alias of {alias:?} skips the usage alias eviction"
+    );
+    assert!(
+        !support::call_keys(&recorder.calls())
+            .iter()
+            .any(|key| key.starts_with("team_alias:")),
+        "an alias of {alias:?} skips the auth alias delete"
+    );
 }
 
 #[test]

@@ -15,7 +15,7 @@ fn registry_bound_does_not_cancel_load() {
             completion: receiver,
         },
     );
-    for index in 1..=MAX_MEMBERSHIP_LOADS {
+    (1..=MAX_MEMBERSHIP_LOADS).for_each(|index| {
         let (_sender, receiver) = watch::channel(None::<u8>);
         inflight.install(
             &format!("team_membership:user-1:team-{index}"),
@@ -24,7 +24,7 @@ fn registry_bound_does_not_cancel_load() {
                 completion: receiver,
             },
         );
-    }
+    });
     assert!(
         inflight.get("team_membership:user-1:team-0").is_none(),
         "the oldest load falls out of the 10000-entry index"
