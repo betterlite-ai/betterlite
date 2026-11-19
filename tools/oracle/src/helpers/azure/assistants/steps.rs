@@ -2,6 +2,7 @@ use std::mem;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
+use betterlite_azure::assistants::error::AssistantsRunError;
 use betterlite_azure::assistants::operations::{
     AssistantsRunsApi, RunCall, RunDispatch, RunInvocation,
 };
@@ -10,6 +11,7 @@ use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_openai::assistants::client::ClientKind;
+use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -54,8 +56,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     let harness = Harness::new(step);
     let request = harness.request(step);
     let run = step.run.request();
-    let calls: Vec<String> = Vec::new();
-    let handler = step.handler.unwrap_or(false).then(RecordingHandler::start);
+    let recording = step.handler.unwrap_or(false).then(RecordingHandler::start);
     let dispatch = RunDispatch {
         arun_thread: flag(step.arun_thread.as_ref()),
         stream: flag(step.stream.as_ref()),
@@ -63,9 +64,10 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     let supplied = step
         .supplied
         .map(|supplied| supplied_client(supplied.kind, &harness.recorder));
-    let attached = handler
-        .as_ref()
-        .map(|handler| Arc::clone(handler) as Arc<dyn RunEventHandler>);
+    let attached = recording.as_ref().map(|recorded| {
+        let object: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(recorded);
+        object
+    });
     match runtime.block_on(harness.runs().run(
         &request,
         supplied,
@@ -75,21 +77,29 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
             handler: attached,
         },
     )) {
-        Ok(RunInvocation::Polled(kind, reply)) => Ok(json!({
-            "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
-            "calls": calls,
-            "kind": reports::kind_name(kind),
-            "result": reply,
-        })),
+        Ok(RunInvocation::Polled(kind, reply)) => Ok(polled(&harness, kind, reply)),
         Ok(RunInvocation::Streaming(manager)) => {
-            consumed(runtime, &harness, *manager, handler.as_ref())
+            consumed(runtime, &harness, *manager, recording.as_ref())
         }
-        Err(error) => Ok(json!({
-            "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
-            "calls": calls,
-            "error": reports::failure(&error)?,
-        })),
+        Err(error) => failed(&error, &harness),
     }
+}
+
+fn polled(harness: &Harness, kind: ClientKind, reply: Box<RunReply>) -> Value {
+    json!({
+        "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
+        "calls": Vec::<String>::new(),
+        "kind": reports::kind_name(kind),
+        "result": reply,
+    })
+}
+
+fn failed(error: &AssistantsRunError, harness: &Harness) -> HelperResult {
+    Ok(json!({
+        "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
+        "calls": Vec::<String>::new(),
+        "error": reports::failure(error)?,
+    }))
 }
 
 // The manager is returned unconsumed, so the case's requests start when it does.

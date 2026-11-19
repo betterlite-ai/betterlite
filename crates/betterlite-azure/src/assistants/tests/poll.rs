@@ -110,21 +110,22 @@ async fn reuses_the_first_interval() {
     assert_eq!(recorder.requests().len(), 4);
 }
 
+const SHAPED: &str = concat!(
+    r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","#,
+    r#""thread_id":"thread_1","status":"completed","instructions":"base","model":"gpt-4o-mini","#,
+    r#""parallel_tool_calls":true,"tool_choice":{"type":"function"},"incomplete_details":{"extra":1},"#,
+    r#""truncation_strategy":{"type":"auto"},"#,
+    r#""response_format":{"type":"json_schema","json_schema":{"name":"reply"}},"#,
+    r#""tools":[{"type":"file_search"},"#,
+    r#"{"type":"file_search","file_search":{"max_num_results":2}},"#,
+    r#"{"type":"function","function":{"name":"lookup"}}]}"#,
+);
+
 // The reply shows the fields the SDK's Run model declares, so a nested model keeps its missing keys as null.
 async fn fills_the_declared_model_keys() {
     let recorder = Recorder::start();
-    let body = concat!(
-        r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","#,
-        r#""thread_id":"thread_1","status":"completed","instructions":"base","model":"gpt-4o-mini","#,
-        r#""parallel_tool_calls":true,"tool_choice":{"type":"function"},"incomplete_details":{"extra":1},"#,
-        r#""truncation_strategy":{"type":"auto"},"#,
-        r#""response_format":{"type":"json_schema","json_schema":{"name":"reply"}},"#,
-        r#""tools":[{"type":"file_search"},"#,
-        r#"{"type":"file_search","file_search":{"max_num_results":2}},"#,
-        r#"{"type":"function","function":{"name":"lookup"}}]}"#,
-    );
     recorder.queue_poll(200, CREATED);
-    recorder.queue_poll(200, body);
+    recorder.queue_poll(200, SHAPED);
     let fixture = support::Fixture::new();
     let (_, reply) = support::polled(&recorder, &fixture, &run_request()).await;
     assert_eq!(

@@ -264,7 +264,7 @@ pub(super) async fn streamed(
 ) -> RunStream<Recorder> {
     match invoked(transport, fixture, run, dispatch, handler).await {
         RunInvocation::Streaming(stream) => *stream,
-        RunInvocation::Polled(reply) => panic!("expected a stream, got {}", reply.id),
+        RunInvocation::Polled(_kind, reply) => panic!("expected a stream, got {}", reply.id),
     }
 }
 

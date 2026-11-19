@@ -1,4 +1,4 @@
-use serde_json::Value;
+use betterlite_config::sections::settings::JsonValue as Value;
 
 // The SDK fills every declared key of a nested run model, so a reply shows the fields its model dump would.
 pub(super) fn sdk_shape(value: &mut Value) {

@@ -171,7 +171,7 @@ where
             response.body,
         )));
     }
-    let mut value = serde_json::from_slice::<serde_json::Value>(&response.body)
+    let mut value = serde_json::from_slice::<JsonValue>(&response.body)
         .map_err(|source| AssistantsRunError::Runs(classify(source)))?;
     reply::sdk_shape(&mut value);
     let reply = serde_json::from_value(value)

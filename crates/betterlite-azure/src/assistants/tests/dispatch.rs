@@ -67,9 +67,9 @@ async fn picks_the_client_and_helper() {
         let outcome = if stream == Some(true) {
             recorder.queue(200, STREAM_BODY);
             let manager = support::streamed(&recorder, &fixture, &run, dispatch, None).await;
-            let kind = manager.kind;
+            let served = manager.kind;
             manager.consume().await.unwrap();
-            (kind, true)
+            (served, true)
         } else {
             recorder.queue_poll(200, CREATED);
             recorder.queue_poll(200, COMPLETED);
@@ -174,11 +174,15 @@ async fn builds_from_the_litellm_params() {
             };
             assert_eq!(kind, expected_kind(arun_thread));
         }
-        let seen = recorder.requests();
-        assert_eq!(
-            seen[0].headers.get("authorization").map(String::as_str),
-            Some("Bearer litellm-token")
-        );
-        assert_eq!(seen[0].headers.get("api-key"), None);
+        sent_with_the_token(&recorder);
     }
+}
+
+fn sent_with_the_token(recorder: &Recorder) {
+    let seen = recorder.requests();
+    assert_eq!(
+        seen[0].headers.get("authorization").map(String::as_str),
+        Some("Bearer litellm-token")
+    );
+    assert_eq!(seen[0].headers.get("api-key"), None);
 }
