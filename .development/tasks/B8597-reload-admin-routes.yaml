@@ -1,7 +1,7 @@
 id: B8597
 title: Adaptive router state and the root route
 description: >-
-  Two small routes from proxy_server.py (L19860-L19897), both behind the normal key check (B052). Build them in
+  Two small routes from proxy_server.py (L19860-L19897), both behind the normal key check (B003's middleware; the handler reads the caller from B732's AuthContext). Build them in
   crates/betterlite-server/src/root_routes.rs (the skeleton declares it) with `pub fn routes()` like the sibling route
   modules. The manual reload, schedule, cancel, status and source routes next to them are B8586's, in reload_routes.rs;
   this task does not call or touch them.

@@ -1,7 +1,7 @@
 id: B8082
 milestone: M12 python
 title: Python MCPClient, tool helpers and MCP result objects
-status: todo
+status: blocked
 depends_on: [B8080, B5657, B7943, B9951]
 file: tasks/B8082-python-mcp-client.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B168
 split_from: B168
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python MCP and A2A clients"
 pr: null

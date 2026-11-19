@@ -32,7 +32,7 @@ description: >-
   results by successful_requests descending before pagination. Return total_count, page, page_size
   and total_pages (ceil division: (total_count + page_size - 1) / page_size).
 
-  All endpoints require user API key authentication (B052). When prisma_client is unavailable, return
+  All endpoints sit behind the server's user API key authentication middleware. When prisma_client is unavailable, return
   HTTP 500. Build SQL queries with parameter injection; accept date validation errors from strptime
   with HTTP 400 "Invalid date format. Use YYYY-MM-DD: {e}".
 
@@ -106,7 +106,7 @@ deviations:
 out_of_scope:
   - "_TableOps protocol and _typed_table overloads (lines 142-155) are type-checking-only definitions with no runtime implementation; they provide type hints that return the repository's existing .table property unchanged. B3100 does not build them either."
   - get_distinct_user_agent_tags, get_daily_active_users, get_weekly_active_users (owned by B3100).
-  - Tag ownership scoping or authorization checks beyond user_api_key_auth (B052).
+  - Tag ownership scoping or authorization checks beyond the server's authentication middleware.
   - Caching of results or precomputed aggregations.
   - Database schema or table definitions (uses existing LiteLLM tables).
 pitfalls:

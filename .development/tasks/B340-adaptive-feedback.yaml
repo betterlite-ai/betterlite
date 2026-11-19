@@ -1,7 +1,7 @@
 id: B340
 title: Adaptive feedback signals and caller attribution
 description: 'Wire B376 feedback signals to B339 learning cells using B250 final-call observations and
-  B052 caller identity. Maintain caller-scoped session context, attribute prior-response feedback correctly
+  the request session id. Maintain caller-scoped session context, attribute prior-response feedback correctly
   and produce typed state deltas for B341. Enforce bounded session history and exclude raw prompt/tool
   text from persistable snapshots. Nonmonetary statistical arithmetic uses f64 only in feedback_math;
   put one module-level #[expect(clippy::float_arithmetic, reason = "pinned statistical routing arithmetic")]
