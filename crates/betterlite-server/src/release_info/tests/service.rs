@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use rstest::rstest;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::timeout;
 
 use super::support::{Answer, RELEASE_URL, Script, advance, fake_clock};
@@ -21,7 +22,13 @@ fn fixture(answers: Vec<Answer>) -> Fixture {
     let script = Script::new(answers);
     let (clock, now) = fake_clock(1_000.0);
     Fixture {
-        service: ReleaseService::new(script.clone(), RELEASE_URL.to_owned(), clock),
+        service: ReleaseService {
+            client: script.clone(),
+            source: RELEASE_URL.to_owned(),
+            clock,
+            cache: AsyncMutex::new(None),
+            fetch_lock: AsyncMutex::new(()),
+        },
         script,
         now,
     }
@@ -140,6 +147,21 @@ async fn a_cancelled_read_is_not_cached() {
 }
 
 #[tokio::test]
+async fn a_redirect_answer_is_unavailable_and_not_followed() {
+    let fixture = fixture(vec![failure(302)]);
+    let release = fixture
+        .service
+        .get()
+        .await
+        .expect("a redirect is an answer");
+    let LatestRelease::Unavailable(unavailable) = release else {
+        panic!("a redirect should be unavailable");
+    };
+    assert_eq!(unavailable.reason, "GitHub responded with status 302");
+    assert_eq!(fixture.script.calls(), 1);
+}
+
+#[tokio::test]
 async fn a_transport_failure_becomes_unavailable() {
     let fixture = fixture(vec![Answer::Closed]);
     let release = fixture
@@ -179,7 +201,13 @@ async fn an_invalid_payload_becomes_unavailable() {
 async fn an_unusable_source_is_an_error() {
     let script = Script::new(Vec::new());
     let (clock, _now) = fake_clock(1_000.0);
-    let service = ReleaseService::new(script.clone(), "not a url".to_owned(), clock);
+    let service = ReleaseService {
+        client: script.clone(),
+        source: "not a url".to_owned(),
+        clock,
+        cache: AsyncMutex::new(None),
+        fetch_lock: AsyncMutex::new(()),
+    };
     let outcome = service.get().await;
     assert!(matches!(outcome, Err(ReleaseError::Source(_))));
     assert_eq!(script.calls(), 0);

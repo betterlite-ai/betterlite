@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::Router;
 use betterlite_context::dynamic_logging_cache::Clock;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::sync::Mutex;
 
 use self::records::FIXED_RELEASE_URL;
 use self::service::ReleaseService;
@@ -21,11 +22,13 @@ pub const RELEASE_FIXTURE_VARIABLE: &str = "BETTERLITE_LATEST_RELEASE_URL";
 pub fn routes(state: &Arc<ServerState>) -> Router {
     let clock: Clock = Arc::new(system_seconds);
     let source = release_source_for(&state.config.environment_variables, cfg!(debug_assertions));
-    let service = Arc::new(ReleaseService::new(
-        state.executor.client.clone(),
+    let service = Arc::new(ReleaseService {
+        client: state.executor.client.clone(),
         source,
         clock,
-    ));
+        cache: Mutex::new(None),
+        fetch_lock: Mutex::new(()),
+    });
     route::router(service)
 }
 

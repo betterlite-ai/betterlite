@@ -4,6 +4,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde::Deserialize;
+use tokio::sync::Mutex;
 use tower::ServiceExt as _;
 
 use super::support::{Answer, RELEASE_URL, Script, fake_clock};
@@ -31,7 +32,13 @@ struct ErrorBody {
 
 fn app(script: Script, source: &str) -> Router {
     let (clock, _now) = fake_clock(1_000.0);
-    let service = Arc::new(ReleaseService::new(script, source.to_owned(), clock));
+    let service = Arc::new(ReleaseService {
+        client: script,
+        source: source.to_owned(),
+        clock,
+        cache: Mutex::new(None),
+        fetch_lock: Mutex::new(()),
+    });
     route::router(service)
 }
 

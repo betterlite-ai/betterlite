@@ -30,27 +30,17 @@ pub(super) enum ReleaseError {
 }
 
 pub(super) struct ReleaseService<Client> {
-    client: Client,
-    source: String,
-    clock: Clock,
-    cache: Mutex<Option<LocalTtlCache>>,
-    fetch_lock: Mutex<()>,
+    pub(super) client: Client,
+    pub(super) source: String,
+    pub(super) clock: Clock,
+    pub(super) cache: Mutex<Option<LocalTtlCache>>,
+    pub(super) fetch_lock: Mutex<()>,
 }
 
 impl<Client> ReleaseService<Client>
 where
     Client: Transport,
 {
-    pub(super) fn new(client: Client, source: String, clock: Clock) -> Self {
-        Self {
-            client,
-            source,
-            clock,
-            cache: Mutex::new(None),
-            fetch_lock: Mutex::new(()),
-        }
-    }
-
     pub(super) async fn get(&self) -> Result<LatestRelease, ReleaseError> {
         if let Some(cached) = self.cached().await? {
             return Ok(cached);
