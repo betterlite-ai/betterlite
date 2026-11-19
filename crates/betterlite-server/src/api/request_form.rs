@@ -98,13 +98,61 @@ fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, Requ
     };
     check_part_count(part_count, limits)?;
     let mut items = Vec::with_capacity(part_count);
-    for (name, value) in form_urlencoded::parse(bytes) {
+    for part in bytes
+        .split(|byte| *byte == b'&')
+        .filter(|part| !part.is_empty())
+    {
+        let (name, value) = match part.iter().position(|byte| *byte == b'=') {
+            Some(index) => (&part[..index], &part[index + 1..]),
+            None => (part, &[][..]),
+        };
         items.push(FormPart {
-            name: name.into_owned(),
-            value: PartValue::Text(value.into_owned()),
+            name: unquote_plus_latin1(name),
+            value: PartValue::Text(unquote_plus_latin1(value)),
         });
     }
     Ok(FormParts { items })
+}
+
+// Starlette reads each field via unquote_plus(bytes.decode("latin-1")), so raw bytes stay latin-1
+fn unquote_plus_latin1(bytes: &[u8]) -> String {
+    let mut decoded = String::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] >= 0x80 {
+            decoded.push(char::from(bytes[index]));
+            index += 1;
+            continue;
+        }
+        let mut escaped = Vec::with_capacity(4);
+        while index < bytes.len() && bytes[index] < 0x80 {
+            let byte = bytes[index];
+            if byte == b'+' {
+                escaped.push(b' ');
+                index += 1;
+            } else if byte == b'%'
+                && index + 2 < bytes.len()
+                && bytes[index + 1].is_ascii_hexdigit()
+                && bytes[index + 2].is_ascii_hexdigit()
+            {
+                escaped.push((hex_value(bytes[index + 1]) << 4) | hex_value(bytes[index + 2]));
+                index += 3;
+            } else {
+                escaped.push(byte);
+                index += 1;
+            }
+        }
+        decoded.push_str(&String::from_utf8_lossy(&escaped));
+    }
+    decoded
+}
+
+fn hex_value(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        _ => byte - b'A' + 10,
+    }
 }
 
 fn decode_multipart(

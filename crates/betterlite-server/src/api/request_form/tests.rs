@@ -89,6 +89,49 @@ fn repeated_plain_last_wins() {
 }
 
 #[test]
+fn urlencoded_raw_bytes_keep_starlette_latin1() {
+    let fields = urlencoded_fields(
+        b"caf\xe9=%E9&caf\xc3\xa9=%C3%A9&mix=caf\xe9%20au+lait&plain=a%41b%6ac%4A&edge=\x80\x7f&short=x%4&tail=x%",
+    );
+    assert_eq!(
+        fields.get("caf\u{e9}"),
+        Some(&FormValue::Text("\u{fffd}".to_owned()))
+    );
+    assert_eq!(
+        fields.get("caf\u{c3}\u{a9}"),
+        Some(&FormValue::Text("\u{e9}".to_owned()))
+    );
+    assert_eq!(
+        fields.get("mix"),
+        Some(&FormValue::Text("caf\u{e9} au lait".to_owned()))
+    );
+    assert_eq!(
+        fields.get("plain"),
+        Some(&FormValue::Text("aAbjcJ".to_owned()))
+    );
+    assert_eq!(
+        fields.get("edge"),
+        Some(&FormValue::Text("\u{80}\u{7f}".to_owned()))
+    );
+    assert_eq!(
+        fields.get("short"),
+        Some(&FormValue::Text("x%4".to_owned()))
+    );
+    assert_eq!(fields.get("tail"), Some(&FormValue::Text("x%".to_owned())));
+}
+
+#[test]
+fn urlencoded_parts_skip_empty_chunks_and_split_at_the_first_equals() {
+    let fields = urlencoded_fields(b"a=1&&b=x=y&flag&c=2&&hex=abc");
+    assert_eq!(fields.get("a"), Some(&FormValue::Text("1".to_owned())));
+    assert_eq!(fields.get("b"), Some(&FormValue::Text("x=y".to_owned())));
+    assert_eq!(fields.get("flag"), Some(&FormValue::Text(String::new())));
+    assert_eq!(fields.get("c"), Some(&FormValue::Text("2".to_owned())));
+    assert_eq!(fields.get("hex"), Some(&FormValue::Text("abc".to_owned())));
+    assert_eq!(fields.len(), 5);
+}
+
+#[test]
 fn a_mixed_list_is_decided_by_its_first_entry() {
     let fields = decode_multipart_parts(&format!(
         "{}{}",
