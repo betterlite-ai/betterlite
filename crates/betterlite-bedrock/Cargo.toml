@@ -39,7 +39,7 @@ chrono.workspace = true
 crc32fast = "1.5.3"
 encoding_rs = "0.8.42"
 fancy-regex = "0.19.2"
-futures-util = { version = "0.3.34", default-features = false }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
