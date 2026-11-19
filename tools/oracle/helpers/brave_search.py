@@ -79,7 +79,8 @@ def reply_value(call: ReplyCall) -> JsonValue:
     response = httpx.Response(200, content=call["body"].encode(), request=request)
     transformed: SearchResponse = CONFIG.transform_search_response(raw_response=response, logging_obj=None)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L240-L287
     view = TypeAdapter(SearchReply).validate_json(transformed.model_dump_json())
-    return JSON.validate_python({"results": view["results"], "object": view["object"]})
+    reply: dict[str, JsonValue] = {"results": view["results"], "object": view["object"]}
+    return JSON.validate_python(reply)
 
 
 def answer(call: Call) -> JsonValue:
