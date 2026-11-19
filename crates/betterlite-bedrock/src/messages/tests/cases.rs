@@ -584,4 +584,6 @@ pub(crate) fn native_error_event() {
     assert_eq!(error.status, Some(400));
     let cause = Error::source(&error).expect("the frame cause is kept");
     assert_eq!(cause.to_string(), "bedrock error (400)");
+    let typed = Error::source(cause).expect("the typed frame cause stays reachable");
+    assert_eq!(typed.to_string(), "bedrock error (400)");
 }
