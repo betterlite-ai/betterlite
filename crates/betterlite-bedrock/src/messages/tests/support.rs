@@ -15,7 +15,7 @@ use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
-use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream;
+use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream as _;
 use betterlite_http::error::HttpError;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json as ContractJson;
@@ -370,6 +370,7 @@ pub(super) fn text(value: &str) -> HeaderValue {
     HeaderValue::String(StrBytes::from(value.to_owned()))
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum TestFrame<'payload> {
     Chunk(&'payload str),
     Failure(&'payload str, &'payload [u8]),
@@ -480,6 +481,7 @@ pub(super) struct Keys {
     pub(super) session_token: Option<&'static str>,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct Signing<'request> {
     pub(super) model: &'request str,
     pub(super) headers: &'request IndexMap<String, String>,
@@ -489,6 +491,12 @@ pub(super) struct Signing<'request> {
     pub(super) configured_bearer: Option<&'request SecretString>,
 }
 
+fn test_runtime() -> Runtime {
+    Builder::new_current_thread()
+        .build()
+        .expect("the test runtime builds")
+}
+
 pub(super) fn sign(request: Signing<'_>, keys: &Keys) -> Result<AwsSignedRequest, SigningError> {
     let credentials = Credentials {
         access_key_id: SecretString::from(keys.access_key_id),
@@ -496,10 +504,10 @@ pub(super) fn sign(request: Signing<'_>, keys: &Keys) -> Result<AwsSignedRequest
         session_token: keys.session_token.map(SecretString::from),
     };
     let optional_params = InvokeParams::new();
-    let now = UNIX_EPOCH + Duration::from_secs(FIXTURE_NOW);
-    let runtime = Builder::new_current_thread()
-        .build()
-        .expect("the test runtime builds");
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_secs(FIXTURE_NOW))
+        .expect("the fixture time is representable");
+    let runtime = test_runtime();
     runtime.block_on(sign_messages_request(
         MessagesSignRequest {
             headers: request.headers,

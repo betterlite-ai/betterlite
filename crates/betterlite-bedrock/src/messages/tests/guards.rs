@@ -120,7 +120,9 @@ fn resolution_failure_is_clean() {
         stream: None,
         fake_stream: None,
         region_inputs: RegionInputs::default(),
-        now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        now: UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_700_000_000))
+            .expect("the fixture time is representable"),
     };
     let runtime = Builder::new_current_thread()
         .build()

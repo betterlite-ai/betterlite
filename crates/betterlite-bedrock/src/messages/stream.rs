@@ -54,9 +54,9 @@ enum MessagesStreamCause {
 #[derive(Clone, Debug, Error)]
 #[error("{message}")]
 pub struct MessagesStreamError {
-    pub kind: String,
-    pub message: String,
-    pub status: Option<u16>,
+    pub(crate) kind: String,
+    pub(crate) message: String,
+    pub(crate) status: Option<u16>,
     #[source]
     cause: Arc<MessagesStreamCause>,
 }
@@ -100,31 +100,31 @@ impl From<MessagesStreamCause> for MessagesStreamError {
 
 impl From<EventFrameError> for MessagesStreamError {
     fn from(source: EventFrameError) -> Self {
-        MessagesStreamError::from(MessagesStreamCause::Frame(Box::new(source)))
+        Self::from(MessagesStreamCause::Frame(Box::new(source)))
     }
 }
 
 impl From<serde_json::Error> for MessagesStreamError {
     fn from(source: serde_json::Error) -> Self {
-        MessagesStreamError::from(MessagesStreamCause::Json(Box::new(source)))
+        Self::from(MessagesStreamCause::Json(Box::new(source)))
     }
 }
 
 impl From<MessageUsageError> for MessagesStreamError {
     fn from(source: MessageUsageError) -> Self {
-        MessagesStreamError::from(MessagesStreamCause::Usage(Box::new(source)))
+        Self::from(MessagesStreamCause::Usage(Box::new(source)))
     }
 }
 
 impl From<ChunkError> for MessagesStreamError {
     fn from(source: ChunkError) -> Self {
-        MessagesStreamError::from(MessagesStreamCause::Chunk(Box::new(source)))
+        Self::from(MessagesStreamCause::Chunk(Box::new(source)))
     }
 }
 
 impl From<HttpError> for MessagesStreamError {
     fn from(source: HttpError) -> Self {
-        MessagesStreamError::from(MessagesStreamCause::Read(Box::new(source)))
+        Self::from(MessagesStreamCause::Read(Box::new(source)))
     }
 }
 

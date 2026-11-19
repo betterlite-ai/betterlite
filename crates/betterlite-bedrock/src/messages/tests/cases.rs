@@ -80,13 +80,13 @@ data: {"type": "message_stop", "usage": {"input_tokens": 11, "cache_creation_inp
 
 "#;
 
-fn stream_headers() -> Option<BTreeMap<String, String>> {
+fn stream_headers() -> BTreeMap<String, String> {
     let mut headers = BTreeMap::new();
     headers.insert(
         "content-type".to_owned(),
         "application/vnd.amazon.eventstream".to_owned(),
     );
-    Some(headers)
+    headers
 }
 
 fn metadata_params() -> MetadataParams {
@@ -126,7 +126,7 @@ fn endpoint_url(
     messages_complete_url(&MessagesEndpoint {
         api_base,
         model: MODEL_SONNET,
-        optional_params: &Default::default(),
+        optional_params: &IndexMap::default(),
         stream,
         environment,
     })
@@ -140,7 +140,7 @@ fn merged_environment() -> IndexMap<String, String> {
         "X-Amzn-Bedrock-Request-Metadata".to_owned(),
         "forged".to_owned(),
     );
-    let fields: IndexSet<String> = ["user_api_key_hash".to_owned()].into_iter().collect();
+    let fields: IndexSet<String> = std::iter::once("user_api_key_hash".to_owned()).collect();
     let policy = BedrockRequestPolicy { fields };
     let (merged, api_base) =
         validate_messages_environment(&input, &metadata_params(), Some(&policy), None, None)
@@ -495,7 +495,7 @@ pub(crate) fn error_header_projection() {
 }
 
 pub(crate) fn messages_constructor() {
-    assert!(MessagesConfig::try_from(&Object::new()).is_ok());
+    let _config = MessagesConfig::try_from(&Object::new()).expect("empty kwargs build");
     let mut kwargs = Object::new();
     kwargs.insert("model".to_owned(), Json::Text("fixture-plain".to_owned()));
     let error = MessagesConfig::try_from(&kwargs).expect_err("nonempty kwargs fail");
@@ -511,7 +511,7 @@ pub(crate) fn aws_event_to_sse() {
     frame.extend(test_frame(TestFrame::Chunk(EVENT_CONTENT)));
     frame.extend(test_frame(TestFrame::Chunk(EVENT_DELTA)));
     frame.extend(test_frame(TestFrame::Chunk(EVENT_STOP)));
-    let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
+    let (emitted, failure) = stream_all(Some(stream_headers()), vec![frame]);
     assert!(failure.is_none());
     let expected = [SSE_START, SSE_CONTENT, SSE_DELTA, SSE_STOP];
     assert_eq!(emitted.len(), expected.len());
@@ -524,7 +524,7 @@ pub(crate) fn message_start_event() {
     let mut frame = Vec::new();
     frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
     frame.extend(test_frame(TestFrame::Chunk(EVENT_STOP)));
-    let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
+    let (emitted, failure) = stream_all(Some(stream_headers()), vec![frame]);
     assert!(failure.is_none());
     assert_eq!(emitted.len(), 2);
     assert_eq!(
@@ -544,7 +544,7 @@ fn unfinished_stream() {
     let mut frame = Vec::new();
     frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
     frame.extend(test_frame(TestFrame::Chunk(EVENT_DELTA)));
-    let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
+    let (emitted, failure) = stream_all(Some(stream_headers()), vec![frame]);
     assert!(failure.is_none());
     assert_eq!(emitted.len(), 2);
     assert_eq!(
@@ -573,7 +573,7 @@ pub(crate) fn native_error_event() {
         "validationException",
         br#"{"message": "bad input"}"#,
     ));
-    let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
+    let (emitted, failure) = stream_all(Some(stream_headers()), vec![frame]);
     assert!(emitted.is_empty());
     let error = failure.expect("the error frame fails the stream");
     assert_eq!(error.kind, "BedrockError");
