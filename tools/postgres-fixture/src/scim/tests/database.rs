@@ -58,6 +58,11 @@ async fn assert_user_columns(client: &Client) {
 }
 
 async fn assert_team_columns(client: &Client) {
+    assert_red_team_columns(client).await;
+    assert_blue_team_columns(client).await;
+}
+
+async fn assert_red_team_columns(client: &Client) {
     let row = client
         .query_one(TEAM_COLUMNS, &[&"team-red"])
         .await
@@ -65,7 +70,7 @@ async fn assert_team_columns(client: &Client) {
     assert_eq!(row.get::<_, String>(0), "2025-03-01 00:00:00");
     assert_eq!(row.get::<_, String>(1), "2025-03-02 00:00:00");
     assert_eq!(row.get::<_, Option<String>>(2).as_deref(), Some("array"));
-    assert_eq!(row.get::<_, Option<i32>>(3), Some(2));
+    assert_eq!(row.get::<_, Option<i32>>(3), Some(2_i32));
     assert_eq!(row.get::<_, Option<String>>(4).as_deref(), Some("alice"));
     assert_eq!(row.get::<_, Option<String>>(5).as_deref(), Some("admin"));
     assert_eq!(
@@ -78,14 +83,17 @@ async fn assert_team_columns(client: &Client) {
         Some(vec!["alice".to_owned()])
     );
     assert_eq!(row.get::<_, Option<String>>(9).as_deref(), Some("scim"));
-    let empty = client
+}
+
+async fn assert_blue_team_columns(client: &Client) {
+    let row = client
         .query_one(TEAM_COLUMNS, &[&"team-blue"])
         .await
         .expect("the team-blue overlay lands");
-    assert_ne!(empty.get::<_, String>(0), "2025-03-01 00:00:00");
-    assert_eq!(empty.get::<_, Option<String>>(2).as_deref(), Some("array"));
-    assert_eq!(empty.get::<_, Option<i32>>(3), Some(0));
-    assert_eq!(empty.get::<_, Option<Vec<String>>>(8), None);
+    assert_ne!(row.get::<_, String>(0), "2025-03-01 00:00:00");
+    assert_eq!(row.get::<_, Option<String>>(2).as_deref(), Some("array"));
+    assert_eq!(row.get::<_, Option<i32>>(3), Some(0_i32));
+    assert_eq!(row.get::<_, Option<Vec<String>>>(8), None);
 }
 
 async fn assert_key_columns(client: &Client) {

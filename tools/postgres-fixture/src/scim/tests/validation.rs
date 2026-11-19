@@ -3,7 +3,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::dashboard::payload::JsonPayload;
 use crate::error::FixtureError;
-use crate::scim::model::{MemberRole, ScimKeyRow, ScimMember};
+use crate::scim::model::{MemberRole, ScimKeyRow, ScimMember, ScimTeamRow, ScimUserRow};
 use crate::seed::{CallerRole, DatabaseFixture};
 
 use super::support::{SAMPLE, decode};
@@ -38,7 +38,12 @@ fn decodes_the_scim_seed_typed_fields() {
     let seed = decode(SAMPLE);
     seed.validate().expect("the sample seed validates");
     let scim = seed.scim.as_ref().expect("the seed carries scim");
-    let alice = &scim.users[0];
+    assert_user_overlay(&scim.users[0]);
+    assert_team_overlay(&scim.teams);
+    assert_key_overlay(&scim.keys);
+}
+
+fn assert_user_overlay(alice: &ScimUserRow) {
     assert_eq!(alice.user_id, "alice");
     assert_eq!(
         alice
@@ -59,7 +64,10 @@ fn decodes_the_scim_seed_typed_fields() {
         Some(&JsonPayload::Text("scim".to_owned()))
     );
     assert_eq!(metadata.get("scim_managed"), Some(&JsonPayload::Bool(true)));
-    let first = scim.teams[0]
+}
+
+fn assert_team_overlay(teams: &[ScimTeamRow]) {
+    let first = teams[0]
         .members_with_roles
         .first()
         .expect("the roster has a member");
@@ -71,12 +79,15 @@ fn decodes_the_scim_seed_typed_fields() {
             role: MemberRole::Admin,
         }
     );
-    assert_eq!(scim.teams[0].members_with_roles[1].role, MemberRole::User);
-    assert!(scim.teams[1].members_with_roles.is_empty());
-    assert_eq!(scim.keys[0].blocked, Some(true));
-    assert_eq!(scim.keys[0].token.expose_secret(), "sk-alice-token");
-    assert_eq!(scim.keys[1].blocked, Some(false));
-    assert_eq!(scim.keys[2].blocked, None);
+    assert_eq!(teams[0].members_with_roles[1].role, MemberRole::User);
+    assert!(teams[1].members_with_roles.is_empty());
+}
+
+fn assert_key_overlay(keys: &[ScimKeyRow]) {
+    assert_eq!(keys[0].blocked, Some(true));
+    assert_eq!(keys[0].token.expose_secret(), "sk-alice-token");
+    assert_eq!(keys[1].blocked, Some(false));
+    assert_eq!(keys[2].blocked, None);
 }
 
 #[rstest]
@@ -128,5 +139,7 @@ fn accepts_a_user_role_its_keys_agree_with() {
 #[test]
 fn denies_unknown_scim_fields() {
     let document = r#"{"seed":{"users":[{"user_id":"alice"}],"scim":{"users":[{"user_id":"alice","teams_count":2}]}}}"#;
-    assert!(serde_json::from_str::<DatabaseFixture>(document).is_err());
+    let error = serde_json::from_str::<DatabaseFixture>(document)
+        .expect_err("an unknown scim field is refused");
+    assert!(error.to_string().contains("unknown field `teams_count`"));
 }
