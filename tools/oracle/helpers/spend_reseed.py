@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
@@ -57,38 +58,28 @@ class LogWhere(TypedDict):
     team_id: NotRequired[str]
 
 
+@dataclass
 class Row:
-    def __init__(self, spend: float | None, window_start: datetime | None = None) -> None:
-        self.spend, self.window_start = spend, window_start
+    spend: float | None
+    window_start: datetime | None = None
 
 
 def as_utc(moment: datetime) -> datetime:
-    if moment.tzinfo is not None:
-        return moment
-    return moment.replace(tzinfo=UTC)
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 def scripted_amount(answer: JsonValue) -> float | None:
-    if answer == "miss":
-        return None
     if answer == "fail":
         raise ValueError("the scripted cache read failed")
-    return FLOAT.validate_python(answer)
+    return None if answer == "miss" else FLOAT.validate_python(answer)
 
 
+@dataclass
 class ScriptedTable:
-    def __init__(
-        self,
-        row: Row | None,
-        window: Row | None,
-        logs: list[tuple[datetime, float]],
-        *,
-        fails: bool,
-    ) -> None:
-        self.row = row
-        self.window = window
-        self.logs = logs
-        self.fails = fails
+    row: Row | None
+    window: Row | None
+    logs: list[tuple[datetime, float]]
+    fails: bool
 
     async def find_unique(self, where: dict[str, JsonValue]) -> Row | None:
         if self.fails:
@@ -122,8 +113,7 @@ class FakeDb(PrismaWrapper):
         self.table = table
 
     @override
-    def __getattr__(self, name: str) -> ScriptedTable:
-        del name
+    def __getattr__(self, _name: str) -> ScriptedTable:
         return self.table
 
 
@@ -140,9 +130,7 @@ class ScriptedMemory(InMemoryCache):
         self.values: dict[str, float] = {}
 
     def current(self, key: str) -> float | None:
-        if key in self.values:
-            return self.values[key]
-        return self.initial
+        return self.values.get(key, self.initial)
 
     @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> float | None:

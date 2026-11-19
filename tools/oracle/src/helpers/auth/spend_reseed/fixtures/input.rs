@@ -13,8 +13,10 @@ pub(crate) enum Operation {
 }
 
 // a scripted answer is a number, "miss" or "fail": serde reads a unit variant as a bare string
+// the u64 repr gives the word a full machine word of payload, so Answer's two variants stay equal
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
+#[repr(u64)]
 pub(crate) enum Word {
     Miss,
     Fail,

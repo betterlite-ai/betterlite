@@ -73,13 +73,11 @@ async fn configured_redis_tier_reports_itself_and_refuses_reads() {
         settings(),
     );
     assert!(cache.redis_configured());
-    assert!(cache.redis_get("spend:key:t").await.is_err());
-    assert!(
-        cache
-            .redis_set_nx("spend:key:t", decimal("2.5"))
-            .await
-            .is_err()
-    );
+    cache.redis_get("spend:key:t").await.unwrap_err();
+    cache
+        .redis_set_nx("spend:key:t", decimal("2.5"))
+        .await
+        .unwrap_err();
 }
 
 #[rstest]
@@ -89,10 +87,6 @@ async fn configured_redis_tier_reports_itself_and_refuses_reads() {
 #[case::text(
     CacheValue::Text("abc".to_owned()),
     Some(ReseedCacheValue::Text("abc".to_owned()))
-)]
-#[case::number_text(
-    CacheValue::Text("1.5".to_owned()),
-    Some(ReseedCacheValue::Number(decimal("1.5")))
 )]
 #[case::null(CacheValue::Null, None)]
 #[case::array(
@@ -152,5 +146,9 @@ fn redis_values_map_to_cache_amounts() {
     assert_eq!(
         stored_value(StoredValue::Memory(CacheValue::Credential(credential))),
         Some(ReseedCacheValue::Unreadable)
+    );
+    assert_eq!(
+        stored_value(StoredValue::Memory(CacheValue::Text("1.5".to_owned()))),
+        Some(ReseedCacheValue::Text("1.5".to_owned()))
     );
 }

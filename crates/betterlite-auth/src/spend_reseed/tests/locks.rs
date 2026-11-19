@@ -29,13 +29,13 @@ async fn lru_hit_overflow_zero_negative_and_held_eviction(#[case] bound: i64) {
     let _overflow = held_registry.lock_for("other");
     let replaced = held_registry.lock_for("held");
     assert!(!Arc::ptr_eq(&held, &replaced));
-    assert!(held.try_lock().is_err());
-    assert!(replaced.try_lock().is_ok());
+    held.try_lock().unwrap_err();
+    replaced.try_lock().unwrap();
     drop(guard);
 
     // a zero or negative bound strips every entry it inserts, so callers stop sharing a lock
-    let registry = LockRegistry::from(bound);
-    let first = registry.lock_for("z");
-    let second = registry.lock_for("z");
-    assert!(!Arc::ptr_eq(&first, &second));
+    let bounded = LockRegistry::from(bound);
+    let zero_first = bounded.lock_for("z");
+    let zero_second = bounded.lock_for("z");
+    assert!(!Arc::ptr_eq(&zero_first, &zero_second));
 }

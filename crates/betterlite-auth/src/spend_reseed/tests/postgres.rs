@@ -124,9 +124,7 @@ async fn insert_spend(pool: &Pool, table: &str, key_column: &str, identifier: &s
 }
 
 async fn insert_window(pool: &Pool, entity: &str, identifier: &str, duration: &str, spend: f64) {
-    let statement = format!(
-        r#"INSERT INTO "LiteLLM_BudgetWindowSpend" (entity_type, entity_id, window_duration, window_start, spend) VALUES ($1, $2, $3, $4, $5)"#
-    );
+    let statement = r#"INSERT INTO "LiteLLM_BudgetWindowSpend" (entity_type, entity_id, window_duration, window_start, spend) VALUES ($1, $2, $3, $4, $5)"#.to_owned();
     execute(
         pool,
         &statement,
@@ -141,12 +139,17 @@ async fn insert_log(pool: &Pool, api_key: &str, team_id: &str, spend: f64, momen
 
 async fn seed_primary_rows(pool: &Pool) {
     let rows = [
-        ("LiteLLM_VerificationToken", "token", "hashed-key", 2.5),
-        ("LiteLLM_TeamTable", "team_id", "t1", 3.25),
-        ("LiteLLM_UserTable", "user_id", "u1", 4.5),
-        ("LiteLLM_OrganizationTable", "organization_id", "org1", 5.25),
-        ("LiteLLM_ProjectTable", "project_id", "proj1", 6.75),
-        ("LiteLLM_EndUserTable", "user_id", "eu1", 7.25),
+        ("LiteLLM_VerificationToken", "token", "hashed-key", 2.5_f64),
+        ("LiteLLM_TeamTable", "team_id", "t1", 3.25_f64),
+        ("LiteLLM_UserTable", "user_id", "u1", 4.5_f64),
+        (
+            "LiteLLM_OrganizationTable",
+            "organization_id",
+            "org1",
+            5.25_f64,
+        ),
+        ("LiteLLM_ProjectTable", "project_id", "proj1", 6.75_f64),
+        ("LiteLLM_EndUserTable", "user_id", "eu1", 7.25_f64),
     ];
     for (table, column, identifier, spend) in rows {
         insert_spend(pool, table, column, identifier, spend).await;

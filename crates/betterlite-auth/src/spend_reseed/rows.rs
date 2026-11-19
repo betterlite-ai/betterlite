@@ -54,7 +54,13 @@ impl WindowEntity {
         match entity_type {
             CounterEntityType::Key => Some(Self::Key),
             CounterEntityType::Team => Some(Self::Team),
-            _ => None,
+            CounterEntityType::TeamMember
+            | CounterEntityType::User
+            | CounterEntityType::EndUser
+            | CounterEntityType::Tag
+            | CounterEntityType::ModelAccessGroup
+            | CounterEntityType::Organization
+            | CounterEntityType::Project => None,
         }
     }
 

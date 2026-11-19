@@ -43,15 +43,12 @@ async fn all_primary_prefixes_and_empty_ids(
 ) {
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
-    match expected {
-        Some(lookup) => {
-            assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("2.5"))));
-            assert_eq!(rows.lookups(), vec![lookup]);
-        }
-        None => {
-            assert_eq!(counter.from_db(counter_key).await, Ok(None));
-            assert!(rows.lookups().is_empty());
-        }
+    if let Some(lookup) = expected {
+        assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("2.5"))));
+        assert_eq!(rows.lookups(), vec![lookup]);
+    } else {
+        assert_eq!(counter.from_db(counter_key).await, Ok(None));
+        assert!(rows.lookups().is_empty());
     }
 }
 
@@ -366,7 +363,7 @@ async fn local_increment_same_lock() {
     let failed = counter
         .increment_in_memory(&cache, "spend:key:t", Decimal::ONE)
         .await;
-    assert!(failed.is_err());
+    failed.unwrap_err();
 }
 
 #[tokio::test]

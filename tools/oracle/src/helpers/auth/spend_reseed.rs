@@ -54,9 +54,9 @@ async fn execute(input: &Input) -> HelperResult {
                 .await
                 .map_err(failure)?
         }
-        Operation::WindowFromTable => window_table(input, &reseed).await?,
-        Operation::WindowFromDb => window_db(input, &reseed).await?,
-        Operation::WindowFromSpendLogs => window_logs(input, &reseed).await?,
+        Operation::WindowFromTable => window(input, &reseed, WindowOp::Table).await?,
+        Operation::WindowFromDb => window(input, &reseed, WindowOp::Db).await?,
+        Operation::WindowFromSpendLogs => window(input, &reseed, WindowOp::Logs).await?,
     };
     Ok(json!({
         "value": value.map_or(Value::Null, amount_json),
@@ -76,51 +76,52 @@ async fn increment(input: &Input, counter: &Counters, cache: &FakeCache) -> Amou
 }
 
 fn counter_entity(input: &Input) -> CounterEntityType {
-    let Some(named) = CounterEntityType::from_litellm_name(&input.entity) else {
-        return CounterEntityType::Tag;
-    };
-    named
+    CounterEntityType::from_litellm_name(&input.entity).unwrap_or(CounterEntityType::Tag)
 }
 
-async fn window_table(input: &Input, counter: &Counters) -> Amount {
-    let entity = counter_entity(input);
-    let start = timestamp(&input.start)?;
-    let query = WindowQuery {
-        entity_type: &entity,
+#[derive(Clone, Copy)]
+enum WindowOp {
+    Table,
+    Db,
+    Logs,
+}
+
+fn window_query<'input>(
+    input: &'input Input,
+    entity: &'input CounterEntityType,
+) -> Result<WindowQuery<'input>, Box<HelperError>> {
+    Ok(WindowQuery {
+        entity_type: entity,
         entity_id: &input.entity_id,
-        start,
-    };
-    let duration = input
-        .duration
-        .as_deref()
-        .ok_or_else(|| failure("window_from_table needs a duration"))?;
-    let expected = timestamp(&input.expected_start)?;
-    counter
-        .window_from_table(&query, duration, expected)
-        .await
-        .map_err(failure)
+        start: timestamp(&input.start)?,
+    })
 }
 
-async fn window_db(input: &Input, counter: &Counters) -> Amount {
+async fn window(input: &Input, counter: &Counters, op: WindowOp) -> Amount {
     let entity = counter_entity(input);
-    let duration = input.duration.as_deref();
-    let expected = timestamp(&input.expected_start)?;
-    counter
-        .window_from_db(&entity, &input.entity_id, duration, expected)
-        .await
-        .map_err(failure)
-}
-
-async fn window_logs(input: &Input, counter: &Counters) -> Amount {
-    let entity = counter_entity(input);
-    let start = timestamp(&input.start)?;
-    let query = WindowQuery {
-        entity_type: &entity,
-        entity_id: &input.entity_id,
-        start,
-    };
-    counter
-        .window_from_spend_logs(&query)
-        .await
-        .map_err(failure)
+    match op {
+        WindowOp::Table => {
+            let Some(duration) = input.duration.as_deref() else {
+                return Err(failure("window_from_table needs a duration"));
+            };
+            let expected = timestamp(&input.expected_start)?;
+            let query = window_query(input, &entity)?;
+            counter
+                .window_from_table(&query, duration, expected)
+                .await
+                .map_err(failure)
+        }
+        WindowOp::Db => {
+            let duration = input.duration.as_deref();
+            let expected = timestamp(&input.expected_start)?;
+            counter
+                .window_from_db(&entity, &input.entity_id, duration, expected)
+                .await
+                .map_err(failure)
+        }
+        WindowOp::Logs => counter
+            .window_from_spend_logs(&window_query(input, &entity)?)
+            .await
+            .map_err(failure),
+    }
 }

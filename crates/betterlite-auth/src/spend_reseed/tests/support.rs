@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
+use std::fmt::Debug;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,12 +18,17 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
+use tracing::Event;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::layer::{Context, SubscriberExt};
 
 use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
@@ -45,7 +52,7 @@ pub(crate) fn decimal(text: &str) -> Decimal {
 // a coalesced answer whose cache error type has no equality, unwrapped for an assert
 pub(crate) fn answered<Failure>(outcome: Result<Option<Decimal>, Failure>) -> Option<Decimal>
 where
-    Failure: std::fmt::Debug,
+    Failure: Debug,
 {
     outcome.expect("the reseed answers")
 }
@@ -157,6 +164,27 @@ impl FakeRows {
     pub(crate) fn log_lookups(&self) -> Vec<(WindowEntity, String, DateTime<Utc>)> {
         self.log_lookups.lock().expect("the fake log lock").clone()
     }
+
+    fn take_window(
+        &self,
+        entity: WindowEntity,
+        entity_id: &str,
+        window_duration: &str,
+    ) -> Result<Option<WindowSpendRow>, FakeError> {
+        if self.window_fails.load(Ordering::Relaxed) {
+            return Err(FakeError);
+        }
+        let record = (entity, entity_id.to_owned(), window_duration.to_owned());
+        self.window_lookups
+            .lock()
+            .expect("the fake window lock")
+            .push(record);
+        Ok(self
+            .window
+            .lock()
+            .expect("the fake window row lock")
+            .clone())
+    }
 }
 
 impl SpendCounterRows for FakeRows {
@@ -174,48 +202,36 @@ impl SpendCounterRows for FakeRows {
         Ok(self.row.lock().expect("the fake row lock").clone())
     }
 
-    async fn window_row(
+    fn window_row(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         window_duration: &str,
-    ) -> Result<Option<WindowSpendRow>, FakeError> {
-        self.window_lookups
-            .lock()
-            .expect("the fake window lock")
-            .push((entity, entity_id.to_owned(), window_duration.to_owned()));
-        if self.window_fails.load(Ordering::Relaxed) {
-            return Err(FakeError);
-        }
-        Ok(self
-            .window
-            .lock()
-            .expect("the fake window row lock")
-            .clone())
+    ) -> impl Future<Output = Result<Option<WindowSpendRow>, FakeError>> + Send {
+        ready(self.take_window(entity, entity_id, window_duration))
     }
 
-    async fn window_log_rows(
+    fn window_log_rows(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         window_start: DateTime<Utc>,
-    ) -> Result<Vec<SpendAggregateRow>, FakeError> {
-        let record = (entity, entity_id.to_owned(), window_start);
-        self.log_lookups
-            .lock()
-            .expect("the fake log lock")
-            .push(record);
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, FakeError>> + Send {
+        self.log_lookups.lock().expect("the fake log lock").push((
+            entity,
+            entity_id.to_owned(),
+            window_start,
+        ));
         if self.logs_fail.load(Ordering::Relaxed) {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
         let logs = self.logs.lock().expect("the fake logs lock").clone();
-        Ok(logs)
+        ready(Ok(logs))
     }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum RedisAnswer {
-    Hit(ReseedCacheValue),
     Miss,
     Fail,
 }
@@ -332,35 +348,21 @@ impl FakeCache {
     pub(crate) fn redis_value(&self) -> Option<ReseedCacheValue> {
         self.redis.lock().expect("the fake redis lock").clone()
     }
-}
 
-impl ReseedCache for FakeCache {
-    type Error = FakeError;
-
-    fn redis_configured(&self) -> bool {
-        self.redis_configured
-    }
-
-    async fn redis_get(&self, _counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
-        self.redis_gets.fetch_add(1, Ordering::Relaxed);
-        match self
+    fn next_redis_value(&self) -> Result<Option<ReseedCacheValue>, FakeError> {
+        let answer = self
             .redis_answers
             .lock()
             .expect("the fake answer lock")
-            .pop_front()
-        {
-            Some(RedisAnswer::Hit(value)) => Ok(Some(value)),
+            .pop_front();
+        match answer {
             Some(RedisAnswer::Miss) => Ok(None),
             Some(RedisAnswer::Fail) => Err(FakeError),
             None => Ok(self.redis_value()),
         }
     }
 
-    async fn redis_set_nx(
-        &self,
-        counter_key: &str,
-        value: Decimal,
-    ) -> Result<Option<bool>, FakeError> {
+    fn store_nx(&self, counter_key: &str, value: Decimal) -> Result<Option<bool>, FakeError> {
         self.redis_sets
             .lock()
             .expect("the fake redis set lock")
@@ -377,7 +379,7 @@ impl ReseedCache for FakeCache {
         }
     }
 
-    async fn memory_get(&self, counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
+    fn read_memory(&self, counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
         if self.memory_get_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
@@ -390,7 +392,7 @@ impl ReseedCache for FakeCache {
         Ok(scripted.unwrap_or_else(|| self.memory_text(counter_key)))
     }
 
-    async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), FakeError> {
+    fn write_memory(&self, counter_key: &str, value: Decimal) -> Result<(), FakeError> {
         if self.memory_set_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
@@ -404,6 +406,45 @@ impl ReseedCache for FakeCache {
             .expect("the fake memory set lock")
             .push((counter_key.to_owned(), value));
         Ok(())
+    }
+}
+
+impl ReseedCache for FakeCache {
+    type Error = FakeError;
+
+    fn redis_configured(&self) -> bool {
+        self.redis_configured
+    }
+
+    fn redis_get(
+        &self,
+        _counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, FakeError>> + Send {
+        self.redis_gets.fetch_add(1, Ordering::Relaxed);
+        ready(self.next_redis_value())
+    }
+
+    fn redis_set_nx(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<Option<bool>, FakeError>> + Send {
+        ready(self.store_nx(counter_key, value))
+    }
+
+    fn memory_get(
+        &self,
+        counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, FakeError>> + Send {
+        ready(self.read_memory(counter_key))
+    }
+
+    fn memory_set(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        ready(self.write_memory(counter_key, value))
     }
 
     async fn increment_local(
@@ -452,14 +493,14 @@ impl FakeBatch {
 }
 
 impl ActiveSpendBatch for FakeBatch {
-    async fn read(
+    fn read(
         &self,
         _counter_key: &str,
-    ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
+    ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
         if self.fails {
-            return Err(SpendCounterBatchError::Cancelled);
+            return ready(Err(SpendCounterBatchError::Cancelled));
         }
-        Ok(self.answer)
+        ready(Ok(self.answer))
     }
 
     fn record(&self, counter_key: &str, value: Decimal) {
@@ -545,14 +586,14 @@ pub(crate) fn reseed(rows: FakeRows) -> SpendCounterReseed<FakeRows> {
 #[derive(Default)]
 struct LogFields(Option<String>);
 
-impl tracing::field::Visit for LogFields {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+impl Visit for LogFields {
+    fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             self.0 = Some(value.to_owned());
         }
     }
 
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = Some(format!("{value:?}"));
         }
@@ -563,7 +604,7 @@ impl tracing::field::Visit for LogFields {
 struct MessageLog(Arc<Mutex<Vec<String>>>);
 
 impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for MessageLog {
-    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
         let mut fields = LogFields::default();
         event.record(&mut fields);
         if let Some(message) = fields.0
@@ -576,19 +617,16 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for MessageLog {
 
 pub(crate) struct Logs {
     messages: MessageLog,
-    _guard: tracing::subscriber::DefaultGuard,
+    _guard: DefaultGuard,
 }
 
 impl Logs {
     pub(crate) fn capture() -> Self {
         let messages = MessageLog::default();
-        let subscriber = tracing_subscriber::layer::SubscriberExt::with(
-            tracing_subscriber::registry(),
-            messages.clone(),
-        );
+        let subscriber = tracing_subscriber::registry().with(messages.clone());
         Self {
             messages,
-            _guard: tracing::subscriber::set_default(subscriber),
+            _guard: set_default(subscriber),
         }
     }
 
@@ -597,10 +635,6 @@ impl Logs {
             .0
             .lock()
             .is_ok_and(|messages| messages.iter().any(|message| message.contains(text)))
-    }
-
-    pub(crate) fn count(&self) -> usize {
-        self.messages.0.lock().map_or(0, |messages| messages.len())
     }
 }
 
@@ -628,10 +662,11 @@ impl BreakerGate for RefusingGate {
 }
 
 pub(crate) async fn refusing_redis_cache() -> Arc<RedisCache> {
-    let overrides: RedisOverrides = serde_json::from_str(
-        r#"{"host":"127.0.0.1","port":1,"socket_timeout":1.0,"socket_connect_timeout":1.0}"#,
-    )
-    .expect("the Redis overrides parse");
+    let overrides = RedisOverrides {
+        host: Some("127.0.0.1".to_owned()),
+        port: Some(IntOrText::Value(1)),
+        ..RedisOverrides::default()
+    };
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,

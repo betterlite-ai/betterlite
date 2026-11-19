@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 
 use betterlite_auth::spend_reseed::rows::{
     SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
@@ -6,12 +7,13 @@ use betterlite_auth::spend_reseed::rows::{
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_oracle_helper_api::error::HelperError;
 use chrono::{DateTime, Utc};
+use serde_json::Number;
 
 use super::fakes::{FakeError, timestamp};
 use super::input::Input;
 
 fn stored(amount: f64) -> Option<JsonData> {
-    serde_json::Number::from_f64(amount).map(JsonData::Number)
+    Number::from_f64(amount).map(JsonData::Number)
 }
 
 fn aggregate(total: f64) -> SpendAggregateRow {
@@ -31,14 +33,16 @@ pub(crate) struct FakeRows {
 
 impl FakeRows {
     pub(crate) fn build(input: &Input) -> Result<Self, Box<HelperError>> {
-        let window = match &input.window {
-            Some((start, spend)) => Some((timestamp(start)?, *spend)),
-            None => None,
-        };
-        let mut logs = Vec::new();
-        for (start, spend) in &input.logs {
-            logs.push((timestamp(start)?, *spend));
-        }
+        let window = input
+            .window
+            .as_ref()
+            .map(|(start, spend)| timestamp(start).map(|moment| (moment, *spend)))
+            .transpose()?;
+        let logs = input
+            .logs
+            .iter()
+            .map(|(start, spend)| timestamp(start).map(|moment| (moment, *spend)))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             row: input.row_spend,
             window,
@@ -51,49 +55,52 @@ impl FakeRows {
 impl SpendCounterRows for FakeRows {
     type Error = FakeError;
 
-    async fn spend_row(&self, _lookup: SpendRowLookup<'_>) -> Result<Option<SpendRow>, FakeError> {
+    fn spend_row(
+        &self,
+        _lookup: SpendRowLookup<'_>,
+    ) -> impl Future<Output = Result<Option<SpendRow>, FakeError>> + Send {
         if self.fails {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
-        Ok(self.row.map(|amount| SpendRow {
+        ready(Ok(self.row.map(|amount| SpendRow {
             spend: stored(amount),
-        }))
+        })))
     }
 
-    async fn window_row(
+    fn window_row(
         &self,
         _entity: WindowEntity,
         _entity_id: &str,
         _window_duration: &str,
-    ) -> Result<Option<WindowSpendRow>, FakeError> {
+    ) -> impl Future<Output = Result<Option<WindowSpendRow>, FakeError>> + Send {
         if self.fails {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
-        Ok(self.window.map(|(start, spend)| WindowSpendRow {
+        ready(Ok(self.window.map(|(start, spend)| WindowSpendRow {
             window_start: start,
             spend: stored(spend),
-        }))
+        })))
     }
 
-    async fn window_log_rows(
+    fn window_log_rows(
         &self,
         _entity: WindowEntity,
         _entity_id: &str,
         window_start: DateTime<Utc>,
-    ) -> Result<Vec<SpendAggregateRow>, FakeError> {
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, FakeError>> + Send {
         if self.fails {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
-        let mut matching = Vec::new();
-        for (start, spend) in &self.logs {
-            if start.utc() >= window_start {
-                matching.push(*spend);
-            }
-        }
+        let matching: Vec<f64> = self
+            .logs
+            .iter()
+            .filter(|(start, _spend)| start.utc() >= window_start)
+            .map(|(_start, spend)| *spend)
+            .collect();
         if matching.is_empty() {
-            return Ok(Vec::new());
+            return ready(Ok(Vec::new()));
         }
         let total: f64 = matching.iter().sum();
-        Ok(vec![aggregate(total)])
+        ready(Ok(vec![aggregate(total)]))
     }
 }

@@ -23,7 +23,6 @@ pub enum SpendValueError {
 }
 
 // Python's float(getattr(row, "spend", 0.0) or 0.0): an absent, null or falsey field reads as zero
-#[must_use]
 pub fn stored_amount(spend: Option<&JsonData>) -> Result<Decimal, SpendValueError> {
     match spend {
         None | Some(JsonData::Null) => Ok(Decimal::ZERO),
@@ -32,7 +31,6 @@ pub fn stored_amount(spend: Option<&JsonData>) -> Result<Decimal, SpendValueErro
 }
 
 // Python's float(value) on a cache hit has no `or 0.0`, so an empty or unreadable value raises
-#[must_use]
 pub fn cache_amount(value: &ReseedCacheValue) -> Result<Decimal, SpendValueError> {
     match value {
         ReseedCacheValue::Number(amount) => Ok(*amount),
@@ -44,14 +42,12 @@ pub fn cache_amount(value: &ReseedCacheValue) -> Result<Decimal, SpendValueError
     }
 }
 
-#[must_use]
 fn text_amount(text: &str) -> Result<Decimal, SpendValueError> {
     amount_from_text(text.trim()).ok_or_else(|| SpendValueError::OutOfRange {
         text: text.to_owned(),
     })
 }
 
-#[must_use]
 fn json_amount(value: &JsonData) -> Result<Decimal, SpendValueError> {
     match value {
         JsonData::Null => Ok(Decimal::ZERO),
@@ -67,7 +63,6 @@ fn json_amount(value: &JsonData) -> Result<Decimal, SpendValueError> {
 }
 
 // the first aggregate row's _sum.spend, read from a mapping row or from a row object's attribute
-#[must_use]
 pub fn aggregate_amount(row: &SpendAggregateRow) -> Result<Decimal, SpendValueError> {
     let sum = match row {
         SpendAggregateRow::Mapping(fields) => fields.get("_sum"),

@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_cache::backend::BackendError;
@@ -62,19 +63,24 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
             .await?)
     }
 
-    async fn memory_get(
+    fn memory_get(
         &self,
         counter_key: &str,
-    ) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
-        let stored = self.in_memory_cache.get_cache(counter_key)?;
-        Ok(stored.map(StoredValue::Memory).and_then(stored_value))
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
+        ready(read_memory(&self.in_memory_cache, counter_key))
     }
 
-    async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), ReseedCacheError> {
-        let amount = value.to_f64().ok_or(ReseedCacheError::OutOfRange(value))?;
-        Ok(self
-            .in_memory_cache
-            .set_cache(counter_key, CacheValue::Float(amount), None)?)
+    fn memory_set(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<(), ReseedCacheError>> + Send {
+        let converted = value.to_f64().ok_or(ReseedCacheError::OutOfRange(value));
+        ready(converted.and_then(|amount| {
+            self.in_memory_cache
+                .set_cache(counter_key, CacheValue::Float(amount), None)
+                .map_err(ReseedCacheError::Memory)
+        }))
     }
 
     async fn increment_local(
@@ -95,6 +101,16 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
             .await;
         Ok(counted.and_then(Decimal::from_f64))
     }
+}
+
+fn read_memory<Memory: MemoryCacheOps>(
+    cache: &Memory,
+    counter_key: &str,
+) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
+    let stored = cache
+        .get_cache(counter_key)
+        .map_err(ReseedCacheError::Memory)?;
+    Ok(stored.map(StoredValue::Memory).and_then(stored_value))
 }
 
 fn redis_of<Memory>(cache: &DualCache<Memory>) -> Option<Arc<RedisCache>>
@@ -131,6 +147,6 @@ pub(crate) fn stored_value(value: StoredValue) -> Option<ReseedCacheValue> {
             Decimal::from_f64(amount)
                 .map_or(ReseedCacheValue::Unreadable, ReseedCacheValue::Number),
         ),
-        _ => Some(ReseedCacheValue::Unreadable),
+        StoredValue::Redis(_) | StoredValue::Memory(_) => Some(ReseedCacheValue::Unreadable),
     }
 }

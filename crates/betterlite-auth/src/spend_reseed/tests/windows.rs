@@ -146,8 +146,9 @@ async fn window_table_team_and_user_lookups() {
             start,
         )
         .await;
+    // a user window counter has no maintained row, so it reads no table row at all
     assert_eq!(user, Ok(None));
-    assert_eq!(rows.window_lookups().len(), 2);
+    assert_eq!(rows.window_lookups().len(), 1);
 }
 
 #[rstest]

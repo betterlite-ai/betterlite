@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::fmt::Display;
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
 use betterlite_auth::budget_primitives::window_start::DurationParser;
@@ -17,7 +19,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
-use serde_json::{Value, json};
+use serde_json::{Number, Value, json};
 use tokio_util::task::TaskTracker;
 
 use super::input::{Answer, CacheInput, SetNx, Word};
@@ -29,7 +31,7 @@ pub(crate) struct FakeError;
 
 pub(crate) fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
@@ -44,7 +46,7 @@ where
 pub(crate) fn amount_json(amount: Decimal) -> Value {
     amount
         .to_f64()
-        .and_then(serde_json::Number::from_f64)
+        .and_then(Number::from_f64)
         .map_or(Value::Null, Value::Number)
 }
 
@@ -84,12 +86,35 @@ impl FakeCache {
         }
     }
 
+    fn state(&self) -> MutexGuard<'_, CacheState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn stored_amount(&self) -> Option<Decimal> {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .memory
-            .and_then(Decimal::from_f64)
+        self.state().memory.and_then(Decimal::from_f64)
+    }
+
+    fn take_answer(&self) -> Option<Answer> {
+        self.state().answers.pop_front()
+    }
+
+    fn write_memory(&self, value: Decimal) -> Result<(), FakeError> {
+        if self.memory_set_fails {
+            return Err(FakeError);
+        }
+        self.state().memory = value.to_f64();
+        Ok(())
+    }
+
+    fn store_nx(&self, counter_key: &str, value: Decimal) -> Result<Option<bool>, FakeError> {
+        if !self.redis {
+            return Ok(None);
+        }
+        if matches!(self.set_nx, SetNx::Fail) {
+            return Err(FakeError);
+        }
+        self.state().sets.push((counter_key.to_owned(), value));
+        Ok(Some(matches!(self.set_nx, SetNx::Stored)))
     }
 
     pub(crate) fn memory_json(&self) -> Value {
@@ -100,7 +125,7 @@ impl FakeCache {
     }
 
     pub(crate) fn sets_json(&self) -> Value {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = self.state();
         Value::Array(
             state
                 .sets
@@ -118,79 +143,66 @@ impl ReseedCache for FakeCache {
         self.redis
     }
 
-    async fn redis_get(&self, _counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
+    fn redis_get(
+        &self,
+        _counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, FakeError>> + Send {
         if !self.redis {
-            return Ok(None);
+            return ready(Ok(None));
         }
-        let answer = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .answers
-            .pop_front();
-        match answer {
-            Some(Answer::Amount(value)) => {
-                Ok(Decimal::from_f64(value).map(ReseedCacheValue::Number))
-            }
-            Some(Answer::Word(Word::Fail)) => Err(FakeError),
-            Some(Answer::Word(Word::Miss)) | None => Ok(None),
-        }
+        ready(cache_value(self.take_answer()))
     }
 
-    async fn redis_set_nx(
+    fn redis_set_nx(
         &self,
         counter_key: &str,
         value: Decimal,
-    ) -> Result<Option<bool>, FakeError> {
-        if !self.redis {
-            return Ok(None);
-        }
-        if matches!(self.set_nx, SetNx::Fail) {
-            return Err(FakeError);
-        }
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .sets
-            .push((counter_key.to_owned(), value));
-        Ok(Some(matches!(self.set_nx, SetNx::Stored)))
+    ) -> impl Future<Output = Result<Option<bool>, FakeError>> + Send {
+        ready(self.store_nx(counter_key, value))
     }
 
-    async fn memory_get(&self, _counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
-        let Some(amount) = self.stored_amount() else {
-            return Ok(None);
-        };
-        Ok(Some(ReseedCacheValue::Number(amount)))
+    fn memory_get(
+        &self,
+        _counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, FakeError>> + Send {
+        ready(Ok(self.stored_amount().map(ReseedCacheValue::Number)))
     }
 
-    async fn memory_set(&self, _counter_key: &str, value: Decimal) -> Result<(), FakeError> {
-        if self.memory_set_fails {
-            return Err(FakeError);
-        }
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .memory = value.to_f64();
-        Ok(())
+    fn memory_set(
+        &self,
+        _counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        ready(self.write_memory(value))
     }
 
-    async fn increment_local(
+    fn increment_local(
         &self,
         _counter_key: &str,
         increment: Decimal,
-    ) -> Result<Option<Decimal>, FakeError> {
+    ) -> impl Future<Output = Result<Option<Decimal>, FakeError>> + Send {
         // LiteLLM's increment swallows a memory write failure and leaves the counter alone
         if self.memory_set_fails {
-            return Ok(None);
+            return ready(Ok(None));
         }
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let base = state
             .memory
             .and_then(Decimal::from_f64)
             .unwrap_or(Decimal::ZERO);
-        let next = base.checked_add(increment).ok_or(FakeError)?;
+        let Some(next) = base.checked_add(increment) else {
+            return ready(Err(FakeError));
+        };
         state.memory = next.to_f64();
-        Ok(Some(next))
+        ready(Ok(Some(next)))
+    }
+}
+
+fn cache_value(answer: Option<Answer>) -> Result<Option<ReseedCacheValue>, FakeError> {
+    match answer {
+        Some(Answer::Amount(value)) => Ok(Decimal::from_f64(value).map(ReseedCacheValue::Number)),
+        Some(Answer::Word(Word::Fail)) => Err(FakeError),
+        Some(Answer::Word(Word::Miss)) | None => Ok(None),
     }
 }
 
@@ -212,6 +224,10 @@ impl FakeBatch {
         if let Some(amount) = recorded {
             return amount_json(amount);
         }
+        self.scripted_answer()
+    }
+
+    fn scripted_answer(&self) -> Value {
         match &self.answer {
             Some(Answer::Amount(value)) => {
                 Decimal::from_f64(*value).map_or(Value::Null, amount_json)
@@ -222,21 +238,26 @@ impl FakeBatch {
 }
 
 impl ActiveSpendBatch for FakeBatch {
-    async fn read(
+    fn read(
         &self,
         _counter_key: &str,
-    ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
-        match &self.answer {
-            Some(Answer::Amount(value)) => Decimal::from_f64(*value)
-                .map(|amount| Some(CounterValue::Amount(amount)))
-                .ok_or(SpendCounterBatchError::Cancelled),
-            Some(Answer::Word(Word::Miss)) => Ok(Some(CounterValue::Missing)),
-            Some(Answer::Word(Word::Fail)) | None => Ok(None),
-        }
+    ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
+        ready(batch_value(self.answer.as_ref()))
     }
 
     fn record(&self, _counter_key: &str, value: Decimal) {
         *self.recorded.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
+    }
+}
+
+fn batch_value(answer: Option<&Answer>) -> Result<Option<CounterValue>, SpendCounterBatchError> {
+    match answer {
+        Some(Answer::Amount(value)) => {
+            let amount = Decimal::from_f64(*value).ok_or(SpendCounterBatchError::Cancelled)?;
+            Ok(Some(CounterValue::Amount(amount)))
+        }
+        Some(Answer::Word(Word::Miss)) => Ok(Some(CounterValue::Missing)),
+        Some(Answer::Word(Word::Fail)) | None => Ok(None),
     }
 }
 
