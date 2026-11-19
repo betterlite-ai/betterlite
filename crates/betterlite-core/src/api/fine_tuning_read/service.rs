@@ -10,10 +10,9 @@ use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSe
 
 use super::page;
 use super::{
-    AzureReadCall, FineTuningListCall, FineTuningReadDispatch, FineTuningReadError,
-    FineTuningReadInput, FineTuningReadOutcome, FineTuningReadParams, FineTuningRetrieveCall,
-    OpenAiReadCall, ReadOperation, ReadProvider, ReadTarget, ReadTimeout, ReadTimeoutValue,
-    ReadValues,
+    AzureReadCall, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
+    FineTuningReadOutcome, FineTuningReadParams, OpenAiReadCall, ReadOperation, ReadProvider,
+    ReadTarget, ReadTimeout, ReadTimeoutValue, ReadValues,
 };
 
 pub struct FineTuningRead<Dispatch> {
@@ -30,36 +29,33 @@ where
         input: &FineTuningReadInput,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
         match input {
-            FineTuningReadInput::List(call) => self.read_list(call, false).await,
-            FineTuningReadInput::AList(call) => self.read_list(call, true).await,
-            FineTuningReadInput::Retrieve(call) => self.read_retrieve(call, false).await,
-            FineTuningReadInput::ARetrieve(call) => self.read_retrieve(call, true).await,
+            FineTuningReadInput::List(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    call.operation(),
+                    false,
+                )
+                .await
+            }
+            FineTuningReadInput::AList(call) => {
+                self.read(call.provider.as_ref(), &call.params, call.operation(), true)
+                    .await
+            }
+            FineTuningReadInput::Retrieve(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    call.operation(),
+                    false,
+                )
+                .await
+            }
+            FineTuningReadInput::ARetrieve(call) => {
+                self.read(call.provider.as_ref(), &call.params, call.operation(), true)
+                    .await
+            }
         }
-    }
-
-    async fn read_list(
-        &self,
-        call: &FineTuningListCall,
-        is_async: bool,
-    ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
-        let operation = ReadOperation::List {
-            after: call.after.as_deref(),
-            limit: call.limit,
-        };
-        self.read(call.provider.as_ref(), &call.params, operation, is_async)
-            .await
-    }
-
-    async fn read_retrieve(
-        &self,
-        call: &FineTuningRetrieveCall,
-        is_async: bool,
-    ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
-        let operation = ReadOperation::Retrieve {
-            job_id: &call.fine_tuning_job_id,
-        };
-        self.read(call.provider.as_ref(), &call.params, operation, is_async)
-            .await
     }
 
     // all four calls share the provider, timeout and dispatch chains; only the decode differs

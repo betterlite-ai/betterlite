@@ -461,30 +461,17 @@ async fn read_falls_back_to_settings_and_environment() {
     assert_eq!(env_call.organization.as_deref(), Some("org-env"));
 }
 
-// the azure settings differ from the openai ones in every name the branch reads
+// the azure settings are the openai ones with every azure name the branch reads filled in
 fn azure_settings() -> ConfiguredSettings {
-    ConfiguredSettings {
-        api_base: Some("http://settings/v1".to_owned()),
-        api_version: Some("2024-01-01".to_owned()),
-        api_key: Some(SecretString::from("sk-settings".to_owned())),
-        openai_key: None,
-        azure_key: None,
-        azure_ad_token: None,
-        organization: Some("org-settings".to_owned()),
-        vertex_project: None,
-        vertex_location: None,
-        openai_base_url: None,
-        openai_api_base: None,
-        openai_api_key: None,
-        openai_organization: None,
-        azure_api_base: Some("http://azure-env/v1".to_owned()),
-        azure_api_version: Some("2024-06-01".to_owned()),
-        azure_openai_api_key: Some(SecretString::from("sk-azure-env".to_owned())),
-        azure_api_key: None,
-        vertexai_project: None,
-        vertexai_location: None,
-        vertexai_credentials: None,
-    }
+    let mut settings = settings();
+    settings.api_version = Some("2024-01-01".to_owned());
+    settings.openai_base_url = None;
+    settings.openai_api_key = None;
+    settings.openai_organization = None;
+    settings.azure_api_base = Some("http://azure-env/v1".to_owned());
+    settings.azure_api_version = Some("2024-06-01".to_owned());
+    settings.azure_openai_api_key = Some(SecretString::from("sk-azure-env".to_owned()));
+    settings
 }
 
 // azure reads the request first, and its organization has no setting fallback

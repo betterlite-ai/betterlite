@@ -148,6 +148,23 @@ pub struct FineTuningRetrieveCall {
     pub params: FineTuningReadParams,
 }
 
+impl FineTuningListCall {
+    fn operation(&self) -> ReadOperation<'_> {
+        ReadOperation::List {
+            after: self.after.as_deref(),
+            limit: self.limit,
+        }
+    }
+}
+
+impl FineTuningRetrieveCall {
+    fn operation(&self) -> ReadOperation<'_> {
+        ReadOperation::Retrieve {
+            job_id: &self.fine_tuning_job_id,
+        }
+    }
+}
+
 // the four functions differ in their async flag and retrieval id; list is not decorated, retrieve is
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
