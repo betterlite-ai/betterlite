@@ -2,7 +2,7 @@
 
 use crate::api::realtime_session_state::{ConnectionSetup, RealtimeStreaming};
 
-use super::support::{
+use self::support::{
     APPEND, CLEAR_FRAME, COMMIT_FRAME, END_FRAME, Fixture, MALFORMED_FRAME, NON_OBJECT_FRAME,
     UNRELATED_FRAME, append, audio_frame, byte_sum, capturing, make, no_guardrails,
 };
