@@ -1,0 +1,65 @@
+kind: helper
+name: messages-chat-options-thinking-budget-buckets
+call:
+  messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: enabled
+        budget_tokens: 1024
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+calls:
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: enabled
+        budget_tokens: 4095
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: disabled
+        summary: detailed
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking: adaptive
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+env: {}
+compare: {ignore: []}

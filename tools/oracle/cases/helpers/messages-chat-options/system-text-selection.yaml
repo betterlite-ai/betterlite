@@ -1,0 +1,69 @@
+kind: helper
+name: messages-chat-options-system-text-selection
+call:
+  messages_chat_options:
+    request:
+      model: claude-sonnet-4-5
+      system:
+      - type: text
+        text: top
+        cache_control:
+          type: ephemeral
+      messages:
+      - role: user
+        content: hi
+      - role: system
+        content:
+        - type: text
+          text: mid
+        - type: text
+          text: ''
+      - role: user
+        content: again
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: [thinking]
+calls:
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      system:
+      - type: text
+        text: top
+        cache_control:
+          type: ephemeral
+        prompt_cache_breakpoint: false
+      messages:
+      - role: system
+        content:
+        - type: text
+          text: mid
+          prompt_cache_breakpoint: false
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      system: ''
+      messages:
+      - role: system
+        content: ''
+      - role: user
+        content: hi
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      system:
+      - type: text
+      messages:
+      - role: user
+        content: hi
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+env: {}
+compare: {ignore: []}
