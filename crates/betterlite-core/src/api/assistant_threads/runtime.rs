@@ -5,6 +5,7 @@ use betterlite_azure::azure_thread_messages::error::ThreadMessagesError;
 use betterlite_azure::azure_thread_messages::operations::{
     ThreadMessagesApi, ThreadOperation as AzureOperation,
 };
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::client as openai_threads;
 use betterlite_openai::threads::error::ThreadsError;
@@ -75,9 +76,7 @@ fn openai_reply(
 fn azure_error(error: ThreadMessagesError) -> ThreadError {
     match error {
         ThreadMessagesError::Threads(threads) => map_threads_error(threads),
-        ThreadMessagesError::Client(client) => ThreadError::Call {
-            message: client.to_string(),
-        },
+        ThreadMessagesError::Client(client) => ThreadError::Definitions(client),
     }
 }
 
@@ -91,6 +90,9 @@ fn map_threads_error(error: ThreadsError) -> ThreadError {
                 failure: Box::new(failure),
             }
         }
+        timeout @ ThreadsError::Transport {
+            source: TransportError::Deadline(_) | TransportError::ConnectTimeout(_),
+        } => ThreadError::ProviderTimeout(timeout),
         other @ (ThreadsError::MissingApiKey
         | ThreadsError::BaseUrl { .. }
         | ThreadsError::Header { .. }
@@ -98,8 +100,6 @@ fn map_threads_error(error: ThreadsError) -> ThreadError {
         | ThreadsError::DotSegment { .. }
         | ThreadsError::Encode { .. }
         | ThreadsError::Transport { .. }
-        | ThreadsError::Reply { .. }) => ThreadError::Call {
-            message: other.to_string(),
-        },
+        | ThreadsError::Reply { .. }) => ThreadError::Threads(other),
     }
 }

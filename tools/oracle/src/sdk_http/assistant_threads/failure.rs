@@ -26,8 +26,8 @@ pub(super) fn async_failure(failure: &ThreadFailure) -> Result<SdkResult, SdkHtt
     Ok(SdkResult::Failure(Failure {
         class: class.to_owned(),
         status: metadata.status_code,
-        kind: Some(field(metadata.error_type)),
-        param: Some(field(metadata.param)),
+        kind: field(metadata.error_type),
+        param: field(metadata.param),
         code: Some(metadata.openai_code),
         message: message.to_owned(),
     }))

@@ -6,15 +6,19 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_azure::endpoints::projection::SessionKind;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::azure_endpoints;
+use betterlite_config::types::ProxyTrust;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_models::decisions::Json;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_openai::assistants::client::{ClientKind, SdkClient};
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::records::{
     MessageContent, MessageRole, ThreadCreate, ThreadMessageData, ThreadRecord,
@@ -23,6 +27,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::net::TcpListener;
 
 use super::error::{ThreadError, sdk_class};
 use super::params::{
@@ -31,13 +36,17 @@ use super::params::{
 use super::runtime::ThreadRuntime;
 use super::target::{Operation, PrepareRequest, PreparedThread, Target, create_body};
 use super::{
-    AssistantThreads, CreateThreadCall, FacadeCall, GetThreadCall, ThreadFacade, ThreadOperation,
-    execute,
+    AssistantThreads, CreateThreadCall, FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade,
+    ThreadOperation, execute,
 };
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::{StructuredTimeout, TimeoutError};
 
 const THREAD: &str = r#"{"id":"thread_a","object":"thread","created_at":1,"metadata":{"tag":"x"},"tool_resources":{}}"#;
+const TIMEOUT_LIMITS: TransportLimits = TransportLimits {
+    read_timeout: Duration::from_millis(100),
+    ..TransportLimits::DEFAULT
+};
 const TYPED_404: &str = r#"{"error":{"message":"missing","type":"invalid_request_error","param":"thread_id","code":"missing"}}"#;
 const UNTYPED_404: &str = r#"{"error":{"message":"missing","param":"thread_id","code":"missing"}}"#;
 
@@ -234,6 +243,18 @@ fn secret_text(value: Option<&SecretString>) -> Option<String> {
     value.map(|token| token.expose_secret().to_owned())
 }
 
+fn supplied_openai(transport: Arc<Recorder>) -> SdkClient<Recorder> {
+    SdkClient {
+        kind: ClientKind::Sync,
+        api_key: Some(SecretString::from("supplied-key")),
+        base_url: Some(String::from("https://supplied.test/v1")),
+        timeout: Some(Duration::from_secs(42)),
+        max_retries: Some(0),
+        organization: None,
+        transport,
+    }
+}
+
 fn create_call<'call>(
     kwargs: &'call mut BTreeMap<String, Json>,
     messages: Option<Vec<ThreadMessageData>>,
@@ -389,6 +410,146 @@ async fn the_async_wrappers_run_once_and_move_their_flag() {
         .expect("the retrieve succeeds");
     assert!(retrieved.is_some());
     assert!(!get_kwargs.contains_key("aget_thread"));
+}
+
+#[tokio::test]
+async fn a_supplied_openai_client_reaches_its_own_recorder_untouched() {
+    let harness = Harness::new();
+    let supplied = Arc::new(Recorder::default());
+    supplied.queue(200, THREAD);
+    supplied.queue(200, THREAD);
+    let mut kwargs = BTreeMap::new();
+    let mut call = create_call(&mut kwargs, None);
+    call.client = Some(SuppliedClient::Openai(supplied_openai(Arc::clone(
+        &supplied,
+    ))));
+    let created = harness
+        .threads()
+        .create_thread(call)
+        .await
+        .expect("the create succeeds");
+    assert!(created.is_some());
+    let mut get_kwargs = BTreeMap::new();
+    let retrieved = harness
+        .threads()
+        .get_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::from("thread_a"),
+            client: Some(SuppliedClient::Openai(supplied_openai(Arc::clone(
+                &supplied,
+            )))),
+            kwargs: &mut get_kwargs,
+        })
+        .await
+        .expect("the retrieve succeeds");
+    assert!(retrieved.is_some());
+    let seen = supplied.seen();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].url, "https://supplied.test/v1/threads");
+    assert_eq!(
+        seen[0].authorization.as_deref(),
+        Some("Bearer supplied-key")
+    );
+    assert_eq!(seen[0].deadline, 42.0);
+    assert_eq!(seen[1].url, "https://supplied.test/v1/threads/thread_a");
+    assert!(harness.recorder.seen().is_empty());
+}
+
+#[tokio::test]
+async fn a_missing_api_key_maps_as_authentication_from_the_async_wrapper() {
+    let mut harness = Harness::new();
+    harness.resources.openai_api_key = None;
+    let mut kwargs = BTreeMap::new();
+    let failure = harness
+        .threads()
+        .acreate_thread(create_call(&mut kwargs, None))
+        .await
+        .expect_err("no api key reaches the client");
+    let metadata = failure.class.metadata();
+    assert!(matches!(failure.class, ErrorClass::Authentication(_)));
+    assert_eq!(metadata.status_code, 401);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    let sdk = failure.error.sdk_failure();
+    assert_eq!(sdk.class, "AuthenticationError");
+    assert_eq!(sdk.status, 401);
+}
+
+#[tokio::test]
+async fn a_status_less_call_failure_maps_as_api_connection() {
+    let harness = Harness::new();
+    let mut kwargs = BTreeMap::new();
+    let failure = harness
+        .threads()
+        .aget_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::new(),
+            client: None,
+            kwargs: &mut kwargs,
+        })
+        .await
+        .expect_err("an empty thread id fails before the request");
+    let metadata = failure.class.metadata();
+    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.openai_code, None);
+    let sdk = failure.error.sdk_failure();
+    assert_eq!(sdk.class, "APIConnectionError");
+    assert_eq!(sdk.status, 500);
+    assert!(harness.recorder.seen().is_empty());
+}
+
+#[tokio::test]
+async fn a_transport_timeout_maps_as_apitimeout_from_the_async_wrapper() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    let transport = ProxiedClient::build(base_builder().http1_only(), &policy, TIMEOUT_LIMITS)
+        .expect("the client");
+    let mut resources = empty_resources();
+    resources.openai_base_url = Some(format!("http://{address}/v1"));
+    resources.openai_api_key = Some(SecretString::from("sk-test"));
+    let azure = azure_endpoints::Settings::default();
+    let env: BTreeMap<String, String> = BTreeMap::new();
+    let sources = NoSources;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor");
+    let threads = AssistantThreads {
+        transport: Arc::new(transport),
+        resources: &resources,
+        azure: &azure,
+        environment: &env,
+        sources: &sources,
+        redactor: &redactor,
+        refresh_enabled: false,
+        session: SessionKind::Dedicated,
+    };
+    let mut kwargs = kwargs_of(r#"{"timeout":0.05}"#);
+    let failure = threads
+        .acreate_thread(CreateThreadCall {
+            custom_llm_provider: String::from("openai"),
+            messages: None,
+            metadata: None,
+            tool_resources: None,
+            client: None,
+            kwargs: &mut kwargs,
+        })
+        .await
+        .expect_err("the silent listener runs into its deadline");
+    let metadata = failure.class.metadata();
+    assert!(matches!(failure.class, ErrorClass::Timeout(_)));
+    assert_eq!(metadata.status_code, 408);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.openai_code, None);
+    let sdk = failure.error.sdk_failure();
+    assert_eq!(sdk.class, "APITimeoutError");
+    assert_eq!(sdk.status, 408);
 }
 
 #[rstest]
@@ -729,6 +890,10 @@ fn forwarded_azure_timeout_reads_numbers_and_phases() {
         forwarded_azure_timeout(&params),
         Err(TimeoutError::NonFinite)
     );
+    params.timeout = Some(ThreadTimeoutValue::Seconds(-5.0));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+    params.timeout = Some(ThreadTimeoutValue::Seconds(0.0));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
     params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
         connect: None,
         read: Some(3.0),
@@ -774,6 +939,19 @@ fn forwarded_azure_timeout_reads_text_like_python_float(
     } else {
         assert!(matches!(result, Err(TimeoutError::InvalidNumber { .. })));
     }
+}
+
+#[rstest]
+#[case::negative_number(r#"{"timeout":-5}"#)]
+#[case::zero_number(r#"{"timeout":0}"#)]
+#[case::negative_text(r#"{"timeout":"-5"}"#)]
+#[case::zero_text(r#"{"timeout":"0"}"#)]
+#[case::empty_text(r#"{"timeout":""}"#)]
+#[case::negative_read_phase(r#"{"timeout":{"read":-1}}"#)]
+#[test]
+fn a_non_positive_azure_timeout_leaves_the_client_default(#[case] text: &'static str) {
+    let params = ThreadParams::from_kwargs(&kwargs_of(text)).expect("the kwargs parse");
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
 }
 
 mod azure;

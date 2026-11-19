@@ -3,8 +3,8 @@ deviations:
   - what: A structured timeout (httpx.Timeout phases) becomes a single request deadline, the read phase when set and otherwise 600 seconds; LiteLLM keeps the phases in its SDK clients and times connect, read, write and pool separately.
     why: betterlite's transport carries one deadline per request, and the read phase is the one that bounds a thread answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
-  - what: A timeout at or below zero becomes no deadline (Duration::MAX), and a non-finite one is refused with a BadRequestError naming the timeout before any request; LiteLLM hands both to its SDK client.
-    why: The deadline is a std::time::Duration, which cannot hold a negative or non-finite duration, and B2487's resolver defines the refusal.
+  - what: An openai timeout at or below zero becomes no deadline (Duration::MAX), while for azure it passes no timeout so B176's 600-second default applies; a non-finite timeout is refused with a BadRequestError naming the timeout before any request. LiteLLM hands the value to its SDK client, where httpx reads a zero or negative timeout as an already-expired deadline.
+    why: The deadline is a std::time::Duration, which cannot hold a negative or non-finite duration, and B176's timeout is seconds that only accept a positive finite value, so a non-positive azure timeout is decided at the facade rather than failing client construction with a 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
   - what: The Azure thread client receives its timeout as seconds, a structured timeout contributing its read phase and a numeric string being parsed, where LiteLLM forwards the raw string or httpx.Timeout to AzureOpenAI.
     why: The B176 Azure client and its transport take a number of seconds, and a phase object cannot travel through that interface.

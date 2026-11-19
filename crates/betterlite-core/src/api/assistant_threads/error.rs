@@ -1,14 +1,18 @@
 use std::collections::BTreeMap;
 use std::str::from_utf8;
 
+use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
-use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::details::{ResponseDetails, TimeoutDetails, TimeoutStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
+use betterlite_openai::threads::error::ThreadsError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::timeout::TimeoutError;
+
+use super::params::ThreadParamsError;
 
 const UNSUPPORTED_MODEL: &str = "n/a";
 
@@ -19,11 +23,8 @@ pub enum ThreadError {
         provider: String,
         operation: &'static str,
     },
-    #[error("{message}")]
-    Params {
-        field: Option<String>,
-        message: String,
-    },
+    #[error(transparent)]
+    Params(#[from] ThreadParamsError),
     #[error(transparent)]
     Timeout(#[from] TimeoutError),
     #[error("{message}")]
@@ -31,8 +32,14 @@ pub enum ThreadError {
         message: String,
         failure: Box<ProviderFailure>,
     },
-    #[error("the thread call failed: {message}")]
-    Call { message: String },
+    // the call failed without a provider status; exception_type() classifies it from the source
+    #[error("the thread call failed: {0}")]
+    Threads(#[from] ThreadsError),
+    // a deadline or connect timeout is the SDK's APITimeoutError, which exception_type() raises as Timeout
+    #[error("the thread call failed: {0}")]
+    ProviderTimeout(#[source] ThreadsError),
+    #[error("the thread call failed: {0}")]
+    Definitions(#[from] DefinitionsError),
     #[error("the provider returned no thread object")]
     Reply,
 }
@@ -128,6 +135,7 @@ pub struct SdkFailure {
 impl ThreadError {
     #[must_use]
     pub fn sdk_failure(&self) -> SdkFailure {
+        let raised = self.to_string();
         match self {
             Self::Provider {
                 message, failure, ..
@@ -140,12 +148,19 @@ impl ThreadError {
                 message: message.clone(),
             },
             // docs/compatibility.md names the field with a 400 where LiteLLM's pydantic model raises
-            Self::Unsupported { .. } | Self::Params { .. } | Self::Timeout(_) => {
-                status_failure("BadRequestError", 400, &self.to_string())
+            Self::Unsupported { .. } | Self::Params(_) | Self::Timeout(_) => {
+                status_failure("BadRequestError", 400, &raised)
             }
-            // a broken transport or reply decodes as an APIError, but no provider answered with a status
-            Self::Call { message } => status_failure("APIError", 500, message),
-            Self::Reply => status_failure("APIError", 500, &self.to_string()),
+            // exception_type() raises an AuthenticationError for the missing api key
+            Self::Threads(ThreadsError::MissingApiKey) => {
+                status_failure("AuthenticationError", 401, &raised)
+            }
+            Self::ProviderTimeout(_) => status_failure("APITimeoutError", 408, &raised),
+            // every other call failure carries no status, which exception_type() reads as APIConnectionError
+            Self::Threads(_) | Self::Definitions(_) => {
+                status_failure("APIConnectionError", 500, &raised)
+            }
+            Self::Reply => status_failure("APIError", 500, &raised),
         }
     }
 
@@ -160,7 +175,7 @@ impl ThreadError {
         };
         match self {
             Self::Unsupported { .. } => bad_request(Some(UNSUPPORTED_MODEL.to_owned()), None),
-            Self::Params { field, .. } => bad_request(None, field.clone()),
+            Self::Params(error) => bad_request(None, error.field.clone()),
             Self::Timeout(_) => bad_request(None, None),
             Self::Provider {
                 message, failure, ..
@@ -168,10 +183,20 @@ impl ThreadError {
                 &DispatchInput::Raw(Box::new(failure.raw(provider, message))),
                 redactor,
             ),
-            // no provider answered, so exception_type() has no status to branch on; keep it an internal failure
-            Self::Call { .. } | Self::Reply => {
-                ErrorClass::InternalServer(Box::new(self.context(provider, None, None)))
+            // exception_type() raises an AuthenticationError for the missing api key
+            Self::Threads(ThreadsError::MissingApiKey) => ErrorClass::Authentication(Box::new(
+                ResponseDetails::with_status(self.context(provider, None, None), Some(401)),
+            )),
+            // a deadline or connect timeout is the SDK's APITimeoutError, which maps as Timeout
+            Self::ProviderTimeout(_) => ErrorClass::Timeout(Box::new(TimeoutDetails {
+                context: self.context(provider, None, None),
+                original_status: TimeoutStatus(408),
+            })),
+            // no status reached exception_type(), which falls back to APIConnectionError
+            Self::Threads(_) | Self::Definitions(_) => {
+                ErrorClass::ApiConnection(Box::new(self.context(provider, None, None)))
             }
+            Self::Reply => ErrorClass::InternalServer(Box::new(self.context(provider, None, None))),
         }
     }
 

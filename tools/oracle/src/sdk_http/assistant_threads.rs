@@ -81,8 +81,8 @@ impl CallKind for Call {
             let resources = resources(env);
             let azure = azure_endpoints::Settings::default();
             let sources = NoSources;
-            let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+            let redactor =
+                Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
             let threads = AssistantThreads {
                 transport: Arc::new(outbound_client(env)?),
                 resources: &resources,

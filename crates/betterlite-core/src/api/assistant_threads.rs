@@ -148,25 +148,16 @@ where
     }
 }
 
-fn create_request<'call, T>(
-    call: CreateThreadCall<'call, T>,
-) -> Result<PrepareRequest<'call, T>, ThreadError> {
-    let CreateThreadCall {
-        custom_llm_provider,
-        messages,
-        metadata,
-        client,
-        kwargs,
-        ..
-    } = call;
-    let flag = kwargs
+fn create_request<T>(call: CreateThreadCall<'_, T>) -> Result<PrepareRequest<'_, T>, ThreadError> {
+    let flag = call
+        .kwargs
         .get("acreate_thread")
         .map(|value| matches!(value, Json::Bool(true)));
     Ok(PrepareRequest {
-        provider: custom_llm_provider,
-        operation: Operation::Create(create_body(messages, metadata)?),
-        client,
-        kwargs: &*kwargs,
+        provider: call.custom_llm_provider,
+        operation: Operation::Create(create_body(call.messages, call.metadata)?),
+        client: call.client,
+        kwargs: &*call.kwargs,
         facade: ThreadOperation::Create,
         flag,
     })
@@ -186,20 +177,15 @@ where
     let prepared = match call {
         FacadeCall::Create(create) => threads.prepare(create_request(create)?)?,
         FacadeCall::Get(get) => {
-            let GetThreadCall {
-                custom_llm_provider,
-                thread_id,
-                client,
-                kwargs,
-            } = get;
-            let flag = kwargs
+            let flag = get
+                .kwargs
                 .remove("aget_thread")
                 .map(|value| matches!(value, Json::Bool(true)));
             threads.prepare(PrepareRequest {
-                provider: custom_llm_provider,
-                operation: Operation::Retrieve(thread_id),
-                client,
-                kwargs: &*kwargs,
+                provider: get.custom_llm_provider,
+                operation: Operation::Retrieve(get.thread_id),
+                client: get.client,
+                kwargs: &*get.kwargs,
                 facade: ThreadOperation::Get,
                 flag,
             })?
@@ -217,13 +203,9 @@ where
     T: AssistantsTransport,
     'deps: 'call,
 {
-    let provider = match &call {
-        FacadeCall::Create(create) => create.custom_llm_provider.clone(),
-        FacadeCall::Get(get) => get.custom_llm_provider.clone(),
-    };
-    let kwargs = match &mut call {
-        FacadeCall::Create(create) => &mut *create.kwargs,
-        FacadeCall::Get(get) => &mut *get.kwargs,
+    let (provider, kwargs) = match &mut call {
+        FacadeCall::Create(create) => (create.custom_llm_provider.clone(), &mut *create.kwargs),
+        FacadeCall::Get(get) => (get.custom_llm_provider.clone(), &mut *get.kwargs),
     };
     kwargs.insert(flag.to_owned(), Json::Bool(true));
     execute(threads, call, &SdkThreadRuntime)

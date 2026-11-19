@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::{
@@ -82,6 +83,7 @@ impl ThreadExtraBody {
             Some(other) => Err(ThreadParamsError {
                 field: Some(String::from("extra_body")),
                 message: format!("extra_body must be an object or null, found {other:?}"),
+                source: None,
             }),
         }
     }
@@ -115,22 +117,30 @@ impl ThreadParams {
         let bytes = serde_json::to_vec(kwargs).map_err(|source| ThreadParamsError {
             field: None,
             message: source.to_string(),
+            source: Some(source),
         })?;
         let mut decoder = serde_json::Deserializer::from_slice(&bytes);
-        let mut params: Self =
-            serde_path_to_error::deserialize(&mut decoder).map_err(|error| ThreadParamsError {
-                field: Some(error.path().to_string()),
-                message: error.into_inner().to_string(),
-            })?;
+        let mut params: Self = serde_path_to_error::deserialize(&mut decoder).map_err(|error| {
+            let field = Some(error.path().to_string());
+            let source = error.into_inner();
+            ThreadParamsError {
+                field,
+                message: source.to_string(),
+                source: Some(source),
+            }
+        })?;
         params.extra_body = ThreadExtraBody::from_kwarg(kwargs.get("extra_body"))?;
         Ok(params)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Error)]
+#[error("{message}")]
 pub(super) struct ThreadParamsError {
     pub field: Option<String>,
     pub message: String,
+    #[source]
+    pub source: Option<serde_json::Error>,
 }
 
 const fn seconds_of(timeout: FineTuningTimeout) -> ThreadTimeout {
@@ -158,41 +168,23 @@ pub(super) fn resolve_timeout(params: &ThreadParams) -> Result<ThreadTimeout, Ti
 
 // the raw kwargs timeout the Azure SDK client receives; the phases cannot travel, so its read phase stands in
 pub(super) fn forwarded_azure_timeout(params: &ThreadParams) -> Result<Option<f64>, TimeoutError> {
-    match params.timeout.as_ref() {
-        None => Ok(None),
+    let seconds = match params.timeout.as_ref() {
+        None => return Ok(None),
         Some(ThreadTimeoutValue::Phases(phases)) => {
-            Ok(phases.read.filter(|seconds| *seconds > 0.0_f64))
+            return Ok(phases.read.filter(|seconds| *seconds > 0.0_f64));
         }
         Some(ThreadTimeoutValue::Seconds(seconds)) if !seconds.is_finite() => {
-            Err(TimeoutError::NonFinite)
+            return Err(TimeoutError::NonFinite);
         }
-        Some(ThreadTimeoutValue::Seconds(seconds)) => Ok(Some(*seconds)),
-        Some(ThreadTimeoutValue::Text(text)) => parse_text(text).map(Some),
-    }
-}
-
-// Python's float() takes underscores between digits; httpx converts the same text the same way
-fn parse_text(text: &str) -> Result<f64, TimeoutError> {
-    let trimmed = text.trim();
-    let valid_underscores = trimmed
-        .chars()
-        .zip(trimmed.chars().skip(1))
-        .all(|(left, right)| {
-            (left != '_' || right.is_ascii_digit()) && (right != '_' || left.is_ascii_digit())
-        });
-    let candidate = if valid_underscores && !trimmed.starts_with('_') && !trimmed.ends_with('_') {
-        trimmed.replace('_', "")
-    } else {
-        trimmed.to_owned()
+        Some(ThreadTimeoutValue::Seconds(seconds)) => *seconds,
+        Some(ThreadTimeoutValue::Text(text)) if text.is_empty() => return Ok(None),
+        Some(ThreadTimeoutValue::Text(text)) => {
+            let raw = TimeoutValue::String(text.clone());
+            seconds_of(resolve_fine_tuning_timeout(Some(&raw), OPENAI, None)?).deadline_seconds()
+        }
     };
-    let seconds = candidate
-        .parse::<f64>()
-        .map_err(|source| TimeoutError::InvalidNumber { source })?;
-    if seconds.is_finite() {
-        Ok(seconds)
-    } else {
-        Err(TimeoutError::NonFinite)
-    }
+    // B176 refuses a negative timeout, so a non-positive one leaves its 600-second default
+    Ok(Some(seconds).filter(|value| *value > 0.0_f64))
 }
 
 // absent extra_body pops nothing, an explicit null reads AZURE_AD_TOKEN, and the body's token is popped and wins

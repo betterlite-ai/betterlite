@@ -14,7 +14,9 @@ use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
 use secrecy::SecretString;
 
 use super::error::ThreadError;
-use super::params::{ThreadParams, ThreadTimeout, forwarded_azure_timeout, resolve_timeout};
+use super::params::{
+    ThreadParams, ThreadParamsError, ThreadTimeout, forwarded_azure_timeout, resolve_timeout,
+};
 use super::{AssistantThreads, SuppliedClient, ThreadOperation};
 use crate::api::resource_sdk_settings::timeout::TimeoutError;
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
@@ -61,9 +63,10 @@ pub(super) fn create_body(
     let converted = metadata
         .map(|value| serde_json::from_value(serde_json::to_value(value)?))
         .transpose()
-        .map_err(|source| ThreadError::Params {
+        .map_err(|source| ThreadParamsError {
             field: None,
             message: source.to_string(),
+            source: Some(source),
         })?;
     Ok(ThreadCreate {
         messages,
@@ -71,7 +74,7 @@ pub(super) fn create_body(
     })
 }
 
-// httpx reads a zero or negative timeout as no timeout; this transport takes the largest deadline instead
+// Duration cannot hold a negative timeout, so a non-positive one becomes the largest deadline
 fn deadline(timeout: ThreadTimeout) -> Result<Duration, ThreadError> {
     let seconds = timeout.deadline_seconds();
     if !seconds.is_finite() {
@@ -157,11 +160,7 @@ where
     where
         'deps: 'call,
     {
-        let params =
-            ThreadParams::from_kwargs(request.kwargs).map_err(|error| ThreadError::Params {
-                field: error.field,
-                message: error.message,
-            })?;
+        let params = ThreadParams::from_kwargs(request.kwargs)?;
         let timeout = resolve_timeout(&params)?;
         let options = ResourceSdkRequestOptions {
             api_base: params.api_base.clone(),
@@ -244,11 +243,8 @@ where
         }
         let request = Box::new(self.azure_request(resolved, token)?);
         let transport = Arc::clone(&self.transport);
-        let azure_client = AssistantsApi { transport }
-            .azure_client(&request, None, client_kind(flag))
-            .map_err(|error| ThreadError::Call {
-                message: error.to_string(),
-            })?;
+        let azure_client =
+            AssistantsApi { transport }.azure_client(&request, None, client_kind(flag))?;
         Ok(Target::Azure {
             request,
             client: azure_client,

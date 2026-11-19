@@ -17,12 +17,12 @@ use super::super::{
     FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade, ThreadOperation, execute,
 };
 use super::{
-    Capture, Harness, Recorder, THREAD, UNTYPED_404, create_call, json, kwargs_of, message,
-    secret_text,
+    Capture, Harness, Recorder, THREAD, UNTYPED_404, create_call, empty_create, json, kwargs_of,
+    message, secret_text,
 };
 
 fn azure_prepare<'call>(
-    harness: &Harness,
+    harness: &'call Harness,
     kwargs: &'call BTreeMap<String, Json>,
     client: Option<SuppliedClient<'call, Recorder>>,
 ) -> PreparedThread<'call, Recorder> {
@@ -182,12 +182,28 @@ async fn azure_create_posts_to_threads_with_api_key_auth() {
 }
 
 #[tokio::test]
-async fn azure_sends_the_facade_token_as_bearer_auth_without_a_key() {
+async fn a_facade_extra_body_token_without_a_key_is_refused_before_the_request() {
     let mut harness = Harness::new();
     harness.resources.azure_openai_api_key = None;
     harness.resources.azure_ad_token = Some(SecretString::from("env-token"));
-    harness.recorder.queue(200, THREAD);
     let mut kwargs = kwargs_of(r#"{"extra_body":null}"#);
+    let mut call = create_call(&mut kwargs, None);
+    call.custom_llm_provider = String::from("azure");
+    let error = harness
+        .threads()
+        .create_thread(call)
+        .await
+        .expect_err("the facade token never reaches the azure client");
+    assert!(error.to_string().contains("Missing credentials"));
+    assert!(harness.recorder.seen().is_empty());
+}
+
+#[tokio::test]
+async fn azure_sends_the_top_level_token_as_bearer_auth_without_a_key() {
+    let mut harness = Harness::new();
+    harness.resources.azure_openai_api_key = None;
+    harness.recorder.queue(200, THREAD);
+    let mut kwargs = kwargs_of(r#"{"azure_ad_token":"param-token"}"#);
     let mut call = create_call(&mut kwargs, None);
     call.custom_llm_provider = String::from("azure");
     let thread = harness
@@ -197,7 +213,7 @@ async fn azure_sends_the_facade_token_as_bearer_auth_without_a_key() {
         .expect("the create succeeds");
     assert!(thread.is_some());
     let seen = &harness.recorder.seen()[0];
-    assert_eq!(seen.authorization.as_deref(), Some("Bearer env-token"));
+    assert_eq!(seen.authorization.as_deref(), Some("Bearer param-token"));
     assert_eq!(seen.api_key, None);
 }
 
@@ -254,4 +270,36 @@ fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchronous: b
         panic!("azure prepares an azure client");
     };
     assert!(client.base_url.starts_with(expected), "{}", client.base_url);
+}
+
+#[rstest]
+#[case::create(false)]
+#[case::get(true)]
+#[test]
+fn an_openai_facade_prepares_a_supplied_azure_client_for_both_operations(#[case] retrieve: bool) {
+    let harness = Harness::new();
+    let kwargs = BTreeMap::new();
+    let operation = if retrieve {
+        Operation::Retrieve(String::from("thread_a"))
+    } else {
+        empty_create()
+    };
+    let prepared = harness
+        .threads()
+        .prepare(PrepareRequest {
+            provider: String::from("openai"),
+            operation,
+            client: Some(SuppliedClient::Azure(azure_client(
+                ClientKind::Sync,
+                Arc::default(),
+            ))),
+            kwargs: &kwargs,
+            facade: ThreadOperation::Create,
+            flag: None,
+        })
+        .expect("the call prepares");
+    let Target::Azure { client, .. } = prepared.target else {
+        panic!("an openai facade keeps the supplied azure client");
+    };
+    assert_eq!(client.base_url, "https://supplied-azure.test");
 }

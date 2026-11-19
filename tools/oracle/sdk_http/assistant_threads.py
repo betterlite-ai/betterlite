@@ -55,7 +55,7 @@ class AssistantThreadsCall(BaseModel):
 
 
 def create_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
-    return litellm.create_thread(
+    return litellm.create_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L557
         custom_llm_provider=call.provider,
         messages=call.messages,
         metadata=call.metadata,
@@ -67,7 +67,7 @@ def create_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
 
 
 async def create_async(call: AssistantThreadsCall, api_base: str) -> Thread:
-    return await litellm.acreate_thread(
+    return await litellm.acreate_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L526
         custom_llm_provider=call.provider,
         messages=call.messages,
         metadata=call.metadata,
@@ -84,7 +84,7 @@ def thread_id_of(call: AssistantThreadsCall) -> str:
 
 
 def get_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
-    return litellm.get_thread(
+    return litellm.get_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L729
         custom_llm_provider=call.provider,
         thread_id=thread_id_of(call),
         api_base=api_base,
@@ -94,7 +94,7 @@ def get_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
 
 async def get_async(call: AssistantThreadsCall, api_base: str) -> Thread:
     thread_id = thread_id_of(call)
-    return await litellm.aget_thread(
+    return await litellm.aget_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L693
         custom_llm_provider=call.provider,
         thread_id=thread_id,
         client=None,
