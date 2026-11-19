@@ -1,3 +1,4 @@
+pub mod async_request;
 pub mod environment;
 pub mod error;
 pub mod messages;

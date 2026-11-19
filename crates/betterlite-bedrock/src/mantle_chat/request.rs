@@ -10,12 +10,9 @@ use betterlite_models::model_capability_predicates::{
     CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest,
 };
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
-use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::arguments::json::{Json as BodyJson, Object};
-use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_media};
-use betterlite_prompts::media::parts::INLINE_EVERY_REMOTE_URL;
-use betterlite_prompts::message_content::Message;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use indexmap::IndexMap;
 
 use crate::aws_settings::AUTHENTICATION_PARAMS;
@@ -72,72 +69,24 @@ pub(super) fn restore_body_fields(body: &mut Object, model_id: &str, stream: Opt
     }
 }
 
-// AmazonMantleConfig.async_transform_request: B183 inlines every remote part first, then the synchronous method runs.
-pub async fn async_transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<Object, ClaudeInvokeError<Blocks::Failure>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
-{
-    let mut inlined = ClaudeInvokeRequest::clone(request);
-    inlined.messages = inlined_messages(&request.messages, sources.prompts.fetcher).await?;
-    transform_request(&inlined, sources).await
-}
-
-async fn inlined_messages<Fetcher, Blocks>(
-    messages: &[ParamJson],
-    fetcher: &Fetcher,
-) -> Result<Vec<ParamJson>, ClaudeInvokeError<Blocks::Failure>>
-where
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-{
-    let typed: Vec<Message> = serde_json::from_value(serde_json::to_value(messages)?)?;
-    let inlined = async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, fetcher).await?;
-    let converted: Vec<ParamJson> = serde_json::from_value(serde_json::to_value(&inlined)?)?;
-    Ok(converted)
-}
-
-async fn base_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
+// The parent's _build_bedrock_anthropic_request_base: filter every credential field, clamp the effort ceiling,
+// normalize tool-search tool types, prepare the native request, then apply the Bedrock invoke rules.
+async fn base_request<E>(
     model_id: &str,
     request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<Object, ClaudeInvokeError<Blocks::Failure>>
+    sources: &mut TransformSources<
+        '_,
+        '_,
+        impl DynamicMetadataSource,
+        impl ModelInfoClient,
+        impl RemoteMediaFetcher + Sync,
+        impl FileBlocks<Failure = E> + Sync,
+        impl Fn() -> String + Sync,
+        impl ModelInfoLookup,
+    >,
+) -> Result<Object, ClaudeInvokeError<E>>
 where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
-{
-    let optional_params = filtered_params(model_id, request, sources).await?;
-    let prepared = prepare(model_id, request, optional_params, sources).await?;
-    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
-    apply_bedrock_rules(model_id, &mut body, sources).await;
-    Ok(body)
-}
-
-// The parent's _build_bedrock_anthropic_request_base filters every credential field, clamps the effort ceiling and
-// normalizes tool-search tool types before it builds anything.
-async fn filtered_params<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    model_id: &str,
-    request: &ClaudeInvokeRequest<'_>,
-    sources: &TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<IndexMap<String, ParamJson>, ClaudeInvokeError<Blocks::Failure>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
+    E: StdError + Send + Sync + 'static,
 {
     let mut optional_params: IndexMap<String, ParamJson> = request
         .optional_params
@@ -153,22 +102,29 @@ where
     )
     .await?;
     normalize_tool_search_tools(&mut optional_params)?;
-    Ok(optional_params)
+    let prepared = prepare(model_id, request, optional_params, sources).await?;
+    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
+    apply_bedrock_rules(model_id, &mut body, sources).await;
+    Ok(body)
 }
 
-async fn prepare<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
+async fn prepare<E>(
     model_id: &str,
     request: &ClaudeInvokeRequest<'_>,
     optional_params: IndexMap<String, ParamJson>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<PreparedRequest, ClaudeInvokeError<Blocks::Failure>>
+    sources: &mut TransformSources<
+        '_,
+        '_,
+        impl DynamicMetadataSource,
+        impl ModelInfoClient,
+        impl RemoteMediaFetcher + Sync,
+        impl FileBlocks<Failure = E> + Sync,
+        impl Fn() -> String + Sync,
+        impl ModelInfoLookup,
+    >,
+) -> Result<PreparedRequest, ClaudeInvokeError<E>>
 where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
+    E: StdError + Send + Sync + 'static,
 {
     let anthropic_request = AnthropicRequest {
         model: model_id,
@@ -191,17 +147,21 @@ where
 
 // The Bedrock invoke rules the parent applies after the native preparation; the model and stream stay out of the
 // body, since the Invoke surface puts them in the URL.
-async fn apply_bedrock_rules<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
+async fn apply_bedrock_rules<E>(
     model_id: &str,
     body: &mut Object,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
+    sources: &mut TransformSources<
+        '_,
+        '_,
+        impl DynamicMetadataSource,
+        impl ModelInfoClient,
+        impl RemoteMediaFetcher + Sync,
+        impl FileBlocks<Failure = E> + Sync,
+        impl Fn() -> String + Sync,
+        impl ModelInfoLookup,
+    >,
 ) where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
+    E: StdError + Send + Sync + 'static,
 {
     body.shift_remove(MODEL_FIELD);
     body.shift_remove(STREAM_FIELD);

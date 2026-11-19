@@ -55,11 +55,10 @@ use crate::claude_invoke::error::ClaudeInvokeError;
 use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources as ChatSources};
 use crate::event_frames::beta::BetaHeader;
 use crate::invoke_primitives::config::Params as InvokeParams;
+use crate::mantle_chat::async_request::async_transform_request;
 use crate::mantle_chat::error::MantleMessagesError;
 use crate::mantle_chat::messages::transform_request as messages_transform_request;
-use crate::mantle_chat::request::{
-    async_transform_request, transform_request as chat_transform_request,
-};
+use crate::mantle_chat::request::transform_request as chat_transform_request;
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::messages::transform::{MessagesRequest, TransformSources as MessagesSources};
 use crate::model_routes::ParamMap;
@@ -418,7 +417,7 @@ pub(super) fn messages_call(
     }
 }
 
-pub(super) struct MessagesSession<'fixture> {
+struct SessionCore<'fixture> {
     fixture: &'fixture Fixture,
     resolution: ResolutionContext<'fixture>,
     keys: ModelCostKeys,
@@ -426,8 +425,8 @@ pub(super) struct MessagesSession<'fixture> {
     runtime: Runtime,
 }
 
-impl<'fixture> MessagesSession<'fixture> {
-    pub(super) fn new(fixture: &'fixture Fixture) -> Self {
+impl<'fixture> SessionCore<'fixture> {
+    fn new(fixture: &'fixture Fixture) -> Self {
         Self {
             fixture,
             resolution: fixture.resolution(),
@@ -438,33 +437,49 @@ impl<'fixture> MessagesSession<'fixture> {
                 .expect("the test runtime builds"),
         }
     }
+}
+
+pub(super) struct MessagesSession<'fixture> {
+    core: SessionCore<'fixture>,
+}
+
+impl<'fixture> MessagesSession<'fixture> {
+    pub(super) fn new(fixture: &'fixture Fixture) -> Self {
+        Self {
+            core: SessionCore::new(fixture),
+        }
+    }
 
     pub(super) fn transform(
         &mut self,
         call: &MessagesCall,
         headers: &mut IndexMap<String, String>,
     ) -> Result<Object, MantleMessagesError> {
-        let catalogs = self.fixture.catalogs();
-        let mut environment =
-            self.fixture
-                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
+        let fixture = self.core.fixture;
+        let catalogs = fixture.catalogs();
+        let mut environment = fixture.capability_environment(
+            &self.core.resolution,
+            &mut self.core.keys,
+            &self.core.dynamic,
+        );
         let request = MessagesRequest {
             model: &call.model,
             messages: call.messages.clone(),
             optional_params: call.optional_params.clone(),
             headers: &call.header_values,
-            model_cost: &self.fixture.model_cost,
+            model_cost: &fixture.model_cost,
             drop_params: false,
         };
         let mut sources = MessagesSources {
             environment: &mut environment,
             catalogs: &catalogs,
-            budgets: &self.fixture.budgets,
-            matrix: &self.fixture.matrix,
-            lookup: &self.fixture.lookup,
-            packaged: self.fixture.packaged.as_ref(),
+            budgets: &fixture.budgets,
+            matrix: &fixture.matrix,
+            lookup: &fixture.lookup,
+            packaged: fixture.packaged.as_ref(),
         };
-        self.runtime
+        self.core
+            .runtime
             .block_on(messages_transform_request(&request, headers, &mut sources))
     }
 }
@@ -476,23 +491,13 @@ pub(super) enum Mode {
 }
 
 pub(super) struct ChatSession<'fixture> {
-    fixture: &'fixture Fixture,
-    resolution: ResolutionContext<'fixture>,
-    keys: ModelCostKeys,
-    dynamic: NoDynamicMetadata,
-    runtime: Runtime,
+    core: SessionCore<'fixture>,
 }
 
 impl<'fixture> ChatSession<'fixture> {
     pub(super) fn new(fixture: &'fixture Fixture) -> Self {
         Self {
-            fixture,
-            resolution: fixture.resolution(),
-            keys: ModelCostKeys::default(),
-            dynamic: NoDynamicMetadata,
-            runtime: Builder::new_current_thread()
-                .build()
-                .expect("the test runtime builds"),
+            core: SessionCore::new(fixture),
         }
     }
 
@@ -505,7 +510,8 @@ impl<'fixture> ChatSession<'fixture> {
     where
         Fetcher: RemoteMediaFetcher + Sync,
     {
-        let catalogs = self.fixture.catalogs();
+        let fixture = self.core.fixture;
+        let catalogs = fixture.catalogs();
         let blocks = NoFileBlocks;
         let new_id: fn() -> String = || "generated".to_owned();
         let deps = PromptDeps {
@@ -513,22 +519,26 @@ impl<'fixture> ChatSession<'fixture> {
             blocks: &blocks,
             new_id: &new_id,
         };
-        let mut environment =
-            self.fixture
-                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
+        let mut environment = fixture.capability_environment(
+            &self.core.resolution,
+            &mut self.core.keys,
+            &self.core.dynamic,
+        );
         let mut sources = ChatSources {
             environment: &mut environment,
             catalogs: &catalogs,
             prompts: &deps,
-            matrix: &self.fixture.matrix,
-            lookup: &self.fixture.lookup,
-            packaged: self.fixture.packaged.as_ref(),
+            matrix: &fixture.matrix,
+            lookup: &fixture.lookup,
+            packaged: fixture.packaged.as_ref(),
         };
         match mode {
             Mode::Sync => self
+                .core
                 .runtime
                 .block_on(chat_transform_request(request, &mut sources)),
             Mode::Async => self
+                .core
                 .runtime
                 .block_on(async_transform_request(request, &mut sources)),
         }

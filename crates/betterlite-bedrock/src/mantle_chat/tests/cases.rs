@@ -5,16 +5,12 @@ use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_models::decisions::Json as ParamJson;
 use betterlite_prompts::arguments::json::{Json as BodyJson, Object};
-use betterlite_prompts::media::error::MediaError;
-use betterlite_prompts::media_fetch::error::ImageFetchError;
 use indexmap::{IndexMap, IndexSet};
 use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
-use crate::claude_invoke::error::ClaudeInvokeError;
 use crate::invoke_events::{DecoderClock, InvokeChunk};
-use crate::invoke_primitives::config::Params as InvokeParams;
 use crate::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use crate::mantle_chat::environment::{chat_headers, messages_headers};
 use crate::mantle_chat::messages::{move_betas_into_header, restore_messages_fields};
@@ -26,12 +22,11 @@ use crate::mantle_inputs::records::MantleGlobals;
 use crate::request_policy::{BedrockRequestPolicy, Params as MetadataParams, RequestValue};
 
 use super::support::{
-    ChatSession, Fixture, MapFetcher, MessagesSession, Mode, Recorder, RefusingFetcher,
-    contract_of, invoke_params, js, logging_object, map_of, messages_call, messages_of, obj,
-    recorder_deps, runtime,
+    ChatSession, Fixture, MapFetcher, MessagesSession, Mode, Recorder, contract_of, invoke_params,
+    js, logging_object, map_of, messages_call, messages_of, obj, recorder_deps, runtime,
 };
 
-const LIMITS: ApiLimits = ApiLimits {
+pub(super) const LIMITS: ApiLimits = ApiLimits {
     max_json_bytes: 4096,
     max_event_bytes: 4096,
     max_items: 100,
@@ -40,10 +35,16 @@ const LIMITS: ApiLimits = ApiLimits {
 const USER_MESSAGES: &str = r#"[{"role": "user", "content": "hi"}]"#;
 const BETA_PARAMS: &str = r#"{"max_tokens":512,"tools":[{"type":"tool_search_tool_regex_20251119","name":"tool_search"},{"name":"geo","description":"geo","input_schema":{"type":"object","properties":{"q":{"type":"string"}}},"eager_input_streaming":true}],"safeguards":[]}"#;
 const BETA_HEADER: &str = "dangerous-tool-use-2026-09-03,fine-grained-tool-streaming-2025-05-14,tool-search-tool-2025-10-19";
-const IMAGE_BODY: &str = r#"{"data":"iVBORw0KGgo=","media_type":"image/png","type":"base64"}"#;
+pub(super) const IMAGE_BODY: &str =
+    r#"{"data":"iVBORw0KGgo=","media_type":"image/png","type":"base64"}"#;
 const STRUCTURED_PARAMS: &str = r#"{"max_tokens":256,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"a":{"type":"string"}}}}}}"#;
 
-fn url(api_base: Option<&str>, model: &str, params: &str, globals: &MantleGlobals) -> String {
+pub(super) fn url(
+    api_base: Option<&str>,
+    model: &str,
+    params: &str,
+    globals: &MantleGlobals,
+) -> String {
     complete_url(api_base, model, &invoke_params(params), globals).expect("the mantle url resolves")
 }
 
@@ -797,7 +798,7 @@ fn usage_failures() {
     assert_eq!(error.status_code(), Some(500));
 }
 
-fn at<'value>(body: &'value Object, path: &[&str]) -> &'value BodyJson {
+pub(super) fn at<'value>(body: &'value Object, path: &[&str]) -> &'value BodyJson {
     let (first, rest) = path.split_first().expect("the path is not empty");
     let mut current = body.get(*first).expect("the body field exists");
     for step in rest {
@@ -819,7 +820,7 @@ const MEDIA_MESSAGES: &str = r#"[{"role":"user","content":[
     {"type":"document","source":{"type":"url","url":"http://example.test/doc.pdf"}}
 ]}]"#;
 
-const SYNC_MESSAGES: &str = r#"[{"role":"user","content":[
+pub(super) const SYNC_MESSAGES: &str = r#"[{"role":"user","content":[
     {"type":"file","file":{"file_id":"https://files.example.test/f1"}},
     {"type":"image_url","image_url":{"url":"https://example.test/pic.png"}}
 ]}]"#;
@@ -875,207 +876,4 @@ pub(super) fn remote_url_inlined() {
         at(&body, &["messages", "0", "content", "1", "source"]),
         &js(r#"{"type":"url","url":"https://example.test/pic.png"}"#)
     );
-}
-
-fn identity(name: &str, region: &str, base: &str) -> MantleGlobals {
-    MantleGlobals {
-        mantle_api_key: Some(SecretString::from(format!("{name}-key"))),
-        mantle_api_base: Some(base.to_owned()),
-        mantle_region: None,
-        aws_bearer_token: Some(SecretString::from(format!("{name}-token"))),
-        aws_region_name: Some(region.to_owned()),
-        aws_region: None,
-    }
-}
-
-fn params_for(name: &str) -> MetadataParams {
-    let mut params = MetadataParams::new();
-    params.insert(
-        "aws_bedrock_project_id".to_owned(),
-        RequestValue::Text(name.to_owned()),
-    );
-    params
-}
-
-#[test]
-fn mantle_claude_credential_identity_isolation() {
-    let alice = identity("alice", "eu-west-1", "https://mantle.alice.test");
-    let bob = identity("bob", "us-east-2", "https://mantle.bob.test");
-    assert_eq!(
-        url(None, "claude", "{}", &alice),
-        "https://mantle.alice.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(None, "claude", "{}", &bob),
-        "https://mantle.bob.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(None, "claude", "{}", &alice),
-        "https://mantle.alice.test/anthropic/v1/messages"
-    );
-    let caller: IndexMap<String, String> =
-        IndexMap::from([("x-caller".to_owned(), "kept".to_owned())]);
-    let alice_headers = chat_headers(
-        &caller,
-        &mut invoke_params("{}"),
-        &params_for("alice"),
-        None,
-    )
-    .expect("alice's chat headers merge");
-    let bob_headers = chat_headers(&caller, &mut invoke_params("{}"), &params_for("bob"), None)
-        .expect("bob's chat headers merge");
-    assert_eq!(
-        alice_headers.get("anthropic-workspace").map(String::as_str),
-        Some("alice")
-    );
-    assert_eq!(
-        bob_headers.get("anthropic-workspace").map(String::as_str),
-        Some("bob")
-    );
-    assert!(!caller.contains_key("anthropic-workspace"));
-    let key = SecretString::from("alice-key");
-    let (merged, base) = messages_headers(
-        &caller,
-        &params_for("alice"),
-        None,
-        Some("https://mantle.alice.test"),
-        Some(&key),
-    )
-    .expect("alice's messages headers merge");
-    assert_eq!(base.as_deref(), Some("https://mantle.alice.test"));
-    assert!(merged.values().all(|value| !value.contains("alice-key")));
-    assert_eq!(
-        merged.get("anthropic-workspace").map(String::as_str),
-        Some("alice")
-    );
-}
-
-const SECRET: &str = "fixture-secret-credential";
-const TOKEN: &str = "fixture-bearer-token";
-
-#[test]
-fn mantle_claude_secret_safe_failure() {
-    let globals = MantleGlobals {
-        mantle_api_key: Some(SecretString::from(SECRET)),
-        aws_bearer_token: Some(SecretString::from(TOKEN)),
-        aws_region_name: Some("us-west-2".to_owned()),
-        ..MantleGlobals::default()
-    };
-    let debug = format!("{globals:?}");
-    assert!(!debug.contains(SECRET));
-    assert!(!debug.contains(TOKEN));
-    let error = complete_url(
-        None,
-        "claude",
-        &invoke_params(r#"{"aws_region_name":"NOT A REGION"}"#),
-        &globals,
-    )
-    .expect_err("the region is invalid");
-    assert!(!error.to_string().contains(SECRET));
-    assert!(!format!("{error:?}").contains(SECRET));
-    let mut headers = IndexMap::new();
-    headers.insert("authorization".to_owned(), format!("Bearer {SECRET}"));
-    let body = obj(r#"{"anthropic_beta":"beta"}"#);
-    let error = move_betas_into_header(&body, &mut headers).expect_err("the beta shape fails");
-    assert!(!error.to_string().contains(SECRET));
-    assert!(!format!("{error:?}").contains(SECRET));
-    let error = transform_response(br#"{"usage":"many"}"#, 200, &LIMITS)
-        .expect_err("the usage shape fails");
-    assert!(!error.to_string().contains(SECRET));
-}
-
-const MEDIA_FETCH_MESSAGES: &str = r#"[{"role":"user","content":[
-    {"type":"image_url","image_url":{"url":"http://example.test/pic.png"}},
-    {"type":"file","file":{"file_id":"https://files.example.test/f1"}},
-    {"type":"document","source":{"type":"url","url":"http://example.test/doc.pdf"}}
-]}]"#;
-
-#[test]
-fn mantle_claude_media_fetch() {
-    let fixture = Fixture::new();
-    let mut session = ChatSession::new(&fixture);
-    async_media_shapes(&fixture, &mut session);
-    sync_media_untouched(&fixture, &mut session);
-    refusing_fetcher_fails(&fixture, &mut session);
-}
-
-fn async_media_shapes(fixture: &Fixture, session: &mut ChatSession<'_>) {
-    let fetcher = MapFetcher::new(&[
-        (
-            "http://example.test/pic.png",
-            "data:image/png;base64,iVBORw0KGgo=",
-        ),
-        (
-            "https://files.example.test/f1",
-            "data:application/pdf;base64,ZmlsZQ==",
-        ),
-        (
-            "http://example.test/doc.pdf",
-            "data:application/pdf;base64,JVBERi0xLjQK",
-        ),
-    ]);
-    let request = fixture.chat_request(
-        "fixture-plain",
-        messages_of(MEDIA_FETCH_MESSAGES),
-        map_of(r#"{"max_tokens":64}"#),
-    );
-    let body = session
-        .transform(&request, &fetcher, Mode::Async)
-        .expect("the media request transforms");
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "0", "source"]),
-        &js(IMAGE_BODY)
-    );
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "1", "source"]),
-        &js(r#"{"data":"ZmlsZQ==","media_type":"application/pdf","type":"base64"}"#)
-    );
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "2", "source"]),
-        &js(r#"{"data":"JVBERi0xLjQK","media_type":"application/pdf","type":"base64"}"#)
-    );
-    assert_eq!(
-        fetcher.calls(),
-        vec![
-            "http://example.test/pic.png",
-            "https://files.example.test/f1",
-            "http://example.test/doc.pdf"
-        ]
-    );
-    assert_eq!(fetcher.transport_attempts(), 3);
-}
-
-fn sync_media_untouched(fixture: &Fixture, session: &mut ChatSession<'_>) {
-    let quiet = MapFetcher::default();
-    let request = fixture.chat_request(
-        "fixture-plain",
-        messages_of(SYNC_MESSAGES),
-        map_of(r#"{"max_tokens":64}"#),
-    );
-    let body = session
-        .transform(&request, &quiet, Mode::Sync)
-        .expect("the sync request transforms");
-    assert!(quiet.calls().is_empty());
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "0", "source"]),
-        &js(r#"{"type":"url","url":"https://files.example.test/f1"}"#)
-    );
-}
-
-fn refusing_fetcher_fails(fixture: &Fixture, session: &mut ChatSession<'_>) {
-    let refusing = RefusingFetcher::default();
-    let request = fixture.chat_request(
-        "fixture-plain",
-        messages_of(MEDIA_FETCH_MESSAGES),
-        map_of(r#"{"max_tokens":64}"#),
-    );
-    match session.transform(&request, &refusing, Mode::Async) {
-        Ok(_body) => panic!("the refusing fetcher must fail the request"),
-        Err(ClaudeInvokeError::Media(MediaError::Fetch(ImageFetchError::Rejected { url }))) => {
-            assert_eq!(url, "http://example.test/pic.png");
-        }
-        Err(other) => panic!("unexpected error: {other}"),
-    }
-    assert_eq!(refusing.transport_attempts(), 0);
-    assert_eq!(refusing.calls(), vec!["http://example.test/pic.png"]);
 }
