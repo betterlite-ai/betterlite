@@ -77,22 +77,7 @@ async fn committed_scope_rejects_before_preparation() {
 
 async fn explicit_region_is_retained() {
     let mut fixture = Fixture::new();
-    let explicit = config_for(
-        &mut fixture,
-        Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some("eu-west-1"),
-            region_inputs: RegionInputs::default(),
-            auth: AuthParams::default(),
-            logged_types: LoggedEventTypes::Default,
-        },
-    )
-    .await;
+    let explicit = config_for(&mut fixture, region_options("eu-west-1")).await;
     assert_eq!(explicit.region, "eu-west-1");
     assert_eq!(
         explicit.endpoint_uri,
@@ -100,22 +85,7 @@ async fn explicit_region_is_retained() {
     );
 
     let mut invalid = Fixture::new();
-    let retained = config_for(
-        &mut invalid,
-        Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some("BAD_REGION"),
-            region_inputs: RegionInputs::default(),
-            auth: AuthParams::default(),
-            logged_types: LoggedEventTypes::Default,
-        },
-    )
-    .await;
+    let retained = config_for(&mut invalid, region_options("BAD_REGION")).await;
     assert_eq!(
         retained.region, "BAD_REGION",
         "an explicit region is never validated"
@@ -124,27 +94,27 @@ async fn explicit_region_is_retained() {
 
 async fn an_empty_explicit_region_is_retained() {
     let mut fixture = Fixture::new();
-    let blank = config_for(
-        &mut fixture,
-        Options {
-            model: MODEL,
-            pending: None,
-            committed: false,
-            committed_failure: None,
-            api_base: None,
-            endpoint: None,
-            region: Some(""),
-            region_inputs: RegionInputs::default(),
-            auth: AuthParams::default(),
-            logged_types: LoggedEventTypes::Default,
-        },
-    )
-    .await;
+    let blank = config_for(&mut fixture, region_options("")).await;
     assert_eq!(blank.region, "", "an empty explicit region is retained");
     assert_eq!(
         blank.endpoint_uri, "https://bedrock-runtime..amazonaws.com",
         "the commercial partition answers an empty region"
     );
+}
+
+fn region_options(region: &str) -> Options<'_> {
+    Options {
+        model: MODEL,
+        pending: None,
+        committed: false,
+        committed_failure: None,
+        api_base: None,
+        endpoint: None,
+        region: Some(region),
+        region_inputs: RegionInputs::default(),
+        auth: AuthParams::default(),
+        logged_types: LoggedEventTypes::Default,
+    }
 }
 
 fn region_inputs(
