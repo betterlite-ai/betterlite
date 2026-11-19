@@ -130,16 +130,12 @@ vector_store_registry:
     }
 )]
 fn loads_registry_config(#[case] source: &str, #[case] expected: Settings) {
-    ConfigLoader {
+    let config = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(source)
     .expect("vector_store_registry is a supported configuration key");
-    let (raw, ignored) = parse_view::<Raw>(source).expect("the registry section parses");
-    assert!(ignored.is_empty());
-    let settings = Section::convert(raw, &BTreeMap::<String, String>::new())
-        .expect("the registry section converts");
-    assert_eq!(settings, expected);
+    assert_eq!(config.sections.vector_store_registry, expected);
 }
 
 #[test]
