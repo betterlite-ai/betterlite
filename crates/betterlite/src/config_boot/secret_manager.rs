@@ -119,6 +119,7 @@ where
     Ok(Some(SecretManagerClient::Uninitialized))
 }
 
+#[derive(Clone, Copy)]
 enum ReaderManager {
     Vault,
     Cyberark,
