@@ -76,8 +76,6 @@ where
         cancel.cancel();
         let client = finish(client_future, client_outcome).await;
         let provider = finish(provider_future, provider_outcome).await;
-        drop(client_pump);
-        drop(provider_pump);
         BridgeRuns {
             logged_events: logged.events,
             client,
@@ -135,15 +133,15 @@ async fn settle<A, B, T, U>(
         Either::Left((outcome, _pending)) => *client_outcome = Some(outcome),
         Either::Right((outcome, _pending)) => *provider_outcome = Some(outcome),
     }
-    if client_outcome.is_none() {
-        if let Either::Left((outcome, _ready)) = select(client.as_mut(), ready(())).await {
-            *client_outcome = Some(outcome);
-        }
+    if client_outcome.is_none()
+        && let Either::Left((outcome, _ready)) = select(client.as_mut(), ready(())).await
+    {
+        *client_outcome = Some(outcome);
     }
-    if provider_outcome.is_none() {
-        if let Either::Left((outcome, _ready)) = select(provider.as_mut(), ready(())).await {
-            *provider_outcome = Some(outcome);
-        }
+    if provider_outcome.is_none()
+        && let Either::Left((outcome, _ready)) = select(provider.as_mut(), ready(())).await
+    {
+        *provider_outcome = Some(outcome);
     }
 }
 

@@ -8,9 +8,9 @@ use super::logging::FakeQueue;
 use super::support::{
     ACCESS, CONTENT_END, CONTENT_START, Chunk, FakeCredentials, FakeError, FakeRuntime, Fixture,
     MODEL, Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET, RESOLVED_TOKEN, ReceiveStep,
-    RecordedConfig, SECRET, SESSION_UPDATE, ScriptedClient, StreamPlan, TEXT_OUTPUT, TOKEN,
-    TRACE_ID, USAGE_EVENT, event_key, event_type, field, full_auth, full_session_tags,
-    stream_error,
+    RecordedConfig, RecordedResolve, SECRET, SESSION_UPDATE, ScriptedClient, StreamPlan,
+    TEXT_OUTPUT, TOKEN, TRACE_ID, USAGE_EVENT, event_key, event_type, field, full_auth,
+    full_session_tags, stream_error,
 };
 use crate::aws_settings::{AuthError, AuthParams};
 use crate::credentials::error::CredentialError;
@@ -466,10 +466,19 @@ fn assert_resolved_auth(fixture: &Fixture) {
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
     assert_eq!(call.region, REGION);
+    assert_resolved_region_and_identity(call);
+    assert_resolved_role(call);
+    assert_absent_role_metadata(call);
+}
+
+fn assert_resolved_region_and_identity(call: &RecordedResolve) {
     assert_eq!(call.region_name.as_deref(), Some(REGION));
     assert_eq!(call.access_key_id.as_deref(), Some(ACCESS));
     assert_eq!(call.secret_access_key.as_deref(), Some(SECRET));
     assert_eq!(call.session_token.as_deref(), Some(TOKEN));
+}
+
+fn assert_resolved_role(call: &RecordedResolve) {
     assert_eq!(call.session_name.as_deref(), Some("fixture-session"));
     assert_eq!(call.profile_name.as_deref(), Some("fixture-profile"));
     assert_eq!(call.role_name.as_deref(), Some("fixture-role"));
@@ -483,6 +492,9 @@ fn assert_resolved_auth(fixture: &Fixture) {
     );
     assert_eq!(call.external_id.as_deref(), Some("fixture-external"));
     assert_eq!(call.session_tags.as_ref(), Some(&full_session_tags()));
+}
+
+fn assert_absent_role_metadata(call: &RecordedResolve) {
     assert!(call.role_arn.is_none());
     assert!(call.web_identity_token_file.is_none());
     assert!(call.bearer_token.is_none());
@@ -615,7 +627,18 @@ async fn provider_failure_is_raised_after_logging() {
         RealtimeTransportError::Provider(ProviderStreamError::Bedrock { status_code, .. }) => {
             assert_eq!(*status_code, 424);
         }
-        other => panic!("a mapped provider failure, not {other:?}"),
+        other @ (RealtimeTransportError::Committed(_)
+        | RealtimeTransportError::Endpoint(_)
+        | RealtimeTransportError::Credential(_)
+        | RealtimeTransportError::NoCredentials { .. }
+        | RealtimeTransportError::Client(_)
+        | RealtimeTransportError::SessionCreated { .. }
+        | RealtimeTransportError::Stream(_)
+        | RealtimeTransportError::Completion(_)
+        | RealtimeTransportError::Logging { .. }
+        | RealtimeTransportError::Provider(_)) => {
+            panic!("a mapped provider failure, not {other:?}");
+        }
     }
     assert_eq!(result.scope.session_committed, Json::Bool(true));
     match &result.scope.committed_failure {
@@ -623,7 +646,10 @@ async fn provider_failure_is_raised_after_logging() {
             failure.contains("ModelStreamErrorException: the provider stream broke"),
             "{failure}"
         ),
-        other => panic!("the committed failure is recorded, not {other:?}"),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            panic!("the committed failure is recorded, not {other:?}");
+        }
     }
     assert_eq!(fixture.logging.dispatched().len(), 1);
     assert_eq!(fixture.logging.dispatched()[0].len(), 1);
@@ -806,7 +832,18 @@ async fn the_client_failure_wins() {
         RealtimeTransportError::Provider(ProviderStreamError::Unchanged(failure)) => {
             assert_eq!(failure.class_name, "ClientStreamError");
         }
-        other => panic!("the client exception arrives first, not {other:?}"),
+        other @ (RealtimeTransportError::Committed(_)
+        | RealtimeTransportError::Endpoint(_)
+        | RealtimeTransportError::Credential(_)
+        | RealtimeTransportError::NoCredentials { .. }
+        | RealtimeTransportError::Client(_)
+        | RealtimeTransportError::SessionCreated { .. }
+        | RealtimeTransportError::Stream(_)
+        | RealtimeTransportError::Completion(_)
+        | RealtimeTransportError::Logging { .. }
+        | RealtimeTransportError::Provider(_)) => {
+            panic!("the client exception arrives first, not {other:?}");
+        }
     }
     assert_eq!(error.status_code(), None);
     assert_eq!(result.scope.committed_failure, Json::Null);

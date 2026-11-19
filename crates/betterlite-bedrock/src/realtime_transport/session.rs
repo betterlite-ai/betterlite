@@ -79,7 +79,7 @@ where
     {
         // A committed scope answers before any credential or connection work
         let pending = call.scope.pending_session_update()?;
-        let target = prepare(Preparation {
+        let target = prepare(&Preparation {
             model: call.model,
             api_base: call.api_base,
             aws_bedrock_runtime_endpoint: call.aws_bedrock_runtime_endpoint,

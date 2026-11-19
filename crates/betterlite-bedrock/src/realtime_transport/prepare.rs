@@ -24,7 +24,7 @@ pub struct PreparedTarget {
     pub endpoint_uri: String,
 }
 
-pub fn prepare(input: Preparation<'_>) -> Result<PreparedTarget, AwsEndpointError> {
+pub fn prepare(input: &Preparation<'_>) -> Result<PreparedTarget, AwsEndpointError> {
     // An explicit region is retained verbatim, empty included; only an absent one falls back
     let region = match input.aws_region_name {
         Some(explicit) => explicit.to_owned(),

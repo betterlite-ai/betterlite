@@ -55,11 +55,14 @@ impl SdkStream {
             .body(body)
             .send()
             .await
-            .map_err(provider_error)?;
+            .map_err(|error| provider_error(&error))?;
         let events = output.body;
-        let stream = unfold(events, |mut events| async move {
-            let event = events.recv().await.map_err(provider_error);
-            Some((event, events))
+        let stream = unfold(events, |mut responses| async move {
+            let event = responses
+                .recv()
+                .await
+                .map_err(|error| provider_error(&error));
+            Some((event, responses))
         });
         Ok(Self {
             input,

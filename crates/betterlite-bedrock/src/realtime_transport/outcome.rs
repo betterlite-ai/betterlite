@@ -18,8 +18,9 @@ where
     // The client direction's exception wins over the provider direction's, as the source reports it first
     if let Err(error) = client {
         return Some(match error {
-            ClientForwardError::Send(inner) => stream_failure(inner),
-            ClientForwardError::Ack(AckError::Stream(inner)) => stream_failure(inner),
+            ClientForwardError::Send(inner) | ClientForwardError::Ack(AckError::Stream(inner)) => {
+                stream_failure(inner)
+            }
             ClientForwardError::Input(inner) => named_failure("InputError", &inner),
             ClientForwardError::Ack(inner) => named_failure("AckError", &inner),
             ClientForwardError::Encode { source } => named_failure("EncodeError", &source),
@@ -42,11 +43,11 @@ where
     let StreamError { message, source } = error;
     let class_name = source
         .as_ref()
-        .and_then(|error| error.provider_class_name().map(str::to_owned))
+        .and_then(|cause| cause.provider_class_name().map(str::to_owned))
         .unwrap_or_else(|| "RuntimeError".to_owned());
     let text = source
         .as_ref()
-        .and_then(|error| error.provider_message().map(str::to_owned))
+        .and_then(|cause| cause.provider_message().map(str::to_owned))
         .unwrap_or(message);
     ProviderFailure {
         class_name,

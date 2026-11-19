@@ -160,8 +160,8 @@ pub(super) fn full_session_tags() -> SessionTagValue {
     ]))])
 }
 
-pub(super) fn secret_text(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
+pub(super) fn secret_text(value: &SecretString) -> String {
+    value.expose_secret().to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,20 +196,20 @@ impl RecordedResolve {
     fn new(settings: &AwsSettings, region: &str) -> Self {
         Self {
             region: region.to_owned(),
-            access_key_id: secret_text(settings.access_key_id.as_ref()),
-            secret_access_key: secret_text(settings.secret_access_key.as_ref()),
-            session_token: secret_text(settings.session_token.as_ref()),
+            access_key_id: settings.access_key_id.as_ref().map(secret_text),
+            secret_access_key: settings.secret_access_key.as_ref().map(secret_text),
+            session_token: settings.session_token.as_ref().map(secret_text),
             region_name: settings.region_name.clone(),
             session_name: settings.session_name.clone(),
             profile_name: settings.profile_name.clone(),
             role_name: settings.role_name.clone(),
-            web_identity_token: secret_text(settings.web_identity_token.as_ref()),
+            web_identity_token: settings.web_identity_token.as_ref().map(secret_text),
             sts_endpoint: settings.sts_endpoint.clone(),
             external_id: settings.external_id.clone(),
             session_tags: settings.session_tags.clone(),
             role_arn: settings.role_arn.clone(),
             web_identity_token_file: settings.web_identity_token_file.clone(),
-            bearer_token: secret_text(settings.bearer_token.as_ref()),
+            bearer_token: settings.bearer_token.as_ref().map(secret_text),
         }
     }
 }
@@ -464,7 +464,7 @@ impl RealtimeRuntime for FakeRuntime {
                 .secret_access_key
                 .expose_secret()
                 .to_owned(),
-            session_token: secret_text(config.credentials.session_token.as_ref()),
+            session_token: config.credentials.session_token.as_ref().map(secret_text),
         };
         self.state
             .configs

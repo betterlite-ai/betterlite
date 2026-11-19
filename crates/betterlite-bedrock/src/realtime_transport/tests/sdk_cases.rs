@@ -7,6 +7,7 @@ use aws_smithy_runtime_api::client::http::{
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::result::ConnectorError;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
+use aws_smithy_types::retry::RetryConfig;
 
 use super::support::{
     ACCESS, FakeCredentials, Fixture, MODEL, Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET,
@@ -17,7 +18,7 @@ use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use crate::aws_settings::AuthError;
 use crate::credentials::error::CredentialError;
 use crate::realtime_transport::error::NO_CREDENTIALS_MESSAGE;
-use crate::realtime_transport::runtime::{RealtimeRuntime, RuntimeConfig, SdkRuntime};
+use crate::realtime_transport::runtime::{RealtimeRuntime as _, RuntimeConfig, SdkRuntime};
 use crate::signing::target::RegionInputs;
 
 pub(super) async fn python_sdk_boundary() {
@@ -56,9 +57,11 @@ async fn the_prepared_config_reaches_the_seam() {
     assert_eq!(fixture.runtime.invocations(), vec![model.to_owned()]);
 }
 
+type RecordedCalls = Arc<Mutex<Vec<(String, Vec<(String, String)>)>>>;
+
 #[derive(Debug)]
 struct RecordingConnector {
-    calls: Arc<Mutex<Vec<(String, Vec<(String, String)>)>>>,
+    calls: RecordedCalls,
 }
 
 impl HttpConnector for RecordingConnector {
@@ -82,12 +85,12 @@ impl HttpConnector for RecordingConnector {
 }
 
 struct Boundary {
-    calls: Arc<Mutex<Vec<(String, Vec<(String, String)>)>>>,
+    calls: RecordedCalls,
     runtime: SdkRuntime,
 }
 
 fn boundary() -> Boundary {
-    let calls: Arc<Mutex<Vec<(String, Vec<(String, String)>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls: RecordedCalls = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&calls);
     let http = http_client_fn(
         move |_settings: &HttpConnectorSettings, _components: &RuntimeComponents| {
@@ -132,7 +135,7 @@ fn the_sdk_client_keeps_the_injected_connector() {
         Some("eu-west-1".to_owned())
     );
     assert_eq!(
-        sdk_config.retry_config().map(|retry| retry.max_attempts()),
+        sdk_config.retry_config().map(RetryConfig::max_attempts),
         Some(1),
         "the SDK retries are disabled"
     );

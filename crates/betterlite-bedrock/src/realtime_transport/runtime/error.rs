@@ -32,21 +32,21 @@ impl ProviderClass for SdkStreamError {
 }
 
 // The SDK answers a service failure with its modeled code and message, and a transport failure with its display text
-pub(super) fn provider_error<E, R>(error: SdkError<E, R>) -> StreamError<SdkStreamError>
+pub(super) fn provider_error<E, R>(error: &SdkError<E, R>) -> StreamError<SdkStreamError>
 where
     E: ProvideErrorMetadata + StdError + 'static,
     R: Debug,
 {
-    let failure = match error.as_service_error() {
-        Some(service) => SdkStreamError::Provider {
+    let failure = error.as_service_error().map_or_else(
+        || SdkStreamError::Provider {
+            class_name: "SdkError".to_owned(),
+            message: DisplayErrorContext(error).to_string(),
+        },
+        |service| SdkStreamError::Provider {
             class_name: service.code().unwrap_or("SdkError").to_owned(),
             message: service.message().unwrap_or_default().to_owned(),
         },
-        None => SdkStreamError::Provider {
-            class_name: "SdkError".to_owned(),
-            message: DisplayErrorContext(&error).to_string(),
-        },
-    };
+    );
     StreamError {
         message: failure.to_string(),
         source: Some(failure),
