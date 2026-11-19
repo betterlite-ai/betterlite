@@ -48,6 +48,12 @@ description: >-
   operation.rs and prepared.rs as they are.
 scope:
   paths:
+    - "tools/oracle/src/gateway.rs"
+    - "crates/betterlite-provider/src/provider/tests.rs"
+    - "crates/betterlite-provider/src/provider.rs"
+    - "crates/betterlite-provider/src/prepared/deployment.rs"
+    - "crates/betterlite-provider/src/operation/tests.rs"
+    - "crates/betterlite-provider/src/aiohttp_openai_dispatch.rs"
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-provider/src/legacy_dispatch.rs
     - crates/betterlite-provider/src/legacy_dispatch/**
