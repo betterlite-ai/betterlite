@@ -21,10 +21,10 @@ pub fn decode_cost_estimate_request(bytes: &[u8]) -> Result<CostEstimateRequest,
             msg: REQUIRED.to_owned(),
         }]));
     }
-    let value = str::from_utf8(bytes)
+    let parsed = str::from_utf8(bytes)
         .ok()
         .and_then(|text| serde_json::from_str::<JsonValue>(text).ok());
-    let Some(value) = value else {
+    let Some(value) = parsed else {
         return Err(EstimateError::Request(vec![Issue {
             kind: "json_invalid",
             loc: vec!["body".to_owned()],

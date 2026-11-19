@@ -59,7 +59,7 @@ pub(super) struct CostLines {
 impl CostLines {
     // CostLines.times: a falsy count answers none, a present one scales every line.
     pub(super) fn times(&self, count: Option<i64>) -> Option<Self> {
-        let factor = Decimal::from(count.filter(|count| *count != 0)?);
+        let factor = Decimal::from(count.filter(|value| *value != 0)?);
         Some(Self {
             total: self.total.saturating_mul(factor),
             input: self.input.saturating_mul(factor),

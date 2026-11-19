@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -12,6 +13,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use jiff::tz::TimeZoneDatabase;
+use tokio::runtime::Builder;
 
 use super::deployments::{DeploymentSet, DeploymentSetError};
 use super::error::EstimateError;
@@ -33,7 +35,7 @@ pub enum FixtureError {
     #[error(transparent)]
     Estimate(#[from] EstimateError),
     #[error("the fixture runtime could not be built: {0}")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
     #[error("the fixture value could not be converted: {0}")]
     Json(#[from] serde_json::Error),
 }
@@ -62,14 +64,12 @@ pub fn service_from(model_cost: &[u8]) -> Result<CostService<ProviderFormulas>, 
 pub fn quote(records: &[JsonObject], request: &JsonValue) -> Result<JsonValue, FixtureError> {
     let deployments = DeploymentSet::from_records(records)?;
     let service = service_from(&(BundledCatalog::default().asset)()?)?;
-    let request = CostEstimateRequest::from_value(request)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let parsed = CostEstimateRequest::from_value(request)?;
+    let runtime = Builder::new_current_thread().enable_all().build()?;
     let response = runtime.block_on(estimate(
         &service,
         Some(&deployments),
-        &request,
+        &parsed,
         SystemTime::now(),
     ))?;
     Ok(serde_json::to_value(response)?)

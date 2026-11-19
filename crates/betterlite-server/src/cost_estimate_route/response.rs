@@ -1,5 +1,5 @@
 use betterlite_models::billed_tokens::BilledTokenRates;
-use betterlite_models::price_lookup::PriceLookup;
+use betterlite_models::price_lookup::PriceLookup as _;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 

@@ -2,7 +2,7 @@ use betterlite_core::cost::call_price::CustomCostPerToken;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
-use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use betterlite_models::price_lookup::{PriceLookup as _, PriceRecord};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use rust_decimal::Decimal;

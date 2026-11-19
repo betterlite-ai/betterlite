@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -14,7 +16,7 @@ use axum::http::{Request, StatusCode, header};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::Config;
-use betterlite_core::cost::prepare::BillingTokenCounter;
+use betterlite_core::cost::prepare::BillingTokenCounter as _;
 use betterlite_models::catalog::{BundledCatalog, CatalogError};
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
@@ -64,8 +66,8 @@ fn application(config: &Config) -> Router {
 async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode, String) {
     let mut request =
         Request::post("/cost/estimate").header(header::CONTENT_TYPE, "application/json");
-    if let Some(key) = key {
-        request = request.header(header::AUTHORIZATION, format!("Bearer {key}"));
+    if let Some(value) = key {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {value}"));
     }
     let response = application
         .oneshot(request.body(Body::from(body.to_owned())).unwrap())
@@ -76,10 +78,12 @@ async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
-async fn quote(body: &str, source: &str) -> CostEstimateResponse {
-    let (status, text) = post(application(&config(source)), body, Some("oracle-master")).await;
-    assert_eq!(status, StatusCode::OK);
-    serde_json::from_str(&text).unwrap()
+fn quote(body: &str, source: &str) -> Pin<Box<dyn Future<Output = CostEstimateResponse> + '_>> {
+    Box::pin(async move {
+        let (status, text) = post(application(&config(source)), body, Some("oracle-master")).await;
+        assert_eq!(status, StatusCode::OK);
+        serde_json::from_str(&text).unwrap()
+    })
 }
 
 fn helper_quote(records: &str, request: &str) -> CostEstimateResponse {
@@ -139,24 +143,20 @@ async fn answers_an_empty_body_at_the_route() {
 #[test]
 fn decode_rejects_invalid_json() {
     let error = decode_cost_estimate_request(b"{").unwrap_err();
-    assert!(
-        matches!(error, EstimateError::Request(ref issues) if issues[0].kind == "json_invalid")
-    );
+    assert!(matches!(&error, EstimateError::Request(issues) if issues[0].kind == "json_invalid"));
 }
 
 #[test]
 fn decode_rejects_a_non_utf8_body() {
     let error = decode_cost_estimate_request(b"\xff\xfe").unwrap_err();
-    assert!(
-        matches!(error, EstimateError::Request(ref issues) if issues[0].kind == "json_invalid")
-    );
+    assert!(matches!(&error, EstimateError::Request(issues) if issues[0].kind == "json_invalid"));
 }
 
 #[test]
 fn decode_rejects_a_non_object_body() {
     let error = decode_cost_estimate_request(b"[]").unwrap_err();
     assert!(
-        matches!(error, EstimateError::Request(ref issues) if issues[0].kind == "model_attributes_type")
+        matches!(&error, EstimateError::Request(issues) if issues[0].kind == "model_attributes_type")
     );
 }
 
@@ -165,7 +165,7 @@ fn decode_rejects_a_wrong_typed_model() {
     let error =
         decode_cost_estimate_request(br#"{"model":null,"input_tokens":1,"output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "string_type" && issues[0].loc == ["body", "model"]));
 }
 
@@ -174,7 +174,7 @@ fn decode_rejects_a_null_count() {
     let error =
         decode_cost_estimate_request(br#"{"model":"m","input_tokens":null,"output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "int_type" && issues[0].msg == "Input should be a valid integer"));
 }
 
@@ -183,7 +183,7 @@ fn decode_rejects_a_string_count() {
     let error =
         decode_cost_estimate_request(br#"{"model":"m","input_tokens":"5","output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "int_type" && issues[0].loc == ["body", "input_tokens"]));
 }
 
@@ -192,7 +192,7 @@ fn decode_rejects_a_fractional_count() {
     let error =
         decode_cost_estimate_request(br#"{"model":"m","input_tokens":5.5,"output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues) if issues[0].kind == "int_type"));
+    assert!(matches!(&error, EstimateError::Request(issues) if issues[0].kind == "int_type"));
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn decode_rejects_a_boolean_count() {
     let error =
         decode_cost_estimate_request(br#"{"model":"m","input_tokens":true,"output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues) if issues[0].kind == "int_type"));
+    assert!(matches!(&error, EstimateError::Request(issues) if issues[0].kind == "int_type"));
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn decode_rejects_a_negative_count() {
     let error =
         decode_cost_estimate_request(br#"{"model":"m","input_tokens":-1,"output_tokens":1}"#)
             .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "greater_than_equal"
             && issues[0].msg == "Input should be greater than or equal to 0"));
 }
@@ -219,7 +219,7 @@ fn decode_rejects_a_negative_cache_count() {
         br#"{"model":"m","input_tokens":10,"output_tokens":5,"cache_read_input_tokens":-1}"#,
     )
     .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "greater_than_equal" && issues[0].loc == ["body", "cache_read_input_tokens"]));
 }
 
@@ -229,7 +229,7 @@ fn decode_rejects_a_negative_period_count() {
         br#"{"model":"m","input_tokens":1,"output_tokens":1,"num_requests_per_day":-1}"#,
     )
     .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues[0].kind == "greater_than_equal" && issues[0].loc == ["body", "num_requests_per_day"]));
 }
 
@@ -249,7 +249,7 @@ fn decode_reports_the_cache_subset_before_the_reasoning_subset() {
             "cache_creation_input_tokens":4,"reasoning_tokens":6}"#,
     )
     .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues.len() == 1
             && issues[0].kind == "value_error"
             && issues[0].msg == "Value error, cache_read_input_tokens plus cache_creation_input_tokens cannot exceed input_tokens"));
@@ -261,7 +261,7 @@ fn decode_reports_the_reasoning_subset() {
         br#"{"model":"m","input_tokens":10,"output_tokens":5,"reasoning_tokens":6}"#,
     )
     .unwrap_err();
-    assert!(matches!(error, EstimateError::Request(ref issues)
+    assert!(matches!(&error, EstimateError::Request(issues)
         if issues.len() == 1 && issues[0].msg == "Value error, reasoning_tokens cannot exceed output_tokens"));
 }
 
@@ -610,7 +610,7 @@ fn rejects_a_deployment_record_without_a_model_name() {
         serde_json::from_str(r#"[{"litellm_params":{"model":"gpt-4o"}}]"#).unwrap();
     let body: JsonValue =
         serde_json::from_str(r#"{"model":"x","input_tokens":1,"output_tokens":1}"#).unwrap();
-    assert!(testing::quote(&rows, &body).is_err());
+    testing::quote(&rows, &body).unwrap_err();
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn rejects_a_deployment_record_with_a_non_object_params() {
         serde_json::from_str(r#"[{"model_name":"x","litellm_params":5}]"#).unwrap();
     let body: JsonValue =
         serde_json::from_str(r#"{"model":"x","input_tokens":1,"output_tokens":1}"#).unwrap();
-    assert!(testing::quote(&rows, &body).is_err());
+    testing::quote(&rows, &body).unwrap_err();
 }
 
 #[test]
@@ -694,12 +694,12 @@ async fn selects_the_off_peak_prices_at_the_pinned_moment() {
         r#"{"model":"deepseek-flash","input_tokens":1000,"output_tokens":500}"#,
     )
     .unwrap();
-    let request = CostEstimateRequest::from_value(&request).unwrap();
+    let parsed = CostEstimateRequest::from_value(&request).unwrap();
     let off_peak = estimate(
         &service,
         Some(&deployments),
-        &request,
-        UNIX_EPOCH + Duration::from_secs(1_767_636_000),
+        &parsed,
+        UNIX_EPOCH + Duration::from_hours(491_010),
     )
     .await
     .unwrap();
@@ -709,8 +709,8 @@ async fn selects_the_off_peak_prices_at_the_pinned_moment() {
     let standard = estimate(
         &service,
         Some(&deployments),
-        &request,
-        UNIX_EPOCH + Duration::from_secs(1_767_578_400),
+        &parsed,
+        UNIX_EPOCH + Duration::from_hours(490_994),
     )
     .await
     .unwrap();

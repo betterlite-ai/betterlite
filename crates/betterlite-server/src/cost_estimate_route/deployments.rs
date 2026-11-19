@@ -80,10 +80,10 @@ impl DeploymentSet {
         if let Some(model) = deployment.litellm_params.model.as_ref() {
             params.insert("model".to_owned(), Json::Text(model.clone()));
         }
-        if let Some(provider) = provider {
+        if let Some(slug) = provider {
             params.insert(
                 "custom_llm_provider".to_owned(),
-                Json::Text(provider.to_owned()),
+                Json::Text(slug.to_owned()),
             );
         }
         let mut info = JsonObject::new();
