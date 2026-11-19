@@ -121,7 +121,10 @@ pub(super) fn message_delta(
     Ok(event)
 }
 
-fn json_from<T: serde::Serialize>(value: &T) -> Result<Json, MessagesResponseEventError> {
+fn json_from<T>(value: &T) -> Result<Json, MessagesResponseEventError>
+where
+    T: serde::Serialize,
+{
     serde_json::to_value(value)
         .and_then(serde_json::from_value::<Json>)
         .map_err(MessagesResponseEventError::Json)

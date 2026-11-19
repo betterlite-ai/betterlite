@@ -170,7 +170,7 @@ pub(super) struct InvalidFailedResponse;
 #[must_use]
 pub(super) const fn text(value: &Json) -> Option<&str> {
     match value {
-        Json::Text(text) => Some(text),
+        Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
