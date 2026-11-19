@@ -123,6 +123,7 @@ mod video_content_remix;
 mod video_create;
 mod video_edit;
 
+use crate::app::spend;
 use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;
 use crate::cost_estimate_route::router as cost_estimate_router;
@@ -287,7 +288,8 @@ pub(crate) fn router(
         .merge(embeddings)
         .merge(stub_router!(&state))
         .merge(scim_router(&state));
-    application
+    let mounted = spend::mount(application, &state);
+    mounted
         .layer(middleware::from_fn_with_state(
             auth,
             auth_route_patterns::stage,
