@@ -20,11 +20,11 @@ pub async fn init_policy_engine(
     has_db: bool,
     ports: &dyn PolicyEngine,
 ) -> Result<(), ConfigBootError> {
-    let Some(config) = config else {
+    let Some(config_map) = config else {
         tracing::debug!("Policy engine: config is None, skipping");
         return Ok(());
     };
-    let Some(policies) = config.get("policies") else {
+    let Some(policies) = config_map.get("policies") else {
         tracing::debug!("Policy engine: no policies in config, skipping");
         return Ok(());
     };
@@ -38,7 +38,7 @@ pub async fn init_policy_engine(
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => 0,
     };
     tracing::info!("Policy engine: found {count} policies in config");
-    let attachments = config.get("policy_attachments");
+    let attachments = config_map.get("policy_attachments");
     ports.init_policies(policies, attachments, has_db).await
 }
 

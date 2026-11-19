@@ -10,6 +10,7 @@ use betterlite_secret_managers::secret_read_dispatch::http_transport::TlsVerific
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use rstest::rstest;
 use secrecy::SecretString;
+use tempfile::NamedTempFile;
 
 use super::{access_mode_name, dispatch_settings, parse_system, select_secret_manager, vault_tls};
 use crate::config_boot::error::ConfigBootError;
@@ -560,7 +561,7 @@ fn other_ssl_verify_values_become_the_ca_file(#[case] value: &str) {
 
 #[test]
 fn an_existing_ssl_cert_file_is_used_when_verification_is_on() {
-    let cert = tempfile::NamedTempFile::new().unwrap();
+    let cert = NamedTempFile::new().unwrap();
     let path = cert.path().to_str().unwrap().to_owned();
     assert_eq!(
         vault_tls(&env(&[("SSL_CERT_FILE", path.as_str())])),
@@ -585,7 +586,7 @@ fn a_missing_ssl_cert_file_leaves_verification_enabled() {
 
 #[test]
 fn ssl_cert_file_is_ignored_when_verification_is_off() {
-    let cert = tempfile::NamedTempFile::new().unwrap();
+    let cert = NamedTempFile::new().unwrap();
     let path = cert.path().to_str().unwrap().to_owned();
     assert_eq!(
         vault_tls(&env(&[

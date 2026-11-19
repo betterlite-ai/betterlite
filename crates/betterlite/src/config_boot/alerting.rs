@@ -44,9 +44,9 @@ pub fn load_alerting_settings(
     if alerting.is_null() {
         return Ok(());
     }
-    let alerting = alerting_names(alerting)?;
+    let names = alerting_names(alerting)?;
     let update = AlertingUpdate {
-        alerting: &alerting,
+        alerting: &names,
         alerting_threshold: alerting_threshold(general_settings.get("alerting_threshold"))?,
         alert_types: general_settings
             .get("alert_types")
@@ -62,7 +62,7 @@ pub fn load_alerting_settings(
             .filter(|value| !value.is_null()),
     };
     ports.update_alerting(&update)?;
-    register_loggers(&alerting, update.alerting_args, ports);
+    register_loggers(&names, update.alerting_args, ports);
     Ok(())
 }
 

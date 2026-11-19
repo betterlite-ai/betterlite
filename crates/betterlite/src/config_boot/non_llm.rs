@@ -42,8 +42,8 @@ pub async fn load_non_llm_configs(
     {
         ports.mcp_tools(tools, config_file_path).await?;
     }
-    let agents = config.get("agents").or_else(|| config.get("agent_list"));
-    if let Some(agents) = agents
+    let configured_agents = config.get("agents").or_else(|| config.get("agent_list"));
+    if let Some(agents) = configured_agents
         && !agents.is_null()
     {
         ports.agents(agents).await?;

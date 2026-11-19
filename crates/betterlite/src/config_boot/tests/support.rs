@@ -5,6 +5,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
+use betterlite_config::loader::parse_view;
 use betterlite_config::sections::includes::ConfigMap;
 use betterlite_secret_managers::custom_interface::CustomParams;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -18,11 +19,12 @@ use betterlite_secret_managers::secret_read_dispatch::protocols::SyncSecretReade
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use secrecy::SecretString;
+use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 pub(crate) fn config_from_yaml(source: &str) -> ConfigMap {
-    let (config, ignored) = betterlite_config::loader::parse_view::<ConfigMap>(source).unwrap();
+    let (config, ignored) = parse_view::<ConfigMap>(source).unwrap();
     assert!(ignored.is_empty());
     config
 }
@@ -124,7 +126,7 @@ pub(crate) fn capture_logs() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(buffer.clone())
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(Level::TRACE)
         .without_time()
         .with_ansi(false)
         .finish();

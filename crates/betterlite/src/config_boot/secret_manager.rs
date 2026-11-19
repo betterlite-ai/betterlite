@@ -198,7 +198,7 @@ fn aws_secret_client(env: &BTreeMap<String, String>) -> SecretManagerClient {
     SecretManagerClient::Uninitialized
 }
 
-fn custom_client(
+const fn custom_client(
     settings: &Settings,
     config_file_path: Option<&Path>,
 ) -> Result<Option<SecretManagerClient>, ConfigBootError> {

@@ -10,7 +10,7 @@ pub(crate) fn is_configured(value: &JsonValue) -> bool {
         JsonValue::Bool(flag) => *flag,
         JsonValue::Number(number) => number
             .as_f64()
-            .is_some_and(|number| number.partial_cmp(&0.0) != Some(Ordering::Equal)),
+            .is_some_and(|parsed| parsed.partial_cmp(&0.0_f64) != Some(Ordering::Equal)),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(fields) => !fields.is_empty(),
