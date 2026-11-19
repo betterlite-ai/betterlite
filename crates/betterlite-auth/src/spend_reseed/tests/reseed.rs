@@ -167,6 +167,16 @@ async fn conversion_after_query_catch(
 }
 
 #[tokio::test]
+async fn absent_rows_answer_none_for_both_reads() {
+    let counter = reseed_with(None, services(25), 5.0);
+    assert_eq!(counter.from_db("spend:key:token").await, Ok(None));
+    assert_eq!(
+        counter.end_user_from_db("spend:end_user:u1").await,
+        Ok(None)
+    );
+}
+
+#[tokio::test]
 async fn absent_stored_spend_reads_zero() {
     let absent_field = reseed(FakeRows::with_row(SpendRow { spend: None }));
     assert_eq!(
