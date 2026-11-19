@@ -315,6 +315,13 @@ const KEPT: &str = r#"[{"role":"system","content":"lead"},{"role":"user","conten
     &[],
     r#"[{"role":"user","content":"ask"},{"role":"user","content":"go"}]"#
 )]
+#[case::only_system_turns(
+    "gpt-4o",
+    r#"[{"role":"system","content":"a"},{"role":"system","content":"b"}]"#,
+    false,
+    &[],
+    r#"[{"role":"system","content":"a"},{"role":"system","content":"b"}]"#
+)]
 #[tokio::test]
 async fn midturn_system_capability(
     #[case] model: &str,
