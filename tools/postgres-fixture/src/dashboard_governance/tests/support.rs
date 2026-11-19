@@ -260,6 +260,7 @@ pub(super) fn seed_with(
         jwt_mappings: Vec::new(),
         daily_usage: None,
         finops: Some(key_alias_metadata()),
+        scim: None,
         discovery_skills: None,
         search_tools: None,
         dashboard,

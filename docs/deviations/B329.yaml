@@ -1,0 +1,15 @@
+task: B329
+deviations:
+  - what: >-
+      An `os.environ/` reference in `plan_mode_min_tier`, `heuristic_first_max_tier` or
+      `hybrid_boundary_margin` is resolved by the configuration section, and a variable set to
+      the empty string counts as unset, where LiteLLM's loader substitutes only a top-level
+      `litellm_params` string and leaves a reference inside `complexity_router_config` as the
+      literal text, which then fails tier or margin validation.
+    why: >-
+      betterlite resolves environment references in the configuration section, once, with the
+      same rule as every other scalar setting, so the router never reads the process
+      environment. A working LiteLLM configuration that spells a variable reference in one of
+      these keys cannot load in LiteLLM, so resolving it changes no valid setup's meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6912-L6914
+kept_bugs: []

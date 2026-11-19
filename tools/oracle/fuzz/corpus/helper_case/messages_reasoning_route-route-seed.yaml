@@ -1,0 +1,22 @@
+kind: helper
+name: messages-reasoning-route-seed
+call:
+  messages_reasoning_route:
+    calls:
+      - function: normalize_effort
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: max, extra: [1]}}
+        model_info: {supports_reasoning: true, reasoning_effort_levels: [high]}
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: high}
+        thinking: {type: enabled, summary: concise}
+        model_info: {supports_reasoning: false}
+        provider: {local: o3, provider: openai, api_base: https://api.test}
+        global_value: true
+        environment: null
+      - function: plain_effort
+        kwargs: {model: o3, custom_llm_provider: openai, tools: [{type: function}], reasoning_effort: {effort: high, summary: null}}
+        thinking: {type: enabled}
+        provider: {local: o3, provider: openai, api_base: null}
+        bridge: {mode: responses, fails: false}
+env: {}
+compare: {ignore: []}

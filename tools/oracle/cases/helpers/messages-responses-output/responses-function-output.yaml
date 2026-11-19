@@ -1,0 +1,63 @@
+kind: helper
+name: messages-responses-output-responses-function-output
+call:
+  messages_responses_output:
+    request: null
+    response:
+      id: resp_b984
+      created_at: 1
+      model: gpt-5
+      status: completed
+      output:
+      - type: message
+        id: msg_b984
+        role: assistant
+        status: completed
+        content:
+        - type: output_text
+          text: hi
+          annotations: []
+      - type: function_call
+        arguments: '{"q":"x"}'
+        call_id: call_b984
+        name: lookup
+      usage:
+        input_tokens: 100
+        output_tokens: 20
+        total_tokens: 120
+        input_tokens_details:
+          cached_tokens: 30
+    include_encrypted_reasoning: true
+    settings: {}
+calls:
+- messages_responses_output:
+    request: null
+    response:
+      id: resp_b984_invalid_arguments
+      created_at: 1
+      output:
+      - type: function_call
+        arguments: "{oops"
+        call_id: call_b984_invalid
+        name: lookup
+    include_encrypted_reasoning: true
+    settings: {}
+- messages_responses_output:
+    request: null
+    response:
+      id: resp_b984_incomplete
+      created_at: 1
+      status: incomplete
+      output:
+      - type: message
+        id: msg_b984_incomplete
+        role: assistant
+        status: incomplete
+        content:
+        - type: output_text
+          text: cut
+          annotations: []
+    include_encrypted_reasoning: true
+    settings: {}
+env: {}
+compare: {ignore: []}

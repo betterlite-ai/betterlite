@@ -1,0 +1,27 @@
+kind: helper
+name: log-predicates-success-null-and-span-classes
+call:
+  log_predicates:
+    function: status
+    status_filter: success
+calls:
+  - log_predicates:
+      function: status
+      status_filter: null
+  - log_predicates:
+      function: status
+      status_filter: failure
+  - log_predicates:
+      function: span
+      span_type: llm
+  - log_predicates:
+      function: span
+      span_type: agent
+  - log_predicates:
+      function: span
+      span_type: mcp
+  - log_predicates:
+      function: span
+      span_type: batch
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+page=abc&page_size=5000&span_type=trace&sort_by=nope&min_spend=nan
