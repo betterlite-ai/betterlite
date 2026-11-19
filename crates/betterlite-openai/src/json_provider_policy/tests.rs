@@ -33,11 +33,11 @@ fn config(base_url: &str, base_class: &str) -> ProviderConfig {
     }
 }
 
-fn chat_policy(descriptor: ProviderDescriptor) -> ChatPolicy {
+const fn chat_policy(descriptor: ProviderDescriptor) -> ChatPolicy {
     ChatPolicy { descriptor }
 }
 
-fn responses_policy_from(descriptor: ProviderDescriptor) -> ResponsesPolicy {
+const fn responses_policy_from(descriptor: ProviderDescriptor) -> ResponsesPolicy {
     ResponsesPolicy { descriptor }
 }
 
@@ -141,10 +141,10 @@ fn policy_accessors_and_lookup_report_the_descriptor() {
         policy.descriptor.config.base_url.as_str(),
         "https://example.invalid/v1"
     );
-    let policy = responses("https://descriptor.invalid/v1");
-    assert_eq!(policy.descriptor.provider, ProviderId::Cortecs);
+    let responses_policy = responses("https://descriptor.invalid/v1");
+    assert_eq!(responses_policy.descriptor.provider, ProviderId::Cortecs);
     assert_eq!(
-        policy.descriptor.config.base_url.as_str(),
+        responses_policy.descriptor.config.base_url.as_str(),
         "https://descriptor.invalid/v1"
     );
     let registry = JSONProviderRegistry::load();
@@ -161,29 +161,45 @@ fn policy_accessors_and_lookup_report_the_descriptor() {
 #[test]
 fn identity_prefers_the_explicit_base_then_the_declared_environment() {
     let policy = chat("https://descriptor.invalid/v1");
-    let explicit_key = SecretString::from("sk-explicit");
-    let lookup = environment(&[(KEY_ENV, "sk-env"), (BASE_ENV, "https://env.invalid/v1")]);
-    let (base, key) = policy.resolve_provider_info(
-        Some("https://explicit.invalid/v1"),
-        Some(&explicit_key),
-        &lookup,
-    );
-    assert_eq!(base, "https://explicit.invalid/v1");
+    let lookup = environment(&[(BASE_ENV, "https://env.invalid/v1")]);
+    let (explicit_base, _) =
+        policy.resolve_provider_info(Some("https://explicit.invalid/v1"), None, &lookup);
+    assert_eq!(explicit_base, "https://explicit.invalid/v1");
+    let (environment_base, _) = policy.resolve_provider_info(Some(""), None, &lookup);
+    assert_eq!(environment_base, "https://env.invalid/v1");
+    let (descriptor_base, _) = policy.resolve_provider_info(None, None, &environment(&[]));
+    assert_eq!(descriptor_base, "https://descriptor.invalid/v1");
+    let (fallback_base, _) =
+        policy.resolve_provider_info(None, None, &environment(&[(BASE_ENV, "")]));
+    assert_eq!(fallback_base, "https://descriptor.invalid/v1");
+}
+
+#[test]
+fn identity_resolves_the_key_chain() {
+    let policy = chat("https://descriptor.invalid/v1");
+    let lookup = environment(&[(KEY_ENV, "sk-env")]);
+    let explicit = SecretString::from("sk-explicit");
+    let (_, explicit_key) = policy.resolve_provider_info(None, Some(&explicit), &lookup);
     assert_eq!(
-        key.as_ref().map(|secret| secret.expose_secret()),
+        explicit_key.as_ref().map(|secret| secret.expose_secret()),
         Some("sk-explicit")
     );
-    let (base, key) = policy.resolve_provider_info(Some(""), None, &lookup);
-    assert_eq!(base, "https://env.invalid/v1");
+    let (_, empty_explicit) =
+        policy.resolve_provider_info(None, Some(&SecretString::from("")), &lookup);
     assert_eq!(
-        key.as_ref().map(|secret| secret.expose_secret()),
+        empty_explicit.as_ref().map(|secret| secret.expose_secret()),
         Some("sk-env")
     );
-    let (base, key) = policy.resolve_provider_info(None, None, &environment(&[(KEY_ENV, "")]));
-    assert_eq!(base, "https://descriptor.invalid/v1");
-    assert!(key.is_none());
-    let (base, _) = policy.resolve_provider_info(None, None, &environment(&[(BASE_ENV, "")]));
-    assert_eq!(base, "https://descriptor.invalid/v1");
+    let (_, environment_key) = policy.resolve_provider_info(None, None, &lookup);
+    assert_eq!(
+        environment_key
+            .as_ref()
+            .map(|secret| secret.expose_secret()),
+        Some("sk-env")
+    );
+    let (_, descriptor_key) =
+        policy.resolve_provider_info(None, None, &environment(&[(KEY_ENV, "")]));
+    assert!(descriptor_key.is_none());
 }
 
 #[test]
@@ -320,7 +336,7 @@ fn constrained(provider: &mut ProviderConfig) {
 #[case::n_equal_to_one_skips_the_step("0.1", Some(1), "0.7")]
 fn temperature_clamps_run_in_max_min_then_n_order(
     #[case] temperature: &str,
-    #[case] n: Option<i64>,
+    #[case] count: Option<i64>,
     #[case] expected: &str,
 ) {
     let mut provider = config("https://example.invalid/v1", "openai_like");
@@ -330,8 +346,8 @@ fn temperature_clamps_run_in_max_min_then_n_order(
         config: provider,
     });
     let mut existing = object(&[("temperature", decimal(temperature))]);
-    if let Some(n) = n {
-        existing.insert("n".to_owned(), number(n));
+    if let Some(requested) = count {
+        existing.insert("n".to_owned(), number(requested));
     }
     policy
         .map_params(&Object::new(), &mut existing, &[])
@@ -407,7 +423,9 @@ fn null_temperature_is_an_error_only_when_a_comparison_runs() {
         .expect("n defaults to one, so Python never compares the null");
     assert_eq!(null_temperature.get("temperature"), Some(&Json::Null));
     let mut with_n = object(&[("temperature", Json::Null), ("n", number(2))]);
-    assert!(policy.map_params(&Object::new(), &mut with_n, &[]).is_err());
+    policy
+        .map_params(&Object::new(), &mut with_n, &[])
+        .expect_err("a null temperature is compared against the n constraint");
     let mut only_max = config("https://example.invalid/v1", "openai_like");
     only_max.constraints.temperature_max = Some("0.5".parse().expect("decimal"));
     let max_policy = chat_policy(ProviderDescriptor {
@@ -415,11 +433,9 @@ fn null_temperature_is_an_error_only_when_a_comparison_runs() {
         config: only_max,
     });
     let mut null_with_max = object(&[("temperature", Json::Null)]);
-    assert!(
-        max_policy
-            .map_params(&Object::new(), &mut null_with_max, &[])
-            .is_err()
-    );
+    max_policy
+        .map_params(&Object::new(), &mut null_with_max, &[])
+        .expect_err("a null temperature is compared against the maximum");
 }
 
 #[test]
@@ -431,14 +447,12 @@ fn null_n_is_an_error_when_the_n_constraint_runs() {
         config: provider,
     });
     let mut existing = object(&[("temperature", decimal("0.1")), ("n", Json::Null)]);
-    assert!(
-        policy
-            .map_params(&Object::new(), &mut existing, &[])
-            .is_err()
-    );
+    policy
+        .map_params(&Object::new(), &mut existing, &[])
+        .expect_err("a null n cannot satisfy the n constraint");
 }
 
-fn message(value: Json) -> ChatMessage {
+fn message(value: serde_json::Value) -> ChatMessage {
     serde_json::from_value(value).expect("a chat message")
 }
 
@@ -569,7 +583,7 @@ fn responses_store_follows_the_force_store_flag() {
     assert_eq!(body.get("store"), Some(&Json::Bool(false)));
     assert_eq!(body.get("temperature"), Some(&number(1)));
     let plain = responses("https://descriptor.invalid/v1");
-    let body = plain
+    let plain_body = plain
         .transform_request(
             "some-model",
             &ResponsesInput::Text("hi".to_owned()),
@@ -577,7 +591,7 @@ fn responses_store_follows_the_force_store_flag() {
             None,
         )
         .expect("the request builds");
-    assert_eq!(body.get("store"), Some(&Json::Bool(true)));
+    assert_eq!(plain_body.get("store"), Some(&Json::Bool(true)));
 }
 
 #[test]

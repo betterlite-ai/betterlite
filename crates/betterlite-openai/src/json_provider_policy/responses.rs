@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::openai_like_settings::Settings as OpenAiLikeSettings;
@@ -40,10 +41,10 @@ impl ResponsesPolicy {
         api_key: Option<&SecretString>,
         lookup: &dyn EnvironmentLookup,
     ) -> Headers {
-        match resolve_descriptor_key(&self.descriptor.config, api_key, lookup) {
-            Some(key) => authorized_headers(headers, Some(&key)),
-            None => headers,
-        }
+        let Some(key) = resolve_descriptor_key(&self.descriptor.config, api_key, lookup) else {
+            return headers;
+        };
+        authorized_headers(headers, Some(&key))
     }
 
     // force_store_false overwrites the caller's store value, then B508 builds the wire body
@@ -54,11 +55,11 @@ impl ResponsesPolicy {
         params: &Object,
         model_info: Option<&Object>,
     ) -> Result<Object, ResponseInputError> {
-        let mut params = params.clone();
+        let mut body = params.clone();
         if self.force_store_false() {
-            params.insert("store".to_owned(), Json::Bool(false));
+            body.insert("store".to_owned(), Json::Bool(false));
         }
-        transform_responses_request(model, input, &params, self.descriptor.provider, model_info)
+        transform_responses_request(model, input, &body, self.descriptor.provider, model_info)
     }
 
     #[must_use]
@@ -74,10 +75,10 @@ impl ResponsesPolicy {
 
 // a truthy Bearer key overwrites Authorization, and every other caller header stays as it is
 fn authorized_headers(mut headers: Headers, key: Option<&SecretString>) -> Headers {
-    if let Some(key) = key {
+    if let Some(authorized) = key {
         headers.insert(
             "Authorization".to_owned(),
-            format!("Bearer {}", key.expose_secret()),
+            format!("Bearer {}", authorized.expose_secret()),
         );
     }
     headers
@@ -95,12 +96,13 @@ impl ResponsesPolicyCache {
         registry: &JSONProviderRegistry,
         provider: ProviderId,
     ) -> Option<&ResponsesPolicy> {
-        if !self.policies.contains_key(&provider) {
-            let descriptor = registry.providers.get(&provider)?.clone();
-            self.policies
-                .insert(provider, ResponsesPolicy { descriptor });
+        match self.policies.entry(provider) {
+            Entry::Occupied(entry) => Some(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let descriptor = registry.providers.get(&provider)?.clone();
+                Some(entry.insert(ResponsesPolicy { descriptor }))
+            }
         }
-        self.policies.get(&provider)
     }
 
     // descriptors from provider code, such as EdenAI's, are cached under the same finite identity space
@@ -121,10 +123,14 @@ pub struct OpenAiLikeResponsesPolicy {
 impl OpenAiLikeResponsesPolicy {
     // the base must come from the caller or OPENAI_LIKE_API_BASE; there is no default endpoint
     pub fn complete_url(&self, api_base: Option<&str>) -> Result<String, JsonProviderPolicyError> {
-        match self.settings.responses_base_required(api_base) {
-            Some(base) => Ok(format!("{}{RESPONSES_SUFFIX}", base.trim_end_matches('/'))),
-            None => Err(JsonProviderPolicyError::OpenAiLikeBaseRequired),
-        }
+        let (base, _) = self.settings.resolve(api_base, None);
+        let Some(resolved) = base else {
+            return Err(JsonProviderPolicyError::OpenAiLikeBaseRequired);
+        };
+        Ok(format!(
+            "{}{RESPONSES_SUFFIX}",
+            resolved.trim_end_matches('/')
+        ))
     }
 
     #[must_use]

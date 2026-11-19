@@ -145,10 +145,15 @@ impl ChatPolicy {
     ) -> Result<(), JsonProviderPolicyError> {
         let mappings = &self.descriptor.config.param_mappings;
         for (name, value) in non_default {
-            if let Some(mapped) = mappings.get(name) {
-                existing.insert(mapped.clone(), value.clone());
-            } else if supported.iter().any(|param| param == name) {
-                existing.insert(name.clone(), value.clone());
+            match mappings.get(name) {
+                Some(mapped) => {
+                    existing.insert(mapped.clone(), value.clone());
+                }
+                None => {
+                    if supported.iter().any(|param| param == name) {
+                        existing.insert(name.clone(), value.clone());
+                    }
+                }
             }
         }
         self.clamp_temperature(existing)
@@ -180,19 +185,7 @@ impl ChatPolicy {
             }
         }
         if let Some(min_with_n) = constraints.temperature_min_with_n_gt_1 {
-            let n = match existing.get("n") {
-                None => Decimal::ONE,
-                Some(Json::Null) => return Err(JsonProviderPolicyError::NNotANumber),
-                Some(value) => {
-                    decimal_of(value).map_err(|_| JsonProviderPolicyError::NNotANumber)?
-                }
-            };
-            if n > Decimal::ONE {
-                let current = decimal_of(&value)?;
-                if current < min_with_n {
-                    value = serde_json::from_str(&min_with_n.to_string()).unwrap_or(Json::Null);
-                }
-            }
+            value = clamp_below_min_with_n(existing, value, min_with_n)?;
         }
         existing.insert("temperature".to_owned(), value);
         Ok(())
@@ -211,9 +204,10 @@ impl ChatPolicy {
         let mut prompt: Vec<Message> = serde_json::from_value(value)
             .map_err(|source| JsonProviderPolicyError::Message { source })?;
         let collapsed = convert_message_content_lists(&mut prompt);
-        let value = serde_json::to_value(collapsed)
+        let collapsed_value = serde_json::to_value(collapsed)
             .map_err(|source| JsonProviderPolicyError::Message { source })?;
-        serde_json::from_value(value).map_err(|source| JsonProviderPolicyError::Message { source })
+        serde_json::from_value(collapsed_value)
+            .map_err(|source| JsonProviderPolicyError::Message { source })
     }
 
     #[must_use]
@@ -227,12 +221,35 @@ impl ChatPolicy {
     }
 }
 
+// the min_with_n constraint applies only while n is above one, and a null or non-numeric n is an error
+fn clamp_below_min_with_n(
+    existing: &Object,
+    value: Json,
+    min_with_n: Decimal,
+) -> Result<Json, JsonProviderPolicyError> {
+    let count = match existing.get("n") {
+        None => Decimal::ONE,
+        Some(Json::Null) => return Err(JsonProviderPolicyError::NNotANumber),
+        Some(requested) => {
+            decimal_of(requested).map_err(|_error| JsonProviderPolicyError::NNotANumber)?
+        }
+    };
+    if count <= Decimal::ONE {
+        return Ok(value);
+    }
+    let current = decimal_of(&value)?;
+    if current < min_with_n {
+        return Ok(serde_json::from_str(&min_with_n.to_string()).unwrap_or(Json::Null));
+    }
+    Ok(value)
+}
+
 fn decimal_of(value: &Json) -> Result<Decimal, JsonProviderPolicyError> {
     match value {
         Json::Number(number) => number
             .to_string()
             .parse()
-            .map_err(|_| JsonProviderPolicyError::TemperatureNotANumber),
+            .map_err(|_error| JsonProviderPolicyError::TemperatureNotANumber),
         Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             Err(JsonProviderPolicyError::TemperatureNotANumber)
         }
