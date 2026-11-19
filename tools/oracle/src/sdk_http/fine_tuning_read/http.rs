@@ -13,7 +13,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::fine_tuning::client::SdkError;
 use http::Method;
-use http::header::{HeaderMap, HeaderValue};
+use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use url::Url;
@@ -40,7 +40,7 @@ pub(super) enum ReadWireError {
     Header {
         name: &'static str,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the azure read needs an api_base")]
     MissingBase,
@@ -144,35 +144,8 @@ fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireEr
         .api_version
         .filter(|value| !value.is_empty())
         .unwrap_or(AZURE_DEFAULT_API_VERSION);
-    let suffix = suffix(call.values.operation);
-    // the v1 surface is a plain OpenAI client, and its bearer token replaces Azure's api-key header
-    let v1 = V1_API_VERSIONS.contains(&version);
-    let mut headers = HeaderMap::new();
-    if let Some(key) = call.api_key {
-        if v1 {
-            insert_header(
-                &mut headers,
-                "authorization",
-                &format!("Bearer {}", key.expose_secret()),
-            )?;
-        } else {
-            insert_header(&mut headers, "api-key", key.expose_secret())?;
-        }
-    }
-    let (url, mut query) = if v1 {
-        // the v1 surface is a plain OpenAI client over /openai/v1/, with no api-version query
-        let url = Url::parse(&format!("{api_base}/openai/v1/fine_tuning/jobs{suffix}"))
-            .map_err(|source| ReadWireError::Url(Box::new(source)))?;
-        (url, Vec::new())
-    } else {
-        let url = Url::parse(&format!(
-            "{}/openai/fine_tuning/jobs{suffix}",
-            api_base.trim_end_matches('/')
-        ))
-        .map_err(|source| ReadWireError::Url(Box::new(source)))?;
-        (url, vec![("api-version".to_owned(), version.to_owned())])
-    };
-    query.extend(paging(call.values.operation));
+    let headers = azure_headers(call.api_key, version)?;
+    let (url, query) = azure_target(api_base, version, call.values.operation)?;
     Ok(OutboundRequest {
         method: Method::GET,
         url,
@@ -181,6 +154,49 @@ fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireEr
         body: RequestBody::Empty,
         deadline: deadline(&call.values),
     })
+}
+
+// the v1 surface is a plain OpenAI client, and its bearer token replaces Azure's api-key header
+fn azure_headers(
+    api_key: Option<&SecretString>,
+    version: &str,
+) -> Result<HeaderMap, ReadWireError> {
+    let mut headers = HeaderMap::new();
+    let Some(key) = api_key else {
+        return Ok(headers);
+    };
+    if V1_API_VERSIONS.contains(&version) {
+        insert_header(
+            &mut headers,
+            "authorization",
+            &format!("Bearer {}", key.expose_secret()),
+        )?;
+    } else {
+        insert_header(&mut headers, "api-key", key.expose_secret())?;
+    }
+    Ok(headers)
+}
+
+// the v1 surface carries no api-version in the query, and every other version names it
+fn azure_target(
+    api_base: &str,
+    version: &str,
+    operation: ReadOperation<'_>,
+) -> Result<(Url, Vec<(String, String)>), ReadWireError> {
+    let suffix = suffix(operation);
+    if V1_API_VERSIONS.contains(&version) {
+        let url = Url::parse(&format!("{api_base}/openai/v1/fine_tuning/jobs{suffix}"))
+            .map_err(|source| ReadWireError::Url(Box::new(source)))?;
+        return Ok((url, paging(operation)));
+    }
+    let url = Url::parse(&format!(
+        "{}/openai/fine_tuning/jobs{suffix}",
+        api_base.trim_end_matches('/')
+    ))
+    .map_err(|source| ReadWireError::Url(Box::new(source)))?;
+    let mut query = vec![("api-version".to_owned(), version.to_owned())];
+    query.extend(paging(operation));
+    Ok((url, query))
 }
 
 fn suffix(operation: ReadOperation<'_>) -> String {
@@ -212,7 +228,7 @@ fn insert_header(
 ) -> Result<(), ReadWireError> {
     let parsed =
         HeaderValue::from_str(value).map_err(|source| ReadWireError::Header { name, source })?;
-    headers.insert(http::header::HeaderName::from_static(name), parsed);
+    headers.insert(HeaderName::from_static(name), parsed);
     Ok(())
 }
 
@@ -241,7 +257,7 @@ fn sdk_error(body: &[u8], status: u16) -> Result<SdkError, ReadWireError> {
 
 fn error_field(error: Option<&Value>, name: &str) -> Option<String> {
     error
-        .and_then(|error| error.get(name))
+        .and_then(|object| object.get(name))
         .and_then(Value::as_str)
         .map(str::to_owned)
 }

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::resource_sdk_settings::Settings;
@@ -214,7 +215,7 @@ fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
 
 fn plain_failure<E>(class: &str, error: &E) -> Failure
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Failure {
         class: class.to_owned(),
