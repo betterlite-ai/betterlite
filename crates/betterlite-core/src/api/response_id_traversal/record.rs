@@ -47,9 +47,7 @@ impl Record {
         match value {
             Json::Object(fields) => Self::Dict(json_dict(fields)),
             Json::List(items) => Self::List(items.into_iter().map(Self::from_json).collect()),
-            scalar @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => {
-                Self::Scalar(scalar)
-            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Self::Scalar(value),
         }
     }
 
