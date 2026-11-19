@@ -36,6 +36,7 @@ use super::service::{self, MessageRequest, Operation, Reply};
 const MESSAGE_REPLY: &str = r#"{"id":"msg_a","object":"thread.message","thread_id":"thread_a","role":"user","content":[],"created_at":1}"#;
 const PAGE_REPLY: &str = r#"{"object":"list","data":[],"has_more":false}"#;
 const NOT_FOUND_BODY: &str = r#"{"error":{"message":"no thread","type":"invalid_request_error","param":"thread_id","code":"model_not_found"}}"#;
+const BAD_REQUEST_BODY: &str = r#"{"error":{"message":"bad role","type":"invalid_request_error","param":"role","code":"unsupported_value"}}"#;
 const AZURE_BASE: &str = "https://azure.test";
 const AZURE_URL: &str =
     "https://azure.test/openai/threads/thread_a/messages?api-version=2024-05-01-preview";
@@ -578,6 +579,30 @@ fn azure_attachment_drop_and_content_rejects_non_list_attachments() {
         error.error,
         MessageError::Setup(SetupError::Options(OptionError::AttachmentsNotList { .. }))
     ));
+    let float = data(r#"{"role":"user","content":"hello","attachments":5.5}"#);
+    let error = call(
+        &fixture,
+        &request("azure", Some(&float), &params("azure")),
+        Operation::Append,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Invalid param. attachments should always be a list. Got=<class 'float'>, Expected=List. Raw value=5.5"
+    );
+    let negative = data(r#"{"role":"user","content":"hello","attachments":-5}"#);
+    let error = call(
+        &fixture,
+        &request("azure", Some(&negative), &params("azure")),
+        Operation::Append,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Invalid param. attachments should always be a list. Got=<class 'int'>, Expected=List. Raw value=-5"
+    );
 }
 
 #[test]
@@ -785,6 +810,46 @@ fn message_settings_and_failures_reads_timeouts() {
     assert_eq!(seen[2].deadline, Duration::from_secs(5));
 }
 
+#[test]
+fn message_settings_and_failures_reads_the_azure_timeout() {
+    let fixture = Fixture::new();
+    fixture.transport.queue(200, MESSAGE_REPLY);
+    fixture.transport.queue(200, MESSAGE_REPLY);
+    fixture.transport.queue(200, MESSAGE_REPLY);
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let mut scalar = params("azure");
+    scalar.timeout = Some(serde_json::from_str("12.5").unwrap());
+    call(
+        &fixture,
+        &request("azure", Some(&message), &scalar),
+        Operation::Append,
+        false,
+    )
+    .unwrap();
+    let mut text = params("azure");
+    text.timeout = Some(serde_json::from_str(r#""8""#).unwrap());
+    call(
+        &fixture,
+        &request("azure", Some(&message), &text),
+        Operation::Append,
+        false,
+    )
+    .unwrap();
+    let mut structured = params("azure");
+    structured.timeout = Some(serde_json::from_str(r#"{"read":5,"connect":1}"#).unwrap());
+    call(
+        &fixture,
+        &request("azure", Some(&message), &structured),
+        Operation::Append,
+        false,
+    )
+    .unwrap();
+    let seen = fixture.transport.requests();
+    assert_eq!(seen[0].deadline, Duration::from_millis(12_500));
+    assert_eq!(seen[1].deadline, Duration::from_secs(8));
+    assert_eq!(seen[2].deadline, Duration::from_secs(5));
+}
+
 fn facade_token(
     message: &MessageData,
     params: &MessageParams,
@@ -879,6 +944,7 @@ fn message_settings_and_failures_names_the_append_operation() {
     assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
     let metadata = failure.class.metadata();
     assert_eq!(metadata.status_code, 400);
+    assert_eq!(metadata.model.as_deref(), Some("n/a"));
     assert_eq!(metadata.error_type, WireField::Null);
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
@@ -952,6 +1018,29 @@ fn message_settings_and_failures_maps_the_async_not_found() {
     assert_eq!(metadata.error_type, WireField::Null);
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
+}
+
+#[test]
+fn message_settings_and_failures_keeps_the_async_body_fields() {
+    let fixture = Fixture::new();
+    fixture.transport.queue(400, BAD_REQUEST_BODY);
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let failure = call(
+        &fixture,
+        &request("openai", Some(&message), &params("openai")),
+        Operation::Append,
+        true,
+    )
+    .unwrap_err();
+    assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
+    let metadata = failure.class.metadata();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text(String::from("invalid_request_error"))
+    );
+    assert_eq!(metadata.param, WireField::Text(String::from("role")));
+    assert_eq!(metadata.openai_code.as_deref(), Some("unsupported_value"));
 }
 
 #[test]
