@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::future::pending;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -78,7 +79,7 @@ impl Transport for Script {
                 headers: HeaderMap::new(),
                 body,
             }),
-            Some(Answer::Hang) => std::future::pending().await,
+            Some(Answer::Hang) => pending().await,
             Some(Answer::Closed) | None => Err(TransportError::Closed),
         }
     }
