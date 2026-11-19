@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -71,7 +72,12 @@ fn failures(
             red: vec![Red::Report],
         }));
     }
-    let verdict = checks::run(worktree, &task, &checks::selection::committed())?;
+    let mut verdict = checks::run(worktree, &task, &checks::selection::unbuilt())?;
+    // after the cheap checks pass, and only where the lane exists: an older worktree's clippy command is a full build into its own target
+    let lane = worktree.root.join(".development/flow/lint-lane.sh");
+    if verdict.passed && env::var_os("GATE_LINT_ROOT").is_some() && lane.exists() {
+        verdict = checks::run(worktree, &task, &checks::selection::linted())?;
+    }
     if verdict.passed {
         return Ok(None);
     }

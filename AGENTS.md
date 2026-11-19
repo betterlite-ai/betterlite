@@ -14,7 +14,7 @@ runs one of the task's test commands. Use `cargo deny --locked check` for depend
 
 In a dispatched run (`GATE_DISPATCHED=1`) nothing builds on this machine:
 the cargo on the PATH refuses build, check, clippy, test and nextest. Format the Rust
-files you changed with `rustfmt --edition 2024` and commit; the stop hook runs the hooks
+files you changed with `rustfmt --edition 2024` and commit; after your answer the gate runs the hooks
 and similarity checks, CI runs every check on the pull request, and a red run comes back
 with its errors.
 

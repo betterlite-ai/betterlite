@@ -1,0 +1,26 @@
+kind: helper
+name: duplicate-name-retained
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: clear_cache
+        router_present: true
+        database_present: true
+        models:
+          - model_name: shared
+            litellm_params: {model: auto_router/default}
+            model_info: {id: auto-1, db_model: true}
+          - model_name: shared
+            litellm_params: {model: openai/gpt-4o}
+            model_info: {id: plain-1, db_model: true}
+          - model_name: config
+            litellm_params: {model: openai/gpt-4o-mini}
+            model_info: {id: cfg-1, db_model: false}
+        strategy_names: [shared]
+        outcome:
+          still_desired: [auto-1, plain-1, cfg-1]
+          live_after: [auto-1, plain-1, cfg-1]
+        reload_error: null
+env: {}
+compare: {ignore: []}
