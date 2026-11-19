@@ -147,6 +147,21 @@ fn registry_for(
     }
 }
 
+fn registry_of<'call>(
+    entries: Vec<(&'call FakeTranslation, CallType)>,
+) -> TranslationRegistry<&'call dyn StructuredMessageSource> {
+    let mut built = Vec::new();
+    for (translation, call_type) in entries {
+        let source: &dyn StructuredMessageSource = translation;
+        built.push(TranslationEntry {
+            call_type,
+            translation: source,
+            chat_completions: false,
+        });
+    }
+    TranslationRegistry { entries: built }
+}
+
 fn run_context<'call>(
     request_data: &'call Object,
     logging: Option<&'call str>,

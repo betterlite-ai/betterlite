@@ -44,6 +44,30 @@ fn extract_inbound_headers_prefers_the_proxy_server_request_over_the_request_hea
 }
 
 #[test]
+fn extract_inbound_headers_prefers_the_request_headers_over_the_metadata_headers() {
+    let data = Object::from([
+        (
+            "headers".to_owned(),
+            object(vec![("shade_scan_id", text("request"))]),
+        ),
+        (
+            "metadata".to_owned(),
+            object(vec![(
+                "headers",
+                object(vec![("shade_scan_id", text("metadata"))]),
+            )]),
+        ),
+    ]);
+    assert_eq!(
+        extract_inbound_headers(&data, None),
+        Some(BTreeMap::from([(
+            "shade_scan_id".to_owned(),
+            "request".to_owned()
+        )]))
+    );
+}
+
+#[test]
 fn extract_inbound_headers_falls_back_to_the_request_headers() {
     let data = Object::from([(
         "headers".to_owned(),
@@ -69,6 +93,25 @@ fn extract_inbound_headers_falls_back_to_the_metadata_headers() {
     )]);
     assert_eq!(
         extract_inbound_headers(&data, None),
+        Some(BTreeMap::from([(
+            "shade_scan_id".to_owned(),
+            "metadata".to_owned()
+        )]))
+    );
+}
+
+#[test]
+fn extract_inbound_headers_prefers_the_metadata_headers_over_the_log_target() {
+    let target = log_target(vec![("shade_scan_id", text("logged"))]);
+    let data = Object::from([(
+        "metadata".to_owned(),
+        object(vec![(
+            "headers",
+            object(vec![("shade_scan_id", text("metadata"))]),
+        )]),
+    )]);
+    assert_eq!(
+        extract_inbound_headers(&data, Some(&target)),
         Some(BTreeMap::from([(
             "shade_scan_id".to_owned(),
             "metadata".to_owned()

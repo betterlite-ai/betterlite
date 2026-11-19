@@ -17,6 +17,36 @@ fn post_call_context_reads_the_route_call_type() {
 }
 
 #[test]
+fn post_call_context_takes_the_first_route_call_type_over_the_logging_one() {
+    let completion = FakeTranslation {
+        messages: Some(vec![message("user", "from-completion")]),
+    };
+    let embedding = FakeTranslation {
+        messages: Some(vec![message("user", "from-embedding")]),
+    };
+    let registry = registry_of(vec![
+        (&completion, CallType::Completion),
+        (&embedding, CallType::Embedding),
+    ]);
+    let routes = RouteCatalog {
+        source: "test".to_owned(),
+        call_types: vec![CallType::Completion, CallType::Embedding],
+        routes: vec![RouteEntry {
+            route: "/v1/chat/completions".to_owned(),
+            call_types: vec![CallType::Completion, CallType::Embedding],
+        }],
+    };
+    let (messages, _tools) = run_context(
+        &routed_data("/v1/chat/completions"),
+        Some("embedding"),
+        ScopeFlags::default(),
+        &registry,
+        &routes,
+    );
+    assert_eq!(messages, vec![plain_message("user", "from-completion")]);
+}
+
+#[test]
 fn post_call_context_falls_back_to_the_logging_call_type() {
     let translation = FakeTranslation {
         messages: Some(vec![message("user", "hi")]),
@@ -31,6 +61,29 @@ fn post_call_context_falls_back_to_the_logging_call_type() {
         &routes,
     );
     assert_eq!(messages, vec![plain_message("user", "hi")]);
+}
+
+#[test]
+fn post_call_context_uses_the_logging_call_type_for_an_unknown_route() {
+    let completion = FakeTranslation {
+        messages: Some(vec![message("user", "from-completion")]),
+    };
+    let embedding = FakeTranslation {
+        messages: Some(vec![message("user", "from-embedding")]),
+    };
+    let registry = registry_of(vec![
+        (&completion, CallType::Completion),
+        (&embedding, CallType::Embedding),
+    ]);
+    let routes = route_catalog();
+    let (messages, _tools) = run_context(
+        &routed_data("/v1/unknown"),
+        Some("embedding"),
+        ScopeFlags::default(),
+        &registry,
+        &routes,
+    );
+    assert_eq!(messages, vec![plain_message("user", "from-embedding")]);
 }
 
 #[test]
@@ -57,22 +110,10 @@ fn post_call_context_prefers_the_logging_call_type_over_the_request_one() {
     let embedding = FakeTranslation {
         messages: Some(vec![message("user", "from-embedding")]),
     };
-    let completion_source: &dyn StructuredMessageSource = &completion;
-    let embedding_source: &dyn StructuredMessageSource = &embedding;
-    let registry = TranslationRegistry {
-        entries: vec![
-            TranslationEntry {
-                call_type: CallType::Completion,
-                translation: completion_source,
-                chat_completions: false,
-            },
-            TranslationEntry {
-                call_type: CallType::Embedding,
-                translation: embedding_source,
-                chat_completions: false,
-            },
-        ],
-    };
+    let registry = registry_of(vec![
+        (&completion, CallType::Completion),
+        (&embedding, CallType::Embedding),
+    ]);
     let routes = route_catalog();
     let data = Object::from([(
         "litellm_logging_obj".to_owned(),
