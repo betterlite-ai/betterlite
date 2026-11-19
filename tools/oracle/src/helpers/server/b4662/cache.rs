@@ -1,5 +1,7 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use futures_util::future::try_join_all;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -10,7 +12,7 @@ use betterlite_server::mcp::outbound_credentials::PER_USER_TOKEN_KEY_PREFIX;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::M2mTokenEndpointPost;
 
 use super::support::{
-    self, FakeBackend, FixedClock, OutcomeSpec, RecordedCall, ScriptedPost, ServerSpec,
+    self, Failure, FakeBackend, FixedClock, OutcomeSpec, RecordedCall, ScriptedPost, ServerSpec,
     ServersInput, authorization,
 };
 
@@ -52,11 +54,7 @@ pub(super) struct PerUserInput {
     #[serde(default)]
     identity_binding_proof: Option<String>,
     #[serde(default)]
-    fail_get: bool,
-    #[serde(default)]
-    fail_set: bool,
-    #[serde(default)]
-    fail_delete: bool,
+    fail: Option<Failure>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,7 +74,7 @@ struct OAuth2Call {
 impl OAuth2Call {
     fn new(spec: &ServerSpec, outcomes: &[OutcomeSpec]) -> Result<Self, Box<HelperError>> {
         let scripted = Arc::new(ScriptedPost::new(outcomes)?);
-        let poster: Arc<dyn M2mTokenEndpointPost> = scripted.clone();
+        let poster: Arc<dyn M2mTokenEndpointPost> = Arc::<ScriptedPost>::clone(&scripted);
         let server: MCPServer = serde_json::from_value(spec.0.clone())
             .map_err(|error| support::value_error(error.to_string()))?;
         Ok(Self {
@@ -110,7 +108,7 @@ struct PerUserCall {
 impl PerUserCall {
     fn new(input: &PerUserInput) -> Self {
         Self {
-            cache: per_user_cache(input.fail_get, input.fail_set, input.fail_delete),
+            cache: per_user_cache(input),
             user_id: input.user_id.clone(),
             server_id: input.server_id.clone(),
         }
@@ -135,9 +133,10 @@ impl PerUserCall {
     }
 }
 
-fn per_user_cache(fail_get: bool, fail_set: bool, fail_delete: bool) -> PerUserCache {
+fn per_user_cache(input: &PerUserInput) -> PerUserCache {
+    let failures: BTreeSet<Failure> = input.fail.into_iter().collect();
     PerUserCache {
-        backend: FakeBackend::new(fail_get, fail_set, fail_delete),
+        backend: FakeBackend::new(failures),
         codec: support::codec(),
     }
 }
@@ -159,10 +158,10 @@ fn set_view(token: Option<String>, raw_differs: bool, ttl: Option<i64>) -> Value
 fn fetch_view(
     token: String,
     ttl: i64,
-    recorded: Option<RecordedCall>,
+    call: Option<RecordedCall>,
 ) -> Result<Value, Box<HelperError>> {
-    let recorded = recorded
-        .ok_or_else(|| support::value_error("the token request was not posted".to_owned()))?;
+    let recorded =
+        call.ok_or_else(|| support::value_error("the token request was not posted".to_owned()))?;
     let mut form = recorded.form;
     form.sort();
     Ok(json!({
@@ -180,7 +179,7 @@ async fn concurrent_tokens(
 ) -> Result<Vec<Option<String>>, Box<HelperError>> {
     let futures = (0..calls).map(|_call| call.cached());
     if concurrent {
-        return futures_util::future::try_join_all(futures).await;
+        return try_join_all(futures).await;
     }
     let mut sequential = Vec::with_capacity(calls);
     for future in futures {

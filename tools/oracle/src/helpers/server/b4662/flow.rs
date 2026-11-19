@@ -202,6 +202,7 @@ pub(super) async fn flow_backfill(input: &FlowBackfillInput) -> Result<Value, Bo
         .collect();
     let stamps = table.stamps.lock().unwrap_or_else(PoisonError::into_inner);
     let views: Vec<Value> = stamps.iter().map(stamp_view).collect();
+    drop(stamps);
     Ok(json!({
         "counts": counts,
         "rows": table.row_views(),

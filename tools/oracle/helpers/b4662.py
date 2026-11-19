@@ -53,9 +53,7 @@ class Input(TypedDict):
     ttl: int
     identity_binding_proof: str | None
     expires_in: int | None
-    fail_get: bool
-    fail_set: bool
-    fail_delete: bool
+    fail: str | None
     signals: list[Where]
     flow_rows: list[Where]
     user_credentials: list[Where]
@@ -213,7 +211,7 @@ async def per_user(call: Input) -> JsonValue:
         server = TypeAdapter(MCPServer).validate_python(call["server"])
         ttl = _compute_per_user_token_ttl(server, call.get("expires_in"))
         return {"ttl": ttl}
-    fail = call.get("fail_get") or call.get("fail_set") or call.get("fail_delete")
+    fail = call.get("fail") is not None
     memory = Memory(action if fail else "none")
     os.environ["LITELLM_SALT_KEY"] = "b4662-oracle-salt"
     proxy_server.redis_usage_cache = None

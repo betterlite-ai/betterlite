@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -17,6 +18,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
+use tokio::task::yield_now;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -46,7 +48,7 @@ pub(super) fn value_error(message: String) -> Box<HelperError> {
 pub(super) fn block_on<T, F>(future: F) -> HelperResult
 where
     T: serde::Serialize,
-    F: std::future::Future<Output = Result<T, Box<HelperError>>>,
+    F: Future<Output = Result<T, Box<HelperError>>>,
 {
     let runtime = runtime()?;
     let value = runtime.block_on(future)?;
@@ -151,7 +153,7 @@ impl M2mTokenEndpointPost for ScriptedPost {
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
         // Yielding lets concurrent callers reach the per-identity lock the way they do over a real socket.
-        tokio::task::yield_now().await;
+        yield_now().await;
         let outcome = self
             .outcomes
             .lock()
@@ -192,22 +194,26 @@ pub(super) fn codec() -> OAuthTokenCacheCodec {
 #[error("{0}")]
 pub(super) struct FakeError(pub(super) &'static str);
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Failure {
+    Get,
+    Set,
+    Delete,
+}
+
 pub(super) struct FakeBackend {
     pub(super) entries: Mutex<BTreeMap<String, String>>,
     sets: Mutex<Vec<(String, String, i64)>>,
-    fail_get: bool,
-    fail_set: bool,
-    fail_delete: bool,
+    failures: BTreeSet<Failure>,
 }
 
 impl FakeBackend {
-    pub(super) const fn new(fail_get: bool, fail_set: bool, fail_delete: bool) -> Self {
+    pub(super) const fn new(failures: BTreeSet<Failure>) -> Self {
         Self {
             entries: Mutex::new(BTreeMap::new()),
             sets: Mutex::new(Vec::new()),
-            fail_get,
-            fail_set,
-            fail_delete,
+            failures,
         }
     }
 
@@ -241,14 +247,14 @@ impl PerUserTokenBackend for FakeBackend {
     type Error = FakeError;
 
     async fn get(&self, key: &str) -> Result<Option<String>, Self::Error> {
-        if self.fail_get {
+        if self.failures.contains(&Failure::Get) {
             return Err(FakeError("the fake cache get failed"));
         }
         Ok(self.entry(key))
     }
 
     async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), Self::Error> {
-        if self.fail_set {
+        if self.failures.contains(&Failure::Set) {
             return Err(FakeError("the fake cache set failed"));
         }
         self.seed(key, value);
@@ -260,7 +266,7 @@ impl PerUserTokenBackend for FakeBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), Self::Error> {
-        if self.fail_delete {
+        if self.failures.contains(&Failure::Delete) {
             return Err(FakeError("the fake cache delete failed"));
         }
         self.entries

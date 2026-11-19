@@ -7,6 +7,5 @@ call:
     server_id: srv-1
     seed: tok
     garbage: false
-    fail_get: false
 env: {}
 compare: {ignore: []}

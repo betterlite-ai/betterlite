@@ -149,11 +149,13 @@ pub(super) async fn issuer_backfill(
     input: &IssuerBackfillInput,
 ) -> Result<Value, Box<HelperError>> {
     let table = FakeIssuerTable::new(&input.issuer_rows, &input.fail_server_ids);
-    let mut healed = 0;
+    let mut healed = 0_usize;
     for _run in 0..input.runs {
-        healed += heal_stamped_issuers(&table, &SilentLog)
-            .await
-            .map_err(|error| support::value_error(error.to_string()))?;
+        healed = healed.saturating_add(
+            heal_stamped_issuers(&table, &SilentLog)
+                .await
+                .map_err(|error| support::value_error(error.to_string()))?,
+        );
     }
     Ok(json!({
         "healed": healed,

@@ -5,6 +5,6 @@ call:
     function: per_user_delete
     user_id: user-1
     server_id: srv-1
-    fail_delete: true
+    fail: delete
 env: {}
 compare: {ignore: []}

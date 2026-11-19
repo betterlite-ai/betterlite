@@ -40,7 +40,7 @@ pub(super) async fn resolve(input: &ResolveInput) -> Result<Value, Box<HelperErr
     let server: MCPServer = serde_json::from_value(input.server.0.clone())
         .map_err(|error| support::value_error(error.to_string()))?;
     let scripted = Arc::new(ScriptedPost::new(&input.outcomes)?);
-    let poster: Arc<dyn M2mTokenEndpointPost> = scripted.clone();
+    let poster: Arc<dyn M2mTokenEndpointPost> = Arc::<ScriptedPost>::clone(&scripted);
     let cache = MCPOAuth2TokenCache::new(poster, Arc::new(FixedClock));
     let header = override_of(input.mcp_auth_header.as_ref());
     let value = resolve_mcp_auth(&server, header.as_ref(), &cache)

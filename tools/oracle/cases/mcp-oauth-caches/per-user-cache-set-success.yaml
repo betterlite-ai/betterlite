@@ -8,6 +8,5 @@ call:
     access_token: tok
     ttl: 300
     identity_binding_proof: proof
-    fail_set: false
 env: {}
 compare: {ignore: []}
