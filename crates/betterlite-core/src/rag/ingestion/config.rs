@@ -50,10 +50,9 @@ pub enum IngestionSetupError {
 pub fn chunking_strategy_value(
     requested: Option<ChunkingStrategyMap>,
 ) -> Result<Box<RawValue>, IngestionSetupError> {
-    let Some(strategy) = requested.filter(|strategy| !strategy.is_empty()) else {
-        return default_chunking_strategy();
-    };
-    to_raw_value(&strategy).map_err(|source| IngestionSetupError::ChunkingStrategy { source })
+    requested.map_or_else(default_chunking_strategy, |strategy| {
+        to_raw_value(&strategy).map_err(|source| IngestionSetupError::ChunkingStrategy { source })
+    })
 }
 
 fn default_chunking_strategy() -> Result<Box<RawValue>, IngestionSetupError> {

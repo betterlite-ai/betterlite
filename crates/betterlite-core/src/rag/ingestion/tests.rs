@@ -270,10 +270,10 @@ fn init_defaults_the_chunking_strategy_to_auto() {
 }
 
 #[test]
-fn init_defaults_an_empty_chunking_strategy() {
+fn init_keeps_an_empty_chunking_strategy() {
     let parsed = serde_json::from_str(r#"{"chunking_strategy": {}}"#).expect("the options parse");
     let state = Harness::default().state(parsed);
-    assert_eq!(state.chunking_strategy.get(), r#"{"type":"auto"}"#);
+    assert_eq!(state.chunking_strategy.get(), "{}");
 }
 
 #[test]
