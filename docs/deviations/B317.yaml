@@ -1,0 +1,70 @@
+task: B317
+deviations:
+  - what: >-
+      When the window store refuses the read of log_success_event's read-modify-write, betterlite drops that
+      update and keeps the stored window, where LiteLLM's DualCache swallows the failed read, starts the
+      update from an empty map and writes that map back over the window, losing every count it could not read.
+    why: >-
+      A read the store cannot serve must not overwrite the counts it holds; betterlite's window service reports
+      the failure to its caller instead of turning it into an empty map. The oracle case missing-counter pins
+      the exact reference and Rust windows through B361.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L64-L73
+  - what: >-
+      async_log_success_event runs the same read-modify-write through DualCache.async_get_cache, which also
+      swallows a failed read, so the async callback replaces the stored window with the new count where
+      betterlite drops the update.
+    why: >-
+      The sync and async callbacks share one record step in betterlite, so the answer to a store failure is the
+      same from both; the missing-counter case pins the sync path and a store failure in either callback keeps
+      the window betterlite read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L124-L137
+  - what: >-
+      When the window store refuses the write of log_success_event's read-modify-write, betterlite keeps the
+      counts it read, where LiteLLM's in-memory cache has already handed its stored map to the callback, so the
+      increment stays visible in the cached window even though the cache refused the write.
+    why: >-
+      docs/compatibility.md does not port in-place changes to a value a cache returned, so a write betterlite
+      cannot store leaves the previous window; a cache tier that copies on read, such as Redis, answers the
+      same way. The oracle case missing-counter pins the exact reference and Rust windows through B361.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L67-L73
+  - what: >-
+      async_log_success_event's write goes through DualCache.async_set_cache, which swallows the refusal after
+      the in-memory map was mutated, so a refused async write also leaves LiteLLM's cached counts incremented
+      where betterlite keeps the previous window.
+    why: >-
+      The record step is shared by both callbacks, and the window it writes is a value the store owns, so a
+      refusal leaves the same previous counts an in-memory cache that copies would show.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L127-L137
+  - what: >-
+      Strategy::UsageBasedRouting selects from a cold window, so a routed request always answers with the
+      first pool deployment that fits the request estimate, where LiteLLM's Router calls
+      get_available_deployments with the cache the success callbacks write.
+    why: >-
+      RouteServices carries no usage-window store and is owned elsewhere, so the strategy arm has no seam to
+      read one; the record and select services are built and oracle-tested, and the arm answers through the
+      same select primitive the cache-backed path uses once the seam exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L164-L169
+  - what: >-
+      A routing_strategy_args.ttl below zero is a config load error that names
+      router_settings.routing_strategy_args.ttl, where LiteLLM's RoutingArgs holds the ttl as a Python int and
+      accepts a negative one.
+    why: >-
+      The v2 accounting section that reads the same key holds the ttl as whole non-negative seconds and
+      refuses a negative one (docs/deviations/B371.yaml), so the shared key gives one answer; this section
+      parses the same unsigned range instead of accepting a value the other section rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L16-L17
+kept_bugs:
+  - what: >-
+      The requests check counts the next request before comparing it, so a deployment whose window count is
+      already one below its rpm is skipped; an rpm of 3 admits two requests per minute.
+    why: >-
+      The comparison is rpm_dict[item] + 1 >= rpm, and a setup that sets rpm relies on the rate it observes
+      from this rule, so betterlite reproduces it instead of admitting one request more.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L226-L231
+  - what: >-
+      A deployment the requests window does not hold is never skipped by its rpm limit, so a zero rpm still
+      admits the first request of a cold window.
+    why: >-
+      The requests check runs only for an id already in rpm_dict, which is what a setup with a small rpm
+      observes on its first request each minute, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L228-L229

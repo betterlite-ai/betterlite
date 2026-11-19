@@ -63,9 +63,10 @@ description: >-
   30 wiring; 525 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B8197 (the listing McpToolListing's first method mirrors), B4654 (MCP request header parsing),
+  Direct inputs come from B4654 (MCP request header parsing),
   B171 (Direct helper oracle and URL path encoding), B948 (Responses mcp selection), B1087 (Api boundaries), B905
-  (Responses parameters, including extract_mcp_headers). These are callable/type/config owners, not provider-family
+  (Responses parameters, including extract_mcp_headers). McpToolListing's first method mirrors B8197's listing, but
+  nothing here calls it: B140 wires it in behind the port. These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:

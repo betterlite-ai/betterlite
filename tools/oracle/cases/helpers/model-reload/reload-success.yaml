@@ -1,0 +1,22 @@
+kind: helper
+name: reload-success
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: reload_serving_verdict
+        obligation: must_serve
+        before: []
+        written:
+          - {id: written-1, model_info: {db_model: true}}
+        still_desired: null
+        live: {captured: null, router_ids: [written-1]}
+      - function: raise_if_reload_degraded_serving
+        action: create
+        before: []
+        written:
+          - {id: written-1, model_info: {db_model: true}}
+        still_desired: null
+        live: {captured: null, router_ids: [written-1]}
+env: {}
+compare: {ignore: []}
