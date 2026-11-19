@@ -71,6 +71,44 @@ fn a_cost_map_that_cannot_answer_leaves_only_the_base_fields() {
 }
 
 #[test]
+fn a_field_without_a_value_is_left_out_of_the_body() {
+    let cost_map = FakeCostMap::default();
+    let groups = ExpectedGroups::default();
+    let sources = info_sources(None, &cost_map, None, &groups);
+    let response =
+        create_model_info_response(&info_request("gpt-4o"), &sources).expect("the entry answers");
+    assert_eq!(
+        serde_json::to_string(&response).expect("the body serializes"),
+        r#"{"id":"gpt-4o","object":"model","created":1677610602,"owned_by":"openai"}"#
+    );
+}
+
+#[test]
+fn the_serialized_body_names_every_declared_field() {
+    let mut cost_map = FakeCostMap::default();
+    cost_map.entries.insert(
+        "gpt-4o".to_owned(),
+        object(vec![
+            ("mode", text("chat")),
+            ("max_input_tokens", number(128_000)),
+        ]),
+    );
+    let settings = fallback_settings();
+    let groups = ExpectedGroups {
+        chain: settings.fallbacks.clone(),
+        answer: strings(&["general-backup"]),
+    };
+    let sources = info_sources(None, &cost_map, Some(&settings), &groups);
+    let mut request = info_request("gpt-4o");
+    request.include_metadata = true;
+    let response = create_model_info_response(&request, &sources).expect("the entry answers");
+    assert_eq!(
+        serde_json::to_string(&response).expect("the body serializes"),
+        r#"{"id":"gpt-4o","object":"model","created":1677610602,"owned_by":"openai","mode":"chat","max_input_tokens":128000,"metadata":{"fallbacks":["general-backup"]}}"#
+    );
+}
+
+#[test]
 fn a_listing_without_cost_map_keys_resolves_the_listed_name() {
     let mut router = FakeRouter::default();
     router.listings.insert(
