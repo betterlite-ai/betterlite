@@ -217,6 +217,8 @@ fn body(source: &str) -> serde_json::Value {
     serde_json::from_str(source).unwrap()
 }
 
+// LiteLLM reads a key through the project view, so a booted case needs the fixture's verified migration chain.
+// A dashboard seed selects that chain; a plain seed stops at the 2025-03 baseline LiteLLM cannot authenticate against.
 #[test]
 fn independent_initial_rows() {
     let case = decode_case(
@@ -226,7 +228,7 @@ config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-seeded, user_role: internal_user, auto_create_key: false}}
 upstream: []
-database: {seed: {users: [{user_id: fixture-admin}, {user_id: fixture-seeded}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-seeded}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
 "#,
     )
@@ -261,7 +263,7 @@ config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
 upstream: []
-database: {seed: {users: [{user_id: fixture-admin}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
 "#,
     )
@@ -291,7 +293,7 @@ config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
 upstream: []
-database: {seed: {users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
 "#;
 
@@ -300,7 +302,7 @@ config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-internal'}, body: {user_id: fixture-denied, user_role: internal_user, auto_create_key: false}}
 upstream: []
-database: {seed: {users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
 "#;
 
