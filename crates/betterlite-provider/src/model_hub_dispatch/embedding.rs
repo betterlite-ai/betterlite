@@ -15,7 +15,6 @@ use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
 use betterlite_openai::huggingface_embedding::{PrepareRequest, PreparedRequest, prepare};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
@@ -142,37 +141,33 @@ fn received(
     Ok(embedding)
 }
 
-// the logging env is not Sync, so the call future stays on the caller's task
-pub fn embed<'call>(
+pub async fn embed<'call>(
     call: &'call EmbeddingCall<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> LocalBoxFuture<'call, Result<EmbeddingResponse, HubDispatchError>> {
-    Box::pin(async move {
-        let prepared = prepare_call(call, deps).await?;
-        let sent = PreCall {
-            input: prepared.input.clone(),
-            model: None,
-            additional_args: additional_args(
-                Some(prepared.request.url.clone()),
-                Some(header_values(&prepared.request.headers)),
-                Some(RawBody::Object(prepared.data.clone())),
-                IndexMap::new(),
-            ),
-        };
-        pre_call(log.state, &sent, log.env)
-            .map_err(|source| HubDispatchError::PreCall { source })?;
-        let request = WireRequest {
-            method: Method::POST,
-            url: &prepared.request.url,
-            query: &[],
-            headers: &prepared.request.headers,
-            body: Some(prepared.request.body.as_bytes()),
-            deadline: deps.timeout,
-        };
-        let response = deps.post.post(&request).await?;
-        received(call, deps.encoder, log, prepared, &response)
-    })
+) -> Result<EmbeddingResponse, HubDispatchError> {
+    let prepared = prepare_call(call, deps).await?;
+    let sent = PreCall {
+        input: prepared.input.clone(),
+        model: None,
+        additional_args: additional_args(
+            Some(prepared.request.url.clone()),
+            Some(header_values(&prepared.request.headers)),
+            Some(RawBody::Object(prepared.data.clone())),
+            IndexMap::new(),
+        ),
+    };
+    pre_call(log.state, &sent, log.env).map_err(|source| HubDispatchError::PreCall { source })?;
+    let request = WireRequest {
+        method: Method::POST,
+        url: &prepared.request.url,
+        query: &[],
+        headers: &prepared.request.headers,
+        body: Some(prepared.request.body.as_bytes()),
+        deadline: deps.timeout,
+    };
+    let response = deps.post.post(&request).await?;
+    received(call, deps.encoder, log, prepared, &response)
 }
 
 pub struct NoTag;

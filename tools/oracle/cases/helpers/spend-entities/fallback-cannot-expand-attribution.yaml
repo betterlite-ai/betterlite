@@ -1,0 +1,35 @@
+kind: helper
+name: fallback-cannot-expand-attribution
+call:
+  spend_entities:
+    steps:
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 3.0
+        attributed: [a, b]
+        served_model_id: dep-1
+        deployments:
+          dep-1:
+            model_info: {access_groups: [b, c]}
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 3.0
+        attributed: [b, a, b]
+        served_model_id: dep-1
+        deployments:
+          dep-1:
+            model_info: {access_groups: [a, b, c]}
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 3.0
+        attributed: []
+        served_model_id: dep-1
+        deployments:
+          dep-1:
+            model_info: {access_groups: [a]}
+      - kind: enqueue
+        entity: model_access_group
+        response_cost: 3.0
+        attributed: [a]
+env: {}
+compare: {ignore: []}

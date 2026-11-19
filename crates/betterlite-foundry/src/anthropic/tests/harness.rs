@@ -98,7 +98,7 @@ pub(super) enum Outcome {
 }
 
 pub(super) type FixtureError = ChatError<FixtureFailure, Infallible>;
-type CallResult = CompletionResult<FixtureTransport, FixtureCounter>;
+pub(super) type CallResult = CompletionResult<FixtureTransport, FixtureCounter>;
 
 pub(super) struct Run {
     pub(super) outcome: Result<Outcome, Box<FixtureError>>,
@@ -170,7 +170,7 @@ impl Run {
     }
 }
 
-struct Keys {
+pub(super) struct Keys {
     argument: Option<SecretString>,
     configured: Option<SecretString>,
     params: Option<SecretString>,
@@ -185,8 +185,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
-    let credentials = credentials_of(setup);
-    let keys = keys_of(setup);
+    let (credentials, keys) = signing_material(setup);
     let request = request_of(setup, &credentials, &keys);
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {
@@ -218,7 +217,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     }
 }
 
-fn deps_of<'deps>(
+pub(super) fn deps_of<'deps>(
     config: &'deps FixtureConfig,
     clients: ChatClients<'deps, FixtureTransport>,
     env: &'deps PrePostEnv<'deps>,
@@ -238,7 +237,7 @@ fn deps_of<'deps>(
     }
 }
 
-fn fixture_config(setup: &Setup) -> FixtureConfig {
+pub(super) fn fixture_config(setup: &Setup) -> FixtureConfig {
     FixtureConfig {
         body: setup.transform_body.clone(),
         transform_failure: setup.transform_failure.map(str::to_owned),
@@ -248,38 +247,35 @@ fn fixture_config(setup: &Setup) -> FixtureConfig {
     }
 }
 
-fn credentials_of(setup: &Setup) -> DeploymentSettings {
+// The Azure deployment credentials and the caller's key shapes the request builder resolves auth from
+pub(super) fn signing_material(setup: &Setup) -> (DeploymentSettings, Keys) {
     let client_secret = setup.client_secret.map(SecretString::from);
-    let tenant_id = client_secret.as_ref().map(|_| "tenant".to_owned());
-    let client_id = client_secret.as_ref().map(|_| "client".to_owned());
-    DeploymentSettings {
+    let typed = match setup.key_shape {
+        KeyShape::Typed(key) => key.map(secret),
+        KeyShape::DictAbsent | KeyShape::DictNull => None,
+    };
+    let credentials = DeploymentSettings {
         azure_ad_token: setup.token.map(SecretString::from),
-        tenant_id,
-        client_id,
+        tenant_id: client_secret.as_ref().map(|_| "tenant".to_owned()),
+        client_id: client_secret.as_ref().map(|_| "client".to_owned()),
         client_secret,
         azure_scope: "https://cognitiveservices.azure.com/.default".to_owned(),
         azure_username: None,
         azure_password: None,
-    }
+    };
+    let keys = Keys {
+        argument: setup.argument_key.map(secret),
+        configured: setup.configured_key.map(secret),
+        params: typed,
+    };
+    (credentials, keys)
 }
 
 fn secret(text: &'static str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn keys_of(setup: &Setup) -> Keys {
-    let typed = match setup.key_shape {
-        KeyShape::Typed(key) => key.map(secret),
-        KeyShape::DictAbsent | KeyShape::DictNull => None,
-    };
-    Keys {
-        argument: setup.argument_key.map(secret),
-        configured: setup.configured_key.map(secret),
-        params: typed,
-    }
-}
-
-fn request_of<'setup>(
+pub(super) fn request_of<'setup>(
     setup: &'setup Setup,
     credentials: &'setup DeploymentSettings,
     keys: &'setup Keys,
@@ -313,7 +309,7 @@ fn request_of<'setup>(
     }
 }
 
-fn outcome_of(result: CallResult) -> Result<Outcome, Box<FixtureError>> {
+pub(super) fn outcome_of(result: CallResult) -> Result<Outcome, Box<FixtureError>> {
     match result {
         Ok(ChatOutcome::Reply(envelope)) => Ok(Outcome::Reply(envelope)),
         Ok(ChatOutcome::Stream(wrapped)) => {

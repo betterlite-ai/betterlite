@@ -1,0 +1,74 @@
+task: B3934
+deviations:
+  - what: >-
+      The proxy failure message is built from B253's typed get_error_information and its status_code is an
+      int only when error_information's error_code, with the surrounding whitespace stripped, is a non-empty
+      run of ASCII digits that fits i64. Every other code, an absent exception included, leaves status_code
+      null. The pinned hook reads the same text through str(error_code).strip().isdigit() then int(). Those
+      also accept non-ASCII digits such as Arabic-Indic ones and turn a digit run of any length into a Python
+      int; for a text isdigit accepts and int rejects, such as the superscript two, int raises ValueError and
+      the hook's outer except logs the exception while no Datadog event is sent for that failure.
+    why: >-
+      An HTTP status code is ASCII digits inside i64, so every code a working setup produces takes the same
+      branch on both sides. A code outside that set leaves status_code null here instead of ending the hook,
+      so the event is kept and the failure still recorded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L312-L315
+  - what: >-
+      The proxy failure hook enqueues the payload on the shared batch queue and flushes it once the queue
+      depth reaches the batch size, with >= as the comparison. The service hooks enqueue on the same queue
+      and never flush, so a service event leaves the queue only through the periodic flush or an explicit
+      flush. LiteLLM appends to log_queue and runs the same batch-size test in the proxy hook alone.
+    why: >-
+      The queue, the batch size and the flush are B3933's CustomBatchLogger port, and a service event has no
+      size trigger to act on. Both sides drain service events on the periodic flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L358-L359
+  - what: >-
+      The success hook logs only the service types DD_LOGGED_SUCCESS_SERVICE_TYPES lists, and the list holds
+      RESET_BUDGET_JOB alone at the pin. Every other type returns without logging or queueing. The failure
+      hook always logs, with WARN; the success hook's records carry INFO.
+    why: >-
+      LiteLLM filters the same way to keep a success record for every service event out of Datadog. The
+      constant is a slice of the typed ServiceType enum here, and the filter compares enum values instead
+      of strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L656-L658
+  - what: >-
+      A service event with a duration of NaN or infinity fails inside the hook: the hook logs the error and
+      queues nothing. The pinned hooks write the value into the message through json.dumps, and its default
+      allow_nan writes a bare NaN or Infinity into the message string.
+    why: >-
+      The message is a JSON document and neither NaN nor Infinity is valid JSON in it; serde_json would
+      write null in their place, turning a duration no clock produced into a zero-like value. A duration
+      comes from the elapsed time between two clock reads, so no working setup sends a non-finite one. The
+      exception-handling test pins both hooks dropping the event and the events after it still queueing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L93
+  - what: >-
+      A service hook whose logging fails writes one diagnostic, "Datadog: Logger - Exception in a service
+      hook". LiteLLM writes a per-hook text there, and its success hook names async_service_failure_hook,
+      the failure hook's name, in the success hook's message.
+    why: >-
+      Both hooks share the queueing and error-reporting step, and the text is a log line, not part of the
+      record Datadog receives. The exception-handling test counts the diagnostics for each hook call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L677-L678
+  - what: >-
+      The proxy failure hook takes the caller's user context as a caller_metadata argument and writes it to
+      user_api_key_dict unchanged. The pinned hook fills it from
+      LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key and, when litellm.proxy cannot be
+      imported, falls back to request_route, team_id, user_id and end_user_id read off UserAPIKeyAuth with
+      hasattr.
+    why: >-
+      Only the proxy calls this hook, and its caller holds the UserAPIKeyAuth. B1106 builds the sanitized
+      map in betterlite-core, and betterlite-core depends on betterlite-logging, so this module cannot call
+      it and takes the finished map instead. Being the only caller, the proxy never needs the SDK-only
+      fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L317-L337
+  - what: >-
+      The message's exception and error_class are the extracted error_message and error_class even when they
+      are empty strings. The pinned hook replaces a falsey extracted value with str(original_exception) for
+      exception and with original_exception.__class__.__name__ for error_class, and the second one raises
+      AttributeError when there is no exception object; that ends the hook run.
+    why: >-
+      B253's get_error_information keeps an explicitly empty .message as the deliberate value it is, and
+      this hook has no exception object to fall back to. An absent exception produces empty strings, the
+      form docs/compatibility.md prefers over str or repr text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L339-L345
+kept_bugs: []
