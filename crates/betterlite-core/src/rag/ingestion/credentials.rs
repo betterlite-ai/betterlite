@@ -1,5 +1,5 @@
 use betterlite_config::credentials::CredentialValues;
-use serde_json::value::to_raw_value;
+use serde_json::value::{RawValue, to_raw_value};
 use thiserror::Error;
 
 use super::config::{IngestionSetupError, VectorStoreConfig};
@@ -57,9 +57,7 @@ pub fn load_from_config(
     Ok(())
 }
 
-fn credential_name(
-    raw_name: &serde_json::value::RawValue,
-) -> Result<Option<String>, IngestionSetupError> {
+fn credential_name(raw_name: &RawValue) -> Result<Option<String>, IngestionSetupError> {
     serde_json::from_str(raw_name.get()).map_err(|_source| IngestionSetupError::InvalidField {
         field: CREDENTIAL_NAME_KEY,
         expected: "a string",
