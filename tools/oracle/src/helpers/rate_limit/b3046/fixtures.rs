@@ -7,11 +7,14 @@ use betterlite_core::api::batch_enqueued_reserve::{
     BatchEnqueuedTokenReservation, ReservationBackend as CoreBackend,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_models::call_helpers::metadata::MetadataMap;
 use betterlite_rate_limit::concurrency_gauges::ConcurrencyGauges;
 use betterlite_rate_limit::fail_closed::FailClosedPolicy;
 use betterlite_rate_limit::limiter_records::{
-    LimiterClock, RateLimitResponse, ReservationAwareIncrement, ReservationWindowIdentity,
+    LimiterClock, ModelGroupResolver, RateLimitResponse, ReservationAwareIncrement,
+    ReservationWindowIdentity,
 };
+use betterlite_rate_limit::model_descriptors::ModelDescriptorBuilder;
 use betterlite_rate_limit::post_call_settlement::settlement::PostCallSettlement;
 use betterlite_rate_limit::rate_limit_window_store::WindowStore;
 use betterlite_rate_limit::request_stash::{RequestStashSlot, StashState};
@@ -21,7 +24,9 @@ use serde_json::{Value, json};
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::cases::{Case, StashCase, TpdOperationCase, WindowCase};
-use super::fakes::{FakeBatchStore, FakeUsage, RecordingCounters, RecordingGauges, lock};
+use super::fakes::{
+    FakeBatchStore, FakeUsage, RecordingCounters, RecordingGauges, lock, operation_json,
+};
 
 pub(crate) struct FixedClock;
 
@@ -134,8 +139,18 @@ fn adjustments(counters: Arc<RecordingCounters>, usage: Arc<FakeUsage>) -> Token
     }
 }
 
+pub(crate) struct NoModels;
+
+impl ModelGroupResolver for NoModels {
+    fn resolve(&self, _model: &str) -> Option<String> {
+        None
+    }
+}
+
 pub(crate) struct Fixture {
     pub(crate) slot: RequestStashSlot,
+    pub(crate) metadata: MetadataMap,
+    pub(crate) models: ModelDescriptorBuilder,
     usage: Arc<FakeUsage>,
     gauges: Arc<RecordingGauges>,
     store: Arc<FakeBatchStore>,
@@ -158,6 +173,11 @@ impl Fixture {
         let store = Arc::new(FakeBatchStore::new(popped_record(case.pop_tokens)));
         Self {
             slot,
+            metadata: MetadataMap::new(),
+            models: ModelDescriptorBuilder {
+                window_size: WINDOW,
+                resolver: Box::new(NoModels),
+            },
             usage: Arc::clone(&usage),
             gauge_values: ConcurrencyGauges {
                 cache: Arc::clone(&gauges),
@@ -203,6 +223,21 @@ impl Fixture {
             }
             None => (None, false, None, 0),
         };
+        let gauge_reads: Vec<Value> = lock(&self.gauges.reads).clone();
+        let gauge_writes: Vec<Value> = lock(&self.gauges.writes).clone();
+        let increments: Vec<Value> = lock(&self.usage.increments)
+            .iter()
+            .map(operation_json)
+            .collect();
+        let pipelines: Vec<Value> = lock(&self.usage.pipelines)
+            .iter()
+            .map(|operations| operations.iter().map(operation_json).collect())
+            .collect();
+        let local_sets: Vec<Value> = lock(&self.usage.local_sets)
+            .iter()
+            .map(|(key, value, ttl)| json!({"key": key, "value": value, "ttl": ttl}))
+            .collect();
+        let batch_calls: Vec<Value> = lock(&self.store.calls).clone();
         json!({
             "slp_headers": slp_headers,
             "response_headers": response_headers,
@@ -210,12 +245,12 @@ impl Fixture {
             "reservation_released": released,
             "batch_tokens": batch_tokens,
             "tpd_ops": tpd_ops,
-            "gauge_reads": self.gauges.reads(),
-            "gauge_writes": self.gauges.writes(),
-            "increments": self.usage.increments(),
-            "pipelines": self.usage.pipelines(),
-            "local_sets": self.usage.local_sets(),
-            "batch_calls": self.store.calls(),
+            "gauge_reads": gauge_reads,
+            "gauge_writes": gauge_writes,
+            "increments": increments,
+            "pipelines": pipelines,
+            "local_sets": local_sets,
+            "batch_calls": batch_calls,
         })
     }
 }

@@ -16,10 +16,22 @@ use serde_json::{Value, json};
 pub(crate) const WINDOW: i64 = 60;
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
-fn operation_json(operation: &IncrementOperation) -> Value {
+fn seed_map<T, F>(seed: &BTreeMap<String, i64>, wrap: F) -> BTreeMap<String, T>
+where
+    F: Fn(i64) -> T,
+{
+    seed.iter()
+        .map(|(key, value)| (key.clone(), wrap(*value)))
+        .collect()
+}
+
+pub(crate) fn operation_json(operation: &IncrementOperation) -> Value {
     json!({
         "key": &operation.key,
         "increment_value": operation.increment_value,
@@ -39,29 +51,9 @@ fn gauge_json(value: &GaugeCacheValue) -> Value {
 
 #[derive(Default)]
 pub(crate) struct FakeUsage {
-    increments: Mutex<Vec<IncrementOperation>>,
-    pipelines: Mutex<Vec<Vec<IncrementOperation>>>,
-    local_sets: Mutex<Vec<(String, f64, Option<i64>)>>,
-}
-
-impl FakeUsage {
-    pub(crate) fn increments(&self) -> Vec<Value> {
-        lock(&self.increments).iter().map(operation_json).collect()
-    }
-
-    pub(crate) fn pipelines(&self) -> Vec<Value> {
-        lock(&self.pipelines)
-            .iter()
-            .map(|operations| operations.iter().map(operation_json).collect())
-            .collect()
-    }
-
-    pub(crate) fn local_sets(&self) -> Vec<Value> {
-        lock(&self.local_sets)
-            .iter()
-            .map(|(key, value, ttl)| json!({"key": key, "value": value, "ttl": ttl}))
-            .collect()
-    }
+    pub(crate) increments: Mutex<Vec<IncrementOperation>>,
+    pub(crate) pipelines: Mutex<Vec<Vec<IncrementOperation>>>,
+    pub(crate) local_sets: Mutex<Vec<(String, f64, Option<i64>)>>,
 }
 
 #[async_trait::async_trait]
@@ -85,12 +77,8 @@ pub(crate) struct RecordingCounters {
 
 impl RecordingCounters {
     pub(crate) fn seeded(seed: &BTreeMap<String, i64>) -> Self {
-        let values = seed
-            .iter()
-            .map(|(key, value)| (key.clone(), CacheCounterValue::Int(*value)))
-            .collect();
         Self {
-            values: Mutex::new(values),
+            values: Mutex::new(seed_map(seed, CacheCounterValue::Int)),
         }
     }
 }
@@ -118,35 +106,20 @@ impl CounterCache for RecordingCounters {
 pub(crate) struct RecordingGauges {
     values: Mutex<BTreeMap<String, GaugeCacheValue>>,
     gauge_keys: BTreeSet<String>,
-    reads: Mutex<Vec<Value>>,
-    writes: Mutex<Vec<Value>>,
+    pub(crate) reads: Mutex<Vec<Value>>,
+    pub(crate) writes: Mutex<Vec<Value>>,
 }
 
 impl RecordingGauges {
     pub(crate) fn seeded(seed: &BTreeMap<String, i64>, gauge_keys: &[String]) -> Self {
-        let values = seed
-            .iter()
-            .map(|(key, value)| {
-                (
-                    key.clone(),
-                    GaugeCacheValue::Counter(CacheCounterValue::Int(*value)),
-                )
-            })
-            .collect();
         Self {
-            values: Mutex::new(values),
+            values: Mutex::new(seed_map(seed, |value| {
+                GaugeCacheValue::Counter(CacheCounterValue::Int(value))
+            })),
             gauge_keys: gauge_keys.iter().cloned().collect(),
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(crate) fn reads(&self) -> Vec<Value> {
-        lock(&self.reads).clone()
-    }
-
-    pub(crate) fn writes(&self) -> Vec<Value> {
-        lock(&self.writes).clone()
     }
 }
 
@@ -176,7 +149,7 @@ impl GaugeCache for RecordingGauges {
 }
 
 pub(crate) struct FakeBatchStore {
-    calls: Mutex<Vec<Value>>,
+    pub(crate) calls: Mutex<Vec<Value>>,
     popped: Option<ReservationRecord>,
 }
 
@@ -187,14 +160,6 @@ impl FakeBatchStore {
             popped,
         }
     }
-
-    fn record(&self, call: Value) {
-        lock(&self.calls).push(call);
-    }
-
-    pub(crate) fn calls(&self) -> Vec<Value> {
-        lock(&self.calls).clone()
-    }
 }
 
 #[async_trait::async_trait]
@@ -204,7 +169,8 @@ impl BatchEnqueuedTokenStore for FakeBatchStore {
         batch_id: &str,
         reservation: &BatchEnqueuedTokenReservation,
     ) -> Result<(), BatchEnqueuedRefundError> {
-        self.record(json!({"call": "save", "batch_id": batch_id, "tokens": reservation.tokens}));
+        lock(&self.calls)
+            .push(json!({"call": "save", "batch_id": batch_id, "tokens": reservation.tokens}));
         Ok(())
     }
 
@@ -212,7 +178,7 @@ impl BatchEnqueuedTokenStore for FakeBatchStore {
         &self,
         batch_id: &str,
     ) -> Result<Option<ReservationRecord>, BatchEnqueuedRefundError> {
-        self.record(json!({"call": "pop", "batch_id": batch_id}));
+        lock(&self.calls).push(json!({"call": "pop", "batch_id": batch_id}));
         Ok(self.popped.clone())
     }
 
@@ -220,7 +186,7 @@ impl BatchEnqueuedTokenStore for FakeBatchStore {
         &self,
         reservation: &ReservationRecord,
     ) -> Result<(), BatchEnqueuedRefundError> {
-        self.record(json!({"call": "refund", "tokens": reservation.tokens}));
+        lock(&self.calls).push(json!({"call": "refund", "tokens": reservation.tokens}));
         Ok(())
     }
 }

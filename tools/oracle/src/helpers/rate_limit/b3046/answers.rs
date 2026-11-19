@@ -1,9 +1,6 @@
 use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
 use betterlite_core::api::batch_enqueued_reserve::response::BatchResponseView;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
-use betterlite_models::call_helpers::metadata::MetadataMap;
-use betterlite_rate_limit::limiter_records::ModelGroupResolver;
-use betterlite_rate_limit::model_descriptors::ModelDescriptorBuilder;
 use betterlite_rate_limit::post_call_settlement::failure_event::FailureEvent;
 use betterlite_rate_limit::post_call_settlement::failure_hook::FailureHook;
 use betterlite_rate_limit::post_call_settlement::logging_hook::{LoggingTargets, logging_hook};
@@ -26,19 +23,11 @@ use super::cases::Case;
 use super::fakes::WINDOW;
 use super::fixtures::Fixture;
 
-struct NoModels;
-
 fn runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()
-}
-
-impl ModelGroupResolver for NoModels {
-    fn resolve(&self, _model: &str) -> Option<String> {
-        None
-    }
 }
 
 pub(crate) fn logging_answer(case: &Case, mirror: bool) -> Value {
@@ -60,22 +49,23 @@ pub(crate) fn logging_answer(case: &Case, mirror: bool) -> Value {
 pub(crate) fn success_event_answer(case: &Case) -> HelperResult {
     let fixture = Fixture::new(case);
     let runtime = runtime()?;
-    let metadata = MetadataMap::new();
-    let models = ModelDescriptorBuilder {
-        window_size: WINDOW,
-        resolver: Box::new(NoModels),
-    };
+    let callback = success_callback(case, &fixture);
+    runtime.block_on(fixture.settlement().log_success_event(&callback));
+    Ok(fixture.record(None, None))
+}
+
+fn success_callback<'case>(case: &'case Case, fixture: &'case Fixture) -> SuccessCallback<'case> {
     let event = SuccessEvent {
         response: SuccessResponse::Unmodelled,
         combined_usage: case.usage.as_ref(),
         rate_limit_type: TokenRateLimitType::Total,
         logging: &case.logging,
-        request_metadata: &metadata,
+        request_metadata: &fixture.metadata,
         request_user: None,
         model_group: None,
         stash: &fixture.slot,
         call_id: case.call_id.as_deref(),
-        models: &models,
+        models: &fixture.models,
         window_size: WINDOW,
     };
     let io = IoTokenReconciliation {
@@ -86,9 +76,7 @@ pub(crate) fn success_event_answer(case: &Case) -> HelperResult {
         combined_usage: case.usage.as_ref(),
         window_size: WINDOW,
     };
-    let callback = SuccessCallback { event, io };
-    runtime.block_on(fixture.settlement().log_success_event(&callback));
-    Ok(fixture.record(None, None))
+    SuccessCallback { event, io }
 }
 
 pub(crate) fn failure_event_answer(case: &Case) -> HelperResult {
@@ -109,7 +97,7 @@ pub(crate) fn disconnect_answer(case: &Case) -> HelperResult {
     let fixture = Fixture::new(case);
     let runtime = runtime()?;
     let settle = fixture.settlement();
-    runtime.block_on(settle.release_max_parallel_requests_on_disconnect(&fixture.slot));
+    runtime.block_on(settle.release_slot_on_disconnect(&fixture.slot));
     Ok(fixture.record(None, None))
 }
 
@@ -146,15 +134,19 @@ pub(crate) fn success_hook_answer(case: &Case) -> HelperResult {
     Ok(fixture.record(None, headers))
 }
 
-pub(crate) fn failure_hook_answer(case: &Case) -> HelperResult {
-    let fixture = Fixture::new(case);
-    let runtime = runtime()?;
-    let hook = FailureHook {
+fn failure_hook<'case>(case: &'case Case, fixture: &'case Fixture) -> FailureHook<'case> {
+    FailureHook {
         stash: &fixture.slot,
         combined_usage: case.usage.as_ref(),
         rate_limit_type: TokenRateLimitType::Total,
         window_size: WINDOW,
-    };
+    }
+}
+
+pub(crate) fn failure_hook_answer(case: &Case) -> HelperResult {
+    let fixture = Fixture::new(case);
+    let runtime = runtime()?;
+    let hook = failure_hook(case, &fixture);
     runtime.block_on(fixture.settlement().post_call_failure_hook(&hook));
     Ok(fixture.record(None, None))
 }
