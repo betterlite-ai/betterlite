@@ -77,6 +77,10 @@ fn converts(#[case] source: &str, #[case] expected: LatencyRoutingSettings) {
     "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: 1.5\n",
     PERCENTILE_PATH
 )]
+#[case::percentile_is_not_a_number(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: .nan\n",
+    PERCENTILE_PATH
+)]
 #[case::buffer_is_no_number(
     "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    lowest_latency_buffer: [0.2]\n",
     BUFFER_PATH
