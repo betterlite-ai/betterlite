@@ -108,6 +108,7 @@ impl WindowSpendUpdateQueue {
             state.batches.push_back(aggregated);
         }
         drop(state);
+        // Notify keeps no count, so waking a waiter that finds no room only re-parks it
         self.room.notify_waiters();
         Ok(())
     }
