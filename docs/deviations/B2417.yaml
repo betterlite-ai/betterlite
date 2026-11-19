@@ -19,7 +19,7 @@ deviations:
     why: "The session id is a process-local integer that no log reader can act on, and betterlite's pooled client is not an aiohttp session; presence is the only portable fact."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2928-L2932"
 kept_bugs:
-  - what: Caller extra_headers cannot override Authorization or Content-Type. Validation mutates the caller's map in place (provider Bearer key, application/json), and the handler's later headers.update re-applies that same, already rewritten map, so the caller's values are gone.
+  - what: Caller extra_headers cannot override Authorization. Validation rewrites the caller's map in place with the provider Bearer key, and the handler's later headers.update re-applies that same, already rewritten map, so the caller's Authorization is gone. Every other caller header, a caller Content-Type included, survives.
     why: A setup passing its own Authorization gets the provider key on the wire, and code depending on that would send the wrong credential if the caller's header won.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3031-L3036
   - what: Both handlers accept extra_body and never merge it into the transformed payload, so a caller sending extra_body silently gets an unchanged body.
