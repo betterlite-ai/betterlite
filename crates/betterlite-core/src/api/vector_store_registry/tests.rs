@@ -12,6 +12,7 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use chrono::SecondsFormat;
 
 use support::{
     FIXED_TIMESTAMP, ScriptedDatabase, capture_logs, config_store, database_store, fixed_clock,
@@ -630,7 +631,7 @@ fn config_load_diagnostic_redacts_credentials() {
 fn fixed_clock_matches_the_record_stamp() {
     let clock = fixed_clock();
     assert_eq!(
-        clock().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+        clock().to_rfc3339_opts(SecondsFormat::Micros, true),
         FIXED_TIMESTAMP
     );
 }

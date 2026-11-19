@@ -11,6 +11,7 @@ use betterlite_openai::api::vector_store_records::records::pydantic::{
 };
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -32,8 +33,12 @@ pub(crate) fn fixed_clock() -> RegistryClock {
     Arc::new(move || fixed)
 }
 
-fn decoded<Record: DeserializeOwned>(document: serde_json::Value) -> Record {
-    serde_json::from_value(document).expect("the store document decodes")
+fn decoded<Record>(document: impl Serialize) -> Record
+where
+    Record: DeserializeOwned,
+{
+    let encoded = serde_json::to_value(document).expect("the store document encodes");
+    serde_json::from_value(encoded).expect("the store document decodes")
 }
 
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {

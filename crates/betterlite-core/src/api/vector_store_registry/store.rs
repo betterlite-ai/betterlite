@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::mem::take;
 use std::sync::Arc;
 
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
@@ -127,7 +128,7 @@ impl VectorStoreRegistry {
 
     // delete_vector_store_from_registry: every record carrying the id goes, config-owned included
     pub fn remove_store(&mut self, vector_store_id: &str) {
-        let stores = std::mem::take(&mut self.stores);
+        let stores = take(&mut self.stores);
         for store in stores {
             if store.vector_store_id.as_deref() != Some(vector_store_id) {
                 self.stores.push(store);
