@@ -6,7 +6,7 @@ description: >-
   POST /v1beta/models/{model_name}:streamGenerateContent, /models/{model_name}:streamGenerateContent,
   POST /v1beta/models/{model_name}:countTokens, and /models/{model_name}:countTokens.
   Each route receives requests from LiteLLM API clients using the Google GenAI SDK.
-  Parse the JSON body (using B1100's request decoder), authenticate via B052's virtual key auth,
+  Parse the JSON body (using B1100's request decoder), authenticate through B003's key auth middleware,
   extract the model name from the path, and dispatch to B3489's generation and streaming handlers.
   For generation, call the non-streaming path; for streaming, set stream=True and the GenAI-specific
   SSE flags (_litellm_skip_openai_stream_done and _litellm_raw_sse_stream) before dispatch.

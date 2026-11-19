@@ -19,7 +19,7 @@ description: >-
   Named case contracts: stream_request: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided
   client,_is_async and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function
   does not force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI.
-  Native typed handles and Python bridge B159 preserve these facade errors. stream_options: Return B005 CustomStreamWrapper
+  Native typed handles preserve these facade errors; the Python bridge belongs to B158, not to this task. stream_options: Return B005 CustomStreamWrapper
   immediately with model, provider azure, logging_obj and data.get(stream_options,None), retaining explicit None/{};
   do not hide opening failures in a lazy async generator. Store raw response headers in logging_obj.model_call_details.response_headers.
   stream_http_failure: Sync has no catch: opening/send errors propagate. Async wraps every exception as B673 AzureOpenAIError
@@ -109,7 +109,7 @@ dod:
 - text: 'stream_request: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided
     client,_is_async and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function
     does not force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI.
-    Native typed handles and Python bridge B159 preserve these facade errors.'
+    Native typed handles preserve these facade errors; the Python bridge belongs to B158, not to this task.'
   proof:
   - case-stream-request
   - oracle
@@ -180,7 +180,7 @@ checks:
     why: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided client,_is_async
       and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function does not
       force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI. Native
-      typed handles and Python bridge B159 preserve these facade errors.
+      typed handles preserve these facade errors; the Python bridge belongs to B158, not to this task.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_request$/)'
   - id: case-stream-options
     why: Return B005 CustomStreamWrapper immediately with model, provider azure, logging_obj and data.get(stream_options,None),

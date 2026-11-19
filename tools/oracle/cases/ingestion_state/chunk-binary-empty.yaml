@@ -1,0 +1,13 @@
+kind: helper
+name: chunk-binary-empty
+call:
+  b3451:
+    mode: chunk
+    options: {}
+    file_content_base64: //4A
+calls:
+  - b3451:
+      mode: chunk
+      options: {}
+env: {}
+compare: {ignore: []}

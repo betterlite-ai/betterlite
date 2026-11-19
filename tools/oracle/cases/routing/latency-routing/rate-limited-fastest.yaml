@@ -1,0 +1,73 @@
+kind: probe
+name: latency-routing-rate-limited-fastest
+probes:
+  # the fastest deployment has no token room left this minute, so it leaves the pool
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 5
+        deployments: [{id: dep-fast, tpm: 10}, {id: dep-slow}]
+        stored:
+          - id: dep-fast
+            latency: [1.0]
+            minutes: {"2023-11-14-22-13": {tpm: 10, rpm: 0}}
+          - id: dep-slow
+            latency: [5.0]
+  # a token sum exactly on the limit still fits, and the fastest deployment serves
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 5
+        deployments: [{id: dep-fast, tpm: 10}, {id: dep-slow}]
+        stored:
+          - id: dep-fast
+            latency: [1.0]
+            minutes: {"2023-11-14-22-13": {tpm: 5, rpm: 0}}
+          - id: dep-slow
+            latency: [5.0]
+  # the request's own count is the one the minute has not recorded yet
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-fast, rpm: 3}, {id: dep-slow}]
+        stored:
+          - id: dep-fast
+            latency: [1.0]
+            minutes: {"2023-11-14-22-13": {tpm: 0, rpm: 3}}
+          - id: dep-slow
+            latency: [5.0]
+  # no deployment has room, and the selection answers no deployment at all
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 1
+        deployments: [{id: dep-fast, tpm: 10}, {id: dep-slow, tpm: 10}]
+        stored:
+          - id: dep-fast
+            latency: [1.0]
+            minutes: {"2023-11-14-22-13": {tpm: 10, rpm: 0}}
+          - id: dep-slow
+            latency: [5.0]
+            minutes: {"2023-11-14-22-13": {tpm: 10, rpm: 0}}
+compare: {ignore: []}

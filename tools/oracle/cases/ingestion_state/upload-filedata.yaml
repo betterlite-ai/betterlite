@@ -1,0 +1,16 @@
+kind: helper
+name: upload-filedata
+call:
+  b3451:
+    mode: upload
+    options:
+      vector_store:
+        custom_llm_provider: openai
+    file_data:
+      filename: notes.txt
+      content_base64: aGVsbG8gdXBsb2Fk
+      content_type: text/plain
+    file_url: https://host/remote.txt
+    file_id: file_1
+env: {}
+compare: {ignore: []}

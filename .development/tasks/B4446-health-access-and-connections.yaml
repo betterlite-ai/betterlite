@@ -34,7 +34,7 @@ description: >-
 
   Direct dependencies:
 
-  - B052: user_api_key_auth on the POST /health/test_connection route.
+  - B003: the key auth middleware in front of the POST /health/test_connection route (LiteLLM's user_api_key_auth).
   - B322: Router._deployment_usable_by_team for team ownership checking in _caller_may_probe_deployment.
   - B401: Deployment.__init__ for native deployment construction in the route.
   - B747: _resolve_key_models_for_auth_check for model-list filtering.

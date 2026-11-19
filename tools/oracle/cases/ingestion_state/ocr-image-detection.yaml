@@ -1,0 +1,14 @@
+kind: helper
+name: ocr-image-detection
+call:
+  b3451:
+    mode: ocr
+    options:
+      ocr:
+        model: mistral/mistral-ocr-2505
+    file_content_base64: aW1hZ2U=
+    content_type: image/png
+    pages:
+      - text from the image
+env: {}
+compare: {ignore: []}

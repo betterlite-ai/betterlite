@@ -1,0 +1,12 @@
+kind: helper
+name: file-upload-options-extract-cached-body
+call:
+  file_upload_options:
+    calls:
+      - function: extract
+        body: {model: m}
+        target_storage_form: " azure_storage "
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: true}
+      - {function: managed_id, resource_id: file-1, resource_kind: file, require_managed_files: true}
+env: {}
+compare: {ignore: []}
