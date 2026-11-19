@@ -58,11 +58,16 @@ pub(super) fn decode_payload(payload: &str) -> Option<Vec<u8>> {
         Some(_) => return None,
         None => (filtered.as_str(), false),
     };
-    let remainder = data.len() % 4;
+    let remainder = data.len().checked_rem(4)?;
     if remainder != 0 && !padded {
         return None;
     }
+    let padding = if remainder == 0 {
+        0_usize
+    } else {
+        4_usize.checked_sub(remainder)?
+    };
     let mut canonical = String::from(data);
-    canonical.push_str(&"=".repeat((4 - remainder) % 4));
+    canonical.push_str(&"=".repeat(padding));
     DATA_URL_BASE64.decode(canonical).ok()
 }

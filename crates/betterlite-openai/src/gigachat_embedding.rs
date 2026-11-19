@@ -169,33 +169,33 @@ fn rewrite_item_usage(fields: &mut Object) -> Result<u64, GigaChatEmbeddingError
     };
     let mut total = 0_u64;
     for item in items {
-        let Some(item) = item.as_object_mut() else {
+        let Some(entry) = item.as_object_mut() else {
             return Err(invalid_reply("an embedding item is not an object"));
         };
-        let Some(usage) = item.remove("usage") else {
+        let Some(detached) = entry.remove("usage") else {
             continue;
         };
-        let Some(usage) = usage.as_object() else {
+        let Some(counts) = detached.as_object() else {
             return Err(invalid_reply("an embedding item usage is not an object"));
         };
-        let Some(counted) = usage.get("prompt_tokens") else {
+        let Some(reported) = counts.get("prompt_tokens") else {
             continue;
         };
-        let Some(counted) = counted.as_u64() else {
+        let Some(count) = reported.as_u64() else {
             return Err(invalid_reply(
                 "an embedding item prompt_tokens is not a non-negative integer",
             ));
         };
-        total = total.saturating_add(counted);
+        total = total.saturating_add(count);
     }
     Ok(total)
 }
 
 fn usage_object(total: u64) -> Object {
-    let total = u32::try_from(total).unwrap_or(u32::MAX);
+    let capped = u32::try_from(total).unwrap_or(u32::MAX);
     Object::from_iter([
-        (String::from("prompt_tokens"), Value::from(total)),
-        (String::from("total_tokens"), Value::from(total)),
+        (String::from("prompt_tokens"), Value::from(capped)),
+        (String::from("total_tokens"), Value::from(capped)),
     ])
 }
 

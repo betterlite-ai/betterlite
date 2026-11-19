@@ -8,6 +8,7 @@ use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::header::AUTHORIZATION;
+use http::header::InvalidHeaderValue;
 use http::{HeaderMap, HeaderValue, Method, header::CONTENT_TYPE};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -82,16 +83,35 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
 
     async fn try_upload(&self, image_url: &str) -> Result<String, UploadError> {
         let key = hex::encode(Sha256::digest(image_url.as_bytes()));
-        let cached = self
-            .cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&key)
-            .cloned();
-        if let Some(id) = cached {
+        if let Some(id) = self.cached(&key) {
             return Ok(id);
         }
         let image = self.image(image_url).await?;
+        let id = self.upload_image(image).await?;
+        self.remember(&key, &id);
+        Ok(id)
+    }
+
+    fn cached(&self, key: &str) -> Option<String> {
+        self.cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+
+    fn remember(&self, key: &str, id: &str) {
+        if self.capacity == 0 {
+            return;
+        }
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if cache.len() >= self.capacity {
+            cache.shift_remove_index(0);
+        }
+        cache.insert(key.to_owned(), id.to_owned());
+    }
+
+    async fn upload_image(&self, image: Image) -> Result<String, UploadError> {
         let filename = format!("{}.{}", self.ids.new_uuid(), image.extension);
         let credentials = self
             .credentials
@@ -107,17 +127,10 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
             return Err(UploadError::UploadStatus(reply.status));
         }
         let UploadReply { id } = serde_json::from_slice::<UploadReply>(&reply.body)?;
-        let Some(id) = id.filter(|value| !value.is_empty()) else {
+        let Some(file_id) = id.filter(|value| !value.is_empty()) else {
             return Err(UploadError::MissingId);
         };
-        if self.capacity > 0 {
-            let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-            if cache.len() >= self.capacity {
-                cache.shift_remove_index(0);
-            }
-            cache.insert(key, id.clone());
-        }
-        Ok(id)
+        Ok(file_id)
     }
 
     async fn image(&self, image_url: &str) -> Result<Image, UploadError> {
@@ -129,6 +142,10 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
                 data,
             });
         }
+        self.download_image(image_url).await
+    }
+
+    async fn download_image(&self, image_url: &str) -> Result<Image, UploadError> {
         let url = Url::parse(image_url).map_err(|source| UploadError::Url {
             what: "image",
             source,
@@ -170,6 +187,22 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
         filename: String,
         image: Image,
     ) -> Result<UpstreamResponse, UploadError> {
+        let request = self.upload_request(token, filename, image)?;
+        self.transport
+            .upload(request)
+            .await
+            .map_err(|source| UploadError::Transport {
+                step: "upload",
+                source,
+            })
+    }
+
+    fn upload_request(
+        &self,
+        token: &SecretString,
+        filename: String,
+        image: Image,
+    ) -> Result<OutboundRequest, UploadError> {
         let base = get_api_base(self.api_base.as_deref(), self.api_base_env.as_deref());
         let url =
             Url::parse(&format!("{base}{FILES_SUFFIX}")).map_err(|source| UploadError::Url {
@@ -181,38 +214,35 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))?,
         );
-        let request = OutboundRequest {
+        Ok(OutboundRequest {
             method: Method::POST,
             url,
             query: Vec::new(),
             headers,
             body: RequestBody::Multipart {
                 boundary: self.ids.new_uuid().simple().to_string(),
-                parts: vec![
-                    MultipartPart {
-                        name: String::from(PURPOSE_FIELD),
-                        file_name: None,
-                        content_type: None,
-                        data: PURPOSE_VALUE.as_bytes().to_vec(),
-                    },
-                    MultipartPart {
-                        name: String::from(FILE_FIELD),
-                        file_name: Some(filename),
-                        content_type: Some(image.content_type),
-                        data: image.data,
-                    },
-                ],
+                parts: upload_parts(filename, image),
             },
             deadline: UPLOAD_TIMEOUT,
-        };
-        self.transport
-            .upload(request)
-            .await
-            .map_err(|source| UploadError::Transport {
-                step: "upload",
-                source,
-            })
+        })
     }
+}
+
+fn upload_parts(filename: String, image: Image) -> Vec<MultipartPart> {
+    vec![
+        MultipartPart {
+            name: String::from(PURPOSE_FIELD),
+            file_name: None,
+            content_type: None,
+            data: PURPOSE_VALUE.as_bytes().to_vec(),
+        },
+        MultipartPart {
+            name: String::from(FILE_FIELD),
+            file_name: Some(filename),
+            content_type: Some(image.content_type),
+            data: image.data,
+        },
+    ]
 }
 
 #[async_trait]
@@ -260,7 +290,7 @@ enum UploadError {
     #[error("the authorization header is not valid: {source}")]
     Header {
         #[from]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
 }
 

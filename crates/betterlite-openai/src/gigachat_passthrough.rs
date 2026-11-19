@@ -82,9 +82,9 @@ pub async fn validate_environment(
     credentials: Option<&SecretString>,
     bearer: &dyn GigachatBearer,
 ) -> Result<Headers, GigachatPassthroughError> {
-    let credentials = credentials.filter(|value| !value.expose_secret().is_empty());
+    let supplied = credentials.filter(|value| !value.expose_secret().is_empty());
     let token = bearer
-        .access_token(credentials)
+        .access_token(supplied)
         .await
         .map_err(|error| GigachatPassthroughError::Token(Box::new(error)))?;
     let mut merged = headers;
@@ -162,9 +162,8 @@ impl BasePassthroughConfig for GigachatPassthroughConfig {
             let Ok(Value::Object(_)) = serde_json::from_str::<Value>(payload) else {
                 continue;
             };
-            match chunk_parser(payload.as_bytes(), &UuidIds) {
-                Ok(StreamEvent::Chunk(parsed)) => chunks.push(*parsed),
-                Ok(StreamEvent::Done) | Err(_) => continue,
+            if let Ok(StreamEvent::Chunk(parsed)) = chunk_parser(payload.as_bytes(), &UuidIds) {
+                chunks.push(*parsed);
             }
         }
         (!chunks.is_empty()).then_some(GigachatPassthroughLogged::Chunks(chunks))
