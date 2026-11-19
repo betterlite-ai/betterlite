@@ -171,11 +171,12 @@ impl GaugeCache for RecordingCache {
         state
             .batch_reads
             .push(json!({"keys": keys, "local_only": local_only}));
-        Some(
-            keys.iter()
-                .map(|key| state.values.get(key).cloned())
-                .collect(),
-        )
+        let values = keys
+            .iter()
+            .map(|key| state.values.get(key).cloned())
+            .collect();
+        drop(state);
+        Some(values)
     }
 }
 
