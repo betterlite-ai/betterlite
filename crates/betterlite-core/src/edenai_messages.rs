@@ -128,13 +128,13 @@ pub struct ReplyInput<'request> {
 // the reply as sent, then the cost it carries goes to the call log and a reply without one leaves it alone
 pub fn transform_response(input: ReplyInput<'_>) -> Result<ResponseRecord, EdenAiMessagesError> {
     let record = decode_messages_response(input.body, input.status, input.limits)?;
-    if let Some(cost) = reply_cost(&record)
-        && let Some(number) = Number::from_str(&cost.normalize().to_string()).ok()
-    {
-        input
-            .state
-            .model_call_details
-            .insert(String::from(RESPONSE_COST), HiddenJson::Number(number));
+    if let Some(cost) = reply_cost(&record) {
+        if let Some(number) = Number::from_str(&cost.normalize().to_string()).ok() {
+            input
+                .state
+                .model_call_details
+                .insert(String::from(RESPONSE_COST), HiddenJson::Number(number));
+        }
     }
     Ok(record)
 }

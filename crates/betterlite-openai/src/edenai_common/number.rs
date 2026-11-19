@@ -16,8 +16,10 @@ pub(super) fn cost_decimal(text: &str) -> Option<Decimal> {
         Some((whole, fraction)) => (whole, fraction),
         None => (mantissa, ""),
     };
-    let digits_only = whole.chars().all(|character| character.is_ascii_digit())
-        && fraction.chars().all(|character| character.is_ascii_digit());
+    let digits_only = whole
+        .chars()
+        .chain(fraction.chars())
+        .all(|character| character.is_ascii_digit());
     if !digits_only || (whole.is_empty() && fraction.is_empty()) {
         return None;
     }
@@ -41,7 +43,10 @@ fn normalized_exponent(exponent: &str) -> Option<String> {
         Some(unsigned) => unsigned,
         None => exponent,
     };
-    if unsigned.is_empty() || !unsigned.chars().all(|character| character.is_ascii_digit()) {
+    if unsigned.is_empty() {
+        return None;
+    }
+    if !unsigned.chars().all(|character| character.is_ascii_digit()) {
         return None;
     }
     Some(exponent.to_owned())
