@@ -109,11 +109,11 @@ pub(super) fn terminal_chunks(stop_reason: &str, explanation: Option<&str>, usag
     let mut delta = IndexMap::new();
     delta.insert("stop_reason".to_owned(), text(stop_reason));
     delta.insert("stop_sequence".to_owned(), Json::Null);
-    if let Some(explanation) = explanation {
+    if let Some(label) = explanation {
         let mut details = IndexMap::new();
         details.insert("type".to_owned(), text("refusal"));
         details.insert("category".to_owned(), Json::Null);
-        details.insert("explanation".to_owned(), text(explanation));
+        details.insert("explanation".to_owned(), text(label));
         delta.insert("stop_details".to_owned(), Json::Object(details));
     }
     let mut message_delta = IndexMap::new();
@@ -157,8 +157,8 @@ pub(super) fn completed(
         .expect("the event processes");
 }
 
-// A valid status needs an int in 400..=599 or a decimal string in that range; a message needs text.
-pub(super) fn failure_status_and_message_matrix() {
+// A valid status needs an int in 400..=599 or a decimal string in that range.
+pub(super) fn failure_status_matrix() {
     let statuses: &[(&str, u16)] = &[
         ("429", 429),
         ("\"\u{0664}\u{0662}\u{0669}\"", 429),
@@ -183,6 +183,10 @@ pub(super) fn failure_status_and_message_matrix() {
             "status {raw}"
         );
     }
+}
+
+// A message needs a nonempty string; any other value falls back to the failure text.
+pub(super) fn failure_message_matrix() {
     let messages: &[(&str, &str)] = &[
         ("\"busy\"", "busy"),
         ("429", "boom"),
@@ -320,7 +324,7 @@ pub(super) fn message_start_once() {
     process(&mut state, &created);
     process(&mut state, &created);
     assert_eq!(drained(&mut state), json(MESSAGE_START));
-    assert!(state.snapshot().sent_message_start);
+    assert!(state.snapshot().sent_message_start.0);
 }
 
 pub(super) fn silent_events() {
@@ -335,7 +339,7 @@ pub(super) fn silent_events() {
         &mapping(r#"{"type":"response.output_item.added"}"#),
     );
     assert_eq!(drained(&mut state), json("[]"));
-    assert!(!state.snapshot().sent_message_start);
+    assert!(!state.snapshot().sent_message_start.0);
 }
 
 pub(super) fn open_message_and_tool() {
@@ -481,7 +485,7 @@ pub(super) fn refusal_deltas() {
     );
 }
 
-pub(super) fn attributed_fallbacks() {
+pub(super) fn attributed_falsey_fallbacks() {
     let falsey_delta = text("");
     let falsey_id = text("");
     let attributes = EventAttributes {
@@ -507,6 +511,11 @@ pub(super) fn attributed_fallbacks() {
             r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"fallback"}}]"#
         )
     );
+}
+
+pub(super) fn attributed_truthy_delta() {
+    let fields =
+        mapping(r#"{"type":"response.output_text.delta","item_id":"item_a","delta":"fallback"}"#);
     let truthy_delta = text("attr");
     let truthy_attributes = EventAttributes {
         event_type: None,
@@ -516,6 +525,7 @@ pub(super) fn attributed_fallbacks() {
         summary_index: None,
         response: None,
     };
+    let mut state = state();
     state
         .process_event(ParsedEvent {
             attributes: truthy_attributes,
@@ -552,7 +562,7 @@ pub(super) fn attributed_event_type_fallback() {
             })
             .expect("the event processes");
         assert_eq!(
-            state.snapshot().sent_message_start,
+            state.snapshot().sent_message_start.0,
             starts,
             "{event_type:?}"
         );

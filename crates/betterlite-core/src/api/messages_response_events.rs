@@ -6,6 +6,8 @@ use betterlite_redact::secret::Redactor;
 
 use crate::api::api_boundaries::ApiLimits;
 
+use self::error::MessagesResponseEventError;
+use self::input::ParsedEvent;
 use self::log::StreamLog;
 
 mod chunks;
@@ -19,6 +21,10 @@ mod tests;
 // The "\n\n" litellm/llms/anthropic/pass_through/responses_adapters/transformation.py puts between reasoning summary parts.
 const SUMMARY_PART_SEPARATOR: &str = "\n\n";
 
+// A bool in the stream state; the newtype keeps struct_excessive_bools off a record that declares three
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct StreamFlag(pub bool);
+
 // AnthropicResponsesStreamWrapper's queue and maps, which B986 iterates and re-emits as Anthropic SSE.
 pub struct MessageStreamState {
     message_id: String,
@@ -26,9 +32,9 @@ pub struct MessageStreamState {
     current_block_index: i64,
     item_id_to_block_index: BTreeMap<String, i64>,
     pending_tool_ids: BTreeMap<String, Json>,
-    sent_message_start: bool,
-    sent_message_stop: bool,
-    stream_failed: bool,
+    sent_message_start: StreamFlag,
+    sent_message_stop: StreamFlag,
+    stream_failed: StreamFlag,
     chunk_queue: VecDeque<Json>,
     refusal_text: String,
     logs: Vec<StreamLog>,
@@ -44,15 +50,16 @@ pub struct MessageStreamSnapshot {
     pub item_id_to_block_index: BTreeMap<String, i64>,
     pub pending_tool_ids: BTreeMap<String, Json>,
     pub refusal_text: String,
-    pub sent_message_start: bool,
-    pub sent_message_stop: bool,
-    pub stream_failed: bool,
+    pub sent_message_start: StreamFlag,
+    pub sent_message_stop: StreamFlag,
+    pub stream_failed: StreamFlag,
     pub logs: Vec<StreamLog>,
 }
 
+// The type's one inherent impl: multiple_inherent_impl keeps the event handlers free in events and failure.
 impl MessageStreamState {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         message_id: String,
         model: String,
         redactor: Option<Arc<Redactor>>,
@@ -64,9 +71,9 @@ impl MessageStreamState {
             current_block_index: -1,
             item_id_to_block_index: BTreeMap::new(),
             pending_tool_ids: BTreeMap::new(),
-            sent_message_start: false,
-            sent_message_stop: false,
-            stream_failed: false,
+            sent_message_start: StreamFlag(false),
+            sent_message_stop: StreamFlag(false),
+            stream_failed: StreamFlag(false),
             chunk_queue: VecDeque::new(),
             refusal_text: String::new(),
             logs: Vec::new(),
@@ -90,11 +97,35 @@ impl MessageStreamState {
         }
     }
 
+    // _process_event: one parsed Responses event becomes zero or more queued Anthropic chunks.
+    pub fn process_event(
+        &mut self,
+        event: ParsedEvent<'_>,
+    ) -> Result<(), MessagesResponseEventError> {
+        let Some(event_type) = event.event_type() else {
+            return Ok(());
+        };
+        match event_type {
+            "response.created" => self.start_message(),
+            "response.output_item.added" => events::item_added(self, event),
+            "response.refusal.delta" => events::refusal_delta(self, event),
+            "response.output_text.delta" => events::text_delta(self, event),
+            "response.reasoning_summary_part.added" => events::summary_part_added(self, event),
+            "response.reasoning_summary_text.delta" => events::summary_text_delta(self, event),
+            "response.function_call_arguments.delta" => events::arguments_delta(self, event),
+            "response.output_item.done" => events::item_done(self, event),
+            "response.failed" => return failure::failed(self, event),
+            "response.completed" | "response.incomplete" => return events::completed(self, event),
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub(super) fn start_message(&mut self) {
-        if self.sent_message_start {
+        if self.sent_message_start.0 {
             return;
         }
-        self.sent_message_start = true;
+        self.sent_message_start = StreamFlag(true);
         self.chunk_queue
             .push_back(chunks::message_start(&self.message_id, &self.model));
     }
@@ -144,7 +175,7 @@ impl MessageStreamState {
         self.current_block_index
     }
 
-    fn next_block_index(&mut self) -> i64 {
+    const fn next_block_index(&mut self) -> i64 {
         self.current_block_index = self.current_block_index.saturating_add(1);
         self.current_block_index
     }

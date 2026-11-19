@@ -13,6 +13,7 @@ use crate::api::responses_stream_primitives::error_fields::{
 };
 
 use super::MessageStreamState;
+use super::StreamFlag;
 use super::error::MessagesResponseEventError;
 use super::input::{ErrorAttribute, InvalidFailedResponse, ParsedEvent, text};
 use super::log::StreamLog;
@@ -80,10 +81,10 @@ pub fn anthropic_error_chunk(
     redactor: Option<&Redactor>,
     limits: ApiLimits,
 ) -> Result<Json, MessagesResponseEventError> {
-    let raw_message = match redactor {
-        Some(scrubber) => scrubber.redact_internal_details(message),
-        None => message.to_owned(),
-    };
+    let raw_message = redactor.map_or_else(
+        || message.to_owned(),
+        |scrubber| scrubber.redact_internal_details(message),
+    );
     let record = AnthropicExceptionMapping::transform_to_anthropic_error(
         status_code,
         &raw_message,
@@ -100,49 +101,52 @@ pub fn anthropic_error_chunk(
         .map_err(MessagesResponseEventError::Json)
 }
 
-impl MessageStreamState {
-    // The exception path of __anext__: the parsed failure chain becomes the terminal error chunk.
-    pub fn fail_with(&mut self, failure: &FailureCause) -> Result<(), MessagesResponseEventError> {
-        let (status_code, message) = failure_status_and_message(failure);
-        self.fail_stream(status_code, &message)
-    }
+// The exception path of __anext__: the parsed failure chain becomes the terminal error chunk.
+pub fn fail_with(
+    state: &mut MessageStreamState,
+    failure: &FailureCause,
+) -> Result<(), MessagesResponseEventError> {
+    let (status_code, message) = failure_status_and_message(failure);
+    fail_stream(state, status_code, &message)
+}
 
-    pub(super) fn failed(
-        &mut self,
-        event: ParsedEvent<'_>,
-    ) -> Result<(), MessagesResponseEventError> {
-        let error = event
-            .failed_error()
-            .map_err(|InvalidFailedResponse| MessagesResponseEventError::FailedEvent)?;
-        let stream_error = match error {
-            Some(ErrorAttribute::Mapping(fields)) => StreamErrorObject::Mapping(fields),
-            Some(ErrorAttribute::Attributes(attributes)) => {
-                StreamErrorObject::Attributes(attributes)
-            }
-            None => StreamErrorObject::Attributes(StreamErrorAttributes::default()),
-        };
-        let (status_code, message) = error_status_and_message(stream_error);
-        let text = format!(
-            "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed ({status_code}): {message}",
-            self.model
-        );
-        tracing::error!("{text}");
-        self.logs.push(StreamLog {
-            level: "error",
-            message: text,
-        });
-        self.fail_stream(status_code, &message)
-    }
+pub(super) fn failed(
+    state: &mut MessageStreamState,
+    event: ParsedEvent<'_>,
+) -> Result<(), MessagesResponseEventError> {
+    let error = event
+        .failed_error()
+        .map_err(|InvalidFailedResponse| MessagesResponseEventError::FailedEvent)?;
+    let stream_error = match error {
+        Some(ErrorAttribute::Mapping(fields)) => StreamErrorObject::Mapping(fields),
+        Some(ErrorAttribute::Attributes(attributes)) => StreamErrorObject::Attributes(attributes),
+        None => StreamErrorObject::Attributes(StreamErrorAttributes::default()),
+    };
+    let (status_code, message) = error_status_and_message(stream_error);
+    let text = format!(
+        "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed ({status_code}): {message}",
+        state.model
+    );
+    tracing::error!("{text}");
+    state.logs.push(StreamLog {
+        level: "error",
+        message: text,
+    });
+    fail_stream(state, status_code, &message)
+}
 
-    fn fail_stream(
-        &mut self,
-        status_code: u16,
-        message: &str,
-    ) -> Result<(), MessagesResponseEventError> {
-        self.stream_failed = true;
-        let chunk =
-            anthropic_error_chunk(status_code, message, self.redactor.as_deref(), self.limits)?;
-        self.chunk_queue.push_back(chunk);
-        Ok(())
-    }
+fn fail_stream(
+    state: &mut MessageStreamState,
+    status_code: u16,
+    message: &str,
+) -> Result<(), MessagesResponseEventError> {
+    state.stream_failed = StreamFlag(true);
+    let chunk = anthropic_error_chunk(
+        status_code,
+        message,
+        state.redactor.as_deref(),
+        state.limits,
+    )?;
+    state.chunk_queue.push_back(chunk);
+    Ok(())
 }

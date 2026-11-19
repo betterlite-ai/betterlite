@@ -13,17 +13,18 @@ use super::input::{
 mod common;
 use common::{
     FAILED_DEFAULT, FAILED_LOG_DEFAULT, MESSAGE_ITEM, assert_mapped,
-    attributed_event_type_fallback, attributed_fallbacks, completed, completed_usage, discard,
-    drained, failed_event_redaction, failure, failure_chains, failure_redaction,
-    failure_status_and_message_matrix, json, mapped_error_types, mapping, message_start_once,
-    non_block_items, open_message_and_tool, passthrough_error_messages, process, projected_usage,
-    refusal_deltas, reopen_and_empty_id, silent_events, state, terminal_chunks, text,
-    text_before_block, text_deltas, zero_usage,
+    attributed_event_type_fallback, attributed_falsey_fallbacks, attributed_truthy_delta,
+    completed, completed_usage, discard, drained, failed_event_redaction, failure, failure_chains,
+    failure_message_matrix, failure_redaction, failure_status_matrix, json, mapped_error_types,
+    mapping, message_start_once, non_block_items, open_message_and_tool,
+    passthrough_error_messages, process, projected_usage, refusal_deltas, reopen_and_empty_id,
+    silent_events, state, terminal_chunks, text, text_before_block, text_deltas, zero_usage,
 };
 
 #[test]
 fn failure_projection() {
-    failure_status_and_message_matrix();
+    failure_status_matrix();
+    failure_message_matrix();
     failure_chains();
     mapped_error_types();
     passthrough_error_messages();
@@ -38,9 +39,9 @@ fn exception_path_failure() {
         r#"{"kind":"mid_stream_fallback","text":"outer","status_code":502,"original_exception":{"kind":"plain","text":"boom","status_code":429,"message":"busy"}}"#,
     );
     let mut state = state();
-    state.fail_with(&cause).expect("the failure maps");
+    super::failure::fail_with(&mut state, &cause).expect("the failure maps");
     let snapshot = state.snapshot();
-    assert!(snapshot.stream_failed);
+    assert!(snapshot.stream_failed.0);
     assert_eq!(
         Json::List(snapshot.chunks),
         json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
@@ -55,11 +56,12 @@ fn message_start_and_item_opening() {
     open_message_and_tool();
     reopen_and_empty_id();
     non_block_items();
-    item_attribute_precedence();
+    item_attribute_truthy_scalar();
+    item_attribute_empty_object();
 }
 
-// getattr(event, "item") is truthy for 5 and falsey for {}, so only the empty object falls back to the dict item.
-fn item_attribute_precedence() {
+// getattr(event, "item") is truthy for 5, so a scalar attribute item hides the dict item and no block opens.
+fn item_attribute_truthy_scalar() {
     let number = json("5");
     let fields =
         mapping(r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#);
@@ -79,7 +81,13 @@ fn item_attribute_precedence() {
         .expect("the event processes");
     assert_eq!(drained(&mut preceded), json("[]"));
     assert!(preceded.snapshot().item_id_to_block_index.is_empty());
+}
+
+// An empty object is falsey, so the dict item falls through and opens the text block.
+fn item_attribute_empty_object() {
     let empty = json("{}");
+    let fields =
+        mapping(r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#);
     let mut falls_back = state();
     falls_back
         .process_event(ParsedEvent {
@@ -108,7 +116,8 @@ fn text_and_refusal_deltas() {
     text_deltas();
     text_before_block();
     refusal_deltas();
-    attributed_fallbacks();
+    attributed_falsey_fallbacks();
+    attributed_truthy_delta();
     attributed_event_type_fallback();
     two_blocks_target_the_first();
     strange_item_ids();
@@ -520,7 +529,7 @@ fn completed_refusal() {
         drained(&mut state),
         terminal_chunks("refusal", Some("final-no"), projected_usage())
     );
-    assert!(state.snapshot().sent_message_stop);
+    assert!(state.snapshot().sent_message_stop.0);
 }
 
 fn completed_tool_and_incomplete() {
@@ -767,8 +776,8 @@ fn failed_mapping() {
         Json::List(snapshot.chunks),
         json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
     );
-    assert!(snapshot.stream_failed);
-    assert!(!snapshot.sent_message_stop);
+    assert!(snapshot.stream_failed.0);
+    assert!(!snapshot.sent_message_stop.0);
     assert_eq!(snapshot.logs.len(), 1);
     let log = snapshot.logs.first().expect("the failure log");
     assert_eq!(log.level, "error");
@@ -795,7 +804,7 @@ fn failed_defaults() {
             json(FAILED_DEFAULT),
             "{source}"
         );
-        assert!(snapshot.stream_failed);
+        assert!(snapshot.stream_failed.0);
         assert_eq!(
             snapshot.logs.first().map(|log| log.message.as_str()),
             Some(FAILED_LOG_DEFAULT)
@@ -821,7 +830,7 @@ fn failed_scalar_responses() {
             "{source}"
         );
         let snapshot = state.snapshot();
-        assert!(!snapshot.stream_failed);
+        assert!(!snapshot.stream_failed.0);
         assert!(snapshot.chunks.is_empty());
         assert!(snapshot.logs.is_empty());
     }
@@ -860,7 +869,7 @@ fn failed_attribute() {
         Json::List(snapshot.chunks),
         json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
     );
-    assert!(snapshot.stream_failed);
+    assert!(snapshot.stream_failed.0);
 }
 
 // A dict error is read by key and a provider object by attribute; both reach the same error chunk.
@@ -915,8 +924,8 @@ fn failed_after_content() {
             r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ahead"}},{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#
         )
     );
-    assert!(state.snapshot().stream_failed);
-    assert!(!state.snapshot().sent_message_stop);
+    assert!(state.snapshot().stream_failed.0);
+    assert!(!state.snapshot().sent_message_stop.0);
 }
 
 fn failed_twice() {
@@ -926,7 +935,7 @@ fn failed_twice() {
     let snapshot = state.snapshot();
     assert_eq!(snapshot.chunks.len(), 2);
     assert_eq!(snapshot.logs.len(), 2);
-    assert!(snapshot.stream_failed);
+    assert!(snapshot.stream_failed.0);
 }
 
 #[test]

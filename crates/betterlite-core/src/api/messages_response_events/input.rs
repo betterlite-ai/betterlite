@@ -93,37 +93,37 @@ impl<'event> ParsedEvent<'event> {
     // A truthy attribute item_id wins over the dict value; a falsey one falls back to it.
     #[must_use]
     pub(super) fn item_id(self) -> Option<&'event Json> {
-        match self.attributes.item_id.filter(|value| is_present(value)) {
-            Some(value) => Some(value),
-            None => self.mapping.and_then(|fields| fields.get("item_id")),
-        }
+        self.attributes
+            .item_id
+            .filter(|value| is_present(value))
+            .or_else(|| self.mapping?.get("item_id"))
     }
 
     // A falsey attribute delta falls back to the dict value, and a non-dict event lands on getattr's "" default.
     #[must_use]
-    pub(super) fn delta(self) -> Option<&'event Json> {
-        match self.attributes.delta.filter(|value| is_present(value)) {
-            Some(value) => Some(value),
-            None => Some(self.field("delta").unwrap_or(&EMPTY_DELTA)),
-        }
+    pub(super) fn delta(self) -> &'event Json {
+        self.attributes
+            .delta
+            .filter(|value| is_present(value))
+            .unwrap_or_else(|| self.field("delta").unwrap_or(&EMPTY_DELTA))
     }
 
     // _field is shape-sensitive: a dict is read with get, and a provider object with getattr only.
     #[must_use]
     pub(super) fn field(self, name: &str) -> Option<&'event Json> {
-        match self.mapping {
-            Some(fields) => fields.get(name),
-            None => match name {
-                "item_id" => self.attributes.item_id,
-                "summary_index" => self.attributes.summary_index,
-                _ => None,
-            },
+        if let Some(fields) = self.mapping {
+            return fields.get(name);
+        }
+        match name {
+            "item_id" => self.attributes.item_id,
+            "summary_index" => self.attributes.summary_index,
+            _ => None,
         }
     }
 
     // The completed branch reads output, status and usage by attribute only, so a dict, scalar or absent response exposes no fields.
     #[must_use]
-    pub(super) fn response(self) -> Option<ResponseAttributes<'event>> {
+    pub(super) const fn response(self) -> Option<ResponseAttributes<'event>> {
         match self.attributes.response {
             Some(ResponseAttribute::Object(attributes)) => Some(attributes),
             Some(ResponseAttribute::Value(_)) | None => None,

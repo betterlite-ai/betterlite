@@ -13,7 +13,7 @@ use betterlite_core::api::responses_stream_errors::failure::FailureCause;
 use betterlite_core::api::responses_stream_primitives::error_fields::StreamErrorAttributes;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponseApiUsage;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
@@ -144,7 +144,7 @@ fn run_step(
         Step::ProcessEvent { event } => {
             process_event(state, event)?;
             Ok(StepResult::ProcessEvent {
-                failed: state.snapshot().stream_failed,
+                failed: state.snapshot().stream_failed.0,
             })
         }
         Step::ProjectFailure { failure } => {
