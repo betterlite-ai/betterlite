@@ -72,19 +72,25 @@ impl Session {
         ))
     }
 
+    fn stage_output(&self, scripted: Option<&ScriptedResult>) -> Result<(), SdkHttpError> {
+        let Some(scripted) = scripted else {
+            return Ok(());
+        };
+        let output = scripted_output(scripted)?;
+        *self
+            .engine
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(output);
+        Ok(())
+    }
+
     async fn run_step(
         &self,
         step: &Step,
         interception: &CompressionInterception<ScriptedEngine>,
     ) -> Result<StepOutcome, SdkHttpError> {
-        if let Some(scripted) = step.compress.as_ref() {
-            let output = scripted_output(scripted)?;
-            *self
-                .engine
-                .pending
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(output);
-        }
+        self.stage_output(step.compress.as_ref())?;
         *self.now.lock().unwrap_or_else(PoisonError::into_inner) = step.now;
         let mut request = step.request.clone();
         let previous = request.get(CALL_ID_FIELD).cloned();
@@ -98,25 +104,27 @@ impl Session {
             .into_keys()
             .collect();
         lookup.sort();
+        let compress_calls = take(
+            &mut *self
+                .engine
+                .calls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        let diagnostics = take(
+            &mut *self
+                .diagnostics
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
         Ok(StepOutcome {
             settings: record_of(&interception.settings),
             skipped: result == HookResult::Skipped,
             request,
-            compress_calls: take(
-                &mut *self
-                    .engine
-                    .calls
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner),
-            ),
+            compress_calls,
             lookup,
-            diagnostics: take(
-                &mut *self
-                    .diagnostics
-                    .0
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner),
-            ),
+            diagnostics,
         })
     }
 }

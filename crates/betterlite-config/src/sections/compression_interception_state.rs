@@ -94,23 +94,30 @@ impl Section for Raw {
     }
 }
 
+fn resolve_enabled(
+    enabled: Option<RawFlag>,
+    path: &str,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<bool, ConfigError> {
+    match enabled {
+        None => Ok(true),
+        Some(RawFlag::Boolean(flag)) => Ok(flag),
+        Some(RawFlag::Text(text)) => {
+            let name = text
+                .strip_prefix(ENVIRONMENT_PREFIX)
+                .unwrap_or(path)
+                .to_owned();
+            let resolved = resolve_string(text, path, lookup)?;
+            Ok(betterlite_env::flag(&name, &resolved)?.unwrap_or(true))
+        }
+    }
+}
+
 fn convert_params<L>(params: RawParams, path: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let enabled = match params.enabled {
-        None => true,
-        Some(RawFlag::Boolean(flag)) => flag,
-        Some(RawFlag::Text(text)) => {
-            let field = format!("{path}.enabled");
-            let name = text
-                .strip_prefix(ENVIRONMENT_PREFIX)
-                .unwrap_or(&field)
-                .to_owned();
-            let resolved = resolve_string(text, &field, lookup)?;
-            betterlite_env::flag(&name, &resolved)?.unwrap_or(true)
-        }
-    };
+    let enabled = resolve_enabled(params.enabled, &format!("{path}.enabled"), lookup)?;
     let compression_trigger = resolve_number(
         params.compression_trigger,
         &format!("{path}.compression_trigger"),
