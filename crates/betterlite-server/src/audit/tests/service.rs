@@ -167,6 +167,47 @@ async fn a_disabled_policy_keeps_callbacks_and_storage_quiet() {
 }
 
 #[tokio::test]
+async fn an_object_value_that_is_not_json_is_logged_and_skipped() {
+    let (captured, guard) = capture();
+    let (entry, recorder) = logger_entry("first", false);
+    let repository = Arc::new(RecordingRepository::new(true, false));
+    let service = Fixture {
+        callbacks: vec![entry],
+        repository: trait_repository(&repository),
+        ..Fixture::new()
+    }
+    .start();
+    let caller = identity(Some("user-1"), None);
+    let mut broken = object(&caller, None);
+    broken.before_value = Some("{not json");
+    service.create_object_audit_log(broken).await;
+    flush(&service).await;
+    drop(guard);
+    assert!(recorder.delivered.lock().unwrap().is_empty());
+    assert!(repository.inserted.lock().unwrap().is_empty());
+    assert!(captured.text().contains("Failed Creating audit log"));
+}
+
+#[tokio::test]
+async fn the_debug_line_withholds_the_actor_key() {
+    let (captured, guard) = capture();
+    let repository = Arc::new(RecordingRepository::new(true, false));
+    let service = Fixture {
+        repository: trait_repository(&repository),
+        ..Fixture::new()
+    }
+    .start();
+    let mut stored = record();
+    stored.changed_by_api_key = Some(SecretString::from("sk-secret-value".to_owned()));
+    service.create_audit_log_for_update(stored).await;
+    flush(&service).await;
+    drop(guard);
+    let output = captured.text();
+    assert!(output.contains("creating audit log"), "{output}");
+    assert!(!output.contains("sk-secret-value"), "{output}");
+}
+
+#[tokio::test]
 async fn the_callback_runs_while_the_database_write_is_pending() {
     let order = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::new(RecordingLogger::watching("first", Arc::clone(&order)));
