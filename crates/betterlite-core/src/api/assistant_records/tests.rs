@@ -417,12 +417,12 @@ async fn assistant_create_configured_fallbacks() {
         openai_call(&fallback_result).api_base,
         "https://global.test/v1"
     );
-    assert_eq!(seen_auth(&fixture, 1), "Bearer sk-global");
+    assert_eq!(seen_auth(&fixture, 0), "Bearer sk-global");
     assert_eq!(
-        fixture.transport.seen()[1].headers["openai-organization"],
+        fixture.transport.seen()[0].headers["openai-organization"],
         "org-global"
     );
-    assert_eq!(seen_deadline(&fixture, 1), Duration::from_secs(12));
+    assert_eq!(seen_deadline(&fixture, 0), Duration::from_secs(12));
 }
 
 #[tokio::test]
