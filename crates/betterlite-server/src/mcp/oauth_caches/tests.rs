@@ -666,6 +666,13 @@ impl FakeBackend {
         }
     }
 
+    fn refuse(&self, failure: Failure) -> Result<(), FakeError> {
+        if self.failures.contains(&failure) {
+            return Err(FakeError);
+        }
+        Ok(())
+    }
+
     fn value(&self, key: &str) -> Option<String> {
         self.entries
             .lock()
@@ -680,16 +687,12 @@ impl PerUserTokenBackend for FakeBackend {
     type Error = FakeError;
 
     async fn get(&self, key: &str) -> Result<Option<String>, FakeError> {
-        if self.failures.contains(&Failure::Get) {
-            return Err(FakeError);
-        }
+        self.refuse(Failure::Get)?;
         Ok(self.value(key))
     }
 
     async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), FakeError> {
-        if self.failures.contains(&Failure::Set) {
-            return Err(FakeError);
-        }
+        self.refuse(Failure::Set)?;
         self.set_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -704,9 +707,7 @@ impl PerUserTokenBackend for FakeBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), FakeError> {
-        if self.failures.contains(&Failure::Delete) {
-            return Err(FakeError);
-        }
+        self.refuse(Failure::Delete)?;
         self.delete_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

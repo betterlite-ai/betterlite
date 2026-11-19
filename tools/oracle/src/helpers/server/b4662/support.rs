@@ -240,6 +240,13 @@ impl FakeBackend {
             .find(|(recorded, _value, _ttl)| recorded.as_str() == key)
             .map(|(_recorded, _value, ttl)| *ttl)
     }
+
+    fn refuse(&self, failure: Failure, message: &'static str) -> Result<(), FakeError> {
+        if self.failures.contains(&failure) {
+            return Err(FakeError(message));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -247,16 +254,12 @@ impl PerUserTokenBackend for FakeBackend {
     type Error = FakeError;
 
     async fn get(&self, key: &str) -> Result<Option<String>, Self::Error> {
-        if self.failures.contains(&Failure::Get) {
-            return Err(FakeError("the fake cache get failed"));
-        }
+        self.refuse(Failure::Get, "the fake cache get failed")?;
         Ok(self.entry(key))
     }
 
     async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), Self::Error> {
-        if self.failures.contains(&Failure::Set) {
-            return Err(FakeError("the fake cache set failed"));
-        }
+        self.refuse(Failure::Set, "the fake cache set failed")?;
         self.seed(key, value);
         self.sets
             .lock()
@@ -266,9 +269,7 @@ impl PerUserTokenBackend for FakeBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), Self::Error> {
-        if self.failures.contains(&Failure::Delete) {
-            return Err(FakeError("the fake cache delete failed"));
-        }
+        self.refuse(Failure::Delete, "the fake cache delete failed")?;
         self.entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
