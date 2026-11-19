@@ -217,8 +217,7 @@ fn body(source: &str) -> serde_json::Value {
     serde_json::from_str(source).unwrap()
 }
 
-// LiteLLM reads a key through the project view, so a booted case needs the fixture's verified migration chain.
-// A dashboard seed selects that chain; a plain seed stops at the 2025-03 baseline LiteLLM cannot authenticate against.
+// LiteLLM reads a key through the project view, so these cases take the fixture's verified chain, not the 2025-03 baseline a plain seed applies
 #[test]
 fn independent_initial_rows() {
     let case = decode_case(
