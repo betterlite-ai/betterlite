@@ -106,7 +106,13 @@ pub fn resolve_editable_fields(value: Option<&JsonValue>, supported: &[&str]) ->
     };
     let unsupported: Vec<String> = configured
         .iter()
-        .filter(|name| !supported.contains(&name.as_str()) && !is_permission(name))
+        .filter(|name| {
+            !supported.contains(&name.as_str())
+                && !matches!(
+                    name.as_str(),
+                    PROJECTS_PERMISSION | MEMBER_KEY_BUDGETS_PERMISSION
+                )
+        })
         .cloned()
         .collect();
     let mut warnings = Vec::new();
@@ -130,10 +136,6 @@ pub fn resolve_editable_fields(value: Option<&JsonValue>, supported: &[&str]) ->
         }
     }
     Resolution { fields, warnings }
-}
-
-const fn is_permission(name: &str) -> bool {
-    matches!(name, PROJECTS_PERMISSION | MEMBER_KEY_BUDGETS_PERMISSION)
 }
 
 // Whether team admins may edit budgets on the keys of other team members.
