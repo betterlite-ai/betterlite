@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use opentelemetry::KeyValue;
-use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
 
