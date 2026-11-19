@@ -324,6 +324,7 @@ fn a_config_write_that_is_not_an_object_says_so(#[case] config: &str) {
 #[case::non_reasoning_off(r#"{"enable_non_reasoning_tier":false}"#)]
 #[case::classification_mode(r#"{"classification_mode":"every_request"}"#)]
 #[case::empty_plugins(r#"{"plugins":[]}"#)]
+#[case::empty_plugins_with_adaptive(r#"{"adaptive":true,"tiers":{"SIMPLE":["a"]},"plugins":[]}"#)]
 #[case::plugins(r#"{"plugins":["pkg.Plugin"]}"#)]
 #[case::tier_pools(
     r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":0.2}}]}}"#
