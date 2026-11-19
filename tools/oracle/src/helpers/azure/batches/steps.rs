@@ -92,8 +92,10 @@ fn operate(
     connection: Connection<'_, '_, Materializer>,
     operation: Operation<'_>,
 ) -> Result<Reply, AzureBatchesError> {
-    let client = connection.open(operation.check())?;
-    runtime.block_on(call(&client, operation))
+    match connection.open(operation.check()) {
+        Ok(client) => runtime.block_on(call(&client, operation)),
+        Err(error) => Err(error),
+    }
 }
 
 // A client builder that answers None makes every handler action report the missing client first
