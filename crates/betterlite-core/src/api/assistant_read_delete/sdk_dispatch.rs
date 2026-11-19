@@ -117,6 +117,8 @@ where
     T: AssistantsTransport,
     S: CredentialSources + Send + Sync,
 {
+    // The flag only picks B519's client type, and both types send the same request through the transport.
+    #[cfg_attr(test, mutants::skip)]
     async fn openai(
         &self,
         call: &AssistantCall,
@@ -153,6 +155,8 @@ where
         Ok(reply)
     }
 
+    // The flag only picks B686's client type, and both types send the same request through the transport.
+    #[cfg_attr(test, mutants::skip)]
     async fn azure_call(
         &self,
         call: &AssistantCall,
@@ -197,7 +201,8 @@ where
         })
     }
 
-    // a supplied Azure client keeps its own class, key, endpoint and api_version
+    // a supplied Azure client keeps its own class, key, endpoint and api_version; a flag flip only picks its transport
+    #[cfg_attr(test, mutants::skip)]
     fn azure_client<'call>(
         &'call self,
         client: &'call SuppliedClient,

@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
 use betterlite_config::sections::resource_sdk_settings::Settings;
@@ -433,9 +434,33 @@ async fn timeout_resolution_matches_the_facade_chain() {
         .await
         .unwrap();
     assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(600.0));
+    assert_eq!(
+        openai_timeout(&result),
+        Some(Duration::from_secs(600)),
+        "the OpenAI SDK gets the resolved default"
+    );
+
+    let mut input = list_openai(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Number(9.5));
+    let (_, dispatch) = harness(200, PAGE);
+    let result = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(9.5));
 
     let mut input = list_openai(AssistantWrapper::Sync);
     input.params.timeout = Some(AssistantTimeout::Number(0.0));
+    input.params.request_timeout = Some(8.0);
+    let (_, dispatch) = harness(200, PAGE);
+    let result = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(8.0));
+
+    let mut input = list_openai(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Text(String::new()));
     input.params.request_timeout = Some(8.0);
     let (_, dispatch) = harness(200, PAGE);
     let result = facade(dispatch, Settings::default())
@@ -474,6 +499,50 @@ async fn timeout_resolution_matches_the_facade_chain() {
             pool: None,
         })
     );
+    assert_eq!(
+        openai_timeout(&result),
+        Some(Duration::from_secs(9)),
+        "a structured timeout reaches the OpenAI SDK as its read phase"
+    );
+}
+
+#[tokio::test]
+async fn openai_retry_budget_clamps_negative_values() {
+    let (_, dispatch) = harness(200, PAGE);
+    let mut input = list_openai(AssistantWrapper::Sync);
+    input.params.max_retries = Some(-2);
+    let result = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_eq!(openai_retries(&result), Some(0));
+
+    let (_, dispatch) = harness(200, PAGE);
+    let mut input = list_openai(AssistantWrapper::Sync);
+    input.params.max_retries = Some(5);
+    let result = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_eq!(
+        openai_retries(&result),
+        Some(5),
+        "a positive value reaches the SDK unchanged"
+    );
+}
+
+fn openai_timeout(result: &super::AssistantReadDeleteResult) -> Option<Duration> {
+    let AssistantProviderCall::OpenAi(options) = &result.call.provider else {
+        panic!("expected the openai branch");
+    };
+    options.timeout
+}
+
+fn openai_retries(result: &super::AssistantReadDeleteResult) -> Option<u32> {
+    let AssistantProviderCall::OpenAi(options) = &result.call.provider else {
+        panic!("expected the openai branch");
+    };
+    options.max_retries
 }
 
 #[tokio::test]

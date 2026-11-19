@@ -54,9 +54,10 @@ pub(super) fn openai(
         api_base: Some(settings.openai_base(options)),
         timeout: std::time::Duration::try_from_secs_f64(timeout_seconds(timeout)).ok(),
         // the SDK compares its attempt count against max_retries, so a negative value behaves as zero
-        max_retries: input.params.max_retries.map(|retries| {
-            u32::try_from(retries).unwrap_or(if retries < 0 { 0 } else { u32::MAX })
-        }),
+        max_retries: input
+            .params
+            .max_retries
+            .map(|retries| u32::try_from(retries.max(0)).unwrap_or(u32::MAX)),
         organization: settings.openai_organization(options).map(str::to_owned),
     }
 }
