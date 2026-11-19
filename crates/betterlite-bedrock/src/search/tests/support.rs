@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, Ready, ready};
+use std::str::from_utf8;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -154,7 +155,7 @@ pub(super) fn header<'headers>(
 }
 
 pub(super) fn body_text(signed: &AwsSignedRequest) -> &str {
-    std::str::from_utf8(&signed.body).unwrap()
+    from_utf8(&signed.body).unwrap()
 }
 
 pub(super) fn authorization(signed: &AwsSignedRequest) -> &str {

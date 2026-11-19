@@ -11,6 +11,9 @@ use betterlite_bedrock::search::signing::{SignRequest, sign_request};
 use betterlite_bedrock::search::url::complete_url;
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::request::AwsSignedRequest;
+use betterlite_config::sections::bedrock_services_search::{
+    GATEWAY_TOKEN_VARIABLE, GATEWAY_URL_VARIABLE,
+};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::search::provider::SearchQuery;
@@ -177,16 +180,10 @@ fn sign_result(run: &SignRun) -> Value {
 fn signing_environment(run: &SignRun) -> BTreeMap<String, String> {
     let mut environment = BTreeMap::new();
     if let Some(url) = &run.gateway_url {
-        environment.insert(
-            betterlite_config::sections::bedrock_services_search::GATEWAY_URL_VARIABLE.to_owned(),
-            url.clone(),
-        );
+        environment.insert(GATEWAY_URL_VARIABLE.to_owned(), url.clone());
     }
     if let Some(token) = &run.gateway_token {
-        environment.insert(
-            betterlite_config::sections::bedrock_services_search::GATEWAY_TOKEN_VARIABLE.to_owned(),
-            token.clone(),
-        );
+        environment.insert(GATEWAY_TOKEN_VARIABLE.to_owned(), token.clone());
     }
     environment
 }
