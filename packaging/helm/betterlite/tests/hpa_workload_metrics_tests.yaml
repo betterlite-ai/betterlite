@@ -10,8 +10,15 @@ tests:
       - equal: { path: 'spec.metrics[0].resource.name', value: cpu }
       - equal: { path: 'spec.metrics[0].resource.target.type', value: Utilization }
       - equal: { path: 'spec.metrics[0].resource.target.averageUtilization', value: 70 }
-      - equal: { path: 'spec.metrics[1].resource.name', value: memory }
-      - equal: { path: 'spec.metrics[1].resource.target.averageUtilization', value: 80 }
+      - equal:
+          path: spec.metrics[1]
+          value:
+            type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 80
       - notContains: { path: spec.metrics, content: { type: Pods }, any: true }
 
   - it: honours overridden cpu and memory targets on every component
@@ -31,8 +38,15 @@ tests:
     template: backend/hpa.yaml
     asserts:
       - lengthEqual: { path: spec.metrics, count: 1 }
-      - equal: { path: 'spec.metrics[0].resource.name', value: cpu }
-      - equal: { path: 'spec.metrics[0].resource.target.averageUtilization', value: 70 }
+      - equal:
+          path: spec.metrics[0]
+          value:
+            type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
       - notContains: { path: spec.metrics, content: { type: Resource, resource: { name: memory } }, any: true }
 
   - it: scales the ui on cpu only by default
@@ -41,8 +55,15 @@ tests:
       ui.hpa.enabled: true
     asserts:
       - lengthEqual: { path: spec.metrics, count: 1 }
-      - equal: { path: 'spec.metrics[0].resource.name', value: cpu }
-      - equal: { path: 'spec.metrics[0].resource.target.averageUtilization', value: 80 }
+      - equal:
+          path: spec.metrics[0]
+          value:
+            type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 80
 
   - it: adds a memory metric to the backend and ui autoscalers when a memory target is set
     set:
@@ -51,11 +72,27 @@ tests:
       ui.hpa.targetMemoryUtilizationPercentage: 60
     asserts:
       - { lengthEqual: { path: spec.metrics, count: 2 }, template: backend/hpa.yaml }
-      - { equal: { path: 'spec.metrics[1].resource.name', value: memory }, template: backend/hpa.yaml }
-      - { equal: { path: 'spec.metrics[1].resource.target.averageUtilization', value: 75 }, template: backend/hpa.yaml }
+      - equal:
+          path: spec.metrics[1]
+          value:
+            type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 75
+        template: backend/hpa.yaml
       - { lengthEqual: { path: spec.metrics, count: 2 }, template: ui/hpa.yaml }
-      - { equal: { path: 'spec.metrics[1].resource.name', value: memory }, template: ui/hpa.yaml }
-      - { equal: { path: 'spec.metrics[1].resource.target.averageUtilization', value: 60 }, template: ui/hpa.yaml }
+      - equal:
+          path: spec.metrics[1]
+          value:
+            type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 60
+        template: ui/hpa.yaml
 
   - it: scales on cpu inside the gateway container when the collector must stay out of the reading
     template: gateway/hpa.yaml
@@ -76,8 +113,15 @@ tests:
       gateway.collector.enabled: true
       gateway.collector.scaleOnGatewayContainerCpu: false
     asserts:
-      - equal: { path: 'spec.metrics[0].type', value: Resource }
-      - equal: { path: 'spec.metrics[0].resource.name', value: cpu }
+      - equal:
+          path: spec.metrics[0]
+          value:
+            type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
       - isNull: { path: 'spec.metrics[0].containerResource' }
 
   - it: keeps a Resource cpu metric when the collector is off
@@ -86,7 +130,15 @@ tests:
       gateway.collector.enabled: false
       gateway.collector.scaleOnGatewayContainerCpu: true
     asserts:
-      - equal: { path: 'spec.metrics[0].type', value: Resource }
+      - equal:
+          path: spec.metrics[0]
+          value:
+            type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
 
   - it: adds requests-per-second and tokens-per-second Pods metrics after cpu and memory
     template: gateway/hpa.yaml

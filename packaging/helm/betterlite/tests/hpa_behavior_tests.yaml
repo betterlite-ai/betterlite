@@ -9,6 +9,8 @@ tests:
       - { hasDocuments: { count: 0 }, template: ui/hpa.yaml }
       - { isKind: { of: HorizontalPodAutoscaler }, template: gateway/hpa.yaml }
       - { equal: { path: apiVersion, value: autoscaling/v2 }, template: gateway/hpa.yaml }
+      - { isKind: { of: HorizontalPodAutoscaler }, template: backend/hpa.yaml }
+      - { equal: { path: apiVersion, value: autoscaling/v2 }, template: backend/hpa.yaml }
 
   - it: renders a ui autoscaler once ui.hpa.enabled is set
     set:
@@ -16,6 +18,7 @@ tests:
     asserts:
       - { hasDocuments: { count: 1 }, template: ui/hpa.yaml }
       - { isKind: { of: HorizontalPodAutoscaler }, template: ui/hpa.yaml }
+      - { equal: { path: apiVersion, value: autoscaling/v2 }, template: ui/hpa.yaml }
 
   - it: renders no autoscaler for a disabled component even when its own hpa is on
     set:
