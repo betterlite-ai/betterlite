@@ -1,3 +1,4 @@
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
@@ -93,8 +94,8 @@ where
         None => Vec::new(),
     };
     let inputs = scan_inputs(message, &pre)?;
-    let content = message.content.clone();
-    let response_value = convert(chat)?;
+    let original_text = message.content.clone();
+    let response_value: GuardrailValue = convert(chat)?;
     let mut fresh = Object::new();
     let prepared = request_data.as_deref_mut().unwrap_or(&mut fresh);
     prepare_request_data(
@@ -113,7 +114,7 @@ where
     write_text(
         responses_so_far,
         &answer,
-        content.as_deref(),
+        original_text.as_deref(),
         context.guardrail_name,
     )?;
     write_tools(responses_so_far, &answer, &pre, context.guardrail_name)
