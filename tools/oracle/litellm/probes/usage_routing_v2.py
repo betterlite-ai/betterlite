@@ -163,19 +163,23 @@ class Context:
 
 
 def deployment_dict(deployment: DeploymentInput) -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = {"model": deployment.model}
-    for name, value in (("tpm", deployment.params_tpm), ("rpm", deployment.params_rpm)):
-        if value is not None:
-            params[name] = value
-    info: dict[str, JsonValue] = {"id": deployment.id}
-    for name, value in (("tpm", deployment.info_tpm), ("rpm", deployment.info_rpm)):
-        if value is not None:
-            info[name] = value
-    entry: dict[str, JsonValue] = {"model_info": info, "litellm_params": params}
-    for name, value in (("tpm", deployment.tpm), ("rpm", deployment.rpm)):
-        if value is not None:
-            entry[name] = value
-    return entry
+    param_fields: dict[str, JsonValue] = {
+        "model": deployment.model,
+        "tpm": deployment.params_tpm,
+        "rpm": deployment.params_rpm,
+    }
+    info_fields: dict[str, JsonValue] = {
+        "id": deployment.id,
+        "tpm": deployment.info_tpm,
+        "rpm": deployment.info_rpm,
+    }
+    entry_fields: dict[str, JsonValue] = {
+        "model_info": {name: value for name, value in info_fields.items() if value is not None},
+        "litellm_params": {name: value for name, value in param_fields.items() if value is not None},
+        "tpm": deployment.tpm,
+        "rpm": deployment.rpm,
+    }
+    return {name: value for name, value in entry_fields.items() if value is not None}
 
 
 def store_values(operation: UsageRoutingV2) -> dict[str, int]:
