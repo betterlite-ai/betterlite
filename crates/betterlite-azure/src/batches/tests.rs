@@ -597,7 +597,7 @@ fn raised(error: &AzureBatchesError) -> Raised {
             message: message.clone(),
         },
         AzureBatchesError::Sdk { source } => Raised::Sdk(source.to_string()),
-        AzureBatchesError::Invalid { source } => Raised::Invalid(source.to_string()),
+        AzureBatchesError::Invalid { .. } => Raised::Invalid(error.to_string()),
         AzureBatchesError::Endpoint { source } => Raised::Endpoint(source.to_string()),
     }
 }
