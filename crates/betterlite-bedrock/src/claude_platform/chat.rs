@@ -123,19 +123,6 @@ fn list_param<'params>(
     }
 }
 
-// The contract keys B570 reads through FeatureParams for the skills predicate.
-fn feature_params(contract: &IndexMap<String, Json>) -> FeatureParams {
-    FeatureParams {
-        compaction: None,
-        container: contract
-            .get("container")
-            .filter(|value| !matches!(value, Json::Null))
-            .cloned(),
-        output_config: None,
-        reasoning_effort: None,
-    }
-}
-
 // The predicates that read only the caller's messages.
 fn message_features(messages: &[PromptJson]) -> Result<BTreeSet<HeaderFeature>, FeatureFlagsError> {
     let detected = [
@@ -155,7 +142,7 @@ fn message_features(messages: &[PromptJson]) -> Result<BTreeSet<HeaderFeature>, 
 // The predicates that read the caller's params through B2211's contract.
 fn param_features(
     params: &IndexMap<String, PromptJson>,
-    contract: &IndexMap<String, Json>,
+    skills: &FeatureParams,
     effort_used: bool,
 ) -> BTreeSet<HeaderFeature> {
     let tools = list_param(params, "tools").unwrap_or_default();
@@ -174,10 +161,7 @@ fn param_features(
             HeaderFeature::CodeExecution,
             is_code_execution_tool_used(tools),
         ),
-        (
-            HeaderFeature::Skills,
-            is_container_with_skills_used(&feature_params(contract)),
-        ),
+        (HeaderFeature::Skills, is_container_with_skills_used(skills)),
         (HeaderFeature::Effort, effort_used),
     ];
     let mut features = BTreeSet::new();
@@ -196,8 +180,18 @@ fn header_features(
     effort_used: bool,
 ) -> Result<HeaderFeatures, FeatureFlagsError> {
     let tools = list_param(params, "tools").unwrap_or_default();
+    // B570 reads the skills predicate through the contract's container, with a JSON null counting as absent.
+    let skills = FeatureParams {
+        compaction: None,
+        container: contract
+            .get("container")
+            .filter(|value| !matches!(value, Json::Null))
+            .cloned(),
+        output_config: None,
+        reasoning_effort: None,
+    };
     let mut features = message_features(messages)?;
-    features.extend(param_features(params, contract, effort_used));
+    features.extend(param_features(params, &skills, effort_used));
     Ok(HeaderFeatures {
         features,
         computer_tool_used: tools.iter().find_map(computer_tool_version),
