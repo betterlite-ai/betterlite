@@ -21,7 +21,6 @@ fn text_message(role: &Json, part_type: &str, text: &str) -> IndexMap<String, Js
     fields
 }
 
-// _input_to_messages: a string becomes one user message, an array keeps its object items, anything else is empty
 #[must_use]
 pub fn input_to_messages(input: &Json) -> Vec<IndexMap<String, Json>> {
     match input {
@@ -67,7 +66,6 @@ fn join_output_text(parts: &[Json]) -> Result<String, ResponsesWsHistoryError> {
     Ok(text)
 }
 
-// the message a message item projects to, or None when its joined text is empty
 fn message_item(
     fields: &IndexMap<String, Json>,
 ) -> Result<Option<IndexMap<String, Json>>, ResponsesWsHistoryError> {
@@ -92,7 +90,6 @@ fn message_item(
     Ok(Some(text_message(&role, OUTPUT_TEXT, &text)))
 }
 
-// _extract_output_messages: messages keep their output_text/text parts joined, function calls pass through
 pub fn extract_output_messages(
     completed: &IndexMap<String, Json>,
 ) -> Result<Vec<IndexMap<String, Json>>, ResponsesWsHistoryError> {

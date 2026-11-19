@@ -6,7 +6,6 @@ use crate::api::response_id_codecs::response::decode_previous_response_id;
 use super::warmup::is_warmup_response_id;
 use super::{FrameSink, ManagedResponsesWebSocket};
 
-// _extract_response_id: the decoded provider id inside a response.completed event
 #[must_use]
 pub fn extract_response_id(completed: &IndexMap<String, Json>) -> Option<String> {
     let Some(Json::Object(response)) = completed.get("response") else {
@@ -62,13 +61,11 @@ pub fn apply_history(
 }
 
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    // _store_history: replaces the whole turn list for the raw provider id
     pub fn store_history(&mut self, response_id: &str, messages: Vec<IndexMap<String, Json>>) {
         self.session_history
             .insert(response_id.to_owned(), messages);
     }
 
-    // _get_history_messages: a copy, so a caller appending to the result never edits the stored turn
     #[must_use]
     pub fn get_history_messages(&self, previous_response_id: &str) -> Vec<IndexMap<String, Json>> {
         let raw_id = decode_previous_response_id(previous_response_id);

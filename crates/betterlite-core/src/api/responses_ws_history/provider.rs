@@ -14,16 +14,13 @@ pub trait ProviderResolution: Send + Sync {
 }
 
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    // _resolve_provider: an empty or unresolvable model has no provider
     #[must_use]
     pub fn resolve_provider(&self, model: Option<&str>) -> Option<String> {
-        match model.filter(|value| !value.is_empty()) {
-            Some(model) => self.resolver.resolve(model).ok(),
-            None => None,
-        }
+        self.resolver
+            .resolve(model.filter(|value| !value.is_empty())?)
+            .ok()
     }
 
-    // _same_provider: no model and the exact connection model match without resolving anything
     #[must_use]
     pub fn same_provider(&self, model: Option<&str>) -> bool {
         match model {

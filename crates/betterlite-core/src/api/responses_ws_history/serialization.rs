@@ -21,7 +21,6 @@ pub enum Chunk<'chunk> {
 
 pub type ChunkWriter = dyn for<'chunk> Fn(Chunk<'chunk>) -> Option<String> + Send + Sync;
 
-// _serialize_chunk: model_dump_json first, then model_dump, then a JSON object, then Python's str()
 #[must_use]
 pub fn serialize_chunk(chunk: Chunk<'_>) -> Option<String> {
     match chunk {
@@ -49,10 +48,8 @@ pub fn serialize_chunk(chunk: Chunk<'_>) -> Option<String> {
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
     pub async fn send_error(&self, message: &str, error_type: Option<&str>) {
         let mut error = IndexMap::new();
-        error.insert(
-            "type".to_owned(),
-            Json::Text(error_type.unwrap_or(SERVER_ERROR).to_owned()),
-        );
+        let class = Json::Text(error_type.unwrap_or(SERVER_ERROR).to_owned());
+        error.insert("type".to_owned(), class);
         error.insert("message".to_owned(), Json::Text(message.to_owned()));
         let mut frame = IndexMap::new();
         frame.insert("type".to_owned(), Json::Text(ERROR_EVENT.to_owned()));

@@ -23,7 +23,7 @@ use secrecy::SecretString;
 use self::error::{FrameSinkError, ResponsesWsHistoryError};
 use self::provider::ProviderResolution;
 use self::serialization::{ChunkWriter, INVALID_JSON_MESSAGE, INVALID_REQUEST_ERROR};
-use self::values::metadata_model_group;
+use self::values::has_content;
 use crate::api::responses_stream_events::ProjectQuotaCallback;
 
 pub const MANAGED_WS_SKIP_KWARGS: [&str; 5] = [
@@ -34,13 +34,11 @@ pub const MANAGED_WS_SKIP_KWARGS: [&str; 5] = [
     "user_api_key_dict",
 ];
 
-// ResponsesClientWebSocket: the client-facing connection this handler writes text frames to
 #[async_trait]
 pub trait FrameSink: Send + Sync {
     async fn send_text(&self, frame: &str) -> Result<(), FrameSinkError>;
 }
 
-// The arguments LiteLLM's constructor receives, with the kwargs map kept apart from the typed ones
 pub struct Connection<Sink: FrameSink> {
     pub websocket: Sink,
     pub model: String,
@@ -56,7 +54,6 @@ pub struct Connection<Sink: FrameSink> {
     pub kwargs: IndexMap<String, Json>,
 }
 
-// The seams the handler does not own: get_llm_provider, the warmup clock and uuid, and chunk serialization
 pub struct WsDeps {
     pub resolver: Arc<dyn ProviderResolution>,
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -87,11 +84,17 @@ pub struct ManagedResponsesWebSocket<Sink: FrameSink> {
 }
 
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    // __init__: store the connection arguments and pick the provider once for the whole connection
     #[must_use]
     pub fn new(connection: Connection<Sink>, dependencies: WsDeps) -> Self {
         let litellm_metadata = connection.litellm_metadata.unwrap_or_else(IndexMap::new);
-        let model_group = metadata_model_group(&litellm_metadata);
+        let raw_model_group = litellm_metadata
+            .get("model_group")
+            .filter(|value| has_content(value))
+            .or_else(|| litellm_metadata.get("deployment_model_name"));
+        let model_group = match raw_model_group {
+            Some(Json::Text(text)) => Some(text.clone()),
+            _ => None,
+        };
         let resolved = if connection.model.is_empty() {
             None
         } else {
@@ -130,7 +133,6 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
         }
     }
 
-    // _parse_message: bad JSON becomes one error frame, other valid JSON is not this handler's message
     pub async fn parse_message(
         &self,
         raw_message: &str,
@@ -146,13 +148,9 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
                 expected: "a JSON object",
             });
         };
-        let is_response_create = matches!(
-            fields.get("type"),
-            Some(Json::Text(message_type)) if message_type == "response.create"
-        );
-        if !is_response_create {
-            return Ok(None);
+        match fields.get("type") {
+            Some(Json::Text(message_type)) if message_type == "response.create" => Ok(Some(fields)),
+            _ => Ok(None),
         }
-        Ok(Some(fields))
     }
 }

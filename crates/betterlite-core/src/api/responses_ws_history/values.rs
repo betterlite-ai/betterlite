@@ -1,6 +1,4 @@
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-
 const SIGN_MASK: u64 = 0x7fff_ffff_ffff_ffff;
 
 // LiteLLM branches on `if value:` here: empty containers, zero and empty text take the other path
@@ -17,17 +15,4 @@ pub(super) fn has_content(value: &Json) -> bool {
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
     }
-}
-
-// model_group or deployment_model_name, and only a string survives either lookup
-#[must_use]
-pub(super) fn metadata_model_group(metadata: &IndexMap<String, Json>) -> Option<String> {
-    let raw = metadata
-        .get("model_group")
-        .filter(|value| has_content(value))
-        .or_else(|| metadata.get("deployment_model_name"));
-    let Some(Json::Text(text)) = raw else {
-        return None;
-    };
-    Some(text.clone())
 }

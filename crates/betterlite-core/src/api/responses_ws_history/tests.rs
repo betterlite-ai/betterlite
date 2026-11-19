@@ -17,7 +17,7 @@ use serde_json::Number;
 use crate::api::response_synthetic_events::error::SyntheticEventsError;
 use crate::api::response_synthetic_events::model_dump::{HasModelDump, HasModelDumpJson};
 use crate::api::responses_ws_history::call_kwargs::{
-    RESPONSE_CREATE_PARAMS, build_base_call_kwargs, update_proxy_request,
+    build_base_call_kwargs, response_create_params, update_proxy_request,
 };
 use crate::api::responses_ws_history::error::ResponsesWsHistoryError;
 use crate::api::responses_ws_history::history::{apply_history, extract_response_id};
@@ -603,7 +603,7 @@ fn response_id_history() {
 #[test]
 fn base_call_kwargs() {
     assert_eq!(
-        RESPONSE_CREATE_PARAMS,
+        response_create_params().collect::<Vec<&str>>(),
         [
             "input",
             "model",
@@ -673,9 +673,7 @@ fn base_call_kwargs() {
     let mut every = IndexMap::new();
     every.insert("type".to_owned(), Json::Text("response.create".to_owned()));
     every.extend(
-        RESPONSE_CREATE_PARAMS
-            .into_iter()
-            .map(|name| (name.to_owned(), Json::Text(format!("v-{name}")))),
+        response_create_params().map(|name| (name.to_owned(), Json::Text(format!("v-{name}")))),
     );
     every.insert("unknown".to_owned(), Json::Text("x".to_owned()));
     let built = build_base_call_kwargs(&every);

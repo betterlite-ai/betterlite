@@ -21,7 +21,6 @@ pub fn is_warmup_frame(message: &IndexMap<String, Json>) -> bool {
     matches!(source.get("generate"), Some(Json::Bool(false)))
 }
 
-// _warmup_source_params: the nested response, or the flat event without its type
 #[must_use]
 pub fn warmup_source_params(message: &IndexMap<String, Json>) -> IndexMap<String, Json> {
     match message.get("response") {
@@ -44,7 +43,6 @@ pub fn is_warmup_response_id(response_id: Option<&str>) -> bool {
 }
 
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    // _build_warmup_response: a completed Responses object that never reaches a provider
     #[must_use]
     pub fn build_warmup_response(
         &self,
@@ -79,7 +77,6 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
         response
     }
 
-    // _send_warmup_ack: response.created then response.completed, dropping only a frame that fails to serialize
     pub async fn send_warmup_ack(
         &self,
         message: &IndexMap<String, Json>,
@@ -91,10 +88,10 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
         ] {
             let mut seen = response.clone();
             seen.insert("status".to_owned(), Json::Text(status.to_owned()));
-            let mut event = IndexMap::new();
-            event.insert("type".to_owned(), Json::Text(event_type.to_owned()));
-            event.insert("response".to_owned(), Json::Object(seen));
-            let data = Json::Object(event);
+            let data = Json::Object(IndexMap::from([
+                ("type".to_owned(), Json::Text(event_type.to_owned())),
+                ("response".to_owned(), Json::Object(seen)),
+            ]));
             let Some(serialized) = (self.serializer)(Chunk::Json(&data)) else {
                 continue;
             };
