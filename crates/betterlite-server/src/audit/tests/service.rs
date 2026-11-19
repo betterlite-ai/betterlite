@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_logging::callback_logger::CallbackLogger;
@@ -69,11 +68,9 @@ fn logger_callback(recorder: &Arc<RecordingLogger>) -> AuditCallbackEntry {
     AuditCallbackEntry::Logger(logger)
 }
 
-fn flush(service: &AuditService) -> impl Future<Output = ()> + '_ {
-    async {
-        service.writes.flush().await;
-        service.delivery.worker.flush().await;
-    }
+async fn flush(service: &AuditService) {
+    service.writes.flush().await;
+    service.delivery.worker.flush().await;
 }
 
 #[tokio::test]
