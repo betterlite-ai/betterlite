@@ -68,8 +68,6 @@ async fn compatible_call(
     state: &mut LoggingState,
     env: &PrePostEnv<'_>,
 ) -> Result<CompatibleChatOutcome, CallError> {
-    let mut options = call.optional_params.clone();
-    normalized_stream(&mut options)?;
     let target = model_garden_target(&ModelGardenTargetInput {
         model: call.model,
         api_base: call.api_base,
@@ -77,6 +75,7 @@ async fn compatible_call(
         vertex_project: call.vertex_project,
         resolved_project: call.resolved_project,
     })?;
+    // the execution pops the stream option, names the field on a wrong type and writes the boolean back
     let execution = CompatibleChatExecution {
         model: &target.model,
         messages: call.messages,
@@ -84,7 +83,7 @@ async fn compatible_call(
         api_base: Some(target.api_base.as_str()),
         api_key: Some(call.access_token),
         headers: None,
-        optional_params: &options,
+        optional_params: call.optional_params,
         custom_endpoint: false,
         timeout: call.timeout,
         mode: call.mode,
@@ -98,20 +97,4 @@ async fn compatible_call(
         .execute(client, state, env)
         .await
         .map_err(|error| CallError::Chat(Box::new(error)))
-}
-
-// the source reads the option without popping it and writes the boolean back, so the body always carries one
-fn normalized_stream(options: &mut IndexMap<String, Json>) -> Result<(), CallError> {
-    let stream = match options.get("stream") {
-        None | Some(Json::Null) => false,
-        Some(Json::Bool(flag)) => *flag,
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(CallError::Chat(Box::new(CompatibleChatError::OptionType {
-                field: "stream",
-                expected: "a boolean",
-            })));
-        }
-    };
-    options.insert("stream".to_owned(), Json::Bool(stream));
-    Ok(())
 }
