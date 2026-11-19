@@ -7,7 +7,7 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::task::yield_now;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
