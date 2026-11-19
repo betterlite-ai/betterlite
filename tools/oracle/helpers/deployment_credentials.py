@@ -64,7 +64,7 @@ def install_credentials(rows: list[CredentialRow]) -> None:
 
 def install_patterns(router: Router, rows: list[PatternRow]) -> None:
     for row in rows:
-        router.pattern_router.add_pattern(row["pattern"], row["deployment"])
+        router.pattern_router.add_pattern(row["pattern"], row["deployment"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L63
 
 
 def case_answer(router: Router, call: Input, log: WarningLog) -> JsonValue:
