@@ -152,10 +152,32 @@ async fn upload_fetch_reports_a_failed_status() {
     assert!(matches!(error, UploadError::HttpStatus { status: 404 }));
 }
 
+#[rstest]
+#[case::ok(200)]
+#[case::last_success(299)]
 #[tokio::test]
-async fn upload_fetch_rejects_a_redirect_status() {
+async fn upload_fetch_accepts_a_2xx_status(#[case] status: u16) {
     let harness = Harness::default().with_fetch(FakeFetch::default().reply(
-        302,
+        status,
+        HeaderMap::new(),
+        b"body",
+    ));
+    let state = harness.state(IngestionOptions::default());
+    let uploaded = state
+        .upload(None, Some("https://host/file.txt"), None)
+        .await
+        .expect("the upload succeeds");
+    assert_eq!(uploaded.file_content.as_deref(), Some(b"body".as_slice()));
+}
+
+#[rstest]
+#[case::multiple_choices(300)]
+#[case::redirect(302)]
+#[case::last_redirection(399)]
+#[tokio::test]
+async fn upload_fetch_rejects_a_non_2xx_status(#[case] status: u16) {
+    let harness = Harness::default().with_fetch(FakeFetch::default().reply(
+        status,
         HeaderMap::new(),
         b"redirected",
     ));
@@ -163,8 +185,11 @@ async fn upload_fetch_rejects_a_redirect_status() {
     let error = state
         .upload(None, Some("https://host/file.txt"), None)
         .await
-        .expect_err("the redirect fails the upload");
-    assert!(matches!(error, UploadError::HttpStatus { status: 302 }));
+        .expect_err("the status fails the upload");
+    assert!(matches!(
+        error,
+        UploadError::HttpStatus { status: failed } if failed == status
+    ));
 }
 
 #[tokio::test]
