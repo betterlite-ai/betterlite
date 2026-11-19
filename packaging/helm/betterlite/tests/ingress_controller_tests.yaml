@@ -1,0 +1,229 @@
+suite: test the ingress controller switch
+templates: [ingress.yaml]
+values: [./values/required.yaml]
+tests:
+  - it: renders no Ingress unless ingress.enabled is set
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: keeps the AWS Load Balancer path types by default
+    set:
+      ingress.enabled: true
+    asserts:
+      - isKind: { of: Ingress }
+      - equal: { path: apiVersion, value: networking.k8s.io/v1 }
+      - equal: { path: metadata.name, value: RELEASE-NAME-betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
+      - equal:
+          path: 'spec.rules[0].http.paths[0]'
+          value:
+            path: /
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /favicon.ico
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /*.txt
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /eu.assemblyai
+            pathType: Prefix
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+
+  - it: renders no dotted Exact or Prefix path for ingress-nginx, whose admission webhook rejects them
+    set:
+      ingress.enabled: true
+      ingress.controller: nginx
+    asserts:
+      - lengthEqual: { path: 'spec.rules[0].http.paths', count: 108 }
+      - notMatchRegexRaw:
+          pattern: 'path: /\S*\.\S*\n\s+pathType: (Exact|Prefix)\n'
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /favicon.ico
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /eu.assemblyai
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+
+  - it: drops the /*.txt wildcard for ingress-nginx and keeps every other route
+    set:
+      ingress.enabled: true
+      ingress.controller: nginx
+    asserts:
+      - notContains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /*.txt
+          any: true
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /ui
+            pathType: Prefix
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /test
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /debug/memory/summary
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+      - equal:
+          path: 'spec.rules[0].http.paths[-1]'
+          value:
+            path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-backend
+                port:
+                  number: 4001
+
+  - it: falls back to the AWS Load Balancer controller when ingress.controller is cleared
+    set:
+      ingress.enabled: true
+      ingress.controller: null
+    asserts:
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /*.txt
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-ui
+                port:
+                  number: 3000
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /eu.assemblyai
+            pathType: Prefix
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+
+  - it: rejects a controller it has no path types for
+    set:
+      ingress.enabled: true
+      ingress.controller: traefik
+    asserts:
+      - failedTemplate:
+          errorMessage: 'ingress.controller: unknown controller "traefik", expected one of alb, nginx'
+
+  - it: routes every gateway data-plane path of the routes allowlist to the gateway and no management path
+    set:
+      ingress.enabled: true
+    asserts:
+      - lengthEqual: { path: 'spec.rules[0].http.paths', count: 109 }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /v1/chat, pathType: Prefix, backend: { service: { name: RELEASE-NAME-betterlite-gateway, port: { number: 4000 } } } } }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /v1/decisions, pathType: Prefix }, any: true }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /systemone, pathType: Prefix }, any: true }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /v1/traces, pathType: Prefix }, any: true }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /gigachat, pathType: Prefix }, any: true }
+      - contains: { path: 'spec.rules[0].http.paths', content: { path: /watsonx, pathType: Prefix }, any: true }
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /api/event_logging/batch
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-betterlite-gateway
+                port:
+                  number: 4000
+      - notContains: { path: 'spec.rules[0].http.paths', content: { path: /v1/mcp }, any: true }
+      - notContains: { path: 'spec.rules[0].http.paths', content: { path: /v2/team }, any: true }
+      - notContains: { path: 'spec.rules[0].http.paths', content: { path: /v1/access_group }, any: true }
+      - notContains: { path: 'spec.rules[0].http.paths', content: { path: /test/connection }, any: true }
+
+  - it: addresses the three component Services by their configured ports
+    set:
+      ingress.enabled: true
+      gateway.service.port: 8000
+      backend.service.port: 8001
+      ui.service.port: 8080
+    asserts:
+      - equal: { path: 'spec.rules[0].http.paths[0].backend.service.port.number', value: 8080 }
+      - equal: { path: 'spec.rules[0].http.paths[6].backend.service.port.number', value: 8000 }
+      - equal: { path: 'spec.rules[0].http.paths[-1].backend.service.port.number', value: 8001 }
+
+  - it: renders the class name, annotations, host and tls from values
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+      ingress.host: llm.example.com
+      ingress.annotations: { example.com/owner: platform }
+      ingress.tls: [{ hosts: [llm.example.com], secretName: llm-tls }]
+    asserts:
+      - equal: { path: spec.ingressClassName, value: nginx }
+      - equal: { path: 'metadata.annotations["example.com/owner"]', value: platform }
+      - equal: { path: 'spec.rules[0].host', value: llm.example.com }
+      - equal: { path: 'spec.tls', value: [{ hosts: [llm.example.com], secretName: llm-tls }] }
+
+  - it: omits the class name, annotations, host and tls when unset
+    set:
+      ingress.enabled: true
+    asserts:
+      - notExists: { path: spec.ingressClassName }
+      - notExists: { path: metadata.annotations }
+      - notExists: { path: 'spec.rules[0].host' }
+      - notExists: { path: spec.tls }
