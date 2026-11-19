@@ -11,7 +11,7 @@ use betterlite_core::api::vector_store_registry::tools::{
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -133,14 +133,8 @@ fn database_rows(input: &Input) -> HelperResult {
         runtime.block_on(rows_from_database(database.as_ref()));
     let stores_failed = stores.is_err();
     let indexes_failed = indexes.is_err();
-    let store_rows = match stores {
-        Ok(rows) => stores_value(&rows),
-        Err(_) => Value::Array(Vec::new()),
-    };
-    let index_rows = match indexes {
-        Ok(rows) => indexes_value(&rows),
-        Err(_) => Value::Array(Vec::new()),
-    };
+    let store_rows = stores.map_or_else(|_| Value::Array(Vec::new()), |rows| stores_value(&rows));
+    let index_rows = indexes.map_or_else(|_| Value::Array(Vec::new()), |rows| indexes_value(&rows));
     let calls = database
         .as_ref()
         .map_or_else(Vec::new, ScriptedDatabase::calls);
