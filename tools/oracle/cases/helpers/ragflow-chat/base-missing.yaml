@@ -1,0 +1,13 @@
+kind: helper
+name: ragflow-chat-base-missing
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat/abc/m', api_base: null}
+      - {model: 'ragflow/chat', api_base: null}
+      - {model: 'ragflow/completion/abc/m', api_base: null}
