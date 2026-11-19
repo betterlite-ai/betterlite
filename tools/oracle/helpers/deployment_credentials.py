@@ -36,7 +36,7 @@ class Input(TypedDict):
     model_list: list[dict[str, JsonValue]]
     arguments: Arguments
     credentials: NotRequired[list[CredentialRow]]
-    # a pattern deployment added after Router construction, which its config path would have validated
+    # a pattern deployment the case adds raw, which Router construction would have validated
     pattern_deployments: NotRequired[list[PatternRow]]
 
 
@@ -80,7 +80,8 @@ def case_answer(router: Router, call: Input, log: WarningLog) -> JsonValue:
         selected = router.get_credential_deployment(model_id, team_id)
         raw = router.get_deployment_credentials_with_provider(model_id, team_id)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10632-L10661
     credentials = OPTIONAL.validate_python(raw)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10661
-    warnings: list[JsonValue] = list(log.messages)
+    warnings: list[JsonValue] = []
+    warnings.extend(log.messages)
     carried: JsonValue = {
         "id": None if selected is None else selected.model_info.id,
         "credentials": credentials,
