@@ -102,6 +102,7 @@ scope:
   - crates/betterlite-openai/src/image_variations/tests/support.rs
   - tools/oracle/src/helpers/core_ops/bfl_jobs/logging.rs
   - tools/oracle/src/helpers/core_ops/bfl_edit_call/logging.rs
+  - tools/oracle/src/helpers/bedrock/other_embedding_call/fixtures/logging.rs
   - crates/betterlite-core/src/api/realtime_sender.rs
   - crates/betterlite-core/src/api/realtime_guardrails/callback.rs
   - crates/betterlite-core/src/api/realtime_guardrails/runner.rs
