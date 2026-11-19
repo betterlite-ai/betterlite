@@ -64,7 +64,7 @@ class FineTuningCancelRequest(BaseModel):
     fine_tuning_cancel: FineTuningCancelCall
 
     def serialize(self, api_base: str) -> str:
-        runs = [run_one(run, api_base) for run in self.fine_tuning_cancel.runs]
+        runs: list[JsonValue] = [run_one(run, api_base) for run in self.fine_tuning_cancel.runs]
         outcome: JsonValue = {"fine_tuning_cancel": {"value": {"runs": runs}}}
         return json.dumps(outcome)
 
