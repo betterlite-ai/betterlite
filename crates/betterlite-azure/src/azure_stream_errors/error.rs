@@ -150,8 +150,7 @@ impl AzureStreamFailure {
         }
     }
 
-    // status_code=getattr(e, "status_code", 500), message=getattr(e, "message", str(e)),
-    // headers=getattr(e, "headers", None), body=getattr(e, "body", None), then the response fallback
+    // status_code=getattr(e, "status_code", 500), message=getattr(e, "message", str(e)), headers/body getattr(e, attr, None), then the response fallback
     #[must_use]
     pub fn wrapped(raised: Raised) -> Self {
         let status = match raised.status {

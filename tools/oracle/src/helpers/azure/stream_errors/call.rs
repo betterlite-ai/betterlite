@@ -27,14 +27,6 @@ fn now() -> StreamInstant {
     }
 }
 
-fn next_id() -> Uuid {
-    Uuid::from_u128(11)
-}
-
-fn runtime() -> StreamRuntime {
-    StreamRuntime { now, next_id }
-}
-
 fn block_on<Fut: Future>(future: Fut) -> Result<Fut::Output, Box<HelperError>> {
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -66,13 +58,17 @@ fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>>
         supplied: Some(&client),
     };
     let _dynamic = case.dynamic_params;
+    let runtime = StreamRuntime {
+        now,
+        next_id: || Uuid::from_u128(11),
+    };
     let outcome = block_on(async {
         match function {
             Function::Streaming => {
-                streaming(&source, &sources, &call, &mut recorder, runtime()).await
+                streaming(&source, &sources, &call, &mut recorder, runtime).await
             }
             Function::AsyncStreaming => {
-                async_streaming(&source, &call, &mut recorder, runtime()).await
+                async_streaming(&source, &call, &mut recorder, runtime).await
             }
         }
     })?;

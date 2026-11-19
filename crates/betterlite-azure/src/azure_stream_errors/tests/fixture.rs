@@ -523,8 +523,10 @@ pub fn scripted_source(
 pub fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
     ScriptedSource {
         transport: Arc::new(ScriptedTransport {
+            headers: Vec::new(),
+            payload: Vec::new(),
             failure: Some(failure),
-            ..ScriptedTransport::default()
+            requests: Arc::new(Mutex::new(Vec::new())),
         }),
         ..scripted_source(kind, &[], Vec::new())
     }

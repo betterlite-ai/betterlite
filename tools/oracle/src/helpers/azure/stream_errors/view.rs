@@ -30,14 +30,6 @@ fn text_map(fields: &BTreeMap<String, String>) -> Json {
     )
 }
 
-fn headers_value(headers: &SecretHeaders) -> Json {
-    text_map(&headers.0)
-}
-
-fn optional_headers(headers: &Option<SecretHeaders>) -> Json {
-    headers.as_ref().map_or(Json::Null, headers_value)
-}
-
 fn get_value(get: &GetView) -> Json {
     let mut fields = Extra::new();
     fields.insert(
@@ -122,10 +114,6 @@ pub(super) fn pre_value(record: &PreCallRecord) -> Json {
             .map_or(Json::Null, Json::from),
     );
     Json::Object(fields)
-}
-
-pub(super) fn pre_values(recorder: &Recorder) -> Vec<Json> {
-    recorder.pre.iter().map(pre_value).collect()
 }
 
 // logging_obj.model_call_details["response_headers"] as the streaming paths stored it
@@ -237,7 +225,13 @@ pub(super) fn error_value(failure: &AzureStreamFailure) -> Json {
     fields.insert("status".to_owned(), status);
     fields.insert("message_present".to_owned(), Json::Bool(message_present));
     fields.insert("message".to_owned(), message);
-    fields.insert("headers".to_owned(), optional_headers(&failure.headers));
+    fields.insert(
+        "headers".to_owned(),
+        failure
+            .headers
+            .as_ref()
+            .map_or(Json::Null, |headers| text_map(&headers.0)),
+    );
     fields.insert(
         "body".to_owned(),
         failure.body.clone().unwrap_or(Json::Null),
@@ -270,7 +264,10 @@ pub(super) fn report(
     fields.insert("gets".to_owned(), Json::List(gets(source)));
     fields.insert("requests".to_owned(), Json::List(requests(source)));
     fields.insert("exchanges".to_owned(), Json::List(exchanges(sources)));
-    fields.insert("pre".to_owned(), Json::List(pre_values(recorder)));
+    fields.insert(
+        "pre".to_owned(),
+        Json::List(recorder.pre.iter().map(pre_value).collect()),
+    );
     fields.insert("response_headers".to_owned(), response_headers(recorder));
     fields.insert("wrapper".to_owned(), wrapper);
     fields.insert("chunks".to_owned(), chunks);

@@ -4,10 +4,7 @@ pub mod prepare;
 pub mod records;
 pub mod stream;
 
-#[cfg(test)]
 mod tests;
-
-use betterlite_logging::logging_pre_post::error::PrePostError;
 
 use crate::credentials::headers::{HeaderLookup, process_azure_headers};
 use crate::credentials::source::CredentialSources;
@@ -84,7 +81,7 @@ async fn async_inner<Source: StreamSource>(
     prepare::require_async(&client)?;
     hooks
         .pre_call(prepare::pre_call(call, &client, call.azure_ad_token)?)
-        .map_err(prepost_failure)?;
+        .map_err(|error| Raised::plain(error.to_string()))?;
     let answer = client.transport.create(call.data, call.timeout).await?;
     let raw = stream::raw_headers(&answer.headers);
     hooks.response_headers(&raw);
@@ -95,8 +92,4 @@ async fn async_inner<Source: StreamSource>(
         WrapperHeaders::Raw(raw),
         runtime,
     ))
-}
-
-fn prepost_failure(error: PrePostError) -> Raised {
-    Raised::plain(error.to_string())
 }

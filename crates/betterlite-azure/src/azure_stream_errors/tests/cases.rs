@@ -530,8 +530,9 @@ fn stream_logging() {
     );
 
     let mut refused = Recorder {
+        pre: Vec::new(),
+        response_headers: Vec::new(),
         fail_pre: true,
-        ..Recorder::default()
     };
     let error = block_on(streaming(&source, &sources, &call, &mut refused, runtime()))
         .expect_err("a refused pre_call fails the sync call");
@@ -541,8 +542,9 @@ fn stream_logging() {
     ));
 
     let mut refused = Recorder {
+        pre: Vec::new(),
+        response_headers: Vec::new(),
         fail_pre: true,
-        ..Recorder::default()
     };
     let error = block_on(async_streaming(&source, &call, &mut refused, runtime()))
         .expect_err("a refused pre_call fails the async call");

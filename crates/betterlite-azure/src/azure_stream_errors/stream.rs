@@ -173,10 +173,6 @@ enum Phase {
 
 type Item = Result<StreamChunk, StreamingError>;
 
-fn failure(raised: Raised) -> StreamingError {
-    StreamingError::Azure(AzureStreamFailure::raised(raised))
-}
-
 fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     let value: JsonValue = serde_json::from_slice(payload)
         .map_err(|source| ProviderChunkError::InvalidChunk { source })?;
@@ -205,11 +201,13 @@ fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
 
 // A byte read that is dropped here still advances the byte stream, so the loop in step ends.
 fn absorb(state: &mut StreamState, read: Result<Vec<u8>, SdkError>) -> Result<(), StreamingError> {
-    let bytes = read.map_err(|error| failure(Raised::sdk(&error)))?;
-    let events = state
-        .parser
-        .push(&bytes)
-        .map_err(|error| failure(Raised::sdk(&SdkError::Sse(error))))?;
+    let bytes = read
+        .map_err(|error| StreamingError::Azure(AzureStreamFailure::raised(Raised::sdk(&error))))?;
+    let events = state.parser.push(&bytes).map_err(|error| {
+        StreamingError::Azure(AzureStreamFailure::raised(Raised::sdk(&SdkError::Sse(
+            error,
+        ))))
+    })?;
     state.pending.extend(events);
     Ok(())
 }
