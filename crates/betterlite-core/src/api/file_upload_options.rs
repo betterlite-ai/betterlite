@@ -74,10 +74,11 @@ pub fn extract_file_creation_params(
     target_model_names_form: Option<&Json>,
     target_storage_form: Option<&str>,
 ) -> Result<FileCreationParams, FileUploadOptionsError> {
-    let read_body = request_body
-        .is_none()
-        .then(|| request.read_body.request_body().unwrap_or_default())
-        .unwrap_or_default();
+    let read_body = if request_body.is_none() {
+        request.read_body.request_body().unwrap_or_default()
+    } else {
+        JsonObject::default()
+    };
     let body = request_body.unwrap_or(&read_body);
     let target_storage = extract_target_storage_simple(target_storage_form);
     let mut target_model_names = simple_model_names(target_model_names_form)?;
