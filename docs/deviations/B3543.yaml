@@ -36,4 +36,13 @@ deviations:
       docs/compatibility.md makes a value of the wrong type an error that names the field, and
       silently dropping a caller's tools would lose data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L179-L182
+  - what: >-
+      Compression diagnostics are structured tracing events carrying the kind, the call id and
+      the token counts, where LiteLLM writes one Python log line whose %d fields truncate a
+      float and drop the line for a count that is not a number.
+    why: >-
+      betterlite logs through tracing, so a diagnostic is a typed event rather than formatted
+      text; docs/compatibility.md limits parity to declared types, and a count keeps its JSON
+      value instead of going through Python formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L194-L207
 kept_bugs: []

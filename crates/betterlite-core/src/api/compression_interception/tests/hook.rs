@@ -4,6 +4,7 @@ use betterlite_compression::compress::CompressionSkippedReason;
 use betterlite_config::sections::compression_interception_state::Settings;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde_json::Number;
 
 use super::support::{
     NOW, ScriptError, apply, disabled, fixed_clock, harness, index, list, number, object, request,
@@ -68,8 +69,11 @@ async fn a_positive_agentic_depth_skips(#[case] depth: Json) {
 #[case::negative(number(-2))]
 #[case::null(Json::Null)]
 #[case::not_a_number(text("two"))]
+#[case::numeric_text(text("2"))]
+#[case::not_whole(Json::Number(Number::from_f64(1.5).expect("finite")))]
+#[case::boolean(Json::Bool(true))]
 #[tokio::test]
-async fn a_non_positive_agentic_depth_applies(#[case] depth: Json) {
+async fn a_depth_that_is_not_a_positive_whole_number_applies(#[case] depth: Json) {
     let harness = harness(
         Settings::default(),
         fixed_clock(NOW),
