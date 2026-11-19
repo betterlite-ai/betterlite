@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use rstest::rstest;
+use tokio::time::timeout;
 
 use super::support::{Answer, RELEASE_URL, Script, advance, fake_clock};
 use crate::release_info::records::LatestRelease;
@@ -65,9 +66,9 @@ async fn fetches_the_release_from_the_configured_source() {
 }
 
 #[rstest]
-#[case::inside_the_hour(3_599.0, 1)]
-#[case::exactly_at_the_hour(3_600.0, 1)]
-#[case::past_the_hour(3_600.5, 2)]
+#[case::inside_the_hour(3_599.0_f64, 1)]
+#[case::exactly_at_the_hour(3_600.0_f64, 1)]
+#[case::past_the_hour(3_600.5_f64, 2)]
 #[tokio::test]
 async fn keeps_a_success_for_an_hour(#[case] elapsed: f64, #[case] expected_calls: usize) {
     let fixture = fixture(vec![success(), success()]);
@@ -88,9 +89,9 @@ async fn keeps_a_success_for_an_hour(#[case] elapsed: f64, #[case] expected_call
 }
 
 #[rstest]
-#[case::inside_five_minutes(299.0, 1)]
-#[case::exactly_at_five_minutes(300.0, 1)]
-#[case::past_five_minutes(300.5, 2)]
+#[case::inside_five_minutes(299.0_f64, 1)]
+#[case::exactly_at_five_minutes(300.0_f64, 1)]
+#[case::past_five_minutes(300.5_f64, 2)]
 #[tokio::test]
 async fn keeps_an_unavailable_answer_for_five_minutes(
     #[case] elapsed: f64,
@@ -117,18 +118,18 @@ async fn keeps_an_unavailable_answer_for_five_minutes(
 async fn concurrent_misses_share_a_single_fetch() {
     let fixture = fixture(vec![success(), success()]);
     let (first, second) = tokio::join!(fixture.service.get(), fixture.service.get());
-    let first = first.expect("the first read is served");
-    let second = second.expect("the second read is served");
-    assert_eq!(first, second);
-    assert!(matches!(first, LatestRelease::Available(_)));
+    let served_first = first.expect("the first read is served");
+    let served_second = second.expect("the second read is served");
+    assert_eq!(served_first, served_second);
+    assert!(matches!(served_first, LatestRelease::Available(_)));
     assert_eq!(fixture.script.calls(), 1);
 }
 
 #[tokio::test]
 async fn a_cancelled_read_is_not_cached() {
     let fixture = fixture(vec![success(), success()]);
-    let cancelled = tokio::time::timeout(Duration::ZERO, fixture.service.get()).await;
-    assert!(cancelled.is_err());
+    let cancelled = timeout(Duration::ZERO, fixture.service.get()).await;
+    cancelled.unwrap_err();
     let served = fixture
         .service
         .get()

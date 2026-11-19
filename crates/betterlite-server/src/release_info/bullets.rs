@@ -68,10 +68,7 @@ fn is_first_contribution(body: &str) -> bool {
 }
 
 fn prefix_bucket(body: &str) -> Bucket {
-    let letters = body
-        .bytes()
-        .take_while(|byte| byte.is_ascii_alphabetic())
-        .count();
+    let letters = body.bytes().take_while(u8::is_ascii_alphabetic).count();
     let Some((prefix, after_prefix)) = body.split_at_checked(letters) else {
         return Bucket::Other;
     };
@@ -103,7 +100,7 @@ fn skip_scope(after_prefix: &str) -> Option<&str> {
     remaining.strip_prefix(')')
 }
 
-fn bucket_named(prefix: &str) -> Bucket {
+const fn bucket_named(prefix: &str) -> Bucket {
     if prefix.eq_ignore_ascii_case("feat") {
         Bucket::NewFeatures
     } else if prefix.eq_ignore_ascii_case("fix") {
@@ -116,14 +113,11 @@ fn bucket_named(prefix: &str) -> Bucket {
 fn strip_one_space(text: &str) -> Option<&str> {
     let mut characters = text.chars();
     let first = characters.next()?;
-    if source_space(first) {
-        Some(characters.as_str())
-    } else {
-        None
-    }
+    let remainder = characters.as_str();
+    source_space(first).then_some(remainder)
 }
 
-fn source_space(character: char) -> bool {
+const fn source_space(character: char) -> bool {
     if matches!(character, '\u{1c}'..='\u{1f}') {
         return true;
     }

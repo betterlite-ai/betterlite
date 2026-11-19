@@ -24,9 +24,9 @@ pub(super) enum ReleaseError {
     #[error(transparent)]
     Cache(#[from] CacheError),
     #[error("the latest release source is not a URL")]
-    Source(#[source] url::ParseError),
+    Source(#[source] Box<url::ParseError>),
     #[error("the latest release entry does not match its wire shape")]
-    Shape(#[source] serde_json::Error),
+    Shape(#[source] Box<serde_json::Error>),
 }
 
 pub(super) struct ReleaseService<Client> {
@@ -75,7 +75,8 @@ where
         let Some(CacheValue::Text(text)) = items.first() else {
             return Ok(None);
         };
-        let release: LatestRelease = serde_json::from_str(text).map_err(ReleaseError::Shape)?;
+        let release: LatestRelease =
+            serde_json::from_str(text).map_err(|error| ReleaseError::Shape(Box::new(error)))?;
         Ok(Some(release))
     }
 
@@ -84,14 +85,16 @@ where
             LatestRelease::Available(_) => SUCCESS_TTL_SECONDS,
             LatestRelease::Unavailable(_) => UNAVAILABLE_TTL_SECONDS,
         };
-        let text = serde_json::to_string(release).map_err(ReleaseError::Shape)?;
+        let text =
+            serde_json::to_string(release).map_err(|error| ReleaseError::Shape(Box::new(error)))?;
         let value = CacheValue::Array(vec![CacheValue::Text(text)]);
         self.with_cache(|cache| cache.set(LATEST_RELEASE_CACHE_KEY, value, Some(ttl)))
             .await
     }
 
     async fn fetch(&self) -> Result<LatestRelease, ReleaseError> {
-        let url = Url::parse(&self.source).map_err(ReleaseError::Source)?;
+        let url =
+            Url::parse(&self.source).map_err(|error| ReleaseError::Source(Box::new(error)))?;
         let request = OutboundRequest {
             method: Method::GET,
             url,
@@ -125,9 +128,11 @@ where
             )?;
             *slot = Some(built);
         }
-        let Some(cache) = slot.as_mut() else {
-            return Err(ReleaseError::Cache(CacheError::Unavailable));
+        let outcome = match slot.as_mut() {
+            Some(cache) => action(cache).map_err(ReleaseError::Cache),
+            None => Err(ReleaseError::Cache(CacheError::Unavailable)),
         };
-        action(cache).map_err(ReleaseError::Cache)
+        drop(slot);
+        outcome
     }
 }

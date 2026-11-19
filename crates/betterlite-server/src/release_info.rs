@@ -18,7 +18,6 @@ use crate::state::ServerState;
 
 pub const RELEASE_FIXTURE_VARIABLE: &str = "BETTERLITE_LATEST_RELEASE_URL";
 
-#[must_use]
 pub fn routes(state: &Arc<ServerState>) -> Router {
     let clock: Clock = Arc::new(system_seconds);
     let source = release_source_for(&state.config.environment_variables, cfg!(debug_assertions));
@@ -38,10 +37,10 @@ fn release_source_for(environment: &Environment, fixture_enabled: bool) -> Strin
     } else {
         None
     };
-    match configured.and_then(Option::as_ref) {
-        Some(source) => source.expose_secret().to_owned(),
-        None => FIXED_RELEASE_URL.to_owned(),
-    }
+    configured.and_then(Option::as_ref).map_or_else(
+        || FIXED_RELEASE_URL.to_owned(),
+        |source| source.expose_secret().to_owned(),
+    )
 }
 
 fn system_seconds() -> f64 {

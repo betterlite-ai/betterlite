@@ -8,6 +8,8 @@ use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use tower::ServiceExt as _;
 
+use crate::release_info::routes;
+use crate::routes::router;
 use crate::routes::tests::state_for;
 use crate::state::ServerState;
 
@@ -30,7 +32,7 @@ fn configured_state() -> Arc<ServerState> {
 
 #[tokio::test]
 async fn the_application_router_serves_the_configured_source() {
-    let application = crate::release_info::routes(&configured_state());
+    let application = routes(&configured_state());
     let request = Request::get("/get/latest_release_info")
         .body(Body::empty())
         .expect("the request should build");
@@ -43,7 +45,7 @@ async fn the_application_router_serves_the_configured_source() {
 
 #[tokio::test]
 async fn the_application_router_mounts_the_route_behind_auth() {
-    let application = crate::routes::router(
+    let application = router(
         configured_state(),
         Arc::new(AtomicBool::new(false)),
         Router::new(),

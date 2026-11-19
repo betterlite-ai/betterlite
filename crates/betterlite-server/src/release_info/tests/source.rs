@@ -54,5 +54,5 @@ fn a_destination_without_a_value_keeps_the_fixed_url() {
 
 #[test]
 fn the_clock_reads_the_current_time() {
-    assert!(system_seconds() > 1_600_000_000.0);
+    assert!(system_seconds() > 1_600_000_000.0_f64);
 }
