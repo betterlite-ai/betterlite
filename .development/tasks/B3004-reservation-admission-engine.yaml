@@ -74,7 +74,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - "Reservation lease renewal (B8480) and unbound-request cleanup (B8270)."
-- "Settlement and release of reservations (B3003)."
+- "Settlement and release of reservations: B3003. The over-budget policy and the grouped reservation call its _release_applied_entries_best_effort, _resize_applied_reservation and _counter_to_reservation_entry; this task builds none of the three."
 - "Reading current spend from cache and database (B3014, B3015)."
 pitfalls:
 - "fail_closed_budget_enforcement on a counter that fails to initialize raises 503, while one that fails to reserve during the pipeline call depends on partial-group success."

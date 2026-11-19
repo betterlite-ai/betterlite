@@ -81,7 +81,7 @@ description: >-
   raw_request_api_base, raw_request_body and raw_request_headers; add a mock-provider model
   and a body the safety check rejects with 400.
 
-  Use B860's Postgres fixture with B5076's bootstrap and mock upstreams for every provider,
+  Use B860's Postgres fixture with B9942's bootstrap and mock upstreams for every provider,
   agent and MCP server; no case reaches the internet. Compare status, content type, SSE frame
   order where the page reads it and the stable body fields above. About 700 case lines.
 scope:

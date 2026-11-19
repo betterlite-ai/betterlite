@@ -1,0 +1,50 @@
+kind: probe
+name: context-escalation
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      context_placement:
+        config:
+          enabled: true
+          buffer: "0.95"
+        tier: SIMPLE
+        signals: [keyword, history]
+        default_model: null
+        pool_override: null
+        pools:
+          SIMPLE: [small]
+          MEDIUM: [medium]
+          COMPLEX: [huge]
+        groups:
+          - model: small
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 100
+                max_output_tokens: 1000
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: medium
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 5000
+                max_output_tokens: 4000
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: huge
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 200000
+                max_output_tokens: 8000
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+        messages:
+          - Please read the attached quarterly report and summarize the three most important findings for the finance team.
+        instructions: null
+        system: null
+        count: 200
+compare:
+  ignore: []
