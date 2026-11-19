@@ -35,7 +35,7 @@ where
                 self.state.setup.content_sent_after_setup.0 = true;
                 Ok(true)
             }
-            .boxed_local(),
+            .boxed(),
             RealtimeMessage::Text(text) => {
                 let kind = classify_text(provider, &text);
                 self.deliver_text(text, kind)
@@ -77,7 +77,7 @@ where
             }
             Ok(true)
         }
-        .boxed_local()
+        .boxed()
     }
 
     // A provider normalizer that rejects an event keeps it off the client socket
@@ -141,7 +141,7 @@ where
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<Config, CallbackError> RealtimeSend for RealtimeSender<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,

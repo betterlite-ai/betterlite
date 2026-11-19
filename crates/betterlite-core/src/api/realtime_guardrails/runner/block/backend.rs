@@ -32,5 +32,5 @@ where
             .map_err(RealtimeGuardrailsError::Send)?;
         Ok(())
     }
-    .boxed_local()
+    .boxed()
 }

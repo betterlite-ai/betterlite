@@ -51,5 +51,5 @@ where
             .map_err(RealtimeSenderError::Client)?;
         Ok(true)
     }
-    .boxed_local()
+    .boxed()
 }

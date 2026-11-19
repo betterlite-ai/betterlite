@@ -45,5 +45,5 @@ where
             .await
             .map_err(RealtimeGuardrailsError::Client)
     }
-    .boxed_local()
+    .boxed()
 }
