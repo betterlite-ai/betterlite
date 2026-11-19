@@ -4330,6 +4330,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "prometheus-client",
  "rand 0.10.3",
  "rand_distr",
