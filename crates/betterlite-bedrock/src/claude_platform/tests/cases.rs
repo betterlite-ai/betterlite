@@ -29,7 +29,7 @@ use crate::claude_platform::error::{
 use crate::claude_platform::native::{
     NativeHeaders, NativeHeadersRequest, NativeRequest, validate_environment as validate_native,
 };
-use crate::claude_platform::stream::get_model_response_iterator;
+use crate::claude_platform::stream::{StreamFlags, get_model_response_iterator};
 use crate::claude_platform::{FILTERS_ANTHROPIC_BETAS, WORKSPACE_HEADER, WorkspaceSources};
 use crate::claude_platform_inputs::body::PlatformWarning;
 
@@ -580,8 +580,10 @@ pub(crate) fn native_anthropic_stream() {
 
     let plain = get_model_response_iterator(
         std::iter::empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
-        false,
-        None,
+        StreamFlags {
+            sync_stream: false,
+            json_mode: None,
+        },
         Counting,
         &ids,
         MAX_EVENT_BYTES,
@@ -589,8 +591,10 @@ pub(crate) fn native_anthropic_stream() {
     assert_eq!(plain.converter.state.json_mode, Some(false));
     let json_mode = get_model_response_iterator(
         std::iter::empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
-        false,
-        Some(true),
+        StreamFlags {
+            sync_stream: false,
+            json_mode: Some(true),
+        },
         Counting,
         &ids,
         MAX_EVENT_BYTES,

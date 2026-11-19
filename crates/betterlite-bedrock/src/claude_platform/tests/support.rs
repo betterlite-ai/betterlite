@@ -45,7 +45,7 @@ use crate::claude_platform::chat::{
 use crate::claude_platform::error::{ChatValidationError, NativeTransformError};
 use crate::claude_platform::native::transform_request as native_transform;
 use crate::claude_platform::native::{NativePrepared, NativeRequest, NativeSources};
-use crate::claude_platform::stream::get_model_response_iterator;
+use crate::claude_platform::stream::{StreamFlags, get_model_response_iterator};
 use crate::mantle_inputs::region::split_region_prefix;
 
 const ID: &str = "generated-id";
@@ -316,8 +316,10 @@ pub(crate) fn stream_chunks(
 ) -> Vec<serde_json::Value> {
     let stream = get_model_response_iterator(
         steps.into_iter().map(Ok::<_, ReceiveError<CounterError>>),
-        false,
-        json_mode,
+        StreamFlags {
+            sync_stream: false,
+            json_mode,
+        },
         Counting,
         ids,
         MAX_EVENT_BYTES,

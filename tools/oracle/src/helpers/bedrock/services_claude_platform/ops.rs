@@ -6,9 +6,13 @@ use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_bedrock::claude_platform::WORKSPACE_HEADER;
+use betterlite_bedrock::claude_platform::chat::ChatHeadersRequest;
 use betterlite_bedrock::claude_platform::convert;
 use betterlite_bedrock::claude_platform::error::{ChatValidationError, NativeHeaderError};
-use betterlite_bedrock::claude_platform::stream::get_model_response_iterator;
+use betterlite_bedrock::claude_platform::native::{
+    NativeHeadersRequest, validate_environment as validate_native,
+};
+use betterlite_bedrock::claude_platform::stream::{StreamFlags, get_model_response_iterator};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
@@ -66,14 +70,14 @@ fn workspaces(model: &str, cases: &[WorkspaceCase]) -> HelperResult {
         let platform =
             platform_inputs(&case.deployment, &case.litellm_settings, &case.environment)?;
         let no_headers = IndexMap::new();
-        let chat = match fixture.chat_headers(
+        let chat = match fixture.chat_headers(&ChatHeadersRequest {
             model,
-            &[],
-            &case.optional_params,
-            &no_headers,
-            None,
-            &platform,
-        ) {
+            messages: &[],
+            optional_params: &case.optional_params,
+            caller_headers: &no_headers,
+            api_key: None,
+            workspace: platform.sources(),
+        }) {
             Ok(headers) => json!({"workspace": headers.values.get(WORKSPACE_HEADER)}),
             Err(error) => {
                 let failed = match &error {
@@ -86,16 +90,16 @@ fn workspaces(model: &str, cases: &[WorkspaceCase]) -> HelperResult {
         let native_params: IndexMap<String, PromptJson> =
             convert::mapped(&case.optional_params).map_err(invalid)?;
         let no_native_messages: Vec<PromptJson> = Vec::new();
-        let native = match fixture.native_headers(
+        let native = match validate_native(&NativeHeadersRequest {
             model,
-            &no_headers,
-            &no_native_messages,
-            &native_params,
-            &IndexMap::new(),
-            None,
-            None,
-            &platform,
-        ) {
+            caller_headers: &no_headers,
+            messages: &no_native_messages,
+            optional_params: &native_params,
+            litellm_params: &IndexMap::new(),
+            api_key: None,
+            api_base: None,
+            workspace: platform.sources(),
+        }) {
             Ok(headers) => json!({"workspace": headers.headers.get(WORKSPACE_HEADER)}),
             Err(error) => {
                 let failed = match &error {
@@ -119,14 +123,14 @@ fn inspect(request: Request<'_>) -> HelperResult {
                 &input.litellm_settings,
                 &input.environment,
             )?;
-            match fixture.chat_headers(
-                &input.model,
-                &input.messages,
-                &input.optional_params,
-                &input.headers,
-                input.api_key.as_ref(),
-                &platform,
-            ) {
+            match fixture.chat_headers(&ChatHeadersRequest {
+                model: &input.model,
+                messages: &input.messages,
+                optional_params: &input.optional_params,
+                caller_headers: &input.headers,
+                api_key: input.api_key.as_ref(),
+                workspace: platform.sources(),
+            }) {
                 Ok(headers) => Ok(json!({"headers": project_headers(&headers.values)})),
                 Err(error) => {
                     let failed = match &error {
@@ -149,16 +153,16 @@ fn inspect(request: Request<'_>) -> HelperResult {
             let messages = convert::prompt_messages(&input.messages).map_err(invalid)?;
             let optional_params: IndexMap<String, PromptJson> =
                 convert::mapped(&input.optional_params).map_err(invalid)?;
-            match fixture.native_headers(
-                &input.model,
-                &input.headers,
-                &messages,
-                &optional_params,
-                &input.litellm_params,
-                input.api_key.as_ref(),
-                input.api_base.as_deref(),
-                &platform,
-            ) {
+            match validate_native(&NativeHeadersRequest {
+                model: &input.model,
+                caller_headers: &input.headers,
+                messages: &messages,
+                optional_params: &optional_params,
+                litellm_params: &input.litellm_params,
+                api_key: input.api_key.as_ref(),
+                api_base: input.api_base.as_deref(),
+                workspace: platform.sources(),
+            }) {
                 Ok(headers) => Ok(json!({
                     "headers": project_headers(&headers.headers),
                     "api_base": headers.api_base,
@@ -231,8 +235,16 @@ fn stream(id: &str, json_mode: Option<bool>, lines: &[String]) -> HelperResult {
     let source = lines.iter().map(|line| {
         Ok::<TransportChunk, ReceiveError<Infallible>>(TransportChunk::Text(line.clone()))
     });
-    let chunks =
-        get_model_response_iterator(source, false, json_mode, Counting, &ids, MAX_EVENT_BYTES);
+    let chunks = get_model_response_iterator(
+        source,
+        StreamFlags {
+            sync_stream: false,
+            json_mode,
+        },
+        Counting,
+        &ids,
+        MAX_EVENT_BYTES,
+    );
     let mut recorded = Vec::new();
     for outcome in chunks {
         match outcome {

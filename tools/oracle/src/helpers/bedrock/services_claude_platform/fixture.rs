@@ -8,12 +8,9 @@ use betterlite_bedrock::claude_platform::chat::{
     ChatHeadersRequest, ChatPrepared, ChatRequest, ChatSources, HeaderSources,
     validate_environment as validate_chat,
 };
-use betterlite_bedrock::claude_platform::error::{
-    ChatValidationError, NativeHeaderError, NativeTransformError,
-};
+use betterlite_bedrock::claude_platform::error::{ChatValidationError, NativeTransformError};
 use betterlite_bedrock::claude_platform::native::{
-    NativeHeaders, NativeHeadersRequest, NativePrepared, NativeRequest, NativeSources,
-    transform_request as native_transform, validate_environment as validate_native,
+    NativePrepared, NativeRequest, NativeSources, transform_request as native_transform,
 };
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_config::sections::anthropic_capability_catalog::Settings as Budgets;
@@ -38,13 +35,10 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
-use super::stubs::{
-    NoFileBlocks, NoFileError, NoHfTransport, PlatformInputsCase, RefusingFetcher, invalid,
-};
+use super::stubs::{NoFileBlocks, NoFileError, NoHfTransport, RefusingFetcher, invalid};
 
 pub(super) const GENERATED_ID: &str = "generated-id";
 
@@ -153,12 +147,7 @@ impl Fixture {
 
     pub(super) fn chat_headers(
         &self,
-        model: &str,
-        messages: &[Json],
-        optional_params: &IndexMap<String, Json>,
-        caller_headers: &IndexMap<String, String>,
-        api_key: Option<&SecretString>,
-        platform: &PlatformInputsCase,
+        request: &ChatHeadersRequest<'_>,
     ) -> Result<AnthropicHeaders, ChatValidationError> {
         let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
@@ -166,17 +155,7 @@ impl Fixture {
             environment: &mut environment,
             catalogs: &catalogs,
         };
-        self.runtime.block_on(validate_chat(
-            &ChatHeadersRequest {
-                model,
-                messages,
-                optional_params,
-                caller_headers,
-                api_key,
-                workspace: platform.sources(),
-            },
-            &mut sources,
-        ))
+        self.runtime.block_on(validate_chat(request, &mut sources))
     }
 
     pub(super) fn chat_body(
@@ -220,29 +199,6 @@ impl Fixture {
                 },
             ),
         )
-    }
-
-    pub(super) fn native_headers(
-        &self,
-        model: &str,
-        caller_headers: &IndexMap<String, String>,
-        messages: &[PromptJson],
-        optional_params: &IndexMap<String, PromptJson>,
-        litellm_params: &IndexMap<String, Json>,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-        platform: &PlatformInputsCase,
-    ) -> Result<NativeHeaders, NativeHeaderError> {
-        validate_native(&NativeHeadersRequest {
-            model,
-            caller_headers,
-            messages,
-            optional_params,
-            litellm_params,
-            api_key,
-            api_base,
-            workspace: platform.sources(),
-        })
     }
 
     pub(super) fn native_body(
