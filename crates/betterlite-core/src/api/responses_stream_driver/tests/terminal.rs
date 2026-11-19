@@ -232,6 +232,25 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     assert!(cache.writes().is_empty());
 }
 
+#[tokio::test]
+async fn cached_response_iteration_logs_only_when_completed_is_yielded() {
+    let success = Arc::new(SuccessPort::default());
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    let fixture = Fixture::new(ports, fixed_clock());
+    let mut stream = fixture.synthetic(Some(true), false);
+    let first = stream
+        .advance(Dispatch::Spawned)
+        .await
+        .expect("the first event yields")
+        .expect("an event is returned");
+    assert_ne!(event_type(&first), "response.completed");
+    await_pending_logging(&mut stream.callback).await;
+    assert!(success.dispatches().is_empty());
+    assert!(success.async_calls().is_empty());
+    assert!(success.sync_calls().is_empty());
+}
+
 #[test]
 fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
     let success = Arc::new(SuccessPort::default());
