@@ -1,6 +1,7 @@
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use secrecy::ExposeSecret;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_credentials::error::CredentialError;
@@ -253,7 +254,8 @@ fn credential_values_never_logged() {
     let debug = format!("{params:?}");
     assert!(debug.contains("api_key"));
     assert!(!debug.contains("sk-top-secret"));
-    let secret = format!("{:?}", params.secret("api_key").unwrap());
-    assert!(!secret.contains("sk-top-secret"));
+    let secret = params.secret("api_key").unwrap();
+    assert_eq!(secret.expose_secret(), "sk-top-secret");
+    assert!(!format!("{secret:?}").contains("sk-top-secret"));
     assert!(warnings.iter().all(|line| !line.contains("sk-top-secret")));
 }
