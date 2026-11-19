@@ -41,7 +41,9 @@ use crate::otel_provider_assembly::legacy_otel_init::{
     init_legacy_otel,
 };
 use crate::otel_provider_assembly::opentelemetry_legacy_provider::GlobalProviders;
-use crate::otel_provider_assembly::proxy_registry::ProxyRegistry;
+use crate::otel_provider_assembly::proxy_registry::{
+    OtelRegistration, ProxyRegistry, ServiceCallback, register_on_proxy,
+};
 
 const START: f64 = 1_704_067_200.0;
 const END: f64 = 1_704_067_201.5;
@@ -265,6 +267,32 @@ fn phoenix_answers_to_the_arize_phoenix_callback_name() {
 }
 
 // ArizePhoenixLogger._init_tracing builds private providers and never takes the process global
+// ArizePhoenixLogger._init_otel_logger_on_litellm_proxy is empty, so the primary otel callback keeps the proxy slot
+#[test]
+fn phoenix_coexists_with_the_primary_otel_registration() {
+    let rig = Rig::new();
+    register_on_proxy(
+        &rig.proxy,
+        &OtelRegistration {
+            callback_name: Some("otel".to_owned()),
+        },
+    );
+    let _lifecycle = rig.phoenix();
+    let slot = rig.proxy.open_telemetry_logger.lock().expect("the slot");
+    assert_eq!(
+        slot.as_ref()
+            .and_then(|entry| entry.callback_name.as_deref()),
+        Some("otel")
+    );
+    drop(slot);
+    let callbacks = rig.proxy.service_callbacks.lock().expect("the callbacks");
+    assert_eq!(callbacks.len(), 1);
+    assert!(matches!(
+        callbacks.first(),
+        Some(ServiceCallback::OpenTelemetry(entry)) if entry.callback_name.as_deref() == Some("otel")
+    ));
+}
+
 #[test]
 fn phoenix_keeps_its_tracer_out_of_the_global_slot() {
     let rig = Rig::new();
