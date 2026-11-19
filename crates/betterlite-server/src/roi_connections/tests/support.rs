@@ -295,8 +295,10 @@ impl Harness {
 
     pub(crate) fn state(&self) -> RoiConnectionsState<Wire> {
         self.repository.seed(&self.stored);
-        let repository: Arc<dyn SettingsRepository> = Arc::clone(&self.repository);
-        let catalog: Arc<dyn RouterCatalog> = Arc::clone(&self.catalog);
+        let concrete_repository = Arc::clone(&self.repository);
+        let repository: Arc<dyn SettingsRepository> = concrete_repository;
+        let concrete_catalog = Arc::clone(&self.catalog);
+        let catalog: Arc<dyn RouterCatalog> = concrete_catalog;
         RoiConnectionsState {
             repository: self.repository_present.then_some(repository),
             catalog: Some(catalog),
