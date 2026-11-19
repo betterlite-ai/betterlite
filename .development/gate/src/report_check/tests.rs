@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::answer::parse_answer;
-use crate::report_check::report_problems;
+use crate::report_check::{report_problems, with_kept};
 use crate::spec::report::Report;
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
@@ -12,6 +12,8 @@ use crate::yaml::read_yaml;
 const ENTRY: &str = r#"{"behavior":"each chunk keeps the id of the first chunk","litellm":"https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L100","code":"crates/betterlite-openai/src/stream.rs:40","test":"chunks_keep_the_first_id"}"#;
 
 const DONE: &str = r#"{"task":"B005","status":"done","summary":"Streams chat completions as server-sent events.","blocker":"","owned":[{"behavior":"each chunk keeps the id of the first chunk","litellm":"https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L100","code":"crates/betterlite-openai/src/stream.rs:40","test":"chunks_keep_the_first_id"}],"prior_art":[{"need":"parse server-sent events split across reads","options":[{"name":"eventsource-stream","link":"https://docs.rs/eventsource-stream","verdict":"chosen","why":"buffers partial events"},{"name":"hand-written split","link":"https://html.spec.whatwg.org/multipage/server-sent-events.html","verdict":"rejected","why":"breaks on events split across reads"}]}],"mutants":[],"notes":[]}"#;
+
+const FIX: &str = r#"{"task":"B005","status":"done","summary":"Fixes the clippy errors the lint lane found.","blocker":"","owned":[],"prior_art":[],"mutants":[],"notes":[],"kept":["owned"]}"#;
 
 fn added(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
@@ -142,5 +144,33 @@ fn a_done_report_with_a_placeholder_summary_fails() {
         [
             "a done report needs a summary of at least 40 characters and an empty blocker; a blocked report needs a blocker"
         ]
+    );
+}
+
+#[test]
+fn a_fix_turn_copies_the_kept_parts_from_the_last_saved_done_answer() {
+    let journal = tempfile::tempdir().unwrap();
+    let first: Report = parse_answer(DONE, "test").unwrap();
+    with_kept(first, journal.path(), 2).unwrap();
+    let fix: Report = parse_answer(FIX, "test").unwrap();
+    let merged = with_kept(fix, journal.path(), 4).unwrap();
+    assert_eq!(merged.owned.len(), 1);
+    assert!(merged.prior_art.is_empty());
+    assert!(merged.kept.is_empty());
+    assert!(journal.path().join("attempt-4-worker.report.json").exists());
+}
+
+#[test]
+fn kept_parts_without_an_earlier_done_answer_are_a_report_problem() {
+    let journal = tempfile::tempdir().unwrap();
+    let fix: Report = parse_answer(FIX, "test").unwrap();
+    let unfilled = with_kept(fix, journal.path(), 3).unwrap();
+    assert!(!journal.path().join("attempt-3-worker.report.json").exists());
+    let problems = report_problems(&unfilled, &task("B005-chat-streaming.yaml"), &added(&[]));
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.starts_with("kept names parts to copy")),
+        "{problems:?}"
     );
 }

@@ -8,6 +8,14 @@
       "description": "Empty when done. When blocked: what is needed, where, and the evidence.",
       "type": "string"
     },
+    "kept": {
+      "description": "Parts copied from your last done answer on this branch instead of written again: owned, prior_art or mutants. Name a part only when nothing it lists changed since that answer, and leave its list empty here. The gate fills it in and checks the whole report as before.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/KeptPart"
+      }
+    },
     "mutants": {
       "description": "One entry per line that cargo mutants --list --in-diff prints for the branch's Rust diff, as worker.md's step 3 runs it; empty when it prints none.",
       "type": "array",
@@ -61,6 +69,14 @@
     "notes"
   ],
   "$defs": {
+    "KeptPart": {
+      "type": "string",
+      "enum": [
+        "owned",
+        "prior_art",
+        "mutants"
+      ]
+    },
     "MutantTest": {
       "type": "object",
       "properties": {
