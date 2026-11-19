@@ -1001,6 +1001,47 @@ fn message_settings_and_failures_preserves_the_provider_body() {
 }
 
 #[test]
+fn message_settings_and_failures_rejects_an_unusable_thread_id() {
+    let fixture = Fixture::new();
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let empty = call(
+        &fixture,
+        &MessageRequest {
+            provider: "openai",
+            thread_id: "",
+            data: Some(&message),
+            params: &params("openai"),
+            drop_params: false,
+        },
+        Operation::Append,
+        false,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        empty.error,
+        MessageError::OpenAi(ThreadsError::EmptyThreadId)
+    ));
+    let dotted = call(
+        &fixture,
+        &MessageRequest {
+            provider: "openai",
+            thread_id: "..",
+            data: Some(&message),
+            params: &params("openai"),
+            drop_params: false,
+        },
+        Operation::Append,
+        false,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        dotted.error,
+        MessageError::OpenAi(ThreadsError::DotSegment { .. })
+    ));
+    assert!(fixture.transport.requests().is_empty());
+}
+
+#[test]
 fn message_settings_and_failures_maps_the_async_not_found() {
     let fixture = Fixture::new();
     fixture.transport.queue(404, NOT_FOUND_BODY);
