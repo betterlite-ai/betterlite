@@ -1,0 +1,22 @@
+kind: helper
+name: spend-reseed-coalesced-seed
+call:
+  spend_reseed:
+    op: coalesced
+    counter_key: "spend:key:sk-seed"
+    prisma: true
+    row_spend: 3.0
+    entity: Key
+    entity_id: key-seed
+    duration: "1h"
+    start: "2026-11-18T12:00:00+00:00"
+    expected_start: "2026-11-18T12:00:00+00:00"
+    window: ["2026-11-18T12:00:00+00:00", 1.0]
+    logs: [["2026-11-18T12:30:00+00:00", 0.5]]
+    fails: false
+    cache: {redis: true, answers: [miss], set_nx: stored, memory: 2.5, memory_set_fails: false}
+    batch: miss
+    increment: 1.5
+    require_cache_warm: false
+env: {}
+compare: {ignore: []}

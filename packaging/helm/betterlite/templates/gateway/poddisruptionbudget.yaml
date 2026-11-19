@@ -1,0 +1,6 @@
+{{- include "betterlite.pdb" (dict
+  "root" $
+  "component" .Values.gateway
+  "componentName" "gateway"
+  "fullname" (include "betterlite.gateway.fullname" .)
+  "selectorLabels" (include "betterlite.gateway.selectorLabels" .)) }}
