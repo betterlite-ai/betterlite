@@ -866,11 +866,12 @@ async fn async_failures_use_the_provider_the_model_resolves_to() {
     let context = fixture.context();
     let settings = settings(SOURCE, &[]);
     let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let topaz = RecordingTopaz::new(Some(response()));
     let service = service(
         &settings,
         &context,
         &transport,
-        &RecordingTopaz::new(Some(response())),
+        &topaz,
         VariationPolicies::default(),
     );
     let mut call = variation_call();

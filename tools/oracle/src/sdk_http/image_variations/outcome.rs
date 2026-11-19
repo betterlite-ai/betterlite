@@ -1,4 +1,4 @@
-use betterlite_core::api::image_variations::VariationAnswer;
+use betterlite_core::api::image_variations::call::VariationAnswer;
 use betterlite_core::api::image_variations::error::{ImageVariationError, VariationException};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;

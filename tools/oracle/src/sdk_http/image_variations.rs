@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::api::image_variations::call::{
+    ImageVariationCall, PendingVariation, VariationOptions, VariationResponseFormat,
+};
 use betterlite_core::api::image_variations::credentials::VariationPolicies;
+use betterlite_core::api::image_variations::entry::{aimage_variation, image_variation};
 use betterlite_core::api::image_variations::error::ImageVariationError;
-use betterlite_core::api::image_variations::{
-    ImageVariationCall, ImageVariations, PendingVariation, TopazVariationExecutor,
-    TopazVariationRequest, VariationOptions, VariationResponseFormat, aimage_variation,
-    image_variation,
+use betterlite_core::api::image_variations::service::ImageVariations;
+use betterlite_core::api::image_variations::topaz::{
+    TopazVariationExecutor, TopazVariationRequest,
 };
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -20,6 +23,7 @@ use uuid::Uuid;
 
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
+use super::result::Failure;
 use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 

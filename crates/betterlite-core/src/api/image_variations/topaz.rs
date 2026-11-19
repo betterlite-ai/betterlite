@@ -1,7 +1,7 @@
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 use secrecy::SecretString;
 
-use super::PendingVariation;
+use super::call::PendingVariation;
 use super::error::ImageVariationError;
 
 // the aiohttp handler's call after main.image_variation resolved the provider and its credentials

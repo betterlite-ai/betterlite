@@ -66,10 +66,10 @@ impl Section for Raw {
                 .unwrap_or(DEFAULT_REQUEST_TIMEOUT);
         let settings = Settings {
             request_timeout_seconds,
-            api_base: match litellm_settings.api_base {
-                Some(text) => Some(resolve_string(text, "litellm_settings.api_base", lookup)?),
-                None => None,
-            },
+            api_base: litellm_settings
+                .api_base
+                .map(|text| resolve_string(text, "litellm_settings.api_base", lookup))
+                .transpose()?,
             api_key: resolve_secret(litellm_settings.api_key, "litellm_settings.api_key", lookup)?,
             openai_key: resolve_secret(
                 litellm_settings.openai_key,

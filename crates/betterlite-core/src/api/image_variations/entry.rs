@@ -15,10 +15,13 @@ pub trait ImageVariationOperation {
 }
 
 // the sync entry: a ready provider answer passes through, and a provider future is awaited here
-pub async fn image_variation<O: ImageVariationOperation>(
+pub async fn image_variation<O>(
     operation: &O,
     call: &ImageVariationCall,
-) -> Result<VariationAnswer, ImageVariationError> {
+) -> Result<VariationAnswer, ImageVariationError>
+where
+    O: ImageVariationOperation,
+{
     match operation.begin(call)? {
         VariationStep::Answer(answer) => Ok(answer),
         VariationStep::Pending(pending) => Ok(VariationAnswer::Response(pending.await?)),
