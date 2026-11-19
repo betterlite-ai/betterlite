@@ -1,11 +1,8 @@
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::decisions::Json;
 use betterlite_openai::files::stream::flatten_headers;
 use http::HeaderMap as HttpHeaders;
 
-use crate::api::vector_store_http_write::error::{
-    BaseLlmException, FailureFacts, HeaderMap as ErrorHeaders, handle_error,
-};
+use crate::api::vector_store_http_write::error::{BaseLlmException, FailureFacts, handle_error};
 
 use super::super::config::{BufferedResponse, FileContentConfig, Headers};
 use super::BufferedReply;
@@ -34,11 +31,7 @@ pub(super) fn transport_error(
         display: error.to_string(),
     };
     let mapped = handle_error(&facts, None);
-    let mut failure = config.error_class(
-        &mapped.message,
-        mapped.status_code,
-        json_headers(&mapped.headers),
-    );
+    let mut failure = config.error_class(&mapped.message, mapped.status_code, Headers::new());
     failure.status_code_is_synthesized = mapped.status_code_is_synthesized;
     failure
 }
@@ -53,22 +46,6 @@ pub(super) fn status_error(
     let text = lossy_text(body);
     let joined: Headers = flatten_headers(headers).into_iter().collect();
     config.error_class(&text, status, joined)
-}
-
-fn json_headers(headers: &ErrorHeaders) -> Headers {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value_text(value)))
-        .collect()
-}
-
-fn value_text(value: &Json) -> String {
-    match value {
-        Json::Text(text) => text.clone(),
-        Json::Bool(flag) => flag.to_string(),
-        Json::Number(number) => number.to_string(),
-        Json::Null | Json::List(_) | Json::Object(_) => String::new(),
-    }
 }
 
 // httpx's response.text decodes UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD
