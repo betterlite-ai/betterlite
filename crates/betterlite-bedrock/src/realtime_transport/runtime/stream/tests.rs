@@ -15,7 +15,8 @@ use tokio::sync::mpsc;
 
 use super::{InputQueue, OutputStream, SdkInput, SdkOutput};
 use crate::realtime_events::stream::{
-    BedrockInputStream as _, BedrockOutputStream as _, BedrockPayloadPart as _, StreamError,
+    BedrockInputStream as _, BedrockOutputChunk as _, BedrockOutputStream as _,
+    BedrockPayloadPart as _, StreamError,
 };
 use crate::realtime_transport::error::ProviderClass as _;
 use crate::realtime_transport::runtime::error::SdkStreamError;
