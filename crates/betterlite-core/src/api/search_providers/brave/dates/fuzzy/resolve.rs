@@ -32,36 +32,24 @@ impl Fields {
         if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
-        let value: i64 = text.parse().ok()?;
-        let mut label = label;
-        if text.len() > 2 && label.is_none() {
-            self.century = true;
-            label = Some(Label::Year);
-        }
-        self.claim(label)?;
-        self.items.push(Field { value, label });
-        Some(())
+        let long = text.len() > 2;
+        self.push(text.parse().ok()?, label, long)
     }
 
     // a number; anything above 100 is the year, whatever its label
     pub(super) fn push_value(&mut self, value: i64, label: Option<Label>) -> Option<()> {
-        let mut label = label;
-        if value > 100 {
-            self.century = true;
-            if label.is_none() {
-                label = Some(Label::Year);
-            }
-        }
-        self.claim(label)?;
-        self.items.push(Field { value, label });
-        Some(())
+        let long = value > 100;
+        self.push(value, label, long)
     }
 
-    fn claim(&mut self, label: Option<Label>) -> Option<()> {
-        match label {
-            Some(label) if self.index(label).is_some() => None,
-            Some(_) | None => Some(()),
+    fn push(&mut self, value: i64, label: Option<Label>, long: bool) -> Option<()> {
+        self.century |= long;
+        let label = label.or(long.then_some(Label::Year));
+        if label.is_some_and(|label| self.index(label).is_some()) {
+            return None;
         }
+        self.items.push(Field { value, label });
+        Some(())
     }
 }
 
@@ -73,54 +61,42 @@ pub(super) fn resolve(
     if items.is_empty() {
         return Some((None, None, None));
     }
-    let labeled = [
+    let mut slots = [
         fields.index(Label::Year),
         fields.index(Label::Month),
         fields.index(Label::Day),
     ];
-    let known = labeled.iter().flatten().count();
+    let known = slots.iter().flatten().count();
     if known == items.len() || (items.len() == 3 && known == 2) {
-        return Some(labeled_resolution(fields, labeled));
+        let missing =
+            (0..items.len()).find(|index| slots.iter().flatten().all(|slot| slot != index));
+        if let (Some(missing), Some(free)) = (missing, slots.iter().position(Option::is_none)) {
+            *slots.get_mut(free)? = Some(missing);
+        }
+        let value = |slot: Option<usize>| {
+            slot.and_then(|index| items.get(index))
+                .map(|field| field.value)
+        };
+        let [year, month, day] = slots;
+        return Some((value(year), value(month), value(day)));
     }
+    let month_index = slots.get(1).copied().flatten();
     let values: Vec<i64> = items.iter().map(|field| field.value).collect();
     match values.len() {
-        1 => single(&values, labeled[1]),
-        2 => pair(&values, labeled[1], flags),
-        3 => triple(&values, labeled[1], fields, flags),
+        1 => single(&values, month_index),
+        2 => pair(&values, month_index, flags),
+        3 => triple(&values, month_index, fields, flags),
         _ => None,
     }
-}
-
-// every element carries a label, or three elements carry two and one is left to back out
-fn labeled_resolution(
-    fields: &Fields,
-    labeled: [Option<usize>; 3],
-) -> (Option<i64>, Option<i64>, Option<i64>) {
-    let mut slots = labeled;
-    if slots.iter().flatten().count() < fields.items.len() {
-        let used: Vec<usize> = slots.iter().flatten().copied().collect();
-        let missing = (0..fields.items.len()).find(|index| !used.contains(index));
-        let free = slots.iter().position(Option::is_none);
-        if let (Some(missing), Some(free)) = (missing, free) {
-            slots[free] = Some(missing);
-        }
-    }
-    let value = |slot: Option<usize>| {
-        slot.and_then(|index| fields.items.get(index))
-            .map(|field| field.value)
-    };
-    (value(slots[0]), value(slots[1]), value(slots[2]))
 }
 
 fn single(
     values: &[i64],
     month_index: Option<usize>,
 ) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
-    let Some(value) = values.first().copied() else {
-        return Some((None, None, None));
-    };
-    if let Some(index) = month_index {
-        return Some((None, values.get(index).copied(), None));
+    let value = values.first().copied()?;
+    if month_index.is_some() {
+        return Some((None, Some(value), None));
     }
     if value > 31 {
         return Some((Some(value), None, None));
@@ -136,12 +112,11 @@ fn pair(
     let first = values.first().copied()?;
     let second = values.get(1).copied()?;
     if let Some(index) = month_index {
-        let month = values.get(index).copied();
         let other = if index == 0 { second } else { first };
         return Some(if other > 31 {
-            (Some(other), month, None)
+            (Some(other), Some(values.get(index).copied()?), None)
         } else {
-            (None, month, Some(other))
+            (None, values.get(index).copied(), Some(other))
         });
     }
     if first > 31 {
@@ -166,7 +141,15 @@ fn triple(
     let slots = match month_index {
         Some(0) if second > 31 => (1, 0, 2),
         Some(0) => (2, 0, 1),
-        Some(1) => month_between(values, flags)?,
+        Some(1) => {
+            let first = values.first().copied()?;
+            let third = values.get(2).copied()?;
+            if first > 31 || (flags.yearfirst && third <= 31) {
+                (0, 1, 2)
+            } else {
+                (2, 1, 0)
+            }
+        }
         Some(2) if second > 31 => (1, 2, 0),
         Some(2) => (0, 2, 1),
         _ => numeric_shape(values, fields, flags)?,
@@ -176,16 +159,6 @@ fn triple(
         values.get(slots.1).copied(),
         values.get(slots.2).copied(),
     ))
-}
-
-fn month_between(values: &[i64], flags: DateFlags) -> Option<(usize, usize, usize)> {
-    let first = values.first().copied()?;
-    let third = values.get(2).copied()?;
-    Some(if first > 31 || (flags.yearfirst && third <= 31) {
-        (0, 1, 2)
-    } else {
-        (2, 1, 0)
-    })
 }
 
 fn numeric_shape(
@@ -222,18 +195,15 @@ pub(super) fn convert_year(year: i64, century: bool, current_year: i64) -> i64 {
         .saturating_mul(100);
     let converted = year.saturating_add(base);
     if converted >= current_year.saturating_add(50) {
-        return converted.saturating_sub(100);
+        converted.saturating_sub(100)
+    } else {
+        converted
     }
-    converted
 }
 
 pub(super) fn days_in_month(year: i64, month: i64) -> Option<u32> {
     const DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let index = usize::try_from(month.checked_sub(1)?).ok()?;
-    let days = *DAYS.get(index)?;
+    let days = *DAYS.get(usize::try_from(month.checked_sub(1)?).ok()?)?;
     let leap = year.rem_euclid(4) == 0 && (year.rem_euclid(100) != 0 || year.rem_euclid(400) == 0);
-    if month == 2 && leap {
-        return Some(29);
-    }
-    Some(days)
+    Some(if month == 2 && leap { 29 } else { days })
 }

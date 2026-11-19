@@ -60,18 +60,11 @@ pub(super) fn build(
 }
 
 pub(super) fn query_string(params: &IndexMap<String, BraveParam>) -> Result<String, WireError> {
-    let mut encoded: IndexMap<String, SearchParam> = IndexMap::with_capacity(params.len());
-    for (name, param) in params {
-        encoded.insert(name.clone(), param.wire());
-    }
+    let encoded: IndexMap<String, SearchParam> = params
+        .iter()
+        .map(|(name, param)| (name.clone(), param.wire()))
+        .collect();
     wire::query_string(&encoded, true)
-}
-
-fn join_query(query: &SearchQuery) -> String {
-    match query {
-        SearchQuery::Single(text) => text.clone(),
-        SearchQuery::Multiple(items) => items.join(" "),
-    }
 }
 
 // the source caps max_results above only; a zero or negative count reaches the API as given

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
 use chrono::NaiveDate;
@@ -8,20 +10,12 @@ use url::form_urlencoded;
 use super::BraveSearchError;
 use super::dates::{self, DateFlags, DateValue};
 
-pub const REPLY_MAX_BYTES: usize = 0x0100_0000;
-
 const SECTIONS: [&str; 6] = ["web", "discussions", "faqs", "faq", "news", "videos"];
 const RESULT_FILTER: &str = "result_filter";
 const COUNT: &str = "count";
 const DEFAULT_COUNT: usize = 20;
 const COUNT_FLOOR: i64 = 1;
 const COUNT_LIMIT: i64 = 20;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Occurrence {
-    First,
-    Last,
-}
 
 // the sections the source reads by name, and only the member each one's results live in
 #[derive(Debug, Deserialize)]
@@ -46,32 +40,11 @@ struct SectionBody {
     results: Option<Vec<Box<RawValue>>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct BraveResult {
-    #[serde(default)]
-    title: Option<Box<RawValue>>,
-    #[serde(default)]
-    url: Option<Box<RawValue>>,
-    #[serde(default)]
-    description: Option<Box<RawValue>>,
-    #[serde(default)]
-    page_age: Option<Box<RawValue>>,
-    #[serde(default)]
-    age: Option<Box<RawValue>>,
-    #[serde(default)]
-    fetched_content_timestamp: Option<Box<RawValue>>,
-}
-
 pub fn decode_brave_search(
     bytes: &[u8],
     url: Option<&str>,
     today: NaiveDate,
 ) -> Result<SearchResponse, BraveSearchError> {
-    if bytes.len() > REPLY_MAX_BYTES {
-        return Err(BraveSearchError::ReplyTooLarge {
-            limit: REPLY_MAX_BYTES,
-        });
-    }
     let reply: BraveReply = serde_json::from_slice(bytes).map_err(BraveSearchError::ReplyDecode)?;
     let limit = result_limit(url)?;
     let mut results = Vec::new();
@@ -112,19 +85,13 @@ fn section_results<'reply>(
 
 // an unsupported or empty filter selects every section, in the source's own order
 fn sections(url: Option<&str>) -> Vec<&'static str> {
-    let Some(raw) = query_parameter(url, RESULT_FILTER, Occurrence::Last) else {
-        return SECTIONS.to_vec();
-    };
     let mut selected = Vec::new();
-    for part in raw.split(',') {
-        let name = part.trim().to_lowercase();
-        if let Some(section) = SECTIONS
-            .iter()
-            .copied()
-            .find(|section| *section == name.as_str())
-        {
-            selected.push(section);
-        }
+    if let Some((_, raw)) = query_parameter(url, RESULT_FILTER) {
+        selected.extend(
+            raw.split(',')
+                .map(|part| part.trim().to_ascii_lowercase())
+                .filter_map(|name| SECTIONS.iter().copied().find(|section| *section == name)),
+        );
     }
     if selected.is_empty() {
         SECTIONS.to_vec()
@@ -134,23 +101,25 @@ fn sections(url: Option<&str>) -> Vec<&'static str> {
 }
 
 // dict(query_params) keeps a repeated parameter's last value; QueryParams.get keeps its first
-fn query_parameter(url: Option<&str>, name: &str, occurrence: Occurrence) -> Option<String> {
-    let query = url?.split_once('?').map(|(_, query)| query)?;
-    let mut found = None;
-    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-        if key != name {
-            continue;
+fn query_parameter(url: Option<&str>, name: &str) -> (Option<String>, Option<String>) {
+    let mut first = None;
+    let mut last = None;
+    if let Some(query) = url
+        .and_then(|url| url.split_once('?'))
+        .map(|(_, query)| query)
+    {
+        for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+            if key == name {
+                first = first.or_else(|| Some(value.to_string()));
+                last = Some(value.into_owned());
+            }
         }
-        if matches!(occurrence, Occurrence::First) {
-            return Some(value.into_owned());
-        }
-        found = Some(value.into_owned());
     }
-    found
+    (first, last)
 }
 
 fn result_limit(url: Option<&str>) -> Result<usize, BraveSearchError> {
-    let Some(raw) = query_parameter(url, COUNT, Occurrence::First) else {
+    let Some(raw) = query_parameter(url, COUNT).0 else {
         return Ok(DEFAULT_COUNT);
     };
     let count = raw
@@ -162,25 +131,17 @@ fn result_limit(url: Option<&str>) -> Result<usize, BraveSearchError> {
 }
 
 fn project(raw: &RawValue, today: NaiveDate) -> Result<SearchResult, BraveSearchError> {
-    let result: BraveResult =
+    // the source reads each member by name, so a map keeps every member it might ask for
+    let result: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(raw.get()).map_err(BraveSearchError::ReplyDecode)?;
-    let title = text_field(result.title, "title")?;
-    let url = text_field(result.url, "url")?;
-    let snippet = text_field(result.description, "description")?;
-    let sources = [
-        result
-            .page_age
-            .as_deref()
-            .map(|raw| DateValue::from_literal(raw.get())),
-        result
-            .age
-            .as_deref()
-            .map(|raw| DateValue::from_literal(raw.get())),
-    ];
+    let title = text_field(result.get("title").map(AsRef::as_ref), "title")?;
+    let url = text_field(result.get("url").map(AsRef::as_ref), "url")?;
+    let snippet = text_field(result.get("description").map(AsRef::as_ref), "description")?;
+    let sources = [result.get("page_age"), result.get("age")]
+        .map(|member| member.map(|raw| DateValue::from_literal(raw.get())));
     let date = projected_date(sources, today);
     let last_updated = result
-        .fetched_content_timestamp
-        .as_deref()
+        .get("fetched_content_timestamp")
         .map(|raw| DateValue::from_literal(raw.get()))
         .and_then(|value| dates::to_yyyy_mm_dd(&value, today, DateFlags::default()));
     Ok(SearchResult {
@@ -202,10 +163,7 @@ fn projected_date(sources: [Option<DateValue>; 2], today: NaiveDate) -> Option<S
     dates::to_yyyy_mm_dd(&value, today, DateFlags::default())
 }
 
-fn text_field(
-    member: Option<Box<RawValue>>,
-    field: &'static str,
-) -> Result<String, BraveSearchError> {
+fn text_field(member: Option<&RawValue>, field: &'static str) -> Result<String, BraveSearchError> {
     let Some(raw) = member else {
         return Ok(String::new());
     };

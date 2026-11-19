@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use chrono::{DateTime, Datelike as _, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 
 mod fuzzy;
 
@@ -29,7 +29,13 @@ impl DateValue {
         match literal.as_bytes().first() {
             Some(b'"') => serde_json::from_str(literal).map_or(Self::Ignored(false), Self::Text),
             Some(b't') => Self::Ignored(true),
-            Some(b'[' | b'{') => Self::Ignored(has_members(literal)),
+            Some(b'[' | b'{') => {
+                let end = literal.len().saturating_sub(1);
+                let filled = literal
+                    .get(1..end)
+                    .is_some_and(|inner| !inner.trim().is_empty());
+                Self::Ignored(filled)
+            }
             Some(b'f' | b'n') => Self::Ignored(false),
             Some(_) => number_value(literal),
             None => Self::Ignored(false),
@@ -61,13 +67,6 @@ fn number_value(literal: &str) -> DateValue {
     DateValue::Integer(literal.to_owned())
 }
 
-fn has_members(literal: &str) -> bool {
-    let end = literal.len().saturating_sub(1);
-    literal
-        .get(1..end)
-        .is_some_and(|inner| !inner.trim().is_empty())
-}
-
 #[must_use]
 pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> Option<String> {
     let date = match value {
@@ -76,12 +75,7 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
         DateValue::Integer(text) => unix_date(text)?,
         DateValue::Decimal(number) => decimal_date(*number)?,
     };
-    Some(format!(
-        "{:04}-{:02}-{:02}",
-        date.year(),
-        date.month(),
-        date.day()
-    ))
+    Some(date.format("%Y-%m-%d").to_string())
 }
 
 fn decimal_date(number: f64) -> Option<NaiveDate> {
@@ -151,16 +145,9 @@ fn unix_date(text: &str) -> Option<NaiveDate> {
     if integer.len() > 30 {
         return None;
     }
-    let (integer, fraction) = if above_threshold(integer, fraction) {
-        shift_three(integer, fraction)?
-    } else {
-        (integer.to_owned(), fraction.to_owned())
-    };
-    let whole: i128 = if integer.is_empty() {
-        0
-    } else {
-        integer.parse().ok()?
-    };
+    let (integer, fraction) = to_seconds(integer, fraction)?;
+    // the 30-digit guard keeps every value inside i128, and an empty run reads as zero
+    let whole: i128 = integer.parse().unwrap_or_default();
     let fractional = fraction.bytes().any(|byte| byte != b'0');
     let seconds = match (negative, fractional) {
         (true, true) => whole.checked_add(1)?.checked_neg()?,
@@ -171,21 +158,20 @@ fn unix_date(text: &str) -> Option<NaiveDate> {
     Some(moment.date_naive())
 }
 
-fn above_threshold(integer: &str, fraction: &str) -> bool {
+// above 1e11 the value is milliseconds; the source divides by 1000.0, and the exact decimal
+// shift keeps every digit, so a fraction that rounds the seconds up or down cannot move the day
+fn to_seconds(integer: &str, fraction: &str) -> Option<(String, String)> {
     const LIMIT: &str = "100000000000";
-    match integer.len().cmp(&LIMIT.len()) {
+    let above = match integer.len().cmp(&LIMIT.len()) {
         Ordering::Greater => true,
         Ordering::Less => false,
-        Ordering::Equal => match integer.cmp(LIMIT) {
-            Ordering::Greater => true,
-            Ordering::Less => false,
-            Ordering::Equal => fraction.bytes().any(|byte| byte != b'0'),
-        },
+        Ordering::Equal => {
+            integer >= LIMIT && (integer > LIMIT || fraction.bytes().any(|b| b != b'0'))
+        }
+    };
+    if !above {
+        return Some((integer.to_owned(), fraction.to_owned()));
     }
-}
-
-// the source divides milliseconds by 1000.0; the exact decimal shift keeps every digit
-fn shift_three(integer: &str, fraction: &str) -> Option<(String, String)> {
     let cut = integer.len().checked_sub(3)?;
     let (head, tail) = integer.split_at_checked(cut)?;
     Some((head.to_owned(), format!("{tail}{fraction}")))

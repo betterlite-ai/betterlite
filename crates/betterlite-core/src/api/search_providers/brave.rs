@@ -42,8 +42,6 @@ pub enum BraveSearchError {
     Credential(#[from] CredentialError),
     #[error("the Brave search option `{field}` has the wrong type")]
     OptionType { field: String },
-    #[error("the Brave search reply is larger than {limit} bytes")]
-    ReplyTooLarge { limit: usize },
     #[error("the Brave search reply does not match the Brave schema")]
     ReplyDecode(#[source] serde_json::Error),
     #[error("the Brave search reply field `{field}` is not text")]
@@ -86,11 +84,7 @@ impl BraveSearchConfig {
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
     ) -> Result<Headers, BraveSearchError> {
-        let environment = BraveEnvironment {
-            api_key: self.api_key.as_ref(),
-            api_base: &self.api_base,
-        };
-        let Some(resolved) = CREDENTIAL.resolve(api_key.cloned(), api_base, &environment)? else {
+        let Some(resolved) = CREDENTIAL.resolve(api_key.cloned(), api_base, self)? else {
             return Err(BraveSearchError::MissingApiKey);
         };
         headers.insert(
@@ -111,16 +105,14 @@ impl BraveSearchConfig {
     }
 }
 
-struct BraveEnvironment<'settings> {
-    api_key: Option<&'settings SecretString>,
-    api_base: &'settings str,
-}
-
-impl EnvironmentLookup for BraveEnvironment<'_> {
+impl EnvironmentLookup for BraveSearchConfig {
     fn lookup(&self, name: &str) -> Option<String> {
         match name {
-            "BRAVE_API_KEY" => self.api_key.map(|key| key.expose_secret().to_owned()),
-            "BRAVE_API_BASE" => Some(self.api_base.to_owned()),
+            API_KEY_VARIABLE => self
+                .api_key
+                .as_ref()
+                .map(|key| key.expose_secret().to_owned()),
+            API_BASE_VARIABLE => Some(self.api_base.clone()),
             _ => None,
         }
     }

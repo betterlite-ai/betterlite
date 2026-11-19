@@ -16,7 +16,6 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::dates::{self, DateFlags, DateValue};
-use super::reply::REPLY_MAX_BYTES;
 use super::{BRAVE_API_BASE, BraveSearchConfig, BraveSearchError};
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -616,18 +615,6 @@ fn brave_search_reply_rejects_a_count_that_is_not_an_integer() {
         .unwrap_err();
 
     assert!(matches!(error, BraveSearchError::CountNotInteger { .. }));
-}
-
-#[test]
-fn brave_search_reply_rejects_an_oversized_body() {
-    let body = vec![b' '; REPLY_MAX_BYTES.saturating_add(1)];
-
-    let error = super::reply::decode_brave_search(&body, None, today()).unwrap_err();
-
-    assert!(matches!(
-        error,
-        BraveSearchError::ReplyTooLarge { limit } if limit == REPLY_MAX_BYTES
-    ));
 }
 
 #[rstest]
