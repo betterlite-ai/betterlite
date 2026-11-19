@@ -135,5 +135,8 @@ async fn transport_failure_propagates() {
         error,
         MessagesError::Threads(ThreadsError::Transport { .. })
     ));
-    assert!(transport.requests().is_empty());
+    assert_eq!(
+        transport.requests(),
+        vec![wire("GET", MESSAGES_URL, None, Auth::Key(KEY))]
+    );
 }
