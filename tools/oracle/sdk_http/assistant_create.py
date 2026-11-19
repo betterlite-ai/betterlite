@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, TypedDict, Unpack
 
 import httpx
 import litellm
@@ -93,6 +93,16 @@ class Outcome(BaseModel):
     failure: Failure | None = None
 
 
+class AssistantCreateValue(BaseModel):
+    value: Outcome
+
+
+class AssistantCreateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assistant_create: AssistantCreateValue
+
+
 class CreateOptions(TypedDict):
     model: str
     name: str | None
@@ -120,6 +130,7 @@ class CreateOptions(TypedDict):
     azure_scope: str | None
     async_create_assistants: bool | int | str | None
     extra_body: dict[str, Json] | None
+    client: None
 
 
 class AssistantCreateRequest(BaseModel):
@@ -128,9 +139,11 @@ class AssistantCreateRequest(BaseModel):
     assistant_create: Call
 
     def serialize(self, api_base: str) -> str:
-        return run(self.assistant_create, api_base).model_dump_json(
-            by_alias=True, exclude_unset=True
-        )
+        return AssistantCreateResult(
+            assistant_create=AssistantCreateValue(
+                value=run(self.assistant_create, api_base)
+            )
+        ).model_dump_json(by_alias=True, exclude_unset=True)
 
 
 ASSISTANT_FIELDS: Final = TypeAdapter(AssistantView)
@@ -140,6 +153,8 @@ def to_timeout(timeout: float | str | Phases | None) -> float | str | httpx.Time
     match timeout:
         case Phases() as phases:
             return httpx.Timeout(**phases.given())
+        case int() as seconds:
+            return float(seconds)
         case float() | str() | None:
             return timeout
 
@@ -174,6 +189,7 @@ def create_options(
         azure_scope=call.azure_scope,
         async_create_assistants=call.async_create_assistants,
         extra_body=call.extra_body if "extra_body" in call.model_fields_set else {},
+        client=None,
     )
 
 
@@ -194,6 +210,24 @@ def project_failure(error: openai.APIError) -> Outcome:
     return Outcome(failure=Failure.model_validate(fields))
 
 
+# both entries are unannotated **kwargs functions, so the calls go through the options they read
+class CreateFacade(Protocol):
+    def create_assistants(
+        self,
+        custom_llm_provider: Literal["openai", "azure"],
+        **kwargs: Unpack[CreateOptions],
+    ) -> Assistant | Coroutine[None, None, Assistant]: ...
+
+    async def acreate_assistants(
+        self,
+        custom_llm_provider: Literal["openai", "azure"],
+        **kwargs: Unpack[CreateOptions],
+    ) -> Assistant: ...
+
+
+FACADE: CreateFacade = litellm
+
+
 def run(call: Call, api_base: str) -> Outcome:
     if call.client is not None:
         raise ScriptedClientError(call.client)
@@ -201,13 +235,13 @@ def run(call: Call, api_base: str) -> Outcome:
     options = create_options(call, api_base, timeout)
     try:
         if call.entry == "sync":
-            answer = litellm.create_assistants(call.provider, client=None, **options)
+            answer = FACADE.create_assistants(call.provider, **options)
             match answer:
                 case Assistant():
                     return project_assistant(answer)
                 case Coroutine():
                     raise UnexpectedAnswerError
-        held = litellm.acreate_assistants(call.provider, client=None, **options)
+        held = FACADE.acreate_assistants(call.provider, **options)
         return project_assistant(asyncio.run(held))
     except openai.APIError as error:
         return project_failure(error)
