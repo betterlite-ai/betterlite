@@ -1,0 +1,37 @@
+kind: helper
+name: org-delimiters-and-tag-multiplicity
+call:
+  spend_entities:
+    steps:
+      - kind: enqueue
+        entity: org
+        response_cost: 1.25
+        org_id: "org::1/part"
+        user_id: "user 1 ue"
+      - kind: enqueue
+        entity: team
+        response_cost: 0.5
+        team_id: team-1
+        user_id: user-1
+      - kind: enqueue
+        entity: tag
+        response_cost: 0.5
+        request_tags: '["prod","","prod","test"]'
+      - kind: enqueue
+        entity: tag
+        response_cost: 0.25
+        request_tags: '{"beta":1,"alpha":2}'
+      - kind: enqueue
+        entity: tag
+        response_cost: 0.25
+        request_tags: '"ab"'
+      - kind: enqueue
+        entity: tag
+        response_cost: 0.25
+        request_tags: '5'
+      - kind: enqueue
+        entity: tag
+        response_cost: 0.25
+        request_tags: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: management-payload-missing-env-values
+call:
+  management_payload:
+    function: redact_env_vars
+    response:
+      env_vars:
+        - {name: ONLY_NAME}
+        - {name: "", scope: user, description: ""}
+        - {name: 7, value: secret}
+        - not-an-entry
+env: {}
+compare: {ignore: []}
