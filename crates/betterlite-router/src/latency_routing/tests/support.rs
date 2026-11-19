@@ -85,7 +85,7 @@ impl Spec {
         }
     }
 
-    fn deployment(&self) -> DeploymentSpec {
+    pub(super) fn deployment(&self) -> DeploymentSpec {
         let mut extra = JsonObject::new();
         let mut params =
             JsonObject::from_iter([("model".to_owned(), Json::Text("openai/probe".to_owned()))]);

@@ -1,7 +1,22 @@
+use std::future::Future as _;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
 
 use super::support::{Case, LimitValue, MINUTE, Outcome, Source, Spec, check};
 use crate::latency_rank_math::valid_count;
+use crate::router_core::tests::support::{
+    NoLimits, NoServices, Providers, route_context, route_request, strategy_context,
+};
+use crate::static_eligibility::request::RequestFacts;
+use crate::strategy::Strategy;
+use crate::strategy::select as strategy_select;
+use crate::strategy_dispatch::service::StrategyDispatch;
+use crate::strategy_dispatch::strategy::RoutingStrategy;
+use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
 
 #[rstest]
 // the token estimate is added first, and a sum exactly on the limit still fits
@@ -121,4 +136,40 @@ fn latency_routing_rank_math_boundaries() {
     assert_eq!(valid_count(&[10.0_f64, 10.0_f64], 0.0_f64), 2);
     assert_eq!(valid_count(&[10.0_f64, 15.0_f64], 0.5_f64), 2);
     assert_eq!(valid_count(&[10.0_f64, 15.1_f64], 0.5_f64), 1);
+}
+
+// the strategy arm answers on its first poll from its arguments alone, so stopping there leaves nothing behind
+#[tokio::test]
+async fn latency_routing_boundaries_cancel_a_strategy_call_without_state() {
+    let deployments = [
+        Spec::unseen("dep-a").deployment(),
+        Spec::unseen("dep-b").deployment(),
+    ];
+    let facts = RequestFacts::default();
+    let request = route_request("gpt-4o", &facts);
+    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
+    let route = route_context(&request, &services, &limits, &params);
+    let mut dispatch = StrategyDispatch::new(RoutingStrategy::LatencyBasedRouting, None)
+        .expect("the latency dispatch builds");
+    let resolution = Resolution {
+        strategy: RoutingStrategy::LatencyBasedRouting,
+        selector: None,
+        source: ResolutionSource::Default,
+        bound: false,
+        ignored_override: None,
+    };
+    let mut random = StdRng::seed_from_u64(7);
+    let first = {
+        let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
+        let mut call = pin!(strategy_select(
+            Strategy::LatencyBasedRouting,
+            context,
+            &mut random
+        ));
+        call.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+    };
+    assert!(matches!(first, Poll::Ready(Ok(index)) if index < deployments.len()));
+    let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
+    let selected = strategy_select(Strategy::LatencyBasedRouting, context, &mut random).await;
+    assert!(selected.is_ok_and(|index| index < deployments.len()));
 }
