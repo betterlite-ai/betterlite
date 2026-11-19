@@ -1,0 +1,44 @@
+kind: helper
+name: vector-store-registry-id-and-tool-params
+call:
+  vector_store_registry:
+    operation: ids_and_tool_params
+    non_default_params:
+      vector_store_ids: [vs_b, vs_a, vs_b]
+    tools:
+      - type: file_search
+        vector_store_ids: [vs_c, vs_a]
+    tool:
+      filters: {}
+      max_num_results: 0
+      ranking_options: {}
+calls:
+  - vector_store_registry:
+      operation: ids_and_tool_params
+      non_default_params:
+        vector_store_ids: vs_a
+      tools: null
+      tool: {}
+  - vector_store_registry:
+      operation: ids_and_tool_params
+      non_default_params: {}
+      tools:
+        - type: other
+          vector_store_ids: [vs_x]
+      tool: {}
+  - vector_store_registry:
+      operation: ids_and_tool_params
+      non_default_params: {}
+      tools: null
+      tool:
+        rewrite_query: false
+  - vector_store_registry:
+      operation: ids_and_tool_params
+      non_default_params: {}
+      tools: null
+      tool:
+        filters: null
+        max_num_results: null
+        ranking_options: null
+env: {}
+compare: {ignore: []}
