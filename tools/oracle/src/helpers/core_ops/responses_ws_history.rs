@@ -5,7 +5,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use betterlite_core::api::responses_ws_history::ManagedResponsesWebSocket;
-use betterlite_core::api::responses_ws_history::call_kwargs::update_proxy_request;
+use betterlite_core::api::responses_ws_history::call_kwargs::{
+    inject_credentials, update_proxy_request,
+};
+use betterlite_core::api::responses_ws_history::history::get_history_messages;
+use betterlite_core::api::responses_ws_history::provider::{resolve_provider, same_provider};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -134,7 +138,7 @@ fn constructor_view(handler: &ManagedResponsesWebSocket<Socket>) -> Value {
         "first_message": handler.first_message,
         "quota_callbacks": handler.quota_callbacks.len(),
         "extra_kwargs": handler.extra_kwargs,
-        "history_empty": handler.get_history_messages("resp_none").is_empty(),
+        "history_empty": get_history_messages(handler, "resp_none").is_empty(),
     })
 }
 
@@ -145,13 +149,12 @@ fn credentials_view(
     let mut answers = Vec::with_capacity(rows.len());
     for row in rows {
         let mut kwargs = row.kwargs.clone();
-        handler
-            .inject_credentials(&mut kwargs, row.model.as_deref())
+        inject_credentials(handler, &mut kwargs, row.model.as_deref())
             .map_err(|error| helper_error("TypeError", error.to_string()))?;
         answers.push(json!({
             "model": row.model,
-            "provider": handler.resolve_provider(row.model.as_deref()),
-            "same": handler.same_provider(row.model.as_deref()),
+            "provider": resolve_provider(handler, row.model.as_deref()),
+            "same": same_provider(handler, row.model.as_deref()),
             "kwargs": kwargs,
         }));
     }
