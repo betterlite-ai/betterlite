@@ -137,8 +137,8 @@ fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::
                 .transpose()?,
         ),
     ] {
-        if let Some(value) = value {
-            delta.insert(name.to_owned(), value);
+        if let Some(present) = value {
+            delta.insert(name.to_owned(), present);
         }
     }
     if let Some(JsonValue::Array(calls)) = &source.tool_calls {
@@ -150,9 +150,10 @@ fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::
             // LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
             let mut kept = Map::new();
             for name in ["index", "id", "type", "function"] {
-                if let Some(value) = fields.get(name) {
-                    kept.insert(name.to_owned(), serde_json::to_value(value)?);
-                }
+                let Some(present) = fields.get(name) else {
+                    continue;
+                };
+                kept.insert(name.to_owned(), serde_json::to_value(present)?);
             }
             projected.push(Value::Object(kept));
         }

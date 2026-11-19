@@ -44,19 +44,19 @@ pub(crate) fn decode(
     prepared: &PreparedRequest,
     upstream: Upstream,
 ) -> Result<OperationResult, OperationError> {
-    let PreparedRequest::Anthropic(prepared) = prepared else {
+    let PreparedRequest::Anthropic(inner) = prepared else {
         return Err(error::unsupported());
     };
-    let Upstream::Anthropic(upstream) = upstream else {
+    let Upstream::Anthropic(stored) = upstream else {
         return Err(error::unsupported());
     };
-    let requested = prepared.chat.request.model.as_deref();
-    match upstream.outcome {
+    let requested = inner.chat.request.model.as_deref();
+    match stored.outcome {
         ChatOutcome::Reply(envelope) => Ok(OperationResult::Anthropic(AnthropicResult::Reply(
             Box::new(AnthropicReply::new(&envelope, requested)),
         ))),
         ChatOutcome::Stream(stream) => Ok(OperationResult::Anthropic(AnthropicResult::Stream(
-            frames::frames(*stream, &prepared.chat.request, &prepared.chat.model),
+            frames::frames(*stream, &inner.chat.request, &inner.chat.model),
         ))),
         ChatOutcome::Embedding => Err(error::unsupported()),
     }

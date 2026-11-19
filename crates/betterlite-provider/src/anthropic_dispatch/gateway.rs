@@ -38,8 +38,8 @@ fn additional_headers(hidden: &IndexMap<String, Json>) -> HeaderMap {
         return headers;
     };
     for (name, value) in additional {
-        if let Json::Text(value) = value {
-            insert(&mut headers, name, value);
+        if let Json::Text(text) = value {
+            insert(&mut headers, name, text);
         }
     }
     headers
@@ -53,11 +53,11 @@ fn stream_headers(response: &IndexMap<String, String>) -> HeaderMap {
     headers
 }
 
-fn insert(headers: &mut HeaderMap, name: &str, value: &str) {
-    let Ok(name) = HeaderName::try_from(name) else {
+fn insert(headers: &mut HeaderMap, raw_name: &str, raw_value: &str) {
+    let Ok(name) = HeaderName::try_from(raw_name) else {
         return;
     };
-    let Ok(value) = HeaderValue::try_from(value) else {
+    let Ok(value) = HeaderValue::try_from(raw_value) else {
         return;
     };
     headers.insert(name, value);
