@@ -216,7 +216,7 @@ async def run_steps(
         returned = await logger.async_pre_call_deployment_hook(request, typed)
         if request.get(CALL_ID) != previous:
             request[CALL_ID] = GENERATED_ID
-        cache = logger._get_cache(step.get("lookup"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L320-L326
+        cache = logger._get_cache(step.get("lookup"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L320-L326
         steps.append(
             {
                 "settings": settings_record(logger),
