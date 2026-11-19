@@ -283,12 +283,9 @@ fn mutation_order_is_kept() {
     let mut registry = registry(vec![store("vs_a"), store("vs_b")]);
     registry.add_store(labelled_store("vs_a", "ignored"));
     assert_eq!(ids(&registry), vec![Some("vs_a"), Some("vs_b")]);
+    let first = registry.store_by_id("vs_a").unwrap();
     assert_eq!(
-        registry
-            .store_by_id("vs_a")
-            .unwrap()
-            .vector_store_description
-            .as_deref(),
+        first.vector_store_description.as_deref(),
         Some("listed"),
         "an id already present keeps the first record"
     );
@@ -308,6 +305,11 @@ fn mutation_order_is_kept() {
     assert_eq!(
         replaced.litellm_credential_name.as_deref(),
         Some("stored-credential")
+    );
+    assert_eq!(
+        ids(&registry),
+        vec![Some("vs_a"), Some("vs_b"), Some("vs_c")],
+        "only the matching record is replaced"
     );
     registry.update_store("vs_a", labelled_store("vs_a", "moved"));
     assert_eq!(
