@@ -17,7 +17,7 @@ description: >-
   fixture rows (keys take the raw token and a role); a case that only needs the master key keeps an empty seed.
   Give every case its own general_settings.master_key (sk-mcp-lifecycle, sk-mcp-review, sk-mcp-byok,
   sk-mcp-purge, sk-mcp-env, sk-mcp-draft) so no two stateful cases ever share a process. Do not set
-  database_url and do not turn off schema setup: the runner injects the database, B5076 boots LiteLLM on it with
+  database_url and do not turn off schema setup: the runner injects the database, B9942 boots LiteLLM on it with
   Prisma, and both gateways create the MCP tables themselves. Set env PROXY_BASE_URL=https://gateway.example.test
   in every case, so registry urls and setup_url come out fixed. Every stored server points at
   http://127.0.0.1:9/mcp and every OAuth server at http://127.0.0.1:9/oauth/authorize and

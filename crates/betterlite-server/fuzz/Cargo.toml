@@ -315,6 +315,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pass_through_config_reads"
+path = "fuzz_targets/pass_through_config_reads.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "credential_request"
 path = "fuzz_targets/credential_request.rs"
 test = false

@@ -1,0 +1,34 @@
+kind: helper
+name: mcp-json-results
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result":{"content":[{"type":"text","text":"[{\"title\":\"a\",\"url\":\"u1\"},{\"title\":\"b\",\"snippet\":\"s\"}]"},{"type":"image","text":"ignored"},{"type":"text","text":"{\"results\":[{\"title\":\"c\",\"publishedDate\":\"2024-01-02\"}]}"},{"type":"text","text":"no json"},{"type":"text","text":9}]}}'
+calls:
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":"{\"results\":[{\"title\":\"d\"}]}"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":"{\"other\":[{\"title\":\"x\"}]}"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":"[1,\"x\",{\"title\":\"ok\"}]"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":[{"title":"no"}]}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":"[{\"title\":\"no\"}]"}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: '{"result":{"structuredContent":[{"title":"sniffed"}]}}'
+env: {}
+compare: {ignore: []}

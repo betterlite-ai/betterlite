@@ -13,7 +13,7 @@ description: >-
   request logs. Put two visible rows in one session, one unrelated row with a different key/user,
   and one row with cache and guardrail metadata. Use fixed ISO timestamps and configured model
   aliases whose model_info.id matches the log filter. Send real key authentication through each
-  booted proxy. Set database URLs only through the ordinary fixture runner and use B5076's
+  booted proxy. Set database URLs only through the ordinary fixture runner and use B9942's
   pinned Prisma environment. Empty upstream transcripts are expected; no provider is called.
   Use the HTTP case schema that the runner reads, including steps and per-peer captures, not
   a helper that invokes a FastAPI handler. The current ordinary HTTP format omits kind.
