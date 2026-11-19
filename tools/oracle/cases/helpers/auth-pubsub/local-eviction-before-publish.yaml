@@ -1,0 +1,8 @@
+kind: helper
+name: auth-pubsub-local-eviction-before-publish
+call:
+  auth_pubsub:
+    evict:
+      keys: [team:alpha, team:beta]
+env: {}
+compare: {ignore: []}

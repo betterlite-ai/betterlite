@@ -1,0 +1,12 @@
+kind: helper
+name: model-garden-target-endpoint-seed
+call:
+  model_garden_target:
+    targets:
+      - model: openai/378943383978115072
+        api_base: null
+        vertex_location: us
+        vertex_project: null
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

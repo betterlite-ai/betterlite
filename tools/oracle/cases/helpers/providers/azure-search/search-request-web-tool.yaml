@@ -1,0 +1,27 @@
+kind: helper
+name: search-request-web-tool
+call:
+  azure_search:
+    request:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: latest AI developments
+          optional_params: {max_results: 5, country: de, search_domain_filter: [example.com], max_tokens_per_page: 3}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: ""
+          optional_params: {country: ""}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: [first, second, ""]
+          optional_params: {country: 42, max_results: true}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          query: grounded
+          optional_params: {max_results: 5, country: de}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          query: zero
+          optional_params: {max_results: 0}
+        - environment: {}
+          query: no model
+          optional_params: {}
+env: {}
+compare:
+  ignore: []

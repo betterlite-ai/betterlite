@@ -1,0 +1,70 @@
+kind: helper
+name: nested-upstream-error
+call:
+  azure_search:
+    error:
+      scenarios:
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": {\"message\": \"connection not found. \"}}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": {\"message\": \"{\\\"error\\\": \\\"Tool_User_Error\\\", \\\"message\\\": \\\"deep detail\\\", \\\"code\\\": \\\"invalid_tool_input\\\"}\"}}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": {\"message\": \"{\\\"message\\\": \\\"\\\"}\"}}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{oops"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"message\": \"not an envelope\"}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": null}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": ""}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": null}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "boom...  "}}
+        - environment: {}
+          status: 200
+          headers: {x-request-id: abc, Retry-After: "1"}
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "with headers"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": {\"message\": 42}}"}}
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": 42}}
+        - environment: {}
+          status: 503
+          body: |
+            {"output": null}
+        - environment: {}
+          status: 400
+          body: |
+            null
+        - environment: {}
+          status: 200
+          body: |
+            ""
+env: {}
+compare:
+  ignore: []
