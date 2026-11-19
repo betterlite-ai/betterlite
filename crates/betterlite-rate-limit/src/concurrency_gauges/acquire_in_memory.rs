@@ -27,13 +27,13 @@ pub(super) async fn acquire_slots_in_memory(
     }
     let mut statuses = Vec::with_capacity(requested.len());
     for (gauge, (registry, in_flight)) in requested.iter().zip(states) {
-        let value = match registry {
-            Some(mut registry) => {
-                registry.insert(slot_id.to_owned(), times.now);
-                GaugeCacheValue::Registry(registry)
-            }
-            None => GaugeCacheValue::Counter(CacheCounterValue::Int(in_flight.saturating_add(1))),
-        };
+        let value = registry.map_or_else(
+            || GaugeCacheValue::Counter(CacheCounterValue::Int(in_flight.saturating_add(1))),
+            |mut slots| {
+                slots.insert(slot_id.to_owned(), times.now);
+                GaugeCacheValue::Registry(slots)
+            },
+        );
         gauges
             .cache
             .set(&gauge.counter_key, value, PARALLEL_SLOT_TTL, true)

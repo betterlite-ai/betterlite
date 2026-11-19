@@ -19,6 +19,7 @@ mod tests;
 use std::sync::Arc;
 use std::time::{Duration, SystemTimeError, UNIX_EPOCH};
 
+use betterlite_redis::redis_counters::RedisCountersError;
 use tokio::sync::Mutex;
 
 use crate::fail_closed::{FailClosedPolicy, RateLimitUnverifiableError};
@@ -68,8 +69,8 @@ impl ConcurrencyGauges {
         stash: Option<&RequestStash>,
         in_logging_callback: bool,
     ) {
-        if let Some(stash) = stash {
-            release_stash::release_stashed_slot(self, stash, in_logging_callback).await;
+        if let Some(request_stash) = stash {
+            release_stash::release_stashed_slot(self, request_stash, in_logging_callback).await;
         }
     }
 }
@@ -85,10 +86,9 @@ pub(crate) fn gauge_times(clock: &dyn LimiterClock) -> Result<GaugeTimes, GaugeE
         .current_time()
         .duration_since(UNIX_EPOCH)
         .map_err(GaugeError::ClockBeforeEpoch)?;
-    let cutoff = match elapsed.checked_sub(PARALLEL_SLOT_TTL) {
-        Some(older) => older.as_secs_f64(),
-        None => f64::NEG_INFINITY,
-    };
+    let cutoff = elapsed
+        .checked_sub(PARALLEL_SLOT_TTL)
+        .map_or(f64::NEG_INFINITY, |older| older.as_secs_f64());
     Ok(GaugeTimes {
         now: elapsed.as_secs_f64(),
         cutoff,
@@ -112,5 +112,5 @@ pub enum GaugeError {
     #[error("the limiter clock reads a time before the Unix epoch")]
     ClockBeforeEpoch(#[source] SystemTimeError),
     #[error(transparent)]
-    Redis(#[from] betterlite_redis::redis_counters::RedisCountersError),
+    Redis(#[from] RedisCountersError),
 }

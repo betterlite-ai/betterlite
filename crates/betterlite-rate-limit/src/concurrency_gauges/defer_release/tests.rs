@@ -22,7 +22,7 @@ fn deferring_gauges(
 ) -> (ConcurrencyGauges, Arc<PlannedScript>) {
     let mut gauges = gauges_with(cache, FixedClock::at(NOW));
     let handle = PlannedScript::new("release", vec![int_values(&[0])]);
-    let script: Arc<dyn CounterScript> = Arc::clone(&handle);
+    let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.release_script = Some(script);
     let source: Arc<dyn ReleaseBatchSource> = Arc::new(FixedBatchSource { batch });
     gauges.release_batch = Some(source);

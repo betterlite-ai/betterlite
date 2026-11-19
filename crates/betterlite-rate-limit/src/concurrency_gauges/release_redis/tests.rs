@@ -22,7 +22,7 @@ fn release_gauges(
 ) -> (ConcurrencyGauges, Arc<PlannedScript>) {
     let mut gauges = gauges_with(cache, FixedClock::at(NOW));
     let handle = PlannedScript::new("release", plans);
-    let script: Arc<dyn CounterScript> = Arc::clone(&handle);
+    let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.release_script = Some(script);
     (gauges, handle)
 }

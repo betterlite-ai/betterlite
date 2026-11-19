@@ -36,8 +36,8 @@ async fn read_only_checks_use_the_count_script_and_never_the_acquire_one() {
     let count = PlannedScript::new("count", vec![int_values(&[1])]);
     let acquire = PlannedScript::new("acquire", vec![int_values(&[0, 1])]);
     let mut gauges = gauges_with(Arc::clone(&cache), clock);
-    let count_script: Arc<dyn CounterScript> = Arc::clone(&count);
-    let acquire_script: Arc<dyn CounterScript> = Arc::clone(&acquire);
+    let count_script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&count);
+    let acquire_script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&acquire);
     gauges.count_script = Some(count_script);
     gauges.acquire_script = Some(acquire_script);
     let response = gauges
@@ -57,8 +57,8 @@ async fn acquire_checks_use_the_acquire_script_and_never_the_count_one() {
     let count = PlannedScript::new("count", vec![int_values(&[9])]);
     let acquire = PlannedScript::new("acquire", vec![int_values(&[0, 1])]);
     let mut gauges = gauges_with(Arc::clone(&cache), clock);
-    let count_script: Arc<dyn CounterScript> = Arc::clone(&count);
-    let acquire_script: Arc<dyn CounterScript> = Arc::clone(&acquire);
+    let count_script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&count);
+    let acquire_script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&acquire);
     gauges.count_script = Some(count_script);
     gauges.acquire_script = Some(acquire_script);
     let response = gauges

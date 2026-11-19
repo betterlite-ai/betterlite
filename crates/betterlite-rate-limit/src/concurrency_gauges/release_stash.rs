@@ -14,11 +14,11 @@ pub(super) async fn release_stashed_slot(
     in_logging_callback: bool,
 ) {
     let _guard = stash.parallel_slot_release_lock.lock().await;
-    let acquisition = {
+    let stashed = {
         let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.parallel_slot.clone()
     };
-    let Some(acquisition) = acquisition else {
+    let Some(acquisition) = stashed else {
         return;
     };
     let deferred = in_logging_callback && defer_slot_release(gauges, &acquisition).await;

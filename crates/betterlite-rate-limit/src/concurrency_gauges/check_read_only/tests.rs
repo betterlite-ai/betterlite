@@ -23,7 +23,7 @@ fn count_gauges(
 ) -> (ConcurrencyGauges, Arc<PlannedScript>) {
     let mut gauges = gauges_with(cache, FixedClock::at(NOW));
     let handle = PlannedScript::new("count", plans);
-    let script: Arc<dyn CounterScript> = Arc::clone(&handle);
+    let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.count_script = Some(script);
     (gauges, handle)
 }
