@@ -218,11 +218,6 @@ impl FakeBackend {
             .insert(key.to_owned(), value.to_owned());
     }
 
-    pub(super) fn seed_token(&self, key: &str, token: &str) {
-        let codec = codec();
-        self.seed(key, &(codec.encrypt)(token));
-    }
-
     pub(super) fn entry(&self, key: &str) -> Option<String> {
         self.entries
             .lock()

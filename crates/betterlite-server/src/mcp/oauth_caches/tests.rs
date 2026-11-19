@@ -927,10 +927,10 @@ async fn resolve_mcp_auth_falls_back_to_the_static_token() {
         Some(McpAuthValue::Headers(_)) | None => panic!("the static token is a text value"),
     }
     let empty = McpAuthOverride::Text(SecretString::from(String::new()));
-    let resolved = resolve_mcp_auth(&static_server, Some(&empty), &cache)
+    let fell_through = resolve_mcp_auth(&static_server, Some(&empty), &cache)
         .await
         .expect("the empty override falls through");
-    match resolved {
+    match fell_through {
         Some(McpAuthValue::Text(value)) => assert_eq!(value.expose_secret(), "static"),
         Some(McpAuthValue::Headers(_)) | None => panic!("the static token is a text value"),
     }

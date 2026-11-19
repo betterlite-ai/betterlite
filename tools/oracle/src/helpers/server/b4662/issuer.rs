@@ -44,7 +44,7 @@ pub(super) struct FakeIssuerTable {
 
 impl FakeIssuerTable {
     fn new(rows: &[IssuerRowSpec], fail: &[String]) -> Self {
-        let rows = rows
+        let states = rows
             .iter()
             .map(|spec| IssuerCandidateRow {
                 server_id: spec.server_id.clone(),
@@ -59,7 +59,7 @@ impl FakeIssuerTable {
             })
             .collect();
         Self {
-            rows: Mutex::new(rows),
+            rows: Mutex::new(states),
             fail: fail.to_vec(),
             attempted: Mutex::new(Vec::new()),
             updated: Mutex::new(Vec::new()),

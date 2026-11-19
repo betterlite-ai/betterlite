@@ -29,7 +29,7 @@ pub(super) fn token_request_inputs(
     let has_client_id = client_id.is_some();
     let has_secret = secret.is_some();
     let has_token_url = token_url.is_some();
-    let (Some(token_url), Some(client_id), Some(secret)) = (token_url, client_id, secret) else {
+    let (Some(url), Some(id), Some(client_secret)) = (token_url, client_id, secret) else {
         return Err(OAuthCacheError::MissingFields {
             server_id: server.fields.server_id.clone(),
             client_id: has_client_id,
@@ -37,7 +37,7 @@ pub(super) fn token_request_inputs(
             token_url: has_token_url,
         });
     };
-    Ok((token_url, client_id, secret))
+    Ok((url, id, client_secret))
 }
 
 pub(super) const fn auth_method_name(method: MCPTokenEndpointAuthMethod) -> &'static str {

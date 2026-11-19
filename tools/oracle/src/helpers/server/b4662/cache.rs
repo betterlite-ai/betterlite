@@ -121,10 +121,6 @@ impl PerUserCall {
         format!("{prefix}{}:{}", self.user_id, self.server_id)
     }
 
-    fn recorded_ttl(&self) -> Option<i64> {
-        self.cache.backend.recorded_ttl(&self.key())
-    }
-
     async fn seed(&self, token: &str, ttl: i64) {
         self.cache
             .set(&self.user_id, &self.server_id, token, ttl, None)
@@ -150,10 +146,6 @@ fn server_identity(spec: &ServerSpec) -> Result<String, Box<HelperError>> {
     let server: MCPServer = serde_json::from_value(spec.0.clone())
         .map_err(|error| support::value_error(error.to_string()))?;
     Ok(MCPOAuth2TokenCache::token_identity(&server))
-}
-
-fn tokens_view(tokens: Vec<Option<String>>, posts: usize) -> Value {
-    json!({"tokens": tokens, "posts": posts})
 }
 
 fn set_view(token: Option<String>, raw_differs: bool, ttl: Option<i64>) -> Value {
@@ -198,15 +190,18 @@ async fn concurrent_tokens(
 }
 
 pub(super) fn identity(input: &ServersInput) -> Result<Value, Box<HelperError>> {
-    let identities = input.servers.iter().map(server_identity);
-    let identities = identities.collect::<Result<Vec<String>, Box<HelperError>>>()?;
+    let identities = input
+        .servers
+        .iter()
+        .map(server_identity)
+        .collect::<Result<Vec<String>, Box<HelperError>>>()?;
     Ok(json!({"identities": identities}))
 }
 
 pub(super) async fn get_token(input: &GetTokenInput) -> Result<Value, Box<HelperError>> {
     let call = OAuth2Call::new(&input.server, &input.outcomes)?;
     let tokens = concurrent_tokens(&call, input.calls, input.concurrent).await?;
-    Ok(tokens_view(tokens, call.scripted.post_count()))
+    Ok(json!({"tokens": tokens, "posts": call.scripted.post_count()}))
 }
 
 pub(super) async fn fetch(input: &FetchInput) -> Result<Value, Box<HelperError>> {
@@ -220,7 +215,7 @@ pub(super) async fn invalidate(input: &InvalidateInput) -> Result<Value, Box<Hel
     let first = call.cached().await?;
     call.cache.invalidate(&call.server.fields.server_id);
     let second = call.cached().await?;
-    Ok(tokens_view(vec![first, second], call.scripted.post_count()))
+    Ok(json!({"tokens": vec![first, second], "posts": call.scripted.post_count()}))
 }
 
 pub(super) async fn per_user_get(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
@@ -239,12 +234,16 @@ pub(super) async fn per_user_set(input: &PerUserInput) -> Result<Value, Box<Help
     call.seed(&input.access_token, input.ttl).await;
     let stored = call.cache.backend.entry(&call.key());
     let differs = stored.is_some_and(|raw| raw != input.access_token);
-    Ok(set_view(call.stored().await, differs, call.recorded_ttl()))
+    let ttl = call.cache.backend.recorded_ttl(&call.key());
+    Ok(set_view(call.stored().await, differs, ttl))
 }
 
 pub(super) async fn per_user_delete(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
-    call.cache.backend.seed_token(&call.key(), "token-value");
+    let codec = support::codec();
+    call.cache
+        .backend
+        .seed(&call.key(), &(codec.encrypt)("token-value"));
     call.cache.delete(&call.user_id, &call.server_id).await;
     Ok(json!({"token_after": call.stored().await}))
 }

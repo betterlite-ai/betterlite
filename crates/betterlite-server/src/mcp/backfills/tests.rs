@@ -388,13 +388,13 @@ fn flow_decrypted_credentials_opens_an_encrypted_secret() {
             None,
         )
         .expect("the cipher seals the value");
-    let StoredValue::Text(sealed) = sealed else {
+    let StoredValue::Text(sealed_text) = sealed else {
         panic!("the sealed value stays text");
     };
     let mut fields = BTreeMap::new();
     fields.insert(
         "client_secret".to_owned(),
-        JsonValue::String(sealed.expose_secret().to_owned()),
+        JsonValue::String(sealed_text.expose_secret().to_owned()),
     );
     let blob = decrypted_credentials(Some(&JsonValue::Object(fields)), &cipher).expect("the blob");
     assert_eq!(

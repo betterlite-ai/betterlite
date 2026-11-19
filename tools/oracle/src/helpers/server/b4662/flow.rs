@@ -99,11 +99,6 @@ impl FakeFlowTable {
         rows.iter().map(row_view).collect()
     }
 
-    fn stamp_views(&self) -> Vec<Value> {
-        let stamps = self.stamps.lock().unwrap_or_else(PoisonError::into_inner);
-        stamps.iter().map(stamp_view).collect()
-    }
-
     fn ambiguous(&self) -> Vec<String> {
         let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let mut ids: Vec<String> = rows
@@ -198,17 +193,19 @@ pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>>
 
 pub(super) async fn flow_backfill(input: &FlowBackfillInput) -> Result<Value, Box<HelperError>> {
     let table = FakeFlowTable::new(&input.flow_rows, credential_rows(&input.user_credentials));
-    let counts = backfill_null_oauth2_flows(&table, &support::cipher(), &SilentLog)
+    let measured = backfill_null_oauth2_flows(&table, &support::cipher(), &SilentLog)
         .await
         .map_err(|error| support::value_error(error.to_string()))?;
-    let counts: BTreeMap<&str, usize> = counts
+    let counts: BTreeMap<&str, usize> = measured
         .iter()
         .map(|(rule, count)| (rule.as_str(), *count))
         .collect();
+    let stamps = table.stamps.lock().unwrap_or_else(PoisonError::into_inner);
+    let views: Vec<Value> = stamps.iter().map(stamp_view).collect();
     Ok(json!({
         "counts": counts,
         "rows": table.row_views(),
-        "stamps": table.stamp_views(),
+        "stamps": views,
         "ambiguous": table.ambiguous(),
     }))
 }
