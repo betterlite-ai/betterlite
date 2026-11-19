@@ -112,7 +112,8 @@ fn details(entries: [(&str, i64); 2]) -> IndexMap<String, Json> {
 fn prompt_details(request: &CostEstimateRequest) -> Option<IndexMap<String, Json>> {
     let cached = request.cache_read_input_tokens;
     let created = request.cache_creation_input_tokens;
-    if cached == 0 && created == 0 {
+    let cache_tokens = cached.saturating_add(created);
+    if cache_tokens == 0 {
         return None;
     }
     Some(details([
