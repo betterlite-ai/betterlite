@@ -117,11 +117,11 @@ async fn keeps_an_unavailable_answer_for_five_minutes(
 #[tokio::test]
 async fn concurrent_misses_share_a_single_fetch() {
     let fixture = fixture(vec![success(), success()]);
-    let (first, second) = tokio::join!(fixture.service.get(), fixture.service.get());
-    let served_first = first.expect("the first read is served");
-    let served_second = second.expect("the second read is served");
-    assert_eq!(served_first, served_second);
-    assert!(matches!(served_first, LatestRelease::Available(_)));
+    let joined = tokio::join!(fixture.service.get(), fixture.service.get());
+    let first = joined.0.expect("the first read is served");
+    let second = joined.1.expect("the second read is served");
+    assert_eq!(first, second);
+    assert!(matches!(first, LatestRelease::Available(_)));
     assert_eq!(fixture.script.calls(), 1);
 }
 
