@@ -149,8 +149,19 @@ impl Scenario {
                     error: None,
                 })
             }
-            StepKind::SelectAsync => self.select_async(step, random).await,
-            StepKind::SelectSync => self.select_sync(step, random),
+            StepKind::SelectAsync => {
+                let selection = usage(&self.group, &self.deployments, step)?;
+                let request = request_slot(&mut self.requests, step.request)?;
+                let outcome = selection
+                    .select_async(&self.store, &self.tiers, request, random)
+                    .await;
+                self.observation(step.kind, outcome)
+            }
+            StepKind::SelectSync => {
+                let tier = self.tiers.usage.clone().ok_or(ScenarioError::NoUsageTier)?;
+                let selection = usage(&self.group, &self.deployments, step)?;
+                self.observation(step.kind, selection.select_now(Some(tier.as_ref()), random))
+            }
             StepKind::Down | StepKind::Up => {
                 self.store.set_down(step.kind == StepKind::Down);
                 Ok(StepOutput {
@@ -172,44 +183,8 @@ impl Scenario {
                 rpm: keys.rpm,
             }),
         };
-        let request = self
-            .requests
-            .get_mut(step.request)
-            .ok_or(ScenarioError::UnknownRequest {
-                request: step.request,
-            })?;
+        let request = request_slot(&mut self.requests, step.request)?;
         Ok(RoutingPrefetch::arm(&read_keys, &self.tiers, true, request))
-    }
-
-    async fn select_async(
-        &mut self,
-        step: &Step,
-        random: &mut InjectedRandom<'_>,
-    ) -> Result<StepOutput, ScenarioError> {
-        let selection = usage(&self.group, &self.deployments, step)?;
-        let request = self
-            .requests
-            .get_mut(step.request)
-            .ok_or(ScenarioError::UnknownRequest {
-                request: step.request,
-            })?;
-        let outcome = selection
-            .select_async(&self.store, &self.tiers, request, random)
-            .await;
-        self.observation(StepKind::SelectAsync, outcome)
-    }
-
-    fn select_sync(
-        &self,
-        step: &Step,
-        random: &mut InjectedRandom<'_>,
-    ) -> Result<StepOutput, ScenarioError> {
-        let tier = self.tiers.usage.clone().ok_or(ScenarioError::NoUsageTier)?;
-        let selection = usage(&self.group, &self.deployments, step)?;
-        self.observation(
-            StepKind::SelectSync,
-            selection.select_now(Some(tier.as_ref()), random),
-        )
     }
 
     fn observation(
@@ -238,6 +213,16 @@ impl Scenario {
             Err(SelectionError::Limit(source)) => Err(ScenarioError::Limit { source }),
         }
     }
+}
+
+// the request a step names, or the adapter error naming the index it asked for
+fn request_slot<'reads>(
+    requests: &'reads mut [RequestReads<RouteValue>],
+    index: usize,
+) -> Result<&'reads mut RequestReads<RouteValue>, ScenarioError> {
+    requests
+        .get_mut(index)
+        .ok_or(ScenarioError::UnknownRequest { request: index })
 }
 
 // the selection one step makes: the pool, the request's token estimate and the step's time
