@@ -72,7 +72,18 @@ fn collect_descriptor(
     let window_key = format!("{{{key}:{value}}}:window");
     collect_gauge(collected, descriptor, limits.max_parallel);
     collect_window_keys(collected, descriptor, &window_key, &limits);
-    collect_window_metadata(collected, descriptor, window_key, &limits);
+    if limits.requests.is_some() || limits.tokens.is_some() {
+        collected.key_metadata.insert(
+            window_key,
+            WindowKeyMetadata {
+                requests_limit: limits.requests,
+                tokens_limit: limits.tokens,
+                window_size: limits.window_size,
+                descriptor_key: descriptor.key.clone(),
+                descriptor_value: descriptor.value.clone(),
+            },
+        );
+    }
 }
 
 fn collect_gauge(
@@ -116,27 +127,6 @@ fn collect_window_keys(
             RateLimitType::Tokens,
         );
     }
-}
-
-fn collect_window_metadata(
-    collected: &mut CollectedWindowedKeys,
-    descriptor: &RateLimitDescriptor,
-    window_key: String,
-    limits: &DescriptorLimits,
-) {
-    if limits.requests.is_none() && limits.tokens.is_none() {
-        return;
-    }
-    collected.key_metadata.insert(
-        window_key,
-        WindowKeyMetadata {
-            requests_limit: limits.requests,
-            tokens_limit: limits.tokens,
-            window_size: limits.window_size,
-            descriptor_key: descriptor.key.clone(),
-            descriptor_value: descriptor.value.clone(),
-        },
-    );
 }
 
 fn push_counter_key(

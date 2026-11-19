@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Literal, NamedTuple, Protocol, TypedDict, TypeAlias, runtime_checkable
+from typing import Literal, NamedTuple, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from litellm.proxy.hooks import PROXY_HOOKS
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
@@ -42,9 +42,10 @@ class StandInCache:
 class WindowedLimiter(Protocol):
     window_size: int
 
-    def _collect_windowed_keys_and_gauges(
+    def _collect_windowed_keys_and_gauges(  # ast-grep-ignore: no-long-names
         self,
         descriptors: Sequence[RateLimitDescriptor],
+        *,
         skip_tpm_check: bool,
     ) -> tuple[list[str], dict[str, WindowKeyMetadata], list[ParallelRequestGauge]]: ...
 
@@ -69,30 +70,6 @@ def make_limiter() -> WindowedLimiter:
     )
     constructor = adapter.validate_python(PROXY_HOOKS["parallel_request_limiter"])
     return constructor(StandInCache())
-
-
-def metadata_value(metadata: dict[str, WindowKeyMetadata]) -> dict[str, JsonValue]:
-    return {
-        window_key: {
-            "requests_limit": entry["requests_limit"],
-            "tokens_limit": entry["tokens_limit"],
-            "window_size": entry["window_size"],
-            "descriptor_key": entry["descriptor_key"],
-            "descriptor_value": entry["descriptor_value"],
-        }
-        for window_key, entry in metadata.items()
-    }
-
-
-def gauges_value(gauges: Sequence[ParallelRequestGauge]) -> list[JsonValue]:
-    return [
-        {
-            "counter_key": gauge["counter_key"],
-            "limit": gauge["limit"],
-            "descriptor_key": gauge["descriptor_key"],
-        }
-        for gauge in gauges
-    ]
 
 
 def response_value(response: RateLimitResponse) -> dict[str, JsonValue]:
@@ -123,10 +100,28 @@ def collect(input_value: CollectInput) -> dict[str, JsonValue]:
     )
     keys_value: list[JsonValue] = []
     keys_value.extend(keys)
+    metadata_value: dict[str, JsonValue] = {
+        window_key: {
+            "requests_limit": entry["requests_limit"],
+            "tokens_limit": entry["tokens_limit"],
+            "window_size": entry["window_size"],
+            "descriptor_key": entry["descriptor_key"],
+            "descriptor_value": entry["descriptor_value"],
+        }
+        for window_key, entry in metadata.items()
+    }
+    gauges_value: list[JsonValue] = [
+        {
+            "counter_key": gauge["counter_key"],
+            "limit": gauge["limit"],
+            "descriptor_key": gauge["descriptor_key"],
+        }
+        for gauge in gauges
+    ]
     return {
         "keys_to_fetch": keys_value,
-        "key_metadata": metadata_value(metadata),
-        "gauges": gauges_value(gauges),
+        "key_metadata": metadata_value,
+        "gauges": gauges_value,
     }
 
 

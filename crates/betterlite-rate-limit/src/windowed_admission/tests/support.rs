@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_redis::batch::error::BatchError;
@@ -404,21 +404,16 @@ pub(crate) struct GaugeWrite {
     pub(crate) local_only: bool,
 }
 
+#[derive(Default)]
 pub(crate) struct RecordingGauges {
     stored: Mutex<BTreeMap<String, GaugeCacheValue>>,
-    reads: Mutex<Vec<(String, bool)>>,
     batch_reads: Mutex<Vec<(Vec<String>, bool)>>,
     writes: Mutex<Vec<GaugeWrite>>,
 }
 
 impl RecordingGauges {
     pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self {
-            stored: Mutex::new(BTreeMap::new()),
-            reads: Mutex::new(Vec::new()),
-            batch_reads: Mutex::new(Vec::new()),
-            writes: Mutex::new(Vec::new()),
-        })
+        Arc::new(Self::default())
     }
 
     pub(crate) fn seed(&self, key: &str, value: GaugeCacheValue) {
@@ -426,13 +421,6 @@ impl RecordingGauges {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key.to_owned(), value);
-    }
-
-    pub(crate) fn reads(&self) -> Vec<(String, bool)> {
-        self.reads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
     }
 
     pub(crate) fn batch_reads(&self) -> Vec<(Vec<String>, bool)> {
@@ -448,36 +436,37 @@ impl RecordingGauges {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn stored(&self) -> MutexGuard<'_, BTreeMap<String, GaugeCacheValue>> {
+        self.stored.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn write_log(&self) -> MutexGuard<'_, Vec<GaugeWrite>> {
+        self.writes.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn record_batch_read(&self, keys: &[String], local_only: bool) {
+        self.batch_reads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((keys.to_vec(), local_only));
+    }
 }
 
 #[async_trait::async_trait]
 impl GaugeCache for RecordingGauges {
-    async fn get(&self, key: &str, local_only: bool) -> Option<GaugeCacheValue> {
-        self.reads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), local_only));
-        self.stored
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned()
+    async fn get(&self, key: &str, _local_only: bool) -> Option<GaugeCacheValue> {
+        self.stored().get(key).cloned()
     }
 
     async fn set(&self, key: &str, value: GaugeCacheValue, ttl: Duration, local_only: bool) {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(GaugeWrite {
-                key: key.to_owned(),
-                value: value.clone(),
-                ttl,
-                local_only,
-            });
-        self.stored
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), value);
+        self.write_log().push(GaugeWrite {
+            key: key.to_owned(),
+            value: value.clone(),
+            ttl,
+            local_only,
+        });
+        self.stored().insert(key.to_owned(), value);
     }
 
     async fn batch_get(
@@ -485,11 +474,8 @@ impl GaugeCache for RecordingGauges {
         keys: &[String],
         local_only: bool,
     ) -> Option<Vec<Option<GaugeCacheValue>>> {
-        self.batch_reads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((keys.to_vec(), local_only));
-        let stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
+        self.record_batch_read(keys, local_only);
+        let stored = self.stored();
         Some(keys.iter().map(|key| stored.get(key).cloned()).collect())
     }
 }
