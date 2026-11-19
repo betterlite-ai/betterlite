@@ -15,40 +15,24 @@ use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::repository::{NativeKey, RepositoryTable};
 use crate::auth_read::table::{AuthReadTable, AuthTable, FindMany, FindOne, Presence, ReadContext};
 
-pub type PostgresPermissions<Client> =
-    AuthReadTable<RepositoryTable<Client, ObjectPermissionTable>, SystemClock>;
-
-pub type PostgresVectorStores<Client> =
-    AuthReadTable<RepositoryTable<Client, ManagedVectorStoreTable>, SystemClock>;
-
-// B725's object permission row, read through B2315's bounded object permission adapter
+// B725's object permission row and B726's vector_store_id.in read through B2315's bounded tables
 #[must_use]
-pub fn open_permissions<Client: GenericClient + Send + Sync + 'static>(
+pub fn open_grant_rows<Client, Rows>(
     client: Arc<Client>,
+    table: Rows,
+    adapter: AuthReadAdapter,
     context: ReadContext<SystemClock>,
-) -> PostgresPermissions<Client> {
-    AuthReadAdapter::ObjectPermission.open(
+) -> AuthReadTable<RepositoryTable<Client, Rows>, SystemClock>
+where
+    RepositoryTable<Client, Rows>: AuthTable,
+{
+    adapter.open(
         Arc::new(RepositoryTable {
             client: Some(client),
-            table: ObjectPermissionTable,
+            table,
         }),
-        String::from("object_permission"),
-        context,
-    )
-}
-
-// B726's vector_store_id.in query, read through B2315's bounded vector store adapter
-#[must_use]
-pub fn open_vector_stores<Client: GenericClient + Send + Sync + 'static>(
-    client: Arc<Client>,
-    context: ReadContext<SystemClock>,
-) -> PostgresVectorStores<Client> {
-    AuthReadAdapter::VectorStore.open(
-        Arc::new(RepositoryTable {
-            client: Some(client),
-            table: ManagedVectorStoreTable,
-        }),
-        String::from("vector_store"),
+        // both grant adapters name their own lookup, so the caller label is never read
+        String::new(),
         context,
     )
 }
@@ -73,9 +57,7 @@ where
         };
         self.find_unique(request)
             .await
-            .map_err(|error| VectorStoreLookupFailure {
-                message: error.to_string(),
-            })
+            .map_err(|source| VectorStoreLookupFailure { source })
     }
 }
 
@@ -96,8 +78,6 @@ where
         };
         self.find_many(request)
             .await
-            .map_err(|error| VectorStoreRowsFailure {
-                message: error.to_string(),
-            })
+            .map_err(|source| VectorStoreRowsFailure { source })
     }
 }

@@ -5,9 +5,11 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use serde::Deserialize;
 
+use super::rows::RowError;
 use crate::auth_cache::backend::AuthCacheTier;
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
+use crate::auth_read::table::AuthReadError;
 
 // LiteLLM reads and writes one row per UUID under this prefix with the management-object TTL
 pub const VECTOR_STORE_CACHE_PREFIX: &str = "managed_vector_store_id:";
@@ -27,9 +29,10 @@ pub struct ManagedRowsQuery {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the managed vector store lookup failed: {message}")]
+#[error("the managed vector store lookup failed")]
 pub struct VectorStoreRowsFailure {
-    pub message: String,
+    #[source]
+    pub source: AuthReadError<RowError>,
 }
 
 #[async_trait]

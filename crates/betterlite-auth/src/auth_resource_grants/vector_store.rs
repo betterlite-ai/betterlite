@@ -6,6 +6,8 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_error_types::{ProxyErrorTypes, VectorStoreObject};
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
+use super::rows::RowError;
+use crate::auth_read::table::AuthReadError;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 // B1062's registry composition installs this selector; a request without one runs no ordinary IDs
@@ -14,9 +16,10 @@ pub trait VectorStoreIds: Send + Sync {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the object permission lookup failed: {message}")]
+#[error("the object permission lookup failed")]
 pub struct VectorStoreLookupFailure {
-    pub message: String,
+    #[source]
+    pub source: AuthReadError<RowError>,
 }
 
 // B725's object permission row read fresh, so a cached token copy never decides access
