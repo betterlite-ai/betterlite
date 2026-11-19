@@ -6,9 +6,13 @@ import litellm
 from litellm.llms.sail.common_utils import (
     CompletionWindow,
     chat_request_for_sail,
-    completion_window_for_service_tier as window_for_tier,
     extra_body_for_sail,
     json_body,
+)
+from litellm.llms.sail.common_utils import (
+    completion_window_for_service_tier as window_for_tier,
+)
+from litellm.llms.sail.common_utils import (
     responses_params_with_completion_window as responses_window_params,
 )
 from pydantic import JsonValue
