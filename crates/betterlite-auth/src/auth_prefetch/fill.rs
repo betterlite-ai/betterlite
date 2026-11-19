@@ -45,8 +45,8 @@ pub fn set_in_memory(
     value: &Json,
     ttl: Option<f64>,
 ) -> Result<(), PrefetchError> {
-    let value: CacheValue = serde_json::from_value(serde_json::to_value(value)?)?;
-    memory.set(key, value, ttl)?;
+    let cached: CacheValue = serde_json::from_value(serde_json::to_value(value)?)?;
+    memory.set(key, cached, ttl)?;
     Ok(())
 }
 // _read_redis_rows: one MGET of the sorted keys, duplicates kept; a failed pipeline reads as no rows

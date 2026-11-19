@@ -1,5 +1,6 @@
 use std::sync::{Arc, PoisonError};
 
+use betterlite_cache::backend::BackendError;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::dual_cache::{DualCache, MemoryMaxSize};
 use betterlite_context::local_ttl_cache::CacheValue;
@@ -14,7 +15,7 @@ pub trait PrefetchMemory: Send + Sync {
 }
 #[derive(Debug, thiserror::Error)]
 #[error("the in-memory cache write failed")]
-pub struct MemoryWriteError(#[source] pub(crate) betterlite_cache::backend::BackendError);
+pub struct MemoryWriteError(#[source] pub(crate) BackendError);
 impl<Memory> PrefetchMemory for Memory
 where
     Memory: MemoryCacheOps + ?Sized,

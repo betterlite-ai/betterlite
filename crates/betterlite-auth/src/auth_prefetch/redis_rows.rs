@@ -74,9 +74,9 @@ impl PrefetchRedis for RedisRows {
         Ok(())
     }
 }
-fn rows_json<'a, Values>(values: Values) -> Json
+fn rows_json<'key, Values>(values: Values) -> Json
 where
-    Values: IntoIterator<Item = (&'a String, &'a Option<CachedValue>)>,
+    Values: IntoIterator<Item = (&'key String, &'key Option<CachedValue>)>,
 {
     let fields = values
         .into_iter()
