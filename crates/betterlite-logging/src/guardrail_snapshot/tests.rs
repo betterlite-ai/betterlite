@@ -31,6 +31,7 @@ fn modes_no_guardrail_information_is_not_mutating() {
 #[case::object(r#"{"guardrail_mode": "pre_call"}"#)]
 #[case::string(r#""pre_call""#)]
 #[case::null("null")]
+#[case::bool("true")]
 #[case::number("7")]
 #[case::empty_list("[]")]
 fn modes_non_array_guardrail_information_has_no_entries(#[case] raw: &str) {
@@ -41,6 +42,7 @@ fn modes_non_array_guardrail_information_has_no_entries(#[case] raw: &str) {
 #[case::numbers("[1, 2]")]
 #[case::strings(r#"["pre_call", "post_call"]"#)]
 #[case::nulls("[null]")]
+#[case::bools_and_lists(r#"[true, [], "pre_call"]"#)]
 fn modes_non_object_entries_are_skipped(#[case] entries: &str) {
     assert!(!request_mutating_guardrail_ran(&guardrail_history(entries)));
 }
@@ -75,8 +77,12 @@ fn modes_non_mutating_mode_arrays_are_not_mutating(#[case] modes: &str) {
 #[case::unknown_mode(r#"[{"guardrail_mode": "future_call"}]"#)]
 #[case::missing_mode(r#"[{"guardrail_name": "pii"}]"#)]
 #[case::null_mode(r#"[{"guardrail_mode": null}]"#)]
+#[case::bool_mode(r#"[{"guardrail_mode": true}]"#)]
 #[case::number_mode(r#"[{"guardrail_mode": 7}]"#)]
+#[case::object_mode(r#"[{"guardrail_mode": {}}]"#)]
 #[case::array_with_a_non_string(r#"[{"guardrail_mode": ["post_call", 7]}]"#)]
+#[case::array_with_an_object(r#"[{"guardrail_mode": ["post_call", {}]}]"#)]
+#[case::array_with_a_list(r#"[{"guardrail_mode": ["post_call", []]}]"#)]
 #[case::array_with_a_mutating_mode(r#"[{"guardrail_mode": ["post_call", "pre_call"]}]"#)]
 fn modes_mutating_entries_are_detected(#[case] entries: &str) {
     assert!(request_mutating_guardrail_ran(&guardrail_history(entries)));
@@ -113,10 +119,10 @@ fn fingerprint_of_no_entries_is_the_hash_of_the_empty_list() {
 #[test]
 fn fingerprint_ignores_object_key_order() {
     let first = guardrail_history(
-        r#"[{"guardrail_mode": "pre_call", "guardrail_name": "pii", "nested": {"a": 1, "b": 2}}]"#,
+        r#"[{"guardrail_mode": "pre_call", "guardrail_name": "pii", "nested": {"a": 1, "b": 2}, "policy": {"block": [{"kind": "email"}, {"kind": "phone"}]}}]"#,
     );
     let second = guardrail_history(
-        r#"[{"nested": {"b": 2, "a": 1}, "guardrail_name": "pii", "guardrail_mode": "pre_call"}]"#,
+        r#"[{"policy": {"block": [{"kind": "email"}, {"kind": "phone"}]}, "nested": {"b": 2, "a": 1}, "guardrail_name": "pii", "guardrail_mode": "pre_call"}]"#,
     );
     assert_eq!(
         request_guardrail_fingerprint(&first),
@@ -124,12 +130,17 @@ fn fingerprint_ignores_object_key_order() {
     );
 }
 
-#[test]
-fn fingerprint_ignores_a_post_call_entry() {
+#[rstest]
+#[case::post_call("post_call")]
+#[case::during_call("during_call")]
+#[case::during_mcp_call("during_mcp_call")]
+#[case::post_mcp_call("post_mcp_call")]
+#[case::realtime_input_transcription("realtime_input_transcription")]
+fn fingerprint_ignores_a_post_call_entry(#[case] mode: &str) {
     let before = guardrail_history(r#"[{"guardrail_mode": "pre_call", "guardrail_name": "pii"}]"#);
-    let after = guardrail_history(
-        r#"[{"guardrail_mode": "pre_call", "guardrail_name": "pii"}, {"guardrail_mode": "post_call", "guardrail_name": "topic"}]"#,
-    );
+    let after = guardrail_history(&format!(
+        r#"[{{"guardrail_mode": "pre_call", "guardrail_name": "pii"}}, {{"guardrail_mode": "{mode}", "guardrail_name": "topic"}}]"#
+    ));
     assert_eq!(
         request_guardrail_fingerprint(&before),
         request_guardrail_fingerprint(&after)
