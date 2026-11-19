@@ -41,12 +41,12 @@ class Input(TypedDict):
     function: str
 
 
-JSON: Final = TypeAdapter(JsonValue)
-REDACT_ENV_VARS: Final = TypeAdapter(RedactEnvVarsCall)
-REDACT_MAPPING: Final = TypeAdapter(RedactMappingCall)
-REDACT_OTHER: Final = TypeAdapter(RedactOtherCall)
-REDACT_MODEL: Final = TypeAdapter(RedactModelCall)
-REDACTED_MODEL: Final = TypeAdapter(RedactedModel)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+REDACT_ENV_VARS: TypeAdapter[RedactEnvVarsCall] = TypeAdapter(RedactEnvVarsCall)
+REDACT_MAPPING: TypeAdapter[RedactMappingCall] = TypeAdapter(RedactMappingCall)
+REDACT_OTHER: TypeAdapter[RedactOtherCall] = TypeAdapter(RedactOtherCall)
+REDACT_MODEL: TypeAdapter[RedactModelCall] = TypeAdapter(RedactModelCall)
+REDACTED_MODEL: TypeAdapter[RedactedModel] = TypeAdapter(RedactedModel)
 
 
 def env_vars_answer(call: RedactEnvVarsCall) -> JsonValue:
