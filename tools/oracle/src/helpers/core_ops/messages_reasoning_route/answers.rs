@@ -2,7 +2,7 @@ use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::messages_reasoning_route::seams::{
     BridgeOutcome, BridgePolicy, BridgeRequest, ModelMetadata, ProviderLookup, ProviderResolution,
-    ReasoningRouteError, ReasoningSeams, ResolvedTarget,
+    ReasoningSeams, ResolvedTarget,
 };
 use betterlite_core::api::messages_reasoning_route::{
     AutoSummary, CompletionKwargs, normalize_effort, plain_effort, route_thinking,
@@ -110,7 +110,7 @@ pub(super) fn plain_answer(
             bridge: &policy,
         },
     )
-    .map_err(bridge_error)?;
+    .map_err(|error| helper_error("BridgeError", None, error.to_string()))?;
     let mut entries = resolution.recorder.into_entries();
     entries.extend(policy.recorder.into_entries());
     entries.extend(metadata.recorder.into_entries());
@@ -118,10 +118,6 @@ pub(super) fn plain_answer(
         "effort": effort,
         "seams": entries,
     }))
-}
-
-fn bridge_error(error: ReasoningRouteError) -> Box<HelperError> {
-    helper_error("BridgeError", None, error.to_string())
 }
 
 fn empty_cost() -> Result<ModelCostMap, Box<HelperError>> {
