@@ -128,15 +128,12 @@ def run(input_value: Input) -> JsonValue:
         case "convenience":
             convenience_kwargs: dict[str, JsonValue] = dict(input_value["kwargs"])
             convenience_request = INPUT_VIEW.translate_completion_input_params(convenience_kwargs)
-            return ANSWER.validate_json(
-                json.dumps(
-                    {
-                        "request": convenience_request,
-                        "tool_name_mapping": None,
-                        "kwargs": convenience_kwargs,
-                    }
-                )
-            )
+            convenience_payload = {
+                "request": convenience_request,
+                "tool_name_mapping": None,
+                "kwargs": convenience_kwargs,
+            }
+            return ANSWER.validate_json(json.dumps(convenience_payload))
         case "compose":
             anthropic_request: dict[str, JsonValue] = dict(input_value["request"])
             translated, tool_mapping = COMPOSE_VIEW.translate_anthropic_to_openai(
@@ -144,15 +141,12 @@ def run(input_value: Input) -> JsonValue:
                 custom_llm_provider=input_value["custom_llm_provider"],
                 preserve_midturn_system=input_value["preserve_midturn_system"],
             )
-            return ANSWER.validate_json(
-                json.dumps(
-                    {
-                        "request": translated,
-                        "tool_name_mapping": tool_mapping,
-                        "anthropic_request": anthropic_request,
-                    }
-                )
-            )
+            compose_payload = {
+                "request": translated,
+                "tool_name_mapping": tool_mapping,
+                "anthropic_request": anthropic_request,
+            }
+            return ANSWER.validate_json(json.dumps(compose_payload))
         case "response":
             translated_response = OUTPUT_VIEW.translate_completion_output_params(
                 RESPONSE.validate_python(input_value["response"]),
