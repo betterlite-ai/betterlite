@@ -1,0 +1,16 @@
+kind: helper
+name: duckduckgo-search-direct-topic-priority
+call:
+  duckduckgo_search:
+    environment: {}
+    calls:
+      - kind: reply
+        query: direct
+        optional_params: {}
+        body: '{"RelatedTopics":[{"Text":"direct - the direct topic","FirstURL":"https://direct.test","Topics":[{"Text":"nested - hidden","FirstURL":"https://nested.test"}]}]}'
+      - kind: reply
+        query: skip
+        optional_params: {}
+        body: '{"RelatedTopics":["plain text",{"Text":"real - kept","FirstURL":"https://real.test"}]}'
+env: {}
+compare: {ignore: []}

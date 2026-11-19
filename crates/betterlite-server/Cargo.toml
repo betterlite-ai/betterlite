@@ -45,6 +45,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-openapi = { path = "../betterlite-openapi" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
+betterlite-pyhost = { path = "../betterlite-pyhost" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
@@ -83,6 +84,7 @@ pem = "4.0.0"
 percent-encoding.workspace = true
 phf.workspace = true
 pkcs8 = { version = "0.11.0", default-features = false }
+pyo3 = { version = "0.30.1", default-features = false }
 rand = { version = "0.10.3", default-features = false, features = ["std_rng", "sys_rng"] }
 redis.workspace = true
 regex.workspace = true
