@@ -37,9 +37,9 @@ impl RecordingAlerting {
 impl AlertingPort for RecordingAlerting {
     fn update_alerting(&self, update: &AlertingUpdate<'_>) -> Result<(), ConfigBootError> {
         let call = format!(
-            "alerting:{}:threshold:{:?}:types:{}:webhook:{}:args:{}:config:{}",
+            "alerting:{}:threshold:{}:types:{}:webhook:{}:args:{}:config:{}",
             update.alerting.join(","),
-            update.alerting_threshold,
+            threshold_text(update.alerting_threshold),
             update.alert_types.is_some(),
             update.alert_to_webhook_url.is_some(),
             update.alerting_args.is_some(),
@@ -66,6 +66,10 @@ impl AlertingPort for RecordingAlerting {
         }
         Ok(())
     }
+}
+
+fn threshold_text(threshold: Option<f64>) -> String {
+    threshold.map_or("None".to_owned(), |value| format!("Some({value})"))
 }
 
 fn settings_of(yaml: &str) -> JsonValue {
@@ -116,7 +120,7 @@ fn an_empty_alerting_list_still_reaches_update_alerting() {
     load_alerting_settings(&settings_of("general_settings:\n  alerting: []\n"), &ports).unwrap();
     assert_eq!(
         ports.updates(),
-        vec!["alerting::threshold:Some(600.0):types:false:webhook:false:args:false:config:false"]
+        vec!["alerting::threshold:Some(600):types:false:webhook:false:args:false:config:false"]
     );
 }
 
@@ -131,7 +135,7 @@ fn slack_reaches_update_alerting_but_not_the_logger_loop() {
     assert_eq!(
         ports.updates(),
         vec![
-            "alerting:slack:threshold:Some(600.0):types:false:webhook:false:args:false:config:false"
+            "alerting:slack:threshold:Some(600):types:false:webhook:false:args:false:config:false"
         ]
     );
     assert!(ports.loggers().is_empty());
@@ -175,7 +179,7 @@ fn the_threshold_defaults_to_600() {
             .updates()
             .first()
             .unwrap()
-            .contains("threshold:Some(600.0)")
+            .contains("threshold:Some(600)")
     );
 }
 
@@ -203,7 +207,7 @@ fn a_configured_threshold_is_passed() {
             .updates()
             .first()
             .unwrap()
-            .contains("threshold:Some(30.0)")
+            .contains("threshold:Some(30)")
     );
 }
 
