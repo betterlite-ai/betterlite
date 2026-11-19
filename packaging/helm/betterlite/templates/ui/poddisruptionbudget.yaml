@@ -1,0 +1,6 @@
+{{- include "betterlite.pdb" (dict
+  "root" $
+  "component" .Values.ui
+  "componentName" "ui"
+  "fullname" (include "betterlite.ui.fullname" .)
+  "selectorLabels" (include "betterlite.ui.selectorLabels" .)) }}

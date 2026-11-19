@@ -2526,6 +2526,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-error",
  "betterlite-guardrails",
@@ -3427,6 +3428,7 @@ name = "betterlite-oracle-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
@@ -3944,6 +3946,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
+ "aws-smithy-async",
  "base64 0.23.1",
  "betterlite-a2a",
  "betterlite-anthropic",
@@ -4450,6 +4453,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-a2a",
  "betterlite-analytics",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
@@ -4472,6 +4476,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-pyhost",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
@@ -4514,6 +4519,7 @@ dependencies = [
  "percent-encoding",
  "phf",
  "pkcs8",
+ "pyo3",
  "rand 0.10.3",
  "rcgen",
  "redis",

@@ -1,0 +1,10 @@
+kind: helper
+name: passthrough-logging-vertex-unknown-route
+call:
+  b3640:
+    operation: vertex_chunks
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/m:predict
+    lines:
+      - 'data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"STOP","index":0}]}'
+env: {}
+compare: {ignore: []}
