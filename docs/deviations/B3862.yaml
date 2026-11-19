@@ -50,6 +50,33 @@ deviations:
       in place; only a proxy with no primary otel callback differs. Covered by
       arize_coexists_with_the_primary_otel_registration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L151-L156
+  - what: Arize and Phoenix registration configs set skip_set_global, so the shared init builds private tracer, meter and logger providers and publishes none of them. LiteLLM's _init_tracing overrides isolate only the tracer; _init_metrics and _init_logs still publish their providers when OTEL_SKIP_SET_GLOBAL is unset.
+    why: >-
+      OpenTelemetryConfig.skip_set_global is how one config says "create a private provider"; the shared
+      init reads the same flag for all three signals, so the callbacks cannot isolate the tracer alone.
+      Every provider still uses the callback's config and exporter, so the metrics and events that leave
+      the process keep their destination; only which process-wide slot a later integration reuses changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L665-L695
+  - what: An injected tracer provider does not disable Phoenix's per-project routing. LiteLLM's injected-provider branch makes get_tracer_to_use_for_request return the injected tracer for every span.
+    why: >-
+      LegacyOtel carries no marker for an injected provider, and the lifecycle's tracer router runs before
+      its fallback, so a phoenix lifecycle built from an injected provider still sends request spans to the
+      project providers. Environment-based registration never injects a provider; only an embedder that
+      passes one sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L70-L76
+  - what: Phoenix builds the default project's provider on the first request instead of at initialization. LiteLLM's _init_tracing seeds the per-project cache with the resolved default project.
+    why: >-
+      The provider and its exporter are built without holding a lock and may fail, so the lifecycle
+      constructor stays infallible and free of exporter I/O; the first request for the default project
+      builds the same provider. The cache therefore starts empty instead of holding "default", which only
+      changes which provider the sixty-fifth distinct project evicts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L83-L84
+  - what: Phoenix ends its proxy parent span even when the request lifecycle returns an error. LiteLLM's _handle_phoenix_trace has no error path, so an exception from guardrail parsing or metric recording leaves the parent unended and it never reaches the exporter.
+    why: >-
+      An unended span is lost data, and handle_trace still holds the parent when the lifecycle fails, so
+      it stamps the status, records the exception and ends the span before returning the error. Covered by
+      phoenix_closes_the_parent_when_the_lifecycle_errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L334-L384
 kept_bugs:
   - what: An empty PHOENIX_API_KEY still produces the header "Authorization=Bearer " and sends it, because LiteLLM tests "is not None" rather than truthiness.
     why: >-
