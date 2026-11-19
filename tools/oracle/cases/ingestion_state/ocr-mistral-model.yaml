@@ -1,0 +1,14 @@
+kind: helper
+name: ocr-mistral-model
+call:
+  b3451:
+    mode: ocr
+    options:
+      ocr: {}
+    file_content_base64: aGVsbG8gb2Ny
+    content_type: application/pdf
+    pages:
+      - first page
+      - second page
+env: {}
+compare: {ignore: []}
