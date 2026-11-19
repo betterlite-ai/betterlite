@@ -1,0 +1,38 @@
+kind: helper
+name: apiserpent-direct-num-below-deep-floor
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params: {deep: true, num: 2}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: null
+calls:
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {deep: true, num: 100}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {num: 1}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {num: 0}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}
