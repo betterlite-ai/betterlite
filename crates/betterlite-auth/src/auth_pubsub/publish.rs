@@ -60,8 +60,8 @@ pub async fn publish_invalidation<E>(
         let message = message::encode(invalidation);
         let owner = Arc::clone(target);
         let in_flight = Arc::clone(&tasks.in_flight);
-        pending.spawn(publish_message(owner, message, cache_key, in_flight));
-    }
+        pending.spawn(publish_message(owner, message, cache_key, in_flight))
+    };
     yield_now().await;
 }
 
