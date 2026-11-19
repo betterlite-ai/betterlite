@@ -8,16 +8,8 @@ use crate::responses::path::{PathError, requoted_path};
 use super::error::FoundryPassthroughError;
 
 pub const API_VERSION: &str = "api-version";
-// litellm_params carries the deployment version under its own underscore key
-pub const PARAMS_API_VERSION: &str = "api_version";
 const MODELS_SEGMENT: &str = "models";
 const OPENAI_SEGMENT: &str = "openai";
-
-// AzureAIPassthroughConfig.api_version_from: TypeAdapter(str | None) accepts only a string or null
-#[must_use]
-pub fn api_version_from(litellm_params: &Object) -> Option<&str> {
-    litellm_params.get(PARAMS_API_VERSION)?.as_str()
-}
 
 // foundry_root: the base up to the first exact "models" segment, with the query dropped and the fragment kept
 pub fn foundry_root(api_base: &str) -> Result<String, FoundryPassthroughError> {

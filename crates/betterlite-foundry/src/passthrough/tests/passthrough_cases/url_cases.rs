@@ -3,9 +3,7 @@ use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest
 
 use crate::passthrough::error::FoundryPassthroughError;
 use crate::passthrough::tests::{build_plan, object, target};
-use crate::passthrough::url::{
-    api_version_from, foundry_root, relay_query_params, without_repeated_native_prefix,
-};
+use crate::passthrough::url::{foundry_root, relay_query_params, without_repeated_native_prefix};
 
 use super::RES;
 
@@ -130,7 +128,7 @@ pub(super) fn query_api_version_precedence() {
     caller_versions_win();
     deployment_versions_beat_the_base();
     the_base_version_is_the_fallback();
-    api_version_from_accepts_only_a_string();
+    complete_urls_read_a_string_deployment_version();
     complete_urls_ignore_a_typed_deployment_version();
 }
 
@@ -189,23 +187,14 @@ fn the_base_version_is_the_fallback() {
     );
 }
 
-fn api_version_from_accepts_only_a_string() {
-    let versioned = object(r#"{"api_version": "2024"}"#);
-    assert_eq!(api_version_from(&versioned), Some("2024"));
-    assert_eq!(api_version_from(&object(r#"{"api_version": null}"#)), None);
-    assert_eq!(api_version_from(&object(r#"{"api_version": 5}"#)), None);
-    assert_eq!(api_version_from(&object(r#"{"api_version": false}"#)), None);
-    assert_eq!(api_version_from(&object("{}")), None);
-}
-
-fn complete_urls_ignore_a_typed_deployment_version() {
+fn complete_urls_read_a_string_deployment_version() {
     let base = format!("{RES}/models?api-version=2024-02&foo=1");
     let plan = build_plan(
         None,
         None,
         Some(base.as_str()),
         None,
-        object(r#"{"api_version": 5}"#),
+        object(r#"{"api_version": "2024-06"}"#),
     );
     let request = PassthroughUrlRequest {
         api_base: None,
@@ -218,6 +207,38 @@ fn complete_urls_ignore_a_typed_deployment_version() {
     assert_eq!(root, RES);
     assert_eq!(
         url.as_str(),
-        format!("{RES}/chat/completions?api-version=2024-02")
+        format!("{RES}/chat/completions?api-version=2024-06")
     );
+}
+
+fn complete_urls_ignore_a_typed_deployment_version() {
+    let base = format!("{RES}/models?api-version=2024-02&foo=1");
+    for litellm_params in [
+        r#"{"api_version": 5}"#,
+        r#"{"api_version": null}"#,
+        r#"{"api_version": false}"#,
+        "{}",
+    ] {
+        let plan = build_plan(
+            None,
+            None,
+            Some(base.as_str()),
+            None,
+            object(litellm_params),
+        );
+        let request = PassthroughUrlRequest {
+            api_base: None,
+            api_key: None,
+            target: target("gpt-x", "gpt-x/chat/completions"),
+            request_query_params: None,
+            litellm_params: &plan.litellm_params,
+        };
+        let (url, root) = plan.get_complete_url(&request).unwrap();
+        assert_eq!(root, RES, "{litellm_params}");
+        assert_eq!(
+            url.as_str(),
+            format!("{RES}/chat/completions?api-version=2024-02"),
+            "{litellm_params}"
+        );
+    }
 }

@@ -28,11 +28,11 @@ use super::logging::{
     FOUNDRY_RELAY_SHAPES, FoundryPassthroughLogging, FoundryRelayedLog, TraitFoundryLogging,
 };
 use super::ocr::{NativeOcrPassthrough, decode_logged_ocr_reply};
-use super::url::{
-    api_version_from, foundry_root, relay_query_params, without_repeated_native_prefix,
-};
+use super::url::{foundry_root, relay_query_params, without_repeated_native_prefix};
 
 const STREAM: &str = "stream";
+// litellm_params carries the deployment version under its own underscore key
+const PARAMS_API_VERSION: &str = "api_version";
 
 // one relayed reply with the route it came from: LiteLLM's logging methods read these beside each other
 pub struct FoundryLogInput<'data> {
@@ -190,11 +190,12 @@ where
             &[request.target.model.to_owned(), model_group],
         );
         let root = without_repeated_native_prefix(&foundry_root(&base)?, &native_endpoint)?;
-        let query_params = relay_query_params(
-            request.request_query_params,
-            api_version_from(request.litellm_params),
-            &base,
-        )?;
+        // api_version_from: TypeAdapter(str | None) accepts only a string or null
+        let api_version = match request.litellm_params.get(PARAMS_API_VERSION) {
+            Some(value) => value.as_str(),
+            None => None,
+        };
+        let query_params = relay_query_params(request.request_query_params, api_version, &base)?;
         let url = self.format_url(&native_endpoint, &root, query_params.as_ref())?;
         Ok((url, root))
     }
