@@ -1,0 +1,10 @@
+kind: helper
+name: messages_responses_output-corpus
+call:
+  messages_responses_output:
+    request: null
+    response: null
+    include_encrypted_reasoning: null
+    settings: {}
+env: {}
+compare: {ignore: []}

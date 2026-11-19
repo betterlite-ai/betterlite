@@ -1,0 +1,1 @@
+{"path": "/hook", "target": "https://target.example.com", "cost_per_request": 0.25, "default_query_params": {"api-version": "2024-01"}}
