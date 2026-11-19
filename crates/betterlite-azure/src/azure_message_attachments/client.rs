@@ -71,11 +71,14 @@ where
     Ok(decode_thread_message_reply(&reply)?)
 }
 
-pub async fn append_message<T: AssistantsTransport>(
+pub async fn append_message<T>(
     client: &AzureAssistantsClient<'_, T>,
     thread_id: &str,
     data: &ThreadMessageData,
-) -> Result<ThreadMessage, MessagesError> {
+) -> Result<ThreadMessage, MessagesError>
+where
+    T: AssistantsTransport,
+{
     let body = serde_json::to_vec(data).map_err(|source| ThreadsError::Encode { source })?;
     let mut message: ThreadMessage =
         send(client, Method::POST, thread_id, RequestBody::Json(body)).await?;
@@ -159,10 +162,13 @@ fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, Messages
     }
 }
 
-async fn send_checked<T: AssistantsTransport>(
+async fn send_checked<T>(
     client: &AzureAssistantsClient<'_, T>,
     request: OutboundRequest,
-) -> Result<Vec<u8>, MessagesError> {
+) -> Result<Vec<u8>, MessagesError>
+where
+    T: AssistantsTransport,
+{
     let response = client
         .transport
         .send(request)
