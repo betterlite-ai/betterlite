@@ -1,0 +1,50 @@
+kind: probe
+name: all-contexts-too-small
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      context_placement:
+        config:
+          enabled: true
+          buffer: "0.95"
+        tier: SIMPLE
+        signals: [keyword]
+        default_model: null
+        pool_override: null
+        pools:
+          SIMPLE: [small]
+          MEDIUM: [medium]
+          COMPLEX: [big]
+        groups:
+          - model: small
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 100
+                max_output_tokens: null
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: medium
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 200
+                max_output_tokens: null
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+          - model: big
+            deployments:
+              - model: openai/gpt-4o
+                custom_llm_provider: null
+                max_input_tokens: 300
+                max_output_tokens: null
+                router_max_input_tokens: null
+                router_max_output_tokens: null
+        messages:
+          - The deployment logs show a slow query on the billing table during the nightly import window; find the cause and write a short note.
+        instructions: null
+        system: null
+        count: 1000
+compare:
+  ignore: []
