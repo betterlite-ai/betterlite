@@ -17,7 +17,7 @@ use crate::facts::resolve_base;
 use crate::gate_lock;
 use crate::git::git;
 use crate::report_check::mutants::mutant_problems;
-use crate::report_check::report_problems;
+use crate::report_check::{report_problems, with_kept};
 use crate::spec::agents::{Rung, Runner};
 use crate::spec::report::{Report, ReportStatus};
 
@@ -184,6 +184,7 @@ fn answered(
             report.blocker
         )])));
     }
+    let complete = with_kept(report, attempt.places.journal, attempt.number)?;
     let touched = worker_edits(attempt.places.worktree, start)?;
     if !touched.is_empty() {
         return Ok(Some(Step::Fix(Failure {
@@ -192,7 +193,7 @@ fn answered(
         })));
     }
     let worktree = Development::open(attempt.places.worktree)?;
-    if let Some(failure) = failures(&worktree, &attempt.brief.task.id, &report)? {
+    if let Some(failure) = failures(&worktree, &attempt.brief.task.id, &complete)? {
         return Ok(Some(Step::Fix(failure)));
     }
     review::review(attempt, runner, &worktree.root).map(Some)

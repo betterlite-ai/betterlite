@@ -1,1 +1,298 @@
+use std::future::Future;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use async_trait::async_trait;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::multipart::MultipartPart;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
+use http::header::AUTHORIZATION;
+use http::header::InvalidHeaderValue;
+use http::{HeaderMap, HeaderValue, Method, header::CONTENT_TYPE};
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use sha2::{Digest as _, Sha256};
+use thiserror::Error;
+use url::Url;
+
+use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
+use crate::gigachat_chat::error::GigaChatError;
+use crate::gigachat_files::data_url::{decode_payload, extension_of, parse_data_url};
+use crate::gigachat_utils::{IdSource, get_api_base};
+
+mod data_url;
+mod tests;
+
+pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
+pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+const DEFAULT_CONTENT_TYPE: &str = "image/jpeg";
+const FILE_FIELD: &str = "file";
+const FILES_SUFFIX: &str = "/files";
+const PURPOSE_FIELD: &str = "purpose";
+const PURPOSE_VALUE: &str = "general";
+
+// download must skip certificate checks and follow redirects like LiteLLM's client; upload must verify certificates
+pub trait GigachatFileTransport: Send + Sync {
+    fn download(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
+
+    fn upload(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
+}
+
+pub struct GigachatFilesConfig {
+    pub bearer: Arc<dyn GigachatBearer>,
+    pub ids: Arc<dyn IdSource>,
+    pub credentials: Option<SecretString>,
+    pub api_base: Option<String>,
+    pub api_base_env: Option<String>,
+}
+
+pub struct GigachatFileUploader<T> {
+    transport: T,
+    bearer: Arc<dyn GigachatBearer>,
+    ids: Arc<dyn IdSource>,
+    credentials: Option<SecretString>,
+    api_base: Option<String>,
+    api_base_env: Option<String>,
+    capacity: usize,
+    cache: Mutex<IndexMap<String, String>>,
+}
+
+impl<T: GigachatFileTransport> GigachatFileUploader<T> {
+    #[must_use]
+    pub fn new(transport: T, config: GigachatFilesConfig, capacity: usize) -> Self {
+        Self {
+            transport,
+            bearer: config.bearer,
+            ids: config.ids,
+            credentials: config.credentials,
+            api_base: config.api_base,
+            api_base_env: config.api_base_env,
+            capacity,
+            cache: Mutex::new(IndexMap::new()),
+        }
+    }
+
+    async fn try_upload(&self, image_url: &str) -> Result<String, UploadError> {
+        let key = hex::encode(Sha256::digest(image_url.as_bytes()));
+        if let Some(id) = self.cached(&key) {
+            return Ok(id);
+        }
+        let image = self.image(image_url).await?;
+        let id = self.upload_image(image).await?;
+        self.remember(&key, &id);
+        Ok(id)
+    }
+
+    fn cached(&self, key: &str) -> Option<String> {
+        self.cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+
+    fn remember(&self, key: &str, id: &str) {
+        if self.capacity == 0 {
+            return;
+        }
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if cache.len() >= self.capacity {
+            cache.shift_remove_index(0);
+        }
+        cache.insert(key.to_owned(), id.to_owned());
+    }
+
+    async fn upload_image(&self, image: Image) -> Result<String, UploadError> {
+        let filename = format!("{}.{}", self.ids.new_uuid(), image.extension);
+        let credentials = self
+            .credentials
+            .as_ref()
+            .filter(|value| !value.expose_secret().is_empty());
+        let token = self
+            .bearer
+            .access_token(credentials)
+            .await
+            .map_err(UploadError::Token)?;
+        let reply = self.send_upload(&token, filename, image).await?;
+        if reply.status >= 400 {
+            return Err(UploadError::UploadStatus(reply.status));
+        }
+        let UploadReply { id } = serde_json::from_slice::<UploadReply>(&reply.body)?;
+        let Some(file_id) = id.filter(|value| !value.is_empty()) else {
+            return Err(UploadError::MissingId);
+        };
+        Ok(file_id)
+    }
+
+    async fn image(&self, image_url: &str) -> Result<Image, UploadError> {
+        if let Some(parsed) = parse_data_url(image_url) {
+            let data = decode_payload(parsed.payload).ok_or(UploadError::Base64)?;
+            return Ok(Image {
+                extension: extension_of(parsed.content_type),
+                content_type: parsed.content_type.to_owned(),
+                data,
+            });
+        }
+        self.download_image(image_url).await
+    }
+
+    async fn download_image(&self, image_url: &str) -> Result<Image, UploadError> {
+        let url = Url::parse(image_url).map_err(|source| UploadError::Url {
+            what: "image",
+            source,
+        })?;
+        let request = OutboundRequest {
+            method: Method::GET,
+            url,
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            body: RequestBody::Empty,
+            deadline: DOWNLOAD_TIMEOUT,
+        };
+        let reply =
+            self.transport
+                .download(request)
+                .await
+                .map_err(|source| UploadError::Transport {
+                    step: "download",
+                    source,
+                })?;
+        if reply.status >= 400 {
+            return Err(UploadError::DownloadStatus(reply.status));
+        }
+        let content_type = reply
+            .headers
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map_or_else(|| String::from(DEFAULT_CONTENT_TYPE), str::to_owned);
+        Ok(Image {
+            extension: extension_of(&content_type),
+            content_type,
+            data: reply.body,
+        })
+    }
+
+    async fn send_upload(
+        &self,
+        token: &SecretString,
+        filename: String,
+        image: Image,
+    ) -> Result<UpstreamResponse, UploadError> {
+        let base = get_api_base(self.api_base.as_deref(), self.api_base_env.as_deref());
+        let url =
+            Url::parse(&format!("{base}{FILES_SUFFIX}")).map_err(|source| UploadError::Url {
+                what: "upload",
+                source,
+            })?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))?,
+        );
+        let request = OutboundRequest {
+            method: Method::POST,
+            url,
+            query: Vec::new(),
+            headers,
+            body: RequestBody::Multipart {
+                boundary: self.ids.new_uuid().simple().to_string(),
+                parts: upload_parts(filename, image),
+            },
+            deadline: UPLOAD_TIMEOUT,
+        };
+        self.transport
+            .upload(request)
+            .await
+            .map_err(|source| UploadError::Transport {
+                step: "upload",
+                source,
+            })
+    }
+}
+
+fn upload_parts(filename: String, image: Image) -> Vec<MultipartPart> {
+    vec![
+        MultipartPart {
+            name: String::from(PURPOSE_FIELD),
+            file_name: None,
+            content_type: None,
+            data: PURPOSE_VALUE.as_bytes().to_vec(),
+        },
+        MultipartPart {
+            name: String::from(FILE_FIELD),
+            file_name: Some(filename),
+            content_type: Some(image.content_type),
+            data: image.data,
+        },
+    ]
+}
+
+#[async_trait]
+impl<T: GigachatFileTransport> GigachatImageUploader for GigachatFileUploader<T> {
+    async fn upload(&self, image_url: &str) -> Option<String> {
+        match self.try_upload(image_url).await {
+            Ok(id) => Some(id),
+            Err(error) => {
+                tracing::error!(error = %error, "Error uploading file to GigaChat");
+                None
+            }
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+enum UploadError {
+    #[error("the data url payload is not base64")]
+    Base64,
+    #[error("the image download answered with status {0}")]
+    DownloadStatus(u16),
+    #[error("the upload reply carries no file id")]
+    MissingId,
+    #[error("the access token could not be fetched: {0}")]
+    Token(#[source] GigaChatError),
+    #[error("the {step} request failed: {source}")]
+    Transport {
+        step: &'static str,
+        #[source]
+        source: TransportError,
+    },
+    #[error("the upload answered with status {0}")]
+    UploadStatus(u16),
+    #[error("the {what} url is not valid: {source}")]
+    Url {
+        what: &'static str,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the upload reply cannot be read: {source}")]
+    Reply {
+        #[from]
+        source: serde_json::Error,
+    },
+    #[error("the authorization header is not valid: {source}")]
+    Header {
+        #[from]
+        source: InvalidHeaderValue,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct UploadReply {
+    #[serde(default)]
+    id: Option<String>,
+}
+
+struct Image {
+    content_type: String,
+    extension: String,
+    data: Vec<u8>,
+}
