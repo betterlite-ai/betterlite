@@ -1,3 +1,5 @@
+use std::io::Error as IoError;
+
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_session_state::logging::SUCCESS_LOGGED_KEY;
 use betterlite_models::decisions::Json;
@@ -642,39 +644,35 @@ async fn provider_failure_is_raised_after_logging() {
     );
     let result = fixture.run(Options::default()).await;
     let error = result.outcome.unwrap_err();
-    match &error {
-        RealtimeTransportError::Provider(ProviderStreamError::Bedrock { status_code, .. }) => {
-            assert_eq!(*status_code, 424);
-        }
-        other @ (RealtimeTransportError::Committed(_)
-        | RealtimeTransportError::Endpoint(_)
-        | RealtimeTransportError::Credential(_)
-        | RealtimeTransportError::NoCredentials { .. }
-        | RealtimeTransportError::Client(_)
-        | RealtimeTransportError::SessionCreated { .. }
-        | RealtimeTransportError::Stream(_)
-        | RealtimeTransportError::Completion(_)
-        | RealtimeTransportError::Logging { .. }
-        | RealtimeTransportError::Provider(_)) => {
-            panic!("a mapped provider failure, not {other:?}");
-        }
-    }
+    assert_provider_failure(&error, 424);
     assert_eq!(result.scope.session_committed, Json::Bool(true));
-    match &result.scope.committed_failure {
-        Json::Text(failure) => assert!(
-            failure.contains("ModelStreamErrorException: the provider stream broke"),
-            "{failure}"
-        ),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            panic!("the committed failure is recorded, not {other:?}");
-        }
-    }
+    assert_committed_failure(&result.scope.committed_failure);
     assert_eq!(fixture.logging.dispatched().len(), 1);
     assert_eq!(fixture.logging.dispatched()[0].len(), 1);
     assert_eq!(
         fixture.logging.detail(SUCCESS_LOGGED_KEY),
         Some(Json::Bool(true))
+    );
+}
+
+fn assert_provider_failure(error: &RealtimeTransportError<FakeError, IoError>, expected: u16) {
+    let RealtimeTransportError::Provider(ProviderStreamError::Bedrock {
+        status_code: actual,
+        ..
+    }) = error
+    else {
+        panic!("a mapped provider failure, not {error:?}");
+    };
+    assert_eq!(*actual, expected);
+}
+
+fn assert_committed_failure(failure: &Json) {
+    let Json::Text(text) = failure else {
+        panic!("the committed failure is recorded, not {failure:?}");
+    };
+    assert!(
+        text.contains("ModelStreamErrorException: the provider stream broke"),
+        "{text}"
     );
 }
 

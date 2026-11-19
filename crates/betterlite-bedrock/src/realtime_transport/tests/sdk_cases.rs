@@ -190,7 +190,8 @@ async fn a_closed_client_refuses_invocations() {
     let calls = boundary
         .calls
         .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     assert!(calls.is_empty(), "a closed client performs no exchange");
 }
 
