@@ -6,9 +6,10 @@ from typing import Literal, TypeAlias, TypeVar
 
 import litellm
 import openai
-from litellm.types.llms.openai import Assistant, AsyncCursorPage, SyncCursorPage
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
+from openai.pagination import AsyncCursorPage, SyncCursorPage
 from openai.types.beta import AssistantDeleted
+from openai.types.beta.assistant import Assistant
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 SENTINEL = "$API_BASE"
