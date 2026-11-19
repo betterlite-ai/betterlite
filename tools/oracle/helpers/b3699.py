@@ -1,16 +1,15 @@
 import asyncio
 from typing import Final, Literal, TypedDict
 
-from litellm import Router
 from litellm.exceptions import ModifyResponseException
 from litellm.proxy.guardrails.guardrail_hooks.litellm_content_filter.content_filter import (
     ContentFilterGuardrail,
 )
+from litellm.router import Router
 from litellm.types.guardrails import BlockedWord, ContentFilterPattern, GuardrailEventHooks
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     Function,
-    GenericGuardrailAPIInputs,
 )
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
@@ -74,6 +73,12 @@ class McpInput(TypedDict):
     request_data: dict[str, Json]
 
 
+class Inputs(TypedDict, total=False):
+    texts: list[str]
+    images: list[str]
+    tool_calls: list[ChatCompletionMessageToolCall]
+
+
 DISPATCH: Final[TypeAdapter[Dispatch]] = TypeAdapter(Dispatch)
 IMAGES_INPUT: Final[TypeAdapter[ImagesInput]] = TypeAdapter(ImagesInput)
 COMPETITOR_INPUT: Final[TypeAdapter[CompetitorInput]] = TypeAdapter(CompetitorInput)
@@ -85,12 +90,11 @@ JSON: Final[TypeAdapter[Json]] = TypeAdapter(Json)
 
 def detection_tag(value: Json) -> Json | None:
     match value:
-        case dict() as detection:
-            kind = detection["type"]
-            if kind == "pattern":
-                return {"type": "pattern", "pattern_name": detection["pattern_name"]}
+        case {"type": "pattern", "pattern_name": name}:
+            return {"type": "pattern", "pattern_name": name}
+        case {"type": kind}:
             return {"type": kind}
-        case None | bool() | int() | float() | str() | list():
+        case None | bool() | int() | float() | str() | list() | dict():
             return None
 
 
@@ -144,16 +148,14 @@ def passthrough_error(raised: ModifyResponseException) -> Json:
 
 async def guardrail_error(
     guardrail: ContentFilterGuardrail,
-    inputs: GenericGuardrailAPIInputs,
+    inputs: Inputs,
     request_data: dict[str, Json],
 ) -> Json:
     try:
-        await guardrail.apply_guardrail(
-            inputs=inputs, request_data=request_data, input_type="request"
-        )
+        await guardrail.apply_guardrail(inputs, request_data, "request")  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     except StarletteHTTPException as raised:
         return http_error(raised)
-    except ModifyResponseException as raised:
+    except ModifyResponseException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201-L1233
         return passthrough_error(raised)
     return None
 
@@ -175,7 +177,7 @@ def tool_call_tag(call: ChatCompletionMessageToolCall) -> Json:
     return {"id": dump["id"], "type": dump["type"], "function": function}
 
 
-def filtered_texts(inputs: GenericGuardrailAPIInputs) -> list[Json]:
+def filtered_texts(inputs: Inputs) -> list[Json]:
     texts = inputs.get("texts")
     if texts is None:
         return []
@@ -187,17 +189,18 @@ async def run_images(request: ImagesInput) -> Json:
         "model": "openai/gpt-4o-mini",
         "mock_response": request["image_description"],
     }
+    router = Router(model_list=[{"model_name": "vision-model", "litellm_params": params}])
     guardrail = ContentFilterGuardrail(
         guardrail_name=GUARDRAIL_NAME,
         patterns=request["patterns"],
         blocked_words=request["blocked_words"],
-        llm_router=Router(model_list=[{"model_name": "vision-model", "litellm_params": params}]),
+        llm_router=router,
         image_model=request["image_model"],
     )
-    inputs: GenericGuardrailAPIInputs = {"texts": [], "images": list(request["images"])}
+    inputs: Inputs = {"texts": [], "images": list(request["images"])}
     request_data: dict[str, Json] = {}
     error = await guardrail_error(guardrail, inputs, request_data)
-    return output(filtered_texts(inputs), [], request_data, error)
+    return output([], [], request_data, error)
 
 
 async def run_competitor(request: CompetitorInput) -> Json:
@@ -219,7 +222,7 @@ async def run_competitor(request: CompetitorInput) -> Json:
             "reframe_message_template": request["config"]["reframe_message_template"],
         },
     )
-    inputs: GenericGuardrailAPIInputs = {"texts": [request["text"]]}
+    inputs: Inputs = {"texts": [request["text"]]}
     request_data: dict[str, Json] = {"model": request["model"]}
     error = await guardrail_error(guardrail, inputs, request_data)
     return output(filtered_texts(inputs), [], request_data, error)
@@ -233,7 +236,7 @@ async def run_tool_calls(request: ToolCallsInput) -> Json:
         blocked_words=request["blocked_words"],
         event_hook=GuardrailEventHooks.pre_call,
     )
-    inputs: GenericGuardrailAPIInputs = {"texts": [], "tool_calls": calls}
+    inputs: Inputs = {"texts": [], "tool_calls": calls}
     request_data: dict[str, Json] = {}
     error = await guardrail_error(guardrail, inputs, request_data)
     projected: list[Json] = [tool_call_tag(call) for call in calls]
@@ -247,7 +250,7 @@ async def run_mcp(request: McpInput) -> Json:
         blocked_words=request["blocked_words"],
         event_hook=GuardrailEventHooks.pre_mcp_call,
     )
-    inputs: GenericGuardrailAPIInputs = {"texts": []}
+    inputs: Inputs = {"texts": []}
     request_data: dict[str, Json] = dict(request["request_data"])
     error = await guardrail_error(guardrail, inputs, request_data)
     return output(filtered_texts(inputs), [], request_data, error)
