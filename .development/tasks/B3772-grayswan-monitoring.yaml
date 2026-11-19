@@ -28,8 +28,6 @@ description: >-
 
 scope:
   paths:
-    - "crates/*"
-    - "tools/*"
     - "crates/betterlite-guardrails/src/agent_365_tokens.rs"
     - crates/betterlite-guardrails/src/grayswan.rs
     - crates/betterlite-guardrails/src/grayswan/**
