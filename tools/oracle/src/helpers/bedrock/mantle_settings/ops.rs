@@ -226,9 +226,9 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::Base { model_cost, cases } => base_cases(model_cost, cases),
         Input::Auth { cases } => auth_cases(cases),
         Input::Chat { catalog, cases } => chat_cases(catalog, cases),
-        Input::Messages { cases } => outcomes::messages_cases(cases),
-        Input::Passthrough { cases } => outcomes::passthrough_cases(cases),
-        Input::Failure { cases } => outcomes::failure_cases(cases),
-        Input::ReplyShape { cases } => outcomes::reply_cases(cases),
+        Input::Messages { .. }
+        | Input::Passthrough { .. }
+        | Input::Failure { .. }
+        | Input::ReplyShape { .. } => outcomes::run(input),
     }
 }
