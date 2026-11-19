@@ -92,7 +92,7 @@ fn usage_response_reads_the_stop_reason() {
 fn usage_response_ignores_event_and_other_chunks() {
     let event = SseChunk::Event(
         serde_json::from_str::<Value>(
-            "{\"delta\": {\"stop_reason\": \"end_turn\"}, \"type\": \"message_delta\"}",
+            "{\"delta\": {\"stop_reason\": \"end_turn\"}, \"type\": \"message_delta\", \"usage\": {\"output_tokens\": 9}}",
         )
         .unwrap()
         .as_object()
