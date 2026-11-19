@@ -2,6 +2,8 @@
 
 #[path = "tests/chunk.rs"]
 mod chunk;
+#[path = "tests/chunk_config.rs"]
+mod chunk_config;
 #[path = "tests/credentials.rs"]
 mod credentials;
 #[path = "tests/init.rs"]
