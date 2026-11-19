@@ -505,7 +505,7 @@ fn empty_content_lists_stay_lists() {
     });
     let original = message(r#"{"role": "user", "content": []}"#);
     let transformed = policy
-        .transform_messages(&[original.clone()])
+        .transform_messages(std::slice::from_ref(&original))
         .expect("messages");
     assert_eq!(transformed, vec![original]);
 }

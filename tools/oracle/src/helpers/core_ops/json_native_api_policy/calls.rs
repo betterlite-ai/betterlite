@@ -14,7 +14,7 @@ use betterlite_openai::json_provider_policy::responses::{
 use betterlite_openai::response_input::ResponsesInput;
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::capabilities::NoCapabilities;
 use super::cases::{Call, Kind};

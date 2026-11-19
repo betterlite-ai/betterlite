@@ -110,7 +110,7 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
     let (slug, model) = split_model(&call.model)?;
     let policy = policy(call, registry, &slug)?;
     match call.kind {
-        Kind::Identity => identity(call, &policy, &slug, &model),
+        Kind::Identity => Ok(identity(call, &policy, &slug, &model)),
         Kind::Supported => {
             let supported = policy.supported_params(&parent_params(&model), capabilities(call));
             serde_json::to_value(supported)
@@ -182,24 +182,19 @@ fn parent_params(model: &str) -> Vec<&'static str> {
     params
 }
 
-fn identity(
-    call: &Call,
-    policy: &ChatPolicy,
-    slug: &str,
-    model: &str,
-) -> Result<Value, Box<HelperError>> {
+fn identity(call: &Call, policy: &ChatPolicy, slug: &str, model: &str) -> Value {
     let explicit = call.api_key.clone().map(SecretString::from);
     let (base, key) = policy.resolve_provider_info(
         call.api_base.as_deref(),
         explicit.as_ref(),
         &call.environment,
     );
-    Ok(json!({
+    json!({
         "model": model,
         "provider": slug,
         "base": base,
         "key": key.map(|secret| secret.expose_secret().to_owned()),
-    }))
+    })
 }
 
 fn messages(call: &Call, policy: &ChatPolicy) -> Result<Value, Box<HelperError>> {
