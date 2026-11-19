@@ -23,6 +23,10 @@ mod tests;
 
 const OPENAI_PROVIDER: &str = "openai";
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "serde's default hook must return the field's Option type"
+)]
 fn default_provider() -> Option<String> {
     Some(OPENAI_PROVIDER.to_owned())
 }
@@ -69,7 +73,7 @@ pub struct FineTuningCancelCall {
     pub acancel_fine_tuning_job: Option<Json>,
     // the in-process SDK client a caller may supply, which only the openai branch receives
     #[serde(skip)]
-    pub client: Option<Box<dyn JobsApi>>,
+    pub client: Option<Box<dyn JobsApi + Send + Sync>>,
 }
 
 // the request-level values the provider fallback chains read first
@@ -103,7 +107,7 @@ pub struct OpenAiFineTuningCancel<'call> {
     pub api_key: Option<&'call SecretString>,
     pub api_version: Option<&'call str>,
     pub organization: Option<&'call str>,
-    pub client: Option<&'call dyn JobsApi>,
+    pub client: Option<&'call (dyn JobsApi + Send + Sync)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,17 +215,19 @@ fn resolve_timeout(
     call: &FineTuningCancelCall,
     provider: Option<&str>,
 ) -> Result<FineTuningTimeout, TimeoutError> {
-    let provider = provider.unwrap_or_default();
+    let provider_name = provider.unwrap_or_default();
     match call.params.timeout.as_ref() {
         Some(OptionalTimeout::Phases(phases)) => {
-            resolve_fine_tuning_timeout(None, provider, Some(structured_timeout(phases)))
+            resolve_fine_tuning_timeout(None, provider_name, Some(structured_timeout(phases)))
         }
         Some(OptionalTimeout::Seconds(seconds)) if *seconds != 0.0_f64 => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider, None)
+            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider_name, None)
         }
-        Some(OptionalTimeout::Text(text)) if !text.is_empty() => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::String(text.clone())), provider, None)
-        }
+        Some(OptionalTimeout::Text(text)) if !text.is_empty() => resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String(text.clone())),
+            provider_name,
+            None,
+        ),
         None | Some(OptionalTimeout::Seconds(_) | OptionalTimeout::Text(_)) => Ok(
             FineTuningTimeout::Seconds(request_timeout(None, call.params.request_timeout)?),
         ),

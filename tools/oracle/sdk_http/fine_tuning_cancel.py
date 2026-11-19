@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from collections.abc import Coroutine
-from typing import Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
 import openai
@@ -11,16 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 ModelResult: TypeAlias = pydantic.BaseModel | Coroutine[object, object, pydantic.BaseModel]
-CallValue: TypeAlias = str | int | float | dict[str, str] | None
-
-
-class Cancels(Protocol):
-    def cancel_fine_tuning_job(self, **kwargs: CallValue) -> ModelResult: ...
-
-    def acancel_fine_tuning_job(self, **kwargs: CallValue) -> ModelResult: ...
-
-
-CANCELS = cast(Cancels, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L334-L481
 
 
 class CallKwargs(TypedDict):
@@ -36,6 +26,15 @@ class CallKwargs(TypedDict):
     request_timeout: float | None
     max_retries: int | None
     azure_ad_token: str | None
+
+
+class Cancels(Protocol):
+    def cancel_fine_tuning_job(self, **kwargs: Unpack[CallKwargs]) -> ModelResult: ...
+
+    def acancel_fine_tuning_job(self, **kwargs: Unpack[CallKwargs]) -> ModelResult: ...
+
+
+CANCELS = cast(Cancels, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L334-L481
 
 
 class Params(BaseModel):

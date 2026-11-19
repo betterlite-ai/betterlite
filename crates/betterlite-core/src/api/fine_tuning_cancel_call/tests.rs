@@ -7,13 +7,11 @@ use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use betterlite_openai::fine_tuning::client::{JobsApi, SdkError};
-use betterlite_openai::fine_tuning::job::{
-    AutoOr, FineTuneCreate, FineTuneJob, Hyperparameters, JobObject, JobStatus,
-};
+use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Map, Number, from_str};
+use serde_json::{Number, from_str};
 use thiserror::Error;
 
 use super::{
@@ -108,33 +106,20 @@ fn base_params() -> FineTuningOptionalParams {
 }
 
 fn answer() -> FineTuneJob {
-    FineTuneJob {
-        id: "ft_1".to_owned(),
-        created_at: 1_704_067_200,
-        error: None,
-        fine_tuned_model: None,
-        finished_at: None,
-        hyperparameters: Hyperparameters {
-            batch_size: Some(AutoOr::Value(4_i64)),
-            learning_rate_multiplier: None,
-            n_epochs: None,
-            extra: Map::new(),
-        },
-        model: "gpt-4o-mini".to_owned(),
-        object: JobObject::FineTuningJob,
-        organization_id: "org_1".to_owned(),
-        result_files: Vec::new(),
-        seed: None,
-        status: JobStatus::Cancelled,
-        trained_tokens: None,
-        training_file: "file_1".to_owned(),
-        validation_file: None,
-        estimated_finish: None,
-        integrations: None,
-        metadata: None,
-        method: None,
-        extra: Map::new(),
-    }
+    from_str(
+        r#"{
+            "id": "ft_1",
+            "created_at": 1704067200,
+            "hyperparameters": {"batch_size": 4},
+            "model": "gpt-4o-mini",
+            "object": "fine_tuning.job",
+            "organization_id": "org_1",
+            "result_files": [],
+            "status": "cancelled",
+            "training_file": "file_1"
+        }"#,
+    )
+    .expect("the provider job decodes")
 }
 
 fn call(provider: Option<&str>, params: FineTuningOptionalParams) -> FineTuningCancelCall {
@@ -284,8 +269,8 @@ async fn cancel_defaults_to_openai_and_keeps_a_null_provider_unsupported() {
         .await
         .expect_err("a null provider is unsupported");
     assert!(matches!(
-        error,
-        FineTuningCancelError::Unsupported { ref provider } if provider == "None"
+        &error,
+        FineTuningCancelError::Unsupported { provider } if provider == "None"
     ));
     assert!(recorded_calls(&calls).is_empty());
 }
@@ -325,8 +310,8 @@ async fn a_null_provider_decodes_to_none_and_stays_unsupported() {
         .await
         .expect_err("a null provider is unsupported");
     assert!(matches!(
-        error,
-        FineTuningCancelError::Unsupported { ref provider } if provider == "None"
+        &error,
+        FineTuningCancelError::Unsupported { provider } if provider == "None"
     ));
     assert!(recorded_calls(&calls).is_empty());
 }
@@ -458,8 +443,8 @@ async fn cancel_reads_the_openai_version_and_azure_organization_only_from_the_ca
         panic!("openai takes its branch");
     };
     assert_eq!(api_version, &None);
-    let entry = first_call(settings, call(Some("azure"), base_params())).await;
-    let Recorded::Azure { organization, .. } = &entry else {
+    let azure_entry = first_call(settings, call(Some("azure"), base_params())).await;
+    let Recorded::Azure { organization, .. } = &azure_entry else {
         panic!("azure takes its branch");
     };
     assert_eq!(organization, &None);
@@ -482,10 +467,14 @@ async fn cancel_reads_the_azure_key_chain(
         ..base_settings()
     };
     let entry = first_call(settings, call(Some("azure"), base_params())).await;
-    let Recorded::Azure { api_key, .. } = &entry else {
+    let Recorded::Azure {
+        api_key: recorded_key,
+        ..
+    } = &entry
+    else {
         panic!("azure takes its branch");
     };
-    assert_eq!(api_key.as_deref(), expected);
+    assert_eq!(recorded_key.as_deref(), expected);
 }
 
 #[rstest]
@@ -653,10 +642,10 @@ async fn cancel_hands_the_supplied_client_to_openai_only() {
     assert!(has_client);
 
     // the azure branch has no client field at all, so a supplied client is dropped
-    let mut request = call(Some("azure"), base_params());
-    request.client = Some(Box::new(SuppliedClient));
-    let entry = first_call(base_settings(), request).await;
-    assert!(matches!(&entry, Recorded::Azure { .. }));
+    let mut azure_request = call(Some("azure"), base_params());
+    azure_request.client = Some(Box::new(SuppliedClient));
+    let azure_entry = first_call(base_settings(), azure_request).await;
+    assert!(matches!(&azure_entry, Recorded::Azure { .. }));
 }
 
 #[tokio::test]
