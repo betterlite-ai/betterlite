@@ -1,5 +1,10 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::PathBuf;
+
+use betterlite_pyhost::json_values::JsonObject;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::PluginRegistry;
@@ -137,4 +142,14 @@ fn parses_the_plugin_key_as_a_secret() {
     let plugins = registry.plugins.read().unwrap();
     let key = plugins["alpha"].plugin_key.as_ref().unwrap();
     assert_eq!(key.expose_secret(), "sk-plugin");
+}
+
+#[rstest]
+fn replays_the_plugin_registry_corpus(#[files("fuzz/corpus/plugin_registry/*")] path: PathBuf) {
+    let text = fs::read_to_string(path).expect("a corpus seed should be readable");
+    let Ok(settings) = serde_json::from_str::<JsonObject>(&text) else {
+        return;
+    };
+    let registry = PluginRegistry::default();
+    drop(registry.replace_from_settings(&settings));
 }

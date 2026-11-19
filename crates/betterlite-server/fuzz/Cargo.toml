@@ -383,3 +383,17 @@ path = "fuzz_targets/roi_identity_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "plugin_session_claim"
+path = "fuzz_targets/plugin_session_claim.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin_registry"
+path = "fuzz_targets/plugin_registry.rs"
+test = false
+doc = false
+bench = false
