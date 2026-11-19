@@ -50,8 +50,8 @@ fn pipeline_pair(entry: &JsonValue) -> Option<(String, GuardrailPipeline)> {
     let [JsonValue::String(policy_name), pipeline] = parts.as_slice() else {
         return None;
     };
-    let pipeline = serde_json::from_value(pipeline.clone()).ok()?;
-    Some((policy_name.clone(), pipeline))
+    let parsed = serde_json::from_value(pipeline.clone()).ok()?;
+    Some((policy_name.clone(), parsed))
 }
 
 #[must_use]

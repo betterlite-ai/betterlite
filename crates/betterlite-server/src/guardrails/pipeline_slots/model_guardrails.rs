@@ -94,11 +94,11 @@ pub fn merge_guardrails_with_existing(
     Ok(modified)
 }
 
-fn object_field(
-    parent: Option<&JsonMap>,
+fn object_field<'data>(
+    parent: Option<&'data JsonMap>,
     key: &'static str,
     field: &'static str,
-) -> Result<Option<&JsonMap>, ModelGuardrailsError> {
+) -> Result<Option<&'data JsonMap>, ModelGuardrailsError> {
     let Some(bucket) = parent else {
         return Ok(None);
     };
@@ -154,10 +154,9 @@ fn alias_guardrails_entry(guardrails: Option<&JsonValue>) -> Option<Vec<JsonValu
         Some(JsonValue::String(name)) => Some(vec![JsonValue::String(name.clone())]),
         Some(JsonValue::Array(items)) => Some(items.clone()),
         None
-        | Some(JsonValue::Null)
-        | Some(JsonValue::Bool(_))
-        | Some(JsonValue::Number(_))
-        | Some(JsonValue::Object(_)) => None,
+        | Some(
+            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
+        ) => None,
     }
 }
 

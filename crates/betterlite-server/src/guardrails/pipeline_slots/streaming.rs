@@ -17,11 +17,14 @@ pub trait PipelineCallbacks {
 }
 
 #[must_use]
-pub fn step_supports_streaming<Translation: BaseTranslation>(
+pub fn step_supports_streaming<Translation>(
     guardrail_name: &str,
     translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
-) -> bool {
+) -> bool
+where
+    Translation: BaseTranslation,
+{
     let Some(support) = callbacks.find_guardrail_callback(guardrail_name) else {
         return false;
     };
@@ -32,11 +35,14 @@ pub fn step_supports_streaming<Translation: BaseTranslation>(
 }
 
 #[must_use]
-pub fn unsupported_stream_guardrails<Translation: BaseTranslation>(
+pub fn unsupported_stream_guardrails<Translation>(
     pipeline: &GuardrailPipeline,
     translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
-) -> Vec<String> {
+) -> Vec<String>
+where
+    Translation: BaseTranslation,
+{
     let mut seen = BTreeSet::new();
     let mut unsupported = Vec::new();
     for step in &pipeline.steps {
@@ -51,12 +57,15 @@ pub fn unsupported_stream_guardrails<Translation: BaseTranslation>(
 }
 
 #[must_use]
-pub fn pipeline_is_streamable<Translation: BaseTranslation>(
+pub fn pipeline_is_streamable<Translation>(
     policy_name: &str,
     pipeline: &GuardrailPipeline,
     translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
-) -> bool {
+) -> bool
+where
+    Translation: BaseTranslation,
+{
     let unsupported = unsupported_stream_guardrails(pipeline, translation, callbacks);
     if unsupported.is_empty() {
         return true;
@@ -69,11 +78,14 @@ pub fn pipeline_is_streamable<Translation: BaseTranslation>(
 }
 
 #[must_use]
-pub fn stream_gated_guardrail_names<Translation: BaseTranslation>(
+pub fn stream_gated_guardrail_names<Translation>(
     data: &JsonMap,
     translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
-) -> BTreeSet<String> {
+) -> BTreeSet<String>
+where
+    Translation: BaseTranslation,
+{
     let Some(found) = translation else {
         return BTreeSet::new();
     };
@@ -87,12 +99,15 @@ pub fn stream_gated_guardrail_names<Translation: BaseTranslation>(
 }
 
 #[must_use]
-pub fn streamable_post_call_pipelines<Translation: BaseTranslation>(
+pub fn streamable_post_call_pipelines<Translation>(
     data: &JsonMap,
     translation: Option<&Translation>,
     route: Option<&str>,
     callbacks: &dyn PipelineCallbacks,
-) -> Vec<(String, GuardrailPipeline)> {
+) -> Vec<(String, GuardrailPipeline)>
+where
+    Translation: BaseTranslation,
+{
     let post_call = post_call_pipelines(data);
     if post_call.is_empty() {
         return Vec::new();
