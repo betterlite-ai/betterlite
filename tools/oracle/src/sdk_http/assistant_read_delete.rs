@@ -18,7 +18,7 @@ use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_openai::assistants::error::AssistantsError;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
@@ -101,17 +101,15 @@ impl CallKind for Call {
                 settings: &settings,
             };
             let input = with_harness_base(&run.input, api_base);
-            let sync = match run.entries {
-                EntrySet::Both | EntrySet::Sync => {
-                    Some(harness.execute(&input, AssistantWrapper::Sync).await)
-                }
-                EntrySet::Async => None,
+            let sync = if run.entries == EntrySet::Async {
+                None
+            } else {
+                Some(harness.execute(&input, AssistantWrapper::Sync).await)
             };
-            let asynchronous = match run.entries {
-                EntrySet::Both | EntrySet::Async => {
-                    Some(harness.execute(&input, AssistantWrapper::Async).await)
-                }
-                EntrySet::Sync => None,
+            let asynchronous = if run.entries == EntrySet::Sync {
+                None
+            } else {
+                Some(harness.execute(&input, AssistantWrapper::Async).await)
             };
             runs.push(RunOutcome { sync, asynchronous });
         }
@@ -189,10 +187,7 @@ fn failure_view(
         } else {
             text
         };
-        json!({
-            "class": fields.class, "status": fields.status, "type": fields.error_type,
-            "param": fields.param, "code": fields.code, "message": message,
-        })
+        json!({ "class": fields.class, "status": fields.status, "message": message })
     } else if let AssistantReadDeleteError::Dispatch(AssistantSdkError::Assistants(
         AssistantsError::Status { status, body },
     )) = error
@@ -222,11 +217,8 @@ fn status_failure(status: u16, body: &[u8], wrapper: AssistantWrapper) -> Value 
             "message": format!("Error code: {status} - {text}"),
         });
     }
-    json!({
-        "class": failure.class, "status": failure.status, "type": failure.kind.flatten(),
-        "param": failure.param.flatten(), "code": failure.code.flatten(),
-        "message": failure.message,
-    })
+    // LiteLLM's mapped exception is built with body=None, so it carries no type, param or code
+    json!({ "class": failure.class, "status": failure.status, "message": failure.message })
 }
 
 // the OpenAI SDK names a status failure after its status code
@@ -247,12 +239,13 @@ const fn sdk_class(status: u16) -> &'static str {
 // litellm's model_dump_json(exclude_none=True) leaves every null field out
 fn compact(value: Value) -> Value {
     match value {
-        Value::Object(object) => object
-            .into_iter()
-            .filter(|(_, item)| !item.is_null())
-            .map(|(key, item)| (key, compact(item)))
-            .collect::<Map<String, Value>>()
-            .into(),
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .filter(|(_, item)| !item.is_null())
+                .map(|(key, item)| (key, compact(item)))
+                .collect(),
+        ),
         Value::Array(items) => Value::Array(items.into_iter().map(compact).collect()),
         other => other,
     }

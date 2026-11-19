@@ -1,19 +1,15 @@
 task: B1130
 deviations:
   - what: >-
-      An async entry that the caller gave a synchronous client runs that client's request and answers
-      the page or deleted object, where LiteLLM awaits the value a sync client returned and raises
-      TypeError.
+      An async entry the caller gave a synchronous client runs that client's request and answers the
+      page or deleted object, where LiteLLM awaits the returned value and raises TypeError.
     why: >-
-      Awaiting a value a synchronous client returned is a crash, not a response any working setup can
-      rely on.
+      Awaiting a synchronous client's return value is a crash, not a response a working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L374-L412
 kept_bugs:
   - what: >-
-      An azure_ad_token read from extra_body, or from AZURE_AD_TOKEN when extra_body is null, is
-      resolved and then dropped: unless the token arrives as the top-level azure_ad_token kwarg the
-      Azure request carries api-key and no bearer token.
-    why: >-
-      LiteLLM's Azure assistants client takes azure_ad_token but initialize_azure_sdk_client builds
-      the client from litellm_params alone, and betterlite's B686 keeps that behavior.
+      An azure_ad_token from extra_body, or from AZURE_AD_TOKEN when extra_body is null, is resolved
+      and then dropped: unless it arrives as the top-level azure_ad_token kwarg, the Azure request
+      carries api-key and no bearer token.
+    why: LiteLLM's initialize_azure_sdk_client builds the client from litellm_params alone, and B686 keeps that.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L40-L60
