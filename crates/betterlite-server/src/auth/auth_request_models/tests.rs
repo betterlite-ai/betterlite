@@ -110,6 +110,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::ModelAccess(_)) => {
             panic!("the master key stage reports no model access")
         }
+        Err(StageFailure::ResourceGrants(_)) => {
+            panic!("the master key stage reports no resource grants")
+        }
     }
 }
 

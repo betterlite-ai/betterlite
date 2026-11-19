@@ -1,6 +1,8 @@
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::cold_storage_key::ColdStorageTarget;
+use crate::s3_audit::current_granularity;
 use crate::s3_batch::Element;
 use crate::s3_batch::logger::{CALLBACK_NAME, S3BatchLogger};
 use crate::s3_batch::ndjson_batch_file::COLD_STORAGE_LOGGER;
@@ -66,6 +68,12 @@ pub(super) fn enqueue_event(
 impl CallbackLogger for S3BatchLogger {
     fn callback_name(&self) -> &str {
         CALLBACK_NAME
+    }
+    fn cold_storage_target(&self) -> Option<ColdStorageTarget> {
+        Some(ColdStorageTarget {
+            s3_path: self.parameters.connection.path.clone().unwrap_or_default(),
+            partition_granularity: current_granularity(self),
+        })
     }
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         enqueue_event(self, &event)

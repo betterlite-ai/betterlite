@@ -1,0 +1,6 @@
+task: B154
+deviations:
+  - what: Two single-service modules replace LiteLLM's three-service modules, and the AWS and GCP modules differ in database authentication.
+    why: betterlite is one binary on port 4000. The AWS module uses IAM tokens (B1232 and the gateway support them) and the GCP module uses a generated password.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm
+kept_bugs: []

@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-streaming-tool-rewrite-two-blocks
+call:
+  b3676: {"function": "tool_rewrite", "scenarios": [{"responses_so_far": [{"bytes": "data: {\"content_block\": {\"name\": \"lookup\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}\n\ndata: {\"delta\": {\"partial_json\": \"{\\\"q\\\": 1}\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"partial_json\": \"\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"content_block\": {\"name\": \"keep\", \"type\": \"tool_use\"}, \"index\": 1, \"type\": \"content_block_start\"}\n\ndata: {\"delta\": {\"partial_json\": \"{}\", \"type\": \"input_json_delta\"}, \"index\": 1, \"type\": \"content_block_delta\"}"}], "pre_guardrail_tool_calls": [{"name": "lookup", "arguments": "{\"q\": 1}"}, {"name": "keep", "arguments": "{}"}], "post_guardrail_tool_calls": [{"name": "search", "arguments": "{\"q\": 2}"}, {"name": "other", "arguments": "{\"x\": 3}"}], "guardrail_name": "guard"}]}
+env: {}
+compare: {ignore: []}

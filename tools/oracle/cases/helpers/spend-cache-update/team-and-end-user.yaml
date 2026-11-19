@@ -1,0 +1,18 @@
+kind: helper
+name: spend-cache-update-team-and-end-user
+call:
+  b8376:
+    end_user_id: end-9
+    team_id: team-9
+    response_cost: 0.5
+calls:
+  - b8376:
+      end_user_id: ""
+      team_id: ""
+      response_cost: 2
+  - b8376:
+      end_user_id: end-9
+      team_id: team-9
+      response_cost: -1.5
+env: {}
+compare: {ignore: []}
