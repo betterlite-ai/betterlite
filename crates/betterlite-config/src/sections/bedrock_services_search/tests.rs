@@ -257,10 +257,10 @@ fn assert_environment_token_is_optional() {
     );
     assert_eq!(settings.deployments.len(), 0);
     let without_token = load("", &[]).expect("the config should load");
-    assert_eq!(without_token.environment.gateway_token, None);
+    assert!(without_token.environment.gateway_token.is_none());
     let empty_token =
         load("", &[(GATEWAY_TOKEN_VARIABLE, "")]).expect("an empty value counts as unset");
-    assert_eq!(empty_token.environment.gateway_token, None);
+    assert!(empty_token.environment.gateway_token.is_none());
 }
 
 fn assert_token_is_not_debugged() {

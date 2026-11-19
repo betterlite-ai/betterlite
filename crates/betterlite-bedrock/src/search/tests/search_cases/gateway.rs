@@ -6,7 +6,7 @@ use betterlite_openai::search::provider::SearchQuery;
 use crate::search::UI_FRIENDLY_NAME;
 use crate::search::headers::{ACCEPT, CONTENT_TYPE, validate_environment};
 use crate::search::request::{Params, transform_search_request};
-use crate::search::tests::support::{header, headers, params, text_field};
+use crate::search::tests::support::{headers, params, text_field};
 use crate::search::url::complete_url;
 
 pub(super) fn assert_configured_gateway_required() {
@@ -60,47 +60,65 @@ fn assert_overlay_replaces_exact_keys() {
     let merged = validate_environment(supplied, None);
     assert_eq!(CONTENT_TYPE, "application/json");
     assert_eq!(ACCEPT, "application/json, text/event-stream");
-    assert_eq!(header(&merged, "Content-Type"), Some("application/json"));
     assert_eq!(
-        header(&merged, "Accept"),
+        merged.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    assert_eq!(
+        merged.get("Accept").map(String::as_str),
         Some("application/json, text/event-stream")
     );
     assert_eq!(
-        header(&merged, "MCP-Protocol-Version"),
+        merged.get("MCP-Protocol-Version").map(String::as_str),
         Some(DEFAULT_MCP_PROTOCOL_VERSION)
     );
-    assert_eq!(header(&merged, "MCP-Protocol-Version"), Some("2025-03-26"));
+    assert_eq!(
+        merged.get("MCP-Protocol-Version").map(String::as_str),
+        Some("2025-03-26")
+    );
     assert_eq!(merged.len(), 3);
 }
 
 fn assert_overlay_is_case_exact() {
     let supplied = headers(&[("content-type", "text/plain")]);
     let merged = validate_environment(supplied, None);
-    assert_eq!(header(&merged, "content-type"), Some("text/plain"));
-    assert_eq!(header(&merged, "Content-Type"), Some("application/json"));
+    assert_eq!(
+        merged.get("content-type").map(String::as_str),
+        Some("text/plain")
+    );
+    assert_eq!(
+        merged.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
     assert_eq!(merged.len(), 4);
 }
 
 fn assert_protocol_version_is_configurable() {
     let configured = validate_environment(headers(&[]), Some("2025-06-18"));
     assert_eq!(
-        header(&configured, "MCP-Protocol-Version"),
+        configured.get("MCP-Protocol-Version").map(String::as_str),
         Some("2025-06-18")
     );
     let empty = validate_environment(headers(&[]), Some(""));
     assert_eq!(
-        header(&empty, "MCP-Protocol-Version"),
+        empty.get("MCP-Protocol-Version").map(String::as_str),
         Some(DEFAULT_MCP_PROTOCOL_VERSION)
     );
     let blank = validate_environment(headers(&[]), Some(" "));
-    assert_eq!(header(&blank, "MCP-Protocol-Version"), Some(" "));
+    assert_eq!(
+        blank.get("MCP-Protocol-Version").map(String::as_str),
+        Some(" ")
+    );
 }
 
 fn assert_unrelated_headers_survive() {
     let supplied = headers(&[("x-request-id", "abc"), ("anthropic-version", "2023-06-01")]);
     let merged = validate_environment(supplied, None);
-    assert_eq!(header(&merged, "x-request-id"), Some("abc"));
-    assert_eq!(header(&merged, "anthropic-version"), Some("2023-06-01"));
+    assert_eq!(merged.get("x-request-id").map(String::as_str), Some("abc"));
+    assert_eq!(
+        merged.get("anthropic-version").map(String::as_str),
+        Some("2023-06-01")
+    );
     assert_eq!(merged.len(), 5);
 }
 

@@ -146,6 +146,7 @@ where
         resolve_credentials,
     )
     .await
+    .map_err(SearchError::from)
 }
 
 fn bearer_signed(
