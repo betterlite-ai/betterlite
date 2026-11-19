@@ -369,3 +369,10 @@ path = "fuzz_targets/cost_estimate_request.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "latest_release"
+path = "fuzz_targets/latest_release.rs"
+test = false
+doc = false
+bench = false

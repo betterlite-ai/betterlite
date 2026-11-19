@@ -1,0 +1,31 @@
+name: release-info-non-200-is-cached-null
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+latest_release_fixture: upstream
+upstream:
+  - status: 503
+    headers: {content-type: application/json}
+    body: {error: unavailable}
+steps:
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []

@@ -11,6 +11,7 @@ base64 = "0.23.1"
 betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-cache = { path = "../betterlite-cache" }
+betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-cost = { path = "../betterlite-cost" }
