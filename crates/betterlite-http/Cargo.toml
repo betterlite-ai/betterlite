@@ -13,6 +13,7 @@ aws-sdk-sts = { version = "=1.116.0", default-features = false, features = ["rt-
 aws-sigv4 = "1.6.2"
 aws-smithy-async = "=1.3.1"
 aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
+aws-smithy-types = { version = "=1.9.1", features = ["http-body-1-x"] }
 aws-types = "=1.6.0"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
@@ -22,6 +23,7 @@ bytes = "1.12.1"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hex.workspace = true
 http = "1.5.0"
+http-body = "1.1.0"
 idna = "1.1.0"
 indexmap = "2.14.2"
 ipnet = "2.12.2"
@@ -48,7 +50,6 @@ webpki-roots = "1.0.11"
 zip = { version = "9.1.0", default-features = false, features = ["bzip2", "deflate-flate2-zlib", "lzma"] }
 
 [dev-dependencies]
-aws-smithy-types = "=1.9.1"
 betterlite-http-fixture = { path = "../../tools/http-fixture" }
 crc32fast = "1.5.3"
 h2 = "0.4.20"

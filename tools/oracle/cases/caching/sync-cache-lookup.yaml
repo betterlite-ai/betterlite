@@ -1,0 +1,150 @@
+kind: helper
+name: caching-sync-cache-lookup
+call:
+  b4305:
+    scenarios:
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+          object: chat.completion
+          created: 0
+          model: gpt-4o
+          choices:
+          - index: 0
+            message:
+              role: assistant
+              content: hello
+            finish_reason: stop
+          usage:
+            prompt_tokens: 1
+            completion_tokens: 1
+            total_tokens: 2
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+      entries:
+      - value:
+          id: chatcmpl-1
+          object: chat.completion
+          choices: []
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+        caching: false
+        cache:
+          no-cache: true
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+          object: chat.completion
+          choices: []
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: image_generation
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        prompt: a cat
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+          object: chat.completion
+          choices: []
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: other-key
+      entries:
+      - key: case-key
+        value:
+          detail: the deployment is gone
+    - operation: sync
+      model: gpt-4o
+      call_type: completion
+      original_function: completion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+        - detail: cached failure
+env: {}
+compare:
+  ignore: []

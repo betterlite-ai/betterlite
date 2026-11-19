@@ -1,0 +1,35 @@
+name: release-info-invalid-record-and-auth
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+latest_release_fixture: upstream
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      tag_name: 7
+      html_url: https://github.com/betterlite-ai/betterlite/releases/tag/v7
+steps:
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - pointer: ""
+          why: LiteLLM returns an unstructured internal-server-error body for a missing key
+  - request:
+      method: GET
+      path: /get/latest_release_info
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
