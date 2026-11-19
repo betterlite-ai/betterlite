@@ -69,7 +69,9 @@ where
             schedule: self.schedule,
             default_enduser_budget_id: self.default_enduser_budget_id,
         };
-        let cascade = match self.commit_chunk(request).await {
+        let reconnect = self.reconnect.as_deref_mut();
+        let committed = run_tier_cascade(&self.store, self.cache, request, reconnect).await;
+        let cascade = match committed {
             Ok(cascade) => cascade,
             Err(failure) => {
                 self.report_failure(&failure, started);
@@ -90,14 +92,6 @@ where
                 None
             }
         }
-    }
-
-    async fn commit_chunk(
-        &mut self,
-        request: TierCascadeRequest<'_, Schedule>,
-    ) -> Result<BudgetCascade, TierCascadeFailure<Schedule::Failure>> {
-        let reconnect = self.reconnect.as_deref_mut();
-        run_tier_cascade(&self.store, self.cache, request, reconnect).await
     }
 
     // _invalidate_budget_cascade_caches runs inside the commit, then the customer walk, the success hook and the progress count follow in that order.

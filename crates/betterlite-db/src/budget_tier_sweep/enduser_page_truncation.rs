@@ -1,4 +1,3 @@
-// _EndUserWalk: where the customer walk stands; a None cursor means it is done and truncated says a failed page read cut it short of the tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EndUserWalk {
     pub(crate) cursor: Option<String>,
