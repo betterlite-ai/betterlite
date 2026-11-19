@@ -171,16 +171,14 @@ fn reply(status: u16, body: &str) -> LeafReply {
     }
 }
 
-struct Scripted {
-    reply: LeafReply,
-}
+struct Scripted(LeafReply);
 
 impl LeafTransport for Scripted {
     fn send(
         &self,
         _request: LeafRequest,
     ) -> Pin<Box<dyn Future<Output = Result<LeafReply, TransportError>> + Send + '_>> {
-        Box::pin(ready(Ok(self.reply.clone())))
+        Box::pin(ready(Ok(self.0.clone())))
     }
 }
 
@@ -317,9 +315,7 @@ impl ResponsesFixture {
 
 pub(super) fn responses_row(run: &ResponsesRun) -> super::HelperResult {
     let mut fixture = ResponsesFixture::new(run)?;
-    let transport = Scripted {
-        reply: reply(run.status, &run.reply),
-    };
+    let transport = Scripted(reply(run.status, &run.reply));
     match block_on(fixture.operation(&run.model).run(&transport))? {
         Ok(outcome) => Ok(responses_success(&outcome)),
         Err(error) => Ok(responses_failure(&error)),
@@ -427,14 +423,6 @@ impl PassthroughServices {
     }
 }
 
-fn passthrough_target(endpoint: &str) -> PassthroughTarget<'_> {
-    PassthroughTarget {
-        model: PASSTHROUGH_MODEL,
-        custom_llm_provider: "bedrock",
-        endpoint,
-    }
-}
-
 fn passthrough_url_request<'call>(
     params: &'call Object,
     endpoint: &'call str,
@@ -442,18 +430,14 @@ fn passthrough_url_request<'call>(
     PassthroughUrlRequest {
         api_base: None,
         api_key: None,
-        target: passthrough_target(endpoint),
+        target: PassthroughTarget {
+            model: PASSTHROUGH_MODEL,
+            custom_llm_provider: "bedrock",
+            endpoint,
+        },
         request_query_params: None,
         litellm_params: params,
     }
-}
-
-fn passthrough_base(
-    plan: &BedrockPassthroughPlan<'_>,
-    request: &PassthroughUrlRequest<'_>,
-) -> Option<(String, String)> {
-    let (url, endpoint_url) = plan.get_complete_url(request).ok()?;
-    Some((url.to_string(), endpoint_url))
 }
 
 fn passthrough_transport(run: &PassthroughRun) -> Result<Scripted, Box<HelperError>> {
@@ -461,7 +445,7 @@ fn passthrough_transport(run: &PassthroughRun) -> Result<Scripted, Box<HelperErr
     for chunk in &run.chunks {
         scripted.chunks.push(hex::decode(chunk).or_value_error()?);
     }
-    Ok(Scripted { reply: scripted })
+    Ok(Scripted(scripted))
 }
 
 pub(super) fn passthrough_row(run: &PassthroughRun) -> super::HelperResult {
@@ -473,9 +457,10 @@ pub(super) fn passthrough_row(run: &PassthroughRun) -> super::HelperResult {
     let plan = services.plan(run);
     let params = Object::new();
     let url_request = passthrough_url_request(&params, &run.endpoint);
-    let Some((signed_base, endpoint_url)) = passthrough_base(&plan, &url_request) else {
+    let Ok((url, endpoint_url)) = plan.get_complete_url(&url_request) else {
         return Ok(error_row("leaf", None));
     };
+    let signed_base = url.to_string();
     let data = run
         .data
         .clone()
@@ -568,9 +553,7 @@ impl SearchFixture {
 
 pub(super) fn search_row(run: &SearchRun) -> super::HelperResult {
     let fixture = SearchFixture::new(run)?;
-    let transport = Scripted {
-        reply: reply(run.status, &run.reply),
-    };
+    let transport = Scripted(reply(run.status, &run.reply));
     match block_on(fixture.operation(run).run(&transport))? {
         Ok(outcome) => Ok(search_success(&outcome)),
         Err(search::Error::Leaf(_)) => Ok(error_row("leaf", None)),
@@ -641,9 +624,7 @@ impl VectorFixture {
 
 pub(super) fn vector_row(run: &VectorRun) -> super::HelperResult {
     let fixture = VectorFixture::new(run)?;
-    let transport = Scripted {
-        reply: reply(run.status, &run.reply),
-    };
+    let transport = Scripted(reply(run.status, &run.reply));
     match block_on(fixture.operation().run(&transport))? {
         Ok(outcome) => Ok(vector_success(&outcome)),
         Err(vector_retrieve::Error::Leaf(_)) => Ok(error_row("leaf", None)),
@@ -761,14 +742,6 @@ fn transport_kind(error: &RealtimeTransportError<Failing, io::Error>) -> &'stati
     }
 }
 
-fn realtime_scope(run: &RealtimeRun) -> EventScope {
-    EventScope {
-        pending_session_update: Json::Text(run.pending.clone()),
-        session_committed: Json::Null,
-        committed_failure: Json::Null,
-    }
-}
-
 pub(super) fn realtime_row(run: &RealtimeRun) -> super::HelperResult {
     let runtime = FailingRuntime;
     let resolver = Resolver;
@@ -777,7 +750,11 @@ pub(super) fn realtime_row(run: &RealtimeRun) -> super::HelperResult {
     let ids = NullIds;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
     let logged_types = LoggedEventTypes::Default;
-    let mut scope = realtime_scope(run);
+    let mut scope = EventScope {
+        pending_session_update: Json::Text(run.pending.clone()),
+        session_committed: Json::Null,
+        committed_failure: Json::Null,
+    };
     let call = RealtimeCall {
         model: REALTIME_MODEL,
         client: &socket,

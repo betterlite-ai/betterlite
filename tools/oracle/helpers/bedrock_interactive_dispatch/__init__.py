@@ -45,7 +45,6 @@ from .inputs import (
     RealtimeRun,
     ResponsesRun,
     SearchRun,
-    VectorCalls,
     VectorRun,
     request_view,
 )
@@ -62,21 +61,13 @@ ACCESS: Final = "AKIDBETTERLITEFIXTURE"
 SEED: Final = "fixture/secret/key/+EXAMPLEKEY0000"
 MODE: Final = "resolved"
 SEARCH_ENVIRONMENT: Final = (
-    "AGENTCORE_SEARCH_TOOL_NAME",
-    "AGENTCORE_GATEWAY_TOKEN",
-    "AGENTCORE_GATEWAY_URL",
+    "AGENTCORE_SEARCH_TOOL_NAME", "AGENTCORE_GATEWAY_TOKEN", "AGENTCORE_GATEWAY_URL"
 )
 
 def error_row(kind: str, status: int | None) -> JsonObject:
     row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
     row["error"] = {"kind": kind, "status": status}
     return row
-
-
-def mapped_params(calls: Calls, params: JsonObject) -> JsonObject:
-    payload: JsonValue = [{"params": params, "drop_params": False}]
-    mapped = MAPPED_RESULT.validate_python(option_cases(calls, payload))
-    return mapped["results"][0]["params"]
 
 
 def responses_row(run: ResponsesRun) -> JsonValue:
@@ -91,7 +82,9 @@ def responses_request(calls: Calls, run: ResponsesRun) -> JsonValue:
     api_key = run.get("api_key")
     try:
         source = RESPONSES_SOURCE.validate_python(run["input"])
-        mapped = mapped_params(calls, run["params"])
+        payload: JsonValue = [{"params": run["params"], "drop_params": False}]
+        validated = MAPPED_RESULT.validate_python(option_cases(calls, payload))
+        mapped = validated["results"][0]["params"]
         url = calls.get_complete_url(RESPONSES_HOST, {})
         params = GenericLiteLLMParams(api_key=api_key)
         headers = calls.validate_environment({}, run["model"], params)
@@ -106,20 +99,6 @@ def responses_request(calls: Calls, run: ResponsesRun) -> JsonValue:
     row["status"] = run["status"]
     row["reply"] = JsonAdapter.validate_json(run["reply"])
     return row
-
-
-def passthrough_logged(run: PassthroughRun) -> bool:
-    chunks = run.get("chunks")
-    if chunks:
-        data = bytes.fromhex("".join(chunks))
-        collected = COLLECT_VIEW.validate_python(
-            collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]}, data)
-        )
-        return collected["decoded"]
-    logged = LOGGED_VIEW.validate_python(
-        reply_run({"provider": "bedrock", "endpoint": run["endpoint"], "body": run["reply"]})
-    )
-    return logged["logged"]
 
 
 def passthrough_row(run: PassthroughRun) -> JsonValue:
@@ -150,7 +129,18 @@ def passthrough_row(run: PassthroughRun) -> JsonValue:
     row["endpoint_url"] = view["endpoint_url"]
     row["streaming"] = view["streaming"]
     row["status"] = run["status"]
-    row["logged"] = passthrough_logged(run)
+    chunks = run.get("chunks")
+    if chunks:
+        data = bytes.fromhex("".join(chunks))
+        collected = COLLECT_VIEW.validate_python(
+            collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]}, data)
+        )
+        row["logged"] = collected["decoded"]
+    else:
+        logged = LOGGED_VIEW.validate_python(
+            reply_run({"provider": "bedrock", "endpoint": run["endpoint"], "body": run["reply"]})
+        )
+        row["logged"] = logged["logged"]
     return row
 
 
@@ -182,15 +172,6 @@ def search_row(run: SearchRun) -> JsonValue:
     return row
 
 
-def vector_calls(supplied: VectorInput) -> VectorCalls | None:
-    raw = retrieval_configuration(BedrockVectorStoreConfig(), supplied)
-    try:
-        calls = VECTOR_CALLS.validate_python(raw)
-    except ValueError:
-        return None
-    return calls if calls["calls"] else None
-
-
 def vector_row(run: VectorRun) -> JsonValue:
     supplied = VectorInput(
         operation="retrieval_configuration",
@@ -205,8 +186,13 @@ def vector_row(run: VectorRun) -> JsonValue:
             )
         ],
     )
-    calls = vector_calls(supplied)
-    if calls is None:
+    try:
+        calls = VECTOR_CALLS.validate_python(
+            retrieval_configuration(BedrockVectorStoreConfig(), supplied)
+        )
+    except ValueError:
+        return error_row("leaf", None)
+    if not calls["calls"]:
         return error_row("leaf", None)
     call = calls["calls"][0]
     row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)

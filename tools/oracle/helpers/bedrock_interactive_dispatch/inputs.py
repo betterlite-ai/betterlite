@@ -9,14 +9,7 @@ JsonObject = dict[str, JsonValue]
 ResponsesSource: TypeAlias = str | ResponseInputParam
 
 KEYS: Final[tuple[str, ...]] = (
-    "request",
-    "endpoint_url",
-    "streaming",
-    "status",
-    "reply",
-    "response",
-    "logged",
-    "error",
+    "request", "endpoint_url", "streaming", "status", "reply", "response", "logged", "error"
 )
 
 
@@ -65,7 +58,6 @@ class RealtimeSeen(TypedDict):
     outcome: str
     error_kind: str | None
     status_code: int | None
-    runtime_closed: bool
     committed: bool
 
 
@@ -156,20 +148,14 @@ def authorization_view(headers: dict[str, str]) -> JsonValue:
         return None
     if value.startswith("Bearer "):
         return {
-            "kind": "bearer",
-            "access_key": None,
-            "region": None,
-            "service": None,
-            "token": value[len("Bearer ") :],
+            "kind": "bearer", "access_key": None, "region": None,
+            "service": None, "token": value[len("Bearer ") :],
         }
     scope = value.partition("Credential=")[2].partition(",")[0]
     access_key, _date, region, service, _scope = scope.split("/")
     return {
-        "kind": "sigv4",
-        "access_key": access_key,
-        "region": region,
-        "service": service,
-        "token": None,
+        "kind": "sigv4", "access_key": access_key, "region": region,
+        "service": service, "token": None,
     }
 
 
