@@ -1,0 +1,14 @@
+kind: sdk_http
+name: storage-factory-errors-database
+env: {}
+call:
+  file_storage_service:
+    operation: factory
+    backend_type: litellm_db
+    target_model_names: []
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
