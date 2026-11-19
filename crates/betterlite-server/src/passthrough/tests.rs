@@ -1,4 +1,18 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "the fixtures state the JSON LiteLLM and its clients exchange, and serde_json's json! macro builds it"
+    )
+)]
+
+mod multipart;
+mod non_streaming;
+mod request_data;
+mod vertex_setup;
+mod websocket;
 
 use super::{
     CUSTOM_BODY_STATE_KEY, ENDPOINT_MARKER, EndpointType, MODEL_INFO_STATE_KEY,

@@ -1,0 +1,19 @@
+kind: helper
+name: chunk-config-invalid
+call:
+  b3451:
+    mode: chunk
+    options:
+      chunking_strategy:
+        chunk_size: 5
+        chunk_overlap: 5
+    text: hello
+calls:
+  - b3451:
+      mode: chunk
+      options:
+        chunking_strategy:
+          chunk_size: 0
+      text: hello
+env: {}
+compare: {ignore: []}

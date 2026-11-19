@@ -6,7 +6,7 @@ use streaming::{ChatCalls, render_stream};
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::header::{CONTENT_TYPE, HeaderValue};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
@@ -16,12 +16,11 @@ use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::dispatch::log::TracingCallLog;
 use betterlite_core::dispatch::{Dispatch, NoRules};
 use betterlite_core::operation::chat::first_message::first_message_has_content;
-use betterlite_core::operation::chat::{
-    ChatCall, ChatFailure, ChatRequest as DispatchChatRequest, ChatResult,
-};
+use betterlite_core::operation::chat::{ChatCall, ChatRequest as DispatchChatRequest, ChatResult};
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::normalize::{ErrorFacts, Normalizer, class::Class, provider::provider_facts};
+use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError};
@@ -31,9 +30,13 @@ use std::time::{Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
+use crate::route_read_through::route_with_read_through;
 use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::{failure, plain_failure};
+use crate::server::failure;
+use crate::server::render::{FailureShape, plain_failure};
+use crate::state::ServerState;
 
+use self::failure::{chat_failure, internal_failure, not_found_failure};
 use headers::success_headers;
 
 // LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
@@ -130,9 +133,24 @@ pub(crate) struct CallContext<'id> {
     pub(crate) errors: &'id ErrorLayer,
 }
 
+fn parse_chat_request(body: &Bytes, call: &mut CallContext<'_>) -> Result<ChatRequest, ChatError> {
+    let request = match ChatRequest::parse(body) {
+        Ok(request) => request,
+        Err(source) => {
+            if let RequestError::Body { source: json } = &source {
+                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
+                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
+            }
+            return Err(ChatError::from(source));
+        }
+    };
+    Ok(request)
+}
+
 async fn chat_completion(
     State(state): State<ChatRouteState>,
     path_model: Option<Path<String>>,
+    server: Option<Extension<Arc<ServerState>>>,
     request_headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -145,39 +163,51 @@ async fn chat_completion(
         started,
         errors: &state.errors,
     };
-    let request = match ChatRequest::parse(&body) {
+    let request = match parse_chat_request(&body, &mut call) {
         Ok(request) => request,
-        Err(source) => {
-            if let RequestError::Body { source: json } = &source {
-                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
-                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
-            }
-            let error = ChatError::from(source);
-            log_unrouted_failure(&error, &call);
+        Err(error) => {
+            // only the dispatch's own terminal record covers a routed call; this covers one that never got there
+            let message = call
+                .errors
+                .redactor
+                .redact_internal_details(&error.to_string());
+            tracing::warn!(error = %message, "chat request failed before dispatch");
             return failure(&error, &call, None);
         }
     };
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    let deployment = match pick_deployment(&state.executor, model.as_deref().unwrap_or("None")) {
+    let deployment = match routed_deployment(&state, model.as_deref(), server).await {
         Ok(deployment) => deployment,
-        Err(error) => {
-            log_unrouted_failure(&error, &call);
-            return failure(&error, &call, None);
-        }
+        Err(error) => return not_found_failure(&call, &error),
     };
     let has_content = first_message_has_content(&body);
-    execute_chat(&state, &request, has_content, deployment, &call).await
+    execute_chat(&state, &request, has_content, &deployment, &call).await
 }
 
-// only the dispatch's own terminal record covers a routed call; this covers one that never got there
-fn log_unrouted_failure(error: &ChatError, call: &CallContext<'_>) {
-    let message = call
-        .errors
-        .redactor
-        .redact_internal_details(&error.to_string());
-    tracing::warn!(error = %message, "chat request failed before dispatch");
+async fn routed_deployment(
+    state: &ChatRouteState,
+    model: Option<&str>,
+    server: Option<Extension<Arc<ServerState>>>,
+) -> Result<ChatDeployment, ProxyModelNotFoundError> {
+    let model_text = model.map(str::to_owned);
+    let read_through = server
+        .and_then(|Extension(server_state)| server_state.model_read_through.read_through.clone());
+    let executor = Arc::clone(&state.executor);
+    // the AsyncFn bound cannot prove Send for a captured reference, so the attempt owns its reads
+    let attempt = move || {
+        let shared_executor = Arc::clone(&executor);
+        let shared_model = model_text.clone();
+        async move {
+            let text = shared_model.as_deref().unwrap_or("None");
+            let route = route_endpoint("acompletion").unwrap_or("acompletion");
+            let deployment = pick_deployment(&shared_executor, text)
+                .map_err(|_error| ProxyModelNotFoundError::new(route, text, true))?;
+            Ok(deployment.clone())
+        }
+    };
+    route_with_read_through(model, read_through.as_deref(), attempt).await
 }
 
 async fn execute_chat(
@@ -247,9 +277,13 @@ fn dispatch_failure(
         } => plain_failure(
             call,
             deployment,
-            StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            (&error_type, param),
-            message,
+            FailureShape {
+                status: StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                error_type: &error_type,
+                param,
+                message,
+                repeat_message: false,
+            },
         ),
         DispatchError::Embedding { .. }
         | DispatchError::NotBuilt { .. }
@@ -260,41 +294,5 @@ fn dispatch_failure(
     }
 }
 
-fn chat_failure(
-    chat_error: &ChatFailure,
-    call: &CallContext<'_>,
-    deployment: Option<&ChatDeployment>,
-) -> Response {
-    if let ChatFailure::Route(route) = chat_error {
-        return failure(route, call, deployment);
-    }
-    if let ChatFailure::InvalidControl { source } = chat_error {
-        let param = Some(source.param().to_owned());
-        let kind = ("invalid_request_error", param);
-        return plain_failure(
-            call,
-            deployment,
-            StatusCode::BAD_REQUEST,
-            kind,
-            source.to_string(),
-        );
-    }
-    internal_failure(&chat_error.to_string(), call, deployment)
-}
-
-fn internal_failure(
-    message: &str,
-    call: &CallContext<'_>,
-    deployment: Option<&ChatDeployment>,
-) -> Response {
-    let redacted = call.errors.redactor.redact_internal_details(message);
-    plain_failure(
-        call,
-        deployment,
-        StatusCode::INTERNAL_SERVER_ERROR,
-        ("internal_server_error", None),
-        redacted,
-    )
-}
-
+mod failure;
 mod tests;

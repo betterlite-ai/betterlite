@@ -1,0 +1,13 @@
+kind: helper
+name: chunk-config-custom
+call:
+  b3451:
+    mode: chunk
+    options:
+      chunking_strategy:
+        chunk_size: 5
+        chunk_overlap: 0
+        separators: ["\n\n", ""]
+    text: "one\n\ntwo\n\nthree"
+env: {}
+compare: {ignore: []}

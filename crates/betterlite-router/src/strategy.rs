@@ -74,26 +74,3 @@ where
         Strategy::Lar1 => lar1_routing::select(&context, random).await,
     }
 }
-
-// A strategy no task has built yet: every strategy module starts from this and replaces it when its selection lands.
-macro_rules! strategy_stub {
-    ($entry:literal) => {
-        use std::future::{Ready, ready};
-
-        use rand::Rng;
-
-        use crate::router_core::error::RoutingError;
-        use crate::strategy::StrategyContext;
-
-        pub(super) fn select<R>(
-            _context: &StrategyContext<'_>,
-            _random: &mut R,
-        ) -> Ready<Result<usize, RoutingError>>
-        where
-            R: Rng,
-        {
-            ready(Err(RoutingError::NotBuilt { entry: $entry }))
-        }
-    };
-}
-pub(crate) use strategy_stub;
