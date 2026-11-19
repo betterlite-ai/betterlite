@@ -26,8 +26,8 @@ fn deferring_gauges(
     let handle = PlannedScript::new("release", vec![int_values(&[0])]);
     let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&handle);
     gauges.release_script = Some(script);
-    if let Some(batch) = &batch {
-        let shared: Arc<dyn PostCallScriptBatch> = Arc::<RecordingReleaseBatch>::clone(batch);
+    if let Some(recording) = batch {
+        let shared: Arc<dyn PostCallScriptBatch> = recording;
         gauges.release_batch = Some(shared);
     }
     (gauges, handle)
