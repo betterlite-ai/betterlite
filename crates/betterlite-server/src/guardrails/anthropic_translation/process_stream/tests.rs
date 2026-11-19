@@ -97,7 +97,10 @@ fn bytes(parts: &[&str]) -> SseChunk {
 }
 
 fn event(value: Value) -> SseChunk {
-    SseChunk::Event(value.as_object().unwrap().clone())
+    match value {
+        Value::Object(map) => SseChunk::Event(map),
+        _ => panic!("an event object"),
+    }
 }
 
 fn text_of(chunks: &[SseChunk]) -> String {
