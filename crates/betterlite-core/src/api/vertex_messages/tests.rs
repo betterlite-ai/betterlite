@@ -53,7 +53,8 @@ impl ThinkingCapabilities for FakeCapabilities {
         key: &str,
         provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        self.asked.push((key.to_owned(), provider.to_owned()));
+        let question = (key.to_owned(), provider.to_owned());
+        self.asked.push(question);
         ready(self.mid_system && key == MID_SYSTEM)
     }
 
