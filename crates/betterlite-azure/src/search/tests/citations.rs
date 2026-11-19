@@ -1,4 +1,5 @@
-use serde_json::{Value, json};
+use betterlite_config::sections::settings::JsonValue;
+use serde_json::json;
 
 use super::support::{envelope, expect_result, indexed, json_value, results};
 
@@ -51,7 +52,7 @@ fn snippets_follow_markers() {
     );
 }
 
-fn whole_text_at(index: &Value) {
+fn whole_text_at(index: &JsonValue) {
     let text = "Only claim here.";
     assert_eq!(
         results(&indexed(text, index)),
