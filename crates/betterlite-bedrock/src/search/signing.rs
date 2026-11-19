@@ -128,8 +128,7 @@ where
         .iter()
         .map(|(name, value)| (name.clone(), Some(value.clone())))
         .collect();
-    // api_key="" keeps BaseAWSLLM off the AWS_BEARER_TOKEN_BEDROCK fallback: that token belongs
-    // to Bedrock Runtime and must never reach an AgentCore gateway
+    // api_key="" keeps BaseAWSLLM off the AWS_BEARER_TOKEN_BEDROCK fallback, a Bedrock Runtime token
     let empty = SecretString::from(String::new());
     sign_service_request(
         ServiceRequest {

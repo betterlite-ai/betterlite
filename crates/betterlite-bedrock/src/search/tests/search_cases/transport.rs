@@ -8,7 +8,7 @@ pub(super) fn assert_https_or_loopback_only() {
     assert_https_is_accepted();
     assert_loopback_hosts_are_accepted_on_any_scheme();
     assert_loopback_match_is_exact();
-    assert_unparseable_base_is_refused();
+    assert_unparsable_base_is_refused();
 }
 
 fn assert_non_object_body_is_refused_first() {
@@ -73,7 +73,7 @@ fn assert_loopback_match_is_exact() {
     }
 }
 
-fn assert_unparseable_base_is_refused() {
+fn assert_unparsable_base_is_refused() {
     let api_base = "not a url";
     let mut case = baseline(api_base);
     case.api_key = Some(secret("caller-token"));

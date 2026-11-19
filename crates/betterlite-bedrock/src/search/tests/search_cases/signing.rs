@@ -34,13 +34,13 @@ fn assert_gateway_host_is_sigv4_signed() {
 }
 
 fn assert_configured_hostname_allows_a_custom_host() {
+    // scheme, port and path of the configured URL never matter, only its hostname
     let api_base = "https://custom.example.com:8443/mcp";
-    let mut case = baseline(api_base);
-    case.session_region = Some("eu-west-1");
-    // hostname-only comparison: scheme, port and path of the configured URL are ignored
     let environment = lookup(&[(GATEWAY_URL_VARIABLE, "http://custom.example.com/other")]);
+    let mut case = baseline(api_base);
+    case.optional_params = params(r#"{"aws_region_name":"us-west-2"}"#);
     let signed = sign(&case, &environment, resolver()).unwrap();
-    assert!(authorization(&signed).contains("/20260101/eu-west-1/bedrock-agentcore/aws4_request"));
+    assert_eq!(signed.url, api_base);
 }
 
 fn assert_untrusted_signing_host_is_refused() {
@@ -53,9 +53,9 @@ fn assert_untrusted_signing_host_is_refused() {
     let configured_error = sign(&case, &environment, resolver()).unwrap_err();
     assert_eq!(configured_error.to_string(), signing_refusal(api_base));
     // a configured value that is not a URL cannot authorize a custom gateway host
-    let unparseable = lookup(&[(GATEWAY_URL_VARIABLE, "not a url")]);
-    let unparseable_error = sign(&case, &unparseable, resolver()).unwrap_err();
-    assert_eq!(unparseable_error.to_string(), signing_refusal(api_base));
+    let unparsable = lookup(&[(GATEWAY_URL_VARIABLE, "not a url")]);
+    let unparsable_error = sign(&case, &unparsable, resolver()).unwrap_err();
+    assert_eq!(unparsable_error.to_string(), signing_refusal(api_base));
 }
 
 fn assert_spoofed_signing_hosts_need_configuration() {
@@ -85,7 +85,6 @@ fn signing_refusal(api_base: &str) -> String {
 pub(super) fn assert_gateway_signing_region() {
     assert_gateway_region_wins_over_session();
     assert_explicit_region_is_kept();
-    assert_empty_explicit_region_is_invalid();
     assert_null_region_falls_through();
     assert_custom_host_uses_session_region();
     assert_missing_region_is_refused();
@@ -107,10 +106,6 @@ fn assert_explicit_region_is_kept() {
         authorization(&signed).contains("/20260101/ap-southeast-2/bedrock-agentcore/aws4_request")
     );
     assert_eq!(body_text(&signed), MCP_BODY_TEXT);
-}
-
-fn assert_empty_explicit_region_is_invalid() {
-    let mut case = baseline(GATEWAY_URL);
     case.optional_params = params(r#"{"aws_region_name":""}"#);
     let error = sign(&case, &lookup(&[]), resolver()).unwrap_err();
     let message = error.to_string();

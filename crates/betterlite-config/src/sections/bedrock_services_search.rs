@@ -82,13 +82,23 @@ impl Section for Raw {
         Ok(Settings {
             deployments: deployments.into_boxed_slice(),
             global,
+            // LiteLLM reads these through get_secret_str, where an empty value counts as unset
             environment: EnvironmentSettings {
-                gateway_url: present(lookup, GATEWAY_URL_VARIABLE),
-                search_tool_name: present(lookup, SEARCH_TOOL_NAME_VARIABLE)
+                gateway_url: lookup
+                    .lookup(GATEWAY_URL_VARIABLE)
+                    .filter(|value| !value.is_empty()),
+                search_tool_name: lookup
+                    .lookup(SEARCH_TOOL_NAME_VARIABLE)
+                    .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| DEFAULT_SEARCH_TOOL_NAME.to_owned()),
-                mcp_protocol_version: present(lookup, MCP_PROTOCOL_VERSION_VARIABLE)
+                mcp_protocol_version: lookup
+                    .lookup(MCP_PROTOCOL_VERSION_VARIABLE)
+                    .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| DEFAULT_MCP_PROTOCOL_VERSION.to_owned()),
-                gateway_token: present(lookup, GATEWAY_TOKEN_VARIABLE).map(SecretString::from),
+                gateway_token: lookup
+                    .lookup(GATEWAY_TOKEN_VARIABLE)
+                    .filter(|value| !value.is_empty())
+                    .map(SecretString::from),
             },
         })
     }
@@ -113,18 +123,11 @@ fn resolve_text<L>(
 where
     L: EnvironmentLookup,
 {
-    match value {
-        None => Ok(None),
-        Some(text) => Ok(Some(resolve_string(text, path, lookup)?)),
-    }
-}
-
-// LiteLLM reads these through get_secret_str, where an empty value counts as unset
-fn present<L>(lookup: &L, variable: &str) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup.lookup(variable).filter(|value| !value.is_empty())
+    let Some(text) = value else {
+        return Ok(None);
+    };
+    let resolved = resolve_string(text, path, lookup)?;
+    Ok(Some(resolved))
 }
 
 mod tests;

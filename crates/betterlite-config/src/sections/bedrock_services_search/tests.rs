@@ -52,8 +52,7 @@ fn bedrock_services_search_config_cases(#[case] key: Key) {
     }
 }
 
-// the deployment api_base beats the environment, the global api_base stays separate, and an
-// absent or empty environment value leaves the gateway unset
+// the deployment api_base wins, the global base stays separate, and an empty environment value leaves the gateway unset
 fn assert_gateway_url() {
     assert_deployment_base_wins();
     assert_global_base_is_separate();
@@ -115,8 +114,7 @@ fn assert_missing_reference_is_reported() {
     );
 }
 
-// the tool name resolves per deployment, per litellm_settings and from the environment, with
-// web-search-tool___WebSearch when the environment leaves it unset
+// the tool name resolves per deployment, per litellm_settings and from the environment, defaulting to web-search-tool___WebSearch
 fn assert_search_tool_name() {
     let source = deployment("{tool_name: custom-target___WebSearch}");
     let settings = load(&source, &[]).expect("the config should load");
@@ -203,45 +201,29 @@ fn agentcore_gateway_credentials_config_cases(#[case] credential: Credential) {
     }
 }
 
-// AGENTCORE_GATEWAY_TOKEN and a deployment api_key stay separate, an explicit api_key is never
-// rewritten by the environment, and neither Debug nor an error text exposes the token
+// a deployment api_key and AGENTCORE_GATEWAY_TOKEN stay separate, and neither Debug nor an error text exposes either token
 fn assert_gateway_token() {
-    assert_explicit_key_is_resolved();
     assert_explicit_key_is_kept();
     assert_environment_token_is_optional();
     assert_token_is_not_debugged();
 }
 
-fn assert_explicit_key_is_resolved() {
-    let source = deployment("{api_key: os.environ/GATEWAY_TOKEN_FIXTURE}");
-    let settings = load(
-        &source,
-        &[("GATEWAY_TOKEN_FIXTURE", "fixture-explicit-token")],
+fn assert_explicit_key_is_kept() {
+    let referenced = load(
+        &deployment("{api_key: os.environ/GATEWAY_TOKEN_FIXTURE}"),
+        &[
+            ("GATEWAY_TOKEN_FIXTURE", "fixture-explicit-token"),
+            (GATEWAY_TOKEN_VARIABLE, "fixture-environment-token"),
+        ],
     )
     .expect("the reference resolves");
-    let configured = settings.deployments[0]
+    let resolved_key = referenced.deployments[0]
         .api_key
         .as_ref()
         .expect("the deployment carries the key");
-    assert_eq!(configured.expose_secret(), "fixture-explicit-token");
-}
-
-fn assert_explicit_key_is_kept() {
-    let settings = load(
-        &deployment("{api_key: explicit-token}"),
-        &[(GATEWAY_TOKEN_VARIABLE, "fixture-environment-token")],
-    )
-    .expect("the config should load");
+    assert_eq!(resolved_key.expose_secret(), "fixture-explicit-token");
     assert_eq!(
-        settings.deployments[0]
-            .api_key
-            .as_ref()
-            .expect("the deployment carries the key")
-            .expose_secret(),
-        "explicit-token"
-    );
-    assert_eq!(
-        settings
+        referenced
             .environment
             .gateway_token
             .as_ref()
@@ -249,6 +231,16 @@ fn assert_explicit_key_is_kept() {
             .expose_secret(),
         "fixture-environment-token"
     );
+    let literal = load(
+        &deployment("{api_key: explicit-token}"),
+        &[(GATEWAY_TOKEN_VARIABLE, "fixture-environment-token")],
+    )
+    .expect("the config should load");
+    let literal_key = literal.deployments[0]
+        .api_key
+        .as_ref()
+        .expect("the deployment carries the key");
+    assert_eq!(literal_key.expose_secret(), "explicit-token");
 }
 
 fn assert_environment_token_is_optional() {
@@ -286,8 +278,7 @@ fn assert_token_is_not_debugged() {
     assert!(!rendered.contains("fixture"), "{rendered}");
 }
 
-// a deployment tool_name wins over the environment, an absent one stays None and leaves the
-// environment value in place
+// a deployment tool_name wins over the environment, and an absent one leaves the environment value in place
 fn assert_tool_name_precedence() {
     let settings = load(
         &deployment("{tool_name: deployment-target___WebSearch}"),

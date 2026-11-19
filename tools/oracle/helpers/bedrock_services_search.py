@@ -148,11 +148,14 @@ def _error_kind(message: str) -> str:
     raise ValueError(message)
 
 
+def _configured(variable: str, value: str | None) -> None:
+    os.environ.pop(variable, None)
+    if value is not None:
+        os.environ[variable] = value
+
+
 def _gateway_value(case: GatewayRun) -> JsonValue:
-    os.environ.pop("AGENTCORE_GATEWAY_URL", None)
-    configured = case["gateway_url"]
-    if configured is not None:
-        os.environ["AGENTCORE_GATEWAY_URL"] = configured
+    _configured("AGENTCORE_GATEWAY_URL", case["gateway_url"])
     try:
         url = CONFIG.get_complete_url(case["api_base"], {})
     except ValueError as error:
@@ -161,20 +164,14 @@ def _gateway_value(case: GatewayRun) -> JsonValue:
 
 
 def _header_value(case: HeaderRun) -> JsonValue:
-    os.environ.pop("AGENTCORE_MCP_PROTOCOL_VERSION", None)
-    version = case["protocol_version"]
-    if version is not None:
-        os.environ["AGENTCORE_MCP_PROTOCOL_VERSION"] = version
+    _configured("AGENTCORE_MCP_PROTOCOL_VERSION", case["protocol_version"])
     merged = CONFIG.validate_environment(case["headers"])
     converted: dict[str, JsonValue] = dict(merged)
     return {"ok": True, "headers": converted}
 
 
 def _request_value(case: ToolRun) -> JsonValue:
-    os.environ.pop("AGENTCORE_SEARCH_TOOL_NAME", None)
-    configured = case["configured_tool_name"]
-    if configured is not None:
-        os.environ["AGENTCORE_SEARCH_TOOL_NAME"] = configured
+    _configured("AGENTCORE_SEARCH_TOOL_NAME", case["configured_tool_name"])
     try:
         body = CONFIG.transform_search_request(case["query"], case["optional_params"])
     except ValueError as error:

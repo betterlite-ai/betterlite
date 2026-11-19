@@ -48,8 +48,7 @@ pub fn transform_search_request(
     Ok(Json::Object(body))
 }
 
-// LiteLLM takes the first truthy tool_name: the request param, then the configured name, then the
-// connector default; only names ending in ___WebSearch may reach the gateway
+// LiteLLM takes the first truthy tool_name (param, configured name, connector default), and only names ending in ___WebSearch pass
 fn selected_tool_name(
     optional_params: &Params,
     configured: Option<&str>,

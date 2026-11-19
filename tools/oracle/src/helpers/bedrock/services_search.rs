@@ -102,9 +102,18 @@ fn scenarios_result(input: &Input) -> Value {
         Input::ConfiguredGatewayRequired { runs } => {
             json!({"results": runs.iter().map(gateway_result).collect::<Vec<_>>()})
         }
-        Input::McpRequestHeaders { runs } => {
-            json!({"results": runs.iter().map(header_result).collect::<Vec<_>>()})
-        }
+        Input::McpRequestHeaders { runs } => json!({
+            "results": runs
+                .iter()
+                .map(|run| json!({
+                    "ok": true,
+                    "headers": validate_environment(
+                        run.headers.clone(),
+                        run.protocol_version.as_deref(),
+                    ),
+                }))
+                .collect::<Vec<_>>()
+        }),
         Input::WebsearchToolSuffix { runs } | Input::QueryListAnd200CharCap { runs } => {
             json!({"results": runs.iter().map(request_result).collect::<Vec<_>>()})
         }
@@ -118,19 +127,10 @@ fn scenarios_result(input: &Input) -> Value {
 }
 
 fn gateway_result(run: &GatewayRun) -> Value {
-    match complete_url(run.api_base.as_deref(), run.gateway_url.as_deref()) {
-        Ok(url) => json!({"api_base": run.api_base, "ok": true, "url": url}),
-        Err(error) => json!({
-            "api_base": run.api_base,
-            "ok": false,
-            "error": error_kind(&error),
-        }),
-    }
-}
-
-fn header_result(run: &HeaderRun) -> Value {
-    let merged = validate_environment(run.headers.clone(), run.protocol_version.as_deref());
-    json!({"ok": true, "headers": merged})
+    complete_url(run.api_base.as_deref(), run.gateway_url.as_deref()).map_or_else(
+        |error| json!({"api_base": run.api_base, "ok": false, "error": error_kind(&error)}),
+        |url| json!({"api_base": run.api_base, "ok": true, "url": url}),
+    )
 }
 
 fn request_result(run: &ToolRun) -> Value {
