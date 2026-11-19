@@ -11,9 +11,9 @@ use charset::decode_part;
 use disposition::disposition_param_bytes;
 use raw_split::{RawItem, split_items};
 
-mod charset;
-mod disposition;
-mod raw_split;
+pub(crate) mod charset;
+pub(crate) mod disposition;
+pub(crate) mod raw_split;
 mod tests;
 
 const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
@@ -31,8 +31,8 @@ pub(super) fn parse_body(body: &[u8], content_type: &str) -> Result<ParsedForm, 
     let mut form = ParsedForm::new();
     let mut fields = 0_usize;
     let mut files = 0_usize;
-    for item in split_items(body, &boundary) {
-        let field = read_item(&item?, &charset)?;
+    for item in split_items(body, &boundary).map_err(OcrRequestError::MultipartParse)? {
+        let field = read_item(&item.map_err(OcrRequestError::MultipartParse)?, &charset)?;
         match &field.value {
             FormValue::File { .. } => files = files.saturating_add(1),
             FormValue::Text(_) => fields = fields.saturating_add(1),

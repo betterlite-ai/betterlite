@@ -1,10 +1,9 @@
-use super::OcrRequestError;
 use multipart_rs::MultipartError;
 
-pub(super) struct RawItem<'body> {
-    pub(super) content_disposition: Option<&'body [u8]>,
-    pub(super) content_type: Option<&'body [u8]>,
-    pub(super) data: &'body [u8],
+pub(crate) struct RawItem<'body> {
+    pub(crate) content_disposition: Option<&'body [u8]>,
+    pub(crate) content_type: Option<&'body [u8]>,
+    pub(crate) data: &'body [u8],
 }
 
 enum HeaderKind {
@@ -23,12 +22,6 @@ const fn header_kind(name: &[u8]) -> HeaderKind {
     }
 }
 
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
 // A line is a boundary only when dash_boundary is immediately followed by nothing (an ordinary boundary) or by "--" (the closing boundary). python-multipart stops at the second hyphen and drops everything else on that line, so a closing boundary followed by trailing spaces or an epilogue (no trailing CRLF needed, since it can end the body) is still the closing boundary. Anything else, such as a data line that merely starts with dash_boundary, is not a boundary at all.
 fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     let rest = line.strip_prefix(dash_boundary)?;
@@ -41,27 +34,75 @@ fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     }
 }
 
-fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), OcrRequestError> {
-    let separator = find_subslice(line, b": ").ok_or(OcrRequestError::MultipartParse(
-        MultipartError::InvalidItemHeader,
-    ))?;
+// python-multipart's HEADER_FIELD ends at the first colon and HEADER_VALUE_START then skips zero or more spaces, so a header whose colon has no following space is still split into a name and a value.
+fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), MultipartError> {
+    let separator = line
+        .iter()
+        .position(|byte| *byte == b':')
+        .ok_or(MultipartError::InvalidItemHeader)?;
     let (name, rest) = line.split_at(separator);
-    let value = rest.get(2..).unwrap_or(&[]);
+    let mut value = rest.get(1..).unwrap_or(&[]);
+    while let Some(stripped) = value.strip_prefix(b" ") {
+        value = stripped;
+    }
     Ok((name, value))
 }
 
-// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF. Each loop below finds only the CRLF's offset, not a slice pair: a caller advancing by that offset plus a literal 2 always shrinks its own cursor, so a mutated offset can at worst spin without allocating, not leak memory on every turn.
-fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> &'body [u8] {
-    let mut remaining = body;
-    while let Some(idx) = remaining.windows(2).position(|pair| pair == b"\r\n") {
-        let line = remaining.get(..idx).unwrap_or(remaining);
-        let after_crlf = remaining.get(idx.saturating_add(2)..).unwrap_or(&[]);
-        if boundary_kind(line, dash_boundary).is_some() {
-            return after_crlf;
+enum BoundaryScan<'body> {
+    Found {
+        content: &'body [u8],
+        after: &'body [u8],
+        is_final: bool,
+    },
+    NoBoundary,
+}
+
+// Scans line by line for the first boundary line and returns the part content before it. A boundary on the very first line counts only when allow_first is set, so a part whose data starts with a boundary line keeps it as content, and the closing delimiter can end the body with no trailing CRLF. Each pass advances by the found offset plus the CRLF width, and a body.get that runs past the end stops the scan, so a mutated offset cannot loop.
+fn scan_boundary<'body>(
+    body: &'body [u8],
+    dash_boundary: &[u8],
+    allow_first: bool,
+) -> BoundaryScan<'body> {
+    let mut start = 0_usize;
+    loop {
+        let Some(cursor) = body.get(start..) else {
+            return BoundaryScan::NoBoundary;
+        };
+        let Some(offset) = cursor.windows(2).position(|pair| pair == b"\r\n") else {
+            let Some(is_final) =
+                boundary_kind(cursor, dash_boundary).filter(|_| allow_first || start > 0)
+            else {
+                return BoundaryScan::NoBoundary;
+            };
+            return BoundaryScan::Found {
+                content: body.get(..start.saturating_sub(2)).unwrap_or(&[]),
+                after: &[],
+                is_final,
+            };
+        };
+        let end = start.saturating_add(offset);
+        let line = body.get(start..end).unwrap_or(&[]);
+        if let Some(is_final) =
+            boundary_kind(line, dash_boundary).filter(|_| allow_first || start > 0)
+        {
+            return BoundaryScan::Found {
+                content: body.get(..start.saturating_sub(2)).unwrap_or(&[]),
+                after: body.get(end.saturating_add(2)..).unwrap_or(&[]),
+                is_final,
+            };
         }
-        remaining = after_crlf;
+        start = end.saturating_add(2);
     }
-    &[]
+}
+
+// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF and whether that line already closed the message. A body with no boundary line at all returns None, which split_items reports as malformed.
+fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> Option<(&'body [u8], bool)> {
+    match scan_boundary(body, dash_boundary, true) {
+        BoundaryScan::Found {
+            after, is_final, ..
+        } => Some((after, is_final)),
+        BoundaryScan::NoBoundary => None,
+    }
 }
 
 struct PartHeaders<'body> {
@@ -71,7 +112,7 @@ struct PartHeaders<'body> {
 }
 
 // Reads header lines up to the blank line that ends a part's header block, returning the Content-Disposition and Content-Type values found and what follows the blank line.
-fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, OcrRequestError> {
+fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, MultipartError> {
     let mut content_disposition = None;
     let mut content_type = None;
     let mut cursor = remaining;
@@ -100,43 +141,29 @@ fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, OcrRequestError> {
     })
 }
 
-// Reads a part's body up to the next boundary line, returning the content (without its trailing CRLF), what follows the boundary line's CRLF, and whether it was the closing boundary.
+// Reads a part's body up to the next boundary line, returning the content (without its trailing CRLF), what follows the boundary line's CRLF, and whether it was the closing boundary. A boundary on the data's first line is content, and a body with no boundary at all is all content.
 fn read_data<'body>(
     remaining: &'body [u8],
     dash_boundary: &[u8],
 ) -> (&'body [u8], &'body [u8], bool) {
-    let mut cursor = remaining;
-    loop {
-        if let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
-            let line = cursor.get(..idx).unwrap_or(cursor);
-            let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
-            if let Some(is_final) = boundary_kind(line, dash_boundary) {
-                let consumed = remaining.len().saturating_sub(cursor.len());
-                let content_len = consumed.saturating_sub(2);
-                let content = remaining.get(..content_len).unwrap_or(remaining);
-                return (content, after_crlf, is_final);
-            }
-            cursor = after_crlf;
-        } else if let Some(is_final) = boundary_kind(cursor, dash_boundary) {
-            // The body can end right after the closing boundary's second hyphen, with no trailing CRLF, so a final unterminated line still needs checking before falling back to treating the rest as content.
-            let consumed = remaining.len().saturating_sub(cursor.len());
-            let content_len = consumed.saturating_sub(2);
-            let content = remaining.get(..content_len).unwrap_or(remaining);
-            return (content, &[], is_final);
-        } else {
-            return (remaining, &[], true);
-        }
+    match scan_boundary(remaining, dash_boundary, false) {
+        BoundaryScan::Found {
+            content,
+            after,
+            is_final,
+        } => (content, after, is_final),
+        BoundaryScan::NoBoundary => (remaining, &[], true),
     }
 }
 
-pub(super) struct SplitItems<'body> {
+pub(crate) struct SplitItems<'body> {
     dash_boundary: Vec<u8>,
     remaining: &'body [u8],
     done: bool,
 }
 
 impl<'body> Iterator for SplitItems<'body> {
-    type Item = Result<RawItem<'body>, OcrRequestError>;
+    type Item = Result<RawItem<'body>, MultipartError>;
 
     // Reads one item at a time rather than collecting every part into a Vec first, so a caller's own per-item cap (parse_body's field and file counts) runs before the next part is read, the way python-multipart's own streaming reader counts as it reads.
     fn next(&mut self) -> Option<Self::Item> {
@@ -163,13 +190,18 @@ impl<'body> Iterator for SplitItems<'body> {
     }
 }
 
-// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type.
-pub(super) fn split_items<'body>(body: &'body [u8], boundary: &str) -> SplitItems<'body> {
+// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type. An immediate closing delimiter ends the message with no items, while a body with no boundary line at all is an error.
+pub(crate) fn split_items<'body>(
+    body: &'body [u8],
+    boundary: &str,
+) -> Result<SplitItems<'body>, MultipartError> {
     let dash_boundary = format!("--{boundary}").into_bytes();
-    let remaining = skip_preamble(body, &dash_boundary);
-    SplitItems {
+    let Some((remaining, closed)) = skip_preamble(body, &dash_boundary) else {
+        return Err(MultipartError::InvalidBoundary);
+    };
+    Ok(SplitItems {
         dash_boundary,
         remaining,
-        done: false,
-    }
+        done: closed,
+    })
 }
