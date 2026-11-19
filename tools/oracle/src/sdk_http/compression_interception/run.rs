@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -30,18 +29,8 @@ enum ScriptedEngineError {
 
 #[derive(Default)]
 pub(super) struct ScriptedEngine {
-    pending: Mutex<Option<CompressionOutput>>,
-    calls: Mutex<Vec<CompressCallRecord>>,
-}
-
-impl ScriptedEngine {
-    pub(super) fn script(&self, output: CompressionOutput) {
-        *self.pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(output);
-    }
-
-    pub(super) fn take_calls(&self) -> Vec<CompressCallRecord> {
-        take(&mut *self.calls.lock().unwrap_or_else(PoisonError::into_inner))
-    }
+    pub(super) pending: Mutex<Option<CompressionOutput>>,
+    pub(super) calls: Mutex<Vec<CompressCallRecord>>,
 }
 
 #[async_trait]

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import TypedDict, Unpack
+from typing import NotRequired, TypedDict, Unpack
 
 from litellm.integrations.compression_interception import handler as interception_handler
 from litellm.integrations.compression_interception.handler import (
@@ -9,7 +9,7 @@ from litellm.integrations.compression_interception.handler import (
 )
 from litellm.types.utils import CallTypes
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from typing_extensions import NotRequired, override
+from typing_extensions import override
 
 CALL_ID = "litellm_call_id"
 GENERATED_ID = "<generated>"
@@ -101,12 +101,6 @@ class InterceptionOutcome(TypedDict):
 
 class OutcomeValue(TypedDict):
     value: InterceptionOutcome
-
-
-class Output(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    body: OutcomeValue = Field(alias="compression_interception")
 
 
 class Clock:
@@ -252,7 +246,12 @@ def run(call: InterceptionCall, _api_base: str) -> str:
     logger.removeHandler(recorder)
     logger.setLevel(previous_level)
     object.__setattr__(time, "time", real_time)
-    return Output(body={"value": {"steps": steps}}).model_dump_json(by_alias=True)
+    outcome: OutcomeValue = {"value": {"steps": steps}}
+    return (
+        TypeAdapter(dict[str, OutcomeValue])
+        .dump_json({"compression_interception": outcome})
+        .decode()
+    )
 
 
 class CompressionInterceptionRequest(BaseModel):

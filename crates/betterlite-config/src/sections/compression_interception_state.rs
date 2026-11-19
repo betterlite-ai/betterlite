@@ -24,8 +24,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlmSettings {
-    #[serde(default)]
-    compression_interception_params: Option<RawParams>,
+    #[serde(default, rename = "compression_interception_params")]
+    params: Option<RawParams>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -84,7 +84,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         // LiteLLM's initialize_from_proxy_config prefers the top-level params and falls back to the callback's entry
-        if let Some(params) = self.litellm_settings.compression_interception_params {
+        if let Some(params) = self.litellm_settings.params {
             return convert_params(params, PARAMS_PATH, lookup);
         }
         self.callback_settings.compression_interception.map_or_else(

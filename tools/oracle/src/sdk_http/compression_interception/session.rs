@@ -78,7 +78,12 @@ impl Session {
         interception: &CompressionInterception<ScriptedEngine>,
     ) -> Result<StepOutcome, SdkHttpError> {
         if let Some(scripted) = step.compress.as_ref() {
-            self.engine.script(scripted_output(scripted)?);
+            let output = scripted_output(scripted)?;
+            *self
+                .engine
+                .pending
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(output);
         }
         *self.now.lock().unwrap_or_else(PoisonError::into_inner) = step.now;
         let mut request = step.request.clone();
@@ -97,7 +102,13 @@ impl Session {
             settings: record_of(&interception.settings),
             skipped: result == HookResult::Skipped,
             request,
-            compress_calls: self.engine.take_calls(),
+            compress_calls: take(
+                &mut *self
+                    .engine
+                    .calls
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner),
+            ),
             lookup,
             diagnostics: take(
                 &mut *self

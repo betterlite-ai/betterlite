@@ -14,7 +14,7 @@ pub struct CompressionSavings {
 }
 
 #[must_use]
-pub fn compression_savings_from_counts(
+pub fn savings_from_counts(
     original_tokens: &Json,
     compressed_tokens: &Json,
 ) -> Option<CompressionSavings> {

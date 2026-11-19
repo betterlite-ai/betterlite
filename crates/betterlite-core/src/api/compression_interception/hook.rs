@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::cache::{Clock, CompressionCache};
 use super::engine::{CompressionCall, CompressionEngine, CompressionOutput};
-use super::savings::{compression_savings_from_counts, record_compression_savings};
+use super::savings::{record_compression_savings, savings_from_counts};
 use super::tools::{has_retrieval_tool, merge_tools};
 use crate::routes::CallType;
 
@@ -148,7 +148,7 @@ where
         }
         let call_id = self.store_content(request, &output.cache);
         if let Some(savings) =
-            compression_savings_from_counts(&output.original_tokens, &output.compressed_tokens)
+            savings_from_counts(&output.original_tokens, &output.compressed_tokens)
         {
             record_compression_savings(request, &savings);
         }

@@ -51,7 +51,7 @@ pub struct ScriptedEngine {
 impl ScriptedEngine {
     pub fn new(outputs: Vec<Result<CompressionOutput, ScriptError>>) -> Arc<Self> {
         Arc::new(Self {
-            outputs: Mutex::new(outputs.into()),
+            outputs: Mutex::new(VecDeque::from(outputs)),
             calls: Mutex::new(Vec::new()),
         })
     }

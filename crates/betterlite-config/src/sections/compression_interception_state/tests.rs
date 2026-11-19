@@ -10,25 +10,28 @@ use serde_json::Number;
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::compression_interception_state::Settings;
 
-fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
-    let lookup: BTreeMap<String, String> = environment
+fn lookup_of(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
+    environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    let config = ConfigLoader { lookup }
-        .load(source)
-        .expect("the config loads");
+        .collect()
+}
+
+fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
+    let config = ConfigLoader {
+        lookup: lookup_of(environment),
+    }
+    .load(source)
+    .expect("the config loads");
     config.sections.compression_interception_state
 }
 
 fn load_error(source: &str, environment: &[(&str, &str)]) -> ConfigError {
-    let lookup: BTreeMap<String, String> = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .expect_err("the config fails to load")
+    ConfigLoader {
+        lookup: lookup_of(environment),
+    }
+    .load(source)
+    .expect_err("the config fails to load")
 }
 
 fn expected(

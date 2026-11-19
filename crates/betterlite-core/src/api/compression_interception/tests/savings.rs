@@ -6,7 +6,7 @@ use serde_json::Number;
 
 use super::support::{index, list, number, object, text};
 use crate::api::compression_interception::savings::{
-    CompressionSavings, compression_savings_from_counts, record_compression_savings,
+    CompressionSavings, record_compression_savings, savings_from_counts,
 };
 
 fn float(value: f64) -> Json {
@@ -24,7 +24,7 @@ fn savings(before: u64, after: u64) -> CompressionSavings {
 #[test]
 fn zero_counts_give_zero_saved() {
     assert_eq!(
-        compression_savings_from_counts(&number(0), &number(0)),
+        savings_from_counts(&number(0), &number(0)),
         Some(savings(0, 0))
     );
 }
@@ -32,85 +32,52 @@ fn zero_counts_give_zero_saved() {
 #[test]
 fn positive_counts_give_the_difference() {
     assert_eq!(
-        compression_savings_from_counts(&number(100), &number(40)),
+        savings_from_counts(&number(100), &number(40)),
         Some(savings(100, 40))
     );
 }
 
 #[test]
 fn a_bool_original_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&Json::Bool(true), &number(4)),
-        None
-    );
+    assert_eq!(savings_from_counts(&Json::Bool(true), &number(4)), None);
 }
 
 #[test]
 fn a_bool_compressed_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&number(10), &Json::Bool(false)),
-        None
-    );
+    assert_eq!(savings_from_counts(&number(10), &Json::Bool(false)), None);
 }
 
 #[test]
 fn a_float_original_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&float(10.5), &number(4)),
-        None
-    );
+    assert_eq!(savings_from_counts(&float(10.5), &number(4)), None);
 }
 
 #[test]
 fn a_float_compressed_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&number(10), &float(4.0)),
-        None
-    );
+    assert_eq!(savings_from_counts(&number(10), &float(4.0)), None);
 }
 
 #[test]
 fn a_negative_original_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&number(-10), &number(-12)),
-        None
-    );
+    assert_eq!(savings_from_counts(&number(-10), &number(-12)), None);
 }
 
 #[test]
 fn a_negative_compressed_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&number(10), &number(-4)),
-        None
-    );
+    assert_eq!(savings_from_counts(&number(10), &number(-4)), None);
 }
 
 #[test]
 fn more_compressed_than_original_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&number(10), &number(40)),
-        None
-    );
+    assert_eq!(savings_from_counts(&number(10), &number(40)), None);
 }
 
 #[test]
 fn a_non_number_count_is_not_a_saving() {
-    assert_eq!(
-        compression_savings_from_counts(&text("10"), &number(4)),
-        None
-    );
-    assert_eq!(
-        compression_savings_from_counts(&Json::Null, &number(4)),
-        None
-    );
-    assert_eq!(
-        compression_savings_from_counts(&list(Vec::new()), &number(4)),
-        None
-    );
-    assert_eq!(
-        compression_savings_from_counts(&object(Vec::new()), &number(4)),
-        None
-    );
+    assert_eq!(savings_from_counts(&text("10"), &number(4)), None);
+    assert_eq!(savings_from_counts(&Json::Null, &number(4)), None);
+    assert_eq!(savings_from_counts(&list(Vec::new()), &number(4)), None);
+    assert_eq!(savings_from_counts(&object(Vec::new()), &number(4)), None);
 }
 
 fn recorded(request: &IndexMap<String, Json>) -> Json {
