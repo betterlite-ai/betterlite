@@ -33,7 +33,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let resolve = input
+        let resolve: Vec<Value> = input
             .resolve
             .iter()
             .map(|case| {
@@ -43,7 +43,7 @@ impl Helper for Op {
                 ))
             })
             .collect();
-        let sniff = input
+        let sniff: Vec<Value> = input
             .sniff
             .iter()
             .map(

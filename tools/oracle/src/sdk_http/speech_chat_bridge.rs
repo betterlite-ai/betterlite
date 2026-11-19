@@ -46,11 +46,11 @@ pub struct Call {
     #[serde(default)]
     voice: Option<Json>,
     #[serde(default)]
-    optional_params: IndexMap<String, Json>,
+    optional_params: Option<Json>,
     #[serde(default)]
-    litellm_params: IndexMap<String, Json>,
+    litellm_params: Option<Json>,
     #[serde(default)]
-    headers: IndexMap<String, Json>,
+    headers: Option<Json>,
     custom_llm_provider: String,
     api_key: String,
     timeout_seconds: u64,
@@ -191,9 +191,9 @@ impl Call {
             model: Some(&model),
             input: Some(&input),
             voice: self.voice.as_ref(),
-            optional_params: Some(&self.optional_params),
-            litellm_params: Some(&self.litellm_params),
-            headers: Some(&self.headers),
+            optional_params: self.optional_params.as_ref(),
+            litellm_params: self.litellm_params.as_ref(),
+            headers: self.headers.as_ref(),
             custom_llm_provider: Some(&provider),
         };
         let bridge = SpeechToCompletionBridge { completions };

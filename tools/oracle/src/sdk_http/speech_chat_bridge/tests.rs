@@ -15,8 +15,12 @@ use crate::sdk_http::result::kinds::SdkResult;
 async fn replays_the_rejected_speech_bridge_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fuzz/corpus/sdk_http_case/speech-chat-bridge-rejection.yaml");
-    let source = std::fs::read_to_string(corpus).expect("the rejection corpus");
-    let case = decode_sdk_http_case(source.as_bytes(), &OracleLimits::default())
+    let source = std::fs::read(corpus).expect("the rejection corpus");
+    let (selector, payload) = source
+        .split_first()
+        .expect("the rejection corpus must not be empty");
+    assert_eq!(*selector, 0_u8, "the rejection corpus must hold a case");
+    let case = decode_sdk_http_case(payload, &OracleLimits::default())
         .expect("the rejection corpus decodes");
     let SdkHttpCall::SpeechChatBridge(call) = case.call else {
         panic!("the rejection corpus must be a speech bridge call");
