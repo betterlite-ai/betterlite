@@ -81,6 +81,11 @@ fn without_repeated_native_prefix_keeps_or_drops_the_overlap() {
         RES
     );
     assert_eq!(
+        without_repeated_native_prefix(&root, "/api/projects/p").unwrap(),
+        RES,
+        "a leading slash repeats the same path segments"
+    );
+    assert_eq!(
         without_repeated_native_prefix(&format!("{RES}/V1/OpenAI"), "openai/embeddings").unwrap(),
         format!("{RES}/V1")
     );
