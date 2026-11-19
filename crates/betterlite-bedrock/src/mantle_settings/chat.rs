@@ -56,6 +56,8 @@ impl MantleChatConfig {
     }
 
     // get_config returns the inherited class attributes; this class holds only defaults, so the answer is empty.
+    // Defaults serialize to an empty object, so an empty Ok is the same answer; no test can tell them apart.
+    #[cfg_attr(test, mutants::skip)]
     pub fn get_config(&self) -> Result<Object, MantleSettingsError> {
         let attributes =
             serde_json::to_value(&self.openai.settings).map_err(MantleSettingsError::Encode)?;

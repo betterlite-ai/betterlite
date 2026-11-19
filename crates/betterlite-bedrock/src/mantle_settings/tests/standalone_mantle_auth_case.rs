@@ -21,6 +21,27 @@ async fn resolved(_settings: &AwsSettings, _region: &str) -> Result<Credentials,
     Ok(support::fixture_credentials())
 }
 
+async fn observed_auth(
+    settings: &AwsSettings,
+    _region: &str,
+) -> Result<Credentials, CredentialError> {
+    assert_eq!(
+        settings
+            .access_key_id
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("caller-access-key")
+    );
+    assert_eq!(
+        settings
+            .secret_access_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("caller-secret-key")
+    );
+    Ok(support::fixture_credentials())
+}
+
 fn data() -> IndexMap<String, Json> {
     IndexMap::from([(
         String::from("messages"),
@@ -166,6 +187,31 @@ pub(super) fn standalone_mantle_auth() {
     let custom_scope =
         header(&custom, "Authorization").expect("the signature carries Authorization");
     assert!(custom_scope.contains("/20231114/us-east-2/bedrock/aws4_request"));
+    // Caller AWS auth parameters travel in optional_params and reach the credential resolver.
+    let auth_params = support::object(
+        r#"{"aws_access_key_id": "caller-access-key", "aws_secret_access_key": "caller-secret-key", "aws_region_name": "us-east-2"}"#,
+    );
+    let keyed = support::block_on(sign_request(
+        SignRequest {
+            headers: &[],
+            optional_params: &auth_params,
+            request_data: &data,
+            api_base: "https://proxy.example/v1",
+            api_key: None,
+            model: None,
+            stream: None,
+            fake_stream: None,
+            globals: &empty,
+            now: now(),
+        },
+        observed_auth,
+    ))
+    .expect("the caller auth parameters sign");
+    assert!(
+        header(&keyed, "Authorization")
+            .expect("the signature carries Authorization")
+            .contains("/20231114/us-east-2/bedrock/aws4_request")
+    );
     // With no region anywhere the shared chain falls back to us-east-1.
     let fallback = support::block_on(sign_request(
         SignRequest {
