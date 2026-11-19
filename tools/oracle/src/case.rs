@@ -18,6 +18,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::oracle_comparison_contracts::{self, Contracts, ExpectedDifference, NumericRule};
+use crate::process::release_fixture;
 use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 use serde::de::IgnoredAny;
@@ -188,8 +189,12 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
 
 pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
-    let case: Case = load::parse_case_text(path, text)?;
+    let prepared = release_fixture::prepare(path, text)?;
+    let mut case: Case = load::parse_case_text(path, prepared.text())?;
     validate(path, &case)?;
+    if let Some(fixture) = prepared.fixture() {
+        fixture.apply(&mut case);
+    }
     Ok(case)
 }
 
