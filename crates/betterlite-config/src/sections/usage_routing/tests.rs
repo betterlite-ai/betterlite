@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::Settings;
+use super::{Settings, UsageRoutingSettings};
 use crate::loader::{ConfigError, ConfigLoader, parse_view};
 use crate::sections::Section as _;
 use crate::types::RoutingStrategy;
@@ -30,8 +30,8 @@ fn convert(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigE
     raw.convert(&lookup(variables))
 }
 
-fn load(source: &str) -> Settings {
-    load_with(source, &[]).unwrap()
+fn load(source: &str) -> UsageRoutingSettings {
+    *load_with(source, &[]).unwrap()
 }
 
 fn ttl(source: &str) -> Option<i64> {
