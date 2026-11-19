@@ -4,11 +4,11 @@ use secrecy::SecretString;
 
 #[must_use]
 pub fn redact_kill_switch(config: Option<&AgentKillSwitchConfig>) -> Option<AgentKillSwitchConfig> {
-    let config = config?;
-    let Some(auth) = config.auth.as_ref() else {
-        return Some(config.clone());
+    let current = config?;
+    let Some(auth) = current.auth.as_ref() else {
+        return Some(current.clone());
     };
-    let mut redacted = config.clone();
+    let mut redacted = current.clone();
     redacted.auth = Some(redact_auth(auth));
     Some(redacted)
 }

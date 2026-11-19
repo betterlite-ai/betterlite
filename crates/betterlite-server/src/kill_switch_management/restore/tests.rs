@@ -11,7 +11,7 @@ use crate::kill_switch_management::support::{
 
 fn bearer_token(config: &AgentKillSwitchConfig) -> String {
     match config.auth.as_ref() {
-        Some(AgentKillSwitchAuth::Bearer { token }) => token.expose_secret().clone(),
+        Some(AgentKillSwitchAuth::Bearer { token }) => String::from(token.expose_secret()),
         Some(AgentKillSwitchAuth::ApiKey { .. } | AgentKillSwitchAuth::Basic { .. }) | None => {
             panic!("the auth type is bearer")
         }
@@ -26,14 +26,14 @@ fn api_key_parts(config: &AgentKillSwitchConfig) -> (String, String) {
     else {
         panic!("the auth type is an api key");
     };
-    (header_name.0.clone(), api_key.expose_secret().clone())
+    (header_name.0.clone(), String::from(api_key.expose_secret()))
 }
 
 fn basic_parts(config: &AgentKillSwitchConfig) -> (String, String) {
     let Some(AgentKillSwitchAuth::Basic { username, password }) = config.auth.as_ref() else {
         panic!("the auth type is basic");
     };
-    (username.clone(), password.expose_secret().clone())
+    (username.clone(), String::from(password.expose_secret()))
 }
 
 #[test]

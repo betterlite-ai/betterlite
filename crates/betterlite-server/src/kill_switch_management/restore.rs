@@ -8,11 +8,11 @@ pub fn restore_kill_switch(
     incoming: Option<&AgentKillSwitchConfig>,
     existing: Option<&AgentKillSwitchConfig>,
 ) -> Option<AgentKillSwitchConfig> {
-    let incoming = incoming?;
-    let Some(auth) = incoming.auth.as_ref() else {
-        return Some(incoming.clone());
+    let current = incoming?;
+    let Some(auth) = current.auth.as_ref() else {
+        return Some(current.clone());
     };
-    let mut restored = incoming.clone();
+    let mut restored = current.clone();
     restored.auth = Some(restore_auth(
         auth,
         existing.and_then(|config| config.auth.as_ref()),
@@ -56,21 +56,21 @@ fn restore_secret(incoming: &SecretString, stored: Option<&SecretString>) -> Sec
     stored.cloned().unwrap_or_else(|| SecretString::from(""))
 }
 
-fn stored_token(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
+const fn stored_token(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
     match existing {
         Some(AgentKillSwitchAuth::Bearer { token }) => Some(token),
         None | Some(AgentKillSwitchAuth::ApiKey { .. } | AgentKillSwitchAuth::Basic { .. }) => None,
     }
 }
 
-fn stored_api_key(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
+const fn stored_api_key(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
     match existing {
         Some(AgentKillSwitchAuth::ApiKey { api_key, .. }) => Some(api_key),
         None | Some(AgentKillSwitchAuth::Bearer { .. } | AgentKillSwitchAuth::Basic { .. }) => None,
     }
 }
 
-fn stored_password(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
+const fn stored_password(existing: Option<&AgentKillSwitchAuth>) -> Option<&SecretString> {
     match existing {
         Some(AgentKillSwitchAuth::Basic { password, .. }) => Some(password),
         None | Some(AgentKillSwitchAuth::Bearer { .. } | AgentKillSwitchAuth::ApiKey { .. }) => {

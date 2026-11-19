@@ -33,12 +33,15 @@ impl DeliveryFailure {
 }
 
 #[must_use]
-pub async fn fire_kill_switch<Client: KillSwitchHttpClient>(
+pub async fn fire_kill_switch<Client>(
     agent_id: &str,
     config: &AgentKillSwitchConfig,
     http_client: &Client,
     timeout: Duration,
-) -> AgentKillSwitchResult {
+) -> AgentKillSwitchResult
+where
+    Client: KillSwitchHttpClient,
+{
     match build_kill_switch_request(config) {
         Ok(request) => {
             tracing::info!(
@@ -59,12 +62,15 @@ pub async fn fire_kill_switch<Client: KillSwitchHttpClient>(
     }
 }
 
-async fn deliver<Client: KillSwitchHttpClient>(
+async fn deliver<Client>(
     agent_id: &str,
     request: KillSwitchRequest,
     http_client: &Client,
     timeout: Duration,
-) -> AgentKillSwitchResult {
+) -> AgentKillSwitchResult
+where
+    Client: KillSwitchHttpClient,
+{
     let (status_code, response_body, error) = match exchange(http_client, &request, timeout).await {
         Ok((status_code, body)) => (Some(status_code), Some(body), None),
         Err(failure) => {
@@ -83,11 +89,14 @@ async fn deliver<Client: KillSwitchHttpClient>(
     }
 }
 
-async fn exchange<Client: KillSwitchHttpClient>(
+async fn exchange<Client>(
     http_client: &Client,
     request: &KillSwitchRequest,
     timeout: Duration,
-) -> Result<(u16, String), DeliveryFailure> {
+) -> Result<(u16, String), DeliveryFailure>
+where
+    Client: KillSwitchHttpClient,
+{
     let built = http_client
         .build_request(request, timeout)
         .map_err(|error| DeliveryFailure::Build {
@@ -117,24 +126,25 @@ async fn exchange<Client: KillSwitchHttpClient>(
     Ok((status_code, body?))
 }
 
-async fn read_prefix<Response: KillSwitchResponse>(
-    response: &mut Response,
-) -> Result<String, DeliveryFailure> {
+async fn read_prefix<Response>(response: &mut Response) -> Result<String, DeliveryFailure>
+where
+    Response: KillSwitchResponse,
+{
     let mut text = String::new();
     let mut length = 0_usize;
     while length < RESPONSE_BODY_MAX_CHARS {
         let Some(chunk) = response.next_text_chunk().await else {
             break;
         };
-        let chunk = chunk.map_err(|error| DeliveryFailure::Response {
+        let piece = chunk.map_err(|error| DeliveryFailure::Response {
             message: error.to_string(),
         })?;
         // a chunk with no text ends the body, so a client that keeps yielding empty ones cannot hang the reader
-        if chunk.is_empty() {
+        if piece.is_empty() {
             break;
         }
-        length = length.saturating_add(chunk.chars().count());
-        text.push_str(&chunk);
+        length = length.saturating_add(piece.chars().count());
+        text.push_str(&piece);
     }
     Ok(text.chars().take(RESPONSE_BODY_MAX_CHARS).collect())
 }

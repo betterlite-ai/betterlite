@@ -27,7 +27,7 @@ fn header_values(request: &KillSwitchRequest) -> BTreeMap<String, String> {
     request
         .headers
         .iter()
-        .map(|(name, value)| (name.clone(), value.expose_secret().clone()))
+        .map(|(name, value)| (name.clone(), String::from(value.expose_secret())))
         .collect()
 }
 
@@ -251,8 +251,6 @@ fn method_text_maps_every_method(#[case] method: AgentKillSwitchMethod, #[case] 
 fn an_invalid_url_is_a_request_error() {
     let config = config_at("not a url");
     let error = build_kill_switch_request(&config).expect_err("the URL is refused");
-    let KillSwitchRequestError::Url(source) = error else {
-        panic!("the error names the URL");
-    };
+    let KillSwitchRequestError::Url(source) = error;
     assert_eq!(source, ParseError::RelativeUrlWithoutBase);
 }

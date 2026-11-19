@@ -130,7 +130,7 @@ fn the_audit_log_carries_the_callers_api_key() {
         record
             .changed_by_api_key
             .as_ref()
-            .map(|key| key.expose_secret().clone()),
+            .map(|key| String::from(key.expose_secret())),
         Some(String::from("sk-caller"))
     );
 }
