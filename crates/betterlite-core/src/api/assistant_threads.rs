@@ -5,7 +5,7 @@ mod target;
 mod tests;
 
 use std::collections::BTreeMap;
-use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
@@ -21,7 +21,7 @@ use betterlite_redact::secret::Redactor;
 
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 
-use self::error::{ThreadError, ThreadFailure, failure};
+use self::error::{ThreadError, ThreadFailure};
 use self::runtime::{SdkThreadRuntime, ThreadRuntime};
 use self::target::{Operation, PrepareRequest, create_body};
 
@@ -32,11 +32,11 @@ pub enum ThreadOperation {
     Get,
 }
 
-impl fmt::Display for ThreadOperation {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl ThreadOperation {
+    pub const fn name(self) -> &'static str {
         match self {
-            Self::Create => formatter.write_str("create_thread"),
-            Self::Get => formatter.write_str("get_thread"),
+            Self::Create => "create_thread",
+            Self::Get => "get_thread",
         }
     }
 }
@@ -77,119 +77,167 @@ pub struct AssistantThreads<'deps, T> {
     pub session: SessionKind,
 }
 
+type ThreadResult = Result<Option<ThreadRecord>, ThreadError>;
+type FailureResult = Result<Option<ThreadRecord>, ThreadFailure>;
+
+enum FacadeCall<'call, T> {
+    Create(CreateThreadCall<'call, T>),
+    Get(GetThreadCall<'call, T>),
+}
+
+impl<T> FacadeCall<'_, T> {
+    fn provider(&self) -> &String {
+        match self {
+            Self::Create(call) => &call.custom_llm_provider,
+            Self::Get(call) => &call.custom_llm_provider,
+        }
+    }
+
+    fn insert_flag(&mut self, flag: &str) {
+        let kwargs = match self {
+            Self::Create(call) => &mut *call.kwargs,
+            Self::Get(call) => &mut *call.kwargs,
+        };
+        kwargs.insert(flag.to_owned(), Json::Bool(true));
+    }
+}
+
+pub trait ThreadFacade<'deps, T> {
+    fn create_thread<'call>(
+        &self,
+        call: CreateThreadCall<'call, T>,
+    ) -> impl Future<Output = ThreadResult>
+    where
+        'deps: 'call;
+
+    fn acreate_thread<'call>(
+        &self,
+        call: CreateThreadCall<'call, T>,
+    ) -> impl Future<Output = FailureResult>
+    where
+        'deps: 'call;
+
+    fn get_thread<'call>(
+        &self,
+        call: GetThreadCall<'call, T>,
+    ) -> impl Future<Output = ThreadResult>
+    where
+        'deps: 'call;
+
+    fn aget_thread<'call>(
+        &self,
+        call: GetThreadCall<'call, T>,
+    ) -> impl Future<Output = FailureResult>
+    where
+        'deps: 'call;
+}
+
+impl<'deps, T> ThreadFacade<'deps, T> for AssistantThreads<'deps, T>
+where
+    T: AssistantsTransport,
+{
+    async fn create_thread<'call>(&self, call: CreateThreadCall<'call, T>) -> ThreadResult
+    where
+        'deps: 'call,
+    {
+        self.execute(FacadeCall::Create(call), &SdkThreadRuntime)
+            .await
+    }
+
+    async fn acreate_thread<'call>(&self, call: CreateThreadCall<'call, T>) -> FailureResult
+    where
+        'deps: 'call,
+    {
+        self.map_failure(FacadeCall::Create(call), "acreate_thread")
+            .await
+    }
+
+    async fn get_thread<'call>(&self, call: GetThreadCall<'call, T>) -> ThreadResult
+    where
+        'deps: 'call,
+    {
+        self.execute(FacadeCall::Get(call), &SdkThreadRuntime).await
+    }
+
+    async fn aget_thread<'call>(&self, call: GetThreadCall<'call, T>) -> FailureResult
+    where
+        'deps: 'call,
+    {
+        self.map_failure(FacadeCall::Get(call), "aget_thread").await
+    }
+}
+
 impl<'deps, T> AssistantThreads<'deps, T>
 where
     T: AssistantsTransport,
 {
-    pub async fn create_thread<'call>(
+    // one implementation for both operations; the runtime stays a parameter so tests capture the prepared call
+    async fn execute<'call, Runtime>(
         &self,
-        call: CreateThreadCall<'call, T>,
-    ) -> Result<Option<ThreadRecord>, ThreadError>
-    where
-        'deps: 'call,
-    {
-        self.create_thread_with(call, &SdkThreadRuntime).await
-    }
-
-    pub async fn acreate_thread<'call>(
-        &self,
-        mut call: CreateThreadCall<'call, T>,
-    ) -> Result<Option<ThreadRecord>, ThreadFailure>
-    where
-        'deps: 'call,
-    {
-        call.kwargs
-            .insert("acreate_thread".to_owned(), Json::Bool(true));
-        let provider = call.custom_llm_provider.clone();
-        match self.create_thread_with(call, &SdkThreadRuntime).await {
-            Ok(thread) => Ok(thread),
-            Err(error) => Err(failure(error, &provider, self.redactor)),
-        }
-    }
-
-    pub async fn get_thread<'call>(
-        &self,
-        call: GetThreadCall<'call, T>,
-    ) -> Result<Option<ThreadRecord>, ThreadError>
-    where
-        'deps: 'call,
-    {
-        self.get_thread_with(call, &SdkThreadRuntime).await
-    }
-
-    pub async fn aget_thread<'call>(
-        &self,
-        mut call: GetThreadCall<'call, T>,
-    ) -> Result<Option<ThreadRecord>, ThreadFailure>
-    where
-        'deps: 'call,
-    {
-        call.kwargs
-            .insert("aget_thread".to_owned(), Json::Bool(true));
-        let provider = call.custom_llm_provider.clone();
-        match self.get_thread_with(call, &SdkThreadRuntime).await {
-            Ok(thread) => Ok(thread),
-            Err(error) => Err(failure(error, &provider, self.redactor)),
-        }
-    }
-
-    async fn create_thread_with<'call, Runtime>(
-        &self,
-        call: CreateThreadCall<'call, T>,
+        call: FacadeCall<'call, T>,
         runtime: &Runtime,
-    ) -> Result<Option<ThreadRecord>, ThreadError>
+    ) -> ThreadResult
     where
         'deps: 'call,
         Runtime: ThreadRuntime<T>,
     {
-        let CreateThreadCall {
-            custom_llm_provider,
-            messages,
-            metadata,
-            client,
-            kwargs,
-            ..
-        } = call;
-        let flag = kwargs
-            .get("acreate_thread")
-            .map(|value| matches!(value, Json::Bool(true)));
-        let prepared = self.prepare(PrepareRequest {
-            provider: custom_llm_provider,
-            operation: Operation::Create(create_body(messages, metadata)?),
-            client,
-            kwargs: &*kwargs,
-            facade: ThreadOperation::Create,
-            flag,
-        })?;
+        let prepared = match call {
+            FacadeCall::Create(call) => {
+                let CreateThreadCall {
+                    custom_llm_provider,
+                    messages,
+                    metadata,
+                    client,
+                    kwargs,
+                    ..
+                } = call;
+                let flag = kwargs
+                    .get("acreate_thread")
+                    .map(|value| matches!(value, Json::Bool(true)));
+                self.prepare(PrepareRequest {
+                    provider: custom_llm_provider,
+                    operation: Operation::Create(create_body(messages, metadata)?),
+                    client,
+                    kwargs: &*kwargs,
+                    facade: ThreadOperation::Create,
+                    flag,
+                })?
+            }
+            FacadeCall::Get(call) => {
+                let GetThreadCall {
+                    custom_llm_provider,
+                    thread_id,
+                    client,
+                    kwargs,
+                } = call;
+                let flag = kwargs
+                    .remove("aget_thread")
+                    .map(|value| matches!(value, Json::Bool(true)));
+                self.prepare(PrepareRequest {
+                    provider: custom_llm_provider,
+                    operation: Operation::Retrieve(thread_id),
+                    client,
+                    kwargs: &*kwargs,
+                    facade: ThreadOperation::Get,
+                    flag,
+                })?
+            }
+        };
         runtime.run(prepared).await
     }
 
-    async fn get_thread_with<'call, Runtime>(
-        &self,
-        call: GetThreadCall<'call, T>,
-        runtime: &Runtime,
-    ) -> Result<Option<ThreadRecord>, ThreadError>
+    async fn map_failure<'call>(&self, mut call: FacadeCall<'call, T>, flag: &str) -> FailureResult
     where
         'deps: 'call,
-        Runtime: ThreadRuntime<T>,
     {
-        let GetThreadCall {
-            custom_llm_provider,
-            thread_id,
-            client,
-            kwargs,
-        } = call;
-        let flag = kwargs
-            .remove("aget_thread")
-            .map(|value| matches!(value, Json::Bool(true)));
-        let prepared = self.prepare(PrepareRequest {
-            provider: custom_llm_provider,
-            operation: Operation::Retrieve(thread_id),
-            client,
-            kwargs: &*kwargs,
-            facade: ThreadOperation::Get,
-            flag,
-        })?;
-        runtime.run(prepared).await
+        let provider = call.provider().to_owned();
+        call.insert_flag(flag);
+        match self.execute(call, &SdkThreadRuntime).await {
+            Ok(thread) => Ok(thread),
+            Err(error) => Err(ThreadFailure {
+                class: error.error_class(&provider, self.redactor),
+                error,
+            }),
+        }
     }
 }

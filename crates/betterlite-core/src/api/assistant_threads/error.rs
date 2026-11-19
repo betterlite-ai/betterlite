@@ -9,8 +9,6 @@ use thiserror::Error;
 
 use crate::api::resource_sdk_settings::timeout::TimeoutError;
 
-use super::ThreadOperation;
-
 // Litellm's own BadRequestError for a provider these two facades don't serve: model "n/a", an empty body
 const UNSUPPORTED_MODEL: &str = "n/a";
 
@@ -19,7 +17,7 @@ pub enum ThreadError {
     #[error("LiteLLM doesn't support {provider} for '{operation}'. Only 'openai' is supported.")]
     Unsupported {
         provider: String,
-        operation: ThreadOperation,
+        operation: &'static str,
     },
     #[error("{message}")]
     Params {
@@ -44,12 +42,6 @@ pub enum ThreadError {
 pub struct ThreadFailure {
     pub error: ThreadError,
     pub class: ErrorClass,
-}
-
-#[must_use]
-pub(super) fn failure(error: ThreadError, provider: &str, redactor: &Redactor) -> ThreadFailure {
-    let class = error.error_class(provider, redactor);
-    ThreadFailure { error, class }
 }
 
 // The OpenAI SDK's APIStatusError as the synchronous facade raises it: a class by status and the flat body's fields.

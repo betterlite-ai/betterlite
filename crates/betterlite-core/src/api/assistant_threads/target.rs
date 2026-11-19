@@ -39,7 +39,6 @@ pub(super) struct PreparedThread<'call, T> {
     pub(super) timeout: ThreadTimeout,
 }
 
-// what one facade call hands prepare: the provider, the operation and the caller's keyword arguments
 pub(super) struct PrepareRequest<'call, T> {
     pub(super) provider: String,
     pub(super) operation: Operation,
@@ -83,6 +82,61 @@ fn deadline(timeout: ThreadTimeout) -> Result<Duration, ThreadError> {
     }
     Duration::try_from_secs_f64(seconds)
         .map_err(|_source| ThreadError::Timeout(TimeoutError::NonFinite))
+}
+
+// the OpenAI client's options from B2487's shared chain and the caller's kwargs
+fn openai_options(
+    resources: &ResourceSdkSettings,
+    params: &ThreadParams,
+    options: &ResourceSdkRequestOptions,
+    timeout: ThreadTimeout,
+) -> Result<ClientOptions, ThreadError> {
+    Ok(ClientOptions {
+        api_key: resources.openai_api_key(options).cloned(),
+        api_base: Some(resources.openai_base(options)),
+        timeout: Some(deadline(timeout)?),
+        max_retries: params
+            .max_retries
+            .and_then(|value| u32::try_from(value).ok()),
+        organization: resources.openai_organization(options).map(str::to_owned),
+    })
+}
+
+// B176's litellm_params: the caller's azure_ad_token, the auth fields and the forwarded timeout
+fn azure_params(params: &ThreadParams) -> Result<LiteLlmParams, ThreadError> {
+    Ok(LiteLlmParams {
+        azure_ad_token: params.azure_ad_token.clone(),
+        auth: AuthParams {
+            tenant_id: params.tenant_id.clone(),
+            client_id: params.client_id.clone(),
+            client_secret: params.client_secret.clone(),
+            azure_username: params.azure_username.clone(),
+            azure_password: params.azure_password.clone(),
+            azure_scope: params.azure_scope.clone(),
+        },
+        max_retries: params.max_retries,
+        timeout: forwarded_azure_timeout(params)?,
+    })
+}
+
+fn openai_client<'call, T>(
+    transport: Arc<T>,
+    resources: &ResourceSdkSettings,
+    resolved: &Resolved,
+    flag: Option<bool>,
+) -> Result<Target<'call, T>, ThreadError>
+where
+    T: AssistantsTransport,
+{
+    let options = openai_options(
+        resources,
+        &resolved.params,
+        &resolved.options,
+        resolved.timeout,
+    )?;
+    Ok(Target::Openai(
+        OpenAiAssistantsApi { transport }.get_openai_client(client_kind(flag), options, None),
+    ))
 }
 
 const fn client_kind(flag: Option<bool>) -> ClientKind {
@@ -144,7 +198,7 @@ where
             other => {
                 return Err(ThreadError::Unsupported {
                     provider: other.to_owned(),
-                    operation: request.facade,
+                    operation: request.facade.name(),
                 });
             }
         };
@@ -175,29 +229,7 @@ where
                     flag,
                 })
             }
-            None => {
-                let options = ClientOptions {
-                    api_key: self.resources.openai_api_key(&resolved.options).cloned(),
-                    api_base: Some(self.resources.openai_base(&resolved.options)),
-                    timeout: Some(deadline(resolved.timeout)?),
-                    max_retries: resolved
-                        .params
-                        .max_retries
-                        .and_then(|value| u32::try_from(value).ok()),
-                    organization: self
-                        .resources
-                        .openai_organization(&resolved.options)
-                        .map(str::to_owned),
-                };
-                let transport = Arc::clone(&self.transport);
-                Ok(Target::Openai(
-                    OpenAiAssistantsApi { transport }.get_openai_client(
-                        client_kind(flag),
-                        options,
-                        None,
-                    ),
-                ))
-            }
+            None => openai_client(Arc::clone(&self.transport), self.resources, resolved, flag),
         }
     }
 
@@ -250,19 +282,7 @@ where
     {
         let params = &resolved.params;
         Ok(ClientRequest {
-            params: LiteLlmParams {
-                azure_ad_token: params.azure_ad_token.clone(),
-                auth: AuthParams {
-                    tenant_id: params.tenant_id.clone(),
-                    client_id: params.client_id.clone(),
-                    client_secret: params.client_secret.clone(),
-                    azure_username: params.azure_username.clone(),
-                    azure_password: params.azure_password.clone(),
-                    azure_scope: params.azure_scope.clone(),
-                },
-                max_retries: params.max_retries,
-                timeout: forwarded_azure_timeout(params)?,
-            },
+            params: azure_params(params)?,
             provider: None,
             api_key: self.resources.azure_api_key(&resolved.options).cloned(),
             api_base: self

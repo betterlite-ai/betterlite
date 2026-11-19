@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,14 +20,21 @@ use betterlite_openai::threads::records::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::error::ThreadError;
-use super::params::{StructuredTimeout, ThreadTimeout};
+use super::error::{ThreadError, sdk_class};
+use super::params::{
+    StructuredTimeout, ThreadParams, ThreadTimeout, ThreadTimeoutValue, forwarded_azure_timeout,
+};
 use super::runtime::ThreadRuntime;
 use super::target::{Operation, PrepareRequest, PreparedThread, Target, create_body};
-use super::{AssistantThreads, CreateThreadCall, GetThreadCall, SuppliedClient, ThreadOperation};
+use super::{
+    AssistantThreads, CreateThreadCall, FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade,
+    ThreadOperation,
+};
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
+use crate::api::resource_sdk_settings::timeout::TimeoutError;
 
 const THREAD: &str = r#"{"id":"thread_a","object":"thread","created_at":1,"metadata":{"tag":"x"},"tool_resources":{}}"#;
 const TYPED_404: &str = r#"{"error":{"message":"missing","type":"invalid_request_error","param":"thread_id","code":"missing"}}"#;
@@ -239,15 +248,6 @@ fn create_call<'call>(
     }
 }
 
-fn get_call<'call>(kwargs: &'call mut BTreeMap<String, Json>) -> GetThreadCall<'call, Recorder> {
-    GetThreadCall {
-        custom_llm_provider: String::from("openai"),
-        thread_id: String::from("thread_a"),
-        client: None,
-        kwargs,
-    }
-}
-
 fn prepare_request<'call>(
     operation: Operation,
     kwargs: &'call BTreeMap<String, Json>,
@@ -322,7 +322,12 @@ async fn retrieve_gets_the_thread_by_id() {
     kwargs.insert(String::from("api_key"), json(r#""ignored""#));
     let thread = harness
         .threads()
-        .get_thread(get_call(&mut kwargs))
+        .get_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::from("thread_a"),
+            client: None,
+            kwargs: &mut kwargs,
+        })
         .await
         .expect("the retrieve succeeds")
         .expect("the mock returned a thread");
@@ -340,7 +345,7 @@ async fn a_null_provider_result_passes_through() {
     let mut kwargs = BTreeMap::new();
     let thread = harness
         .threads()
-        .create_thread_with(create_call(&mut kwargs, None), &capture)
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
         .await
         .expect("a null provider result is not an error");
     assert!(thread.is_none());
@@ -366,72 +371,161 @@ async fn the_async_wrappers_run_once_and_move_their_flag() {
     kwargs.insert(String::from("aget_thread"), Json::Bool(true));
     let _ = harness
         .threads()
-        .aget_thread(get_call(&mut kwargs))
+        .aget_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::from("thread_a"),
+            client: None,
+            kwargs: &mut kwargs,
+        })
         .await
         .expect("the retrieve succeeds");
     assert!(!kwargs.contains_key("aget_thread"));
 }
 
+#[rstest]
+#[case::true_flag("true", "openai:Async")]
+#[case::false_flag("false", "openai:Sync")]
+#[case::one("1", "openai:Sync")]
+#[case::text(r#""true""#, "openai:Sync")]
+#[case::null_flag("null", "openai:Sync")]
+#[case::absent("", "openai:Sync")]
 #[tokio::test]
-async fn only_the_literal_true_flag_selects_the_async_client() {
-    for (flag, expected) in [
-        (Json::Bool(true), "openai:Async"),
-        (Json::Bool(false), "openai:Sync"),
-        (json("1"), "openai:Sync"),
-        (json(r#""true""#), "openai:Sync"),
-        (Json::Null, "openai:Sync"),
-    ] {
-        let harness = Harness::new();
-        let capture = Capture::default();
-        let mut kwargs = BTreeMap::new();
-        kwargs.insert(String::from("acreate_thread"), flag);
-        let _ = harness
-            .threads()
-            .create_thread_with(create_call(&mut kwargs, None), &capture)
-            .await
-            .expect("the call prepares");
-        assert_eq!(capture.calls.lock().unwrap()[0], expected);
-    }
+async fn only_the_literal_true_flag_selects_the_async_client(
+    #[case] flag: &'static str,
+    #[case] expected: &'static str,
+) {
     let harness = Harness::new();
     let capture = Capture::default();
     let mut kwargs = BTreeMap::new();
+    if !flag.is_empty() {
+        kwargs.insert(String::from("acreate_thread"), json(flag));
+    }
     let _ = harness
         .threads()
-        .create_thread_with(create_call(&mut kwargs, None), &capture)
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
         .await
         .expect("the call prepares");
-    assert_eq!(capture.calls.lock().unwrap()[0], "openai:Sync");
+    assert_eq!(capture.calls.lock().unwrap()[0], expected);
+}
+
+#[rstest]
+#[case::default("{}", 600.0)]
+#[case::zero_falls_to_request_timeout(r#"{"timeout":0,"request_timeout":4}"#, 4.0)]
+#[case::text(r#"{"timeout":"7.5"}"#, 7.5)]
+#[tokio::test]
+async fn timeouts_resolve_like_litellm(#[case] text: &'static str, #[case] expected: f64) {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(text);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Seconds(expected)
+    );
 }
 
 #[tokio::test]
-async fn timeouts_resolve_like_litellm() {
-    for (text, expected) in [
-        ("{}", ThreadTimeout::Seconds(600.0)),
-        (
-            r#"{"timeout":0,"request_timeout":4}"#,
-            ThreadTimeout::Seconds(4.0),
-        ),
-        (r#"{"timeout":"7.5"}"#, ThreadTimeout::Seconds(7.5)),
-        (
-            r#"{"timeout":{"read":3.0,"connect":1.0}}"#,
-            ThreadTimeout::Phases(StructuredTimeout {
-                connect: Some(1.0),
-                read: Some(3.0),
-                write: None,
-                pool: None,
-            }),
-        ),
-    ] {
-        let harness = Harness::new();
-        let capture = Capture::default();
-        let mut kwargs = kwargs_of(text);
-        let _ = harness
-            .threads()
-            .create_thread_with(create_call(&mut kwargs, None), &capture)
-            .await
-            .expect("the call prepares");
-        assert_eq!(capture.timeouts.lock().unwrap()[0], expected);
-    }
+async fn a_read_only_structured_timeout_stays_structured() {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(r#"{"timeout":{"read":3.0,"connect":1.0}}"#);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Phases(StructuredTimeout {
+            connect: Some(1.0),
+            read: Some(3.0),
+            write: None,
+            pool: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_read_phase_alone_is_not_absent() {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(r#"{"timeout":{"read":3.0}}"#);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Phases(StructuredTimeout {
+            connect: None,
+            read: Some(3.0),
+            write: None,
+            pool: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_connect_phase_alone_is_not_absent() {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(r#"{"timeout":{"connect":1.0}}"#);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Phases(StructuredTimeout {
+            connect: Some(1.0),
+            read: None,
+            write: None,
+            pool: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_pool_phase_alone_is_not_absent() {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(r#"{"timeout":{"pool":2.0}}"#);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Phases(StructuredTimeout {
+            connect: None,
+            read: None,
+            write: None,
+            pool: Some(2.0),
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_empty_phase_map_falls_back_to_the_default() {
+    let harness = Harness::new();
+    let capture = Capture::default();
+    let mut kwargs = kwargs_of(r#"{"timeout":{}}"#);
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(create_call(&mut kwargs, None)), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(
+        capture.timeouts.lock().unwrap()[0],
+        ThreadTimeout::Seconds(600.0)
+    );
 }
 
 #[tokio::test]
@@ -523,56 +617,47 @@ async fn azure_gets_litellm_params_and_the_shared_settings() {
     assert_eq!(client.deadline, std::time::Duration::from_secs_f64(7.5));
 }
 
+#[rstest]
+#[case::absent("", "")]
+#[case::null_body("null", "env-token")]
+#[case::body_token(r#"{"azure_ad_token":"body-token"}"#, "body-token")]
 #[tokio::test]
-async fn azure_token_sources_are_absent_null_or_body() {
+async fn azure_token_sources_are_absent_null_or_body(
+    #[case] extra: &'static str,
+    #[case] expected: &'static str,
+) {
     let mut harness = Harness::new();
     harness.resources.azure_ad_token = Some(SecretString::from("env-token"));
-    for (extra, expected) in [
-        (None, None),
-        (Some(Json::Null), Some("env-token")),
-        (
-            Some(json(r#"{"azure_ad_token":"body-token"}"#)),
-            Some("body-token"),
-        ),
-    ] {
-        let mut kwargs = BTreeMap::new();
-        if let Some(value) = extra {
-            kwargs.insert(String::from("extra_body"), value);
-        }
-        let prepared = harness
-            .threads()
-            .prepare(PrepareRequest {
-                provider: String::from("azure"),
-                operation: Operation::Retrieve(String::from("thread_a")),
-                client: None,
-                kwargs: &kwargs,
-                facade: ThreadOperation::Get,
-                flag: None,
-            })
-            .expect("the call prepares");
-        let Target::Azure { request, .. } = prepared.target else {
-            panic!("azure prepares an azure client");
-        };
-        assert_eq!(
-            request
-                .azure_ad_token
-                .as_ref()
-                .map(|token| token.expose_secret().as_str()),
-            expected
-        );
+    let mut kwargs = BTreeMap::new();
+    if !extra.is_empty() {
+        kwargs.insert(String::from("extra_body"), json(extra));
     }
-}
-
-fn sdk_client(kind: ClientKind, transport: Arc<Recorder>) -> SdkClient<Recorder> {
-    SdkClient {
-        kind,
-        api_key: Some(SecretString::from("supplied-key")),
-        base_url: Some(String::from("https://supplied.test/v1")),
-        timeout: Some(std::time::Duration::from_secs(42)),
-        max_retries: Some(0),
-        organization: None,
-        transport,
-    }
+    let prepared = harness
+        .threads()
+        .prepare(PrepareRequest {
+            provider: String::from("azure"),
+            operation: Operation::Retrieve(String::from("thread_a")),
+            client: None,
+            kwargs: &kwargs,
+            facade: ThreadOperation::Get,
+            flag: None,
+        })
+        .expect("the call prepares");
+    let Target::Azure { request, .. } = prepared.target else {
+        panic!("azure prepares an azure client");
+    };
+    let expected = if expected.is_empty() {
+        None
+    } else {
+        Some(expected)
+    };
+    assert_eq!(
+        request
+            .azure_ad_token
+            .as_ref()
+            .map(|token| token.expose_secret().as_str()),
+        expected
+    );
 }
 
 fn azure_client(
@@ -591,39 +676,46 @@ fn azure_client(
     }
 }
 
+#[rstest]
+#[case::openai_sync(false, false, "azure:Sync:None")]
+#[case::openai_async(false, true, "openai:Async")]
+#[case::azure_sync(true, false, "azure:Sync:None")]
+#[case::azure_async(true, true, "azure:Async:None")]
 #[tokio::test]
-async fn azure_drops_the_sync_sdk_classes_only() {
+async fn azure_drops_the_sync_sdk_classes_only(
+    #[case] azure: bool,
+    #[case] asynchronous: bool,
+    #[case] expected: &'static str,
+) {
     let harness = Harness::new();
-    for (supplied, expected) in [
-        (
-            SuppliedClient::Openai(sdk_client(ClientKind::Sync, Arc::default())),
-            "azure:Sync:None",
-        ),
-        (
-            SuppliedClient::Openai(sdk_client(ClientKind::Async, Arc::default())),
-            "openai:Async",
-        ),
-        (
-            SuppliedClient::Azure(azure_client(ClientKind::Sync, Arc::default())),
-            "azure:Sync:None",
-        ),
-        (
-            SuppliedClient::Azure(azure_client(ClientKind::Async, Arc::default())),
-            "azure:Async:None",
-        ),
-    ] {
-        let capture = Capture::default();
-        let mut kwargs = BTreeMap::new();
-        let mut call = create_call(&mut kwargs, None);
-        call.custom_llm_provider = String::from("azure");
-        call.client = Some(supplied);
-        let _ = harness
-            .threads()
-            .create_thread_with(call, &capture)
-            .await
-            .expect("the call prepares");
-        assert_eq!(capture.calls.lock().unwrap()[0], expected);
-    }
+    let capture = Capture::default();
+    let kind = if asynchronous {
+        ClientKind::Async
+    } else {
+        ClientKind::Sync
+    };
+    let mut kwargs = BTreeMap::new();
+    let mut call = create_call(&mut kwargs, None);
+    call.custom_llm_provider = String::from("azure");
+    call.client = Some(if azure {
+        SuppliedClient::Azure(azure_client(kind, Arc::default()))
+    } else {
+        SuppliedClient::Openai(SdkClient {
+            kind,
+            api_key: Some(SecretString::from("supplied-key")),
+            base_url: Some(String::from("https://supplied.test/v1")),
+            timeout: Some(std::time::Duration::from_secs(42)),
+            max_retries: Some(0),
+            organization: None,
+            transport: Arc::default(),
+        })
+    });
+    let _ = harness
+        .threads()
+        .execute(FacadeCall::Create(call), &capture)
+        .await
+        .expect("the call prepares");
+    assert_eq!(capture.calls.lock().unwrap()[0], expected);
 }
 
 #[tokio::test]
@@ -691,7 +783,12 @@ async fn a_provider_404_keeps_the_sdk_fields_synchronously() {
     let mut kwargs = BTreeMap::new();
     let error = harness
         .threads()
-        .get_thread(get_call(&mut kwargs))
+        .get_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::from("thread_a"),
+            client: None,
+            kwargs: &mut kwargs,
+        })
         .await
         .expect_err("the mock failed");
     let failure = error.sdk_failure();
@@ -702,33 +799,40 @@ async fn a_provider_404_keeps_the_sdk_fields_synchronously() {
     assert_eq!(failure.code.as_deref(), Some("missing"));
 }
 
+#[rstest]
+#[case::typed(true)]
+#[case::untyped(false)]
 #[tokio::test]
-async fn the_async_wrapper_maps_the_provider_error_through_b011() {
-    for (reply, typed) in [(TYPED_404, true), (UNTYPED_404, false)] {
-        let harness = Harness::new();
-        harness.recorder.queue(404, reply);
-        let mut kwargs = BTreeMap::new();
-        let failure = harness
-            .threads()
-            .aget_thread(get_call(&mut kwargs))
-            .await
-            .expect_err("the mock failed");
-        let metadata = failure.class.metadata();
-        assert_eq!(metadata.status_code, 404);
-        if typed {
-            assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
-            assert_eq!(
-                metadata.error_type,
-                WireField::Text(String::from("invalid_request_error"))
-            );
-            assert_eq!(metadata.param, WireField::Text(String::from("thread_id")));
-            assert_eq!(metadata.openai_code.as_deref(), Some("missing"));
-        } else {
-            assert!(matches!(failure.class, ErrorClass::NotFound(_)));
-            assert_eq!(metadata.error_type, WireField::Null);
-            assert_eq!(metadata.param, WireField::Null);
-            assert_eq!(metadata.openai_code, None);
-        }
+async fn the_async_wrapper_maps_the_provider_error_through_b011(#[case] typed: bool) {
+    let reply = if typed { TYPED_404 } else { UNTYPED_404 };
+    let harness = Harness::new();
+    harness.recorder.queue(404, reply);
+    let mut kwargs = BTreeMap::new();
+    let failure = harness
+        .threads()
+        .aget_thread(GetThreadCall {
+            custom_llm_provider: String::from("openai"),
+            thread_id: String::from("thread_a"),
+            client: None,
+            kwargs: &mut kwargs,
+        })
+        .await
+        .expect_err("the mock failed");
+    let metadata = failure.class.metadata();
+    assert_eq!(metadata.status_code, 404);
+    if typed {
+        assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
+        assert_eq!(
+            metadata.error_type,
+            WireField::Text(String::from("invalid_request_error"))
+        );
+        assert_eq!(metadata.param, WireField::Text(String::from("thread_id")));
+        assert_eq!(metadata.openai_code.as_deref(), Some("missing"));
+    } else {
+        assert!(matches!(failure.class, ErrorClass::NotFound(_)));
+        assert_eq!(metadata.error_type, WireField::Null);
+        assert_eq!(metadata.param, WireField::Null);
+        assert_eq!(metadata.openai_code, None);
     }
 }
 
@@ -739,8 +843,12 @@ async fn an_azure_provider_404_maps_without_body_fields_asynchronously() {
     harness.resources.azure_openai_api_key = Some(SecretString::from("azure-key"));
     harness.recorder.queue(404, TYPED_404);
     let mut kwargs = BTreeMap::new();
-    let mut call = get_call(&mut kwargs);
-    call.custom_llm_provider = String::from("azure");
+    let mut call = GetThreadCall {
+        custom_llm_provider: String::from("azure"),
+        thread_id: String::from("thread_a"),
+        client: None,
+        kwargs: &mut kwargs,
+    };
     let failure = harness
         .threads()
         .aget_thread(call)
@@ -757,8 +865,8 @@ async fn an_azure_provider_404_maps_without_body_fields_asynchronously() {
 
 #[test]
 fn the_operation_names_match_the_litellm_message() {
-    assert_eq!(ThreadOperation::Create.to_string(), "create_thread");
-    assert_eq!(ThreadOperation::Get.to_string(), "get_thread");
+    assert_eq!(ThreadOperation::Create.name(), "create_thread");
+    assert_eq!(ThreadOperation::Get.name(), "get_thread");
     let created = create_body(None, None).expect("empty metadata converts");
     assert_eq!(
         created,
@@ -767,4 +875,117 @@ fn the_operation_names_match_the_litellm_message() {
             metadata: None,
         }
     );
+}
+
+#[rstest]
+#[case::bad_request(400, "BadRequestError")]
+#[case::authentication(401, "AuthenticationError")]
+#[case::permission(403, "PermissionDeniedError")]
+#[case::not_found(404, "NotFoundError")]
+#[case::conflict(409, "ConflictError")]
+#[case::unprocessable(422, "UnprocessableEntityError")]
+#[case::rate_limit(429, "RateLimitError")]
+#[case::server_error(500, "InternalServerError")]
+#[case::service_unavailable(503, "InternalServerError")]
+fn sdk_class_names_every_status_like_the_pinned_sdk(
+    #[case] status: u16,
+    #[case] class: &'static str,
+) {
+    assert_eq!(sdk_class(status), class);
+}
+
+#[test]
+fn forwarded_azure_timeout_reads_numbers_and_phases() {
+    let mut params = ThreadParams::default();
+    params.timeout = Some(ThreadTimeoutValue::Seconds(30.0));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(30.0)));
+    params.timeout = Some(ThreadTimeoutValue::Seconds(f64::INFINITY));
+    assert_eq!(
+        forwarded_azure_timeout(&params),
+        Err(TimeoutError::NonFinite)
+    );
+    params.timeout = Some(ThreadTimeoutValue::Seconds(f64::NEG_INFINITY));
+    assert_eq!(
+        forwarded_azure_timeout(&params),
+        Err(TimeoutError::NonFinite)
+    );
+    params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
+        connect: None,
+        read: Some(3.0),
+        write: None,
+        pool: None,
+    }));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(3.0)));
+    params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
+        connect: None,
+        read: Some(0.0),
+        write: None,
+        pool: None,
+    }));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+    params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
+        connect: Some(1.0),
+        read: None,
+        write: None,
+        pool: None,
+    }));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+    params.timeout = None;
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+}
+
+#[rstest]
+#[case::plain("7.5", 7.5, true)]
+#[case::underscores("7_5", 75.0, true)]
+#[case::underscore_after_sign("-_1", 0.0, false)]
+#[case::trailing_underscore("75_", 0.0, false)]
+#[case::leading_underscore("_75", 0.0, false)]
+#[case::double_underscore("1__2", 0.0, false)]
+fn forwarded_azure_timeout_reads_text_like_python_float(
+    #[case] text: &'static str,
+    #[case] expected: f64,
+    #[case] valid: bool,
+) {
+    let mut params = ThreadParams::default();
+    params.timeout = Some(ThreadTimeoutValue::Text(String::from(text)));
+    let result = forwarded_azure_timeout(&params);
+    if valid {
+        assert_eq!(result, Ok(Some(expected)));
+    } else {
+        assert!(matches!(result, Err(TimeoutError::InvalidNumber { .. })));
+    }
+}
+
+#[rstest]
+#[case::synchronous(false)]
+#[case::asynchronous(true)]
+#[tokio::test]
+async fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchronous: bool) {
+    let harness = Harness::new();
+    let kind = if asynchronous {
+        ClientKind::Async
+    } else {
+        ClientKind::Sync
+    };
+    let expected = if asynchronous {
+        "https://supplied-azure.test"
+    } else {
+        "https://azure.test"
+    };
+    let kwargs = BTreeMap::new();
+    let prepared = harness
+        .threads()
+        .prepare(PrepareRequest {
+            provider: String::from("azure"),
+            operation: Operation::Retrieve(String::from("thread_a")),
+            client: Some(SuppliedClient::Azure(azure_client(kind, Arc::default()))),
+            kwargs: &kwargs,
+            facade: ThreadOperation::Get,
+            flag: None,
+        })
+        .expect("the call prepares");
+    let Target::Azure { client, .. } = prepared.target else {
+        panic!("azure prepares an azure client");
+    };
+    assert!(client.base_url.starts_with(expected), "{}", client.base_url);
 }

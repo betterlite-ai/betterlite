@@ -62,7 +62,12 @@ impl<T: AssistantsTransport> ThreadRuntime<T> for SdkThreadRuntime {
                     let reply = api
                         .call(&request, Some(client), flag, operation)
                         .await
-                        .map_err(map_azure_error)?;
+                        .map_err(|error| match error {
+                            ThreadMessagesError::Threads(error) => map_threads_error(error),
+                            ThreadMessagesError::Client(error) => ThreadError::Call {
+                                message: error.to_string(),
+                            },
+                        })?;
                     Ok(Some(reply.thread))
                 }
             }
@@ -70,24 +75,19 @@ impl<T: AssistantsTransport> ThreadRuntime<T> for SdkThreadRuntime {
     }
 }
 
-fn map_threads_error(error: ThreadsError) -> ThreadError {
-    match error {
-        ThreadsError::Status { status, body } => {
-            let failure = provider_failure(status, &body);
-            let message = format!("Error code: {status} - {}", failure.body_text);
-            ThreadError::Provider { message, failure }
-        }
-        other => ThreadError::Call {
-            message: other.to_string(),
-        },
+fn provider_error(status: u16, body: &[u8]) -> ThreadError {
+    let failure = provider_failure(status, body);
+    ThreadError::Provider {
+        message: format!("Error code: {status} - {}", failure.body_text),
+        failure,
     }
 }
 
-fn map_azure_error(error: ThreadMessagesError) -> ThreadError {
+fn map_threads_error(error: ThreadsError) -> ThreadError {
     match error {
-        ThreadMessagesError::Threads(error) => map_threads_error(error),
-        ThreadMessagesError::Client(error) => ThreadError::Call {
-            message: error.to_string(),
+        ThreadsError::Status { status, body } => provider_error(status, &body),
+        other => ThreadError::Call {
+            message: other.to_string(),
         },
     }
 }
