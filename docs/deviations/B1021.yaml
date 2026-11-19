@@ -1,0 +1,9 @@
+task: B1021
+deviations:
+  - what: With litellm_settings.require_managed_files=true and an encoded managed id, betterlite returns status 500 with detail "Managed resource ownership validation is unavailable." when no ManagedResourceAccessChecker is installed, while a raw provider id still returns status 400 with the exact resource-specific detail.
+    why: The pinned open-source package has no enterprise managed_files hook in this checkout. Betterlite follows that MIT fallback and does not fabricate ownership, silently allow cross-tenant access or add a paid-tier rejection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1085-L1118
+kept_bugs:
+  - what: target_model_names text is split on every comma with no JSON decoding, so a client that sends a JSON list as a string gets fragments like '["a"' and '"b"]' instead of the model names inside it.
+    why: LiteLLM splits the form text literally, and a working setup may rely on comma-separated aliases reaching the router unchanged; decoding JSON here would change the names sent to providers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L974-L990
