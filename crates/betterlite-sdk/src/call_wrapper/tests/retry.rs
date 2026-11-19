@@ -10,6 +10,7 @@ use super::support::bad_request;
 use super::support::chat_request;
 use super::support::context;
 use super::support::fixture;
+use super::support::not_found;
 use super::support::plain;
 use super::support::rate_limit;
 use super::support::request;
@@ -90,6 +91,20 @@ fn sync_retry_policy_without_a_match_clears_the_count() {
         .expect_err("a policy without a matching class clears the count");
     assert_eq!(error.to_string(), "bad");
     assert_eq!(stub.retry_count(), 0);
+}
+
+#[test]
+fn sync_retry_policy_takes_the_not_found_count() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("completion", not_found("missing"))
+        .with_retry(response(value(r#"{"retried":true}"#)));
+    let request = chat_request(
+        r#"{"num_retries":5,"retry_policy":{"NotFoundErrorRetries":2,"DefaultRetries":3}}"#,
+    );
+    run_sync(&mut fixture, &stub, request).expect("the retry entry answers");
+    let retries = stub.retries();
+    let sent = retries.first().expect("the retry entry saw one request");
+    assert_eq!(sent.get("num_retries"), Some(&count(2)));
 }
 
 #[test]

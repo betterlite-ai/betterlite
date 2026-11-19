@@ -87,6 +87,12 @@ pub(crate) fn bad_request(message: &str) -> CallError {
     ))))
 }
 
+pub(crate) fn not_found(message: &str) -> CallError {
+    CallError::from(ErrorClass::NotFound(Box::new(ResponseDetails::from(
+        context(message),
+    ))))
+}
+
 pub(crate) fn context_window(message: &str) -> CallError {
     CallError::from(ErrorClass::ContextWindowExceeded(Box::new(
         ResponseDetails::from(context(message)),
