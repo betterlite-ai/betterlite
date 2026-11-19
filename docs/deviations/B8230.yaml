@@ -12,4 +12,7 @@ deviations:
   - what: The request body forwarded to a plugin is capped at 16 MiB and a larger one answers 413 with the plain-text body "Request body too large"; LiteLLM reads the whole body with no limit.
     why: An unauthenticated-size body read into memory has no bound, and an admin plugin call is small in every working setup; betterlite refuses instead of allocating without limit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L285
+  - what: The plugin response is read through the B173 outbound client, so a response body over 16 MiB or a header block over 64 KiB answers 502 with "Cannot connect to plugin '<name>' at <url>"; LiteLLM returns the plugin response whole whatever its size.
+    why: The task sends plugin calls through the same pooled client as the pass-through routes, and that client bounds what it buffers; a plugin answer of that size is not what any working dashboard load uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L323-L327
 kept_bugs: []
