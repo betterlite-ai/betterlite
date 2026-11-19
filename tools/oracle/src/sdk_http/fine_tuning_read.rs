@@ -206,7 +206,8 @@ fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
         },
         FineTuningReadError::Timeout(_) => plain_failure("ValueError", error),
         FineTuningReadError::Decode(_) => plain_failure("ValidationError", error),
-        FineTuningReadError::Page { .. } => plain_failure("APIError", error),
+        // a list page that is not JSON fails where the SDK decodes the body, and that is a ValueError
+        FineTuningReadError::Page { .. } => plain_failure("JSONDecodeError", error),
         FineTuningReadError::Dispatch(_) => plain_failure("APIConnectionError", error),
     }
 }
