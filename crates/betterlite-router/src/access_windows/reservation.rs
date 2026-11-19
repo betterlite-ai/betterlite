@@ -48,11 +48,10 @@ pub fn filter_reserved_deployments(
     now: DateTime<Utc>,
     database: &TimeZoneDatabase,
 ) -> Result<Reservations, WindowError> {
-    let caller_team = team_id.filter(|team| !team.is_empty());
     let mut kept = Vec::with_capacity(deployments.len());
     let mut blocking = None;
     for deployment in deployments {
-        let Some(window) = blocking_window(deployment, caller_team, now, database)? else {
+        let Some(window) = blocking_window(deployment, team_id, now, database)? else {
             kept.push(deployment.clone());
             continue;
         };
