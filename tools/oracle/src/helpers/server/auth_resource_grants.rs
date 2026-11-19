@@ -106,20 +106,20 @@ fn search_key(search_tool_name: &str, key: &KeyFields) -> HelperResult {
     let payload: BTreeMap<String, JsonData> = serde_json::from_value(json!(object))?;
     let token = UserAPIKeyAuth::construct(AuthInput::Dict(payload)).or_value_error()?;
     match can_key_call_search_tool(search_tool_name, &token) {
-        Ok(()) => answer(true, None),
-        Err(denial) => answer(false, Some(denial.as_ref())),
+        Ok(()) => Ok(answer(true, None)),
+        Err(denial) => Ok(answer(false, Some(denial.as_ref()))),
     }
 }
 
 fn search_team(search_tool_name: &str, fields: Option<&TeamFields>) -> HelperResult {
     let team: Option<LiteLLMTeamTable> = match fields {
-        Some(fields) => {
+        Some(team_fields) => {
             let mut object = BTreeMap::new();
-            object.insert("team_id", json!(fields.team_id.as_str()));
-            if let Some(id) = &fields.object_permission_id {
+            object.insert("team_id", json!(team_fields.team_id.as_str()));
+            if let Some(id) = &team_fields.object_permission_id {
                 object.insert("object_permission_id", json!(id));
             }
-            if let Some(permission) = &fields.permission {
+            if let Some(permission) = &team_fields.permission {
                 object.insert("object_permission", permission_data(permission));
             }
             Some(serde_json::from_value(json!(object))?)
@@ -127,8 +127,8 @@ fn search_team(search_tool_name: &str, fields: Option<&TeamFields>) -> HelperRes
         None => None,
     };
     match can_team_call_search_tool(search_tool_name, team.as_ref()) {
-        Ok(()) => answer(true, None),
-        Err(denial) => answer(false, Some(denial.as_ref())),
+        Ok(()) => Ok(answer(true, None)),
+        Err(denial) => Ok(answer(false, Some(denial.as_ref()))),
     }
 }
 
@@ -169,7 +169,7 @@ fn managed_rows(rows: &[RowFixture], rounds: &[Vec<String>]) -> HelperResult {
     Ok(json!(answers))
 }
 
-fn answer(allowed: bool, denial: Option<&ProxyException>) -> HelperResult {
+fn answer(allowed: bool, denial: Option<&ProxyException>) -> Value {
     let error = denial.map_or(Value::Null, |exception| {
         json!({
             "status": exception.code.parse::<u16>().unwrap_or_default(),
@@ -178,7 +178,7 @@ fn answer(allowed: bool, denial: Option<&ProxyException>) -> HelperResult {
             "code": exception.code.as_str(),
         })
     });
-    Ok(json!({"allowed": allowed, "error": error}))
+    json!({"allowed": allowed, "error": error})
 }
 
 fn vector_row(fixture: &RowFixture) -> VectorStoreRow {
@@ -195,10 +195,10 @@ fn permission_data(fields: &PermissionFields) -> Value {
         "object_permission_id",
         json!(fields.object_permission_id.as_str()),
     );
-    let search_tools = match &fields.search_tools {
-        Some(tools) => json!(tools),
-        None => Value::Null,
-    };
+    let search_tools = fields
+        .search_tools
+        .as_ref()
+        .map_or(Value::Null, |tools| json!(tools));
     object.insert("search_tools", search_tools);
     json!(object)
 }
