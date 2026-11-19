@@ -159,9 +159,7 @@ class RecordingConfig(BaseRerankConfig):
         litellm_params: dict[str, JsonValue] | None = None,
     ) -> RerankResponse:
         self.events.append("response_transform")
-        optional: dict[str, JsonValue] = (
-            optional_params if optional_params is not None else {}
-        )
+        optional: dict[str, JsonValue] = optional_params if optional_params is not None else {}
         passed: dict[str, JsonValue] = litellm_params if litellm_params is not None else {}
         self.seen = TransformSeen(
             model=model,
@@ -175,8 +173,9 @@ class RecordingConfig(BaseRerankConfig):
         return RerankResponse.model_validate_json(raw_response.text)
 
     @override
-    # ast-grep-ignore: no-long-names
-    def get_supported_cohere_rerank_params(self, model: str) -> list[str]:
+    def get_supported_cohere_rerank_params(  # ast-grep-ignore: no-long-names
+        self, model: str
+    ) -> list[str]:
         return ["query", "documents"]
 
     @override
