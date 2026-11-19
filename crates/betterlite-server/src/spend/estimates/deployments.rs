@@ -46,10 +46,10 @@ pub fn matched_deployment(
     })
 }
 
-// An empty or non-string model reaches cost_per_token as None, which raises there and answers 500.
+// A non-string model reaches cost_per_token as None and raises there; a string, empty included, is billed as given.
 fn text_model(params: &JsonObject) -> Option<&str> {
     match params.get("model") {
-        Some(Json::Text(model)) if !model.is_empty() => Some(model.as_str()),
+        Some(Json::Text(model)) => Some(model.as_str()),
         None | Some(_) => None,
     }
 }

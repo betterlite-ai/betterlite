@@ -73,12 +73,31 @@ async fn the_calculate_route_rejects_malformed_json_with_422() {
 async fn an_unknown_model_answers_invalid_request_error() {
     let (status, body) = post_json(
         state(None),
-        &format!(r#"{{"model":"not-a-model","messages":{MESSAGES}}}"#),
+        &format!(r#"{{"model":"openai/not-a-model","messages":{MESSAGES}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error_field(&body, "type"), "invalid_request_error");
     assert_eq!(error_field(&body, "param"), "model");
+    assert_eq!(error_field(&body, "code"), "400");
+}
+
+#[tokio::test]
+async fn a_model_without_a_provider_answers_the_null_defaults() {
+    let (status, body) = post_json(
+        state(None),
+        &format!(r#"{{"model":"not-a-model","messages":{MESSAGES}}}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        error_field(&body, "message")
+            .as_str()
+            .unwrap()
+            .contains("LLM Provider NOT provided")
+    );
+    assert!(error_field(&body, "type").is_null());
+    assert!(error_field(&body, "param").is_null());
     assert_eq!(error_field(&body, "code"), "400");
 }
 

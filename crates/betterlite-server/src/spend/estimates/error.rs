@@ -20,6 +20,9 @@ pub enum EstimateError {
     InputRequired,
     #[error("{message}")]
     ModelNotMapped { message: String },
+    // get_llm_provider's BadRequestError carries null type and param attributes, so ProxyException keeps nulls
+    #[error("{message}")]
+    ProviderMissing { message: String },
     #[error("{message}")]
     Failure { message: String },
     // HTTPException(500, detail={"error": "No llm_router found"}) stringifies its detail for ProxyException
@@ -67,6 +70,12 @@ impl IntoResponse for EstimateError {
                 self.to_string(),
                 WireField::Text(INVALID_REQUEST_TYPE.to_owned()),
                 WireField::Text(MODEL_PARAM.to_owned()),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ProviderMissing { .. } => proxy(
+                self.to_string(),
+                WireField::Null,
+                WireField::Null,
                 StatusCode::BAD_REQUEST,
             ),
             Self::Failure { .. } => proxy(

@@ -6,4 +6,7 @@ deviations:
   - what: completion_response must satisfy betterlite's ChatResponse decoder (id, object, created, model and choices), so a response body that omits any of them answers 500, where litellm.ModelResponse defaults id, created, object and choices and prices the body.
     why: The task directs the response-only branch through the existing chat ModelResponse decoder instead of porting ModelResponse's constructor defaults.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2189-L2226
+  - what: A matched deployment whose litellm_params.model is the empty string and that sets both token overrides answers a priced cost, where LiteLLM's completion_cost raises BadRequestError from its token counter before reading the overrides.
+    why: betterlite's completion cost counts tokens without resolving a provider, so the empty model only fails at cost_per_token, which custom prices answer first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1557
 kept_bugs: []

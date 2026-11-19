@@ -90,7 +90,7 @@ async fn an_alias_without_a_match_does_not_fall_back_to_the_requested_name() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, EstimateError::ModelNotMapped { .. }));
+    assert!(matches!(error, EstimateError::ProviderMissing { .. }));
 }
 
 #[tokio::test]
@@ -141,6 +141,38 @@ async fn an_empty_deployment_model_fails_the_price() {
         None,
         None,
     );
+    let error = priced(
+        &state(Some(router)),
+        &format!(r#"{{"model":"mini","messages":{MESSAGES}}}"#),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::ProviderMissing { .. }));
+}
+
+#[tokio::test]
+async fn prices_an_empty_deployment_model_from_its_token_overrides() {
+    let router = configured_router(
+        vec![deployment(
+            "mini",
+            r#"{"model":"","input_cost_per_token":0.001,"output_cost_per_token":0.002}"#,
+        )],
+        AliasMap::new(),
+        None,
+        None,
+    );
+    let cost = priced(
+        &state(Some(router)),
+        &format!(r#"{{"model":"mini","messages":{MESSAGES}}}"#),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cost, decimal("0.01"));
+}
+
+#[tokio::test]
+async fn a_deployment_without_a_model_fails_the_price() {
+    let router = configured_router(vec![deployment("mini", "{}")], AliasMap::new(), None, None);
     let error = priced(
         &state(Some(router)),
         &format!(r#"{{"model":"mini","messages":{MESSAGES}}}"#),
@@ -219,11 +251,33 @@ async fn passes_an_unmatched_model_to_the_catalog() {
 async fn names_a_model_no_catalog_entry_maps() {
     let error = priced(
         &state(None),
-        &format!(r#"{{"model":"not-a-model","messages":{MESSAGES}}}"#),
+        &format!(r#"{{"model":"openai/not-a-model","messages":{MESSAGES}}}"#),
     )
     .await
     .unwrap_err();
     assert!(matches!(error, EstimateError::ModelNotMapped { .. }));
+}
+
+#[tokio::test]
+async fn a_model_without_a_provider_fails_the_price() {
+    let error = priced(
+        &state(None),
+        &format!(r#"{{"model":"not-a-model","messages":{MESSAGES}}}"#),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::ProviderMissing { .. }));
+}
+
+#[tokio::test]
+async fn an_empty_request_model_fails_the_price() {
+    let error = priced(
+        &state(None),
+        &format!(r#"{{"model":"","messages":{MESSAGES}}}"#),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::ProviderMissing { .. }));
 }
 
 #[tokio::test]

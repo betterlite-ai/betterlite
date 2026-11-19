@@ -59,8 +59,8 @@ pub async fn estimate(
             let fields = matched_deployment(deployment)?;
             (fields.model, fields.custom_cost_per_token)
         }
-        // an unknown model is handed to completion_cost as it came in
-        None => (Some(requested).filter(|model| !model.is_empty()), None),
+        // an unmatched model is handed to completion_cost as it came in, an empty string included
+        None => (Some(requested), None),
     };
     let billing = billing_input(model, messages, None);
     price(
@@ -176,13 +176,21 @@ async fn price(
         .map_err(cost_error)
 }
 
-// An unknown model is completion_cost's ModelNotMappedError, which calculate_spend answers 400 with param model.
+// An unmapped model is ModelNotMappedError; no resolvable provider is BadRequestError, which keeps its null type and param.
 fn cost_error(error: CompletionCostError<ImagePolicyError>) -> EstimateError {
     if matches!(
         &error,
         CompletionCostError::Price(CallPriceError::Generic(TokenCostError::UnknownModel))
     ) {
         return EstimateError::ModelNotMapped {
+            message: error.to_string(),
+        };
+    }
+    if matches!(
+        &error,
+        CompletionCostError::Price(CallPriceError::Resolution { .. })
+    ) {
+        return EstimateError::ProviderMissing {
             message: error.to_string(),
         };
     }
