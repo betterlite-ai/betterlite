@@ -4,20 +4,35 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{BUFFER_PATH, LatencyRoutingSettings, PERCENTILE_PATH};
-use crate::loader::{ConfigError, ConfigLoader};
+use super::{BUFFER_PATH, LatencyRoutingSettings, PERCENTILE_PATH, Raw};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
+use crate::sections::Section as _;
+
+fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
+    variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
 
 fn load_with(
     source: &str,
     variables: &[(&str, &str)],
 ) -> Result<LatencyRoutingSettings, ConfigError> {
-    let lookup: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .map(|config| *config.sections.latency_routing)
+    ConfigLoader {
+        lookup: environment(variables),
+    }
+    .load(source)
+    .map(|config| *config.sections.latency_routing)
+}
+
+// latency_observations converts first and refuses the same argument, so these cases exercise this section alone
+fn convert_with(
+    source: &str,
+    variables: &[(&str, &str)],
+) -> Result<LatencyRoutingSettings, ConfigError> {
+    let (raw, _ignored) = parse_view::<Raw>(source)?;
+    raw.convert(&environment(variables))
 }
 
 fn load(source: &str) -> LatencyRoutingSettings {
@@ -86,10 +101,10 @@ fn converts(#[case] source: &str, #[case] expected: LatencyRoutingSettings) {
     BUFFER_PATH
 )]
 fn rejects(#[case] source: &str, #[case] path: &str) {
-    let error = load_with(source, &[]).expect_err("the fixture config is invalid");
+    let error = convert_with(source, &[]).expect_err("the fixture config is invalid");
     assert!(
         matches!(&error, ConfigError::InvalidScalar { path: named, .. } if named == path),
-        "the load answered {error:?}"
+        "the conversion answered {error:?}"
     );
 }
 
@@ -97,7 +112,7 @@ fn rejects(#[case] source: &str, #[case] path: &str) {
 #[test]
 fn rejects_a_non_finite_percentile_literal() {
     let source = "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: .nan\n";
-    let error = load_with(source, &[]).expect_err("the fixture percentile is not finite");
+    let error = convert_with(source, &[]).expect_err("the fixture percentile is not finite");
     assert_eq!(error.category(), "yaml");
 }
 
