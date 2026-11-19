@@ -1,0 +1,55 @@
+kind: helper
+name: azure-assistant-definitions-client-inputs
+call:
+  azure_assistant_definitions:
+    client_arguments:
+      - api_key: arg-key
+        api_base: https://arg.test
+        api_version: "2024-05-01"
+        azure_ad_token: method-token
+        timeout: 5
+        max_retries: 9
+        params: {azure_ad_token: params-token, timeout: 30, max_retries: 4}
+      - api_key: arg-key
+        api_base: https://arg.test
+        api_version: "2024-05-01"
+        azure_ad_token: method-token
+        timeout: 5
+        max_retries: 9
+        params: {azure_ad_token: params-token, timeout: 30, max_retries: 4}
+        kind: async
+      - api_key: sk-fixture
+        api_base: https://example.test
+        timeout: 5
+        max_retries: 9
+      - supplied: {kind: sync}
+      - supplied: {kind: async}
+      - api_base: https://example.test
+      - api_key: sk-fixture
+      - environment: {AZURE_OPENAI_API_KEY: sk-env, AZURE_OPENAI_ENDPOINT: "https://env.test/"}
+      - api_key: ""
+        api_base: https://example.test
+        params: {azure_ad_token: params-token}
+      - api_key: sk-fixture
+        api_base: https://example.test/openai/deployments/dep
+      - api_key: sk-fixture
+        api_base: https://example.test/
+calls:
+  - azure_assistant_definitions:
+      list_assistants:
+        - api_key: arg-key
+          api_base: https://arg.test
+          api_version: "2024-05-01"
+          azure_ad_token: method-token
+          timeout: 5
+          max_retries: 9
+          params: {azure_ad_token: params-token, timeout: 30, max_retries: 4}
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+          params: {azure_ad_token: ""}
+        - api_base: https://example.test
+          api_version: "2024-02-01"
+          environment: {AZURE_OPENAI_AD_TOKEN: env-token}
+env: {}
+compare: {ignore: []}

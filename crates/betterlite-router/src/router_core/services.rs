@@ -4,6 +4,7 @@ use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 use crate::least_busy::LeastBusy;
+use crate::model_rate_limits::service::ModelRateLimits;
 use crate::prompt_affinity::service::PromptAffinity;
 use crate::routing_groups::group::RoutingGroup;
 
@@ -52,6 +53,12 @@ pub trait RouteServices: Send + Sync {
     // The fallback_generalizations rules a stage fills into each deployment, absent on a router without them
     #[must_use]
     fn model_generalizations(&self) -> Option<&ModelGeneralizations> {
+        None
+    }
+
+    // Router.add_optional_pre_call_checks leaves ModelRateLimitingCheck out unless the config names enforce_model_rate_limits
+    #[must_use]
+    fn model_rate_limits(&self) -> Option<&ModelRateLimits> {
         None
     }
 
