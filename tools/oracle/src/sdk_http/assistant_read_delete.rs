@@ -69,7 +69,6 @@ pub struct Outcome {
     pub runs: Vec<RunOutcome>,
 }
 
-// what one entry point returned or raised, projected as print() would show the caller
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct View(pub Value);
@@ -183,7 +182,6 @@ fn step_view(step: AssistantStep) -> View {
 
 type FailureValue = Result<Value, SdkHttpError>;
 
-// litellm's own classes print as litellm.<Class>: message; a plain Exception prints only its message
 fn failure_view(
     error: &AssistantReadDeleteError<AssistantSdkError>,
     wrapper: AssistantWrapper,
@@ -204,13 +202,15 @@ fn failure_view(
     )) = error
     {
         status_failure(*status, body, wrapper)?
+    } else if wrapper == AssistantWrapper::Async {
+        json!({ "class": "APIConnectionError", "status": 500, "message": error.to_string() })
     } else {
         json!({ "class": "Exception", "message": error.to_string() })
     };
     Ok(View(compact(json!({ "failure": value }))))
 }
 
-// the sync SDK names the status and prints the raw body; the async wrapper maps the body through B011
+// the sync SDK prints the raw body; the async wrapper maps it through LiteLLM's classes
 fn status_failure(status: u16, body: &[u8], wrapper: AssistantWrapper) -> FailureValue {
     let text = String::from_utf8(body.to_vec()).map_err(SdkHttpError::ErrorBodyUtf8)?;
     let response = UpstreamResponse {
@@ -221,15 +221,14 @@ fn status_failure(status: u16, body: &[u8], wrapper: AssistantWrapper) -> Failur
     let Ok(failure) = mapped_failure("", &response) else {
         return Ok(json!({ "class": "APIError", "status": status, "message": text }));
     };
-    if wrapper == AssistantWrapper::Sync {
-        return Ok(json!({
-            "class": sdk_class(status), "status": status, "type": failure.kind.flatten(),
-            "param": failure.param.flatten(), "code": failure.code.flatten(),
-            "message": format!("Error code: {status} - {text}"),
-        }));
-    }
-    // LiteLLM's mapped exception is built with body=None, so it carries no type, param or code
-    Ok(json!({ "class": failure.class, "status": failure.status, "message": failure.message }))
+    let (class, message) = match wrapper {
+        AssistantWrapper::Sync => (sdk_class(status), format!("Error code: {status} - {text}")),
+        AssistantWrapper::Async => (failure.class.as_str(), failure.message),
+    };
+    Ok(json!({
+        "class": class, "status": status, "type": failure.kind.flatten(),
+        "param": failure.param.flatten(), "code": failure.code.flatten(), "message": message,
+    }))
 }
 
 // the OpenAI SDK names a status failure after its status code
