@@ -9,6 +9,7 @@ use crate::search::tests::support::{
 pub(super) fn assert_gateway_host_signing() {
     assert_gateway_host_is_sigv4_signed();
     assert_signing_host_is_lowercased();
+    assert_supplied_host_header_is_signed_verbatim();
     assert_configured_hostname_allows_a_custom_host();
     assert_untrusted_signing_host_is_refused();
     assert_spoofed_signing_hosts_need_configuration();
@@ -49,6 +50,23 @@ fn assert_signing_host_is_lowercased() {
             "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request, ",
             "SignedHeaders=content-type;host;x-amz-date, ",
             "Signature=76ed7ae683e800ebd9657f72b3636540ba8d73dd884c021358b124c839c80041"
+        )
+    );
+}
+
+fn assert_supplied_host_header_is_signed_verbatim() {
+    // LiteLLM keeps a caller-supplied Host in the signing headers, and botocore signs it as given
+    let mut case = baseline(GATEWAY_URL);
+    case.headers
+        .insert("Host".to_owned(), "signed.example.com".to_owned());
+    let signed = sign(&case, &lookup(&[]), resolver()).unwrap();
+    assert_eq!(header(&signed.headers, "Host"), Some("signed.example.com"));
+    assert_eq!(
+        authorization(&signed),
+        concat!(
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request, ",
+            "SignedHeaders=content-type;host;x-amz-date, ",
+            "Signature=2f866d794281e427008bc83a7bcccbf030e39101bb4d1e5a860d6601d77b7159"
         )
     );
 }
