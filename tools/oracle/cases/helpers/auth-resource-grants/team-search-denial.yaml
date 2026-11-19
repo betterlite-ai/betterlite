@@ -1,0 +1,20 @@
+kind: helper
+name: auth-resource-grants-team-search-denial
+call:
+  auth_resource_grants:
+    function: search_team
+    search_tool_name: other
+    team:
+      team_id: team-1
+      object_permission_id: op-team
+      permission:
+        object_permission_id: op-team
+        search_tools: [allowed-tool]
+calls:
+  - auth_resource_grants:
+      function: search_team
+      search_tool_name: other
+      team: null
+env: {}
+compare:
+  ignore: []
