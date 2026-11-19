@@ -40,11 +40,11 @@ pub(crate) enum Input {
         preserve_midturn_system: bool,
     },
     Response {
-        response: ResponseRecord,
+        response: Box<ResponseRecord>,
         #[serde(default)]
-        tool_name_mapping: Option<Objectless>,
+        tool_name_mapping: Option<Box<Objectless>>,
         #[serde(default)]
-        polyfill_result: Option<PolyfillInput>,
+        polyfill_result: Option<Box<PolyfillInput>>,
     },
 }
 
@@ -151,52 +151,52 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = Builder::new_current_thread()
-            .build()
-            .map_err(|error| failure("RuntimeError", error.to_string()))?;
         match input {
             Input::InputParams {
                 kwargs,
                 custom_llm_provider,
-            } => serialized(wrapped_answer(
-                kwargs,
-                custom_llm_provider.as_deref(),
-                true,
-                &runtime,
-            )?),
+            } => input_params_answer(kwargs, custom_llm_provider.as_deref()),
             Input::Convenience {
                 kwargs,
                 custom_llm_provider,
-            } => serialized(wrapped_answer(
-                kwargs,
-                custom_llm_provider.as_deref(),
-                false,
-                &runtime,
-            )?),
+            } => convenience_answer(kwargs, custom_llm_provider.as_deref()),
             Input::Compose {
                 request,
                 custom_llm_provider,
                 preserve_midturn_system,
-            } => serialized(compose_answer(
+            } => compose_answer(
                 request,
                 custom_llm_provider.as_deref(),
                 *preserve_midturn_system,
-                &runtime,
-            )?),
+            ),
             Input::Response {
                 response,
                 tool_name_mapping,
                 polyfill_result,
             } => response_answer(
                 response,
-                tool_name_mapping.as_ref(),
-                polyfill_result.as_ref(),
+                tool_name_mapping.as_deref(),
+                polyfill_result.as_deref(),
             ),
         }
     }
 }
 
-fn serialized<T: Serialize>(answer: T) -> Result<serde_json::Value, Box<HelperError>> {
+fn build_runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
+        .build()
+        .map_err(|error| failure("RuntimeError", error.to_string()))
+}
+
+fn input_params_answer(input_kwargs: &Object, custom_llm_provider: Option<&str>) -> HelperResult {
+    let runtime = build_runtime()?;
+    let answer = wrapped_answer(input_kwargs, custom_llm_provider, true, &runtime)?;
+    serde_json::to_value(answer).map_err(|error| failure("SerializationError", error.to_string()))
+}
+
+fn convenience_answer(input_kwargs: &Object, custom_llm_provider: Option<&str>) -> HelperResult {
+    let runtime = build_runtime()?;
+    let answer = wrapped_answer(input_kwargs, custom_llm_provider, false, &runtime)?;
     serde_json::to_value(answer).map_err(|error| failure("SerializationError", error.to_string()))
 }
 
@@ -244,8 +244,8 @@ fn compose_answer(
     source: &Object,
     custom_llm_provider: Option<&str>,
     preserve_midturn_system: bool,
-    runtime: &Runtime,
-) -> Result<ComposeAnswer, Box<HelperError>> {
+) -> HelperResult {
+    let runtime = build_runtime()?;
     let mut anthropic_request = source.clone();
     let declared = Declared;
     let mut settings = AdapterSettings::new(&declared);
@@ -259,11 +259,12 @@ fn compose_answer(
             &mut capabilities,
         ))
         .map_err(|error| transform_failure(&error))?;
-    Ok(ComposeAnswer {
+    serde_json::to_value(ComposeAnswer {
         request,
         tool_name_mapping,
         anthropic_request,
     })
+    .map_err(|error| failure("SerializationError", error.to_string()))
 }
 
 fn response_answer(

@@ -18,8 +18,10 @@ NO_MESSAGES: Final[list[dict[str, JsonValue]]] = []
 
 @runtime_checkable
 class InputView(Protocol):
+    # ast-grep-ignore: no-long-names
     def translate_completion_input_params(self, kwargs: dict[str, JsonValue]) -> JsonValue: ...
 
+    # ast-grep-ignore: no-long-names
     def translate_completion_input_params_with_tool_mapping(
         self, kwargs: dict[str, JsonValue], *, custom_llm_provider: str | None = None
     ) -> tuple[JsonValue, dict[str, str]]: ...
@@ -39,6 +41,7 @@ class ComposeView(Protocol):
 
 @runtime_checkable
 class OutputView(Protocol):
+    # ast-grep-ignore: no-long-names
     def translate_completion_output_params(
         self,
         response: ModelResponse,
