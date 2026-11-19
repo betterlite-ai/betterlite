@@ -107,7 +107,7 @@ EMPTY_FIELDS: Final[dict[str, JsonValue]] = {}
 CHUNK: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 CHUNKS: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 RESPONSE_USAGE: Final[TypeAdapter[ResponseAPIUsage]] = TypeAdapter(ResponseAPIUsage)
-PROCESS_EVENT: Final = adapter.AnthropicResponsesStreamWrapper._process_event  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L209
+PROCESS_EVENT: Final = adapter.AnthropicResponsesStreamWrapper._process_event  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L209
 FAILURE_STATUS: Final = adapter._failure_status_and_message  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L78
 ERROR_CHUNK: Final = adapter._anthropic_error_chunk  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L88
 
@@ -168,11 +168,12 @@ def error_fixture(spec: ErrorSpec) -> JsonValue | SimpleNamespace:
 def response_fixture(spec: ResponseSpec) -> JsonValue | SimpleNamespace:
     if spec["shape"] == "value":
         return spec.get("value")
-    output = spec.get("output")
+    raw_output = spec.get("output")
+    output: list[JsonValue] = [] if raw_output is None else raw_output
     usage = spec.get("usage")
     error = spec.get("error")
     return SimpleNamespace(
-        output=[] if output is None else output,
+        output=output,
         status=spec.get("status"),
         usage=None if usage is None else RESPONSE_USAGE.validate_python(usage),
         error=None if error is None else error_fixture(error),
@@ -206,7 +207,7 @@ def build_event(spec: EventSpec) -> dict[str, JsonValue] | SimpleNamespace:
 
 def state_view(wrapper: adapter.AnthropicResponsesStreamWrapper, capture: LogCapture) -> StateView:
     return {
-        "chunks": CHUNKS.validate_python(list(wrapper._chunk_queue)),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L136
+        "chunks": CHUNKS.validate_python(list(wrapper._chunk_queue)),  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L136
         "current_block_index": wrapper._current_block_index,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L128
         "item_id_to_block_index": wrapper._item_id_to_block_index,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L130
         "pending_tool_ids": wrapper._pending_tool_ids,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L132
