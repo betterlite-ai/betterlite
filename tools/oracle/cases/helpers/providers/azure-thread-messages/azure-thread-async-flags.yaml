@@ -1,0 +1,60 @@
+kind: helper
+name: azure-thread-messages-azure-thread-async-flags
+call:
+  azure_thread_messages:
+    azure_thread_async_flags:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+        flag: false
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+        flag: true
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+        flag: 1
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+        flag: "yes"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: thread_1
+        flag: null
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        messages: [{role: user, content: hello}]
+        flag: true
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        timeout: 1.0
+        params: {timeout: 30}
+        thread_id: thread_1
+calls:
+  - azure_thread_messages:
+      azure_thread_async_flags:
+        - supplied: {kind: sync}
+          flag: null
+          messages: [{role: user, content: hello}]
+        - supplied: {kind: sync}
+        - supplied: {kind: async}
+          flag: true
+          thread_id: thread_1
+        - supplied: {kind: async}
+          flag: true
+          messages: []
+env: {}
+compare: {ignore: []}

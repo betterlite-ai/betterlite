@@ -1,0 +1,1 @@
+{"model":"gpt-4o-mini","input_tokens":1024,"output_tokens":256,"cache_read_input_tokens":128,"cache_creation_input_tokens":64,"reasoning_tokens":32,"num_requests_per_day":10,"num_requests_per_month":300}

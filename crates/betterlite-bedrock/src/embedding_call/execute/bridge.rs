@@ -13,7 +13,7 @@ use betterlite_openai::cohere_legacy_embedding::plan::{
 };
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Object;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use http::{HeaderMap, HeaderName, HeaderValue};
 
 use super::{Item, cohere_timeout};
@@ -140,7 +140,7 @@ pub(super) fn cohere<'run, Source, Factory, Transport>(
     dependencies: &'run Dependencies<'_, Source, Factory, Transport>,
     supplied: Option<SuppliedClient<'run, Factory::Client>>,
     log: &'run mut LogContext<'_, '_>,
-) -> LocalBoxFuture<'run, Result<LegacyEmbeddingResponse, EmbeddingCallError>>
+) -> BoxFuture<'run, Result<LegacyEmbeddingResponse, EmbeddingCallError>>
 where
     Source: CredentialSource + Sync,
     Factory: ClientFactory + Sync,

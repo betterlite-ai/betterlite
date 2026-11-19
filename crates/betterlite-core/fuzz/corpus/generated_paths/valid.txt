@@ -1,0 +1,1 @@
+["/sandbox/chart.png", "/sandbox/report.csv", "/sandbox/nested/out.json"]

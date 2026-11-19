@@ -1,0 +1,17 @@
+kind: helper
+name: auth-pubsub-malformed-message
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: message, message: 'not json'}
+          - {kind: message, message: '[]'}
+          - {kind: message, message: '{}'}
+          - {kind: message, message: '{"cache_key": 5, "new_value": 9.0}'}
+          - {kind: message, message: '{"cache_key": null, "new_value": 1.0}'}
+          - {kind: message, message: '"text"'}
+          - {kind: message, message: '{"cache_key": "truncated"'}
+          - {kind: block}
+      probe_keys: [key:a]
+env: {}
+compare: {ignore: []}

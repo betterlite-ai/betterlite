@@ -1,0 +1,14 @@
+kind: helper
+name: release_redis-success
+call:
+  b3035:
+    function: release
+    counter_keys:
+      - "{api-key:k1}:max_parallel_requests"
+    slot_id: slot-9
+    now: 1700000000
+    cache: {}
+    replies:
+      - values: [1]
+env: {}
+compare: {ignore: []}

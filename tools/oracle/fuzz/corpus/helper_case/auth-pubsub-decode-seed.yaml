@@ -1,0 +1,5 @@
+kind: helper
+name: auth-pubsub-decode-seed
+call: {auth_pubsub: {evict: {keys: [team:alpha], fail_publish: false}}}
+env: {}
+compare: {ignore: []}
