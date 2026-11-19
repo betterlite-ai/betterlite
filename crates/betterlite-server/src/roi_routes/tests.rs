@@ -21,8 +21,8 @@ use crate::roi_routes::{IDENTITY_MAP_PATH, REPORT_PATH, SETUP_RESET_PATH, SYNC_P
 use crate::roi_sync::coordinator::SyncCoordinator;
 
 use self::support::{
-    Harness, IdentityReply, ReportReply, SEALED_ESTIMATOR, SEALED_TOKEN, SummaryPeek, admin, call,
-    delete, finished_status, fixed_now, get, idle_status, member, minutes_before,
+    FakeStore, Harness, IdentityReply, ReportReply, SEALED_ESTIMATOR, SEALED_TOKEN, SummaryPeek,
+    admin, call, delete, finished_status, fixed_now, get, idle_status, member, minutes_before,
     missing_key_completion, post, put, ready_stored, recorded, report_json, running_status,
     settings_from, stored_json, stored_peek, viewer,
 };
