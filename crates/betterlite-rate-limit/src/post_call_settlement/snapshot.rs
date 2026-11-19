@@ -50,15 +50,18 @@ pub(crate) fn rate_limit_statuses(stash: Option<&RequestStash>) -> Option<Vec<Ra
     Some(response.statuses)
 }
 
-pub(crate) fn batch_enqueued_reservation(
-    stash: &RequestStash,
-) -> Option<BatchEnqueuedTokenReservation> {
-    stash
-        .state
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .batch_enqueued_reservation
-        .clone()
+// the batch fields the proxy-rejection hook settles before the TPM reservation guard
+pub(crate) struct BatchSettlementSnapshot {
+    pub(crate) reservation: Option<BatchEnqueuedTokenReservation>,
+    pub(crate) tpd_refund_ops: Vec<ReservationAwareIncrement>,
+}
+
+pub(crate) fn batch_snapshot(stash: &RequestStash) -> BatchSettlementSnapshot {
+    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    BatchSettlementSnapshot {
+        reservation: state.batch_enqueued_reservation.clone(),
+        tpd_refund_ops: state.batch_tpd_refund_ops.clone(),
+    }
 }
 
 pub(crate) fn clear_batch_reservation(stash: &RequestStash) {
@@ -67,15 +70,6 @@ pub(crate) fn clear_batch_reservation(stash: &RequestStash) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .batch_enqueued_reservation = None;
-}
-
-pub(crate) fn batch_tpd_refund_ops(stash: &RequestStash) -> Vec<ReservationAwareIncrement> {
-    stash
-        .state
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .batch_tpd_refund_ops
-        .clone()
 }
 
 pub(crate) fn clear_batch_tpd_refund_ops(stash: &RequestStash) {

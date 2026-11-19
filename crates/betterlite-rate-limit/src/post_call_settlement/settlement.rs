@@ -21,8 +21,8 @@ use super::failure_event::FailureEvent;
 use super::failure_hook::FailureHook;
 use super::refund_operations::reserved_operations;
 use super::snapshot::{
-    batch_enqueued_reservation, batch_tpd_refund_ops, clear_batch_reservation,
-    clear_batch_tpd_refund_ops, mark_reservation_released, stash_snapshot,
+    batch_snapshot, clear_batch_reservation, clear_batch_tpd_refund_ops, mark_reservation_released,
+    stash_snapshot,
 };
 use super::success_event::{SuccessCallback, apply_io_operations};
 use super::success_hook::{SuccessHook, merge_response_headers};
@@ -172,15 +172,15 @@ impl PostCallSettlement<'_> {
         &self,
         stash: &RequestStash,
     ) -> Result<(), PostCallSettlementError> {
-        if let Some(reservation) = batch_enqueued_reservation(stash) {
+        let batch = batch_snapshot(stash);
+        if let Some(reservation) = batch.reservation {
             self.batch_store
                 .refund(&ReservationRecord::from(&reservation))
                 .await?;
             clear_batch_reservation(stash);
         }
-        let operations = batch_tpd_refund_ops(stash);
-        if !operations.is_empty() {
-            apply_reservation_aware_tokens(self.adjustments, &operations).await?;
+        if !batch.tpd_refund_ops.is_empty() {
+            apply_reservation_aware_tokens(self.adjustments, &batch.tpd_refund_ops).await?;
             clear_batch_tpd_refund_ops(stash);
         }
         Ok(())
@@ -204,7 +204,7 @@ impl PostCallSettlement<'_> {
         };
         let batch_id = canonical_provider_batch_id(&view.id);
         if let Some(stash) = call.stash.get()
-            && let Some(reservation) = batch_enqueued_reservation(&stash)
+            && let Some(reservation) = batch_snapshot(&stash).reservation
         {
             self.batch_store
                 .save_reservation(&batch_id, &reservation)
