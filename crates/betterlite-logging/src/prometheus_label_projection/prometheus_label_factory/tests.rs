@@ -265,6 +265,27 @@ fn tag_labels_are_merged_on_both_paths() {
 }
 
 #[test]
+fn the_context_path_resolves_the_end_user_once() {
+    let values = test_support::values(&[("end_user", "e1")]);
+    let settings = test_support::settings(&[]);
+    let resolver = Arc::new(CountingResolver::new(Resolution::Echo));
+    let context =
+        PrometheusLabelFactoryContext::with_resolver(&values, &settings, Arc::clone(&resolver))
+            .expect("the context");
+    let projected = labels(&["end_user"], &values, LabelSource::Context(&context));
+    assert_eq!(projected, map_of(&[("end_user", Some("resolved-e1"))]));
+    let again = labels(&["end_user"], &values, LabelSource::Context(&context));
+    assert_eq!(again, map_of(&[("end_user", Some("resolved-e1"))]));
+    assert_eq!(
+        *resolver
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+        1
+    );
+}
+
+#[test]
 fn tag_labels_win_over_custom_metadata_with_the_same_name() {
     let mut values = test_support::values(&[("user", "u1")]);
     values.tags = texts(&["prod"]);
