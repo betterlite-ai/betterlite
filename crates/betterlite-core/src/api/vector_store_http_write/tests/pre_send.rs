@@ -57,17 +57,18 @@ async fn invalid_extra_headers_fail_after_the_pre_call() {
     };
     assert_eq!(name, "bad name");
     let bad_value = caller_headers(&[("X-Trace", "bad\nvalue")]);
-    let call = WriteCall::Update(UpdateCall {
+    let value_call = WriteCall::Update(UpdateCall {
         target: target("vs_a", &params, Some(&bad_value), None),
         optional_params: &optional,
         extra_body: None,
     });
-    let Err(WriteError::HeaderValue { name, .. }) =
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await
+    let Err(WriteError::HeaderValue {
+        name: trace_header, ..
+    }) = run(&mut fixture, &deps, ClientKind::Sync, &value_call, &events).await
     else {
         panic!("a header value HTTP cannot carry fails the header value");
     };
-    assert_eq!(name, "X-Trace");
+    assert_eq!(trace_header, "X-Trace");
     assert_eq!(events.recorded(), ["log", "log"]);
     assert!(fixture.input().is_some());
     assert!(wire.requests().is_empty());
