@@ -368,7 +368,7 @@ pub(crate) fn written(log: &NamedTempFile) -> String {
 }
 
 pub(crate) fn key_object(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> Json {
-    let limit = soft_budget.map_or("null".to_owned(), |value| value.to_string());
+    let limit = soft_budget.map_or_else(|| "null".to_owned(), |value| value.to_string());
     json_from(&format!(
         r#"{{"token":"cached-token","key_alias":"alias","user_id":"user-1","spend":{spend},"soft_budget":{limit},"soft_budget_cooldown":{cooldown}}}"#
     ))
