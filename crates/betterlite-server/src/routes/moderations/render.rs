@@ -38,8 +38,8 @@ pub(super) fn render_failure(
 
 // the plan's model-less refusal and the router's unknown-model refusal share the 400 shape
 pub(super) fn refusal(model: Option<&str>) -> ModerationFailure {
-    match model {
-        None => ModerationFailure {
+    model.map_or_else(
+        || ModerationFailure {
             status: 400,
             error_type: Some(String::from("invalid_request_error")),
             param: Some(String::from("model")),
@@ -48,14 +48,14 @@ pub(super) fn refusal(model: Option<&str>) -> ModerationFailure {
                 "the request names no moderation model and general_settings.moderation_model is not set",
             ),
         },
-        Some(model) => ModerationFailure {
+        |served| ModerationFailure {
             status: 400,
             error_type: Some(String::from("invalid_request_error")),
             param: None,
             code: None,
-            message: format!("no model_list entry serves the model {model}"),
+            message: format!("no model_list entry serves the model {served}"),
         },
-    }
+    )
 }
 
 pub(super) fn dispatch_failure(error: DispatchError, redactor: &Redactor) -> ModerationFailure {

@@ -170,7 +170,7 @@ async fn execute(
     });
     let redactor = &state.calls.executor.redactor;
     match state.dispatch.execute(operation, &context).await {
-        Ok(CallResult::Moderation(result)) => answered(state, result, call_id),
+        Ok(CallResult::Moderation(result)) => answered(state, deployment, result, call_id),
         Ok(_) => render_failure(
             &dispatch_failure(
                 DispatchError::NotBuilt {
@@ -189,14 +189,19 @@ async fn execute(
     }
 }
 
-// proxy_server.py's moderation handler gives get_custom_headers no model id, cache key, api base or logging object
-fn answered(state: &ModerationState, result: ModerationResult, call_id: &str) -> Response {
+// proxy_server.py's moderation handler gives get_custom_headers the hidden params' model id and api base, but no cache key or logging object
+fn answered(
+    state: &ModerationState,
+    deployment: &ChatDeployment,
+    result: ModerationResult,
+    call_id: &str,
+) -> Response {
     let input = CustomHeadersInput {
         key: KeyHeaderView::default(),
         call_id: Some(call_id.to_owned()),
-        model_id: None,
+        model_id: Some(deployment.model_id.clone()),
         cache_key: None,
-        api_base: None,
+        api_base: Some(deployment.api_base.clone()),
         version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         model_region: None,
         response_cost: None,

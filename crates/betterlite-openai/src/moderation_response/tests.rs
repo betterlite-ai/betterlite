@@ -131,35 +131,31 @@ fn an_image_input_type_is_only_accepted_where_the_sdk_types_it() {
 }
 
 // the schema declares harassment/threatening; the SDK's field for it is harassment_threatening
-#[test]
-fn a_category_spelled_with_its_field_name_is_read_as_that_category() {
+#[rstest]
+#[case::categories("categories", "harassment/threatening", "harassment_threatening")]
+#[case::applied_input_types("category_applied_input_types", "self-harm", "self_harm")]
+#[case::category_scores("category_scores", "violence/graphic", "violence_graphic")]
+fn a_category_spelled_with_its_field_name_is_read_as_that_category(
+    #[case] field: &str,
+    #[case] alias: &str,
+    #[case] name: &str,
+) {
     let mut result = result_with(&every_category(&json!(0.5_f64)));
-    let object = result.as_object_mut().expect("result object");
-    for (field, alias, name) in [
-        (
-            "categories",
-            "harassment/threatening",
-            "harassment_threatening",
-        ),
-        ("category_applied_input_types", "self-harm", "self_harm"),
-        ("category_scores", "violence/graphic", "violence_graphic"),
-    ] {
-        let map = object
-            .get_mut(field)
-            .and_then(Value::as_object_mut)
-            .expect("category map");
-        let value = map.remove(alias).expect("the alias value");
-        map.insert(String::from(name), value);
-    }
+    let map = result
+        .as_object_mut()
+        .expect("result object")
+        .get_mut(field)
+        .and_then(Value::as_object_mut)
+        .expect("category map");
+    let value = map.remove(alias).expect("the alias value");
+    map.insert(String::from(name), value.clone());
+    // the typed field has no default, so a parse that succeeded read the field-name spelling
     let response = ModerationResponse::parse(&body_with(&result)).expect("moderation response");
-    assert!(!response.results[0].categories.harassment_threatening.0);
+    let client = serde_json::to_value(&response).expect("client body");
     assert_eq!(
-        response.results[0].category_applied_input_types.self_harm,
-        vec![AppliedInputType::Text]
-    );
-    assert_eq!(
-        response.results[0].category_scores.violence_graphic,
-        parse_decimal_lexeme("0.5").expect("score")
+        client.pointer(&format!("/results/0/{field}/{name}")),
+        Some(&value),
+        "{field} read the field-name spelling"
     );
 }
 

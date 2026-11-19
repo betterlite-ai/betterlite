@@ -13,6 +13,7 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use betterlite_openai::chat::deployment::ChatDeployment;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -115,10 +116,7 @@ fn content_length(head: &[u8]) -> usize {
 async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
     let mut received = Vec::new();
     let mut buffer = [0_u8; 4096];
-    loop {
-        let Ok(read) = stream.read(&mut buffer).await else {
-            break;
-        };
+    while let Ok(read) = stream.read(&mut buffer).await {
         if read == 0 {
             break;
         }
@@ -177,6 +175,15 @@ struct Reply {
     headers: HeaderMap,
     raw: Vec<u8>,
     sent: Vec<String>,
+    // the deployment the provider request shows the route served, as the success headers report it
+    served: Option<Served>,
+}
+
+// the two identity headers LiteLLM's success path reads off the served deployment
+#[derive(Debug)]
+struct Served {
+    model_id: String,
+    api_base: String,
 }
 
 // the client body the route answers, read through the keys this test checks; the provider's slash keys stay unknown
@@ -223,7 +230,7 @@ where
     let reply = response.expect("response");
     let status = reply.status();
     let headers = reply.headers().clone();
-    let raw = to_bytes(reply.into_body(), 1_048_576)
+    let raw = to_bytes(reply.into_body(), 0x0010_0000)
         .await
         .expect("body")
         .to_vec();
@@ -232,6 +239,7 @@ where
         headers,
         raw,
         sent,
+        served: None,
     }
 }
 
@@ -247,12 +255,36 @@ async fn call(
     let guard = format!("http://{address}{base_suffix}");
     let other = format!("http://{address}/other/v1");
     let state = state_with(&guard, &other, extra);
-    exchange(
+    let mut reply = exchange(
         routes(&state),
         request(path, body),
         record_requests(listener, replies),
     )
-    .await
+    .await;
+    let served = served_deployment(&state.executor.deployments, &reply);
+    reply.served = Some(served);
+    reply
+}
+
+// the provider request's path names the deployment the route picked, so the expected headers follow from it
+fn served_deployment(deployments: &[ChatDeployment], reply: &Reply) -> Served {
+    let group = if reply
+        .sent
+        .first()
+        .is_some_and(|sent| sent.starts_with("POST /other/"))
+    {
+        "other"
+    } else {
+        "guard"
+    };
+    let deployment = deployments
+        .iter()
+        .find(|deployment| deployment.model_group == group)
+        .expect("the config has that model group");
+    Served {
+        model_id: deployment.model_id.clone(),
+        api_base: deployment.api_base.clone(),
+    }
 }
 
 fn body_text(reply: &Reply) -> &str {
@@ -270,10 +302,8 @@ fn error_details(reply: &Reply) -> ErrorFields {
 }
 
 fn call_id(reply: &Reply) -> Option<&str> {
-    reply
-        .headers
-        .get("x-litellm-call-id")
-        .and_then(|value| value.to_str().ok())
+    let value = reply.headers.get("x-litellm-call-id")?;
+    value.to_str().ok()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -372,7 +402,27 @@ fn assert_success(reply: &Reply) {
         Some("application/json")
     );
     assert_eq!(call_id(reply), Some("caller-id"));
-    // get_custom_headers gets an empty model id, cache key and api base, and no logging object
+    // proxy_server.py's moderation handler hands get_custom_headers the served deployment's model id and api base
+    let served = reply
+        .served
+        .as_ref()
+        .expect("the caller named the served deployment");
+    assert_eq!(
+        reply
+            .headers
+            .get("x-litellm-model-id")
+            .and_then(|value| value.to_str().ok()),
+        Some(served.model_id.as_str()),
+        "x-litellm-model-id"
+    );
+    assert_eq!(
+        reply
+            .headers
+            .get("x-litellm-model-api-base")
+            .and_then(|value| value.to_str().ok()),
+        Some(served.api_base.as_str()),
+        "x-litellm-model-api-base"
+    );
     assert_eq!(
         reply
             .headers
@@ -381,8 +431,8 @@ fn assert_success(reply: &Reply) {
         Some("0.0")
     );
     assert!(reply.headers.contains_key("x-litellm-version"));
+    // the handler passes no cache key and no logging object, so the name and cost headers stay off
     for header in [
-        "x-litellm-model-id",
         "x-litellm-model-name",
         "x-litellm-model-group",
         "x-litellm-response-cost",
@@ -609,6 +659,17 @@ fn assert_failure_headers(reply: &Reply) {
     assert!(!reply.headers.contains_key("x-litellm-timeout"));
 }
 
+// the provider body's type and param for each status the stubbed provider answers
+const fn provider_fields(status: u16) -> Option<(Option<&'static str>, Option<&'static str>)> {
+    match status {
+        400 => Some((Some("invalid_request_error"), Some("input"))),
+        401 => Some((Some("invalid_request_error"), None)),
+        429 => Some((Some("tokens"), None)),
+        500 => Some((None, None)),
+        _ => None,
+    }
+}
+
 fn assert_provider_error(status: u16, reply: &Reply) {
     let text = body_text(reply);
     assert_eq!(reply.status.as_u16(), status, "{text}");
@@ -616,36 +677,12 @@ fn assert_provider_error(status: u16, reply: &Reply) {
     assert_eq!(error.code, status.to_string(), "{text}");
     assert_eq!(call_id(reply), Some("caller-id"));
     assert_failure_headers(reply);
-    match status {
-        400 => {
-            assert_eq!(
-                error.kind.as_deref(),
-                Some("invalid_request_error"),
-                "{text}"
-            );
-            assert_eq!(error.param.as_deref(), Some("input"), "{text}");
-        }
-        401 => {
-            assert_eq!(
-                error.kind.as_deref(),
-                Some("invalid_request_error"),
-                "{text}"
-            );
-            assert_eq!(error.param, None, "{text}");
-            assert!(text.contains(r#""param":null"#), "{text}");
-        }
-        429 => {
-            assert_eq!(error.kind.as_deref(), Some("tokens"), "{text}");
-            assert_eq!(error.param, None, "{text}");
-            assert!(text.contains(r#""param":null"#), "{text}");
-        }
-        500 => {
-            assert_eq!(error.kind, None, "{text}");
-            assert_eq!(error.param, None, "{text}");
-            assert!(text.contains(r#""type":null"#), "{text}");
-        }
-        other => panic!("unexpected provider status {other}"),
-    }
+    let (kind, param) = provider_fields(status).expect("a stubbed provider status");
+    assert_eq!(error.kind.as_deref(), kind, "{text}");
+    assert_eq!(error.param.as_deref(), param, "{text}");
+    // an absent type or param reaches the client as an explicit null
+    assert_eq!(text.contains(r#""type":null"#), kind.is_none(), "{text}");
+    assert_eq!(text.contains(r#""param":null"#), param.is_none(), "{text}");
 }
 
 async fn provider_retry_then_success() {
@@ -716,7 +753,10 @@ fn assert_refused(reply: &Reply, status: StatusCode) {
     );
 }
 
-fn application_for(source: &str, environment: &BTreeMap<String, String>) -> Router {
+fn application_for(
+    source: &str,
+    environment: &BTreeMap<String, String>,
+) -> (Router, Vec<ChatDeployment>) {
     let config = ConfigLoader {
         lookup: environment.clone(),
     }
@@ -724,13 +764,15 @@ fn application_for(source: &str, environment: &BTreeMap<String, String>) -> Rout
     .expect("config");
     let executor =
         chat_executor(&config, environment, StdRng::seed_from_u64(1)).expect("chat executor");
-    application(
+    let deployments = executor.deployments.clone();
+    let app = application(
         &config,
         executor,
         Arc::new(AtomicBool::new(false)),
         &TaskTracker::new(),
     )
-    .expect("application")
+    .expect("application");
+    (app, deployments)
 }
 
 async fn auth_required() {
@@ -740,8 +782,9 @@ async fn auth_required() {
         "general_settings: {{master_key: oracle-master}}\nmodel_list:\n  - model_name: guard\n    litellm_params: {{model: openai/omni-moderation-latest, api_base: 'http://{address}/v1', api_key: oracle-key, timeout: 0.5}}\n"
     );
     let environment = BTreeMap::new();
+    let (unauthorized_app, _deployments) = application_for(&source, &environment);
     let unauthorized = exchange(
-        application_for(&source, &environment),
+        unauthorized_app,
         Request::post("/v1/moderations")
             .header("content-type", "application/json")
             .body(Body::from(r#"{"model":"guard","input":"hello"}"#))
@@ -751,12 +794,15 @@ async fn auth_required() {
     .await;
     assert_eq!(unauthorized.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body_text(&unauthorized), "Internal Server Error");
-    let authorized = exchange(
-        application_for(&source, &environment),
+    let (authorized_app, deployments) = application_for(&source, &environment);
+    let mut authorized = exchange(
+        authorized_app,
         request("/v1/moderations", r#"{"model":"guard","input":"hello"}"#),
         record_requests(listener, vec![(200, answer("0.5"))]),
     )
     .await;
+    let served = served_deployment(&deployments, &authorized);
+    authorized.served = Some(served);
     assert_success(&authorized);
     assert!(
         authorized
@@ -770,9 +816,10 @@ async fn auth_required() {
 
 async fn body_limit() {
     let source = "general_settings:\n  max_request_size_mb: 1\nmodel_list:\n  - model_name: guard\n    litellm_params: {model: openai/omni-moderation-latest, api_base: 'http://127.0.0.1:1/v1', api_key: oracle-key, timeout: 0.2}\n";
-    let oversized = vec![b'a'; 2_097_152];
+    let oversized = vec![b'a'; 0x0020_0000];
+    let (app, _deployments) = application_for(source, &BTreeMap::new());
     let reply = exchange(
-        application_for(source, &BTreeMap::new()),
+        app,
         Request::post("/v1/moderations")
             .header("content-type", "application/json")
             .header("content-length", oversized.len().to_string())
