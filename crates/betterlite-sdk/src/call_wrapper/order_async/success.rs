@@ -10,7 +10,9 @@ use crate::call_setup::hooks::{
 use crate::call_wrapper::cache::CacheMode;
 use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::fields::field;
-use crate::call_wrapper::logging::{DispatchFlags, dispatch_success_logging, success_result};
+use crate::call_wrapper::logging::{
+    DispatchFlags, SuccessLogInput, dispatch_success_logging, success_result,
+};
 use crate::call_wrapper::post_call::{PostCallInput, Validation, run as post_call_processing};
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::steps::{self, CallView};
@@ -160,11 +162,13 @@ fn dispatch_success<E>(run: &AsyncRun<'_, E>, handle: &LoggingHandle, outcome: &
         &run.wrapper.logging,
         &run.wrapper.scheduler,
         handle,
-        success_result(outcome, &run.call_type),
-        times,
-        DispatchFlags {
-            is_completion_with_fallbacks: run.is_completion_with_fallbacks,
-            is_internal_call: run.internal_call,
+        SuccessLogInput {
+            result: success_result(outcome, &run.call_type),
+            times,
+            flags: DispatchFlags {
+                is_completion_with_fallbacks: run.is_completion_with_fallbacks,
+                is_internal_call: run.internal_call,
+            },
         },
     );
 }

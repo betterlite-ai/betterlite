@@ -40,11 +40,11 @@ where
     ) -> Result<Option<CallOutcome>, CallError> {
         let count = self.resolve_count(error)?;
         let router = is_router_call(&self.request)?;
-        if let Some(count) = count.filter(|value| *value != 0) {
+        if let Some(retries) = count.filter(|value| *value != 0) {
             if router || !is_api_error(&error.class) {
                 return Ok(None);
             }
-            return self.retry_call(count);
+            return self.retry_call(retries);
         }
         if router || !context_fallback_allowed {
             return Ok(None);

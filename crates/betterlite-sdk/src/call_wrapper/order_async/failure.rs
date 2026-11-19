@@ -17,7 +17,7 @@ use crate::call_wrapper::steps;
 // The except block: failure logging first, then the async retry branches, then the failure's stamps
 pub(super) async fn handle<E>(
     run: &mut AsyncRun<'_, E>,
-    error: CallError,
+    mut error: CallError,
 ) -> Result<CallOutcome, CallError>
 where
     E: RuleEvaluator,
@@ -29,7 +29,6 @@ where
     if !run.internal_call {
         log_failure(run, &error).await;
     }
-    let mut error = error;
     let count = num_retries(
         &mut run.request,
         run.wrapper.retry.num_retries,
@@ -82,14 +81,14 @@ where
     if is_router_call(&run.request)? {
         return Ok(None);
     }
-    let Some(count) = count.filter(|value| *value != 0) else {
+    let Some(retries) = count.filter(|value| *value != 0) else {
         if context_fallback_allowed {
             return context_fallback(run, error).await;
         }
         return Ok(None);
     };
     run.wrapper.retry.num_retries = None;
-    stamp_retry(run, count, error);
+    stamp_retry(run, retries, error);
     let request = run.request.clone();
     let target = run.target;
     let logging = run.logging.clone();

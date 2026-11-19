@@ -88,6 +88,13 @@ pub struct DispatchFlags {
     pub is_internal_call: bool,
 }
 
+// the result, the times and the flags one success log carries through the dispatch
+pub struct SuccessLogInput {
+    pub result: SuccessResult,
+    pub times: CallTimes,
+    pub flags: DispatchFlags,
+}
+
 #[must_use]
 pub fn success_result(outcome: &CallOutcome, call_type: &str) -> SuccessResult {
     match outcome {
@@ -108,21 +115,12 @@ pub fn dispatch_success_logging(
     logging: &Arc<dyn CallLogging>,
     scheduler: &Arc<dyn SuccessLogScheduler>,
     handle: &LoggingHandle,
-    result: SuccessResult,
-    times: CallTimes,
-    flags: DispatchFlags,
+    input: SuccessLogInput,
 ) {
-    if !flags.is_internal_call {
-        schedule_async_success_logging(
-            logging,
-            scheduler,
-            handle,
-            result.clone(),
-            times,
-            flags.is_completion_with_fallbacks,
-        );
+    if !input.flags.is_internal_call {
+        schedule_async_success_logging(logging, scheduler, handle, &input);
     }
-    logging.sync_success_callbacks_for_async_calls(handle, result, times);
+    logging.sync_success_callbacks_for_async_calls(handle, input.result, input.times);
 }
 
 // _schedule_async_success_logging: the innermost wrapper claims the log, and a deferred one waits in its slot
@@ -130,9 +128,7 @@ fn schedule_async_success_logging(
     logging: &Arc<dyn CallLogging>,
     scheduler: &Arc<dyn SuccessLogScheduler>,
     handle: &LoggingHandle,
-    result: SuccessResult,
-    times: CallTimes,
-    is_completion_with_fallbacks: bool,
+    input: &SuccessLogInput,
 ) {
     let defer = {
         let mut state = handle.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -144,9 +140,9 @@ fn schedule_async_success_logging(
     let job = AsyncSuccessLog {
         logging: Arc::clone(logging),
         handle: handle.clone(),
-        result,
-        times,
-        is_completion_with_fallbacks,
+        result: input.result.clone(),
+        times: input.times,
+        is_completion_with_fallbacks: input.flags.is_completion_with_fallbacks,
     };
     if !defer {
         warn_rejected(scheduler.schedule(job));

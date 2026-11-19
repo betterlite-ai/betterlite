@@ -59,14 +59,8 @@ pub(super) fn raw_logging<E>(wrapper: &CallWrapper<E>, request: &RequestMap) -> 
         context: &mut correlation,
         settings: CorrelationSettings::default(),
     };
-    let state = LoggingState::new(
-        init,
-        setup,
-        wrapper.setup.redactor.as_ref(),
-        next_trace_id,
-        clock,
-    )
-    .ok()?;
+    let state =
+        LoggingState::new(init, setup, &wrapper.setup.redactor, next_trace_id, clock).ok()?;
     Some(RawLogging { state, correlation })
 }
 

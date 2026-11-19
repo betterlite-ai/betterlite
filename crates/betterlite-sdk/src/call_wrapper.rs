@@ -43,7 +43,7 @@ use crate::call_setup::callbacks::{CallbackLists, CustomLoggers};
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_setup::credentials::CredentialLookup;
 use crate::call_setup::function_setup::{
-    BreadcrumbSink, CallSetupDependencies, TraceSource, function_setup,
+    BreadcrumbSink, CallSetup, CallSetupDependencies, TraceSource, function_setup,
 };
 use crate::call_setup::hooks::DeploymentHook;
 use crate::call_setup::providers::ProviderRegistry;
@@ -102,44 +102,7 @@ where
         is_async_call: bool,
     ) -> Result<(LoggingHandle, RequestMap), CallError> {
         let mut correlation = CorrelationContext::default();
-        let mut clock = {
-            let source = Arc::clone(&self.clock);
-            move || source.monotonic()
-        };
-        let next_trace_id = {
-            let source = Arc::clone(&self.ids);
-            move || source.next_call_id()
-        };
-        let known = Arc::clone(&self.setup.known);
-        let resolver = Arc::clone(&self.setup.resolver);
-        let known_fn = |name: &str| known.is_known(name);
-        let breadcrumbs = self
-            .setup
-            .breadcrumbs
-            .as_ref()
-            .map(|sink| -> &dyn BreadcrumbSink { sink.as_ref() });
-        let deps = CallSetupDependencies {
-            lists: &mut self.setup.lists,
-            providers: &mut self.setup.providers,
-            callbacks: &self.setup.callbacks,
-            loggers: CustomLoggers {
-                known: &known_fn,
-                resolver: resolver.as_ref(),
-            },
-            correlation: &mut correlation,
-            correlation_settings: self.setup.correlation_settings,
-            redactor: &self.setup.redactor,
-            trace: TraceSource {
-                next_trace_id: &next_trace_id,
-                clock: &mut clock,
-            },
-            breadcrumbs,
-            litellm_params: self.setup.litellm_params.clone(),
-            turn_off_message_logging: self.setup.turn_off_message_logging,
-            is_async_call,
-        };
-        let start = self.clock.now();
-        let setup = function_setup(call_type, &self.rules, start, request, deps)?;
+        let setup = begin_setup(self, call_type, request, is_async_call, &mut correlation)?;
         let handle = LoggingHandle {
             state: Arc::new(Mutex::new(setup.logging)),
             correlation: Arc::new(Mutex::new(correlation)),
@@ -191,4 +154,55 @@ where
         let logging = raw_request::raw_logging(self, &request);
         raw_request::capture(logging, target, request).await
     }
+}
+
+// the dependency bundle function_setup takes, built from the setup state and the run's own context
+fn begin_setup<E>(
+    wrapper: &mut CallWrapper<E>,
+    call_type: &str,
+    request: RequestMap,
+    is_async_call: bool,
+    correlation: &mut CorrelationContext,
+) -> Result<CallSetup, CallError>
+where
+    E: RuleEvaluator,
+{
+    let mut clock = {
+        let source = Arc::clone(&wrapper.clock);
+        move || source.monotonic()
+    };
+    let next_trace_id = {
+        let source = Arc::clone(&wrapper.ids);
+        move || source.next_call_id()
+    };
+    let known = Arc::clone(&wrapper.setup.known);
+    let resolver = Arc::clone(&wrapper.setup.resolver);
+    let known_fn = |name: &str| known.is_known(name);
+    let breadcrumbs = wrapper
+        .setup
+        .breadcrumbs
+        .as_ref()
+        .map(|sink| -> &dyn BreadcrumbSink { sink.as_ref() });
+    let deps = CallSetupDependencies {
+        lists: &mut wrapper.setup.lists,
+        providers: &mut wrapper.setup.providers,
+        callbacks: &wrapper.setup.callbacks,
+        loggers: CustomLoggers {
+            known: &known_fn,
+            resolver: resolver.as_ref(),
+        },
+        correlation,
+        correlation_settings: wrapper.setup.correlation_settings,
+        redactor: &wrapper.setup.redactor,
+        trace: TraceSource {
+            next_trace_id: &next_trace_id,
+            clock: &mut clock,
+        },
+        breadcrumbs,
+        litellm_params: wrapper.setup.litellm_params.clone(),
+        turn_off_message_logging: wrapper.setup.turn_off_message_logging,
+        is_async_call,
+    };
+    let start = wrapper.clock.now();
+    function_setup(call_type, &wrapper.rules, start, request, deps).map_err(CallError::from)
 }

@@ -84,6 +84,20 @@ where
     }
 
     async fn execute(&mut self) -> Result<CallOutcome, CallError> {
+        if let Some(cached) = self.prepare().await? {
+            return Ok(cached);
+        }
+        let outcome = self.send_call().await?;
+        self.end = Some(self.wrapper.clock.now());
+        let streaming_requested = is_streaming_request(&self.request, &self.call_type);
+        if streaming_requested || outcome.is_converted_stream() {
+            return success::stream_result(self, outcome, streaming_requested).await;
+        }
+        self.complete(outcome).await
+    }
+
+    // function_setup, the hooks, credentials, the budget check and the cache, up to the provider call
+    async fn prepare(&mut self) -> Result<Option<CallOutcome>, CallError> {
         steps::insert_call_id(self.wrapper, &mut self.request);
         self.model = field(&self.request, "model")?;
         self.request.shift_remove("_is_litellm_internal_call");
@@ -105,7 +119,7 @@ where
         steps::load_credentials(self.wrapper, &mut self.request)?;
         self.wrapper.budget.check()?;
         if let Some(cached) = cache::lookup(self).await? {
-            return Ok(cached);
+            return Ok(Some(cached));
         }
         cache::apply_preset_cache_key(self);
         steps::modify_max_tokens(
@@ -114,6 +128,12 @@ where
             &mut self.request,
             self.model.as_deref(),
         )?;
+        self.record_call_kwargs();
+        Ok(None)
+    }
+
+    // the kwargs the deployment sees: the request after the cache replaced a partial embedding hit's input
+    fn record_call_kwargs(&mut self) {
         self.call_kwargs = self.request.clone();
         if let Some(input) = self
             .cache
@@ -122,12 +142,10 @@ where
         {
             self.call_kwargs.insert("input".to_owned(), input);
         }
-        let outcome = self.send_call().await?;
-        self.end = Some(self.wrapper.clock.now());
-        let streaming_requested = is_streaming_request(&self.request, &self.call_type);
-        if streaming_requested || outcome.is_converted_stream() {
-            return success::stream_result(self, outcome, streaming_requested).await;
-        }
+    }
+
+    // the tail after the provider answered: post-call validation, the cache write and the success log
+    async fn complete(&mut self, outcome: CallOutcome) -> Result<CallOutcome, CallError> {
         if matches!(
             self.call_type.as_str(),
             "arealtime" | "aresponses_websocket"
@@ -141,15 +159,15 @@ where
     // the deployment hooks may convert the request, so the logging object follows the hook's stream value
     fn sync_stream(&self) -> Result<(), CallError> {
         let stream: Option<bool> = field(&self.request, "stream")?;
-        let Some(stream) = stream else {
+        let Some(stream_value) = stream else {
             return Ok(());
         };
         let Some(handle) = &self.logging else {
             return Ok(());
         };
         let mut state = handle.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.stream != Some(stream) {
-            state.stream = Some(stream);
+        if state.stream != Some(stream_value) {
+            state.stream = Some(stream_value);
         }
         Ok(())
     }

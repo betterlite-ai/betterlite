@@ -9,7 +9,7 @@ use super::cache::CacheMode;
 use super::error::{CallError, plain_error};
 use super::fields::{field, object_field};
 use super::logging::success_result;
-use super::ports::BlockingBridge;
+use super::ports::{BlockingBridge, CallTimes};
 use super::post_call::{PostCallInput, Validation, run as post_call_processing};
 use super::retry::max_retries_per_request_hit;
 use super::state::{LoggingHandle, WrapperOptions};
@@ -82,31 +82,35 @@ where
         let outcome = self.send_call()?;
         self.end = Some(self.wrapper.clock.now());
         let times = steps::times(self.start, self.end, self.wrapper.clock.as_ref());
-        let complete: Option<bool> = field(&self.request, "complete_response")?;
         if is_streaming_request(&self.request, &self.call_type) {
-            if complete == Some(true) {
-                return steps::assemble(
-                    self.wrapper,
-                    &self.request,
-                    self.logging.as_ref(),
-                    &outcome,
-                );
-            }
-            steps::update_metadata(
-                self.wrapper,
-                self.logging.as_ref(),
-                CallView {
-                    request: &self.request,
-                    model: self.model.as_deref(),
-                },
-                times,
-                &outcome,
-            );
-            return Ok(outcome);
+            return self.stream_outcome(outcome, times);
         }
         if async_result(&self.request) {
             return Ok(outcome);
         }
+        self.post_call(outcome, times)
+    }
+
+    // the stream is assembled for a complete_response, and otherwise only its metadata is updated
+    fn stream_outcome(
+        &mut self,
+        outcome: CallOutcome,
+        times: CallTimes,
+    ) -> Result<CallOutcome, CallError> {
+        let complete: Option<bool> = field(&self.request, "complete_response")?;
+        if complete == Some(true) {
+            return steps::assemble(self.wrapper, &self.request, self.logging.as_ref(), &outcome);
+        }
+        self.update_metadata(times, &outcome);
+        Ok(outcome)
+    }
+
+    // post_call_processing, the cache write, the metadata update and the success log, in that order
+    fn post_call(
+        &mut self,
+        outcome: CallOutcome,
+        times: CallTimes,
+    ) -> Result<CallOutcome, CallError> {
         let input = PostCallInput {
             call_type: &self.call_type,
             model: self.model.as_deref(),
@@ -119,6 +123,16 @@ where
         };
         post_call_processing(&self.wrapper.rules, &input)?;
         self.store(&outcome)?;
+        self.update_metadata(times, &outcome);
+        if let Some(handle) = &self.logging {
+            self.wrapper
+                .logging
+                .success(handle, success_result(&outcome, &self.call_type), times);
+        }
+        Ok(outcome)
+    }
+
+    fn update_metadata(&self, times: CallTimes, outcome: &CallOutcome) {
         steps::update_metadata(
             self.wrapper,
             self.logging.as_ref(),
@@ -127,14 +141,8 @@ where
                 model: self.model.as_deref(),
             },
             times,
-            &outcome,
+            outcome,
         );
-        if let Some(handle) = &self.logging {
-            self.wrapper
-                .logging
-                .success(handle, success_result(&outcome, &self.call_type), times);
-        }
-        Ok(outcome)
     }
 
     // litellm_call_id, function_setup, credentials, the budget check and the retry limit, in that order

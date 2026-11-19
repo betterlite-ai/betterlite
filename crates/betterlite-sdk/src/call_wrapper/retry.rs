@@ -34,7 +34,7 @@ pub fn metadata_key(request: &RequestMap) -> &'static str {
 
 #[must_use]
 pub fn max_retries_per_request_hit(request: &RequestMap, limit: Option<i64>) -> bool {
-    let Some(limit) = limit else {
+    let Some(limit_value) = limit else {
         return false;
     };
     let Some(Json::Object(metadata)) = request.get(metadata_key(request)) else {
@@ -45,7 +45,7 @@ pub fn max_retries_per_request_hit(request: &RequestMap, limit: Option<i64>) -> 
     };
     retry_count
         .as_i64()
-        .is_some_and(|count| 0 < count && limit <= count)
+        .is_some_and(|count| 0 < count && limit_value <= count)
 }
 
 // The router keeps model_group in the request's own metadata, never in litellm_metadata
@@ -136,7 +136,7 @@ pub fn context_window_model(
     request: &RequestMap,
     model: Option<&str>,
 ) -> Result<Option<String>, CallError> {
-    let Some(model) = model else {
+    let Some(model_name) = model else {
         return Ok(None);
     };
     let Some(mapping) = object_field(request, "context_window_fallback_dict")? else {
@@ -145,7 +145,7 @@ pub fn context_window_model(
     if mapping.is_empty() {
         return Ok(None);
     }
-    match mapping.get(model) {
+    match mapping.get(model_name) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(mapped)) => Ok(Some(mapped.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => Err(

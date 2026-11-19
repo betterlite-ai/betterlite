@@ -17,7 +17,7 @@ use betterlite_sdk::call_wrapper::cache::{CacheHandler, CacheMode, CacheOutcome}
 use betterlite_sdk::call_wrapper::error::CallError;
 use betterlite_sdk::call_wrapper::logging::{AsyncSuccessLog, CallLogging, SuccessLogScheduler};
 use betterlite_sdk::call_wrapper::max_tokens::MaxTokensModifier;
-use betterlite_sdk::call_wrapper::metadata::ResponseMetadataUpdater;
+use betterlite_sdk::call_wrapper::metadata::{MetadataUpdate, ResponseMetadataUpdater};
 use betterlite_sdk::call_wrapper::ports::{CallTimes, IdSource, WrapperClock};
 use betterlite_sdk::call_wrapper::state::{KnownCallback, LoggingHandle};
 use betterlite_sdk::call_wrapper::stream::StreamAssembly;
@@ -124,15 +124,7 @@ impl StreamAssembly for NoAssembly {
 pub(super) struct NoMetadata;
 
 impl ResponseMetadataUpdater for NoMetadata {
-    fn update(
-        &self,
-        _outcome: &CallOutcome,
-        _logging: &LoggingHandle,
-        _model: Option<&str>,
-        _request: &RequestMap,
-        _times: CallTimes,
-    ) {
-    }
+    fn update(&self, _logging: &LoggingHandle, _update: MetadataUpdate<'_>) {}
 }
 
 // The cases read nothing off the logging object, so the background job is dropped

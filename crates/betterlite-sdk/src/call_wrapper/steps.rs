@@ -6,6 +6,7 @@ use super::CallWrapper;
 use super::error::CallError;
 use super::fields::field;
 use super::max_tokens::MODIFIED_CALL_TYPES;
+use super::metadata::MetadataUpdate;
 use super::ports::{CallTimes, WrapperClock};
 use super::state::LoggingHandle;
 use crate::call_setup::RequestMap;
@@ -41,9 +42,9 @@ pub(super) fn load_credentials<E>(
     request: &mut RequestMap,
 ) -> Result<(), CallError> {
     let warning = load_credentials_from_list(request, wrapper.credentials.as_ref())?;
-    if let Some(warning) = warning {
+    if let Some(found) = warning {
         tracing::debug!(
-            credential = %warning.credential_name,
+            credential = %found.credential_name,
             "no credential matches the requested name"
         );
     }
@@ -57,10 +58,10 @@ pub(super) fn modify_max_tokens<E>(
     model: Option<&str>,
 ) -> Result<(), CallError> {
     let user_max_tokens: Option<i64> = field(request, "max_tokens")?;
-    let Some(user_max_tokens) = user_max_tokens else {
+    let Some(user_tokens) = user_max_tokens else {
         return Ok(());
     };
-    let Some(model) = model else {
+    let Some(model_name) = model else {
         return Ok(());
     };
     if !wrapper.flags.modify_params || !MODIFIED_CALL_TYPES.contains(&call_type) {
@@ -69,10 +70,10 @@ pub(super) fn modify_max_tokens<E>(
     let hf_model_name: Option<String> = field(request, "hf_model_name")?;
     let messages = request.get("messages");
     let modified = wrapper.max_tokens.modified_max_tokens(
-        model,
+        model_name,
         hf_model_name.as_deref(),
         messages,
-        user_max_tokens,
+        user_tokens,
     );
     let value = modified.map_or(Json::Null, |tokens| Json::Number(Number::from(tokens)));
     request.insert("max_tokens".to_owned(), value);
@@ -103,9 +104,15 @@ pub(super) fn update_metadata<E>(
     let Some(handle) = logging else {
         return;
     };
-    wrapper
-        .metadata
-        .update(outcome, handle, call.model, call.request, times);
+    wrapper.metadata.update(
+        handle,
+        MetadataUpdate {
+            outcome,
+            model: call.model,
+            request: call.request,
+            times,
+        },
+    );
 }
 
 pub(super) fn times(

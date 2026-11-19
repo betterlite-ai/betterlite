@@ -31,7 +31,7 @@ use crate::call_wrapper::cache::{CacheHandler, CacheMode, CacheOutcome};
 use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::logging::{AsyncSuccessLog, CallLogging, SuccessLogScheduler};
 use crate::call_wrapper::max_tokens::MaxTokensModifier;
-use crate::call_wrapper::metadata::ResponseMetadataUpdater;
+use crate::call_wrapper::metadata::{MetadataUpdate, ResponseMetadataUpdater};
 use crate::call_wrapper::ports::{CallTimes, IdSource, WrapperClock};
 use crate::call_wrapper::retry::WrapperRetryDefaults;
 use crate::call_wrapper::state::{KnownCallback, LoggingHandle, WrapperOptions};
@@ -631,18 +631,11 @@ impl RecordingMetadata {
 }
 
 impl ResponseMetadataUpdater for RecordingMetadata {
-    fn update(
-        &self,
-        _outcome: &CallOutcome,
-        _logging: &LoggingHandle,
-        model: Option<&str>,
-        request: &RequestMap,
-        _times: CallTimes,
-    ) {
+    fn update(&self, _logging: &LoggingHandle, update: MetadataUpdate<'_>) {
         self.updates
             .lock()
             .expect("the metadata lock is free")
-            .push((model.map(str::to_owned), request.clone()));
+            .push((update.model.map(str::to_owned), update.request.clone()));
     }
 }
 
