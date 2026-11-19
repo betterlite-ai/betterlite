@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use rstest::rstest;
@@ -138,7 +139,7 @@ async fn the_collected_bytes_stop_at_the_cap() {
             .await
             .unwrap_err()
             .kind(),
-        std::io::ErrorKind::NotFound
+        ErrorKind::NotFound
     );
 }
 

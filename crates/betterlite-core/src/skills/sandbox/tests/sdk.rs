@@ -9,13 +9,14 @@ use betterlite_pyhost::host::{HostConfig, PythonHost};
 use betterlite_pyhost::optional_library::{LibraryError, OptionalLibrary};
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyModule};
 use pyo3::{Py, PyAny};
+use tokio::sync::Mutex;
 
 use super::super::programs::SESSION_LANG;
 use super::super::sdk::{SdkSessions, open_failure};
-use super::super::session::{RunResult, SessionError, SessionOpener, SessionOptions};
+use super::super::session::{RunResult, SessionError, SessionOpener as _, SessionOptions};
 
 // the interpreter and sys.modules are shared, so the SDK tests run one at a time
-static SDK_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static SDK_TESTS: Mutex<()> = Mutex::const_new(());
 
 const FAKE_SDK: &str = "
 fail_run = False
@@ -300,7 +301,9 @@ async fn sdk_a_failed_call_names_the_operation() {
             assert_eq!(operation, "run");
             assert!(source.message.contains("boom"));
         }
-        other => panic!("expected a call error, got {other:?}"),
+        other @ (SessionError::SdkMissing | SessionError::Start { .. }) => {
+            panic!("expected a call error, got {other:?}");
+        }
     }
 }
 
@@ -319,7 +322,9 @@ async fn sdk_a_result_without_fields_is_a_call_error() {
             assert_eq!(operation, "run");
             assert!(source.message.contains("exit_code"));
         }
-        other => panic!("expected a call error, got {other:?}"),
+        other @ (SessionError::SdkMissing | SessionError::Start { .. }) => {
+            panic!("expected a call error, got {other:?}");
+        }
     }
 }
 
@@ -329,7 +334,7 @@ fn a_missing_library_maps_to_the_install_message() {
         module: "llm_sandbox".to_owned(),
         install_hint: "llm-sandbox".to_owned(),
     };
-    assert_eq!(open_failure(missing), SessionError::SdkMissing);
+    assert_eq!(open_failure(&missing), SessionError::SdkMissing);
 }
 
 #[test]
@@ -338,9 +343,11 @@ fn another_library_error_starts_the_session_with_its_text() {
         module: "llm_sandbox".to_owned(),
         path: "SandboxSession".to_owned(),
     };
-    let source = match open_failure(broken) {
+    let source = match open_failure(&broken) {
         SessionError::Start { source } => source,
-        other => panic!("expected a start error, got {other:?}"),
+        other @ (SessionError::SdkMissing | SessionError::Call { .. }) => {
+            panic!("expected a start error, got {other:?}");
+        }
     };
     assert!(source.message.contains("llm_sandbox"));
 }

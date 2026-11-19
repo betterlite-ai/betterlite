@@ -10,11 +10,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use tokio::time::sleep;
 
 use super::executor::{SandboxExecutor, SandboxOutcome, SandboxRequest};
 use super::programs::{
-    REQUIREMENTS_FILE, SANDBOX_ROOT, SESSION_LANG, SKILL_REQUIREMENTS_FILE, pip_install_code,
-    wrapped_code,
+    LISTING_CODE, REQUIREMENTS_FILE, SANDBOX_ROOT, SESSION_LANG, SKILL_REQUIREMENTS_FILE,
+    pip_install_code, wrapped_code,
 };
 use super::session::{
     RunResult, SandboxSession, SdkFailure, SessionError, SessionOpener, SessionOptions,
@@ -95,6 +96,51 @@ impl Script {
         };
         chosen.clone().unwrap_or_default()
     }
+
+    fn with_install(mut self, chosen: Reply) -> Self {
+        self.install = Some(chosen);
+        self
+    }
+
+    fn with_execution(mut self, chosen: Reply) -> Self {
+        self.execution = Some(chosen);
+        self
+    }
+
+    fn with_listing(mut self, chosen: Reply) -> Self {
+        self.listing = Some(chosen);
+        self
+    }
+
+    fn with_runtime_file(mut self, path: &str, content: &[u8]) -> Self {
+        self.runtime_files.insert(path.to_owned(), content.to_vec());
+        self
+    }
+
+    fn with_refusing_copy(mut self, path: &str) -> Self {
+        self.refusing_copies.push(path.to_owned());
+        self
+    }
+
+    fn with_missing_sdk(mut self) -> Self {
+        self.missing_sdk = true;
+        self
+    }
+
+    fn with_open_error(mut self, message: &str) -> Self {
+        self.open_error = Some(message.to_owned());
+        self
+    }
+
+    fn with_close_error(mut self, message: &str) -> Self {
+        self.close_error = Some(message.to_owned());
+        self
+    }
+
+    fn with_hang(mut self, hang: Duration) -> Self {
+        self.hang = Some(hang);
+        self
+    }
 }
 
 struct ScriptedSession {
@@ -116,6 +162,7 @@ impl SandboxSession for ScriptedSession {
         let mut calls = self.script.calls();
         calls.staging.extend(local.parent().map(Path::to_path_buf));
         calls.copies.push((sandbox_path.to_owned(), content));
+        drop(calls);
         Ok(())
     }
 
@@ -125,8 +172,7 @@ impl SandboxSession for ScriptedSession {
         destination: &Path,
     ) -> Result<(), SessionError> {
         let script = &self.script;
-        let mut calls = script.calls();
-        calls.downloaded.push(source.to_owned());
+        script.calls().downloaded.push(source.to_owned());
         if script.refusing_copies.iter().any(|path| path == source) {
             // a partial copy can leave the file behind before it fails
             fs::write(destination, b"partial").expect("the partial download");
@@ -140,15 +186,12 @@ impl SandboxSession for ScriptedSession {
     }
 
     async fn run(&self, code: &str) -> Result<RunResult, SessionError> {
-        {
-            let mut calls = self.script.calls();
-            calls.runs.push(code.to_owned());
-        }
+        self.script.calls().runs.push(code.to_owned());
         let kind = kind_of(code);
-        if kind == Kind::Execution {
-            if let Some(hang) = self.script.hang {
-                tokio::time::sleep(hang).await;
-            }
+        if kind == Kind::Execution
+            && let Some(hang) = self.script.hang
+        {
+            sleep(hang).await;
         }
         let chosen = self.script.reply_for(kind);
         Ok(RunResult {
@@ -163,11 +206,12 @@ impl SandboxSession for ScriptedSession {
             return Ok(());
         }
         let mut calls = self.script.calls();
-        calls.closes += 1;
-        match &self.script.close_error {
-            Some(message) => Err(call_error("__exit__", message)),
-            None => Ok(()),
-        }
+        calls.closes = calls.closes.saturating_add(1);
+        drop(calls);
+        self.script
+            .close_error
+            .as_ref()
+            .map_or(Ok(()), |message| Err(call_error("__exit__", message)))
     }
 }
 
@@ -175,7 +219,7 @@ impl Drop for ScriptedSession {
     fn drop(&mut self) {
         if !self.closed.swap(true, Ordering::SeqCst) {
             let mut calls = self.script.calls();
-            calls.closes += 1;
+            calls.closes = calls.closes.saturating_add(1);
         }
     }
 }
@@ -293,7 +337,7 @@ async fn the_request_requirements_win_over_the_skill_file() {
         calls.runs.first(),
         Some(&pip_install_code(REQUIREMENTS_FILE))
     );
-    assert_eq!(calls.runs.last(), Some(&wrapped_code("main")));
+    assert_eq!(calls.runs.get(1), Some(&wrapped_code("main")));
 }
 
 #[tokio::test]
@@ -341,14 +385,16 @@ async fn no_requirements_runs_no_install() {
     let files = skill_files(&[("main.py", "print(1)")]);
     let outcome = execute(&executor_for(&script), &files, "main", None).await;
     assert!(outcome.success);
-    assert_eq!(script.calls().runs, vec![wrapped_code("main")]);
+    assert_eq!(
+        script.calls().runs,
+        vec![wrapped_code("main"), LISTING_CODE.to_owned()]
+    );
 }
 
 #[tokio::test]
 async fn a_failed_install_returns_its_output_and_skips_the_code() {
-    let mut script = Script::default();
-    script.install = Some(reply(1, Some("pip out"), Some("pip err")));
-    let script = Arc::new(script);
+    let script =
+        Arc::new(Script::default().with_install(reply(1, Some("pip out"), Some("pip err"))));
     let files = skill_files(&[("requirements.txt", "pkg\n")]);
     let outcome = execute(&executor_for(&script), &files, "main", None).await;
     assert!(!outcome.success);
@@ -363,9 +409,7 @@ async fn a_failed_install_returns_its_output_and_skips_the_code() {
 
 #[tokio::test]
 async fn a_successful_execution_returns_its_output() {
-    let mut script = Script::default();
-    script.execution = Some(reply(0, Some("hello"), Some("")));
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_execution(reply(0, Some("hello"), Some(""))));
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(outcome.success);
     assert_eq!(outcome.output, "hello");
@@ -375,13 +419,12 @@ async fn a_successful_execution_returns_its_output() {
 
 #[tokio::test]
 async fn a_failed_execution_keeps_its_generated_files() {
-    let mut script = Script::default();
-    script.execution = Some(reply(1, None, Some("boom")));
-    script.listing = Some(reply(0, Some(r#"["/sandbox/chart.png"]"#), None));
-    script
-        .runtime_files
-        .insert("/sandbox/chart.png".to_owned(), b"png-bytes".to_vec());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_execution(reply(1, None, Some("boom")))
+            .with_listing(reply(0, Some(r#"["/sandbox/chart.png"]"#), None))
+            .with_runtime_file("/sandbox/chart.png", b"png-bytes"),
+    );
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(!outcome.success);
     assert_eq!(outcome.output, "");
@@ -396,19 +439,16 @@ async fn a_failed_execution_keeps_its_generated_files() {
 
 #[tokio::test]
 async fn generated_files_exclude_the_original_skill_files() {
-    let mut script = Script::default();
-    script.listing = Some(reply(
-        0,
-        Some(r#"["/sandbox/main.py", "/sandbox/report.csv"]"#),
-        None,
-    ));
-    script
-        .runtime_files
-        .insert("/sandbox/main.py".to_owned(), b"print(1)".to_vec());
-    script
-        .runtime_files
-        .insert("/sandbox/report.csv".to_owned(), b"a,b\n".to_vec());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_listing(reply(
+                0,
+                Some(r#"["/sandbox/main.py", "/sandbox/report.csv"]"#),
+                None,
+            ))
+            .with_runtime_file("/sandbox/main.py", b"print(1)")
+            .with_runtime_file("/sandbox/report.csv", b"a,b\n"),
+    );
     let files = skill_files(&[("main.py", "print(1)")]);
     let outcome = execute(&executor_for(&script), &files, "main", None).await;
     assert_eq!(outcome.files.len(), 1);
@@ -419,15 +459,12 @@ async fn generated_files_exclude_the_original_skill_files() {
 
 #[tokio::test]
 async fn an_empty_listing_entry_is_skipped() {
-    let mut script = Script::default();
-    script.listing = Some(reply(0, Some(r#"["", "/sandbox/a.png"]"#), None));
-    script
-        .runtime_files
-        .insert(String::new(), b"nothing".to_vec());
-    script
-        .runtime_files
-        .insert("/sandbox/a.png".to_owned(), b"a".to_vec());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_listing(reply(0, Some(r#"["", "/sandbox/a.png"]"#), None))
+            .with_runtime_file("", b"nothing")
+            .with_runtime_file("/sandbox/a.png", b"a"),
+    );
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert_eq!(outcome.files.len(), 1);
     assert_eq!(outcome.files[0].path, "a.png");
@@ -435,22 +472,17 @@ async fn an_empty_listing_entry_is_skipped() {
 
 #[tokio::test]
 async fn a_copy_failure_keeps_the_collected_prefix() {
-    let mut script = Script::default();
-    script.listing = Some(reply(
-        0,
-        Some(r#"["/sandbox/a.png", "/sandbox/broken.csv", "/sandbox/b.png"]"#),
-        None,
-    ));
-    script
-        .runtime_files
-        .insert("/sandbox/a.png".to_owned(), b"/sandbox/a.png".to_vec());
-    script
-        .runtime_files
-        .insert("/sandbox/b.png".to_owned(), b"/sandbox/b.png".to_vec());
-    script
-        .refusing_copies
-        .push("/sandbox/broken.csv".to_owned());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_listing(reply(
+                0,
+                Some(r#"["/sandbox/a.png", "/sandbox/broken.csv", "/sandbox/b.png"]"#),
+                None,
+            ))
+            .with_runtime_file("/sandbox/a.png", b"/sandbox/a.png")
+            .with_runtime_file("/sandbox/b.png", b"/sandbox/b.png")
+            .with_refusing_copy("/sandbox/broken.csv"),
+    );
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     let names: Vec<&str> = outcome
         .files
@@ -470,12 +502,11 @@ async fn a_copy_failure_keeps_the_collected_prefix() {
 
 #[tokio::test]
 async fn a_failing_listing_collects_nothing() {
-    let mut script = Script::default();
-    script.listing = Some(reply(2, Some(r#"["/sandbox/a.png"]"#), Some("walk")));
-    script
-        .runtime_files
-        .insert("/sandbox/a.png".to_owned(), b"a".to_vec());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_listing(reply(2, Some(r#"["/sandbox/a.png"]"#), Some("walk")))
+            .with_runtime_file("/sandbox/a.png", b"a"),
+    );
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(outcome.success);
     assert!(outcome.files.is_empty());
@@ -483,27 +514,21 @@ async fn a_failing_listing_collects_nothing() {
 
 #[tokio::test]
 async fn an_empty_listing_stdout_collects_nothing() {
-    let mut script = Script::default();
-    script.listing = Some(reply(0, Some(""), None));
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_listing(reply(0, Some(""), None)));
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(outcome.files.is_empty());
 }
 
 #[tokio::test]
 async fn a_malformed_listing_collects_nothing() {
-    let mut script = Script::default();
-    script.listing = Some(reply(0, Some("not json"), None));
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_listing(reply(0, Some("not json"), None)));
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(outcome.files.is_empty());
 }
 
 #[tokio::test]
 async fn a_missing_sdk_returns_the_install_message() {
-    let mut script = Script::default();
-    script.missing_sdk = true;
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_missing_sdk());
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(!outcome.success);
     assert_eq!(outcome.error, SDK_MISSING);
@@ -513,9 +538,7 @@ async fn a_missing_sdk_returns_the_install_message() {
 
 #[tokio::test]
 async fn an_opening_error_returns_its_message() {
-    let mut script = Script::default();
-    script.open_error = Some("no docker daemon".to_owned());
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_open_error("no docker daemon"));
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(!outcome.success);
     assert_eq!(
@@ -559,13 +582,12 @@ async fn an_empty_image_is_not_passed() {
 
 #[tokio::test]
 async fn a_failing_close_replaces_the_result() {
-    let mut script = Script::default();
-    script
-        .runtime_files
-        .insert("/sandbox/a.png".to_owned(), b"a".to_vec());
-    script.listing = Some(reply(0, Some(r#"["/sandbox/a.png"]"#), None));
-    script.close_error = Some("docker stop failed".to_owned());
-    let script = Arc::new(script);
+    let script = Arc::new(
+        Script::default()
+            .with_runtime_file("/sandbox/a.png", b"a")
+            .with_listing(reply(0, Some(r#"["/sandbox/a.png"]"#), None))
+            .with_close_error("docker stop failed"),
+    );
     let outcome = execute(&executor_for(&script), &skill_files(&[]), "main", None).await;
     assert!(!outcome.success);
     assert_eq!(
@@ -578,9 +600,7 @@ async fn a_failing_close_replaces_the_result() {
 
 #[tokio::test(start_paused = true)]
 async fn a_timeout_cancellation_cleans_session_and_staging() {
-    let mut script = Script::default();
-    script.hang = Some(Duration::from_secs(600));
-    let script = Arc::new(script);
+    let script = Arc::new(Script::default().with_hang(Duration::from_secs(600)));
     let mut executor = executor_for(&script);
     executor.timeout = Duration::from_secs(1);
     let files = skill_files(&[("main.py", "print(1)")]);
@@ -595,4 +615,5 @@ async fn a_timeout_cancellation_cleans_session_and_staging() {
     assert_eq!(calls.closes, 1);
     assert_eq!(calls.staging.len(), 1);
     assert!(calls.staging.iter().all(|path| !path.exists()));
+    drop(calls);
 }
