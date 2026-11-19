@@ -1,0 +1,40 @@
+kind: helper
+name: responses-ws-history-seed
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    resolve: []
+    inject: []
+    proxy: []
+    serialize:
+    - json
+    errors:
+    - message: seeded
+      error_type: null
+      fail: false
+    parse: []
+    warmup: []
+    warmup_ids: []
+    inputs: []
+    completions: []
+    history:
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+    base_kwargs: []
+    apply: []
+env: {}
+compare:
+  ignore: []
