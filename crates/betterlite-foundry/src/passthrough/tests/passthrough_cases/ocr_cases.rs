@@ -3,6 +3,7 @@ use std::sync::{Arc, PoisonError};
 use betterlite_azure::passthrough::logging::AzureRelayedLog;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use betterlite_openai::passthrough::transformation::types::RelayedResponse;
 
 use crate::passthrough::logging::FoundryRelayedLog;
 use crate::passthrough::tests::{
@@ -21,6 +22,7 @@ pub(super) fn ocr_usage_log() {
     ocr_failure_warns_and_falls_back();
     an_absent_ocr_body_logs_nothing();
     a_malformed_ocr_body_warns();
+    the_trait_path_logs_ocr_without_the_ocr_call_type();
 }
 
 pub(super) fn scripted_ocr() -> Arc<RecordingOcr> {
@@ -189,6 +191,26 @@ fn an_absent_ocr_body_logs_nothing() {
     assert_eq!(logging.call_type, None);
     assert_eq!(ocr.calls().len(), 1);
     assert!(warnings.is_empty());
+}
+
+// the trait's logging object has no OCR call type, so the composing route must call the inherent method
+fn the_trait_path_logs_ocr_without_the_ocr_call_type() {
+    let ocr = scripted_ocr();
+    let mut plan = build_plan(None, None, Some(RES), None, Object::new());
+    plan.ocr = Some(ocr.clone());
+    let mut logging = RecordingLogging::default();
+    let response = RelayedResponse {
+        status_code: 200_u16,
+        body: OCR_BODY.as_bytes(),
+    };
+    let logged = plan.logging_non_streaming_response(
+        &target(OCR_MODEL, OCR_ENDPOINT),
+        &response,
+        &object("{}"),
+        &mut logging,
+    );
+    assert!(matches!(logged, Some(FoundryRelayedLog::Ocr(_))));
+    assert_eq!(logging.call_type, None, "the trait path cannot set aocr");
 }
 
 fn a_malformed_ocr_body_warns() {
