@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -19,11 +18,13 @@ use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::runtime::{Builder, Runtime};
 use tokio::task::yield_now;
 
 use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_oracle_helper_api::helper::HelperResult;
+
+mod runtime;
+
+pub(super) use runtime::block_on;
 
 const NOW_MS: i64 = 1_700_000_000_000;
 
@@ -45,23 +46,6 @@ pub(super) fn value_error(message: String) -> Box<HelperError> {
         code: None,
         message,
     })
-}
-
-pub(super) fn block_on<T, F>(future: F) -> HelperResult
-where
-    T: serde::Serialize,
-    F: Future<Output = Result<T, Box<HelperError>>>,
-{
-    let runtime = runtime()?;
-    let value = runtime.block_on(future)?;
-    serde_json::to_value(value).map_err(|error| value_error(error.to_string()))
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| value_error(error.to_string()))
 }
 
 pub(super) struct FixedClock;
@@ -234,6 +218,13 @@ impl FakeBackend {
             .cloned()
     }
 
+    fn drop_entry(&self, key: &str) {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key);
+    }
+
     pub(super) fn recorded_ttl(&self, key: &str) -> Option<i64> {
         self.sets
             .lock()
@@ -277,10 +268,7 @@ impl AsyncCache for FakeBackend {
 
     async fn async_delete_cache(&self, key: &str) -> Result<(), Self::Error> {
         self.refuse(Failure::Delete, "the fake cache delete failed")?;
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key);
+        self.drop_entry(key);
         Ok(())
     }
 }
