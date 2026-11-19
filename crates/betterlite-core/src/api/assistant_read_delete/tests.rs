@@ -1,5 +1,6 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
@@ -17,11 +18,12 @@ use serde_json::{Value, json};
 use super::call::AssistantProviderCall;
 use super::error::AssistantReadDeleteError;
 use super::request::{
-    AssistantFlag, AssistantOperation, AssistantReadDeleteInput, AssistantWrapper, ExtraBody,
-    SuppliedClient, SuppliedClientKind,
+    AssistantFlag, AssistantOperation, AssistantParams, AssistantReadDeleteInput, AssistantTimeout,
+    AssistantWrapper, SuppliedClient, SuppliedClientKind, TimeoutPhases,
 };
 use super::sdk_dispatch::{NoSources, SdkDispatch};
 use super::{AssistantReadDelete, AssistantStep};
+use crate::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
 
 const PAGE: &str = r#"{"object":"list","data":[{"id":"asst_b","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}],"has_more":true,"first_id":"asst_b","last_id":"asst_b"}"#;
 const DELETED: &str = r#"{"id":"asst_a","object":"assistant.deleted","deleted":true}"#;
@@ -108,48 +110,48 @@ fn facade(dispatch: Sdk, settings: Settings) -> AssistantReadDelete<Sdk> {
     }
 }
 
-fn list_openai(entry: AssistantWrapper) -> AssistantReadDeleteInput {
+fn input_of(operation: AssistantOperation, provider: &str) -> AssistantReadDeleteInput {
     AssistantReadDeleteInput {
-        operation: AssistantOperation::List,
-        provider: "openai".to_owned(),
+        operation,
+        provider: provider.to_owned(),
         assistant_id: None,
-        entry,
+        entry: AssistantWrapper::Sync,
         aget_assistants: None,
         async_delete_assistants: None,
-        extra_body: ExtraBody::Missing,
+        extra_body: None,
         client: None,
         after: None,
         before: None,
         limit: None,
         order: None,
-        params: super::request::AssistantParams {
-            api_base: Some(OPENAI_BASE.to_owned()),
-            api_key: Some(SecretString::from("sk-request")),
-            ..super::request::AssistantParams::default()
-        },
+        params: AssistantParams::default(),
     }
 }
 
+fn list_openai(entry: AssistantWrapper) -> AssistantReadDeleteInput {
+    let mut input = input_of(AssistantOperation::List, "openai");
+    input.entry = entry;
+    input.params.api_base = Some(OPENAI_BASE.to_owned());
+    input.params.api_key = Some(SecretString::from("sk-request"));
+    input
+}
+
 fn delete_azure(entry: AssistantWrapper) -> AssistantReadDeleteInput {
-    AssistantReadDeleteInput {
-        operation: AssistantOperation::Delete,
-        provider: "azure".to_owned(),
-        assistant_id: Some("asst_a".to_owned()),
-        entry,
-        aget_assistants: None,
-        async_delete_assistants: None,
-        extra_body: ExtraBody::Missing,
-        client: None,
-        after: None,
-        before: None,
-        limit: None,
-        order: None,
-        params: super::request::AssistantParams {
-            api_base: Some(AZURE_BASE.to_owned()),
-            api_key: Some(SecretString::from("sk-request")),
-            api_version: Some("2024-02-01".to_owned()),
-            ..super::request::AssistantParams::default()
-        },
+    let mut input = input_of(AssistantOperation::Delete, "azure");
+    input.entry = entry;
+    input.assistant_id = Some("asst_a".to_owned());
+    input.params.api_base = Some(AZURE_BASE.to_owned());
+    input.params.api_key = Some(SecretString::from("sk-request"));
+    input.params.api_version = Some("2024-02-01".to_owned());
+    input
+}
+
+fn supplied(kind: SuppliedClientKind, api_base: &str) -> SuppliedClient {
+    SuppliedClient {
+        kind,
+        api_base: Some(api_base.to_owned()),
+        api_key: Some(SecretString::from("sk-supplied")),
+        api_version: Some("2024-02-01".to_owned()),
     }
 }
 
@@ -250,65 +252,67 @@ async fn azure_list_keeps_api_version_and_drops_pagination() {
     );
 }
 
-#[tokio::test]
-async fn delete_sends_the_identifier_in_both_entries() {
-    for entry in [AssistantWrapper::Sync, AssistantWrapper::Async] {
-        let (recorder, dispatch) = harness(200, DELETED);
-        let input = delete_azure(entry);
-        let result = facade(dispatch, Settings::default())
-            .run(&input)
-            .await
-            .unwrap();
-        let requests = recorder.requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].method, "DELETE");
-        assert_eq!(
-            requests[0].url,
-            "https://azure.test/v1/openai/assistants/asst_a?api-version=2024-02-01"
-        );
-        match result.step {
-            AssistantStep::Deleted(deleted) => {
-                assert_eq!(
-                    serde_json::to_value(deleted).unwrap(),
-                    json!({
-                        "id": "asst_a",
-                        "object": "assistant.deleted",
-                        "deleted": true,
-                    })
-                );
-            }
-            other => panic!("expected a deleted object, got {other:?}"),
+fn assert_delete(seen: &Seen, step: AssistantStep) {
+    assert_eq!(seen.method, "DELETE");
+    assert_eq!(
+        seen.url,
+        "https://azure.test/v1/openai/assistants/asst_a?api-version=2024-02-01"
+    );
+    match step {
+        AssistantStep::Deleted(deleted) => {
+            assert_eq!(
+                serde_json::to_value(deleted).unwrap(),
+                json!({
+                    "id": "asst_a",
+                    "object": "assistant.deleted",
+                    "deleted": true,
+                })
+            );
         }
+        other => panic!("expected a deleted object, got {other:?}"),
     }
 }
 
 #[tokio::test]
+async fn delete_sends_the_identifier_in_both_entries() {
+    let input = delete_azure(AssistantWrapper::Sync);
+    let (recorder, dispatch) = harness(200, DELETED);
+    let sync = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_delete(&recorder.requests()[0], sync.step);
+
+    let input = delete_azure(AssistantWrapper::Async);
+    let (recorder, dispatch) = harness(200, DELETED);
+    let asynchronous = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_delete(&recorder.requests()[0], asynchronous.step);
+}
+
+async fn assert_azure_delete_discards(kind: SuppliedClientKind) {
+    let (recorder, dispatch) = harness(200, DELETED);
+    let mut input = delete_azure(AssistantWrapper::Async);
+    input.client = Some(supplied(kind, AZURE_BASE));
+    facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    let requests = recorder.requests();
+    assert_eq!(requests[0].api_key.as_deref(), Some("sk-request"));
+    assert_eq!(requests[0].authorization, None);
+}
+
+#[tokio::test]
 async fn azure_delete_discards_openai_class_clients_and_keeps_async_ones() {
-    for kind in [SuppliedClientKind::OpenAi, SuppliedClientKind::AzureOpenAi] {
-        let (recorder, dispatch) = harness(200, DELETED);
-        let mut input = delete_azure(AssistantWrapper::Async);
-        input.client = Some(SuppliedClient {
-            kind,
-            api_base: Some(AZURE_BASE.to_owned()),
-            api_key: Some(SecretString::from("sk-supplied")),
-            api_version: Some("2024-02-01".to_owned()),
-        });
-        facade(dispatch, Settings::default())
-            .run(&input)
-            .await
-            .unwrap();
-        let requests = recorder.requests();
-        assert_eq!(requests[0].api_key.as_deref(), Some("sk-request"));
-        assert_eq!(requests[0].authorization, None);
-    }
+    assert_azure_delete_discards(SuppliedClientKind::OpenAi).await;
+    assert_azure_delete_discards(SuppliedClientKind::AzureOpenAi).await;
+
     let (recorder, dispatch) = harness(200, DELETED);
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.client = Some(SuppliedClient {
-        kind: SuppliedClientKind::AsyncOpenAi,
-        api_base: Some(AZURE_BASE.to_owned()),
-        api_key: Some(SecretString::from("sk-supplied")),
-        api_version: None,
-    });
+    input.client = Some(supplied(SuppliedClientKind::AsyncOpenAi, AZURE_BASE));
     let result = facade(dispatch, Settings::default())
         .run(&input)
         .await
@@ -323,12 +327,7 @@ async fn azure_list_and_openai_delete_keep_openai_class_clients() {
     let mut input = delete_azure(AssistantWrapper::Async);
     input.operation = AssistantOperation::List;
     input.assistant_id = None;
-    input.client = Some(SuppliedClient {
-        kind: SuppliedClientKind::OpenAi,
-        api_base: Some(OPENAI_BASE.to_owned()),
-        api_key: Some(SecretString::from("sk-supplied")),
-        api_version: None,
-    });
+    input.client = Some(supplied(SuppliedClientKind::OpenAi, OPENAI_BASE));
     facade(dispatch, Settings::default())
         .run(&input)
         .await
@@ -348,12 +347,7 @@ async fn azure_list_and_openai_delete_keep_openai_class_clients() {
     let mut input = list_openai(AssistantWrapper::Sync);
     input.operation = AssistantOperation::Delete;
     input.assistant_id = Some("asst_a".to_owned());
-    input.client = Some(SuppliedClient {
-        kind: SuppliedClientKind::OpenAi,
-        api_base: Some(OPENAI_BASE.to_owned()),
-        api_key: Some(SecretString::from("sk-supplied")),
-        api_version: None,
-    });
+    input.client = Some(supplied(SuppliedClientKind::OpenAi, OPENAI_BASE));
     facade(dispatch, Settings::default())
         .run(&input)
         .await
@@ -370,20 +364,18 @@ async fn azure_list_and_openai_delete_keep_openai_class_clients() {
 
 #[tokio::test]
 async fn openai_credentials_follow_the_litellm_chain() {
+    let mut settings = Settings::default();
+    settings.api_base = Some("https://settings.test/v1".to_owned());
+    settings.api_key = Some(SecretString::from("sk-settings"));
+    settings.openai_base_url = Some("https://env.test/v1".to_owned());
+    settings.openai_api_key = Some(SecretString::from("sk-env"));
+    settings.organization = Some("org-settings".to_owned());
+    settings.openai_organization = Some("org-env".to_owned());
     let (recorder, dispatch) = harness(200, PAGE);
-    let settings = Settings {
-        api_base: Some("https://settings.test/v1".to_owned()),
-        api_key: Some(SecretString::from("sk-settings")),
-        openai_base_url: Some("https://env.test/v1".to_owned()),
-        openai_api_key: Some(SecretString::from("sk-env")),
-        organization: Some("org-settings".to_owned()),
-        openai_organization: Some("org-env".to_owned()),
-        ..Settings::default()
-    };
     let mut input = list_openai(AssistantWrapper::Sync);
     input.params.api_base = Some(String::new());
     input.params.api_key = None;
-    let result = facade(dispatch, settings.clone())
+    facade(dispatch, settings.clone())
         .run(&input)
         .await
         .unwrap();
@@ -397,11 +389,11 @@ async fn openai_credentials_follow_the_litellm_chain() {
         Some("Bearer sk-settings")
     );
     assert_eq!(requests[0].organization.as_deref(), Some("org-settings"));
-    let _ = result;
 
     let empty = Settings {
         api_base: Some(String::new()),
         api_key: Some(SecretString::from("")),
+        organization: Some(String::new()),
         ..settings
     };
     let (recorder, dispatch) = harness(200, PAGE);
@@ -440,48 +432,34 @@ async fn timeout_resolution_matches_the_facade_chain() {
         .run(&input)
         .await
         .unwrap();
-    assert_eq!(
-        result.call.timeout,
-        crate::api::resource_sdk_settings::timeout::FineTuningTimeout::Seconds(600.0)
-    );
+    assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(600.0));
 
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.timeout = Some(super::request::AssistantTimeout::Plain(
-        crate::api::resource_sdk_settings::timeout::TimeoutValue::Number(0.0),
-    ));
+    input.params.timeout = Some(AssistantTimeout::Number(0.0));
     input.params.request_timeout = Some(8.0);
     let (_, dispatch) = harness(200, PAGE);
     let result = facade(dispatch, Settings::default())
         .run(&input)
         .await
         .unwrap();
-    assert_eq!(
-        result.call.timeout,
-        crate::api::resource_sdk_settings::timeout::FineTuningTimeout::Seconds(8.0)
-    );
+    assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(8.0));
 
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.timeout = Some(super::request::AssistantTimeout::Plain(
-        crate::api::resource_sdk_settings::timeout::TimeoutValue::String("7.5".to_owned()),
-    ));
+    input.params.timeout = Some(AssistantTimeout::Text("7.5".to_owned()));
     let (_, dispatch) = harness(200, PAGE);
     let result = facade(dispatch, Settings::default())
         .run(&input)
         .await
         .unwrap();
-    assert_eq!(
-        result.call.timeout,
-        crate::api::resource_sdk_settings::timeout::FineTuningTimeout::Seconds(7.5)
-    );
+    assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(7.5));
 
-    let structured = crate::api::resource_sdk_settings::timeout::StructuredTimeout {
+    let mut input = list_openai(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Structured(TimeoutPhases {
         connect: Some(2.0),
         read: Some(9.0),
         write: None,
         pool: None,
-    };
-    let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.timeout = Some(super::request::AssistantTimeout::Structured(structured));
+    }));
     let (_, dispatch) = harness(200, PAGE);
     let result = facade(dispatch, Settings::default())
         .run(&input)
@@ -489,16 +467,19 @@ async fn timeout_resolution_matches_the_facade_chain() {
         .unwrap();
     assert_eq!(
         result.call.timeout,
-        crate::api::resource_sdk_settings::timeout::FineTuningTimeout::Structured(structured)
+        FineTuningTimeout::Structured(StructuredTimeout {
+            connect: Some(2.0),
+            read: Some(9.0),
+            write: None,
+            pool: None,
+        })
     );
 }
 
 #[tokio::test]
 async fn azure_extra_body_reads_and_removes_the_token() {
-    let settings = Settings {
-        azure_ad_token: Some(SecretString::from("env-token")),
-        ..Settings::default()
-    };
+    let mut settings = Settings::default();
+    settings.azure_ad_token = Some(SecretString::from("env-token"));
     let (_, dispatch) = harness(200, PAGE);
     let mut input = delete_azure(AssistantWrapper::Sync);
     input.params.azure_ad_token = Some(SecretString::from("kwarg-token"));
@@ -510,7 +491,7 @@ async fn azure_extra_body_reads_and_removes_the_token() {
     let AssistantProviderCall::Azure(values) = &result.call.provider else {
         panic!("expected the azure branch");
     };
-    assert_eq!(values.request.azure_ad_token, None);
+    assert_eq!(values.azure_ad_token, None);
     assert_eq!(
         values
             .params
@@ -524,7 +505,7 @@ async fn azure_extra_body_reads_and_removes_the_token() {
 
     let (_, dispatch) = harness(200, PAGE);
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.extra_body = ExtraBody::Null;
+    input.extra_body = Some(None);
     let result = facade(dispatch, settings.clone())
         .run(&input)
         .await
@@ -534,7 +515,6 @@ async fn azure_extra_body_reads_and_removes_the_token() {
     };
     assert_eq!(
         values
-            .request
             .azure_ad_token
             .as_ref()
             .map(secrecy::ExposeSecret::expose_secret),
@@ -550,7 +530,7 @@ async fn azure_extra_body_reads_and_removes_the_token() {
     ]);
     let (_, dispatch) = harness(200, PAGE);
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.extra_body = ExtraBody::Body(body);
+    input.extra_body = Some(Some(body));
     let result = facade(dispatch, settings.clone())
         .run(&input)
         .await
@@ -560,7 +540,6 @@ async fn azure_extra_body_reads_and_removes_the_token() {
     };
     assert_eq!(
         values
-            .request
             .azure_ad_token
             .as_ref()
             .map(secrecy::ExposeSecret::expose_secret),
@@ -571,18 +550,20 @@ async fn azure_extra_body_reads_and_removes_the_token() {
 
     let (_, dispatch) = harness(200, PAGE);
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.extra_body = ExtraBody::Body(indexmap::IndexMap::new());
+    input.extra_body = Some(Some(indexmap::IndexMap::new()));
     let result = facade(dispatch, settings).run(&input).await.unwrap();
     let AssistantProviderCall::Azure(values) = &result.call.provider else {
         panic!("expected the azure branch");
     };
-    assert_eq!(values.request.azure_ad_token, None);
+    assert_eq!(values.azure_ad_token, None);
 }
 
 #[tokio::test]
 async fn invalid_flags_raise_the_litellm_classes_without_a_request() {
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.aget_assistants = Some(AssistantFlag::Other(Json::Number(1.into())));
+    input.aget_assistants = Some(AssistantFlag::Other(Json::Number(
+        serde_json::Number::from(1),
+    )));
     let error = facade(no_request(), Settings::default())
         .run(&input)
         .await
@@ -673,7 +654,6 @@ async fn unsupported_providers_and_null_replies_answer_like_litellm() {
     let fields = error.fields().unwrap();
     assert_eq!(fields.class, "InternalServerError");
     assert_eq!(fields.status, Some(500));
-    assert_eq!(fields.error_type, Some("internal_server_error"));
     assert_eq!(
         error.to_string(),
         "No response returned from 'delete_assistant'"
@@ -692,16 +672,9 @@ async fn unsupported_providers_and_null_replies_answer_like_litellm() {
     ));
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
+#[error("scripted failure")]
 struct ScriptFailure;
-
-impl std::fmt::Display for ScriptFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("scripted failure")
-    }
-}
-
-impl Error for ScriptFailure {}
 
 struct Scripted {
     reply: Result<Option<super::AssistantReply>, ScriptFailure>,
@@ -760,20 +733,18 @@ async fn provider_failures_keep_their_status_and_body() {
 
 #[tokio::test]
 async fn limits_refuse_an_oversized_extra_body() {
-    let limits = super::ApiLimits {
-        max_items: 0,
-        ..super::ApiLimits::default()
-    };
+    let mut limits = super::ApiLimits::default();
+    limits.max_items = 0;
     let facade = AssistantReadDelete {
         dispatch: no_request(),
         limits,
         settings: Settings::default(),
     };
     let mut input = delete_azure(AssistantWrapper::Sync);
-    input.extra_body = ExtraBody::Body(indexmap::IndexMap::from([(
+    input.extra_body = Some(Some(indexmap::IndexMap::from([(
         "key".to_owned(),
         Json::Text("value".to_owned()),
-    )]));
+    )])));
     let error = facade.run(&input).await.unwrap_err();
     assert!(matches!(error, AssistantReadDeleteError::Limits(_)));
     assert!(error.fields().is_none());

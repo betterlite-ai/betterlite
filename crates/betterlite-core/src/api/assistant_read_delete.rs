@@ -20,26 +20,13 @@ use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSe
 
 use call::{AssistantCall, AssistantProviderCall};
 use error::AssistantReadDeleteError;
-use request::{
-    AssistantFlag, AssistantOperation, AssistantReadDeleteInput, AssistantWrapper, ExtraBody,
-};
+use request::{AssistantFlag, AssistantOperation, AssistantReadDeleteInput, AssistantWrapper};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssistantReply {
     Page(AssistantPage),
     Deleted(AssistantDeleted),
     Assistant(AssistantObject),
-}
-
-impl AssistantReply {
-    #[must_use]
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::Page(_) => "page",
-            Self::Deleted(_) => "deleted",
-            Self::Assistant(_) => "assistant",
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,14 +68,12 @@ where
         input: &AssistantReadDeleteInput,
     ) -> Result<AssistantReadDeleteResult, AssistantReadDeleteError<Dispatch::Error>> {
         check_limits(&self.limits, input)?;
-        let flag =
-            requested_flag(input).map_err(|invalid| AssistantReadDeleteError::InvalidFlag {
-                flag: invalid.flag,
-                class: invalid.class,
-            })?;
-        let kind = match flag {
-            Some(true) => ClientKind::Async,
-            Some(false) | None => ClientKind::Sync,
+        let flag = requested_flag(input)
+            .map_err(|(flag, class)| AssistantReadDeleteError::InvalidFlag { flag, class })?;
+        let kind = if flag == Some(true) {
+            ClientKind::Async
+        } else {
+            ClientKind::Sync
         };
         let call = self.resolve(input, kind)?;
         let asynchronous_client = kind == ClientKind::Async
@@ -124,10 +109,9 @@ where
             (AssistantOperation::Delete, AssistantReply::Deleted(deleted)) => {
                 AssistantStep::Deleted(deleted)
             }
-            (_, reply) => {
+            (_, _) => {
                 return Err(AssistantReadDeleteError::MismatchedReply {
                     function: input.operation.function(),
-                    reply: reply.name(),
                 });
             }
         };
@@ -170,14 +154,10 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct InvalidFlag {
-    flag: &'static str,
-    class: &'static str,
-}
-
 // Only the sync entry sees the caller's flag: each async wrapper overwrites it with True.
-fn requested_flag(input: &AssistantReadDeleteInput) -> Result<Option<bool>, InvalidFlag> {
+fn requested_flag(
+    input: &AssistantReadDeleteInput,
+) -> Result<Option<bool>, (&'static str, &'static str)> {
     if input.entry == AssistantWrapper::Async {
         return Ok(Some(true));
     }
@@ -188,30 +168,20 @@ fn requested_flag(input: &AssistantReadDeleteInput) -> Result<Option<bool>, Inva
     match raw {
         None => Ok(None),
         Some(AssistantFlag::Bool(value)) => Ok(Some(*value)),
-        Some(AssistantFlag::Other(_)) => Err(InvalidFlag {
-            flag: input.operation.flag(),
-            class: input.operation.flag_class(),
-        }),
+        Some(AssistantFlag::Other(_)) => Err(input.operation.invalid_flag()),
     }
 }
 
 fn check_limits(limits: &ApiLimits, input: &AssistantReadDeleteInput) -> Result<(), ApiLimitError> {
-    let body = match &input.extra_body {
-        ExtraBody::Body(body) => Some(body),
-        ExtraBody::Missing | ExtraBody::Null => None,
-    };
-    limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+    let body = input.extra_body.as_ref().and_then(Option::as_ref);
+    let items = ItemsBoundary {
         known_count: body.map_or(0, IndexMap::len),
-    }))?;
-    let body_bytes = match body {
-        Some(body) => serde_json::to_vec(body).map_or(usize::MAX, |bytes| bytes.len()),
-        None => 0,
     };
-    let known_bytes = input
-        .assistant_id
-        .as_ref()
-        .map_or(0, String::len)
-        .saturating_add(body_bytes);
-    limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))?;
-    Ok(())
+    limits.check(ApiBoundariesInput::Items(items))?;
+    let body_bytes = body.map_or(0, |body| {
+        serde_json::to_vec(body).map_or(usize::MAX, |bytes| bytes.len())
+    });
+    let id_bytes = input.assistant_id.as_ref().map_or(0, String::len);
+    let known_bytes = id_bytes.saturating_add(body_bytes);
+    limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))
 }

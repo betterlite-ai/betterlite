@@ -8,20 +8,15 @@ use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::request::{AssistantOperation, SuppliedClient};
 
-// the facade's own api_base, api_version, key, token and retries as the Azure provider method receives them
+// everything the Azure provider method and the client it initializes receive
 #[derive(Debug, Clone)]
-pub struct AzureCallRequest {
+pub struct AzureAssistantCall {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
     pub api_key: Option<SecretString>,
     pub azure_ad_token: Option<SecretString>,
     pub timeout: f64,
     pub max_retries: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AzureAssistantCall {
-    pub request: AzureCallRequest,
     // get_litellm_params: the kwargs LiteLLM forwards to the Azure client initializer
     pub params: LiteLlmParams,
     // extra_body after the azure_ad_token key was popped, so the rest is never forwarded either

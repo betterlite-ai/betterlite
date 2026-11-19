@@ -6,14 +6,11 @@ use thiserror::Error;
 use crate::api::api_boundaries::ApiLimitError;
 use crate::api::resource_sdk_settings::timeout::TimeoutError;
 
-// the LiteLLM class a failure surfaces as, and the fields its exception carries
+// the LiteLLM class a failure surfaces as, and the status its exception carries
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AssistantErrorFields {
     pub class: &'static str,
     pub status: Option<u16>,
-    pub error_type: Option<&'static str>,
-    pub param: Option<&'static str>,
-    pub code: Option<&'static str>,
     // litellm's own exceptions print their class before the message, a plain Exception does not
     pub prefixed: bool,
 }
@@ -41,11 +38,8 @@ where
     MissingAssistantId,
     #[error("No response returned from '{function}'")]
     MissingReply { function: &'static str },
-    #[error("the dispatch answered '{function}' with the {reply} reply")]
-    MismatchedReply {
-        function: &'static str,
-        reply: &'static str,
-    },
+    #[error("the dispatch answered '{function}' with the wrong reply")]
+    MismatchedReply { function: &'static str },
     #[error(transparent)]
     Dispatch(#[from] DispatchError),
 }
@@ -56,31 +50,21 @@ where
 {
     #[must_use]
     pub const fn fields(&self) -> Option<AssistantErrorFields> {
-        let bad_request = AssistantErrorFields {
-            class: "BadRequestError",
-            status: Some(400),
-            error_type: None,
-            param: None,
-            code: None,
-            prefixed: true,
-        };
         match self {
-            Self::Unsupported { .. } => Some(bad_request),
+            Self::Unsupported { .. } => Some(AssistantErrorFields {
+                class: "BadRequestError",
+                status: Some(400),
+                prefixed: true,
+            }),
             Self::InvalidFlag { class, .. } => Some(AssistantErrorFields {
                 class,
                 status: None,
-                error_type: None,
-                param: None,
-                code: None,
                 prefixed: false,
             }),
             Self::MissingReply { .. } | Self::MismatchedReply { .. } => {
                 Some(AssistantErrorFields {
                     class: "InternalServerError",
                     status: Some(500),
-                    error_type: Some("internal_server_error"),
-                    param: None,
-                    code: None,
                     prefixed: true,
                 })
             }

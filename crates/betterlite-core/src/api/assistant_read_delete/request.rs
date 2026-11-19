@@ -2,8 +2,8 @@ use betterlite_openai::assistants::client::ClientKind;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::ser::SerializeStruct as _;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::double_option;
 
 use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
 use crate::api::resource_sdk_settings::timeout::{StructuredTimeout, TimeoutValue};
@@ -25,20 +25,12 @@ impl AssistantOperation {
         }
     }
 
+    // the flag's name, and the class its sync function raises when the value isn't a bool
     #[must_use]
-    pub const fn flag(self) -> &'static str {
+    pub const fn invalid_flag(self) -> (&'static str, &'static str) {
         match self {
-            Self::List => "aget_assistants",
-            Self::Delete => "async_delete_assistants",
-        }
-    }
-
-    // the sync get raises a plain Exception where delete raises ValueError
-    #[must_use]
-    pub const fn flag_class(self) -> &'static str {
-        match self {
-            Self::List => "Exception",
-            Self::Delete => "ValueError",
+            Self::List => ("aget_assistants", "Exception"),
+            Self::Delete => ("async_delete_assistants", "ValueError"),
         }
     }
 }
@@ -61,93 +53,49 @@ pub enum AssistantFlag {
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AssistantTimeout {
-    Plain(TimeoutValue),
-    Structured(StructuredTimeout),
+    Number(f64),
+    Text(String),
+    Structured(TimeoutPhases),
 }
 
-impl Serialize for AssistantTimeout {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Plain(TimeoutValue::Number(value)) => serializer.serialize_f64(*value),
-            Self::Plain(TimeoutValue::String(text)) => serializer.serialize_str(text),
-            Self::Structured(timeout) => {
-                let mut state = serializer.serialize_struct("AssistantTimeout", 4)?;
-                state.serialize_field("connect", &timeout.connect)?;
-                state.serialize_field("read", &timeout.read)?;
-                state.serialize_field("write", &timeout.write)?;
-                state.serialize_field("pool", &timeout.pool)?;
-                state.end()
-            }
-        }
-    }
-}
-
-// optional_params.get("extra_body", {}): an omitted kwarg reads as {}, while an explicit null stays None
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum ExtraBody {
-    #[default]
-    Missing,
-    Null,
-    Body(IndexMap<String, Json>),
-}
-
-impl ExtraBody {
+impl AssistantTimeout {
     #[must_use]
-    pub const fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing)
-    }
-}
-
-impl Serialize for ExtraBody {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    pub fn value(&self) -> Option<TimeoutValue> {
         match self {
-            Self::Missing | Self::Null => serializer.serialize_none(),
-            Self::Body(body) => body.serialize(serializer),
+            Self::Number(value) if *value != 0.0 => Some(TimeoutValue::Number(*value)),
+            Self::Text(text) if !text.is_empty() => Some(TimeoutValue::String(text.clone())),
+            Self::Number(_) | Self::Text(_) | Self::Structured(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn phases(&self) -> Option<StructuredTimeout> {
+        match self {
+            Self::Structured(fields) => Some(StructuredTimeout {
+                connect: fields.connect,
+                read: fields.read,
+                write: fields.write,
+                pool: fields.pool,
+            }),
+            Self::Number(_) | Self::Text(_) => None,
         }
     }
 }
 
-impl<'de> Deserialize<'de> for ExtraBody {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ExtraBodyVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for ExtraBodyVisitor {
-            type Value = ExtraBody;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("the extra_body kwarg, null, or nothing")
-            }
-
-            fn visit_none<E>(self) -> Result<ExtraBody, E> {
-                Ok(ExtraBody::Null)
-            }
-
-            fn visit_unit<E>(self) -> Result<ExtraBody, E> {
-                Ok(ExtraBody::Null)
-            }
-
-            fn visit_some<D>(self, deserializer: D) -> Result<ExtraBody, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                IndexMap::<String, Json>::deserialize(deserializer).map(ExtraBody::Body)
-            }
-        }
-
-        deserializer.deserialize_option(ExtraBodyVisitor)
-    }
+// the four httpx.Timeout phases, local because the shared StructuredTimeout doesn't serialize
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+pub struct TimeoutPhases {
+    #[serde(default)]
+    pub connect: Option<f64>,
+    #[serde(default)]
+    pub read: Option<f64>,
+    #[serde(default)]
+    pub write: Option<f64>,
+    #[serde(default)]
+    pub pool: Option<f64>,
 }
 
 // the class of a client the caller passed in: LiteLLM reads it before and after the call
@@ -170,12 +118,6 @@ impl SuppliedClientKind {
             Self::OpenAi | Self::AzureOpenAi => ClientKind::Sync,
             Self::AsyncOpenAi | Self::AsyncAzureOpenAi => ClientKind::Async,
         }
-    }
-
-    // isinstance(client, OpenAI) is true for the AzureOpenAI subclass only
-    #[must_use]
-    pub const fn is_openai_instance(self) -> bool {
-        matches!(self, Self::OpenAi | Self::AzureOpenAi)
     }
 }
 
@@ -241,8 +183,13 @@ pub struct AssistantReadDeleteInput {
     pub aget_assistants: Option<AssistantFlag>,
     #[serde(default)]
     pub async_delete_assistants: Option<AssistantFlag>,
-    #[serde(default, skip_serializing_if = "ExtraBody::is_missing")]
-    pub extra_body: ExtraBody,
+    // optional_params.get("extra_body", {}): omitted reads as {}, while an explicit null stays None
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub extra_body: Option<Option<IndexMap<String, Json>>>,
     #[serde(default)]
     pub client: Option<SuppliedClient>,
     // get_assistants accepts the pagination kwargs and never forwards them to the provider method

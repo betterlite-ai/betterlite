@@ -14,6 +14,7 @@ use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
 use betterlite_azure::endpoints::projection::{AzureClientInputs, HttpClient, SessionKind};
+use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient};
@@ -69,10 +70,7 @@ impl CredentialSources for NoSources {
         None
     }
 
-    fn oidc(
-        &self,
-        _input: &betterlite_azure::oidc_exchange::OidcExchangeInput,
-    ) -> Result<SecretString, SourceFailure> {
+    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
         Err(missing_source("oidc"))
     }
 }
@@ -172,12 +170,12 @@ where
         let request = ClientRequest {
             params: values.params.clone(),
             provider: None,
-            api_key: values.request.api_key.clone(),
-            api_base: values.request.api_base.clone(),
-            api_version: values.request.api_version.clone(),
-            azure_ad_token: values.request.azure_ad_token.clone(),
-            timeout: values.request.timeout,
-            max_retries: values.request.max_retries,
+            api_key: values.api_key.clone(),
+            api_base: values.api_base.clone(),
+            api_version: values.api_version.clone(),
+            azure_ad_token: values.azure_ad_token.clone(),
+            timeout: values.timeout,
+            max_retries: values.max_retries,
             refresh_enabled: false,
             session: SessionKind::Dedicated,
             settings: &self.azure,
