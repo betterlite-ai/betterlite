@@ -207,8 +207,7 @@ fn cache_value(answer: Option<&Answer>) -> Result<Option<ReseedCacheValue>, Fake
     }
 }
 
-// LiteLLM opens a spend counter batch only for a Redis-backed request that binds counters,
-// so without one the record call is a no-op and nothing is visible afterwards
+// LiteLLM opens a spend counter batch only for a Redis-backed request that binds counters
 pub(crate) struct FakeBatch {
     present: bool,
     answer: Option<Answer>,
