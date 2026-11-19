@@ -187,13 +187,17 @@ impl Harness {
         options: IngestionOptions,
         router: Option<Arc<dyn OcrOperation>>,
     ) -> IngestionState {
+        let ocr: Arc<dyn OcrOperation> = Arc::<FakeOcr>::clone(&self.ocr);
+        let uploader: Arc<dyn UrlFetch> = Arc::<FakeFetch>::clone(&self.fetch);
+        let credentials: Arc<dyn CredentialLookup> =
+            Arc::<FakeCredentials>::clone(&self.credentials);
         IngestionState::new(
             options,
             router,
             IngestionPorts {
-                ocr: Arc::clone(&self.ocr),
-                uploader: Arc::clone(&self.fetch),
-                credentials: Arc::clone(&self.credentials),
+                ocr,
+                uploader,
+                credentials,
             },
         )
         .expect("the state builds")

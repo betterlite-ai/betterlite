@@ -106,9 +106,10 @@ async fn ocr_without_a_content_type_uses_an_empty_mime() {
 async fn ocr_prefers_the_router_operation() {
     let harness = Harness::default();
     let routed = Arc::new(FakeOcr::returning(vec!["router".to_owned()]));
+    let router: Arc<dyn OcrOperation> = Arc::<FakeOcr>::clone(&routed);
     let state = harness.routed(
         serde_json::from_str(r#"{"ocr": {}}"#).expect("the options parse"),
-        Some(Arc::clone(&routed)),
+        Some(router),
     );
     let text = state
         .ocr(Some(b"x"), Some("text/plain"))
