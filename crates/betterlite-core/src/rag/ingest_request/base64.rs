@@ -14,8 +14,7 @@ pub enum Base64DecodeError {
     OneModuloFour { characters: usize },
 }
 
-// CPython's base64.b64decode outside strict mode drops bytes off the alphabet, keeps reading past a completed '=' run, lets the trailing run complete the last group, and rejects a lone final character by its count
-// not betterlite_openai::api::speech_chat_bridge::audio_base64::decode_chat_audio_base64: it ends the parse at a completed '=' run (CPython before 3.13), while the oracle's CPython 3.13.16 reads on
+// CPython's base64.b64decode outside strict mode drops bytes off the alphabet, keeps reading past a completed '=' run, lets the trailing run complete the last group, and rejects a lone final character by its count; betterlite_openai::api::speech_chat_bridge::audio_base64::decode_chat_audio_base64 cannot be reused unchanged because it ends the parse at a completed '=' run (CPython before 3.13), while the oracle's CPython 3.13.16 reads on
 pub(super) fn decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
     if !text.is_ascii() {
         return Err(Base64DecodeError::NonAscii);
