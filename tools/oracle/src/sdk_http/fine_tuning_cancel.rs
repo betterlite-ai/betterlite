@@ -375,68 +375,50 @@ fn json_headers() -> HeaderMap {
 // the class each failure projects to; only the SDK's status errors carry a status, type, param and code
 fn failure(error: &FineTuningCancelError<CancelFailure>) -> Failure {
     match error {
-        FineTuningCancelError::Unsupported { .. } => Failure {
-            class: "BadRequestError".to_owned(),
-            status: 400,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
-        FineTuningCancelError::Timeout(_) => Failure {
-            class: "ValueError".to_owned(),
-            status: 0,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
-        FineTuningCancelError::Dispatch(CancelFailure::MissingKey) => Failure {
-            class: "OpenAIError".to_owned(),
-            status: 0,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
-        FineTuningCancelError::Dispatch(CancelFailure::Status { status, body }) => {
-            let (kind, param, code) = body_fields(body);
-            Failure {
-                class: status_class(*status).to_owned(),
-                status: *status,
-                kind,
-                param,
-                code,
-                message: format!("Error code: {status} - {body}"),
-            }
+        FineTuningCancelError::Unsupported { .. } => {
+            null_failure("BadRequestError", 400, error.to_string())
         }
-        FineTuningCancelError::Dispatch(CancelFailure::StatusUtf8 { status, .. }) => Failure {
-            class: status_class(*status).to_owned(),
-            status: *status,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
-        FineTuningCancelError::Dispatch(CancelFailure::MissingBase)
-        | FineTuningCancelError::Dispatch(CancelFailure::InvalidHeader) => Failure {
-            class: "ValueError".to_owned(),
-            status: 0,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
+        FineTuningCancelError::Timeout(_)
+        | FineTuningCancelError::Dispatch(
+            CancelFailure::MissingBase | CancelFailure::InvalidHeader,
+        ) => null_failure("ValueError", 0, error.to_string()),
+        FineTuningCancelError::Dispatch(CancelFailure::MissingKey) => {
+            null_failure("OpenAIError", 0, error.to_string())
+        }
+        FineTuningCancelError::Dispatch(CancelFailure::Status { status, body }) => {
+            status_failure(*status, body)
+        }
+        FineTuningCancelError::Dispatch(CancelFailure::StatusUtf8 { status, .. }) => {
+            null_failure(status_class(*status), *status, error.to_string())
+        }
         FineTuningCancelError::Dispatch(
             CancelFailure::Url(_) | CancelFailure::Transport(_) | CancelFailure::Decode(_),
-        ) => Failure {
-            class: "APIConnectionError".to_owned(),
-            status: 0,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        },
+        ) => null_failure("APIConnectionError", 0, error.to_string()),
+    }
+}
+
+// an error the SDK raises before or without a provider body leaves type, param and code null
+fn null_failure(class: &str, status: u16, message: String) -> Failure {
+    Failure {
+        class: class.to_owned(),
+        status,
+        kind: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message,
+    }
+}
+
+// a status error reads type, param and code out of the body and renders the status with the raw body
+fn status_failure(status: u16, body: &str) -> Failure {
+    let (kind, param, code) = body_fields(body);
+    Failure {
+        class: status_class(status).to_owned(),
+        status,
+        kind,
+        param,
+        code,
+        message: format!("Error code: {status} - {body}"),
     }
 }
 
