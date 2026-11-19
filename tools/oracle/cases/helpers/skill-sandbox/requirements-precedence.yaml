@@ -1,0 +1,13 @@
+kind: helper
+name: requirements_precedence
+call:
+  skill_sandbox:
+    code: "import skill_pkg\nprint(skill_pkg.NAME)\n"
+    files:
+      requirements.txt: "skill-pkg==1.0\n"
+    requirements: "request-pkg==2.0\n"
+    image: "ghcr.io/example/sandbox:1"
+    install: {exit_code: 0, stdout: "installed\n", stderr: null}
+    execution: {exit_code: 0, stdout: "hello\n", stderr: null}
+env: {}
+compare: {ignore: []}

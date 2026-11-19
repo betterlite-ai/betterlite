@@ -398,7 +398,7 @@ fn split_items_yields_the_first_part_before_the_second_parts_bad_header_fails() 
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n");
     body.extend_from_slice(b"--B\r\nBad-Header-With-No-Colon-Space\r\n\r\nv\r\n");
     body.extend_from_slice(b"--B--\r\n");
-    let mut items = super::raw_split::split_items(&body, "B");
+    let mut items = super::raw_split::split_items(&body, "B").unwrap();
     assert!(matches!(items.next(), Some(Ok(_))));
     assert!(matches!(items.next(), Some(Err(_))));
 }

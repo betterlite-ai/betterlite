@@ -1,0 +1,60 @@
+kind: helper
+name: turn-cache-ttl-classifier-and-estimates
+call:
+  spend_entities:
+    steps:
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          model_group: fast
+          api_key: sk-1
+          user: user-1
+          session_id: session-1
+          startTime: "2024-01-02T03:04:05+02:00"
+          prompt_tokens: 10
+          completion_tokens: 5
+          spend: 0.5
+        metadata:
+          routing_decision:
+            router_model_name: smart
+            router_type: llm-classifier
+            classifier_cost: 0.25
+            savings_baseline_model: gpt-4o
+          autorouter_savings_estimate: {version: 2, status: estimated}
+          autorouter_savings: 1.5
+        saved_spend: 1.5
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          api_key: sk-1
+          session_id: session-2
+          startTime: "2024-01-02T03:04:05.500000Z"
+          prompt_tokens: 4
+          completion_tokens: 0
+          spend: 0.0
+        metadata:
+          routing_decision:
+            router_model_name: smart
+            router_type: heuristic
+          usage_object:
+            cache_read_input_tokens: 12
+            prompt_tokens_details:
+              cache_creation_token_details:
+                ephemeral_5m_input_tokens: 3
+        saved_spend: 0.0
+      - kind: turn
+        payload:
+          status: success
+          model: gpt-4o
+          api_key: sk-1
+          session_id: session-3
+          startTime: "2024-01-02T03:04:05Z"
+          spend: 0.25
+        metadata:
+          routing_decision:
+            router_model_name: smart
+        saved_spend: 0.25
+env: {}
+compare: {ignore: []}

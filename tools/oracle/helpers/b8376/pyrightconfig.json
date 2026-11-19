@@ -1,0 +1,6 @@
+{
+  "include": ["../b8376.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

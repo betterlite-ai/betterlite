@@ -1,0 +1,19 @@
+kind: probe
+name: usage-routing-v2-prefetch-not-reused
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: [0, 0, 0]
+    operation:
+      usage_routing_v2:
+        model_group: gpt-4o
+        deployments:
+          - {id: a, model: gpt-4o}
+          - {id: b, model: gpt-4o}
+        counters:
+          a: {tpm: 5, rpm: 1}
+          b: {tpm: 1, rpm: 3}
+        steps:
+          - {kind: arm, now_millis: 1795003200000}
+          - {kind: select_async, now_millis: 1795003210000}
+          - {kind: select_async, now_millis: 1795003820000}
+compare: {ignore: []}

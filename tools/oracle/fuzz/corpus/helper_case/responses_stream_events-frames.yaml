@@ -1,0 +1,14 @@
+kind: helper
+name: responses-stream-events-frames-seed
+call:
+  responses_stream_events:
+    payloads: ["", "data:{\"type\":\"response.output_text.delta\"}", "7", "[DONE]"]
+    model: gpt-4o
+    provider: openai
+    request_data: {"input": "hello"}
+    metadata: {}
+    transform: configured
+    estimate: fixed
+    cost: missing
+env: {}
+compare: {ignore: []}
