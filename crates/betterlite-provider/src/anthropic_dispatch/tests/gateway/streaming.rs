@@ -1,6 +1,6 @@
 use std::str::from_utf8;
 
-use betterlite_openai::stream::chunk::{Chunk, ThinkingKind};
+use betterlite_openai::stream::chunk::{Choice, Chunk, ThinkingBlock, ThinkingKind};
 use futures_util::StreamExt as _;
 use tokio::time::timeout;
 
@@ -21,6 +21,24 @@ const TOOL_END: &str =
     r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}"#;
 const TEXT_END: &str = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#;
 const MESSAGE_STOP: &str = r#"{"type":"message_stop"}"#;
+
+const TOOL_EVENTS: [&str; 6] = [
+    MESSAGE_START,
+    TOOL_START,
+    TOOL_DELTA,
+    BLOCK_STOP,
+    TOOL_END,
+    MESSAGE_STOP,
+];
+const THINKING_EVENTS: [&str; 7] = [
+    MESSAGE_START,
+    THINKING_START,
+    THINKING_DELTA,
+    SIGNATURE_DELTA,
+    BLOCK_STOP,
+    TEXT_END,
+    MESSAGE_STOP,
+];
 
 fn sse(events: &[&str]) -> wire::Answer {
     let body = events
@@ -68,66 +86,56 @@ async fn chunks(events: &[&str]) -> Vec<Chunk> {
     .expect("the frame stream ends")
 }
 
+fn choices(chunks: &[Chunk]) -> impl Iterator<Item = &Choice> + '_ {
+    chunks.iter().flat_map(|chunk| &chunk.choices)
+}
+
+fn tool_calls(chunks: &[Chunk]) -> Vec<(&str, &str)> {
+    choices(chunks)
+        .flat_map(|choice| choice.delta.tool_calls.iter().flatten())
+        .filter_map(|call| {
+            Some((
+                call.id.as_deref()?,
+                call.function.as_ref()?.name.as_deref()?,
+            ))
+        })
+        .collect()
+}
+
+fn thinking_deltas(chunks: &[Chunk]) -> (Vec<&str>, Vec<&ThinkingBlock>) {
+    let reasoning = choices(chunks)
+        .filter_map(|choice| choice.delta.reasoning_content.as_deref())
+        .collect();
+    let blocks = choices(chunks)
+        .flat_map(|choice| choice.delta.thinking_blocks.iter().flatten())
+        .collect();
+    (reasoning, blocks)
+}
+
 pub(super) async fn stream() {
-    let chunks = chunks(&[
-        MESSAGE_START,
-        TOOL_START,
-        TOOL_DELTA,
-        BLOCK_STOP,
-        TOOL_END,
-        MESSAGE_STOP,
-    ])
-    .await;
-    let mut named = false;
-    let mut finished = false;
-    for chunk in &chunks {
-        for choice in &chunk.choices {
-            named |= choice.delta.tool_calls.iter().flatten().any(|call| {
-                call.id.as_deref() == Some("tool_1")
-                    && call
-                        .function
-                        .as_ref()
-                        .is_some_and(|function| function.name.as_deref() == Some("get_weather"))
-            });
-            finished |= choice.finish_reason.as_deref() == Some("tool_calls");
-        }
-    }
-    assert!(named, "the tool_use block arrives as delta tool_calls");
-    assert!(finished, "the stream closes with a finish_reason chunk");
+    let parsed = chunks(&TOOL_EVENTS).await;
+    let calls = tool_calls(&parsed);
+    assert_eq!(calls, vec![("tool_1", "get_weather")]);
+    assert!(
+        choices(&parsed).any(|choice| choice.finish_reason.as_deref() == Some("tool_calls")),
+        "the stream closes with a finish_reason chunk"
+    );
 }
 
 pub(super) async fn thinking() {
-    let chunks = chunks(&[
-        MESSAGE_START,
-        THINKING_START,
-        THINKING_DELTA,
-        SIGNATURE_DELTA,
-        BLOCK_STOP,
-        TEXT_END,
-        MESSAGE_STOP,
-    ])
-    .await;
-    let thought = chunks
+    let parsed = chunks(&THINKING_EVENTS).await;
+    let (reasoning, blocks) = thinking_deltas(&parsed);
+    assert_eq!(
+        reasoning,
+        vec!["hmm"],
+        "the reasoning text reaches the delta"
+    );
+    let thought = blocks.iter().any(|block| {
+        block.kind == ThinkingKind::Thinking && block.thinking.as_deref() == Some("hmm")
+    });
+    assert!(thought, "the thinking block reaches the delta");
+    let signed = blocks
         .iter()
-        .flat_map(|chunk| &chunk.choices)
-        .find(|choice| {
-            choice.delta.reasoning_content.as_deref() == Some("hmm")
-                && choice.delta.thinking_blocks.as_ref().is_some_and(|blocks| {
-                    blocks.len() == 1
-                        && blocks[0].kind == ThinkingKind::Thinking
-                        && blocks[0].thinking.as_deref() == Some("hmm")
-                })
-        });
-    assert!(thought.is_some(), "the thinking block reaches the delta");
-    let signed = chunks
-        .iter()
-        .flat_map(|chunk| &chunk.choices)
-        .any(|choice| {
-            choice.delta.thinking_blocks.as_ref().is_some_and(|blocks| {
-                blocks
-                    .iter()
-                    .any(|block| block.signature.as_deref() == Some("sig-abc"))
-            })
-        });
+        .any(|block| block.signature.as_deref() == Some("sig-abc"));
     assert!(signed, "the signature reaches the same delta");
 }
