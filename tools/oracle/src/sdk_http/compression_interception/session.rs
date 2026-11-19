@@ -157,26 +157,27 @@ fn record_of(settings: &Settings) -> SettingsRecord {
 }
 
 fn scripted_output(scripted: &ScriptedResult) -> Result<CompressionOutput, SdkHttpError> {
-    let skipped_reason = match scripted.skipped_reason.as_deref() {
-        None => None,
-        Some("below_trigger") => Some(CompressionSkippedReason::BelowTrigger),
-        Some("invalid_anthropic_tool_sequence") => {
-            Some(CompressionSkippedReason::InvalidAnthropicToolSequence)
-        }
-        Some(other) => {
-            return Err(SdkHttpError::Invalid(format!(
-                "the case scripts an unknown skipped reason {other}"
-            )));
-        }
-    };
     Ok(CompressionOutput {
         messages: scripted.messages.clone(),
         tools: scripted.tools.clone(),
         original_tokens: scripted.original_tokens.clone(),
         compressed_tokens: scripted.compressed_tokens.clone(),
         cache: scripted.cache.clone(),
-        skipped_reason,
+        skipped_reason: skipped_reason(scripted.skipped_reason.as_deref())?,
     })
+}
+
+fn skipped_reason(name: Option<&str>) -> Result<Option<CompressionSkippedReason>, SdkHttpError> {
+    match name {
+        None => Ok(None),
+        Some("below_trigger") => Ok(Some(CompressionSkippedReason::BelowTrigger)),
+        Some("invalid_anthropic_tool_sequence") => {
+            Ok(Some(CompressionSkippedReason::InvalidAnthropicToolSequence))
+        }
+        Some(other) => Err(SdkHttpError::Invalid(format!(
+            "the case scripts an unknown skipped reason {other}"
+        ))),
+    }
 }
 
 fn normalize_generated_id(request: &mut IndexMap<String, Json>, previous: Option<&Json>) {
