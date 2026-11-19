@@ -66,7 +66,7 @@ impl Helper for Op {
             outcomes.push(outcome(answer(&config, call)));
         }
         serde_json::to_value(outcomes)
-            .map(|outcomes| json!({"calls": outcomes}))
+            .map(|calls| json!({"calls": calls}))
             .or_value_error()
     }
 }
