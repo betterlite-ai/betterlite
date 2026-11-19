@@ -17,6 +17,8 @@ use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::HeaderMap;
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 use url::Url;
 
 use super::custom::{self, CustomChatMethod, custom_chat_llm_router, decode_custom_output};
@@ -791,6 +793,52 @@ async fn a_legacy_call_that_cannot_connect_is_a_transport_error() {
             "{legacy:?} answered {refused}"
         );
     }
+}
+
+#[tokio::test]
+async fn a_proxy_call_keeps_a_buffered_answer_buffered_and_a_stream_streamed() {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
+    let chat = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
+    let streamed = chat_operation(
+        br#"{"messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+        true,
+    );
+    for (request, expected_stream) in [(&chat, false), (&streamed, true)] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base = format!("http://127.0.0.1:{port}");
+        let deployment = deployment("model-name", &base, Some("test-key"));
+        let prepared = Legacy::LitellmProxy
+            .prepare(request, &deployment, &catalog())
+            .unwrap();
+        let (served, answered) = tokio::join!(
+            serve_json(listener),
+            Legacy::LitellmProxy.execute(&client, &prepared, &deployment)
+        );
+        let answer = answered.unwrap();
+        assert_eq!(matches!(answer, Upstream::Streaming(_)), expected_stream);
+        assert!(served.starts_with("POST /chat/completions "), "{served}");
+    }
+}
+
+async fn serve_json(listener: TcpListener) -> String {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(socket.read_u8().await.unwrap());
+    }
+    let head = String::from_utf8(received).unwrap();
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .map_or(0, |value| value.parse().unwrap());
+    let mut sent = vec![0_u8; length];
+    socket.read_exact(&mut sent).await.unwrap();
+    let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+    socket.write_all(reply.as_bytes()).await.unwrap();
+    socket.shutdown().await.unwrap();
+    head
 }
 
 #[test]
