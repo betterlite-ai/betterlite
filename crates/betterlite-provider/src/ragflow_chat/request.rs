@@ -14,7 +14,7 @@ pub struct RequestInput<'request> {
 
 mod tests;
 
-// LiteLLM's RAGFlowConfig.transform_request calls OpenAIConfig.transform_request, which merges {model, messages, **optional_params} untouched.
+// LiteLLM's RAGFlowConfig.transform_request calls OpenAIConfig.transform_request, which sets model and messages and then spreads optional_params over them.
 pub fn transform_request(input: &RequestInput<'_>) -> Result<Object, RagflowError> {
     let actual_model = actual_model(input.model, input.litellm_params)?;
     let messages: Json = serde_json::from_value(
@@ -22,9 +22,10 @@ pub fn transform_request(input: &RequestInput<'_>) -> Result<Object, RagflowErro
             .map_err(|source| RagflowError::MessageShape { source })?,
     )
     .map_err(|source| RagflowError::MessageShape { source })?;
-    let mut body = input.optional_params.clone();
+    let mut body = Object::new();
     body.insert(String::from("model"), Json::Text(actual_model));
     body.insert(String::from("messages"), messages);
+    body.extend(input.optional_params.clone());
     Ok(body)
 }
 

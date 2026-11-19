@@ -107,6 +107,28 @@ fn the_body_is_the_optional_params_with_the_model_and_messages() {
 }
 
 #[test]
+fn an_option_named_model_replaces_the_computed_name() {
+    let messages = messages(r#"[{"role":"user","content":"hi"}]"#);
+    let options = object(r#"{"model": "other/model"}"#);
+    let body = body(
+        "ragflow/chat/abc/openai/gpt-4o",
+        &messages,
+        &options,
+        &object("{}"),
+    );
+    assert_eq!(body.get("model"), Some(&text("other/model")));
+}
+
+#[test]
+fn an_option_named_messages_replaces_the_sent_messages() {
+    let messages = messages(r#"[{"role":"user","content":"hi"}]"#);
+    let options = object(r#"{"messages": [{"role": "user", "content": "replaced"}]}"#);
+    let body = body("ragflow/chat/abc/m", &messages, &options, &object("{}"));
+    let message = only_message(&body);
+    assert_eq!(message.get("content"), Some(&text("replaced")));
+}
+
+#[test]
 fn the_messages_are_sent_unchanged() {
     let wire = r#"[
         {"role": "user", "content": [{"type": "text", "text": "a", "cache_control": {"type": "ephemeral"}}]},
