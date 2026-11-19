@@ -1,0 +1,20 @@
+kind: helper
+name: anonymized-action-does-not-raise
+call:
+  b3722:
+    bedrock_decisions:
+      should_raise:
+        response:
+          action: GUARDRAIL_INTERVENED
+          assessments:
+            - sensitiveInformationPolicy:
+                piiEntities:
+                  - type: EMAIL
+                    match: a@b.c
+                    action: ANONYMIZED
+            - wordPolicy:
+                customWords:
+                  - match: fine
+                    action: NONE
+env: {}
+compare: {ignore: []}

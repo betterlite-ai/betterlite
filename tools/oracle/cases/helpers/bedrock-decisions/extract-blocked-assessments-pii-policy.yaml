@@ -1,0 +1,23 @@
+kind: helper
+name: extract-blocked-assessments-pii-policy
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          assessments:
+            - sensitiveInformationPolicy:
+                piiEntities:
+                  - type: EMAIL
+                    match: a@b.c
+                    action: BLOCKED
+                  - type: PHONE
+                    match: "555"
+                    action: ANONYMIZED
+                regexes:
+                  - name: account
+                    regex: '\d{4}'
+                    match: "1234"
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}
