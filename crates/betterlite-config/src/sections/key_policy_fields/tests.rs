@@ -45,6 +45,22 @@ fn configured_pattern_overrides_toggle() {
     );
 }
 
+// the toggle without a pattern installs the built-in character rule
+#[test]
+fn toggle_alone_installs_builtin() {
+    let loaded = settings("litellm_settings:\n  enable_key_alias_format_validation: true\n");
+    let Some(rule) = loaded.alias_rule() else {
+        panic!("the toggle alone installs the built-in rule");
+    };
+    assert!(matches!(&rule, AliasRule::Builtin));
+    assert!(rule.accepts("a_b"));
+    assert!(!rule.accepts("a!b"));
+    assert!(!rule.accepts("-ab"));
+    assert!(!rule.accepts("ab-"));
+    assert!(rule.accepts(&"a".repeat(255)));
+    assert!(!rule.accepts(&"a".repeat(256)));
+}
+
 #[test]
 fn empty_pattern_is_configured() {
     let loaded = settings(
