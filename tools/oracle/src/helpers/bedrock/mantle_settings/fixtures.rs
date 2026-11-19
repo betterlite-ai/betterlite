@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use std::future::{Future, ready};
-use std::panic::panic_any;
+use std::panic::resume_unwind;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_bedrock::aws_settings::credential_cache::CredentialCache;
@@ -107,7 +107,7 @@ impl CapabilityPredicates for Policy {
             match answer {
                 Reasoning::Supported => is_reasoning,
                 Reasoning::Unsupported => false,
-                Reasoning::Panic => panic_any("fixture reasoning probe"),
+                Reasoning::Panic => resume_unwind(Box::new("fixture reasoning probe")),
             }
         }
     }

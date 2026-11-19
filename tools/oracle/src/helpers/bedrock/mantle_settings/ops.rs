@@ -41,8 +41,8 @@ pub(super) fn globals(environment: &BTreeMap<String, String>) -> MantleGlobals {
 
 pub(super) fn object_with_region(region: Option<&str>) -> Object {
     let mut params = Object::new();
-    if let Some(region) = region {
-        params.insert("aws_region_name".to_owned(), json!(region));
+    if let Some(text) = region {
+        params.insert("aws_region_name".to_owned(), json!(text));
     }
     params
 }
@@ -117,7 +117,7 @@ fn scope(value: &str) -> &str {
     value.split_once(',').map_or(value, |(head, _rest)| head)
 }
 
-fn signed_value(signed: AwsSignedRequest) -> Value {
+fn signed_value(signed: &AwsSignedRequest) -> Value {
     let mut headers = Object::new();
     let mut authorization = Value::Null;
     for (name, value) in &signed.headers {
@@ -164,7 +164,10 @@ fn auth_cases(cases: &[SignCase]) -> HelperResult {
         let signed = runtime.block_on(sign_request(request, move |_settings, _region| {
             async move { Ok::<Credentials, CredentialError>(credentials) }
         }));
-        results.push(signed.map_or_else(|_error| json!({"error": true}), signed_value));
+        results.push(signed.map_or_else(
+            |_error| json!({"error": true}),
+            |value| signed_value(&value),
+        ));
     }
     Ok(json!({"results": results}))
 }

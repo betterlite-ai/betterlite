@@ -35,7 +35,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Catalog {
+pub(crate) struct Catalog {
     #[serde(default)]
     pub(super) chat_models: Vec<String>,
     #[serde(default)]
@@ -44,7 +44,7 @@ pub(super) struct Catalog {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct BaseCase {
+pub(crate) struct BaseCase {
     #[serde(default)]
     pub(super) model: Option<String>,
     #[serde(default)]
@@ -70,7 +70,7 @@ pub(super) struct Keys {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SignCase {
+pub(crate) struct SignCase {
     pub(super) api_base: String,
     #[serde(default)]
     pub(super) headers: Vec<(String, Option<String>)>,
@@ -112,7 +112,7 @@ pub(super) struct ErrorProbe {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ChatCase {
+pub(crate) struct ChatCase {
     pub(super) model: String,
     #[serde(default)]
     pub(super) project_id: Option<String>,
@@ -127,13 +127,11 @@ pub(super) struct ChatCase {
     pub(super) json_mode: Option<bool>,
     #[serde(default)]
     pub(super) sync_stream: bool,
-    #[serde(default)]
-    pub(super) environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct MessageCase {
+pub(crate) struct MessageCase {
     #[serde(default)]
     pub(super) api_base: Option<String>,
     #[serde(default)]
@@ -144,7 +142,7 @@ pub(super) struct MessageCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct PassthroughCase {
+pub(crate) struct PassthroughCase {
     #[serde(default)]
     pub(super) api_base: Option<String>,
     #[serde(default)]
@@ -171,7 +169,7 @@ pub(super) enum FailureKind {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct FailureCase {
+pub(crate) struct FailureCase {
     pub(super) kind: FailureKind,
     #[serde(default)]
     pub(super) api_base: Option<String>,
@@ -183,7 +181,7 @@ pub(super) struct FailureCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ReplyCase {
+pub(crate) struct ReplyCase {
     pub(super) custom_llm_provider: String,
     pub(super) endpoint: String,
 }

@@ -41,19 +41,22 @@ fn failed_credentials(kind: FailureKind) -> Result<Credentials, CredentialError>
     }
 }
 
-fn messages_cases(cases: &[MessageCase]) -> HelperResult {
+fn messages_cases(cases: &[MessageCase]) -> Value {
     let mut urls = Vec::with_capacity(cases.len());
     for case in cases {
         let globals = globals(&case.environment);
         let params = object_with_region(case.aws_region_name.as_deref());
         let url = build_native_messages_url(case.api_base.as_deref(), &params, &globals);
-        urls.push(url.map_or_else(|_error| json!({"error": true}), |url| json!({"url": url})));
+        urls.push(url.map_or_else(
+            |_error| json!({"error": true}),
+            |signed| json!({"url": signed}),
+        ));
     }
-    Ok(json!({
+    json!({
         "provider": <&'static str>::from(CUSTOM_LLM_PROVIDER),
         "uses_get_llm_provider_api_base": USES_GET_LLM_PROVIDER_API_BASE,
         "urls": urls,
-    }))
+    })
 }
 
 fn passthrough_case(case: &PassthroughCase) -> Value {
@@ -88,12 +91,12 @@ fn passthrough_case(case: &PassthroughCase) -> Value {
     })
 }
 
-fn passthrough_cases(cases: &[PassthroughCase]) -> HelperResult {
+fn passthrough_cases(cases: &[PassthroughCase]) -> Value {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         results.push(passthrough_case(case));
     }
-    Ok(json!({"results": results}))
+    json!({"results": results})
 }
 
 fn failure_outcome(outcome: Result<AwsSignedRequest, MantleSettingsError>) -> Value {
@@ -178,8 +181,8 @@ fn reply_shape_cases(cases: &[ReplyCase]) -> HelperResult {
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::Messages { cases } => messages_cases(cases),
-        Input::Passthrough { cases } => passthrough_cases(cases),
+        Input::Messages { cases } => Ok(messages_cases(cases)),
+        Input::Passthrough { cases } => Ok(passthrough_cases(cases)),
         Input::Failure { cases } => failure_cases(cases),
         Input::ReplyShape { cases } => reply_shape_cases(cases),
         Input::Base { .. } | Input::Auth { .. } | Input::Chat { .. } => Err(fixtures::failure(
