@@ -1,0 +1,19 @@
+kind: helper
+name: gigachat-embedding-reply-usage
+call:
+  b8178:
+    steps:
+      - kind: embedding_reply
+        body: '{"object": "list", "model": "Embeddings", "data": [{"object": "embedding", "embedding": [0.5, -1.25], "index": 0, "usage": {"prompt_tokens": 4}}, {"object": "embedding", "embedding": [0.25], "index": 1, "usage": {"prompt_tokens": 6}}], "usage": {"prompt_tokens": 99, "total_tokens": 99}}'
+      - kind: embedding_reply
+        body: '{"model": "Embeddings", "data": []}'
+      - kind: embedding_reply
+        body: '{"object": "weird", "model": "M", "data": [{"object": "embedding", "embedding": [1.5], "index": 0, "usage": {"prompt_tokens": 7}}]}'
+      - kind: embedding_reply
+        body: '{"model": "Embeddings"}'
+      - kind: embedding_reply
+        body: '{"object": "list", "model": "Embeddings", "data": [{"object": "embedding", "embedding": [1], "index": 0}, {"object": "embedding", "embedding": [2], "index": 1, "usage": {"prompt_tokens": 5}}], "usage": {"prompt_tokens": 1, "total_tokens": 1}}'
+      - kind: embedding_reply
+        body: '{"object": "list", "model": "E", "data": [{"object": "embedding", "embedding": [3], "index": 0, "usage": {"prompt_tokens": 0}}]}'
+env: {}
+compare: {ignore: []}

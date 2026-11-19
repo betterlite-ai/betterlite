@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-search-seed
+call:
+  bedrock_services_search:
+    scenario: configured_gateway_required
+    runs:
+      - api_base: null
+        gateway_url: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+      - api_base: 'https://explicit.example.com/mcp'
+        gateway_url: null
+env: {}
+compare: {ignore: []}

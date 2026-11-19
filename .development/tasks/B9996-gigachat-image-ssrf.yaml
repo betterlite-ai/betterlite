@@ -1,0 +1,246 @@
+id: B9996
+title: GigaChat image upload fetches internal addresses for a client
+description: >-
+  Fix the SSRF bug B8178 copied from LiteLLM in crates/betterlite-openai/src/gigachat_files.rs. When a chat message
+  carries an image_url that isn't a base64 data URL, GigachatFileUploader::download_image parses it, builds a bare GET
+  with a 600 second deadline and hands it to GigachatFileTransport::download. The trait comment says that download
+  skips certificate checks and follows redirects like LiteLLM's client. Nothing checks the host first. A client that
+  can send a GigaChat chat request can point image_url at 127.0.0.1, 169.254.169.254 or a host inside the network, and
+  the gateway fetches it and uploads the body to GigaChat as the message's attachment. LiteLLM's _download_image_sync
+  does the same with client.get(url) on a client built with ssl_verify False and follow_redirects True.
+  owned-behavior-is-built lists SSRF as a bug to fix without asking, no working setup relies on the gateway fetching
+  internal hosts for a client, and the architect confirmed the fix on 2026-11-19. So this task routes the download
+  through the shared guard in crates/betterlite-http/src/user_url and logs a deviation.
+
+
+  Two wirings were compared. The first keeps GigachatFileTransport::download and puts a UrlValidator in front of it.
+  validate_url checks the address, and the uploader sends the pinned URL with its Host header to the transport. That
+  checks the first hop only. The transport follows redirects, and ProxiedClient::send_following re-checks only the
+  proxy route on each hop (proxy/redirect.rs), so a public host that answers 302 with Location
+  http://169.254.169.254/ still gets through. Closing that gap means refusing every 3xx, and then images behind a CDN
+  redirect stop working although LiteLLM fetches them today. The other way is to re-validate each hop in the uploader,
+  and that copies the loop in UserUrlFetcher::fetch. The guard can't sit on the transport either. The uploader gets a
+  generic T: GigachatFileTransport, the only implementation is the test Fake, B8312 writes the real one later, and
+  UserUrlFetcher::fetch takes a concrete &ProxiedClient, not a trait.
+
+
+  The second wiring is the one to build. It takes the download out of the trait and gives the uploader the pair the
+  guard needs: a UserUrlFetcher<R> and the ProxiedClient the download goes out on. vertex's SafeGet and the prompts
+  media Fetcher hold the same pair. fetch validates the start URL and every redirect hop, sends plain http to the
+  checked address with the original Host header and honors user_url_allowed_hosts. With its validation flag false it
+  follows redirects the httpx way with no check. So the download keeps following redirects and nothing is copied. The
+  cost is in the tests, where the downloads move from the Fake to a local listener. The upload stays on
+  GigachatFileTransport::upload, since it goes to the operator's GigaChat base with certificate checks on, never to a
+  client URL.
+
+
+  The change. Add crates/betterlite-openai/src/gigachat_files/download.rs and declare it with pub mod download; in
+  gigachat_files.rs. It holds pub struct ImageDownloader<R> with pub fields urls: UserUrlFetcher<R> and client:
+  ProxiedClient, and an impl<R: Resolve> with pub(super) async fn download(&self, image_url: &str) -> Result<Image,
+  UploadError>. download runs self.urls.fetch(&self.client, image_url, &HeaderMap::new()) and then
+  fetched.buffered(self.client.limits.body_bytes), both inside one tokio::time::timeout(DOWNLOAD_TIMEOUT, ...) the way
+  SafeGet does it. After that it keeps today's steps: a status of 400 or more is UploadError::DownloadStatus, a
+  missing content-type is image/jpeg and the extension comes from extension_of. DEFAULT_CONTENT_TYPE moves with it;
+  DOWNLOAD_TIMEOUT and Image stay in gigachat_files.rs. GigachatFileTransport loses download and keeps upload, and its
+  comment keeps only the upload's certificate rule. GigachatFilesConfig becomes GigachatFilesConfig<R> with pub
+  downloader: ImageDownloader<R>, GigachatFileUploader<T> becomes GigachatFileUploader<T, R> and holds it, and image
+  calls self.downloader.download(image_url) where it called download_image. UploadError gains Download(#[source]
+  UserUrlError), shown as "the image download failed: {0}", and DownloadTimeout. A failed body read stays Transport
+  with step "download". The Url error with what "image" goes away, since the guard parses the URL now.
+
+
+  What a caller sees. An image_url whose host resolves to a blocked address, that redirects to one, or whose scheme
+  isn't http or https sends no request. The existing "Error uploading file to GigaChat" line logs the guard's message,
+  upload returns None, and the chat message goes to GigaChat without that image, as after any failed upload. A public
+  URL downloads as before, redirects included, up to the client body limit (16 MiB by default); a larger body
+  returns None like any failed download. B8312's wiring builds the ImageDownloader from
+  config.sections.user_url_policy, so user_url_allowed_hosts and user_url_validation apply here as on every other user
+  URL. This task changes no wiring.
+
+
+  Tests in gigachat_files/tests.rs. Replace the Fake's download half (SeenDownload, download_replies, seen_download and
+  the download method) with a local HTTP/1.1 listener on 127.0.0.1. It records each request line and Host header and
+  answers with the next scripted download reply (status, headers, body, content-length, connection close), or closes
+  the connection without an answer for Scripted::Fail. Keep script_download and downloads, so the existing tests read
+  the same. The fixture builds the ProxiedClient from ProxyPolicy::resolve(&ProxyTrust::default(), &env), where env
+  holds only HTTP_PROXY=http://127.0.0.1:<listener port>, as the otlp_client tests do. Every request that leaves the
+  client then lands on the listener, whatever address it names. The UserUrlFetcher gets UrlValidator::new(FakeResolver,
+  &[], &Verification::Enabled) and validation true. FakeResolver passes IP literals through, maps img.test and cdn.test
+  to 93.184.216.34 and intranet.test to 10.0.0.5, and fails any other name. IMAGE_URL and every https://img.test URL in
+  the file become http.
+
+
+  New and renamed tests. an_internal_image_url_is_refused_before_any_request is an #[rstest] #[tokio::test] with the
+  cases loopback ("http://127.0.0.1/a.png", 127.0.0.1), link_local ("http://169.254.169.254/latest/meta-data/",
+  169.254.169.254) and private_range ("http://intranet.test/a.png", 10.0.0.5). Each case calls try_upload, asserts
+  UploadError::Download(UserUrlError::Ssrf(SsrfError::BlockedAddress { address })) with the case's address, and asserts
+  that the listener saw no request and the Fake saw no upload. a_remote_image_is_downloaded_and_uploaded becomes
+  a_public_image_url_still_downloads: http://img.test/a.png returns the file id, the listener saw one request with the
+  line "GET http://93.184.216.34/a.png HTTP/1.1" and Host img.test, and the upload part carries the body and content
+  type as before. Drop its deadline assertion. a_redirected_download_checks_the_next_hop is an rstest whose first
+  scripted download reply is a 302 with a Location. In to_link_local the Location is
+  http://169.254.169.254/latest/meta-data/, and upload returns None after one request and no upload. In to_public_host
+  it is http://cdn.test/b.png, and the second scripted reply is uploaded after two requests, the second one to
+  http://93.184.216.34/b.png with Host cdn.test. a_stalled_download_gives_up_at_the_download_timeout runs under
+  #[tokio::test(start_paused = true)] against a listener that accepts and never answers, and asserts that try_upload
+  returns UploadError::DownloadTimeout.
+
+
+  The three data URL tests that expect a download (a_data_url_without_the_base64_marker_is_downloaded,
+  a_data_url_parameter_before_the_marker_is_downloaded and a_data_url_with_an_empty_mime_is_downloaded) become one
+  rstest, a_data_url_the_decoder_skips_is_refused, with the cases no_base64_marker ("data:image/png,xyz"),
+  parameter_before_marker ("data:image/png;charset=x;base64,QUJD") and empty_mime ("data:;base64,QUJD"). Each asserts
+  that upload returns None, the listener saw no request and the Fake saw no upload. LiteLLM's httpx fails these with
+  UnsupportedProtocol, so the caller sees the same None and no deviation is needed. The other download tests keep their
+  assertions.
+
+
+  Deviations. Write docs/deviations/B9996.yaml (task: B9996, then deviations, then kept_bugs: []) with the row under
+  deviations below.
+scope:
+  paths:
+    - crates/betterlite-openai/src/gigachat_files.rs
+    - crates/betterlite-openai/src/gigachat_files/download.rs
+    - crates/betterlite-openai/src/gigachat_files/tests.rs
+    - docs/deviations/B9996.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files.rs#L37-L48
+    why: GigachatFileTransport, whose download skips certificate checks and follows redirects; download leaves the trait.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files.rs#L50-L82
+    why: GigachatFilesConfig, GigachatFileUploader and new gain the ImageDownloader here.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files.rs#L136-L182
+    why: image and download_image, the bare GET with no host check that moves to download.rs behind the guard.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files.rs#L252-L286
+    why: UploadError gains Download and DownloadTimeout and loses the image Url case.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files/tests.rs#L98-L220
+    why: Scripted and the Fake; the local listener replaces the Fake download half.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files/tests.rs#L241-L292
+    why: The fixture keeps its script_download and downloads methods, now backed by the listener.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files/tests.rs#L357-L378
+    why: a_remote_image_is_downloaded_and_uploaded, renamed a_public_image_url_still_downloads.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-openai/src/gigachat_files/tests.rs#L735-L765
+    why: The three data URL tests that expect a download and now stop at the guard.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-http/src/user_url/fetch.rs#L88-L112
+    why: UserUrlFetcher::fetch, LiteLLM's safe_get, validates every hop and pins plain http to the checked address.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-http/src/user_url/validate.rs#L93-L104
+    why: UrlValidator::new keeps an https hostname only while TLS verification is on.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-http/src/proxy/redirect.rs#L126-L140
+    why: send_following re-checks only the proxy route on each hop, so a first-hop check before it leaves the redirect bypass.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-vertex/src/vertex_batch_create/fetch.rs#L22-L55
+    why: SafeGet holds the same UserUrlFetcher and ProxiedClient pair and puts one deadline over fetch and the body read.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-prompts/src/media_fetch/fetcher.rs#L117-L130
+    why: The media Fetcher calls fetch on its client and logs an Ssrf refusal before any request goes out.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-http/src/user_url/tests.rs#L32-L56
+    why: The FakeResolver shape, with IP literals passed through and test names mapped to fixed addresses.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8741448821/crates/betterlite-http/src/otlp_client/tests.rs#L19-L31
+    why: A ProxyPolicy built from an env map whose HTTP_PROXY points at a local listener.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L61-L70
+    why: _download_image_sync sends client.get(url) with no host check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1393-L1415
+    why: HTTPHandler.create_client builds the download client with follow_redirects True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L421-L461
+    why: safe_get is LiteLLM's guard for other user URLs, and UserUrlFetcher::fetch ports it.
+dod:
+  - text: >-
+      An image_url on a loopback, link-local or private address sends no request. try_upload fails with the guard's
+      BlockedAddress and the Fake sees no upload.
+    proof: [blocked-hosts]
+  - text: >-
+      A redirect to a blocked address is refused at the next hop, and a redirect to a public host is still followed and
+      uploaded.
+    proof: [blocked-hosts]
+  - text: >-
+      A public image URL still downloads, from the checked address with its original Host header, and is uploaded as
+      before.
+    proof: [public-download]
+  - text: The response and the body read together still end at DOWNLOAD_TIMEOUT.
+    proof: [download-timeout]
+  - text: >-
+      A data URL the decoder doesn't match stops at the guard without a request, and no test still expects it
+      downloaded.
+    proof: [data-urls]
+  - text: >-
+      GigachatFileTransport has no download method, ImageDownloader in download.rs calls UserUrlFetcher, and the other
+      gigachat_files tests pass over the listener.
+    proof: [module-tests]
+  - text: docs/deviations/B9996.yaml lists the fix with the pinned LiteLLM link.
+    proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+    - id: blocked-hosts
+      why: An image_url on a blocked address, or a redirect to one, still sends a request, or a redirect to a public host is no longer followed.
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^gigachat_files::tests::(an_internal_image_url_is_refused_before_any_request|a_redirected_download_checks_the_next_hop)::case_/)'
+    - id: public-download
+      why: A public image URL no longer downloads, or goes out to the hostname instead of the checked address.
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^gigachat_files::tests::a_public_image_url_still_downloads$/)'
+    - id: download-timeout
+      why: The download lost its 600 second deadline over the response and the body.
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^gigachat_files::tests::a_stalled_download_gives_up_at_the_download_timeout$/)'
+    - id: data-urls
+      why: A data URL the decoder skips still reaches a request, or a test still expects it or a remote image to go out unchecked.
+      run: >-
+        ! git grep -n -E 'fn (a_data_url_without_the_base64_marker_is_downloaded|a_data_url_parameter_before_the_marker_is_downloaded|a_data_url_with_an_empty_mime_is_downloaded|a_remote_image_is_downloaded_and_uploaded)[(]'
+        -- crates/betterlite-openai/src/gigachat_files
+        && cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^gigachat_files::tests::a_data_url_the_decoder_skips_is_refused::case_/)'
+    - id: module-tests
+      why: The download still goes through the transport trait, or the move broke another gigachat_files test.
+      run: >-
+        grep -q -F 'UserUrlFetcher' crates/betterlite-openai/src/gigachat_files/download.rs
+        && ! git grep -n -F 'fn download(' -- crates/betterlite-openai/src/gigachat_files.rs
+        && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^gigachat_files::/)'
+    - id: deviation-row
+      why: The fix has no deviations row, or the row lacks the pinned LiteLLM link or the allowlist a blocked host needs.
+      run: >-
+        grep -q -F 'file_handler.py#L61-L70' docs/deviations/B9996.yaml
+        && grep -q -F 'user_url_allowed_hosts' docs/deviations/B9996.yaml
+oracle_cases: []
+deviations:
+  - what: >-
+      The GigaChat image uploader fetches a chat message's image_url through betterlite's user URL guard. A URL whose
+      host resolves to a loopback, link-local, private or other non-global address, a redirect to one, or a scheme
+      other than http and https sends no request. The uploader logs "Error uploading file to GigaChat" with the guard's
+      message and returns None, so the message goes to GigaChat without that image, as after any failed upload. Hosts
+      listed in user_url_allowed_hosts still download, user_url_validation false turns the check off, and a plain http
+      URL is fetched from the checked address with its original Host header. A body over the download client body
+      limit (16 MiB by default) returns None, where LiteLLM reads any size.
+    why: >-
+      LiteLLM's _download_image_sync sends client.get(url) with certificate checks off and redirects on, and never
+      checks the host. Any client that can send a GigaChat chat request can make the gateway fetch an internal address,
+      and the body is uploaded to GigaChat and attached to that client's message. No working setup relies on the gateway
+      fetching internal hosts for a client, and an internal image host can be added to user_url_allowed_hosts. The
+      body limit keeps one image URL from filling the gateway's memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L61-L70
+out_of_scope:
+  - >-
+    B8312 builds the ImageDownloader, with a UserUrlFetcher from config.sections.user_url_policy and a download
+    ProxiedClient that skips certificate checks, and picks the Verification its UrlValidator gets. This task changes no
+    wiring.
+  - The upload to the GigaChat base stays on GigachatFileTransport::upload with certificate checks on, since its URL comes from the operator's config.
+  - The guard's rules (blocked ranges, allowlist matching, redirect limits, the validation switch) belong to crates/betterlite-http/src/user_url and its tests.
+  - upload_file_async and _download_image_async have no caller at the pin, as B8178 found.
+  - The data URL decoder in data_url.rs, the id cache and the multipart upload don't change.
+pitfalls:
+  - Call UserUrlFetcher::fetch for the download. validate_url followed by send_following checks the first hop only, since send_following re-checks just the proxy route.
+  - Put fetch and buffered inside one timeout(DOWNLOAD_TIMEOUT, ...). fetch returns at the response head, and its own request deadline is client.limits.read_timeout, 100 minutes by default.
+  - Read the body with buffered(self.client.limits.body_bytes), as SafeGet does, so one image URL can't fill memory.
+  - SsrfError holds an io::Error and has no PartialEq, so the tests match UploadError::Download by pattern and compare only the address.
+  - Every test URL is http. Through the HTTP_PROXY route the listener gets each request in absolute form, and an https URL would need a CONNECT tunnel and TLS on the listener.
+  - The FakeResolver's public address must be global, like 93.184.216.34. 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24 are documentation ranges that is_blocked_ip refuses.
+  - Keep fixture() synchronous so its 37 call sites stay as they are. Bind a std TcpListener on 127.0.0.1:0, call set_nonblocking(true), wrap it with tokio::net::TcpListener::from_std and tokio::spawn the accept loop, since every test already runs inside a tokio runtime.
+  - In the paused-clock test, give that test's client a connect_timeout and read_timeout above DOWNLOAD_TIMEOUT. The paused clock jumps to the next timer whenever the runtime idles, and reqwest's 10 second connect timeout would fire first.
+  - gigachat_files.rs counts 296 of its 300 lines (mod lines are free), so the download code moves to download.rs instead of growing the parent.
+  - tests.rs has 801 of its 1000 lines, so the listener replaces the Fake's download half instead of sitting next to it.
+  - Look for the host header case-insensitively in the listener; hyper writes header names in lowercase.
+review_level: security
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0

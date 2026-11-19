@@ -1,7 +1,7 @@
 id: B166
 milestone: M12 python
 title: Python helpers for token counting, cost, model info, provider lookup, caching and budgets
-status: todo
+status: blocked
 depends_on: [B158, B8060, B8061, B8062, B8063, B8065, B8066]
 file: tasks/B166-python-budget-core-helpers.yaml
 covers:
@@ -12,5 +12,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

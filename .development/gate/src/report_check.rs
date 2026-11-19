@@ -2,8 +2,13 @@ pub(crate) mod mutants;
 mod tests;
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::mem;
+use std::path::Path;
 
-use crate::spec::report::{OptionVerdict, PriorArt, Report, ReportStatus};
+use crate::answer::parse_answer;
+use crate::error::GateError;
+use crate::spec::report::{KeptPart, OptionVerdict, PriorArt, Report, ReportStatus};
 use crate::spec::task::Task;
 
 fn prior_art_problems(entry: &PriorArt) -> Vec<String> {
@@ -83,6 +88,12 @@ fn shape_problems(report: &Report, task_id: &str) -> Vec<String> {
     if report.notes.iter().any(|note| note.trim().is_empty()) {
         problems.push("notes hold no empty strings".to_owned());
     }
+    if !report.kept.is_empty() {
+        problems.push(
+            "kept names parts to copy, but this branch has no earlier done answer to copy them from; give those lists in full"
+                .to_owned(),
+        );
+    }
     problems
 }
 
@@ -110,4 +121,38 @@ pub(crate) fn report_problems(
         )
     }));
     problems
+}
+
+pub(crate) fn with_kept(
+    mut report: Report,
+    journal: &Path,
+    number: u32,
+) -> Result<Report, GateError> {
+    let earlier = (1..number)
+        .rev()
+        .map(|previous| journal.join(format!("attempt-{previous}-worker.report.json")))
+        .find(|path| path.exists());
+    if let Some(path) = earlier.filter(|_| !report.kept.is_empty()) {
+        let text = fs::read_to_string(&path).map_err(|source| GateError::Read {
+            path: path.clone(),
+            source,
+        })?;
+        let mut last: Report = parse_answer(&text, "the saved report")?;
+        for part in mem::take(&mut report.kept) {
+            match part {
+                KeptPart::Owned => report.owned = mem::take(&mut last.owned),
+                KeptPart::PriorArt => report.prior_art = mem::take(&mut last.prior_art),
+                KeptPart::Mutants => report.mutants = mem::take(&mut last.mutants),
+            }
+        }
+    }
+    if report.kept.is_empty() {
+        let path = journal.join(format!("attempt-{number}-worker.report.json"));
+        let text = serde_json::to_string(&report).map_err(|source| GateError::Json {
+            what: "the report".to_owned(),
+            source,
+        })?;
+        fs::write(&path, text).map_err(|source| GateError::Write { path, source })?;
+    }
+    Ok(report)
 }
