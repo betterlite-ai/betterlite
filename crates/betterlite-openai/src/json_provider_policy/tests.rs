@@ -670,7 +670,7 @@ fn openai_like_responses_requires_a_base(
 ) {
     let settings = OpenAiLikeSettings {
         api_base: environment_base.map(str::to_owned),
-        ..OpenAiLikeSettings::default()
+        api_key: None,
     };
     let policy = OpenAiLikeResponsesPolicy { settings };
     match expected {
@@ -688,8 +688,8 @@ fn openai_like_responses_requires_a_base(
 #[test]
 fn openai_like_responses_preserves_headers_for_a_truthy_key() {
     let settings = OpenAiLikeSettings {
+        api_base: None,
         api_key: Some(SecretString::from("sk-env")),
-        ..OpenAiLikeSettings::default()
     };
     let policy = OpenAiLikeResponsesPolicy { settings };
     assert!(policy.settings.api_key.is_some());

@@ -25,11 +25,10 @@ use crate::api::messages_native_transform::capabilities::{
 const KEY_ENV: &str = "PROBE_API_KEY";
 const BASE_ENV: &str = "PROBE_API_BASE";
 
-// the cases carry no thinking fields, so the fake never answers a capability question with data
+// the seam answers by provider, so a request with adaptive thinking shows which provider the transform asked with
 #[derive(Default)]
 struct NoCapabilities {
-    // the provider each transform asks its capability questions with
-    observed_provider: Option<String>,
+    expected_provider: Option<&'static str>,
 }
 
 impl ThinkingCapabilities for NoCapabilities {
@@ -37,9 +36,9 @@ impl ThinkingCapabilities for NoCapabilities {
         &mut self,
         _model: &str,
         _key: &str,
-        _provider: &str,
+        provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(false)
+        ready(self.expected_provider == Some(provider))
     }
 
     fn map_effort<'seam>(
@@ -63,18 +62,17 @@ impl ThinkingCapabilities for NoCapabilities {
     fn supports_effort_param(
         &mut self,
         _model: &str,
-        _provider: &str,
+        provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(false)
+        ready(self.expected_provider == Some(provider))
     }
 
     fn drop_disabled_thinking(
         &mut self,
         _model: &str,
         _params: &mut OptionalParams,
-        provider: &str,
+        _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        self.observed_provider = Some(provider.to_owned());
         ready(false)
     }
 
@@ -495,31 +493,36 @@ async fn transform_without_max_tokens_is_an_error() {
 // the JSON subclass asks capability questions with its provider slug; the generic class stays on anthropic
 #[tokio::test]
 async fn the_json_subclass_reports_its_slug_and_the_generic_class_anthropic() {
-    let mut json_capabilities = NoCapabilities::default();
-    policy(ProviderId::Cortecs, "https://descriptor.invalid/v1")
+    let adaptive = r#"{"max_tokens":32,"thinking":{"type":"adaptive"}}"#;
+    let mut json_capabilities = NoCapabilities {
+        expected_provider: Some("cortecs"),
+    };
+    let json_body = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1")
         .transform_request(
             &mut json_capabilities,
             "example-model",
             messages("[]"),
-            object(r#"{"max_tokens":32}"#),
+            object(adaptive),
         )
         .await
         .expect("the request builds");
-    assert_eq!(
-        json_capabilities.observed_provider.as_deref(),
-        Some("cortecs")
+    assert!(
+        json_body.contains_key("thinking"),
+        "the capability question carried the cortecs slug, so adaptive thinking stays"
     );
-    let mut generic_capabilities = NoCapabilities::default();
-    generic_transform_request(
+    let mut generic_capabilities = NoCapabilities {
+        expected_provider: Some("cortecs"),
+    };
+    let generic_body = generic_transform_request(
         &mut generic_capabilities,
         "example-model",
         messages("[]"),
-        object(r#"{"max_tokens":32}"#),
+        object(adaptive),
     )
     .await
     .expect("the request builds");
-    assert_eq!(
-        generic_capabilities.observed_provider.as_deref(),
-        Some("anthropic")
+    assert!(
+        !generic_body.contains_key("thinking"),
+        "the generic class asked with anthropic, so adaptive thinking is dropped"
     );
 }
