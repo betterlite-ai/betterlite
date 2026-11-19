@@ -20,6 +20,7 @@ use betterlite_ocr::ocr_error::OcrError;
 use betterlite_ocr::response::OCRResponse;
 use betterlite_openai::chat_choices::reply::ResponseReply;
 use betterlite_openai::compatible_wire::LogInput;
+use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughLogging, PassthroughTarget, RelayCallType,
@@ -428,9 +429,26 @@ fn secret_plan() -> Plan {
 
 fn assert_plan_debug_redacts(plan: &Plan) {
     let debug = format!("{plan:?}");
+    assert!(debug.contains("FoundryPassthroughPlan"), "{debug}");
+    assert!(debug.contains("<redacted>"), "{debug}");
     for secret in ["fixture-global-secret", "fixture-env-secret"] {
         assert!(!debug.contains(secret), "{debug}");
     }
+}
+
+#[test]
+fn provider_errors_keep_their_message() {
+    let parts = ProviderErrorParts {
+        status_code: 400_u16,
+        message: String::from("fixture provider failure"),
+        headers: None,
+        request: None,
+        response: None,
+        body: None,
+        status_code_is_synthesized: false,
+    };
+    let error = FoundryPassthroughError::from(ProviderError::from(parts));
+    assert_eq!(error.to_string(), "fixture provider failure");
 }
 
 fn offline_entra_error() -> CredentialsError {
