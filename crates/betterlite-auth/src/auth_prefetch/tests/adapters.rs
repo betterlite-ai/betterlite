@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
@@ -23,11 +23,14 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 
 use super::fixtures;
+use super::support::{auth, json};
 use crate::auth_cache::{AuthCache, gateway_cache};
 use crate::auth_prefetch::fill::{PrefetchClock, SystemPrefetchClock};
 use crate::auth_prefetch::memory::{PrefetchCache, PrefetchMemory};
+use crate::auth_prefetch::orchestrator::AdmissionCounterBinding;
 use crate::auth_prefetch::permission::lookup::ObjectPermissionCache;
 use crate::auth_prefetch::redis_rows::{PrefetchRedis, RedisRows, RedisRowsError};
+use crate::spend_counter_batch::scope::SpendCounterScope;
 
 const CLOCK_SECONDS: f64 = 1000.0;
 const MANAGEMENT_TTL: f64 = 600.0;
@@ -56,6 +59,36 @@ impl BreakerGate for OpenGate {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
+#[derive(Default)]
+struct RecordingGate {
+    calls: Mutex<Vec<&'static str>>,
+}
+
+impl RecordingGate {
+    fn calls(&self) -> Vec<&'static str> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl BreakerGate for RecordingGate {
+    fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(name);
+        Ok(BreakerAdmission::from(0))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
+}
+
 fn memory() -> Arc<LocalMemoryOps> {
     let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| CLOCK_SECONDS);
     Arc::new(LocalMemoryOps::new(1024, clock).expect("the local memory tier builds"))
@@ -72,7 +105,7 @@ fn real_cache(default_in_memory_ttl: Option<f64>) -> AuthCache<DualCache<LocalMe
     gateway_cache(memory(), memory(), None, settings, FALLBACK_TTL)
 }
 
-async fn dead_redis() -> RedisCache {
+async fn dead_redis(gate: Arc<dyn BreakerGate>) -> RedisCache {
     let overrides: RedisOverrides =
         serde_json::from_str(DEAD_REDIS).expect("the override fixture builds");
     let options = RedisCacheOptions {
@@ -85,7 +118,7 @@ async fn dead_redis() -> RedisCache {
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(NoHooks),
-        gate: Arc::new(OpenGate),
+        gate,
     };
     connect(options, &BTreeMap::<String, String>::new())
         .await
@@ -153,7 +186,7 @@ async fn real_cache_partitions_and_redis() {
     let attached = gateway_cache(
         memory(),
         memory(),
-        Some(Arc::new(dead_redis().await)),
+        Some(Arc::new(dead_redis(Arc::new(OpenGate)).await)),
         settings,
         FALLBACK_TTL,
     );
@@ -179,7 +212,7 @@ async fn real_cache_permission_roundtrip() {
 
 #[tokio::test]
 async fn redis_rows_direct_read_and_guards() {
-    let client = Arc::new(dead_redis().await);
+    let client = Arc::new(dead_redis(Arc::new(OpenGate)).await);
     let rows = RedisRows { client };
     assert!(!rows.has_batch());
     let read = rows
@@ -202,7 +235,7 @@ async fn redis_rows_direct_read_and_guards() {
 
 #[tokio::test]
 async fn redis_rows_batch_scope_detection() {
-    let client = Arc::new(dead_redis().await);
+    let client = Arc::new(dead_redis(Arc::new(OpenGate)).await);
     let rows = RedisRows { client };
     let (_batches, ()) = request_redis_batch_scope(Duration::from_millis(5), async {
         assert!(rows.has_batch());
@@ -214,4 +247,23 @@ async fn redis_rows_batch_scope_detection() {
 fn system_clock_reads_unix_seconds() {
     let now = SystemPrefetchClock.now();
     assert!(now > 1_700_000_000.0, "the clock reads unix seconds: {now}");
+}
+
+#[tokio::test]
+async fn spend_scope_trait_binds_admission_counters() {
+    let gate = Arc::new(RecordingGate::default());
+    let recording: Arc<dyn BreakerGate> = gate.clone();
+    let cache = Arc::new(dead_redis(recording).await);
+    let scope = SpendCounterScope::default();
+    let _guard = scope.enter(Some(&cache), &BTreeSet::new());
+    let api_key = auth(&[("user_id", json(r#""user-1""#))]);
+    <SpendCounterScope as AdmissionCounterBinding>::bind_admission_counter_keys(
+        &scope, &api_key, None,
+    );
+    let value = scope
+        .read_spend_counter("spend:user:user-1")
+        .await
+        .expect("the batched read");
+    assert!(value.is_none());
+    assert_eq!(gate.calls(), vec!["async_batch_get_cache"]);
 }
