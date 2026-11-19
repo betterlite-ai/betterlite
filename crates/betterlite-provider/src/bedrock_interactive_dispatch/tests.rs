@@ -323,6 +323,40 @@ fn responses_case() {
     );
     responses_remote_image();
     responses_unsupported_model();
+    responses_rejected_reply();
+}
+
+fn responses_rejected_reply() {
+    let input: ResponsesInput = serde_json::from_str(r#""plain text""#).unwrap();
+    let params: ResponsesParams = serde_json::from_str("{}").unwrap();
+    let model_cost = responses_cost();
+    let mut capabilities = Capabilities;
+    let operation = responses_operation(
+        &input,
+        &params,
+        &model_cost,
+        &mut capabilities,
+        Invocation {
+            model: Some(RESPONSES_MODEL),
+            api_key: None,
+        },
+    );
+    let transport = RecordingTransport::new(LeafReply {
+        status: 400,
+        headers: Vec::new(),
+        body: b"bad \xff body".to_vec(),
+        chunks: Vec::new(),
+    });
+    let error = block_on(operation.run(&transport)).unwrap_err();
+    match error {
+        responses::Error::Rejected {
+            status, message, ..
+        } => {
+            assert_eq!(status, 400);
+            assert_eq!(message, "bad \u{FFFD} body");
+        }
+        other => panic!("expected a rejected reply, got {other}"),
+    }
 }
 
 fn responses_remote_image() {
