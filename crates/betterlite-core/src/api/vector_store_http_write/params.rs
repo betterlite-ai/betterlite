@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use super::error::WriteError;
 
-// LiteLLM's VectorStoreCreateOptionalRequestParams: an absent key, a null and a value stay distinct
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+// An optional request parameter: an absent key, an explicit null and a value all mean something different
+type Maybe<T> = Option<Option<T>>;
+
+// LiteLLM's VectorStoreCreateOptionalRequestParams: the three states of each key survive to the body
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateParams {
     #[serde(
@@ -17,31 +20,31 @@ pub struct UpdateParams {
         skip_serializing_if = "Option::is_none",
         with = "serde_with::rust::double_option"
     )]
-    pub name: Option<Option<String>>,
+    pub name: Maybe<String>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         with = "serde_with::rust::double_option"
     )]
-    pub file_ids: Option<Option<Vec<String>>>,
+    pub file_ids: Maybe<Vec<String>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         with = "serde_with::rust::double_option"
     )]
-    pub expires_after: Option<Option<VectorStoreExpirationPolicy>>,
+    pub expires_after: Maybe<VectorStoreExpirationPolicy>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         with = "serde_with::rust::double_option"
     )]
-    pub chunking_strategy: Option<Option<VectorStoreChunkingStrategy>>,
+    pub chunking_strategy: Maybe<VectorStoreChunkingStrategy>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         with = "serde_with::rust::double_option"
     )]
-    pub metadata: Option<Option<IndexMap<String, Json>>>,
+    pub metadata: Maybe<IndexMap<String, Json>>,
 }
 
 impl UpdateParams {
@@ -68,11 +71,14 @@ impl UpdateParams {
     }
 }
 
-fn insert<T: Serialize>(
+fn insert<T>(
     body: &mut IndexMap<String, Json>,
     key: &str,
-    field: &Option<Option<T>>,
-) -> Result<(), WriteError> {
+    field: &Maybe<T>,
+) -> Result<(), WriteError>
+where
+    T: Serialize,
+{
     match field {
         None => {}
         Some(None) => {
@@ -94,6 +100,6 @@ fn cleaned_metadata(metadata: &IndexMap<String, Json>) -> Result<Json, WriteErro
     let encoded = serde_json::to_value(metadata).map_err(WriteError::Encode)?;
     let map = serde_json::from_value(encoded).map_err(WriteError::Encode)?;
     let cleaned = metadata_filter_limit(Some(&map));
-    let encoded = serde_json::to_value(&cleaned).map_err(WriteError::Encode)?;
-    serde_json::from_value(encoded).map_err(WriteError::Encode)
+    let filtered = serde_json::to_value(&cleaned).map_err(WriteError::Encode)?;
+    serde_json::from_value(filtered).map_err(WriteError::Encode)
 }
