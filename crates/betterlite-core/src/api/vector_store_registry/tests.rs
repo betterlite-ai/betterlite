@@ -22,7 +22,6 @@ use support::{
     registry_with_credentials, store,
 };
 
-use super::diagnostics;
 use super::error::VectorStoreRegistryError;
 use super::index::VectorStoreIndexRegistry;
 use super::repository::rows_from_database;
@@ -747,9 +746,6 @@ fn registry_debug_redacts_credentials() {
     assert!(printed.contains("vs_secret"));
     assert!(printed.contains(REDACTED));
     assert!(!printed.contains(secret));
-    let diagnostics = diagnostics::redacted_stores(&registry.stores);
-    assert!(diagnostics.contains(REDACTED));
-    assert!(!diagnostics.contains(secret));
 }
 
 #[test]

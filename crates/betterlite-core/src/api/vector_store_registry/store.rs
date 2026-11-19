@@ -53,9 +53,14 @@ impl VectorStoreRegistry {
             let record = config_record(entry, &self.clock)?;
             self.stores.push(record);
         }
+        let records: Vec<Json> = self
+            .stores
+            .iter()
+            .map(diagnostics::redacted_store)
+            .collect();
         tracing::debug!(
             "all loaded vector stores = {}",
-            diagnostics::redacted_stores(&self.stores)
+            serde_json::to_string(&records).unwrap_or_else(|_| "[]".to_owned())
         );
         Ok(())
     }
@@ -156,10 +161,15 @@ impl VectorStoreRegistry {
 
 impl fmt::Debug for VectorStoreRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let records: Vec<Json> = self
+            .stores
+            .iter()
+            .map(diagnostics::redacted_store)
+            .collect();
         write!(
             f,
             "VectorStoreRegistry {{ stores: {} }}",
-            diagnostics::redacted_stores(&self.stores)
+            serde_json::to_string(&records).unwrap_or_else(|_| "[]".to_owned())
         )
     }
 }
