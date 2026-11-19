@@ -117,7 +117,7 @@ fn consumed(
     });
     match outcome {
         Ok(events) => output["events"] = json!(events),
-        Err(error) => output["error"] = reports::failure(&error)?,
+        Err(error) => output["error"] = reports::failure(&AssistantsRunError::Runs(error))?,
     }
     Ok(output)
 }
