@@ -56,19 +56,19 @@ fn assert_query_is_capped_at_200_codepoints() {
 
 fn assert_truncation_counts_codepoints() {
     let accented = "\u{e9}".repeat(AGENTCORE_MAX_QUERY_LENGTH + 1);
-    let body = request(&single(&accented), &Params::new());
+    let accented_body = request(&single(&accented), &Params::new());
     assert_eq!(
-        query_text(&body),
+        query_text(&accented_body),
         "\u{e9}".repeat(AGENTCORE_MAX_QUERY_LENGTH)
     );
-    assert!(dumps(&body).contains("\\u00e9"));
+    assert!(dumps(&accented_body).contains("\\u00e9"));
     let astral = "\u{1d11e}".repeat(AGENTCORE_MAX_QUERY_LENGTH + 1);
-    let body = request(&single(&astral), &Params::new());
+    let astral_body = request(&single(&astral), &Params::new());
     assert_eq!(
-        query_text(&body),
+        query_text(&astral_body),
         "\u{1d11e}".repeat(AGENTCORE_MAX_QUERY_LENGTH)
     );
-    assert!(dumps(&body).contains("\\ud834\\udd1e"));
+    assert!(dumps(&astral_body).contains("\\ud834\\udd1e"));
 }
 
 fn assert_max_results_pass_through() {

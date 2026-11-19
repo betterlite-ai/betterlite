@@ -86,7 +86,7 @@ pub fn is_configured_gateway(api_base: &str, configured_gateway_url: Option<&str
         return false;
     };
     match (candidate.host_str(), trusted.host_str()) {
-        (Some(candidate), Some(trusted)) => candidate == trusted,
+        (Some(candidate_host), Some(trusted_host)) => candidate_host == trusted_host,
         _ => false,
     }
 }

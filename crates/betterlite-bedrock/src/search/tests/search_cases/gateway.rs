@@ -177,11 +177,11 @@ fn assert_missing_suffix_is_refused() {
     let error = transform_search_request(&single(), &optional, None).unwrap_err();
     assert_eq!(error.to_string(), tool_error("web-search-tool"));
     let embedded = params(r#"{"tool_name":"a___WebSearchb"}"#);
-    let error = transform_search_request(&single(), &embedded, None).unwrap_err();
-    assert_eq!(error.to_string(), tool_error("a___WebSearchb"));
-    let error =
+    let embedded_error = transform_search_request(&single(), &embedded, None).unwrap_err();
+    assert_eq!(embedded_error.to_string(), tool_error("a___WebSearchb"));
+    let configured_error =
         transform_search_request(&single(), &Params::new(), Some("custom-target")).unwrap_err();
-    assert_eq!(error.to_string(), tool_error("custom-target"));
+    assert_eq!(configured_error.to_string(), tool_error("custom-target"));
 }
 
 fn assert_miscased_suffix_is_refused() {

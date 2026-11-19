@@ -50,12 +50,12 @@ fn assert_untrusted_signing_host_is_refused() {
     let error = sign(&case, &lookup(&[]), resolver()).unwrap_err();
     assert_eq!(error.to_string(), signing_refusal(api_base));
     let environment = lookup(&[(GATEWAY_URL_VARIABLE, "https://other.example.com/mcp")]);
-    let error = sign(&case, &environment, resolver()).unwrap_err();
-    assert_eq!(error.to_string(), signing_refusal(api_base));
+    let configured_error = sign(&case, &environment, resolver()).unwrap_err();
+    assert_eq!(configured_error.to_string(), signing_refusal(api_base));
     // a configured value that is not a URL cannot authorize a custom gateway host
     let unparseable = lookup(&[(GATEWAY_URL_VARIABLE, "not a url")]);
-    let error = sign(&case, &unparseable, resolver()).unwrap_err();
-    assert_eq!(error.to_string(), signing_refusal(api_base));
+    let unparseable_error = sign(&case, &unparseable, resolver()).unwrap_err();
+    assert_eq!(unparseable_error.to_string(), signing_refusal(api_base));
 }
 
 fn assert_spoofed_signing_hosts_need_configuration() {
@@ -141,8 +141,8 @@ fn assert_missing_region_is_refused() {
     assert_eq!(error.to_string(), region_refusal(api_base));
     let mut blank = baseline(api_base);
     blank.session_region = Some("");
-    let error = sign(&blank, &environment, resolver()).unwrap_err();
-    assert_eq!(error.to_string(), region_refusal(api_base));
+    let blank_error = sign(&blank, &environment, resolver()).unwrap_err();
+    assert_eq!(blank_error.to_string(), region_refusal(api_base));
 }
 
 fn assert_runtime_bearer_token_is_not_sent() {

@@ -73,8 +73,8 @@ fn assert_untrusted_custom_host_is_refused() {
         (GATEWAY_TOKEN_VARIABLE, TOKEN),
         (GATEWAY_URL_VARIABLE, "https://custom.example.com/mcp"),
     ]);
-    let error = sign(&baseline(api_base), &other_port, failing()).unwrap_err();
-    assert_eq!(error.to_string(), untrusted_base(api_base));
+    let other_port_error = sign(&baseline(api_base), &other_port, failing()).unwrap_err();
+    assert_eq!(other_port_error.to_string(), untrusted_base(api_base));
 }
 
 fn assert_spoofed_gateway_hosts_are_untrusted() {

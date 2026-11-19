@@ -26,11 +26,11 @@ fn assert_failures_omit_secrets() {
     let mut rejected = baseline("https://custom.example.com/mcp");
     rejected.request_data = case.request_data.clone();
     let environment = lookup(&[("AGENTCORE_GATEWAY_TOKEN", TOKEN)]);
-    let error = sign(&rejected, &environment, failing()).unwrap_err();
-    let message = error.to_string();
-    assert!(message.contains("AGENTCORE_GATEWAY_TOKEN"));
-    assert!(!message.contains(TOKEN));
-    assert!(!format!("{error:?}").contains(TOKEN));
+    let rejected_error = sign(&rejected, &environment, failing()).unwrap_err();
+    let rejected_message = rejected_error.to_string();
+    assert!(rejected_message.contains("AGENTCORE_GATEWAY_TOKEN"));
+    assert!(!rejected_message.contains(TOKEN));
+    assert!(!format!("{rejected_error:?}").contains(TOKEN));
 }
 
 fn assert_debug_omits_secrets() {
@@ -55,9 +55,9 @@ fn assert_debug_omits_secrets() {
         header(&signed.headers, "Authorization"),
         Some("Bearer super-secret-gateway-token")
     );
-    let debug = format!("{signed:?}");
-    assert!(debug.contains("Authorization"));
-    assert!(!debug.contains(TOKEN));
+    let signed_debug = format!("{signed:?}");
+    assert!(signed_debug.contains("Authorization"));
+    assert!(!signed_debug.contains(TOKEN));
     let mut configured = baseline(GATEWAY_URL);
     configured.optional_params = params(
         r#"{"aws_access_key_id":"AKIDEXAMPLE","aws_secret_access_key":"fixture-secret-access-key"}"#,

@@ -85,13 +85,13 @@ fn assert_global_base_is_separate() {
         Some("https://global.example/mcp")
     );
     assert_eq!(settings.deployments.len(), 0);
-    let settings = load(
+    let referenced = load(
         &deployment("{api_base: os.environ/GATEWAY_FROM_ENV}"),
         &[("GATEWAY_FROM_ENV", "https://reference.example/mcp")],
     )
     .expect("the reference resolves");
     assert_eq!(
-        settings.deployments[0].api_base.as_deref(),
+        referenced.deployments[0].api_base.as_deref(),
         Some("https://reference.example/mcp")
     );
 }
@@ -99,8 +99,9 @@ fn assert_global_base_is_separate() {
 fn assert_environment_base_is_optional() {
     let settings = load("", &[]).expect("the config should load");
     assert_eq!(settings.environment.gateway_url, None);
-    let settings = load("", &[(GATEWAY_URL_VARIABLE, "")]).expect("an empty value counts as unset");
-    assert_eq!(settings.environment.gateway_url, None);
+    let empty_value =
+        load("", &[(GATEWAY_URL_VARIABLE, "")]).expect("an empty value counts as unset");
+    assert_eq!(empty_value.environment.gateway_url, None);
 }
 
 fn assert_missing_reference_is_reported() {
@@ -124,33 +125,33 @@ fn assert_search_tool_name() {
         Some("custom-target___WebSearch")
     );
 
-    let settings = load(&global("{tool_name: global-target___WebSearch}"), &[])
+    let global_settings = load(&global("{tool_name: global-target___WebSearch}"), &[])
         .expect("the config should load");
     assert_eq!(
-        settings.global.tool_name.as_deref(),
+        global_settings.global.tool_name.as_deref(),
         Some("global-target___WebSearch")
     );
-    assert_eq!(settings.deployments.len(), 0);
+    assert_eq!(global_settings.deployments.len(), 0);
 
-    let settings = load(
+    let environment_settings = load(
         "",
         &[(SEARCH_TOOL_NAME_VARIABLE, "environment-target___WebSearch")],
     )
     .expect("the config should load");
     assert_eq!(
-        settings.environment.search_tool_name,
+        environment_settings.environment.search_tool_name,
         "environment-target___WebSearch"
     );
 
-    let settings = load("", &[]).expect("the config should load");
+    let defaults = load("", &[]).expect("the config should load");
     assert_eq!(
-        settings.environment.search_tool_name,
+        defaults.environment.search_tool_name,
         DEFAULT_SEARCH_TOOL_NAME
     );
-    let settings =
+    let empty_name =
         load("", &[(SEARCH_TOOL_NAME_VARIABLE, "")]).expect("an empty value counts as unset");
     assert_eq!(
-        settings.environment.search_tool_name,
+        empty_name.environment.search_tool_name,
         DEFAULT_SEARCH_TOOL_NAME
     );
 }
@@ -161,15 +162,15 @@ fn assert_mcp_protocol_version() {
         load("", &[(MCP_PROTOCOL_VERSION_VARIABLE, "2025-06-18")]).expect("the config should load");
     assert_eq!(settings.environment.mcp_protocol_version, "2025-06-18");
 
-    let settings = load("", &[]).expect("the config should load");
+    let defaults = load("", &[]).expect("the config should load");
     assert_eq!(
-        settings.environment.mcp_protocol_version,
+        defaults.environment.mcp_protocol_version,
         DEFAULT_MCP_PROTOCOL_VERSION
     );
-    let settings =
+    let empty_version =
         load("", &[(MCP_PROTOCOL_VERSION_VARIABLE, "")]).expect("an empty value counts as unset");
     assert_eq!(
-        settings.environment.mcp_protocol_version,
+        empty_version.environment.mcp_protocol_version,
         DEFAULT_MCP_PROTOCOL_VERSION
     );
 }
@@ -263,11 +264,11 @@ fn assert_environment_token_is_optional() {
         "fixture-environment-token"
     );
     assert_eq!(settings.deployments.len(), 0);
-    let settings = load("", &[]).expect("the config should load");
-    assert_eq!(settings.environment.gateway_token, None);
-    let settings =
+    let without_token = load("", &[]).expect("the config should load");
+    assert_eq!(without_token.environment.gateway_token, None);
+    let empty_token =
         load("", &[(GATEWAY_TOKEN_VARIABLE, "")]).expect("an empty value counts as unset");
-    assert_eq!(settings.environment.gateway_token, None);
+    assert_eq!(empty_token.environment.gateway_token, None);
 }
 
 fn assert_token_is_not_debugged() {
@@ -302,25 +303,25 @@ fn assert_tool_name_precedence() {
         "environment-target___WebSearch"
     );
 
-    let settings = load(
+    let without_tool_name = load(
         &deployment("{}"),
         &[(SEARCH_TOOL_NAME_VARIABLE, "environment-target___WebSearch")],
     )
     .expect("the config should load");
-    assert_eq!(settings.deployments[0].tool_name, None);
+    assert_eq!(without_tool_name.deployments[0].tool_name, None);
     assert_eq!(
-        settings.environment.search_tool_name,
+        without_tool_name.environment.search_tool_name,
         "environment-target___WebSearch"
     );
 
-    let settings = load(
+    let global_settings = load(
         &global("{tool_name: global-target___WebSearch}"),
         &[(SEARCH_TOOL_NAME_VARIABLE, "environment-target___WebSearch")],
     )
     .expect("the config should load");
     assert_eq!(
-        settings.global.tool_name.as_deref(),
+        global_settings.global.tool_name.as_deref(),
         Some("global-target___WebSearch")
     );
-    assert_eq!(settings.deployments.len(), 0);
+    assert_eq!(global_settings.deployments.len(), 0);
 }

@@ -28,8 +28,8 @@ fn assert_plaintext_remote_host_is_refused() {
     // the guard runs before credential lookup, so even an explicit caller key is refused
     let mut keyed = baseline(api_base);
     keyed.api_key = Some(secret("caller-token"));
-    let error = sign(&keyed, &lookup(&[]), failing()).unwrap_err();
-    assert_eq!(error.to_string(), plaintext_refusal(api_base));
+    let keyed_error = sign(&keyed, &lookup(&[]), failing()).unwrap_err();
+    assert_eq!(keyed_error.to_string(), plaintext_refusal(api_base));
 }
 
 fn assert_https_is_accepted() {
