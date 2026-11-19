@@ -1,0 +1,17 @@
+kind: sdk_http
+name: transcription-http-configuration-errors
+env: {}
+call:
+  transcription_http:
+    mode: sync
+    model: m
+    provider_config: missing
+    transform:
+      data: {query: hello}
+    response: {text: ok}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
