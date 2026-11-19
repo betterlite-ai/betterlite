@@ -24,7 +24,7 @@ struct FakeView {
 
 impl VideoRouteView for FakeView {
     fn is_recognized_model(&self, model: &str) -> bool {
-        self.recognized.iter().any(|candidate| *candidate == model)
+        self.recognized.contains(&model)
     }
 
     fn map_team_model(&self, model: &str, team_id: &str) -> Option<String> {
@@ -35,11 +35,11 @@ impl VideoRouteView for FakeView {
     }
 
     fn team_public_model_names_has(&self, model: &str) -> bool {
-        self.team_public.iter().any(|candidate| *candidate == model)
+        self.team_public.contains(&model)
     }
 
     fn model_names_has(&self, model: &str) -> bool {
-        self.model_names.iter().any(|candidate| *candidate == model)
+        self.model_names.contains(&model)
     }
 
     fn pass_through_all_models(&self) -> bool {
@@ -51,7 +51,7 @@ impl VideoRouteView for FakeView {
     }
 
     fn deployment_names_has(&self, model: &str) -> bool {
-        self.deployments.iter().any(|candidate| *candidate == model)
+        self.deployments.contains(&model)
     }
 }
 

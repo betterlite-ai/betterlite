@@ -33,7 +33,7 @@ impl VideoCallKind {
 }
 
 // every argument the SDK call would receive, named and loose alike, plus the file parts it takes
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoCallArgs {
     pub fields: VideoOptions,
     pub uploads: Vec<VideoUpload>,
@@ -48,7 +48,7 @@ pub struct VideoUpload {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VideoReply {
     Json(JsonValue),
     Bytes(Vec<u8>),

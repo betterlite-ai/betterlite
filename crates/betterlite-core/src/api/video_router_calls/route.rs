@@ -55,7 +55,7 @@ pub fn plan_video_route(
             VideoRoute::Direct
         };
     }
-    let Some(view) = view else {
+    let Some(router) = view else {
         return if input.user_model.is_some() {
             VideoRoute::Direct
         } else {
@@ -64,7 +64,7 @@ pub fn plan_video_route(
             }
         };
     };
-    plan_with_router(input, view)
+    plan_with_router(input, router)
 }
 
 fn plan_with_router(input: &VideoRouteInput<'_>, view: &dyn VideoRouteView) -> VideoRoute {
