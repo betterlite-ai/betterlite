@@ -41,8 +41,15 @@ fn job() -> FineTuneJob {
     decode_fine_tune_job(JOB.as_bytes(), false).expect("the fixture job decodes")
 }
 
+#[derive(Clone)]
+struct Recorded {
+    target: FineTuningCreateTarget,
+    task: Option<Id>,
+}
+
 struct Scripted {
-    calls: Arc<Mutex<Vec<FineTuningCreateTarget>>>,
+    calls: Arc<Mutex<Vec<Recorded>>>,
+    failure: Option<ScriptFailure>,
 }
 
 impl FineTuningCreateDispatch for Scripted {
@@ -52,11 +59,21 @@ impl FineTuningCreateDispatch for Scripted {
         &self,
         target: FineTuningCreateTarget,
     ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(target);
-        async move { Ok(job()) }
+        let calls = Arc::clone(&self.calls);
+        let failure = self.failure.clone();
+        async move {
+            calls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(Recorded {
+                    target,
+                    task: try_id(),
+                });
+            match failure {
+                Some(error) => Err(error),
+                None => Ok(job()),
+            }
+        }
     }
 }
 
@@ -69,10 +86,14 @@ async fn ran(settings: ResourceSdkSettings, call: &CreateFineTuningJobCall) -> R
     let calls = Arc::new(Mutex::new(Vec::new()));
     let dispatch = Scripted {
         calls: Arc::clone(&calls),
+        failure: None,
     };
     let outcome = FineTuningCreate { dispatch, settings }.create(call).await;
     let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    (outcome, recorded)
+    (
+        outcome,
+        recorded.into_iter().map(|entry| entry.target).collect(),
+    )
 }
 
 fn settings() -> ResourceSdkSettings {
@@ -675,11 +696,17 @@ async fn tuning_credentials_and_timeout() {
 #[test]
 fn tuning_call_wire_form() {
     let params = CreateParams {
+        api_base: None,
         api_key: Some(SecretString::from("sk-wire".to_owned())),
+        api_version: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
         vertex_credentials: Some(SecretString::from("cred-wire".to_owned())),
         training_type: Some(number(2)),
         timeout: Some(CreateTimeout::Plain(TimeoutValue::Number(2.5_f64))),
-        ..CreateParams::default()
+        request_timeout: None,
+        max_retries: None,
     };
     let wire: Json =
         serde_json::from_str(&serde_json::to_string(&params).expect("the params encode"))
@@ -697,8 +724,17 @@ fn tuning_call_wire_form() {
         ))
     );
     let structured_params = CreateParams {
+        api_base: None,
+        api_key: None,
+        api_version: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        vertex_credentials: None,
+        training_type: None,
         timeout: Some(CreateTimeout::Structured(structured())),
-        ..CreateParams::default()
+        request_timeout: None,
+        max_retries: None,
     };
     let structured_wire: Json = serde_json::from_str(
         &serde_json::to_string(&structured_params).expect("the params encode"),
@@ -830,28 +866,16 @@ async fn unsupported_tuning_create() {
     unrepresentable_integration().await;
 }
 
-struct Refusing;
-
-impl FineTuningCreateDispatch for Refusing {
-    type Error = ScriptFailure;
-
-    fn create(
-        &self,
-        _target: FineTuningCreateTarget,
-    ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
-        async {
-            Err(ScriptFailure {
-                message: "the provider refused".to_owned(),
-            })
-        }
-    }
-}
-
 #[tokio::test]
 async fn tuning_dispatch_failure() {
     let (buffer, _guard) = capture();
     let service = FineTuningCreate {
-        dispatch: Refusing,
+        dispatch: Scripted {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            failure: Some(ScriptFailure {
+                message: "the provider refused".to_owned(),
+            }),
+        },
         settings: settings(),
     };
     let outcome = service.create(&base_call("openai")).await;
@@ -866,27 +890,6 @@ async fn tuning_dispatch_failure() {
     );
 }
 
-struct Tasked {
-    seen: Arc<Mutex<Vec<Option<Id>>>>,
-}
-
-impl FineTuningCreateDispatch for Tasked {
-    type Error = ScriptFailure;
-
-    fn create(
-        &self,
-        _target: FineTuningCreateTarget,
-    ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
-        let seen = Arc::clone(&self.seen);
-        async move {
-            seen.lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(try_id());
-            Ok(job())
-        }
-    }
-}
-
 #[tokio::test]
 async fn tuning_dispatch_runs_in_caller_task() {
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -897,7 +900,10 @@ async fn tuning_dispatch_runs_in_caller_task() {
             spawn_local(async move {
                 let caller = try_id().expect("the caller runs inside the local task");
                 let service = FineTuningCreate {
-                    dispatch: Tasked { seen: local_seen },
+                    dispatch: Scripted {
+                        calls: local_seen,
+                        failure: None,
+                    },
                     settings: settings(),
                 };
                 service
@@ -911,5 +917,6 @@ async fn tuning_dispatch_runs_in_caller_task() {
         })
         .await;
     let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    assert_eq!(recorded, [Some(caller)]);
+    let tasks: Vec<Option<Id>> = recorded.into_iter().map(|entry| entry.task).collect();
+    assert_eq!(tasks, [Some(caller)]);
 }
