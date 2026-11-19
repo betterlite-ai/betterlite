@@ -56,11 +56,12 @@ deviations:
   - what: >-
       A pretty, no_redirect, no_html or skip_disambig request option holding an integer outside the
       signed 64-bit range fails the request with an OptionType error that names the field. LiteLLM
-      copies the option into the query and urlencode sends its full decimal text upstream.
+      copies the option into the query and urlencode sends its full decimal text upstream. A JSON
+      boolean is accepted and sent as True or False, the text urlencode writes for Python's bool.
     why: >-
-      The four flags are stored as i64, and a value outside a field's type is an error here under
-      docs/compatibility.md. Python's int is unbounded, so the source's declared int accepts the
-      value betterlite refuses.
+      The four flags keep a boolean or an integer that fits i64; the source declares them int and
+      Python's bool is an int, so a boolean is in type. Python's int is unbounded, so a value
+      outside i64 is an error here under docs/compatibility.md and accepted there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L131-L134
 kept_bugs:
   - what: >-

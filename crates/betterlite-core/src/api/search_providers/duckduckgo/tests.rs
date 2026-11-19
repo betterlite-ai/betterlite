@@ -186,7 +186,7 @@ fn only_duckduckgo_options_are_copied() {
 
     let body = build_request(&single("q"), &extra).unwrap();
 
-    assert_eq!(body.params.pretty, Some(1));
+    assert_eq!(body.params.pretty, Some(JsonValue::from(1_i64)));
     assert_eq!(
         serde_json::to_value(&body.params).unwrap(),
         serde_json::from_str::<JsonValue>(r#"{"q":"q","format":"json","pretty":1}"#).unwrap()
@@ -284,6 +284,26 @@ fn an_unsupported_option_value_names_the_field(#[case] field: &str, #[case] valu
         panic!("unexpected error {error:?}");
     };
     assert_eq!(*named, field);
+}
+
+#[rstest]
+#[case("pretty", false)]
+#[case("pretty", true)]
+#[case("no_redirect", false)]
+#[case("no_html", true)]
+#[case("skip_disambig", false)]
+fn boolean_flags_are_written_as_python_does(#[case] field: &str, #[case] flag: bool) {
+    let body = build_request(&single("q"), &options(&[(field, JsonValue::Bool(flag))])).unwrap();
+    let written = if flag { "True" } else { "False" };
+
+    assert_eq!(
+        search_url(None, "https://instant.test", Some(&body)),
+        format!("https://instant.test/?q=q&format=json&{field}={written}")
+    );
+    assert_eq!(
+        serde_json::to_value(&body.params).unwrap().get(field),
+        Some(&JsonValue::Bool(flag))
+    );
 }
 
 #[test]

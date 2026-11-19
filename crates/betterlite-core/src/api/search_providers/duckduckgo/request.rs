@@ -24,14 +24,15 @@ pub struct DuckDuckGoParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub max_results: Option<JsonValue>,
+    // the source copies each flag as given, so a boolean stays a boolean and urlencode writes True or False
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pretty: Option<i64>,
+    pub pretty: Option<JsonValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub no_redirect: Option<i64>,
+    pub no_redirect: Option<JsonValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub no_html: Option<i64>,
+    pub no_html: Option<JsonValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skip_disambig: Option<i64>,
+    pub skip_disambig: Option<JsonValue>,
 }
 
 pub fn build_request(
@@ -50,26 +51,33 @@ pub fn build_request(
                 .get("max_results")
                 .filter(|value| !value.is_null())
                 .cloned(),
-            pretty: int_option(optional_params, "pretty")?,
-            no_redirect: int_option(optional_params, "no_redirect")?,
-            no_html: int_option(optional_params, "no_html")?,
-            skip_disambig: int_option(optional_params, "skip_disambig")?,
+            pretty: flag_option(optional_params, "pretty")?,
+            no_redirect: flag_option(optional_params, "no_redirect")?,
+            no_html: flag_option(optional_params, "no_html")?,
+            skip_disambig: flag_option(optional_params, "skip_disambig")?,
         },
     })
 }
 
-fn int_option(
+fn flag_option(
     optional_params: &Object,
     field: &'static str,
-) -> Result<Option<i64>, DuckDuckGoSearchError> {
+) -> Result<Option<JsonValue>, DuckDuckGoSearchError> {
     let Some(value) = optional_params.get(field).filter(|value| !value.is_null()) else {
         return Ok(None);
     };
-    value
-        .as_i64()
-        .map_or(Err(DuckDuckGoSearchError::OptionType { field }), |number| {
-            Ok(Some(number))
-        })
+    let accepted = match value {
+        JsonValue::Bool(_) => true,
+        JsonValue::Number(number) => number.as_i64().is_some(),
+        JsonValue::Null | JsonValue::String(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            false
+        }
+    };
+    if accepted {
+        Ok(Some(value.clone()))
+    } else {
+        Err(DuckDuckGoSearchError::OptionType { field })
+    }
 }
 
 #[must_use]
@@ -104,14 +112,14 @@ pub fn encode_params(params: &DuckDuckGoParams) -> String {
         }
     }
     let flags = [
-        ("pretty", params.pretty),
-        ("no_redirect", params.no_redirect),
-        ("no_html", params.no_html),
-        ("skip_disambig", params.skip_disambig),
+        ("pretty", &params.pretty),
+        ("no_redirect", &params.no_redirect),
+        ("no_html", &params.no_html),
+        ("skip_disambig", &params.skip_disambig),
     ];
     for (name, value) in flags {
-        if let Some(number) = value {
-            serializer.append_pair(name, &number.to_string());
+        if let Some(flag) = value {
+            serializer.append_pair(name, &wire_text(flag));
         }
     }
     let encoded = serializer.finish();
