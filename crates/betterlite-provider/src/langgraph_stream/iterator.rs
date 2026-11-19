@@ -177,6 +177,8 @@ pub(crate) fn make_chunk(model: &str, ids: &dyn IdSource, shape: ChunkShape<'_>)
             refusal: None,
             tool_calls: None,
             function_call: None,
+            reasoning_content: None,
+            thinking_blocks: None,
         },
         ChunkShape::Final => Delta::default(),
     };

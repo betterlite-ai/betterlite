@@ -24,6 +24,8 @@ fn delta(content: Option<&str>, tool_calls: Option<Vec<ToolCall>>) -> Delta {
         refusal: None,
         tool_calls,
         function_call: None,
+        reasoning_content: None,
+        thinking_blocks: None,
     }
 }
 

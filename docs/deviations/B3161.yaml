@@ -1,0 +1,43 @@
+task: B3161
+deviations:
+  - what: >-
+      The estimator gateway is reached through the server's shared outbound HTTP transport
+      (ProxiedClient) at a base URL carried in RoiConnectionsState, not through an in-process
+      httpx.ASGITransport over the proxy's own FastAPI app at the fixed host http://litellm.internal.
+      _gateway_transport's lru_cache has no counterpart because that transport is already one
+      pooled client per process; the 180 second deadline and follow_redirects=False are kept as the
+      OutboundRequest deadline and the transport's Follow::Never.
+    why: >-
+      betterlite has no FastAPI app to hand an ASGI transport, and a second, per-app HTTP client
+      would bypass the one client where TLS, proxy and timeout policy live. The mounting task
+      (B8677) points gateway_base at this proxy's own listener, so the request still enters the
+      proxy's own /v1/chat/completions and /v1/models routes with the estimator key as the bearer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L257-L270
+  - what: >-
+      A GET /v1/models answer that is not JSON, or whose shape does not match the gateway models
+      model, answers 409 "The estimator key could not connect to the gateway.". LiteLLM only
+      catches httpx.HTTPError and pydantic ValidationError, so response.json()'s
+      json.JSONDecodeError escapes as a 500.
+    why: >-
+      The endpoint is a connection test for the operator, so an unreadable answer from the gateway
+      belongs in the same 409 as an unreachable one; a 500 hides where the misconfiguration is.
+      The task's pitfalls also list response validation under the 409 mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L296-L309
+  - what: >-
+      A GitHub token holding a character a header cannot carry is refused while the GitHub client is
+      built and answers 502 with the reach-GitHub detail. LiteLLM builds the Authorization header as
+      a plain Python string, and the invalid value fails later inside httpx as a protocol error
+      LiteLLM does not catch, which is a 500.
+    why: >-
+      docs/compatibility.md turns a value of the wrong type into an error that names the field, and
+      betterlite's GitHub client already reports an unusable token as a SourceError, which these
+      routes map to 502 like every other GitHub failure. A working setup never sends such a token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L319-L336
+  - what: >-
+      Query validation issues carry type, loc and msg only. FastAPI's 422 detail for the query and
+      page parameters also carries input and url for each issue.
+    why: >-
+      input echoes the submitted value, and the ROI settings endpoints already answer with the same
+      three fields (B3158's deviation log). type and loc keep the part a client branches on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L400-L401
+kept_bugs: []
