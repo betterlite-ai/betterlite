@@ -150,11 +150,9 @@ ASSISTANT_FIELDS: Final = TypeAdapter(AssistantView)
 
 
 def to_timeout(timeout: float | str | Phases | None) -> float | str | httpx.Timeout | None:
-    match timeout:
-        case Phases() as phases:
-            return httpx.Timeout(**phases.given())
-        case float() | str() | None:
-            return timeout
+    if isinstance(timeout, Phases):
+        return httpx.Timeout(**timeout.given())
+    return timeout
 
 
 def create_options(
