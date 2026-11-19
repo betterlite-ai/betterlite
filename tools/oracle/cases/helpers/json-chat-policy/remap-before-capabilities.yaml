@@ -1,0 +1,47 @@
+kind: helper
+name: json-chat-policy-capabilities-and-mappings
+call:
+  json_chat_policy:
+    calls:
+      - kind: supported
+        model: sail/openai/gpt-oss-120b
+        environment: {}
+        supports_function_calling: true
+        supports_reasoning: true
+      - kind: supported
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {}
+      - kind: params
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        non_default:
+          max_completion_tokens: 16
+          temperature: 5
+          n: 4
+          tools: [{type: function}]
+        optional: {}
+      - kind: params
+        model: sail/openai/gpt-oss-120b
+        environment: {}
+        supports_function_calling: true
+        supports_reasoning: true
+        non_default:
+          max_completion_tokens: 16
+          temperature: 2
+          reasoning_effort: high
+          tools: [{type: function}]
+        optional: {temperature: 1}
+      - kind: params
+        model: scx-ai/some-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        non_default:
+          max_completion_tokens: 16
+          temperature: 5
+          n: 2
+        optional: {}
+env: {}
+compare: {ignore: []}

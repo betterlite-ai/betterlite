@@ -1,7 +1,7 @@
 id: B1200
 milestone: M4 keys, spend and management
 title: Team-administrator editable field policy
-status: todo
+status: done
 depends_on: [B002, B171, B192, B720, B770, B856, B859, B1231]
 file: tasks/B1200-team-admin-fields.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B057
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2584
