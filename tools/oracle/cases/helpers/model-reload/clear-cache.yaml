@@ -1,0 +1,29 @@
+kind: helper
+name: clear-cache
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: clear_cache
+        router_present: true
+        database_present: true
+        models:
+          - model_name: cfg
+            litellm_params: {model: openai/gpt-4o}
+            model_info: {id: cfg-1, db_model: false}
+          - model_name: db-plain
+            litellm_params: {model: openai/gpt-4o}
+            model_info: {id: db-1, db_model: true}
+          - model_name: auto-one
+            litellm_params: {model: auto_router/default}
+            model_info: {id: auto-2, db_model: true}
+          - model_name: auto-two
+            litellm_params: {model: auto_router/default}
+            model_info: {id: auto-3, db_model: true}
+        strategy_names: [auto-one, auto-two, kept]
+        outcome:
+          still_desired: [cfg-1, db-1, auto-2, auto-3]
+          live_after: [cfg-1, db-1, auto-2, auto-3]
+        reload_error: null
+env: {}
+compare: {ignore: []}

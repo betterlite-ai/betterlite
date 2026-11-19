@@ -1,0 +1,42 @@
+kind: helper
+name: prometheus-failure-bounded-model-recognized
+call:
+  b3880:
+    function: bounded_requested_model_label
+    requested_model: "gpt-4o"
+    router_originated: false
+    catalog:
+      recognized: ["gpt-4o"]
+      team_public: []
+      patterns: []
+      team_patterns: []
+calls:
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: "shared-model"
+      router_originated: false
+      catalog:
+        recognized: []
+        team_public: ["shared-model"]
+        patterns: []
+        team_patterns: []
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: "gpt-4o-mini"
+      router_originated: false
+      catalog:
+        recognized: []
+        team_public: []
+        patterns: ["gpt-4o-*"]
+        team_patterns: []
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: "claude-3"
+      router_originated: false
+      catalog:
+        recognized: []
+        team_public: []
+        patterns: []
+        team_patterns: ["claude-*"]
+env: {}
+compare: {ignore: []}

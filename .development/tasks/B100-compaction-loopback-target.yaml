@@ -8,11 +8,12 @@ description: >-
   address. LiteLLM reads them off the Starlette request (`request.scope["app"]`, `scope["root_path"]`, `request.url`,
   `request.headers.raw`, `request.client`), and asgi_handler.py points an in-memory httpx transport at that app with the
   parent's root path and client. Nothing in betterlite hands B8291 those values, and no request carries its peer address
-  today: server.rs knows `remote_address` per connection but never puts it on the request. This task adds both.
+  today: `serve_connection` in crates/betterlite-server/src/server/connections.rs gets `remote_address` per connection
+  but only logs it and never puts it on the request. This task adds both.
 
   Code goes in the new module `app::inference::native_compaction`: crates/betterlite-server/src/app/inference/native_compaction.rs
-  and native_compaction/ (target.rs, request.rs, tests.rs). Its one change outside that module is in
-  crates/betterlite-server/src/server.rs, in `application` and `serve_connection` only.
+  and native_compaction/ (target.rs, request.rs, tests.rs). Its two changes outside that module are `application` in
+  crates/betterlite-server/src/server.rs and `serve_connection` in crates/betterlite-server/src/server/connections.rs.
 
   Target (target.rs). `LoopbackTarget` holds the application as a cloned axum `Router` and the scalar root path, the
   config value `general_settings.SERVER_ROOT_PATH` (env SERVER_ROOT_PATH, default "", already loaded as
@@ -32,9 +33,10 @@ description: >-
   and outer error layers), then request_stack, admission, RootPaths and install. B8610's app::wrap is the last step of
   router(), not of application(), so the two never compete for the same place. B8610 also rebuilds application() around
   Shared and StartupOutputs, and this task uses nothing from that rebuild; whichever of the two lands second keeps the
-  other's change, and install stays the last call. `serve_connection` puts `axum::extract::ConnectInfo(remote_address)` on every request of the
-  connection, for example with `axum::Extension(ConnectInfo(remote_address))` used as a tower layer around the router
-  before `TowerToHyperService::new`. Touch nothing else in server.rs.
+  other's change, and install stays the last call. In server/connections.rs, `serve_connection(builder, application, stream,
+  remote_address)` puts `axum::extract::ConnectInfo(remote_address)` on every request of the connection, for example with
+  `axum::Extension(ConnectInfo(remote_address))` used as a tower layer around the router before
+  `TowerToHyperService::new`. Touch nothing else in either file.
 
   Builder (request.rs). `pub fn executor_for(parts: &axum::http::request::Parts) -> Option<LoopbackExecutor>`
   is what the router call site uses to get the executor for one client request:
@@ -61,7 +63,8 @@ description: >-
   /v1/chat/completions with the parent's Authorization and peer, and for messages reaches /v1/messages; with the stack built
   as `application` builds it (RootPaths from SERVER_ROOT_PATHS "/tenant-a", then `install`) and the parent sent to
   /tenant-a/v1/chat/completions, the child reaches the chat handler through the /tenant-a prefix. `peer_`: bind a
-  `TcpListener` on 127.0.0.1:0, serve one accepted stream with `crate::server::serve_connection` and a router whose handler
+  `TcpListener` on 127.0.0.1:0, serve one accepted stream with `crate::server::connections::serve_connection` (its builder from
+  `configure_connection_builder()`) and a router whose handler
   returns its `ConnectInfo`, connect with a TCP client and check the address it gets back equals the client socket's
   local address.
 scope:
@@ -69,6 +72,7 @@ scope:
     - crates/betterlite-server/src/app/inference/native_compaction.rs
     - crates/betterlite-server/src/app/inference/native_compaction/**
     - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/connections.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L16-L46
@@ -129,7 +133,7 @@ pitfalls:
   - "Router::layer wraps every route, not the router as one service, so clone the target's app once in install from the router value before the layer; never rebuild it per request."
   - "install must be the last wrap in application, outside RootPaths and so outside router() and its app::wrap: inside RootPaths the child's /tenant-a prefix is never cut and the child gets a 404."
   - "By the time a handler runs, RootPaths has cut the prefix from parts.uri, so the root path comes from RequestRootPath through get_request_root_path and the parent URL from OriginalUri."
-  - "server.rs drives hyper itself, so axum's into_make_service_with_connect_info does not apply; ConnectInfo has to be added per connection in serve_connection."
+  - "server/connections.rs drives hyper itself through TowerToHyperService, so axum's into_make_service_with_connect_info does not apply; ConnectInfo has to be added per connection in serve_connection."
   - "The target and the built executor hold the caller's Authorization header; never log the headers or derive Debug output that prints them."
 review_level: security
 budget:

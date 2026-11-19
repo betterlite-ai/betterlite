@@ -2,7 +2,7 @@ id: B145
 milestone: M10 admin ui
 title: Admin UI pages for keys, teams, users, organizations, projects and access groups working against betterlite
 status: todo
-depends_on: [B144, B9091, B860, B8387, B8671, B786, B9730, B9731, B9732, B9733, B9734, B9735]
+depends_on: [B144, B9091, B860, B8387, B8671, B786, B9730, B9731, B9732, B9733, B9734]
 file: tasks/B145-admin-pages-integration.yaml
 covers:
   - "ui/litellm-dashboard/src/components/{key_info_utils,key_scope,key_value_input}.*"

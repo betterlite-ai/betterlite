@@ -2,7 +2,7 @@ id: B8142
 milestone: M11 distribution
 title: "AWS Terraform module: ECS service, load balancer, autoscaling and outputs"
 status: todo
-depends_on: [B8141, B5071]
+depends_on: [B8141]
 file: tasks/B8142-aws-service-alb.yaml
 covers:
   - "terraform/litellm/aws/ecs.tf"
