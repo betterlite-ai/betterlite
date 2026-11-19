@@ -1,0 +1,595 @@
+#![cfg(test)]
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
+use betterlite_error::envelope::WireField;
+use betterlite_foundry::chat::sources::NoSources;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use http::HeaderMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::{Value, json};
+
+use super::call::{AssistantCreateCall, AssistantCreateResult, AzureCreateCall, OpenAiCreateCall};
+use super::error::{AssistantCreateFailure, Entry, Raised, no_response, raised};
+use super::service::AssistantRecords;
+use super::{AssistantCreateInput, AsyncFlag, ClientClass, CreateTimeout};
+use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
+
+const ASSISTANT: &str = r#"{"id":"asst_a","object":"assistant","model":"gpt-4o-mini","created_at":1,"name":null,"tools":[]}"#;
+
+#[derive(Debug, Clone)]
+struct Seen {
+    method: String,
+    url: String,
+    headers: BTreeMap<String, String>,
+    body: Value,
+    deadline: Duration,
+}
+
+#[derive(Default)]
+struct Scripted {
+    replies: Mutex<Vec<UpstreamResponse>>,
+    seen: Mutex<Vec<Seen>>,
+}
+
+impl Scripted {
+    fn reply(self: &Arc<Self>, status: u16, body: &str) {
+        self.replies
+            .lock()
+            .expect("replies")
+            .push(UpstreamResponse {
+                status,
+                headers: HeaderMap::new(),
+                body: body.as_bytes().to_vec(),
+            });
+    }
+
+    fn seen(&self) -> Vec<Seen> {
+        self.seen.lock().expect("seen").clone()
+    }
+}
+
+impl AssistantsTransport for Scripted {
+    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+        let body = match &request.body {
+            RequestBody::Json(bytes) => {
+                serde_json::from_slice(bytes).expect("the create body is JSON")
+            }
+            _ => Value::Null,
+        };
+        let mut headers = BTreeMap::new();
+        for (name, value) in &request.headers {
+            headers.insert(
+                name.as_str().to_owned(),
+                value.to_str().expect("a readable header").to_owned(),
+            );
+        }
+        let mut url = request.url.to_string();
+        if !request.query.is_empty() {
+            let pairs: Vec<String> = request
+                .query
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect();
+            url.push('?');
+            url.push_str(&pairs.join("&"));
+        }
+        self.seen.lock().expect("seen").push(Seen {
+            method: request.method.as_str().to_owned(),
+            url,
+            headers,
+            body,
+            deadline: request.deadline,
+        });
+        let mut replies = self.replies.lock().expect("replies");
+        if replies.is_empty() {
+            return Ok(UpstreamResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: ASSISTANT.as_bytes().to_vec(),
+            });
+        }
+        Ok(replies.remove(0))
+    }
+}
+
+struct Fixture {
+    settings: resource_sdk_settings::Settings,
+    azure: azure_endpoints::Settings,
+    environment: BTreeMap<String, String>,
+    catalog: ModelCatalog,
+    names: BTreeSet<String>,
+    transport: Arc<Scripted>,
+}
+
+impl Fixture {
+    fn new(settings: resource_sdk_settings::Settings) -> Self {
+        Self {
+            settings,
+            azure: azure_endpoints::Settings::default(),
+            environment: BTreeMap::new(),
+            catalog: ModelCatalog::default(),
+            names: BTreeSet::new(),
+            transport: Arc::default(),
+        }
+    }
+
+    fn env(mut self, name: &str, value: &str) -> Self {
+        self.environment.insert(name.to_owned(), value.to_owned());
+        self
+    }
+
+    fn reply(mut self, status: u16, body: &str) -> Self {
+        self.transport.reply(status, body);
+        self
+    }
+
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.names,
+            custom_providers: &self.names,
+            environment: &self.environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+
+    fn service<'fixture, 'resolution>(
+        &'fixture self,
+        resolution: &'resolution ResolutionContext<'fixture>,
+        redactor: &'fixture Redactor,
+    ) -> AssistantRecords<'fixture, 'resolution, Scripted> {
+        AssistantRecords {
+            settings: self.settings.clone(),
+            azure: self.azure.clone(),
+            environment: &self.environment,
+            sources: &NoSources,
+            resolution,
+            redactor,
+            transport: Arc::clone(&self.transport),
+        }
+    }
+}
+
+fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor")
+}
+
+fn input(extra: Value) -> AssistantCreateInput {
+    let mut base = json!({"provider": "openai", "model": "gpt-4o-mini"});
+    if let (Some(target), Some(source)) = (base.as_object_mut(), extra.as_object()) {
+        for (key, value) in source {
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    serde_json::from_value(base).expect("an assistant create input")
+}
+
+fn openai_call(result: &AssistantCreateResult) -> &OpenAiCreateCall {
+    match &result.call {
+        AssistantCreateCall::OpenAi(call) => call,
+        AssistantCreateCall::Azure(_) => panic!("an azure call came back for an openai input"),
+    }
+}
+
+fn azure_call(result: &AssistantCreateResult) -> &AzureCreateCall {
+    match &result.call {
+        AssistantCreateCall::Azure(call) => call,
+        AssistantCreateCall::OpenAi(_) => panic!("an openai call came back for an azure input"),
+    }
+}
+
+fn failure(
+    result: Result<AssistantCreateResult, AssistantCreateFailure>,
+) -> AssistantCreateFailure {
+    match result {
+        Ok(result) => panic!("the call unexpectedly returned {}", result.assistant.id),
+        Err(failure) => failure,
+    }
+}
+
+fn seen_auth(fixture: &Fixture, index: usize) -> String {
+    fixture.transport.seen()[index].headers["authorization"].clone()
+}
+
+fn seen_deadline(fixture: &Fixture, index: usize) -> Duration {
+    fixture.transport.seen()[index].deadline
+}
+
+#[tokio::test]
+async fn assistant_create_optional_values() {
+    let fixture = Fixture::new(resource_sdk_settings::Settings::default());
+    let redactor = redactor();
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+    let request = input(json!({
+        "api_base": "https://request.test/v1",
+        "api_key": "sk-request",
+        "temperature": 0,
+        "top_p": 0.0,
+        "tools": [],
+        "metadata": {"team": "ai"},
+        "unknown_kwarg": "dropped",
+        "stream": false,
+    }));
+    for entry in [Entry::Sync, Entry::Async] {
+        let result = match entry {
+            Entry::Sync => service.create_assistants(&request).await,
+            Entry::Async => service.acreate_assistants(&request).await,
+        }
+        .expect("the provider answered");
+        let call = openai_call(&result);
+        assert_eq!(call.is_async, entry == Entry::Async);
+        assert_eq!(result.assistant.id, "asst_a");
+        assert_eq!(result.assistant.object, "assistant");
+        assert_eq!(result.assistant.model, "gpt-4o-mini");
+        assert_eq!(result.assistant.created_at, 1);
+        assert_eq!(result.assistant.name, None);
+        assert!(result.assistant.tools.is_empty());
+    }
+    let seen = fixture.transport.seen();
+    assert_eq!(seen.len(), 2);
+    for request in &seen {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.url, "https://request.test/v1/assistants");
+        assert_eq!(request.headers["authorization"], "Bearer sk-request");
+        assert_eq!(request.headers["openai-beta"], "assistants=v2");
+        assert_eq!(request.headers["accept"], "application/json");
+        assert!(!request.headers.contains_key("openai-organization"));
+        assert_eq!(
+            request.body,
+            json!({
+                "model": "gpt-4o-mini",
+                "metadata": {"team": "ai"},
+                "temperature": 0,
+                "tools": [],
+                "top_p": 0.0,
+            })
+        );
+    }
+}
+
+#[tokio::test]
+async fn assistant_create_credentials() {
+    let redactor = redactor();
+    let configured = resource_sdk_settings::Settings {
+        api_base: Some(String::from("https://global.test/v1")),
+        api_key: Some(SecretString::from("sk-global")),
+        organization: Some(String::from("org-global")),
+        openai_base_url: Some(String::from("https://base-url.test/v1")),
+        openai_api_key: Some(SecretString::from("sk-env")),
+        openai_organization: Some(String::from("org-env")),
+        ..Default::default()
+    };
+    let fixture = Fixture::new(configured);
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // the request's base, key and organization win over the configured ones
+    let request = input(json!({
+        "api_base": "https://request.test/v1",
+        "api_key": "sk-request",
+        "organization": "org-request",
+        "max_retries": 3,
+        "client": "open_ai",
+        "timeout": 7.5,
+        "request_timeout": 12.0,
+    }));
+    let result = service.create_assistants(&request).await.expect("answered");
+    let call = openai_call(&result);
+    assert_eq!(call.api_base, "https://request.test/v1");
+    assert_eq!(call.max_retries, Some(3));
+    assert_eq!(call.client, Some(ClientClass::OpenAi));
+    assert_eq!(call.timeout, FineTuningTimeout::Seconds(7.5));
+    assert_eq!(seen_auth(&fixture, 0), "Bearer sk-request");
+    assert_eq!(
+        fixture.transport.seen()[0].headers["openai-organization"],
+        "org-request"
+    );
+    assert_eq!(seen_deadline(&fixture, 0), Duration::from_secs_f64(7.5));
+
+    // the configured values fill in when the request leaves them out, and a zero falls through
+    let request = input(json!({"timeout": 0, "request_timeout": 12.0}));
+    let result = service.create_assistants(&request).await.expect("answered");
+    assert_eq!(openai_call(&result).api_base, "https://global.test/v1");
+    assert_eq!(seen_auth(&fixture, 1), "Bearer sk-global");
+    assert_eq!(
+        fixture.transport.seen()[1].headers["openai-organization"],
+        "org-global"
+    );
+    assert_eq!(seen_deadline(&fixture, 1), Duration::from_secs(12));
+
+    // an empty base falls through, the key chain reaches the env name, and a numeric text converts
+    let fixture_empty = Fixture::new(resource_sdk_settings::Settings {
+        api_base: Some(String::new()),
+        openai_base_url: Some(String::from("https://base-url.test/v1")),
+        openai_key: Some(SecretString::from("sk-openai-key")),
+        ..Default::default()
+    });
+    let resolution = fixture_empty.resolution();
+    let service = fixture_empty.service(&resolution, &redactor);
+    let request = input(json!({"timeout": "7.5"}));
+    let result = service.create_assistants(&request).await.expect("answered");
+    assert_eq!(openai_call(&result).api_base, "https://base-url.test/v1");
+    assert_eq!(seen_auth(&fixture_empty, 0), "Bearer sk-openai-key");
+    assert_eq!(
+        seen_deadline(&fixture_empty, 0),
+        Duration::from_secs_f64(7.5)
+    );
+
+    // no configured base at all is the OpenAI default, and no key is the SDK's own OpenAIError
+    let fixture_default = Fixture::new(resource_sdk_settings::Settings::default());
+    let resolution = fixture_default.resolution();
+    let service = fixture_default.service(&resolution, &redactor);
+    let missing = failure(service.create_assistants(&input(json!({}))).await);
+    assert_eq!(missing.class, "OpenAIError");
+    assert_eq!(missing.status, None);
+
+    // a structured timeout survives for openai and bounds the call by its read phase
+    let fixture_structured = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    });
+    let resolution = fixture_structured.resolution();
+    let service = fixture_structured.service(&resolution, &redactor);
+    let request = input(json!({"timeout": {"read": 9.0, "connect": 2.0}}));
+    service.create_assistants(&request).await.expect("answered");
+    assert_eq!(
+        seen_deadline(&fixture_structured, 0),
+        Duration::from_secs(9)
+    );
+}
+
+#[tokio::test]
+async fn assistant_create_azure_token() {
+    let redactor = redactor();
+    let settings = resource_sdk_settings::Settings {
+        azure_api_base: Some(String::from("https://azure.test")),
+        azure_api_version: Some(String::from("2024-02-15-preview")),
+        azure_openai_api_key: Some(SecretString::from("key-settings")),
+        ..Default::default()
+    };
+    let fixture = Fixture::new(settings).env("AZURE_AD_TOKEN", "token-env");
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // an explicit null extra_body reads the environment token, which the facade drops
+    let request = input(json!({"provider": "azure", "extra_body": null}));
+    let result = service
+        .acreate_assistants(&request)
+        .await
+        .expect("answered");
+    let call = azure_call(&result);
+    assert_eq!(
+        call.azure_ad_token
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("token-env")
+    );
+    assert_eq!(call.api_base.as_deref(), Some("https://azure.test"));
+    assert_eq!(call.api_version.as_deref(), Some("2024-02-15-preview"));
+    let seen = fixture.transport.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://azure.test/openai/assistants?api-version=2024-02-15-preview"
+    );
+    assert_eq!(seen[0].headers["api-key"], "key-settings");
+    assert!(!seen[0].headers.contains_key("authorization"));
+
+    // an absent or empty extra_body reads no environment token
+    for extra_body in [None, Some(json!({}))] {
+        let mut request = input(json!({"provider": "azure"}));
+        request.extra_body = extra_body;
+        let result = service.create_assistants(&request).await.expect("answered");
+        assert_eq!(azure_call(&result).azure_ad_token, None);
+    }
+
+    // a body token wins and is popped; every other extra_body key stays out of the request
+    let request = input(json!({
+        "provider": "azure",
+        "azure_ad_token": "token-params",
+        "extra_body": {"azure_ad_token": "token-body", "other": "x"},
+    }));
+    let result = service
+        .acreate_assistants(&request)
+        .await
+        .expect("answered");
+    let call = azure_call(&result);
+    assert_eq!(
+        call.azure_ad_token
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("token-body")
+    );
+    assert_eq!(
+        call.litellm_params
+            .azure_ad_token
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("token-params")
+    );
+    assert_eq!(
+        fixture.transport.seen()[3].body,
+        json!({"model": "gpt-4o-mini"})
+    );
+
+    // the litellm_params token reaches the SDK and the facade's own token never does
+    let fixture_bearer = Fixture::new(resource_sdk_settings::Settings {
+        azure_api_base: Some(String::from("https://azure.test")),
+        ..Default::default()
+    });
+    let resolution = fixture_bearer.resolution();
+    let service = fixture_bearer.service(&resolution, &redactor);
+    let request = input(json!({"provider": "azure", "azure_ad_token": "token-params"}));
+    service.create_assistants(&request).await.expect("answered");
+    let seen = fixture_bearer.transport.seen();
+    assert_eq!(seen[0].headers["authorization"], "Bearer token-params");
+    assert!(!seen[0].headers.contains_key("api-key"));
+}
+
+#[tokio::test]
+async fn assistant_create_flag_and_failures() {
+    let redactor = redactor();
+    let fixture = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    });
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // any bool, or none at all, is a legal flag; the async entry forces it true whatever the caller said
+    for entry in [Entry::Sync, Entry::Async] {
+        for flag in [None, Some(false), Some(true)] {
+            let mut request = input(json!({}));
+            request.async_create_assistants = flag.map(AsyncFlag::Bool);
+            let result = match entry {
+                Entry::Sync => service.create_assistants(&request).await,
+                Entry::Async => service.acreate_assistants(&request).await,
+            }
+            .expect("answered");
+            let expected = entry == Entry::Async || flag == Some(true);
+            assert_eq!(openai_call(&result).is_async, expected);
+        }
+    }
+
+    // anything else raises the ValueError before a client is built
+    for flag in [json!(1), json!("true")] {
+        let mut request = input(json!({}));
+        request.async_create_assistants =
+            Some(serde_json::from_value::<AsyncFlag>(flag).expect("a flag"));
+        let value_error = failure(service.create_assistants(&request).await);
+        assert_eq!(value_error.class, "ValueError");
+        assert_eq!(value_error.status, None);
+        assert_eq!(
+            value_error.message,
+            "Invalid value passed in for async_create_assistants. Only bool or None allowed"
+        );
+    }
+
+    // an unsupported provider is a 400 before any request is sent
+    let request = input(json!({"provider": "anthropic", "model": "claude-3"}));
+    let unsupported = failure(service.create_assistants(&request).await);
+    assert_eq!(unsupported.class, "BadRequestError");
+    assert_eq!(unsupported.status, Some(400));
+    assert_eq!(unsupported.kind, WireField::Null);
+    assert_eq!(unsupported.param, WireField::Null);
+    assert_eq!(unsupported.code, WireField::Null);
+    assert_eq!(
+        unsupported.message,
+        "LiteLLM doesn't support anthropic for 'create_assistants'. Only 'openai' is supported."
+    );
+
+    // a provider that answers nothing is the wrapper's own 500
+    let absent = no_response();
+    assert_eq!(absent.class, "InternalServerError");
+    assert_eq!(absent.status, Some(500));
+    assert_eq!(
+        absent.kind,
+        WireField::Text(String::from("internal_server_error"))
+    );
+    assert_eq!(absent.param, WireField::Null);
+    assert_eq!(absent.code, WireField::Null);
+    assert_eq!(
+        absent.message,
+        "No response returned from 'create_assistants'"
+    );
+
+    // the sync entry keeps the body's type/param/code; the async one maps through exception_type to nulls
+    let body_404 = r#"{"error":{"message":"no such assistant","type":"invalid_request_error","param":"assistant_id","code":"missing"}}"#;
+    let fixture_404 = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    })
+    .reply(404, body_404)
+    .reply(404, body_404);
+    let resolution = fixture_404.resolution();
+    let service = fixture_404.service(&resolution, &redactor);
+    let request = input(json!({}));
+    let sync = failure(service.create_assistants(&request).await);
+    assert_eq!(sync.class, "NotFoundError");
+    assert_eq!(sync.status, Some(404));
+    assert_eq!(
+        sync.kind,
+        WireField::Text(String::from("invalid_request_error"))
+    );
+    assert_eq!(sync.param, WireField::Text(String::from("assistant_id")));
+    assert_eq!(sync.code, WireField::Text(String::from("missing")));
+    let asynchronous = failure(service.acreate_assistants(&request).await);
+    assert_eq!(asynchronous.class, "NotFoundError");
+    assert_eq!(asynchronous.status, Some(404));
+    assert_eq!(asynchronous.kind, WireField::Null);
+    assert_eq!(asynchronous.param, WireField::Null);
+    assert_eq!(asynchronous.code, WireField::Null);
+
+    // a 500 keeps the body's type in sync and uses the internal_server_error literal in async
+    let body_500 = r#"{"error":{"message":"boom","type":"server_error","param":null,"code":null}}"#;
+    let fixture_500 = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    })
+    .reply(500, body_500)
+    .reply(500, body_500);
+    let resolution = fixture_500.resolution();
+    let service = fixture_500.service(&resolution, &redactor);
+    let request = input(json!({}));
+    let sync = failure(service.create_assistants(&request).await);
+    assert_eq!(sync.class, "InternalServerError");
+    assert_eq!(sync.status, Some(500));
+    assert_eq!(sync.kind, WireField::Text(String::from("server_error")));
+    let asynchronous = failure(service.acreate_assistants(&request).await);
+    assert_eq!(asynchronous.class, "InternalServerError");
+    assert_eq!(asynchronous.status, Some(500));
+    assert_eq!(
+        asynchronous.kind,
+        WireField::Text(String::from("internal_server_error"))
+    );
+    assert_eq!(asynchronous.param, WireField::Null);
+    assert_eq!(asynchronous.code, WireField::Null);
+
+    // a raw failure with no status is an APIConnection 500 in the async entry and a bare ValueError in sync
+    let asynchronous = raised(
+        Raised::Local(String::from("no provider")),
+        "gpt-4o-mini",
+        "openai",
+        Entry::Async,
+        &redactor,
+    );
+    assert_eq!(asynchronous.class, "APIConnectionError");
+    assert_eq!(asynchronous.status, Some(500));
+    let sync = raised(
+        Raised::Local(String::from("no provider")),
+        "gpt-4o-mini",
+        "openai",
+        Entry::Sync,
+        &redactor,
+    );
+    assert_eq!(sync.class, "ValueError");
+    assert_eq!(sync.status, None);
+}
+
+#[test]
+fn assistant_create_timeout_values_parse() {
+    let number: CreateTimeout = serde_json::from_value(json!(0)).expect("a number");
+    assert_eq!(number, CreateTimeout::Seconds(0.0));
+    let arguments: CreateTimeout = serde_json::from_value(json!("7.5")).expect("text");
+    assert_eq!(arguments, CreateTimeout::Text(String::from("7.5")));
+    let phases: CreateTimeout = serde_json::from_value(json!({"read": 9.0})).expect("phases");
+    match phases {
+        CreateTimeout::Phases(phases) => assert_eq!(phases.read, Some(9.0)),
+        CreateTimeout::Seconds(_) | CreateTimeout::Text(_) => panic!("a phase map parsed as plain"),
+    }
+}
