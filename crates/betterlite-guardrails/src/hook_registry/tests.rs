@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -13,8 +14,12 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks:
     RealtimeInputTranscription,
 };
 use betterlite_config::tls::VerifySetting;
+use betterlite_http::proxy::base_builder;
 use reqwest::Client;
+use reqwest::header::{HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing::subscriber::set_default;
+use tracing_subscriber::fmt;
 
 use super::error::HookRegistryError;
 use super::hooks::supported_event_hooks;
@@ -746,6 +751,24 @@ fn agent_365_args_keep_the_tenant_identity() {
 }
 
 #[test]
+fn agent_365_reports_the_overrides_it_ignores() {
+    let sink = LogSink::default();
+    let writer = sink.clone();
+    let subscriber = fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let guard = set_default(subscriber);
+    let spec = build_ok(wire::AGENT_365);
+    drop(guard);
+    assert!(matches!(&spec.kind, HookKind::Agent365(_)));
+    let printed = String::from_utf8(sink.0.lock().expect("the captured log").clone())
+        .expect("the captured log is UTF-8");
+    assert!(printed.contains("ignoring api_base"), "{printed}");
+}
+
+#[test]
 fn mcp_jwt_signer_registers_the_signer_it_builds() {
     let ports = test_ports();
     let params = test_params(wire::MCP_JWT_SIGNER);
@@ -758,6 +781,32 @@ fn mcp_jwt_signer_registers_the_signer_it_builds() {
     let slot = ports.slot.get().expect("slot holds the signer");
     assert!(Arc::ptr_eq(&slot, signer));
     assert_eq!(ports.registered.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn mcp_jwt_signer_keeps_the_hook_port_client() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-betterlite-port",
+        HeaderValue::from_static("hook-registry"),
+    );
+    let client = base_builder()
+        .default_headers(headers)
+        .build()
+        .expect("a port client");
+    let mut ports = test_ports();
+    ports.client = client;
+    let params = test_params(wire::MCP_JWT_SIGNER);
+    let spec = build_hook_spec(wire::MCP_JWT_SIGNER, &params, "signer-guard", &ports)
+        .expect("wire name is built")
+        .expect("signer builds");
+    let HookKind::McpJwtSigner(signer) = &spec.kind else {
+        panic!("signer spec expected");
+    };
+    assert!(
+        format!("{:?}", signer.idp.client).contains("x-betterlite-port"),
+        "the signer keeps the client the hook port serves"
+    );
 }
 
 #[test]
@@ -817,4 +866,21 @@ fn semantic_guard_needs_the_router() {
         error.to_string(),
         "SemanticGuard requires llm_router for embeddings. Configure a model_list with an embedding model."
     );
+}
+
+#[derive(Clone, Default)]
+struct LogSink(Arc<Mutex<Vec<u8>>>);
+
+impl Write for LogSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the log lock is poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
