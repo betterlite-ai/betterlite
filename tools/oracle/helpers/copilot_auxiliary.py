@@ -100,7 +100,7 @@ class EmbeddingConfig(Protocol):
 
 @runtime_checkable
 class MessagesConfig(Protocol):
-    def validate_anthropic_messages_environment(
+    def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
         self, **kwargs: Unpack[EnvironmentArgs]
     ) -> tuple[dict[str, str], str | None]: ...
 
