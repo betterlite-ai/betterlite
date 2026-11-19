@@ -15,6 +15,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::Value;
+use tokio::runtime::{Builder, Runtime};
 
 use super::{Step, failure};
 
@@ -77,7 +78,7 @@ struct EnqueueCase<'call> {
     step: &'call Step,
     database: Option<&'call dyn EntitySpendQueue>,
     cost: Option<SpendAmount>,
-    runtime: &'call tokio::runtime::Runtime,
+    runtime: &'call Runtime,
 }
 
 pub(super) fn enqueue_value(step: &Step) -> Result<Value, Box<HelperError>> {
@@ -85,9 +86,7 @@ pub(super) fn enqueue_value(step: &Step) -> Result<Value, Box<HelperError>> {
         items: Mutex::new(Vec::new()),
         fail_at: step.fail_at,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(failure)?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let database: Option<&dyn EntitySpendQueue> = step.database.unwrap_or(true).then_some(&queue);
     let case = EnqueueCase {
         step,
