@@ -14,6 +14,7 @@ use tokio::runtime::Runtime;
 use super::call::{SharedCall, SharedSource, StreamAbort};
 use super::framing::ChunkFraming;
 use super::generator::{DEFAULT_LIMITS, SharedStreamGenerator};
+use super::passthrough::PassThroughHooks;
 use super::ports::{BufferedOutput, CostInjection, ReservationRelease};
 use super::sse::Emitted;
 use super::tail::{ANTHROPIC_PING_BYTES, ANTHROPIC_PING_CHUNK};
@@ -379,6 +380,21 @@ fn fast_path_skips_chunk_hook() {
     );
     assert_eq!(frames, vec![String::from("x"), String::from("y")]);
     assert_eq!(rig.events(), vec![String::from("wrap:requested")]);
+}
+
+#[test]
+fn pass_through_hooks_take_the_fast_path() {
+    let hooks = PassThroughHooks;
+    let streaming: &dyn StreamHooks<String> = &hooks;
+    assert!(!streaming.needs_iterator_wrap());
+    assert!(!streaming.needs_per_chunk_hook());
+}
+
+#[test]
+fn standalone_streams_without_wiring() {
+    let generator = SharedStreamGenerator::<String, PassThroughHooks>::standalone(None);
+    let frames = texts(generator.sse_data_generator(call(vec![Ok(text_chunk("x"))]), None));
+    assert_eq!(frames, vec![String::from("x")]);
 }
 
 #[test]
