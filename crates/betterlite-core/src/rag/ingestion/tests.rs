@@ -289,7 +289,7 @@ fn init_leaves_supports_existing_file_id_false() {
 
 #[test]
 fn init_rejects_an_unknown_ingest_option() {
-    let parsed = serde_json::from_str::<IngestionOptions>(r#"{"nmae": "docs"}"#);
+    let parsed = serde_json::from_str::<IngestionOptions>(r#"{"unexpected_option": "docs"}"#);
     assert!(parsed.is_err());
 }
 
