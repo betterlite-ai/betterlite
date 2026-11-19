@@ -12,8 +12,6 @@ use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, accept_async};
 
-use super::input::MAX_FRAMES;
-
 // A poisoned lock is recovered instead of panicking, since no code here can leave the guarded data inconsistent
 pub(crate) trait Locked<T> {
     fn locked(&self) -> MutexGuard<'_, T>;

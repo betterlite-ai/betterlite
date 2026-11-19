@@ -26,7 +26,7 @@ pub(crate) enum Operation {
 }
 
 impl Operation {
-    fn size(&self) -> usize {
+    const fn size(&self) -> usize {
         match self {
             Self::ShouldBuffer { text }
             | Self::Buffer { text }
