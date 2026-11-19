@@ -100,7 +100,7 @@ impl HasModelDumpJson for FailingJson {
 struct FailingDump;
 
 impl HasModelDump for FailingDump {
-    fn model_dump(&self) -> Result<IndexMap<String, Json>, SyntheticEventsError> {
+    fn model_dump(&self) -> Result<BTreeMap<String, Json>, SyntheticEventsError> {
         Err(SyntheticEventsError::NotAnObject { field: "chunk" })
     }
 }
@@ -858,13 +858,9 @@ fn proxy_request_projection() {
     let mut expected = object_map(&support::json(
         r#"{"input": ["hello"], "store": null, "tools": null, "tool_choice": "auto", "instructions": null, "metadata": {"tenant": "t1"}}"#,
     ));
-    expected.insert(
-        "litellm_metadata".to_owned(),
-        support::json(&format!(
-            r#"{{"proxy_server_request": {request}}}"#,
-            request = request
-        )),
-    );
+    let mut metadata = IndexMap::new();
+    metadata.insert("proxy_server_request".to_owned(), request.clone());
+    expected.insert("litellm_metadata".to_owned(), Json::Object(metadata));
     expected.insert("proxy_server_request".to_owned(), request);
     assert_eq!(Json::Object(kwargs), Json::Object(expected));
 
