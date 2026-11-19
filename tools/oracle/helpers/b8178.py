@@ -88,7 +88,7 @@ class CollectedStep(TypedDict):
     endpoint: str
 
 
-Step = (
+Step: TypeAlias = (
     EmbeddingRequestStep
     | EmbeddingReplyStep
     | UrlStep
