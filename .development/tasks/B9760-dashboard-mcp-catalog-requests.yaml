@@ -63,7 +63,7 @@ description: >-
   No on-disk HTTP case currently sends these management requests. B8625/B8627/B8701 have
   planned generic route cases, but not the create/edit builder's null/omission choices,
   import-result projection or review/toolset sequence. The shared B9735 cases are planned,
-  not existing evidence. Use B136's /__mcp_fixture/ protocol and $mcp_request_id substitution
+  not existing evidence. Use B9943's /__mcp_fixture/ id correlation and $mcp_request_id substitution
   for local MCP health targets; compare status, response
   envelopes, content-type, auth error type/param/code and secret redaction. Limit comparison
   exclusions to generated IDs, timestamps and human error text at their actual pointers.
