@@ -6,7 +6,6 @@ use betterlite_auth::auth_cache::AuthCache;
 use betterlite_auth::auth_cache::WriteOptions;
 use betterlite_auth::auth_cache::WriteTtl;
 use betterlite_auth::auth_cache::keys::{Partition, partition};
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::batch_reads::BatchReadOptions;
 use betterlite_cache::batch_reads::BatchReads as _;
@@ -46,7 +45,7 @@ pub trait SpendCache: Send + Sync {
         armed: ArmedSpendRead,
     ) -> Result<Vec<Option<Json>>, SpendCacheUpdateError>;
 
-    async fn auth(&self, key: &str) -> Result<Option<UserAPIKeyAuth>, SpendCacheUpdateError>;
+    async fn cached_key(&self, key: &str) -> Option<Json>;
 
     async fn write(&self, entries: &[(String, Json)], ttl: f64, local_only: bool);
 }
@@ -139,10 +138,8 @@ where
             .collect())
     }
 
-    async fn auth(&self, key: &str) -> Result<Option<UserAPIKeyAuth>, SpendCacheUpdateError> {
-        self.async_get_auth(key, false)
-            .await
-            .map_err(SpendCacheUpdateError::KeyAuth)
+    async fn cached_key(&self, key: &str) -> Option<Json> {
+        self.async_get(key, false).await
     }
 
     async fn write(&self, entries: &[(String, Json)], ttl: f64, local_only: bool) {

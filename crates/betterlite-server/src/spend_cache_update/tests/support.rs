@@ -7,10 +7,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::{AuthCache, gateway_cache};
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
@@ -26,7 +24,6 @@ use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 use chrono::{DateTime, FixedOffset, TimeZone as _};
-use serde_json::json;
 use tempfile::NamedTempFile;
 use tokio::net::TcpListener;
 use tokio_util::task::TaskTracker;
@@ -55,6 +52,7 @@ pub(crate) fn json_from(text: &str) -> Json {
     serde_json::from_str(text).expect("the cached json fixture parses")
 }
 
+#[derive(Clone)]
 pub(crate) struct WriteCall {
     pub entries: Vec<(String, Json)>,
     pub ttl: f64,
@@ -70,7 +68,7 @@ pub(crate) enum FakeFailure {
 #[derive(Default)]
 pub(crate) struct FakeState {
     pub cached: BTreeMap<String, Json>,
-    pub auth: Option<UserAPIKeyAuth>,
+    pub key_object: Option<Json>,
     pub auth_requests: Vec<String>,
     pub declared: Vec<Vec<String>>,
     pub resolves: usize,
@@ -111,8 +109,8 @@ impl FakeState {
     }
 
     #[must_use]
-    pub(crate) fn with_auth(mut self, auth: UserAPIKeyAuth) -> Self {
-        self.auth = Some(auth);
+    pub(crate) fn with_key_object(mut self, key_object: Json) -> Self {
+        self.key_object = Some(key_object);
         self
     }
 
@@ -155,6 +153,7 @@ impl SpendCache for FakeCache {
             return Ok(None);
         }
         state.declared.push(keys.to_vec());
+        drop(state);
         Ok(Some(ArmedSpendRead {
             keys: keys.to_vec(),
             reads: Vec::new(),
@@ -171,10 +170,9 @@ impl SpendCache for FakeCache {
         if state.fail == Some(FakeFailure::Reads) {
             return Err(SpendCacheUpdateError::CacheRead);
         }
-        Ok(keys
-            .iter()
-            .map(|key| state.cached.get(key).cloned())
-            .collect())
+        let cached = state.cached.clone();
+        drop(state);
+        Ok(keys.iter().map(|key| cached.get(key).cloned()).collect())
     }
 
     async fn resolve(
@@ -186,17 +184,19 @@ impl SpendCache for FakeCache {
         if state.fail == Some(FakeFailure::Resolve) {
             return Err(SpendCacheUpdateError::CacheRead);
         }
+        let cached = state.cached.clone();
+        drop(state);
         Ok(armed
             .keys
             .iter()
-            .map(|key| state.cached.get(key).cloned())
+            .map(|key| cached.get(key).cloned())
             .collect())
     }
 
-    async fn auth(&self, key: &str) -> Result<Option<UserAPIKeyAuth>, SpendCacheUpdateError> {
+    async fn cached_key(&self, key: &str) -> Option<Json> {
         let mut state = self.state();
         state.auth_requests.push(key.to_owned());
-        Ok(state.auth.clone())
+        state.key_object.clone()
     }
 
     async fn write(&self, entries: &[(String, Json)], ttl: f64, local_only: bool) {
@@ -276,8 +276,8 @@ fn dual_cache_settings() -> DualCacheSettings {
     }
 }
 
-pub(crate) fn local_cache() -> AuthCache<DualCache<LocalMemoryOps>> {
-    gateway_cache(memory(), memory(), None, dual_cache_settings(), 45.0_f64)
+pub(crate) fn local_cache(ordinary: Arc<LocalMemoryOps>) -> AuthCache<DualCache<LocalMemoryOps>> {
+    gateway_cache(ordinary, memory(), None, dual_cache_settings(), 45.0_f64)
 }
 
 pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> {
@@ -302,13 +302,11 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
 }
 
 fn unreachable_options(port: u16) -> RedisCacheOptions {
-    let overrides: RedisOverrides = serde_json::from_value(json!({
-        "host": "127.0.0.1",
-        "port": port,
-        "socket_timeout": 0.05,
-        "socket_connect_timeout": 0.05,
-    }))
-    .expect("the unreachable overrides parse");
+    let wire = format!(
+        r#"{{"host":"127.0.0.1","port":{port},"socket_timeout":0.05,"socket_connect_timeout":0.05}}"#
+    );
+    let overrides: RedisOverrides =
+        serde_json::from_str(&wire).expect("the unreachable overrides parse");
     RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
@@ -369,27 +367,14 @@ pub(crate) fn written(log: &NamedTempFile) -> String {
     fs::read_to_string(log.path()).expect("the captured log reads")
 }
 
-pub(crate) fn key_auth(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> UserAPIKeyAuth {
-    let mut fields: BTreeMap<String, JsonData> = BTreeMap::from([
-        (
-            "token".to_owned(),
-            JsonData::String("cached-token".to_owned()),
-        ),
-        ("key_alias".to_owned(), JsonData::String("alias".to_owned())),
-        ("user_id".to_owned(), JsonData::String("user-1".to_owned())),
-        (
-            "spend".to_owned(),
-            JsonData::Number(serde_json::Number::from(spend)),
-        ),
-        ("soft_budget_cooldown".to_owned(), JsonData::Bool(cooldown)),
-    ]);
-    if let Some(limit) = soft_budget {
-        fields.insert(
-            "soft_budget".to_owned(),
-            JsonData::Number(serde_json::Number::from(limit)),
-        );
-    }
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the auth fixture builds")
+pub(crate) fn key_object(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> Json {
+    let limit = match soft_budget {
+        Some(value) => value.to_string(),
+        None => "null".to_owned(),
+    };
+    json_from(&format!(
+        r#"{{"token":"cached-token","key_alias":"alias","user_id":"user-1","spend":{spend},"soft_budget":{limit},"soft_budget_cooldown":{cooldown}}}"#
+    ))
 }
 
 #[derive(Default)]

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use betterlite_auth::auth_cache::keys::CacheKey;
 use betterlite_auth::auth_cache::payload::PayloadError;
-use betterlite_auth::resolved_key::auth::{AuthError, ParentOtelSpan};
+use betterlite_auth::resolved_key::auth::ParentOtelSpan;
 use betterlite_cache::batch_reads::BatchReadsError;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
 use betterlite_models::decisions::Json;
@@ -37,10 +37,6 @@ pub enum SpendCacheUpdateError {
     Declare(#[source] BatchReadsError),
     #[error("the request batch read could not be resolved")]
     Resolve(#[source] BatchReadsError),
-    #[error("the cached api key could not be read")]
-    KeyAuth(#[source] AuthError),
-    #[error("the cached api key could not be decoded")]
-    KeyView(#[source] serde_json::Error),
     #[error("the cached spend object could not be decoded")]
     Decode(#[source] PayloadError),
     #[error("the updated spend object could not be encoded")]

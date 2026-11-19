@@ -12,9 +12,6 @@ deviations:
   - what: A cached tag row whose spend is null is treated as an undecodable row and skipped.
     why: betterlite's TagTable declares spend as a required Decimal, so a null row fails validation and the cache reports a miss, where LiteLLM's `spend or 0.0` reads it as zero; docs/compatibility.md makes a null for a defined type an error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4166
-  - what: A cached key object whose spend is null fails the auth cache's validation and reads as a miss, so no projected alert is sent.
-    why: the verification token row declares spend without a null form, so a null payload is invalid and B733's decode returns a miss, where LiteLLM's `spend or 0.0` reads it as zero and can still alert.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3959
   - what: A global proxy spend cached as a JSON boolean is left untouched; LiteLLM's isinstance check accepts a bool as an int and increments it.
     why: docs/compatibility.md sends input of the declared type, and the global spend's declared type is a number, so Python's bool-is-an-int habit is not copied.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4034-L4035
@@ -31,7 +28,7 @@ kept_bugs:
   - what: A missing or undecodable cached user row returns from the user branch before the global spend is bumped, so a present global value stays unchanged when the user row is absent.
     why: LiteLLM returns on a user-row miss instead of skipping ahead to the global update; copied because a setup that only sees the global move alongside a decoded user row keeps that.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4010-L4013
-  - what: The key object's spend is never written back; the key branch reads the cached UserAPIKeyAuth, computes the new spend for the projected alert, and leaves the stored row as it was.
+  - what: The key object's spend is never written back; the key branch reads the cached key object, computes the new spend for the projected alert, and leaves the stored row as it was.
     why: LiteLLM queues the user, end-user, team and tag rows in one list but appends nothing from the key branch; copied because key spend still belongs to the key manager that wrote it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3947-L3997
   - what: The projected alert is sent on every response over the soft limit because the cooldown is never set; the branch carries LiteLLM's "# set cooldown on alert" comment and no code.

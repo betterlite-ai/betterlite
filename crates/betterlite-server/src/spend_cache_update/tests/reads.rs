@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_auth::auth_cache::WriteOptions;
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
 use betterlite_redis::request_batch::lock;
@@ -16,7 +18,7 @@ use super::super::{
 };
 use super::support::{
     FakeCache, FakeState, HASHED_TEST_TOKEN, RecordingAlerts, capture_logs, in_request_scope,
-    json_from, local_cache, unreachable_cache, update_deps, written,
+    json_from, local_cache, memory, unreachable_cache, update_deps, written,
 };
 
 fn armed(keys: &[String]) -> ArmedSpendRead {
@@ -45,7 +47,6 @@ fn take_armed() -> ArmedSpendRead {
         .expect("the armed slot");
     *slot
         .downcast::<ArmedSpendRead>()
-        .ok()
         .expect("the slot holds the armed read")
 }
 
@@ -123,7 +124,7 @@ async fn a_failed_read_updates_nothing() {
         user_id: Some("user-1".to_owned()),
         end_user_id: None,
         team_id: None,
-        response_cost: Some(Decimal::from(5)),
+        response_cost: Some(Decimal::from(5_i32)),
         span: None,
         tags: None,
     };
@@ -153,6 +154,7 @@ async fn the_armed_read_is_used_when_its_keys_match() {
     let state = cache.state();
     assert_eq!(state.resolves, 1);
     assert!(state.reads.is_empty());
+    drop(state);
 }
 
 #[tokio::test]
@@ -242,7 +244,7 @@ async fn arming_declares_the_batch_read_under_the_slot() {
 
 #[tokio::test]
 async fn a_real_cache_without_redis_does_not_arm() {
-    let cache = local_cache();
+    let cache = local_cache(memory());
     let keys = vec!["user-1".to_owned()];
     let armed = in_request_scope(async {
         arm_cache_read(&keys, &cache).expect("arming without redis is a no-op");
@@ -280,7 +282,7 @@ async fn a_real_cache_with_redis_arms_one_read_per_partition() {
 
 #[tokio::test]
 async fn the_real_cache_reads_the_cached_values_without_an_armed_read() {
-    let cache = local_cache();
+    let cache = local_cache(memory());
     cache
         .async_set(
             Some("user-1"),
@@ -301,7 +303,11 @@ async fn the_real_cache_reads_the_cached_values_without_an_armed_read() {
 
 #[tokio::test]
 async fn a_real_cache_whose_batch_read_fails_logs_the_warning_and_returns_no_values() {
-    let cache = unreachable_cache().await;
+    let ordinary = memory();
+    ordinary
+        .set_cache("user-1", CacheValue::Bytes(vec![1_u8, 2, 3]), None)
+        .expect("the unrepresentable memory fixture is stored");
+    let cache = local_cache(ordinary);
     let keys = vec!["user-1".to_owned()];
     let (log, _guard) = capture_logs(Level::WARN);
     let values = read_cache_values(&keys, None, &cache).await;
