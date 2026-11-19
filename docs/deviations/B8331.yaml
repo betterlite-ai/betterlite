@@ -1,0 +1,15 @@
+task: B8331
+deviations:
+  - what: A SAP token request that needs a client certificate fails with an error naming the pooled client, before any request is sent.
+    why: The token transport runs on B173's pooled reqwest client, which cannot present a client certificate. LiteLLM hands httpx a cert pair built from the AICORE cert and key. Secret-based SAP auth is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L384-L393
+  - what: The SAP token POST and the deployment and configuration GETs go through the dispatch transport instead of fresh or module-level httpx clients.
+    why: B5950 takes its transport as an argument, so the arm passes the pooled client the call already owns. The URL, form body, headers and timeout are the ones LiteLLM builds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L373-L396
+  - what: The SAP chat deployment lookup uses the 30 second token timeout, where LiteLLM reads the deployment listing through the module-level client and its own timeout.
+    why: B5950's deployment lookup takes the same deadline as the token request. The embedding arm already reads the listing with a 30 second client in LiteLLM, so the two arms agree in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L169-L185
+  - what: The sap-chat, sap-embedding, sagemaker-chat and sagemaker-nova cases compare reply ids, token usage and AWS signature headers as present, not equal.
+    why: The ids are random, usage depends on each side's tokenizer and the signature covers the request time. The requests the arms prepare and the mapped error statuses are what the cases compare.
+    link: ""
+kept_bugs: []
