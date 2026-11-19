@@ -16,6 +16,15 @@ deviations:
       betterlite runs no pydantic; the location ("0.start") matches, the sentence does not.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L23-L32
+  - what: >-
+      A malformed access_windows in config.yaml stops startup with the YAML path, model_list.<index>.model_info.access_windows:
+      <error>, instead of LiteLLM's model '<model_name>': invalid model_info.access_windows: <error> wrapper.
+    why: >-
+      betterlite validates the windows while it loads config.yaml, before a router or a deployment knows its model
+      name, so the config path is the location it can name. The inner window location and field, such as 0.start,
+      still match LiteLLM's.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5084-L5089
 kept_bugs:
   - what: >-
       A proxy admin request without a team id keeps only the deployments no team owns; the ambiguity refusal fires
