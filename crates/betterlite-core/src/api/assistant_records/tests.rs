@@ -219,10 +219,15 @@ async fn assistant_create_optional_values() {
     let request = input(json!({
         "api_base": "https://request.test/v1",
         "api_key": "sk-request",
-        "temperature": 0,
-        "top_p": 0.0,
+        "name": "",
+        "description": "",
+        "instructions": "",
         "tools": [],
-        "metadata": {"team": "ai"},
+        "tool_resources": {},
+        "metadata": {},
+        "temperature": 0,
+        "top_p": 0,
+        "response_format": {"type": "json_object"},
         "unknown_kwarg": "dropped",
         "stream": false,
     }));
@@ -254,12 +259,45 @@ async fn assistant_create_optional_values() {
             request.body,
             json!({
                 "model": "gpt-4o-mini",
-                "metadata": {"team": "ai"},
-                "temperature": 0,
+                "name": "",
+                "description": "",
+                "instructions": "",
                 "tools": [],
-                "top_p": 0.0,
+                "tool_resources": {},
+                "metadata": {},
+                "temperature": 0,
+                "top_p": 0,
+                "response_format": {"type": "json_object"},
             })
         );
+    }
+
+    // a null for every optional field stays out of the create data
+    let request = input(json!({
+        "api_base": "https://request.test/v1",
+        "api_key": "sk-request",
+        "name": null,
+        "description": null,
+        "instructions": null,
+        "tools": null,
+        "tool_resources": null,
+        "metadata": null,
+        "temperature": null,
+        "top_p": null,
+        "response_format": null,
+    }));
+    for entry in [Entry::Sync, Entry::Async] {
+        let result = match entry {
+            Entry::Sync => service.create_assistants(&request).await,
+            Entry::Async => service.acreate_assistants(&request).await,
+        }
+        .expect("the provider answered");
+        assert_eq!(result.assistant.id, "asst_a");
+    }
+    let seen = fixture.transport.seen();
+    assert_eq!(seen.len(), 4);
+    for request in &seen[2..] {
+        assert_eq!(request.body, json!({"model": "gpt-4o-mini"}));
     }
 }
 
@@ -331,13 +369,30 @@ async fn assistant_create_credentials() {
         Duration::from_secs_f64(7.5)
     );
 
-    // no configured base at all is the OpenAI default, and no key is the SDK's own OpenAIError
+    // with no key the SDK raises its own OpenAIError
     let fixture_default = Fixture::new(resource_sdk_settings::Settings::default());
     let resolution = fixture_default.resolution();
     let service = fixture_default.service(&resolution, &redactor);
     let missing = failure(service.create_assistants(&input(json!({}))).await);
     assert_eq!(missing.class, "OpenAIError");
     assert_eq!(missing.status, None);
+
+    // a missing base is the OpenAI default, unlike Azure, which has none
+    let fixture_base = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    });
+    let resolution = fixture_base.resolution();
+    let service = fixture_base.service(&resolution, &redactor);
+    let result = service
+        .create_assistants(&input(json!({})))
+        .await
+        .expect("answered");
+    assert_eq!(openai_call(&result).api_base, "https://api.openai.com/v1");
+    assert_eq!(
+        fixture_base.transport.seen()[0].url,
+        "https://api.openai.com/v1/assistants"
+    );
 
     // a structured timeout survives for openai and bounds the call by its read phase
     let fixture_structured = Fixture::new(resource_sdk_settings::Settings {
@@ -415,7 +470,16 @@ async fn assistant_create_azure_options() {
     );
     assert_eq!(seen[4].deadline, Duration::from_secs_f64(7.5));
 
-    // an azure call with no endpoint anywhere is a bare ValueError, not a provider status
+    // a structured timeout is accepted for azure and leaves the deadline at the SDK default
+    let request = input(json!({"provider": "azure", "timeout": {"read": 9.0}}));
+    let result = service.create_assistants(&request).await.expect("answered");
+    assert_eq!(azure_call(&result).litellm_params.timeout, None);
+    assert_eq!(
+        fixture.transport.seen()[5].deadline,
+        Duration::from_secs(600)
+    );
+
+    // an azure call with no base anywhere has no default and fails as a bare ValueError
     let fixture_unset = Fixture::new(resource_sdk_settings::Settings::default());
     let resolution = fixture_unset.resolution();
     let service = fixture_unset.service(&resolution, &redactor);
