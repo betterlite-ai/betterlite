@@ -158,13 +158,10 @@ fn requested_effort(effort: &str) -> Result<ReasoningEffort, MessagesResponsesOu
 }
 
 fn budget_tokens(value: &Json) -> i64 {
-    match value {
-        Json::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_f64().and_then(|float| float.trunc().to_i64()))
-            .unwrap_or(0),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => 0,
+    if matches!(value, Json::Number(_)) {
+        return integer_value(value).unwrap_or(0);
     }
+    0
 }
 
 const fn responses_effort(effort: BudgetEffort) -> ReasoningEffort {
