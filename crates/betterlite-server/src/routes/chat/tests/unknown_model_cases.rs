@@ -1,18 +1,20 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use axum::Extension;
 use axum::body::{Body, to_bytes};
-use axum::http::Request;
+use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::dispatch::error::DispatchError;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::route_read_through::ModelReadThrough;
-use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 use crate::state::ServerState;
 use crate::state::shared::Shared;
@@ -195,4 +197,32 @@ async fn unknown_model_redacts_a_key_like_model() {
         .map(|fields| fields.error);
     assert_eq!(repeated.as_deref(), Some(reply.error.message.as_str()));
     assert!(!reply.error.message.contains("sk-secretsecretsecretsecret"));
+}
+
+#[tokio::test]
+async fn an_undispatchable_chat_call_answers_internal_server_error() {
+    let errors = ErrorLayer::new().expect("errors");
+    let call = CallContext {
+        id: "call-internal",
+        include_in_body: false,
+        started: Instant::now(),
+        errors: &errors,
+    };
+    let response = dispatch_failure(DispatchError::NotBuilt { entry: "chat" }, &call, None);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let reply: NotFoundReply = serde_json::from_slice(&bytes).expect("error body");
+    assert_eq!(reply.error.message, "the chat call could not be dispatched");
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.param, None);
+    assert_eq!(
+        reply
+            .error
+            .provider_specific_fields
+            .map(|fields| fields.error),
+        None
+    );
 }
