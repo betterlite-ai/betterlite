@@ -112,58 +112,50 @@ where
             };
             let payload = item.map_err(source_error)?;
             self.check_duration()?;
-            if let Some(event) = self.process_payload(&payload, dispatch).await? {
-                return self.deliver(event).await;
+            // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
+            let text = replaced_text(&payload);
+            let processed = ResponsesEventProcessor {
+                transform: self.engine.transform,
+                tokenization: self.engine.tokenization,
+                calculator: self.engine.calculator,
+                hooks: self.engine.hooks,
+                details: &mut self.engine.details,
+                dispatch,
+                limits: self.engine.limits,
+            }
+            .process(
+                &text,
+                &mut self.state,
+                &mut self.callback,
+                self.engine.logging,
+            )
+            .await;
+            let yielded = processed.map_err(|error| DriverError::Class {
+                class: error
+                    .error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
+            })?;
+            if self.state.finished {
+                self.raise_if_ended().await?;
+                return Ok(None);
+            }
+            if let Some(event) = yielded {
+                maybe_raise_for_error_event(self.engine.hooks, &self.state, &event).map_err(
+                    |failure| DriverError::Class {
+                        class: failure.exception,
+                    },
+                )?;
+                let context = ChunkHookContext {
+                    explicit_call_type: self.state.call_type.as_deref(),
+                    logging_call_type: None,
+                    request_data: Some(&self.state.request_data),
+                    model_call_details: &self.engine.details,
+                };
+                let hooked =
+                    chunk_hook(self.engine.hooks, &mut self.callback, context, event).await;
+                note_yielded_event(&mut self.state, &hooked);
+                return Ok(Some(hooked));
             }
         }
-    }
-    async fn process_payload(
-        &mut self,
-        payload: &[u8],
-        dispatch: Dispatch,
-    ) -> Result<Option<Event>, DriverError> {
-        // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
-        let text = replaced_text(payload);
-        let outcome = ResponsesEventProcessor {
-            transform: self.engine.transform,
-            tokenization: self.engine.tokenization,
-            calculator: self.engine.calculator,
-            hooks: self.engine.hooks,
-            details: &mut self.engine.details,
-            dispatch,
-            limits: self.engine.limits,
-        }
-        .process(
-            &text,
-            &mut self.state,
-            &mut self.callback,
-            self.engine.logging,
-        )
-        .await;
-        let result = outcome.map_err(|error| DriverError::Class {
-            class: error.error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
-        })?;
-        if self.state.finished {
-            self.raise_if_ended().await?;
-            return Ok(None);
-        }
-        Ok(result)
-    }
-    async fn deliver(&mut self, event: Event) -> Result<Option<Event>, DriverError> {
-        if let Err(failure) = maybe_raise_for_error_event(self.engine.hooks, &self.state, &event) {
-            return Err(DriverError::Class {
-                class: failure.exception,
-            });
-        }
-        let context = ChunkHookContext {
-            explicit_call_type: self.state.call_type.as_deref(),
-            logging_call_type: None,
-            request_data: Some(&self.state.request_data),
-            model_call_details: &self.engine.details,
-        };
-        let hooked = chunk_hook(self.engine.hooks, &mut self.callback, context, event).await;
-        note_yielded_event(&mut self.state, &hooked);
-        Ok(Some(hooked))
     }
     fn check_duration(&self) -> Result<(), DriverError> {
         self.state
