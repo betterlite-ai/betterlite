@@ -1,11 +1,18 @@
+mod fixture;
+mod input;
+mod ops;
+mod project;
+mod stubs;
+mod tests;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_services_claude_platform")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }
