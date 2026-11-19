@@ -90,8 +90,12 @@ fn completed_event<Context>(
 impl From<ResponseRewriteError> for ChatResponseStreamError {
     fn from(error: ResponseRewriteError) -> Self {
         match error {
-            ResponseRewriteError::Encode(source) => StreamItemsError::Encode { source }.into(),
-            ResponseRewriteError::Decode(source) => StreamItemsError::Response { source }.into(),
+            ResponseRewriteError::Encode(source) => {
+                Self::Items(StreamItemsError::Encode { source })
+            }
+            ResponseRewriteError::Decode(source) => {
+                Self::Items(StreamItemsError::Response { source })
+            }
             ResponseRewriteError::Traversal(source) => Self::Traversal(source),
         }
     }
