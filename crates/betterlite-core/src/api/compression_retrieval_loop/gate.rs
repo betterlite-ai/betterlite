@@ -1,46 +1,37 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::api::compression_interception::engine::CompressionEngine;
 use crate::api::compression_interception::hook::CompressionInterception;
 use crate::api::compression_interception::tools::{CONTENT_RETRIEVE_TOOL_NAME, has_retrieval_tool};
 
-use super::{CONTENT_FIELD, ID_FIELD, INPUT_FIELD, NAME_FIELD, TOOL_USE_TYPE, TYPE_FIELD};
+use super::{
+    COMPRESSION_RETRIEVAL_TYPE, CONTENT_FIELD, ID_FIELD, INPUT_FIELD, NAME_FIELD,
+    THINKING_BLOCKS_FIELD, TOOL_CALLS_FIELD, TOOL_TYPE_FIELD, TOOL_USE_TYPE, TYPE_FIELD,
+};
 
-const TOOL_CALLS_FIELD: &str = "tool_calls";
-const THINKING_BLOCKS_FIELD: &str = "thinking_blocks";
-const TOOL_TYPE_FIELD: &str = "tool_type";
-const COMPRESSION_RETRIEVAL_TYPE: &str = "compression_retrieval";
-
-impl<Engine> CompressionInterception<Engine>
-where
-    Engine: CompressionEngine,
-{
-    #[must_use]
-    pub fn should_run_agentic_loop(
-        &self,
-        response: &Json,
-        tools: Option<&Json>,
-    ) -> (bool, IndexMap<String, Json>) {
-        if !self.settings.enabled || !has_retrieval_tool(tools) {
-            return (false, IndexMap::new());
-        }
-        let (tool_calls, thinking_blocks) = extract_retrieval_blocks(response);
-        if tool_calls.is_empty() {
-            return (false, IndexMap::new());
-        }
-        let mut ready = IndexMap::with_capacity(3);
-        ready.insert(TOOL_CALLS_FIELD.to_owned(), Json::List(tool_calls));
-        ready.insert(
-            THINKING_BLOCKS_FIELD.to_owned(),
-            Json::List(thinking_blocks),
-        );
-        ready.insert(
-            TOOL_TYPE_FIELD.to_owned(),
-            Json::Text(COMPRESSION_RETRIEVAL_TYPE.to_owned()),
-        );
-        (true, ready)
+pub(super) fn should_run_agentic_loop<Engine>(
+    interception: &CompressionInterception<Engine>,
+    response: &Json,
+    tools: Option<&Json>,
+) -> (bool, IndexMap<String, Json>) {
+    if !interception.settings.enabled || !has_retrieval_tool(tools) {
+        return (false, IndexMap::new());
     }
+    let (tool_calls, thinking_blocks) = extract_retrieval_blocks(response);
+    if tool_calls.is_empty() {
+        return (false, IndexMap::new());
+    }
+    let mut ready = IndexMap::with_capacity(3);
+    ready.insert(TOOL_CALLS_FIELD.to_owned(), Json::List(tool_calls));
+    ready.insert(
+        THINKING_BLOCKS_FIELD.to_owned(),
+        Json::List(thinking_blocks),
+    );
+    ready.insert(
+        TOOL_TYPE_FIELD.to_owned(),
+        Json::Text(COMPRESSION_RETRIEVAL_TYPE.to_owned()),
+    );
+    (true, ready)
 }
 
 pub(super) fn extract_retrieval_blocks(response: &Json) -> (Vec<Json>, Vec<Json>) {

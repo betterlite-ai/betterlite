@@ -8,6 +8,7 @@ use betterlite_core::api::compression_interception::engine::{
     CompressionCall, CompressionEngine, CompressionOutput,
 };
 use betterlite_core::api::compression_interception::hook::CompressionInterception;
+use betterlite_core::api::compression_retrieval_loop::CompressionRetrievalLoop;
 use betterlite_core::api::compression_retrieval_loop::plan::RetrievalLoopRequest;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;

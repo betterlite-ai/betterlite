@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
 
+use super::CompressionRetrievalLoop;
 use super::gate::extract_retrieval_blocks;
 use super::plan::{RetrievalLoopError, followup_kwargs, retrieval_content};
 use support::{
@@ -32,9 +33,10 @@ fn gate_without_a_retrieval_tool_returns_false_and_empty() {
     let (run, ready) = interception.should_run_agentic_loop(&response, None);
     assert!(!run);
     assert!(ready.is_empty());
-    let (run, ready) = interception.should_run_agentic_loop(&response, Some(&other_tools()));
-    assert!(!run);
-    assert!(ready.is_empty());
+    let (other_run, other_ready) =
+        interception.should_run_agentic_loop(&response, Some(&other_tools()));
+    assert!(!other_run);
+    assert!(other_ready.is_empty());
 }
 
 #[test]
@@ -422,8 +424,8 @@ fn plan_sets_no_tools_and_the_plan_defaults() {
     assert!(patch.tools.is_none());
     assert!(patch.kwargs.is_empty());
     let empty = index(Vec::new());
-    let built = plan(&interception, &empty, &request(&[], &params, None, &kwargs));
-    assert!(tool_results(&built).is_empty());
+    let no_calls = plan(&interception, &empty, &request(&[], &params, None, &kwargs));
+    assert!(tool_results(&no_calls).is_empty());
 }
 
 #[test]
@@ -468,16 +470,16 @@ fn plan_reads_the_logging_call_id_before_the_kwargs_one() {
         tool_results(&built),
         vec![tool_result(text("call-1"), "from logging")]
     );
-    let built = plan(&interception, &tools, &request(&[], &params, None, &kwargs));
+    let from_kwargs = plan(&interception, &tools, &request(&[], &params, None, &kwargs));
     assert_eq!(
-        raw_json(&built.metadata).get("call_id"),
+        raw_json(&from_kwargs.metadata).get("call_id"),
         Some(&text("from-kwargs"))
     );
     let missing = vec![tool_result(
         text("call-1"),
         "[compressed content key 'k' not found]",
     )];
-    assert_eq!(tool_results(&built), missing);
+    assert_eq!(tool_results(&from_kwargs), missing);
 }
 
 #[test]
@@ -527,24 +529,24 @@ fn plan_max_tokens_falls_through_a_zero_or_null_optional_param() {
     assert_eq!(patch.max_tokens, Some(512));
     let null = index(vec![("max_tokens", Json::Null)]);
     let zero_kwargs = index(vec![("max_tokens", number(0))]);
-    let patch = plan(
+    let null_patch = plan(
         &interception,
         &tools,
         &request(&[], &null, None, &zero_kwargs),
     )
     .request_patch
     .expect("the patch");
-    assert_eq!(patch.max_tokens, Some(0));
+    assert_eq!(null_patch.max_tokens, Some(0));
     let absent = index(Vec::new());
     let no_kwargs = index(Vec::new());
-    let patch = plan(
+    let absent_patch = plan(
         &interception,
         &tools,
         &request(&[], &absent, None, &no_kwargs),
     )
     .request_patch
     .expect("the patch");
-    assert_eq!(patch.max_tokens, None);
+    assert_eq!(absent_patch.max_tokens, None);
 }
 
 #[test]
@@ -563,18 +565,18 @@ fn plan_model_comes_from_agentic_loop_params() {
     .expect("the patch");
     assert_eq!(patch.model.as_deref(), Some("claude-original"));
     let empty = logging("call-1", None);
-    let patch = plan(
+    let empty_logging_patch = plan(
         &interception,
         &tools,
         &request(&[], &params, Some(&empty), &kwargs),
     )
     .request_patch
     .expect("the patch");
-    assert_eq!(patch.model.as_deref(), Some(MODEL));
-    let patch = plan(&interception, &tools, &request(&[], &params, None, &kwargs))
+    assert_eq!(empty_logging_patch.model.as_deref(), Some(MODEL));
+    let plain_patch = plan(&interception, &tools, &request(&[], &params, None, &kwargs))
         .request_patch
         .expect("the patch");
-    assert_eq!(patch.model.as_deref(), Some(MODEL));
+    assert_eq!(plain_patch.model.as_deref(), Some(MODEL));
 }
 
 #[test]
@@ -652,11 +654,11 @@ fn plan_rejects_a_typed_max_tokens_with_the_field_name() {
         }
     ));
     let negative = index(vec![("max_tokens", number(-1))]);
-    let error = interception
+    let negative_error = interception
         .build_agentic_loop_plan(&tools, &request(&[], &negative, None, &kwargs))
         .expect_err("the plan fails");
     assert!(matches!(
-        error,
+        negative_error,
         RetrievalLoopError::FieldType {
             field: "max_tokens"
         }
@@ -682,11 +684,11 @@ fn plan_rejects_typed_tools_with_the_field_name() {
         }
     ));
     let wrong_calls = index(vec![("tool_calls", text("none"))]);
-    let error = interception
+    let wrong_calls_error = interception
         .build_agentic_loop_plan(&wrong_calls, &request(&[], &params, None, &kwargs))
         .expect_err("the plan fails");
     assert!(matches!(
-        error,
+        wrong_calls_error,
         RetrievalLoopError::FieldType {
             field: "tool_calls"
         }

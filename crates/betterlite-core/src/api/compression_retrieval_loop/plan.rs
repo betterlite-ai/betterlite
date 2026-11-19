@@ -12,11 +12,11 @@ use crate::api::compression_interception::hook::{CompressionInterception, resolv
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
 
 use super::gate::block_input;
-use super::{CONTENT_FIELD, ID_FIELD, INPUT_FIELD, NAME_FIELD, TOOL_USE_TYPE, TYPE_FIELD};
+use super::{
+    COMPRESSION_RETRIEVAL_TYPE, CONTENT_FIELD, ID_FIELD, INPUT_FIELD, NAME_FIELD,
+    THINKING_BLOCKS_FIELD, TOOL_CALLS_FIELD, TOOL_TYPE_FIELD, TOOL_USE_TYPE, TYPE_FIELD,
+};
 
-const TOOL_CALLS_FIELD: &str = "tool_calls";
-const THINKING_BLOCKS_FIELD: &str = "thinking_blocks";
-const TOOL_TYPE_FIELD: &str = "tool_type";
 const TOOL_RESULT_TYPE: &str = "tool_result";
 const TOOL_USE_ID_FIELD: &str = "tool_use_id";
 const ROLE_FIELD: &str = "role";
@@ -26,7 +26,6 @@ const MAX_TOKENS_FIELD: &str = "max_tokens";
 const MODEL_FIELD: &str = "model";
 const KEY_FIELD: &str = "key";
 const CALL_ID_FIELD: &str = "call_id";
-const COMPRESSION_RETRIEVAL_TYPE: &str = "compression_retrieval";
 const INTERNAL_KWARGS_PREFIX: &str = "_compression_interception";
 const LOGGING_OBJECT_FIELD: &str = "litellm_logging_obj";
 const NO_RETRIEVAL_KEY: &str = "No retrieval key provided.";
@@ -47,51 +46,49 @@ pub enum RetrievalLoopError {
     FieldType { field: &'static str },
 }
 
-impl<Engine> CompressionInterception<Engine>
+pub(super) fn build_agentic_loop_plan<Engine>(
+    interception: &CompressionInterception<Engine>,
+    tools: &IndexMap<String, Json>,
+    request: &RetrievalLoopRequest<'_>,
+) -> Result<AgenticLoopPlan, RetrievalLoopError>
 where
     Engine: CompressionEngine,
 {
-    pub fn build_agentic_loop_plan(
-        &self,
-        tools: &IndexMap<String, Json>,
-        request: &RetrievalLoopRequest<'_>,
-    ) -> Result<AgenticLoopPlan, RetrievalLoopError> {
-        self.cache.prune();
-        let tool_calls = loop_field(tools, TOOL_CALLS_FIELD)?;
-        let thinking_blocks = loop_field(tools, THINKING_BLOCKS_FIELD)?;
-        let call_id = resolve_call_id(
-            request
-                .logging
-                .and_then(|logging| logging.call_id.as_deref()),
-            request.kwargs,
-        );
-        let cache = self.get_cache(call_id);
-        let mut contents = Vec::with_capacity(tool_calls.len());
-        for call in tool_calls {
-            contents.push(retrieval_content(call, &cache)?);
-        }
-        let patch = AgenticLoopRequestPatch {
-            model: Some(patch_model(request.logging, request.model)?),
-            messages: Some(follow_up_messages(
-                request.messages,
-                thinking_blocks,
-                tool_calls,
-                &contents,
-            )?),
-            tools: None,
-            max_tokens: patch_max_tokens(request.optional_params, request.kwargs)?,
-            optional_params: without_max_tokens(request.optional_params)?,
-            kwargs: followup_kwargs(request.kwargs)?,
-        };
-        Ok(AgenticLoopPlan {
-            run_agentic_loop: true,
-            request_patch: Some(patch),
-            response_override: None,
-            terminate: false,
-            stop_reason: None,
-            metadata: plan_metadata(call_id)?,
-        })
+    interception.cache.prune();
+    let tool_calls = loop_field(tools, TOOL_CALLS_FIELD)?;
+    let thinking_blocks = loop_field(tools, THINKING_BLOCKS_FIELD)?;
+    let call_id = resolve_call_id(
+        request
+            .logging
+            .and_then(|logging| logging.call_id.as_deref()),
+        request.kwargs,
+    );
+    let cache = interception.get_cache(call_id);
+    let mut contents = Vec::with_capacity(tool_calls.len());
+    for call in tool_calls {
+        contents.push(retrieval_content(call, &cache)?);
     }
+    let patch = AgenticLoopRequestPatch {
+        model: Some(patch_model(request.logging, request.model)?),
+        messages: Some(follow_up_messages(
+            request.messages,
+            thinking_blocks,
+            tool_calls,
+            &contents,
+        )?),
+        tools: None,
+        max_tokens: patch_max_tokens(request.optional_params, request.kwargs)?,
+        optional_params: without_max_tokens(request.optional_params)?,
+        kwargs: followup_kwargs(request.kwargs)?,
+    };
+    Ok(AgenticLoopPlan {
+        run_agentic_loop: true,
+        request_patch: Some(patch),
+        response_override: None,
+        terminate: false,
+        stop_reason: None,
+        metadata: plan_metadata(call_id)?,
+    })
 }
 
 fn loop_field<'tools>(
@@ -107,7 +104,7 @@ fn loop_field<'tools>(
     }
 }
 
-fn call_fields(call: &Json) -> Result<&IndexMap<String, Json>, RetrievalLoopError> {
+const fn call_fields(call: &Json) -> Result<&IndexMap<String, Json>, RetrievalLoopError> {
     match call {
         Json::Object(fields) => Ok(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
@@ -132,10 +129,10 @@ pub(super) fn retrieval_content(
     if key.is_empty() {
         return Ok(NO_RETRIEVAL_KEY.to_owned());
     }
-    match cache.get(key) {
-        Some(content) => Ok(content.clone()),
-        None => Ok(format!("[compressed content key '{key}' not found]")),
-    }
+    Ok(cache.get(key).map_or_else(
+        || format!("[compressed content key '{key}' not found]"),
+        String::clone,
+    ))
 }
 
 fn follow_up_messages(
@@ -227,12 +224,12 @@ fn patch_max_tokens(
 fn count_field(value: Option<&Json>) -> Result<Option<u64>, RetrievalLoopError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => match number.as_u64() {
-            Some(count) => Ok(Some(count)),
-            None => Err(RetrievalLoopError::FieldType {
+        Some(Json::Number(number)) => number.as_u64().map_or(
+            Err(RetrievalLoopError::FieldType {
                 field: MAX_TOKENS_FIELD,
             }),
-        },
+            |count| Ok(Some(count)),
+        ),
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(RetrievalLoopError::FieldType {
                 field: MAX_TOKENS_FIELD,
@@ -275,10 +272,7 @@ fn patch_model(
     };
     let recorded: Option<String> = serde_json::from_str(raw.get())
         .map_err(|_error| RetrievalLoopError::FieldType { field: MODEL_FIELD })?;
-    match recorded {
-        Some(recorded_model) => Ok(recorded_model),
-        None => Ok(model.to_owned()),
-    }
+    recorded.map_or_else(|| Ok(model.to_owned()), Ok)
 }
 
 fn plan_metadata(call_id: Option<&str>) -> Result<JsonMap, RetrievalLoopError> {

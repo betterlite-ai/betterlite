@@ -18,6 +18,7 @@ use crate::api::compression_interception::engine::{
 };
 use crate::api::compression_interception::hook::CompressionInterception;
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
+use crate::api::compression_retrieval_loop::CompressionRetrievalLoop;
 use crate::api::compression_retrieval_loop::plan::RetrievalLoopRequest;
 
 pub(super) const MODEL: &str = "claude-sonnet-4";
@@ -115,11 +116,11 @@ pub(super) fn retrieval_block(id: Option<&str>, input: Option<Json>) -> Json {
         ("type", text("tool_use")),
         ("name", text(CONTENT_RETRIEVE_TOOL_NAME)),
     ];
-    if let Some(id) = id {
-        pairs.push(("id", text(id)));
+    if let Some(block_id) = id {
+        pairs.push(("id", text(block_id)));
     }
-    if let Some(input) = input {
-        pairs.push(("input", input));
+    if let Some(supplied) = input {
+        pairs.push(("input", supplied));
     }
     object(pairs)
 }
@@ -134,10 +135,10 @@ pub(super) fn tool_use(id: Json, input: Json) -> Json {
 }
 
 pub(super) fn retrieval_call(id: &str, key: Option<&str>) -> Json {
-    let input = match key {
-        Some(key) => object(vec![("key", text(key))]),
-        None => object(Vec::new()),
-    };
+    let input = key.map_or_else(
+        || object(Vec::new()),
+        |retrieval_key| object(vec![("key", text(retrieval_key))]),
+    );
     tool_use(text(id), input)
 }
 
