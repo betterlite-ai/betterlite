@@ -1,5 +1,6 @@
 pub mod execute;
 pub mod failure;
+mod tests;
 
 use std::collections::BTreeMap;
 use std::future::Future;
