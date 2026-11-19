@@ -1,0 +1,30 @@
+task: B1141
+deviations:
+  - what: >-
+      A finetune_settings entry whose os.environ/ reference names an unset variable fails the config load with
+      MissingEnvironment, where LiteLLM stores a null in that entry and keeps the list usable.
+    why: >-
+      Every os.environ/ reference in a betterlite config resolves through B002, so a missing variable is reported
+      once with its name and path instead of surfacing later as a null credential inside a provider entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L40-L46
+  - what: >-
+      An OpenAI cancellation whose api_version is set reaches the provider and returns the cancelled job, where
+      LiteLLM hands api_version to the OpenAI constructor and raises TypeError before any request.
+    why: >-
+      api_version is not an OpenAI client option, so no working LiteLLM setup can pass one to this branch; betterlite
+      resolves the value with the rest of the chain and lets the provider's own versioning decide.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L86-L97
+  - what: >-
+      A provider lookup that reaches an entry which is not a map fails with a typed error carrying LiteLLM's own
+      message, where LiteLLM raises AttributeError from dict.get.
+    why: >-
+      betterlite reports the malformed finetune_settings entry as its own error instead of leaking a Python
+      attribute failure; the text a caller sees is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L56-L59
+kept_bugs:
+  - what: >-
+      The rejection of every provider other than openai and azure says it does not support that provider for
+      'create_batch', although the call is a fine-tuning cancellation.
+    why: >-
+      Callers match on this text, so betterlite keeps the wrong operation name byte for byte.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L439-L448

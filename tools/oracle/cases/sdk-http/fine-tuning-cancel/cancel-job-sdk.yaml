@@ -1,0 +1,95 @@
+kind: sdk_http
+name: sdk-http-fine-tuning-cancel-job
+env:
+  OPENAI_API_KEY: sk-env-openai
+  AZURE_API_VERSION: "2024-10-21"
+call:
+  fine_tuning_cancel:
+    runs:
+      - fine_tuning_job_id: ftjob_param
+        custom_llm_provider: openai
+        base: param
+        params:
+          api_key: sk-param
+          organization: org-param
+      - fine_tuning_job_id: ftjob_env
+        custom_llm_provider: openai
+        base: env
+        asynchronous: true
+      - fine_tuning_job_id: ftjob_azure
+        custom_llm_provider: azure
+        base: env
+        params:
+          api_key: azure-param
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ftjob_param
+      created_at: 1700000000
+      error: null
+      fine_tuned_model: null
+      finished_at: null
+      hyperparameters: {batch_size: 4, learning_rate_multiplier: 2.0, n_epochs: 3}
+      model: gpt-4o-mini-2024-07-18
+      object: fine_tuning.job
+      organization_id: org-1
+      result_files: []
+      seed: 7
+      status: cancelled
+      trained_tokens: null
+      training_file: file-train
+      validation_file: null
+      estimated_finish: null
+      integrations: null
+      metadata: null
+      method: null
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ftjob_env
+      created_at: 1700000001
+      error: null
+      fine_tuned_model: null
+      finished_at: null
+      hyperparameters: {batch_size: auto, learning_rate_multiplier: 1.0, n_epochs: 3}
+      model: gpt-4o-mini-2024-07-18
+      object: fine_tuning.job
+      organization_id: org-1
+      result_files: []
+      seed: 8
+      status: cancelled
+      trained_tokens: null
+      training_file: file-train
+      validation_file: null
+      estimated_finish: null
+      integrations: null
+      metadata: null
+      method: null
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ftjob_azure
+      created_at: 1700000002
+      error: null
+      fine_tuned_model: null
+      finished_at: null
+      hyperparameters: {batch_size: 2, learning_rate_multiplier: 0.5, n_epochs: 2}
+      model: gpt-4o-mini-2024-07-18
+      object: fine_tuning.job
+      organization_id: null
+      result_files: null
+      seed: 9
+      status: canceled
+      trained_tokens: null
+      training_file: file-azure
+      validation_file: null
+      estimated_finish: null
+      integrations: null
+      metadata: null
+      method: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, content-type, accept]
+  ignore: []
