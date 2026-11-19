@@ -94,6 +94,29 @@ fn tool_call_malformed_json_falls_back_to_text() {
 }
 
 #[test]
+fn tool_call_nan_arguments_fall_back_to_text() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "special",
+        "NaN",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text(r#"{"n": NaN}"#))];
+    let mut detections = Vec::new();
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("non-standard JSON filters as text");
+    assert_eq!(
+        arguments_of(&calls[0]),
+        Some(r#"{"n": [SPECIAL_REDACTED]}"#)
+    );
+    assert_eq!(pattern_names(&detections), ["special"]);
+}
+
+#[test]
 fn tool_call_text_fallback_blocks_on_a_blocking_pattern() {
     let fixture = Fixture::with_patterns(vec![regex_pattern(
         "leak",

@@ -105,6 +105,29 @@ impl ImageDescriptionCompletion for Failing {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+struct OrderedError {
+    message: String,
+}
+
+struct FailingInOrder;
+
+#[async_trait]
+impl ImageDescriptionCompletion for FailingInOrder {
+    type Error = OrderedError;
+
+    async fn describe(
+        &self,
+        request: &ImageDescriptionRequest,
+    ) -> Result<ImageDescriptionResponse, Self::Error> {
+        let image_url = request.image_url.clone();
+        Err(OrderedError {
+            message: format!("failed for {image_url}"),
+        })
+    }
+}
+
 #[tokio::test]
 async fn image_description_fetching() {
     let fixture = Fixture::with_patterns(vec![regex_pattern(
@@ -326,4 +349,24 @@ async fn image_processing_skips_empty_descriptions() {
         .await
         .expect("an empty description is skipped");
     assert!(detections.is_empty());
+}
+
+#[tokio::test]
+async fn image_processing_reports_the_first_failure_in_image_order() {
+    let fixture = Fixture::empty();
+    let source = fixture.source();
+    let images = ["img-1".to_owned(), "img-2".to_owned()];
+    let scan = ImageScan {
+        images: &images,
+        image_model: Some("vision-model"),
+        source: &source,
+    };
+    let mut detections = Vec::new();
+    let error = process_images(&scan, Some(&FailingInOrder), &mut detections)
+        .await
+        .unwrap_err();
+    let GuardrailFailure::Other(message) = error.into_failure() else {
+        panic!("a failed completion is not a block");
+    };
+    assert_eq!(message, "failed for img-1");
 }
