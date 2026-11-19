@@ -336,6 +336,36 @@ async fn write_transport_failures(#[case] operation: Operation) {
             provider_error.headers.clone()
         )]
     );
+    let empty = RecordingConfig::new("http://mock.test/v1/responses");
+    let empty_wire = Wire::replying(
+        Reply::json(503, "").with_header("content-length", "0"),
+        &events,
+    );
+    let empty_source = Source::new(empty_wire.clone());
+    let empty_deps = WriteDeps {
+        config: &empty,
+        source: &empty_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut empty_fixture = Fixture::new("responses");
+    let empty_call = operation_call(operation, "resp_a", &write_params, None, None);
+    let Err(WriteError::Provider(empty_error)) = run(
+        &mut empty_fixture,
+        &empty_deps,
+        ClientKind::Sync,
+        &empty_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a 503 with no body is a provider error");
+    };
+    assert_eq!(empty_error.status_code, 503);
+    assert!(empty_error.message.is_empty());
+    // The masked rebuild carries a content-length only when the decoded body is non-empty
+    assert_eq!(empty_error.headers.get("content-length"), None);
+    assert_eq!(empty_wire.requests().len(), 1);
     let rejected = RecordingConfig::new("http://mock.test/v1/responses");
     let rejected_wire = Wire::replying(Reply::json(400, DELETED), &events);
     let rejected_source = Source::new(rejected_wire.clone());
