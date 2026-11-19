@@ -170,11 +170,7 @@ where
         shutdown: &mut watch::Receiver<bool>,
     ) -> Option<Failure> {
         loop {
-            let Some(outcome) =
-                unless_stopped(shutdown, subscription.next_message(POLL_TIMEOUT)).await
-            else {
-                return None;
-            };
+            let outcome = unless_stopped(shutdown, subscription.next_message(POLL_TIMEOUT)).await?;
             let received = match outcome {
                 Ok(None) => continue,
                 Ok(Some(received)) => received,

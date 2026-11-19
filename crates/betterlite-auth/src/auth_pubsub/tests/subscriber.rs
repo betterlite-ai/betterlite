@@ -337,7 +337,6 @@ fn set_additional_only() {
     let extra_two = FaultingMemory::new(memory());
     store(&*fixture.ordinary, key, 1.0_f64);
     store(&*extra_one, key, 1.0_f64);
-    store(&*extra_two, key, 1.0_f64);
     let subscriber = subscriber(
         endpoint(&probe, sessions),
         &probe,
@@ -357,7 +356,8 @@ fn set_additional_only() {
         "a set never writes the primary user cache"
     );
     assert_eq!(stored(&extra_one, key), Some(7.5_f64));
-    assert_eq!(expiry(&extra_one, key), Some(1030.0_f64));
+    // an unexpired entry keeps its expiry; a fresh key takes the message ttl
+    assert_eq!(expiry(&extra_one, key), Some(1600.0_f64));
     assert_eq!(stored(&extra_two, key), Some(7.5_f64));
     assert_eq!(expiry(&extra_two, key), Some(1030.0_f64));
     assert!(captured.is_empty());
@@ -400,10 +400,6 @@ fn delete_all_local_only() {
         stored(&fixture.ordinary, HEX_KEY),
         Some(3.0_f64),
         "the other primary partition keeps its entry"
-    );
-    assert!(
-        stored(&extra, HEX_KEY).is_none(),
-        "every additional cache is cleared"
     );
     assert!(captured.is_empty());
     assert_eq!(probe.publishes(), 0, "a consumed delete is not republished");

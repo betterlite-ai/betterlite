@@ -45,22 +45,23 @@ pub async fn publish_invalidation<E>(
         return;
     };
     let cache_key = invalidation.cache_key.clone();
-    let mut pending = lock(&tasks.pending);
-    while pending.try_join_next().is_some() {}
-    if pending.len() >= MAX_PENDING_PUBLISHES {
-        drop(pending);
-        warn!(
-            subject = cache_key.as_str(),
-            pending = MAX_PENDING_PUBLISHES,
-            "auth cache invalidation publish for {cache_key} dropped: {MAX_PENDING_PUBLISHES} publishes already waiting on redis; other workers keep their cached copy until its TTL expires"
-        );
-        return;
+    {
+        let mut pending = lock(&tasks.pending);
+        while pending.try_join_next().is_some() {}
+        if pending.len() >= MAX_PENDING_PUBLISHES {
+            drop(pending);
+            warn!(
+                subject = cache_key.as_str(),
+                pending = MAX_PENDING_PUBLISHES,
+                "auth cache invalidation publish for {cache_key} dropped: {MAX_PENDING_PUBLISHES} publishes already waiting on redis; other workers keep their cached copy until its TTL expires"
+            );
+            return;
+        }
+        let message = message::encode(invalidation);
+        let owner = Arc::clone(target);
+        let in_flight = Arc::clone(&tasks.in_flight);
+        pending.spawn(publish_message(owner, message, cache_key, in_flight));
     }
-    let message = message::encode(invalidation);
-    let owner = Arc::clone(target);
-    let in_flight = Arc::clone(&tasks.in_flight);
-    pending.spawn(publish_message(owner, message, cache_key, in_flight));
-    drop(pending);
     yield_now().await;
 }
 
