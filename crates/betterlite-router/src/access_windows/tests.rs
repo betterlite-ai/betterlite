@@ -489,6 +489,45 @@ fn equal_bounds_and_extra_fields_are_refused() {
     );
 }
 
+fn a_non_list_value_is_refused() {
+    let error =
+        parse_access_windows(&windows(Json::Text(String::from("09:00"))), &database()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        ": access_windows must be a list of windows"
+    );
+}
+
+fn a_non_object_window_is_refused() {
+    let entries = windows(Json::List(vec![Json::Text(String::from("09:00"))]));
+    let error = parse_access_windows(&entries, &database()).unwrap_err();
+    assert_eq!(error.to_string(), "0: must be a window object");
+}
+
+fn a_missing_window_field_is_refused() {
+    let entries = windows(Json::List(vec![Json::Object(JsonObject::from_iter([
+        ("end".to_owned(), text("17:00")),
+        ("timezone".to_owned(), text("UTC")),
+        ("team_ids".to_owned(), Json::List(vec![text("t")])),
+    ]))]));
+    let error = parse_access_windows(&entries, &database()).unwrap_err();
+    assert_eq!(error.to_string(), "0.start: is required");
+}
+
+fn a_non_text_timezone_is_refused() {
+    let entries = windows(Json::List(vec![Json::Object(JsonObject::from_iter([
+        ("start".to_owned(), text("09:00")),
+        ("end".to_owned(), text("17:00")),
+        ("timezone".to_owned(), Json::Bool(true)),
+        ("team_ids".to_owned(), Json::List(vec![text("t")])),
+    ]))]));
+    let error = parse_access_windows(&entries, &database()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "0.timezone: must be an IANA timezone name"
+    );
+}
+
 fn a_blocked_pool_is_refused_with_the_window_end() {
     let deployments = vec![spec(
         "gpt",
@@ -528,6 +567,29 @@ fn an_admin_pool_with_a_null_owner_is_only_filtered() {
     )
     .unwrap();
     assert_eq!(ids(&kept), ["shared"]);
+}
+
+fn an_invalid_window_is_refused_with_its_deployment() {
+    let deployments = vec![spec(
+        "gpt",
+        "d",
+        &[(
+            "access_windows",
+            Json::List(vec![window("9:00", "17:00", "UTC", &["mine"])]),
+        )],
+    )];
+    let error = reserved_deployments(
+        "gpt",
+        deployments,
+        Some("other"),
+        at("2026-01-05T10:00:00Z"),
+        &database(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Deployment gpt has an invalid model_info.access_windows: 0.start: must be a time like 09:00"
+    );
 }
 
 fn an_admin_pool_named_by_two_teams_is_refused() {
@@ -718,8 +780,15 @@ fn access_windows_behaviors(#[case] run: fn()) {
 #[case::a_zone_name_is_matched_case_sensitively(a_zone_name_is_matched_case_sensitively)]
 #[case::team_ids_must_hold_non_empty_entries(team_ids_must_hold_non_empty_entries)]
 #[case::equal_bounds_and_extra_fields_are_refused(equal_bounds_and_extra_fields_are_refused)]
+#[case::a_non_list_value_is_refused(a_non_list_value_is_refused)]
+#[case::a_non_object_window_is_refused(a_non_object_window_is_refused)]
+#[case::a_missing_window_field_is_refused(a_missing_window_field_is_refused)]
+#[case::a_non_text_timezone_is_refused(a_non_text_timezone_is_refused)]
 #[case::a_blocked_pool_is_refused_with_the_window_end(
     a_blocked_pool_is_refused_with_the_window_end
+)]
+#[case::an_invalid_window_is_refused_with_its_deployment(
+    an_invalid_window_is_refused_with_its_deployment
 )]
 #[case::a_pool_with_one_blocked_deployment_keeps_the_rest(
     a_pool_with_one_blocked_deployment_keeps_the_rest
