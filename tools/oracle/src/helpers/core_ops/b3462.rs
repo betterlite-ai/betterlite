@@ -15,7 +15,7 @@ const ID: uuid::Uuid = uuid::Uuid::from_u128(0x550e_8400_e29b_41d4_a716_4466_554
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     Multipart { parts: Vec<Part> },
     Json { body: String },
 }
