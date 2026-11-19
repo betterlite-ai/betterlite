@@ -106,11 +106,7 @@ where
         }
     }
 
-    fn compression_call<'call>(
-        &'call self,
-        messages: &'call [Json],
-        model: &'call str,
-    ) -> CompressionCall<'call> {
+    fn compression_call(&self, messages: &[Json], model: &str) -> CompressionCall<'_> {
         CompressionCall {
             model,
             call_type: CallType::AnthropicMessages,
