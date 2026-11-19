@@ -712,6 +712,36 @@ async fn invalid_timeout_fails_before_dispatch() {
     assert!(fake.calls().is_empty());
 }
 
+// a timeout past an f64's range reaches no finite number, plain or per phase, before any dispatch
+#[tokio::test]
+async fn timeout_past_f64_range_is_non_finite() {
+    let fake = Fake::answering(&page());
+    let plain = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {"timeout": 1e400}}"#),
+    )
+    .await
+    .expect_err("a timeout past an f64");
+    assert!(matches!(
+        plain,
+        FineTuningReadError::Timeout(TimeoutError::NonFinite)
+    ));
+
+    let structured = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {"provider": "azure", "timeout": {"read": 1e400}}}"#),
+    )
+    .await
+    .expect_err("a per-phase timeout past an f64");
+    assert!(matches!(
+        structured,
+        FineTuningReadError::Timeout(TimeoutError::NonFinite)
+    ));
+    assert!(fake.calls().is_empty());
+}
+
 // a provider error keeps the fields the SDK projected, and no page is decoded
 #[tokio::test]
 async fn dispatch_errors_propagate() {
