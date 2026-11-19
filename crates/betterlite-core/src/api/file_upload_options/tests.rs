@@ -316,6 +316,21 @@ fn null_body_model_falls_through() {
     );
 }
 
+#[test]
+fn control_characters_count_as_strippable_space() {
+    let raw = names(&["\u{1c}a\u{1f}", "\u{b}b"]);
+    let direct = FileCreationParams::new(None, Some(raw), None);
+    assert_eq!(direct.target_model_names, names(&["a", "b"]));
+
+    let probe = Fixture::new(None, &[], &[], &[]);
+    let form = Json::Text("\u{1c} c \u{1f}".to_owned());
+    let extracted = probe
+        .extract(None, Some(&form), Some("\u{1c} azure_storage \u{1f}"))
+        .unwrap();
+    assert_eq!(extracted.target_model_names, names(&["c"]));
+    assert_eq!(extracted.target_storage, "azure_storage");
+}
+
 #[rstest]
 #[case::comma("\" a, b,,a \"", &["a", "b", "a"])]
 #[case::list("[\" a \", 0, 2, \" \"]", &["a", "2"])]
@@ -324,6 +339,7 @@ fn null_body_model_falls_through() {
 #[case::null("null", &[])]
 #[case::boolean("true", &[])]
 #[case::number("5", &[])]
+#[case::object("{\"a\": true}", &[])]
 fn simple_targets(#[case] source: &str, #[case] expected: &[&str]) {
     let form = json_value(source);
     let probe = Fixture::new(None, &[], &[], &[]);
@@ -378,6 +394,7 @@ fn repeated_targets() {
         text_part("target_model_names[unterminated", "d"),
         text_part("target_model_names[]", "a"),
         upload_part("target_model_names[]", "f.txt"),
+        text_part("other[]", "z"),
     ];
     let form = FormParts {
         items: parts.to_vec(),
