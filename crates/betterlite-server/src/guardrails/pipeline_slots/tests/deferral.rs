@@ -130,6 +130,27 @@ fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
 }
 
 #[test]
+fn deferring_treats_a_non_string_policy_source_as_not_a_tag_match() {
+    let mut request = deferral_data(
+        &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
+        vec![
+            ("applied_policies", json!(["policy-a"])),
+            ("policy_sources", json!({"policy-a": ["tag:team-a"]})),
+        ],
+    );
+    let policies = post_call_pipelines(&request);
+    let deferred = context(&[("policy-a", &["pii"])], &[]);
+    let (_, log) = capture_warnings(|| {
+        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred)
+    });
+    assert!(!log.contains("request tag"), "{log}");
+    assert!(!log.contains("request body's policies"), "{log}");
+    let metadata = metadata_of(&request);
+    assert!(metadata.get("applied_policies").is_none());
+    assert!(metadata.get("policy_sources").is_none());
+}
+
+#[test]
 fn deferring_keeps_a_policy_with_a_guardrail_outside_the_pipeline() {
     let mut request = deferral_data(
         &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
