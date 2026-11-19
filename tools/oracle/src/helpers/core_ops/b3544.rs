@@ -132,10 +132,11 @@ fn logging_value(input: &Input) -> Result<Option<AgenticLogging>, Box<HelperErro
     let Some(spec) = input.logging.as_ref() else {
         return Ok(None);
     };
-    let agentic_loop_params = match spec.agentic_model.as_deref() {
-        Some(model) => Some(agentic_params(model)?),
-        None => None,
-    };
+    let agentic_loop_params = spec
+        .agentic_model
+        .as_deref()
+        .map(agentic_params)
+        .transpose()?;
     Ok(Some(AgenticLogging {
         call_id: Some(spec.call_id.clone()),
         agentic_loop_params,
