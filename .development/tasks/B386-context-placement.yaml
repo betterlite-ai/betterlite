@@ -34,6 +34,7 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/context-placement-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/context_placement.rs
+  - tools/betterlite-db-admin/src/command_shell.rs
   - crates/betterlite-config/src/sections/context_placement/**
   - tools/oracle/helpers/b386.py
   - tools/oracle/helpers/b386/**

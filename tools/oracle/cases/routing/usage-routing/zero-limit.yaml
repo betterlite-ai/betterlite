@@ -1,0 +1,23 @@
+kind: probe
+name: usage-routing-zero-limit
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        # a zero limit is a real limit: the estimate check is a strict greater-than, so a zero-token estimate
+        # still fits a tpm of 0, and one token does not. A zero rpm never blocks a deployment the requests
+        # window has not seen yet, then blocks every request once it has one.
+        deployments:
+          - {id: dep-a, tpm: 0}
+          - {id: dep-b, rpm: 0}
+          - {id: dep-c}
+        steps:
+          - {kind: select, now_millis: 1700000000000, input_tokens: 0}
+          - {kind: select, now_millis: 1700000000000, input_tokens: 1}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 5}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 5}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-c, total_tokens: 5}
+          - {kind: select, now_millis: 1700000000000, input_tokens: 0}
+          - {kind: observe, now_millis: 1700000000000}

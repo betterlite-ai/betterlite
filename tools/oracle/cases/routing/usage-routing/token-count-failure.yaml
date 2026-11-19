@@ -1,0 +1,19 @@
+kind: probe
+name: usage-routing-token-count-failure
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        # an estimate the request could not compute is zero, so the zero-tpm deployment fits it; the same
+        # estimate computed for real rules that deployment out.
+        deployments:
+          - {id: dep-a, params_tpm: 5}
+          - {id: dep-b, tpm: 1000}
+        steps:
+          - {kind: observe, now_millis: 1700000000000}
+          - {kind: select, now_millis: 1700000000000, input_tokens: 999}
+          - {kind: select, now_millis: 1700000000000, input_tokens: 999, token_count_failure: true}
+          - {kind: select, now_millis: 1700000000000, input_tokens: 6}
+          - {kind: observe, now_millis: 1700000000000}
