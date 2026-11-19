@@ -7,4 +7,5 @@ mod pooled;
 mod predibase;
 mod replicate;
 mod rerank;
+mod send;
 mod support;

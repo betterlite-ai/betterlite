@@ -12,6 +12,7 @@ betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-cache = { path = "../betterlite-cache" }
+betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-cost = { path = "../betterlite-cost" }

@@ -2,7 +2,7 @@ id: B3099
 title: Report cache activity, errors and available filters
 description: >-
   Build the module `cache_activity_routes` in betterlite-server. It serves one route for the Admin UI cache dashboard:
-  GET `/global/activity/cache_hits`, authenticated by B052, hidden from /openapi.json (LiteLLM sets
+  GET `/global/activity/cache_hits`, authenticated by B003's key auth middleware, hidden from /openapi.json (LiteLLM sets
   include_in_schema=False; keep it out of the schema too). It is the only path; there is no /v1 or other alias.
   The route reads the LiteLLM_SpendLogs table and answers `CacheActivityResponse`. The route is not scoped to the caller:
   every admitted caller sees all rows, as in LiteLLM (B867 decides which roles may reach the path). This task adds no
@@ -13,7 +13,7 @@ description: >-
   repeat (`?models=a&models=b`); a missing list becomes an empty list, and a repeated empty value stays one empty string.
   A missing date answers 422 in the envelope B003 uses for other query validation errors.
 
-  Order inside the handler. First the caller is authenticated (B052), so a missing or bad credential answers 401 before
+  Order inside the handler. First the caller is authenticated (B003's key auth middleware), so a missing or bad credential is answered there before
   anything else. Then the query string is checked, so a missing date is a 422 even when the database is missing. Then the
   database handle: a missing handle answers HTTP 500 with detail `{"error": "Database not connected. Connect a database to
   your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"}`. That text is not

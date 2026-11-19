@@ -1,7 +1,7 @@
 id: B7871
 milestone: M12 python
 title: Python create_file, file_retrieve, file_delete, file_list and the files package
-status: todo
+status: blocked
 depends_on: [B7870, B6040, B158, B167, B1028, B1029]
 file: tasks/B7871-python-file-calls.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B161
 split_from: B161
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

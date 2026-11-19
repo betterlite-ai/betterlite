@@ -1,0 +1,38 @@
+kind: helper
+name: search-settings
+call:
+  azure_search:
+    settings:
+      urls:
+        - environment: {BING_GROUNDING_PROJECT_ENDPOINT: "https://project.services.ai.azure.com/api/projects/example"}
+          api_base: null
+        - environment: {}
+          api_base: "https://caller.example/base/"
+        - environment: {}
+          api_base: "https://caller.example/openai/v1/responses"
+        - environment: {}
+          api_base: "https://caller.example/openai/v1/responses/"
+        - environment: {}
+          api_base: ""
+        - environment: {BING_GROUNDING_PROJECT_ENDPOINT: ""}
+          api_base: null
+        - environment: {}
+          api_base: null
+        - environment: {BING_GROUNDING_PROJECT_ENDPOINT: "https://x.example///"}
+          api_base: null
+      requests:
+        - environment: {}
+          query: q
+          optional_params: {}
+        - environment: {BING_GROUNDING_MODEL: ""}
+          query: q
+          optional_params: {}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: [first, second]
+          optional_params: {}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: ""
+          optional_params: {}
+env: {}
+compare:
+  ignore: []

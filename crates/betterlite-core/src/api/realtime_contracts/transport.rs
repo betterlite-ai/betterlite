@@ -1,6 +1,5 @@
 use super::error::WebSocketError;
 use async_trait::async_trait;
-use betterlite_models::decisions::Json;
 use std::future::Future;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RealtimeMessage {
@@ -15,7 +14,7 @@ pub trait ScopedWebSocket {
     fn scope(&self) -> &WebSocketScope;
 }
 #[async_trait]
-pub trait ClientWebSocket: ScopedWebSocket {
+pub trait ClientWebSocket: ScopedWebSocket + Send {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError>;
 
     async fn receive_text(&mut self) -> Result<String, WebSocketError>;
@@ -36,9 +35,4 @@ pub trait LoggingWorker {
     fn enqueue<Work>(&self, work: Work)
     where
         Work: Future<Output = ()> + Send + 'static;
-}
-pub trait RealtimeEventNormalizer {
-    fn should_drop(&self, event: &Json) -> bool;
-    fn normalize(&self, event: Json) -> Json;
-    fn patch_outgoing_session(&self, session: Json) -> Json;
 }

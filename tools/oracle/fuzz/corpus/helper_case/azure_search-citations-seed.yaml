@@ -1,0 +1,12 @@
+kind: helper
+name: azure-search-citations-seed
+call:
+  azure_search:
+    citations:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"seed claim ([x](https://seed.example)).","annotations":[{"type":"url_citation","url":"https://seed.example","title":"Seed","start_index":11}]}]}]}
+env: {}
+compare:
+  ignore: []
