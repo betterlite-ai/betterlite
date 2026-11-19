@@ -651,7 +651,7 @@ async fn topaz_failures_keep_their_status_and_message() {
     let context = fixture.context();
     let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
     let transport = RecordingTransport::new(200, SUCCESS_BODY);
-    let topaz = FailingTopaz;
+    let topaz = FailingTopaz::bad_gateway("topaz is down");
     let service = service(
         &settings,
         &context,

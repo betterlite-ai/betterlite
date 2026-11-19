@@ -30,7 +30,7 @@ pub enum ImageVariationError {
 }
 
 // what a Topaz executor reports, mirroring the TopazException its aiohttp handler raises
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 #[error("{message}")]
 pub struct TopazVariationError {
     pub status_code: Option<u16>,

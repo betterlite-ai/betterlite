@@ -254,17 +254,23 @@ impl TopazVariationExecutor for NoTopaz {
     }
 }
 
-pub(super) struct FailingTopaz;
+pub(super) struct FailingTopaz(TopazVariationError);
+
+impl FailingTopaz {
+    pub(super) fn bad_gateway(message: &str) -> Self {
+        Self(TopazVariationError {
+            status_code: Some(502),
+            message: message.to_owned(),
+        })
+    }
+}
 
 impl TopazVariationExecutor for FailingTopaz {
     fn execute(
         &self,
         _request: TopazVariationRequest,
     ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
-        Err(ImageVariationError::Topaz(TopazVariationError {
-            status_code: Some(502),
-            message: "topaz is down".to_owned(),
-        }))
+        Err(ImageVariationError::Topaz(self.0.clone()))
     }
 }
 
