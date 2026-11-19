@@ -275,6 +275,19 @@ fn absent_equals_null() {
 }
 
 #[test]
+fn unrepresentable_numbers_compare_by_text() {
+    let stored = r#"{"team_id": "t", "metadata": {"big": 1e40}}"#;
+    assert!(team_changes(stored, stored).is_empty());
+    assert_eq!(
+        changed_names(&team_changes(
+            r#"{"team_id": "t", "metadata": {"big": 1e41}}"#,
+            stored
+        )),
+        vec!["metadata"]
+    );
+}
+
+#[test]
 fn unknown_metadata_attributed_to_metadata() {
     let stored = r#"{"team_id": "t", "metadata": {"custom": 1, "nested": {"a": 1}}}"#;
     assert!(
