@@ -291,30 +291,17 @@ async fn azure_list_keeps_api_version_and_drops_pagination() {
     assert_page(&result.step);
 }
 
-async fn delete_in_the_sync_entry() {
-    let input = delete_azure(AssistantWrapper::Sync);
-    let (recorder, dispatch) = harness(200, DELETED);
-    let result = facade(dispatch, Settings::default())
-        .run(&input)
-        .await
-        .unwrap();
-    assert_azure_delete(&recorder.requests()[0], &result.step);
-}
-
-async fn delete_in_the_async_entry() {
-    let input = delete_azure(AssistantWrapper::Async);
-    let (recorder, dispatch) = harness(200, DELETED);
-    let result = facade(dispatch, Settings::default())
-        .run(&input)
-        .await
-        .unwrap();
-    assert_azure_delete(&recorder.requests()[0], &result.step);
-}
-
 #[tokio::test]
 async fn delete_sends_the_identifier_in_both_entries() {
-    delete_in_the_sync_entry().await;
-    delete_in_the_async_entry().await;
+    for entry in [AssistantWrapper::Sync, AssistantWrapper::Async] {
+        let input = delete_azure(entry);
+        let (recorder, dispatch) = harness(200, DELETED);
+        let result = facade(dispatch, Settings::default())
+            .run(&input)
+            .await
+            .unwrap();
+        assert_azure_delete(&recorder.requests()[0], &result.step);
+    }
 }
 
 async fn azure_delete_discards(kind: SuppliedClientKind) {
@@ -334,6 +321,7 @@ async fn azure_delete_discards(kind: SuppliedClientKind) {
 async fn azure_delete_discards_openai_class_clients_and_keeps_async_ones() {
     azure_delete_discards(SuppliedClientKind::OpenAi).await;
     azure_delete_discards(SuppliedClientKind::AzureOpenAi).await;
+    azure_delete_keeps_an_async_openai_client().await;
 
     let (recorder, dispatch) = harness(200, DELETED);
     let mut input = delete_azure(AssistantWrapper::Sync);
@@ -346,45 +334,22 @@ async fn azure_delete_discards_openai_class_clients_and_keeps_async_ones() {
     assert!(recorder.requests().is_empty());
 }
 
-async fn azure_list_keeps_an_openai_client() {
-    let (recorder, dispatch) = harness(200, PAGE);
-    let mut input = delete_azure(AssistantWrapper::Async);
-    input.operation = AssistantOperation::List;
-    input.assistant_id = None;
-    input.client = Some(supplied(SuppliedClientKind::OpenAi, OPENAI_BASE));
-    facade(dispatch, Settings::default())
-        .run(&input)
-        .await
-        .unwrap();
-    let requests = recorder.requests();
-    assert_eq!(
-        requests[0].url,
-        format!("{OPENAI_BASE}/assistants?limit=20&order=desc")
-    );
-    assert_eq!(
-        requests[0].authorization.as_deref(),
-        Some("Bearer sk-supplied")
-    );
-    assert!(requests[0].api_key.is_none());
-}
-
-async fn azure_list_keeps_an_azure_client() {
-    let (recorder, dispatch) = harness(200, PAGE);
-    let mut input = delete_azure(AssistantWrapper::Async);
-    input.operation = AssistantOperation::List;
-    input.assistant_id = None;
-    input.client = Some(supplied(SuppliedClientKind::AzureOpenAi, AZURE_BASE));
-    facade(dispatch, Settings::default())
-        .run(&input)
-        .await
-        .unwrap();
-    let requests = recorder.requests();
-    assert_eq!(
-        requests[0].url, "https://azure.test/v1/openai/assistants?api-version=2024-02-01",
-        "an Azure client keeps the Azure request path"
-    );
-    assert_eq!(requests[0].api_key.as_deref(), Some("sk-supplied"));
-    assert!(requests[0].authorization.is_none());
+fn supplied_input(
+    operation: AssistantOperation,
+    kind: SuppliedClientKind,
+    base: &str,
+) -> AssistantReadDeleteInput {
+    let mut input = match operation {
+        AssistantOperation::List => delete_azure(AssistantWrapper::Async),
+        AssistantOperation::Delete => list_openai(AssistantWrapper::Sync),
+    };
+    input.operation = operation;
+    input.assistant_id = match operation {
+        AssistantOperation::Delete => Some("asst_a".to_owned()),
+        AssistantOperation::List => None,
+    };
+    input.client = Some(supplied(kind, base));
+    input
 }
 
 async fn azure_delete_keeps_an_async_openai_client() {
@@ -407,49 +372,105 @@ async fn azure_delete_keeps_an_async_openai_client() {
     );
 }
 
-async fn openai_delete_keeps_an_openai_client() {
-    let (recorder, dispatch) = harness(200, DELETED);
-    let mut input = list_openai(AssistantWrapper::Sync);
-    input.operation = AssistantOperation::Delete;
-    input.assistant_id = Some("asst_a".to_owned());
-    input.client = Some(supplied(SuppliedClientKind::OpenAi, OPENAI_BASE));
+#[tokio::test]
+async fn azure_list_and_openai_delete_keep_openai_class_clients() {
+    check_supplied(
+        AssistantOperation::List,
+        SuppliedClientKind::OpenAi,
+        OPENAI_BASE,
+        PAGE,
+    )
+    .await;
+    check_supplied(
+        AssistantOperation::List,
+        SuppliedClientKind::AzureOpenAi,
+        AZURE_BASE,
+        PAGE,
+    )
+    .await;
+    check_supplied(
+        AssistantOperation::Delete,
+        SuppliedClientKind::OpenAi,
+        OPENAI_BASE,
+        DELETED,
+    )
+    .await;
+}
+
+async fn check_supplied(
+    operation: AssistantOperation,
+    kind: SuppliedClientKind,
+    base: &str,
+    body: &str,
+) {
+    let (recorder, dispatch) = harness(200, body);
     facade(dispatch, Settings::default())
-        .run(&input)
+        .run(&supplied_input(operation, kind, base))
         .await
         .unwrap();
     let requests = recorder.requests();
-    assert_eq!(requests[0].url, format!("{OPENAI_BASE}/assistants/asst_a"));
+    let openai_class = kind == SuppliedClientKind::OpenAi;
+    let url = match (operation, openai_class) {
+        (AssistantOperation::Delete, _) => format!("{base}/assistants/asst_a"),
+        (AssistantOperation::List, true) => format!("{base}/assistants?limit=20&order=desc"),
+        (AssistantOperation::List, false) => {
+            "https://azure.test/v1/openai/assistants?api-version=2024-02-01".to_owned()
+        }
+    };
+    assert_eq!(requests[0].url, url);
     assert_eq!(
         requests[0].authorization.as_deref(),
-        Some("Bearer sk-supplied")
+        openai_class.then_some("Bearer sk-supplied")
+    );
+    assert_eq!(
+        requests[0].api_key.as_deref(),
+        (!openai_class).then_some("sk-supplied")
     );
 }
 
-#[tokio::test]
-async fn azure_list_and_openai_delete_keep_openai_class_clients() {
-    azure_list_keeps_an_openai_client().await;
-    azure_list_keeps_an_azure_client().await;
-    azure_delete_keeps_an_async_openai_client().await;
-    openai_delete_keeps_an_openai_client().await;
-}
-
-fn keyed_settings() -> Settings {
+// every field named, since a ..Settings::default() update and a field assignment after
+// Settings::default() are both denied
+const fn empty_settings() -> Settings {
     Settings {
-        api_base: Some("https://settings.test/v1".to_owned()),
-        api_key: Some(SecretString::from("sk-settings")),
-        openai_base_url: Some("https://env.test/v1".to_owned()),
-        openai_api_key: Some(SecretString::from("sk-env")),
-        organization: Some("org-settings".to_owned()),
-        openai_organization: Some("org-env".to_owned()),
-        ..Settings::default()
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
     }
 }
 
+fn keyed_settings() -> Settings {
+    let mut settings = empty_settings();
+    settings.api_base = Some("https://settings.test/v1".to_owned());
+    settings.api_key = Some(SecretString::from("sk-settings"));
+    settings.organization = Some("org-settings".to_owned());
+    settings.openai_base_url = Some("https://env.test/v1".to_owned());
+    settings.openai_api_key = Some(SecretString::from("sk-env"));
+    settings.openai_organization = Some("org-env".to_owned());
+    settings
+}
+
 async fn settings_win_when_the_request_is_empty() {
-    let (recorder, dispatch) = harness(200, PAGE);
     let mut input = list_openai(AssistantWrapper::Sync);
     input.params.api_base = Some(String::new());
     input.params.api_key = None;
+    let (recorder, dispatch) = harness(200, PAGE);
     facade(dispatch, keyed_settings())
         .run(&input)
         .await
@@ -466,49 +487,45 @@ async fn settings_win_when_the_request_is_empty() {
     assert_eq!(requests[0].organization.as_deref(), Some("org-settings"));
 }
 
-async fn env_wins_when_settings_are_empty() {
-    let empty = Settings {
-        api_base: Some(String::new()),
-        api_key: Some(SecretString::from("")),
-        organization: Some(String::new()),
-        ..keyed_settings()
-    };
-    let (recorder, dispatch) = harness(200, PAGE);
-    let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.api_base = None;
-    input.params.api_key = Some(SecretString::from(""));
-    facade(dispatch, empty).run(&input).await.unwrap();
-    let requests = recorder.requests();
-    assert_eq!(
-        requests[0].url,
-        "https://env.test/v1/assistants?limit=20&order=desc"
-    );
-    assert_eq!(requests[0].authorization.as_deref(), Some("Bearer sk-env"));
-    assert_eq!(requests[0].organization.as_deref(), Some("org-env"));
-}
-
-async fn the_default_base_serves_an_unconfigured_call() {
-    let (recorder, dispatch) = harness(200, PAGE);
-    let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.api_base = None;
-    input.params.api_key = None;
-    facade(dispatch, Settings::default())
-        .run(&input)
-        .await
-        .unwrap();
-    let requests = recorder.requests();
-    assert_eq!(
-        requests[0].url,
-        "https://api.openai.com/v1/assistants?limit=20&order=desc"
-    );
-    assert!(requests[0].authorization.is_none());
+async fn env_and_default_serve_an_unconfigured_call() {
+    let mut env = keyed_settings();
+    env.api_base = Some(String::new());
+    env.api_key = Some(SecretString::from(""));
+    env.organization = Some(String::new());
+    for (api_base, api_key, settings, url, authorization, organization) in [
+        (
+            None,
+            Some(SecretString::from("")),
+            env,
+            "https://env.test/v1/assistants?limit=20&order=desc",
+            Some("Bearer sk-env"),
+            Some("org-env"),
+        ),
+        (
+            None,
+            None,
+            empty_settings(),
+            "https://api.openai.com/v1/assistants?limit=20&order=desc",
+            None,
+            None,
+        ),
+    ] {
+        let mut input = list_openai(AssistantWrapper::Sync);
+        input.params.api_base = api_base;
+        input.params.api_key = api_key;
+        let (recorder, dispatch) = harness(200, PAGE);
+        facade(dispatch, settings).run(&input).await.unwrap();
+        let requests = recorder.requests();
+        assert_eq!(requests[0].url, url);
+        assert_eq!(requests[0].authorization.as_deref(), authorization);
+        assert_eq!(requests[0].organization.as_deref(), organization);
+    }
 }
 
 #[tokio::test]
 async fn openai_credentials_follow_the_litellm_chain() {
     settings_win_when_the_request_is_empty().await;
-    env_wins_when_settings_are_empty().await;
-    the_default_base_serves_an_unconfigured_call().await;
+    env_and_default_serve_an_unconfigured_call().await;
 }
 
 fn timeout_input(
@@ -612,19 +629,11 @@ async fn openai_retry_budget_clamps_negative_values() {
     );
 }
 
-fn env_token_settings() -> Settings {
-    Settings {
-        azure_ad_token: Some(SecretString::from("env-token")),
-        ..Settings::default()
-    }
-}
-
 async fn azure_call(input: &AssistantReadDeleteInput) -> AssistantReadDeleteResult {
+    let mut settings = empty_settings();
+    settings.azure_ad_token = Some(SecretString::from("env-token"));
     let (_, dispatch) = harness(200, DELETED);
-    facade(dispatch, env_token_settings())
-        .run(input)
-        .await
-        .unwrap()
+    facade(dispatch, settings).run(input).await.unwrap()
 }
 
 async fn kwargs_token_stays_in_litellm_params() {
@@ -931,8 +940,9 @@ async fn provider_failures_keep_their_status_and_body() {
 #[tokio::test]
 async fn limits_refuse_an_oversized_extra_body() {
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
         max_items: 0,
-        ..ApiLimits::default()
     };
     let limited = AssistantReadDelete {
         dispatch: no_request(),
