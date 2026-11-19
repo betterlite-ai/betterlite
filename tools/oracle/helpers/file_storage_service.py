@@ -103,6 +103,8 @@ async def upload_view(input_value: Input) -> Projection | Refusal:
                 "content": input_value["content"].encode(),
                 "filename": input_value["filename"],
                 "content_type": input_value["content_type"],
+                # extract_file_data gives an upload without headers an empty mapping
+                "headers": {},
             },
             target_storage=input_value["target_storage"],
             target_model_names=input_value["target_model_names"],
