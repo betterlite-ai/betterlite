@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 
+use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::stream_decode::error::ReceiveError;
 use betterlite_anthropic::stream_decode::{DecodedChunk, TransportChunk};
 use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
@@ -56,13 +57,6 @@ enum Route {
     Native,
 }
 
-// The four request-preparing methods share one fixture, so their seams stay in one function.
-#[derive(Clone, Copy)]
-enum Request<'request> {
-    Headers(&'request HeaderInput, Route),
-    Body(&'request BodyInput, Route),
-}
-
 // The 401 both validations raise carries the provider and the model; the wording stays out.
 fn chat_failure(error: &ChatValidationError) -> Value {
     let failed = match error {
@@ -101,17 +95,18 @@ fn workspace_chat(
     platform: &PlatformInputsCase,
 ) -> Value {
     let no_headers = IndexMap::new();
-    match fixture.chat_headers(&ChatHeadersRequest {
+    let outcome = fixture.chat_headers(&ChatHeadersRequest {
         model,
         messages: &[],
         optional_params: &case.optional_params,
         caller_headers: &no_headers,
         api_key: None,
         workspace: platform.sources(),
-    }) {
-        Ok(headers) => json!({"workspace": headers.values.get(WORKSPACE_HEADER)}),
-        Err(error) => chat_failure(&error),
-    }
+    });
+    outcome.map_or_else(
+        |error| chat_failure(&error),
+        |headers| json!({"workspace": headers.values.get(WORKSPACE_HEADER)}),
+    )
 }
 
 fn workspace_native(
@@ -123,7 +118,7 @@ fn workspace_native(
     let native_params: IndexMap<String, PromptJson> =
         convert::mapped(&case.optional_params).map_err(invalid)?;
     let no_native_messages: Vec<PromptJson> = Vec::new();
-    match validate_native(&NativeHeadersRequest {
+    let outcome = validate_native(&NativeHeadersRequest {
         model,
         caller_headers: &no_headers,
         messages: &no_native_messages,
@@ -132,51 +127,65 @@ fn workspace_native(
         api_key: None,
         api_base: None,
         workspace: platform.sources(),
-    }) {
-        Ok(headers) => Ok(json!({"workspace": headers.headers.get(WORKSPACE_HEADER)})),
-        Err(error) => Ok(native_failure(&error)),
-    }
+    });
+    Ok(outcome.map_or_else(
+        |error| native_failure(&error),
+        |headers| json!({"workspace": headers.headers.get(WORKSPACE_HEADER)}),
+    ))
 }
 
-fn inspect(request: Request<'_>) -> HelperResult {
-    match request {
-        Request::Headers(input, Route::Chat) => chat_headers_answer(input),
-        Request::Headers(input, Route::Native) => native_headers_answer(input),
-        Request::Body(input, Route::Chat) => chat_body_answer(input),
-        Request::Body(input, Route::Native) => native_body_answer(input),
-    }
-}
-
-fn chat_headers_answer(input: &HeaderInput) -> HelperResult {
+fn headers_answer(input: &HeaderInput, route: Route) -> HelperResult {
     let fixture = Fixture::empty()?;
     let platform = platform_inputs(
         &input.deployment,
         &input.litellm_settings,
         &input.environment,
     )?;
-    match fixture.chat_headers(&ChatHeadersRequest {
+    match route {
+        Route::Chat => chat_header_view(&fixture, input, &platform),
+        Route::Native => native_header_view(&fixture, input, &platform),
+    }
+}
+
+fn chat_header_view(
+    fixture: &Fixture,
+    input: &HeaderInput,
+    platform: &PlatformInputsCase,
+) -> HelperResult {
+    let request = chat_request(input, platform);
+    Ok(chat_outcome(fixture.chat_headers(&request)))
+}
+
+const fn chat_request<'input>(
+    input: &'input HeaderInput,
+    platform: &'input PlatformInputsCase,
+) -> ChatHeadersRequest<'input> {
+    ChatHeadersRequest {
         model: &input.model,
         messages: &input.messages,
         optional_params: &input.optional_params,
         caller_headers: &input.headers,
         api_key: input.api_key.as_ref(),
         workspace: platform.sources(),
-    }) {
-        Ok(headers) => Ok(json!({"headers": project_headers(&headers.values)})),
-        Err(error) => Ok(chat_failure(&error)),
     }
 }
 
-fn native_headers_answer(input: &HeaderInput) -> HelperResult {
-    let platform = platform_inputs(
-        &input.deployment,
-        &input.litellm_settings,
-        &input.environment,
-    )?;
+fn chat_outcome(outcome: Result<AnthropicHeaders, ChatValidationError>) -> Value {
+    outcome.map_or_else(
+        |error| chat_failure(&error),
+        |headers| json!({"headers": project_headers(&headers.values)}),
+    )
+}
+
+fn native_header_view(
+    fixture: &Fixture,
+    input: &HeaderInput,
+    platform: &PlatformInputsCase,
+) -> HelperResult {
     let messages = convert::prompt_messages(&input.messages).map_err(invalid)?;
     let optional_params: IndexMap<String, PromptJson> =
         convert::mapped(&input.optional_params).map_err(invalid)?;
-    match validate_native(&NativeHeadersRequest {
+    let response = validate_native(&NativeHeadersRequest {
         model: &input.model,
         caller_headers: &input.headers,
         messages: &messages,
@@ -185,49 +194,51 @@ fn native_headers_answer(input: &HeaderInput) -> HelperResult {
         api_key: input.api_key.as_ref(),
         api_base: input.api_base.as_deref(),
         workspace: platform.sources(),
-    }) {
-        Ok(headers) => Ok(json!({
-            "headers": project_headers(&headers.headers),
-            "api_base": headers.api_base,
-        })),
-        Err(error) => Ok(native_failure(&error)),
-    }
-}
-
-fn chat_body_answer(input: &BodyInput) -> HelperResult {
-    let fixture = Fixture::empty()?;
-    let prepared = fixture
-        .chat_body(
-            &input.model,
-            input.messages.clone(),
-            input.optional_params.clone(),
-            input.litellm_params.clone(),
-            input.headers.clone(),
-        )
-        .map_err(invalid)?;
-    let body = serde_json::to_value(&prepared.prepared.body).map_err(invalid)?;
-    Ok(body_view(
-        &body,
-        &prepared.warnings,
-        &prepared.prepared.headers.values,
+    });
+    Ok(response.map_or_else(
+        |error| native_failure(&error),
+        |headers| {
+            json!({"headers": project_headers(&headers.headers), "api_base": headers.api_base})
+        },
     ))
 }
 
-fn native_body_answer(input: &BodyInput) -> HelperResult {
+fn body_answer(input: &BodyInput, route: Route) -> HelperResult {
     let fixture = Fixture::empty()?;
-    let messages = convert::prompt_messages(&input.messages).map_err(invalid)?;
-    let optional_params: IndexMap<String, PromptJson> =
-        convert::mapped(&input.optional_params).map_err(invalid)?;
-    let prepared = fixture
-        .native_body(
-            &input.model,
-            messages,
-            optional_params,
-            input.litellm_params.clone(),
-        )
-        .map_err(invalid)?;
-    let body = serde_json::to_value(&prepared.body).map_err(invalid)?;
-    Ok(body_view(&body, &prepared.warnings, &IndexMap::new()))
+    match route {
+        Route::Chat => {
+            let prepared = fixture
+                .chat_body(
+                    &input.model,
+                    input.messages.clone(),
+                    input.optional_params.clone(),
+                    input.litellm_params.clone(),
+                    input.headers.clone(),
+                )
+                .map_err(invalid)?;
+            let body = serde_json::to_value(&prepared.prepared.body).map_err(invalid)?;
+            Ok(body_view(
+                &body,
+                &prepared.warnings,
+                &prepared.prepared.headers.values,
+            ))
+        }
+        Route::Native => {
+            let messages = convert::prompt_messages(&input.messages).map_err(invalid)?;
+            let optional_params: IndexMap<String, PromptJson> =
+                convert::mapped(&input.optional_params).map_err(invalid)?;
+            let prepared = fixture
+                .native_body(
+                    &input.model,
+                    messages,
+                    optional_params,
+                    input.litellm_params.clone(),
+                )
+                .map_err(invalid)?;
+            let body = serde_json::to_value(&prepared.body).map_err(invalid)?;
+            Ok(body_view(&body, &prepared.warnings, &IndexMap::new()))
+        }
+    }
 }
 
 fn chunk_view(event: &StreamEventChunk) -> Value {
@@ -277,10 +288,10 @@ fn stream(id: &str, json_mode: Option<bool>, lines: &[String]) -> HelperResult {
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::WorkspaceIdRequired { model, cases } => workspaces(model, cases),
-        Input::ChatPlatformHeaders(headers) => inspect(Request::Headers(headers, Route::Chat)),
-        Input::NativePlatformHeaders(headers) => inspect(Request::Headers(headers, Route::Native)),
-        Input::ChatPlatformBody(body) => inspect(Request::Body(body, Route::Chat)),
-        Input::NativePlatformBody(body) => inspect(Request::Body(body, Route::Native)),
+        Input::ChatPlatformHeaders(headers) => headers_answer(headers, Route::Chat),
+        Input::NativePlatformHeaders(headers) => headers_answer(headers, Route::Native),
+        Input::ChatPlatformBody(body) => body_answer(body, Route::Chat),
+        Input::NativePlatformBody(body) => body_answer(body, Route::Native),
         Input::NativeAnthropicStream {
             id,
             json_mode,
