@@ -1,0 +1,17 @@
+kind: helper
+name: deployment-credentials-malformed-candidate
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list: []
+    pattern_deployments:
+      - pattern: "openai/*"
+        deployment:
+          model_name: "openai/*"
+          litellm_params:
+            model: openai/ghost
+            custom_llm_provider: 5
+    arguments:
+      model_id: openai/ghost-model
+env: {}
+compare: {ignore: []}

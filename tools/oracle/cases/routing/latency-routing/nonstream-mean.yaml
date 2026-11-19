@@ -1,0 +1,60 @@
+kind: probe
+name: latency-routing-nonstream-mean
+probes:
+  # a request that does not stream scores the mean of each deployment's latency window
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: false
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [1.0, 3.0]}
+          - {id: dep-b, latency: [4.0, 8.0]}
+  # a streaming request scores the mean of the first-token window instead
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: true
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [10.0], time_to_first_token_seconds: [1.0]}
+          - {id: dep-b, latency: [2.0], time_to_first_token_seconds: [3.0]}
+  # a streaming request with no first-token sample falls back to the latency window
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: null}
+        now_millis: 1700000000000
+        stream: true
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, latency: [5.0]}
+          - {id: dep-b, latency: [1.0]}
+  # ttft_percentile scores the first-token window at its one-based ceil(len * percentile) rank
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_routing:
+        model_group: gpt-4o
+        settings: {lowest_latency_buffer: 0.0, ttft_percentile: 0.5}
+        now_millis: 1700000000000
+        stream: true
+        input_tokens: 0
+        deployments: [{id: dep-a}, {id: dep-b}]
+        stored:
+          - {id: dep-a, time_to_first_token_seconds: [1.0, 2.0, 3.0, 4.0]}
+          - {id: dep-b, time_to_first_token_seconds: [2.5]}
+compare: {ignore: []}

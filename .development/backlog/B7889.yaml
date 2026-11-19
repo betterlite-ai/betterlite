@@ -1,7 +1,7 @@
 id: B7889
 milestone: M12 python
 title: Python realtime client secrets, transcription session, calls and websocket
-status: todo
+status: blocked
 depends_on: [B6040, B158, B167, B1010, B1011]
 file: tasks/B7889-python-realtime.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B161
 split_from: B161
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

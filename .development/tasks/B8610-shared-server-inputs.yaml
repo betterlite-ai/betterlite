@@ -35,10 +35,12 @@ description: >-
   `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle).
   `model_read_through: Option<Arc<dyn ModelReadThrough>>` (B9949's trait): the B9948 instance from B8613's Started.
   The routes read it through the model_read_through state slot: B9947 made that slot answer None, and this task changes
-  its Slot::new in state/model_read_through.rs to clone this field. `mcp_registry:
-  Arc<McpRegistry>`, `credentials: Arc<CredentialRegistry>` (B1601's one registry, so B097, B7171 and B2306 share it
-  and a credential added through POST /credentials is seen by all), `vector_stores: Arc<VectorStores>` and `pass_through: Arc<PassThroughState>` (B8614; the
-  pass-through credential router, Vertex token state and route table that startup, B8384 and B8640 share).
+  its Slot::new in state/model_read_through.rs to clone this field. `credentials: Arc<CredentialRegistry>` (B1601's
+  one registry, so B097, B7171 and B2306 share it and a credential added through POST /credentials is seen by all) and
+  `pass_through: Arc<PassThroughState>` (B8614; the pass-through credential router, Vertex token state and route table
+  that startup, B8384 and B8640 share). Shared holds no MCP or vector store registry yet: those features are deferred
+  until the core is done, and B9997 adds `mcp_registry: Arc<McpRegistry>` and B9998 `vector_stores:
+  Arc<VectorStores>`, each with its StartupOutputs field, when they build them.
   `pass_through_logging: std::sync::OnceLock<Arc<PassThroughRuntime>>` (B8931), created empty here: B8640 fills it once
   when it builds PassThroughState. Shared also carries B012's existing logging-worker handle, which B012 exposes as a
   reusable handle while keeping its shutdown ownership, so B8931 starts no second worker.
@@ -142,7 +144,7 @@ description: >-
   Reusable key auth. Some public routers key only some of their paths (B4720's CatalogViews keys every path but
   /v1/mcp/registry.json; B7321's OauthRoot keys only /introspect). So routes.rs exposes `pub fn with_key_auth(router:
   Router, state: &Arc<ServerState>) -> Router`, which applies exactly the auth layers router() applies to keyed routes
-  (http_auth_stage with B052's key auth, then the route_match stage), and router() itself uses it for those layers. An
+  (http_auth_stage over the key auth stage router() runs today, auth_route_patterns::stage, then the route_match stage), and router() itself uses it for those layers. An
   area builds the keyed part of a public router, passes it through with_key_auth, merges the unkeyed part, and returns
   the result from mount_public.
 
@@ -255,7 +257,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The router, router views, shared port and registry types: B8611, B8612 and B8614. The values made during startup: B8613."
+  - "The router, router views, shared port and registry types: B8611, B8612 and B8614. The mcp_registry and vector_stores fields: B9997 and B9998. The values made during startup: B8613."
   - "Each area's mount, mount_public, start and edge's wrap: the area wiring parts, in app/<area>.rs and app/<area>/**."
   - "The route and state registry, ServerState and the stub modules: B1100. user_api_key_auth_websocket: B052."
   - "HealthSlot's contents and the five health routers: B8540. ShutdownState and its drain: B4448. The in-flight counter and the admission layer: B022."

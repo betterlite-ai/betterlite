@@ -2,7 +2,7 @@ id: B8386
 milestone: M8 platform
 title: Model latency and exception metrics routes
 status: todo
-depends_on: [B052, B714, B8399]
+depends_on: [B714, B8399]
 file: tasks/B8386-model-metrics-routes.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

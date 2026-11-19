@@ -1,0 +1,43 @@
+kind: helper
+name: bedrock-services-claude-platform-native-platform-headers
+call:
+  bedrock_services_claude_platform:
+    native_platform_headers:
+      model: claude-sonnet-4-5
+      messages:
+        - {role: user, content: hi}
+      optional_params:
+        compaction: {type: compaction}
+        speed: fast
+        output_config: {format: {type: json_schema}}
+      headers:
+        anthropic-version: '2024-01-01'
+        content-type: text/plain
+        anthropic-beta: alpha
+        x-api-key: ''
+      api_key: native-key
+      api_base: https://aws-external-anthropic.us-west-2.amazonaws.com/v1/messages
+      deployment: {workspace_id: deployment-workspace}
+      environment: {ANTHROPIC_AWS_API_KEY: environment-key}
+env:
+  ANTHROPIC_AWS_API_KEY: environment-key
+calls:
+  - bedrock_services_claude_platform:
+      native_platform_headers:
+        model: claude-sonnet-4-5
+        messages:
+          - {role: user, content: hi}
+        optional_params: {workspace_id: request-workspace}
+        headers: {anthropic-beta: beta}
+        deployment: {workspace_id: deployment-workspace}
+        environment: {ANTHROPIC_AWS_API_KEY: environment-key}
+  - bedrock_services_claude_platform:
+      native_platform_headers:
+        model: claude-sonnet-4-5
+        messages:
+          - {role: user, content: hi}
+        optional_params: {workspace_id: request-workspace}
+        headers: {x-api-key: caller-key}
+        deployment: {workspace_id: deployment-workspace}
+        environment: {ANTHROPIC_AWS_API_KEY: environment-key}
+compare: {ignore: []}

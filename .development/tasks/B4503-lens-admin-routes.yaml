@@ -6,7 +6,7 @@ description: >-
   and lens_admin_routes (the handlers and the router). Add betterlite-lens and betterlite-db to the server's Cargo.toml if B4504 has not already (no cycle, the server is the top crate).
   The worker routes (everything under /lens/worker/...), worker_auth, assigned, claim_candidate, validate_finding and merge_results belong to B4505,
   which imports lens_access from this task. This task registers its 16 routes in one function `lens_admin_routes::router(state)` and B8682 mounts it, so nothing is registered twice.
-  Every route sits behind the existing auth layer (B003 and B052), exactly like the routes of B3125. Every error body is {"detail": "<text>"} with the status below.
+  Every route sits behind the existing auth layer (the B003 middleware), exactly like the routes of B3125. Every error body is {"detail": "<text>"} with the status below.
 
   Outside services come through a state struct `LensRoutesState` (`crate::lens_access::state::LensRoutesState`, with the `Clock` and `IdSource` traits beside it in the same file, all `pub(crate)`), built once by the caller and passed to the router: the Lens repository (B4501 LensRepository, absent when the server has no Postgres),
   the trace storage (Option of the B4502 Storage port; the owner of the ClickHouse implementation and of provide_storage is B3867 and the later storage task, this task only reads what the state holds),

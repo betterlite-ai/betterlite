@@ -70,7 +70,7 @@ description: >-
   shared.agents.registry from B8612 together with B8647's one PublicAgentGroups
   holder to the agent projection; the holder used by make_public must be shared
   with this reader, as the report's B8647/B8610 correction specifies. Pass
-  shared.mcp_registry from B8614 to the MCP projection and use its live
+  shared.mcp_registry from B9997 to the MCP projection and use its live
   RegistrySettings.public_mcp_servers for the explicit flag, since B8627's
   PublicServerSetting writes that value. Pass shared.db to B3194's plugin repository.
   B3194 owns agent stable/legacy-id intersection, the request-base URL projection,
@@ -269,7 +269,7 @@ out_of_scope:
   - "public_endpoints.py L593-L639: B3191 owns get_agent_fields and its agent credential projection; B8647 owns its existing mount and HTTP coverage."
   - "types/proxy/public_endpoints/public_endpoints.py: B3190 owns ProviderCredentialField, ProviderCreateInfo, EndpointProvider, SupportedEndpoint and SupportedEndpointsResponse; B3191 owns AgentCredentialField and AgentCreateInfo; B3192 owns AutoRouterPresetTiers, AutoRouterPresetConfig, AutoRouterPresetRecord and ComplexityScorerDefaults. B7947 owns the separate Python exports. Only the native PublicModelHubInfo is added here."
   - B9300 owns all get_blog_posts.py functions, production BlogPost/BlogPostsResponse, settings defaults and RSS decoding; B193/B194 own catalog loading, finalization, serialization retention and adoption, which must be corrected before this task runs.
-  - B8610 owns the shared server inputs and aggregate mount calls, B8611 router views, B8612 agent read-through, B8614 MCP boot registries, B8647 the live public-agent holder, B8380 settings snapshots and B839 model/link writes; this task implements only the adapters into the already owned handlers.
+  - B8610 owns the shared server inputs and aggregate mount calls, B8611 router views, B8612 agent read-through, B9997 the MCP registry in shared.mcp_registry, B8647 the live public-agent holder, B8380 settings snapshots and B839 model/link writes; this task implements only the adapters into the already owned handlers.
   - The import of EnterpriseProxyConfig.get_custom_docs_description has no open-source implementation and is not built; the reachable exception fallback is custom_docs_description null.
 pitfalls:
   - A v1 path in B868's public set still executes user_api_key_auth, so moving it wholly outside auth silently bypasses custom auth.

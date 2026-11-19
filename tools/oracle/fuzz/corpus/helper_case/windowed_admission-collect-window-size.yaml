@@ -1,0 +1,17 @@
+kind: helper
+name: windowed-admission-collect-window-size-seed
+call:
+  b3036:
+    function: collect
+    descriptors:
+      - key: api-key
+        value: seeded
+        rate_limit:
+          requests_per_unit: 3
+          tokens_per_unit: null
+          max_parallel_requests: null
+          window_size: 0
+    skip_tpm_check: false
+    window_size: 60
+env: {}
+compare: {ignore: []}
