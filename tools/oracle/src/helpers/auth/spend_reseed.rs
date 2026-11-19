@@ -39,7 +39,10 @@ async fn execute(input: &Input) -> HelperResult {
     let reseed: Counters = counter(source);
     let cache = FakeCache::build(&input.cache);
     // LiteLLM only opens a spend counter batch against a configured Redis cache
-    let batch = FakeBatch::new(input.batch.clone().filter(|_| input.cache.redis));
+    let batch = FakeBatch::new(
+        input.cache.redis && input.batch.is_some(),
+        input.batch.clone().filter(|_| input.cache.redis),
+    );
     let value = match &input.op {
         Operation::FromDb => reseed.from_db(&input.counter_key).await.map_err(failure)?,
         Operation::EndUserFromDb => reseed

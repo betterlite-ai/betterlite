@@ -207,20 +207,27 @@ fn cache_value(answer: Option<&Answer>) -> Result<Option<ReseedCacheValue>, Fake
     }
 }
 
+// LiteLLM opens a spend counter batch only for a Redis-backed request that binds counters,
+// so without one the record call is a no-op and nothing is visible afterwards
 pub(crate) struct FakeBatch {
+    present: bool,
     answer: Option<Answer>,
     recorded: Mutex<Option<Decimal>>,
 }
 
 impl FakeBatch {
-    pub(crate) const fn new(answer: Option<Answer>) -> Self {
+    pub(crate) const fn new(present: bool, answer: Option<Answer>) -> Self {
         Self {
+            present,
             answer,
             recorded: Mutex::new(None),
         }
     }
 
     pub(crate) fn after(&self) -> Value {
+        if !self.present {
+            return Value::Null;
+        }
         let recorded = *self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(amount) = recorded {
             return amount_json(amount);
@@ -247,6 +254,9 @@ impl ActiveSpendBatch for FakeBatch {
     }
 
     fn record(&self, _counter_key: &str, value: Decimal) {
+        if !self.present {
+            return;
+        }
         *self.recorded.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
     }
 }
