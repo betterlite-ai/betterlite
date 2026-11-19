@@ -102,10 +102,9 @@ fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, Requ
         .split(|byte| *byte == b'&')
         .filter(|part| !part.is_empty())
     {
-        let (name, value) = match part.iter().position(|byte| *byte == b'=') {
-            Some(index) => (&part[..index], &part[index + 1..]),
-            None => (part, &[][..]),
-        };
+        let mut fields = part.splitn(2, |byte| *byte == b'=');
+        let name = fields.next().unwrap_or_default();
+        let value = fields.next().unwrap_or_default();
         items.push(FormPart {
             name: unquote_plus_latin1(name),
             value: PartValue::Text(unquote_plus_latin1(value)),
@@ -114,44 +113,54 @@ fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, Requ
     Ok(FormParts { items })
 }
 
-// Starlette reads each field via unquote_plus(bytes.decode("latin-1")), so raw bytes stay latin-1
+// Starlette reads each field via unquote_plus(bytes.decode("latin-1")): raw bytes stay latin-1 characters and percent escapes decode as UTF-8 runs with one U+FFFD per invalid sequence
 fn unquote_plus_latin1(bytes: &[u8]) -> String {
     let mut decoded = String::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] >= 0x80 {
-            decoded.push(char::from(bytes[index]));
-            index += 1;
-            continue;
-        }
-        let mut escaped = Vec::with_capacity(4);
-        while index < bytes.len() && bytes[index] < 0x80 {
-            let byte = bytes[index];
-            if byte == b'+' {
-                escaped.push(b' ');
-                index += 1;
-            } else if byte == b'%'
-                && index + 2 < bytes.len()
-                && bytes[index + 1].is_ascii_hexdigit()
-                && bytes[index + 2].is_ascii_hexdigit()
-            {
-                escaped.push((hex_value(bytes[index + 1]) << 4) + hex_value(bytes[index + 2]));
-                index += 3;
-            } else {
-                escaped.push(byte);
-                index += 1;
+    let mut escaped = Vec::with_capacity(bytes.len());
+    let mut remainder = bytes;
+    while let Some((byte, rest)) = remainder.split_first() {
+        remainder = rest;
+        if *byte >= 0x80_u8 {
+            push_replaced_utf8(&mut decoded, &escaped);
+            escaped.clear();
+            decoded.push(char::from(*byte));
+        } else if *byte == b'+' {
+            escaped.push(b' ');
+        } else if *byte == b'%' {
+            match rest {
+                [high, low, tail @ ..] if high.is_ascii_hexdigit() && low.is_ascii_hexdigit() => {
+                    escaped.push(
+                        hex_value(*high)
+                            .wrapping_shl(4_u32)
+                            .wrapping_add(hex_value(*low)),
+                    );
+                    remainder = tail;
+                }
+                _ => escaped.push(b'%'),
             }
+        } else {
+            escaped.push(*byte);
         }
-        decoded.push_str(&String::from_utf8_lossy(&escaped));
     }
+    push_replaced_utf8(&mut decoded, &escaped);
     decoded
 }
 
-fn hex_value(byte: u8) -> u8 {
+// Python's errors="replace" decodes each maximal invalid subsequence as one U+FFFD
+fn push_replaced_utf8(decoded: &mut String, bytes: &[u8]) {
+    for chunk in bytes.utf8_chunks() {
+        decoded.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            decoded.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+}
+
+const fn hex_value(byte: u8) -> u8 {
     match byte {
-        b'0'..=b'9' => byte - b'0',
-        b'a'..=b'f' => byte - b'a' + 10,
-        _ => byte - b'A' + 10,
+        b'0'..=b'9' => byte.wrapping_sub(b'0'),
+        b'a'..=b'f' => byte.wrapping_sub(b'a').wrapping_add(10_u8),
+        _ => byte.wrapping_sub(b'A').wrapping_add(10_u8),
     }
 }
 
