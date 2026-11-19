@@ -28,9 +28,11 @@ description: >-
   2. Secret lookup. B8612's `production_secret_lookup(env)` before B8590's env_overlay, which takes it as `secrets`.
   3. Proxy config state. One B8380 `ProxyConfigState` before config boot; when B8374's merged code already makes one,
   keep that one.
-  4. Registries. One B4776 `AgentRegistry`, B8614's `McpRegistry::new(&config, db, http)`, `VectorStores::new()` and `PassThroughState::new()`, and B8614's
-  `BootRegistries` over the first three and a clone of the LifespanInputs `python_hooks` Arc, passed to B8590's load_non_llm_configs. B8374's agent grant id migration and B8384's
-  _init_mcp_servers_in_db use these same values. The PassThroughState goes to every call B8374 makes into B3616's initialize_pass_through_endpoints and to B8384's database load, and at the default_vertex_config line of load_config (L6964-L6965) B3602's set_default_vertex_config runs on its credential router unless B8374 already calls it.
+  4. Registries. One B4776 `AgentRegistry` and B8614's `PassThroughState::new(...)`, and B8614's `BootRegistries`
+  over the AgentRegistry, passed to B8590's load_non_llm_configs. B8374's agent grant id migration uses this same
+  AgentRegistry. No MCP or vector store registry is made here: those features are deferred until the core is done,
+  and B9997 and B9998 add McpRegistry and VectorStores to this step, to BootRegistries, to the DbObjectSync and to
+  Started when they land. The PassThroughState goes to every call B8374 makes into B3616's initialize_pass_through_endpoints and to B8384's database load, and at the default_vertex_config line of load_config (L6964-L6965) B3602's set_default_vertex_config runs on its credential router unless B8374 already calls it.
   One B4059 `InMemoryPromptRegistry`, in the RwLock wrapper Shared holds it in (B8610), made with the registries. At
   the prompts position of load_config (L7027-L7034, after the policy engine setup and before credentials), when
   `config.sections.prompts` is not empty, B8293's `init_prompts` fills it with the config file path; its error stops
@@ -173,12 +175,12 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "Each startup and shutdown step: B8374 and the owners it names. The deployment checks: B8378. Plugin resolution: B8587."
-  - "The types made here: B8611, B8612 and B8614. The Shared fields: B8610."
+  - "The types made here: B8611, B8612 and B8614. The Shared fields: B8610. McpRegistry and VectorStores, with their place in this step: B9997 and B9998."
   - "The collector subcommand and its port: B1709."
   - "Calling init_callbacks: B8742's callback_loggers slot, from app::callbacks::start. Filling the GuardrailClasses embedder slot: B8790. The Shared fields: B8610."
 pitfalls:
   - The usage Redis can come from three places (the coordination block, the database block, the response cache backend); attach_redis must get whichever won, after the last of them, or the router keeps a client that rate limits do not use.
-  - A second AgentRegistry, McpRegistry, JwtSignerSlot, CacheSettingsManager, ProxyLogging, GuardrailClasses, prompt registry, PeriodicReloads, GatewayRequestAccumulator, CollectorRegistry, ShutdownState or PythonHooks built anywhere later splits state between startup and request handling; Started is the only owner until B8610 moves them into Shared.
+  - A second AgentRegistry, JwtSignerSlot, CacheSettingsManager, ProxyLogging, GuardrailClasses, prompt registry, PeriodicReloads, GatewayRequestAccumulator, CollectorRegistry, ShutdownState or PythonHooks built anywhere later splits state between startup and request handling; Started is the only owner until B8610 moves them into Shared.
   - Installing the router before init_cache gives it cache_responses false even when litellm_settings.cache is true.
   - pin_complexity_model_id must run on the raw params before B8587 swaps plugin paths for instances, or B8381's later reconcile hashes different params and evicts the deployment.
 review_level: security

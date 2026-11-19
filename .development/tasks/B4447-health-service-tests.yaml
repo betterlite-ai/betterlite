@@ -11,7 +11,7 @@ description: >-
   Route split. B4448 registers the readiness, details, backlog, drain, license, OPTIONS, /settings and
   /active/callbacks routes. B4446 registers POST /health/test_connection. This task registers only GET /test and GET
   /health/services, in one function `health_services_routes(state) -> Router` that B8540 mounts once. Do not
-  register any path B4448 or B4446 owns. Both routes sit behind B052's user_api_key_auth, so a missing or wrong key is
+  register any path B4448 or B4446 owns. Both routes sit behind the server's authentication middleware (LiteLLM's user_api_key_auth), so a missing or wrong key is
   that pipeline's 401 and this module never sees it.
 
   GET /test (deprecated). Authenticated, answers `{"route": <request route>}` where the route is the request path after

@@ -1,7 +1,7 @@
 id: B343
 title: Auto-router identity, member permissions and inference checks
 description: 'Revalidate B377 automatic-router dependencies at inference using B378 MemberRouterAccess
-  and B052/B060 public services. Reject revoked members, blocked teams and unavailable ownership data
+  and B060 public services, plus B737 get_team_object and B879 get_org_object and get_project_object. Reject revoked members, blocked teams and unavailable ownership data
   before any classifier or selected-model call. The member check reads the membership through B2318
   MembershipLookup::get_team_membership (betterlite-auth membership_load), as auto_router_checks.py L91
   calls get_team_membership. Reuse configuration-write policy; no duplicate quota or

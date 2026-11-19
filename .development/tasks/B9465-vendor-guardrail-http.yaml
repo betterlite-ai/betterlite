@@ -212,7 +212,7 @@ oracle_cases:
   - tools/oracle/cases/guardrails/m-z-vendor-http/no-auth.yaml
 deviations: []
 out_of_scope:
-  - "The classes and their initializers: B3780 and B3781 (Noma), B3782 (Noma v2), B3783 (Onyx), B3784 (Ovalix), B3785 (Pangea), B3791 and B3792 (Prompt Security), B3793 and B3794 (Repello), B3801 to B3803 (custom code) and B3809 (judge). Registry arms: B8521. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683."
+  - "The classes and their initializers: B3780 and B3781 (Noma), B3782 (Noma v2), B3783 (Onyx), B3784 (Ovalix), B3785 (Pangea), B3791 and B3792 (Prompt Security), B3793 and B3794 (Repello), B3801 to B3803 (custom code) and B3809 (judge). Registry arms: B8521, and B3792 for prompt_security. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683."
   - "The `/upstream/{i}/body` selector the Onyx and Noma v2 cases use: B9850. The fields inside those scan bodies (Onyx's proxy_server_request, Noma v2's request_data and litellm_logging_obj) are left to B3783's and B3782's tests."
   - "Prompt Security file and image sanitization (/api/sanitizeFile): B3791's helper cases cover it."
   - "Streamed responses: Noma's buffered stream (B3781) and Repello's stream blocking (B3794) own that code; the streaming cases across guardrails are B8993's."

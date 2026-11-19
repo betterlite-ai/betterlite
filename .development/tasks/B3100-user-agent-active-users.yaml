@@ -29,7 +29,7 @@ description: >-
   Include period_start and period_end dates in response. Order by week_offset descending
   (most recent first) then active_users descending.
 
-  All three endpoints require user API key authentication (B052). When prisma_client is unavailable,
+  All three endpoints sit behind the server's user API key authentication middleware. When prisma_client is unavailable,
   return HTTP 500 with "Database not connected" error matching CommonProxyErrors.db_not_connected_error.
   Build SQL queries dynamically with parameter injection; do not use template strings for user input.
 
@@ -93,7 +93,7 @@ deviations:
 out_of_scope:
   - "_TableOps protocol and _typed_table overloads (lines 142-155 of user_agent_analytics_endpoints.py) are used only by get_per_user_analytics, which B3101 owns. B3100 builds only _query_raw and does not use these protocol helpers."
   - get_monthly_active_users, get_tag_summary, get_per_user_analytics (owned by B3101).
-  - Tag ownership scoping or authorization checks beyond user_api_key_auth (B052).
+  - Tag ownership scoping or authorization checks beyond the server's authentication middleware.
   - Caching of results or precomputed aggregations.
   - Database schema or table definitions (uses existing LiteLLM tables).
 pitfalls:

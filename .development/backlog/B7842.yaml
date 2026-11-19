@@ -1,7 +1,7 @@
 id: B7842
 milestone: M12 python
 title: Python get, delete, cancel, list-input-items and compact response functions
-status: todo
+status: blocked
 depends_on: [B7840, B7841, B933, B1116, B934, B6040, B158]
 file: tasks/B7842-python-response-lifecycle.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B160
 split_from: B160
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

@@ -2,7 +2,7 @@ id: B8641
 title: Pass-through port adapters over shared state
 description: >-
   The pass-through route tasks declare small traits for everything that LiteLLM reads from proxy_server globals (llm_router, proxy_logging_obj, the vector store registries) and test with fakes. This task writes the production value for each of those traits, so B8640 can build the route deps. Code goes in crates/betterlite-server/src/app/pass_through/ports.rs and ports/ (logging.rs, router.rs, vector.rs, vertex.rs, tokens.rs, tests.rs).
-  Every adapter is a struct that holds what it needs from `Shared` (B8610 adds the struct and the `vector_stores` field, B8611 the `router` and `router_views` fields, B8612 the `proxy_logging` and `general_settings` fields) and forwards each call to the task that owns the behavior. No adapter copies logic from the task it calls. Read each trait's merged name and signature before writing its impl; when a trait or a backing function named below is not on the branch, stop and report.
+  Every adapter is a struct that holds what it needs from `Shared` (B8610 adds the struct, B9998 the `vector_stores` field, B8611 the `router` and `router_views` fields, B8612 the `proxy_logging` and `general_settings` fields) and forwards each call to the task that owns the behavior. No adapter copies logic from the task it calls. Read each trait's merged name and signature before writing its impl; when a trait or a backing function named below is not on the branch, stop and report.
   `PassThroughPorts::new(shared: &Shared)` builds every adapter once and holds each as an `Arc`, so B8640 clones what each route family needs.
 
   Logging (logging.rs).
@@ -15,7 +15,7 @@ description: >-
   - `AllowlistAdapter` implements B3628's `ModelAllowlistPort`: B885's enforced_model_allowlists for the key, returned in the order B885 gives them.
 
   Vector stores (vector.rs). These back the three ports of B3624 and one of B3623.
-  - `VectorRegistryAdapter` implements `VectorRegistryPort` over B1062 (is_index, index by name) and B1063 (store by name). has_index_registry and has_store_registry are true only when the registry that LiteLLM keeps in `litellm.vector_store_index_registry` and `litellm.vector_store_registry` exists. Both live in `shared.vector_stores` (B8610).
+  - `VectorRegistryAdapter` implements `VectorRegistryPort` over B1062 (is_index, index by name) and B1063 (store by name). has_index_registry and has_store_registry are true only when the registry that LiteLLM keeps in `litellm.vector_store_index_registry` and `litellm.vector_store_registry` exists. Both live in `shared.vector_stores` (B9998), each None until a loader creates it.
   - `VectorAccessAdapter` implements `VectorAccessPort`: assert_store_access is B1061's assert_user_can_access_vector_store, check_index_endpoint is B1061's is_allowed_to_call_vector_store_endpoint (keep only its error), and assert_admin_for_index_create is B1060's assert_proxy_admin_for_vector_store_index_management with operation `create`. The same struct implements B3623's `VertexStoreAccess` (managed_store with B1061's get_litellm_managed_vector_store, assert_access with assert_user_can_access_vector_store).
   - `VectorProviderAdapter` implements `VectorProviderPort`. `VectorProvider::AzureAi` goes to B558's AzureAIVectorStoreConfig and `VectorProvider::Milvus` to B7892's MilvusProviderPorts: auth_headers is get_auth_credentials, complete_url is get_complete_url, has_config is true for both.
 

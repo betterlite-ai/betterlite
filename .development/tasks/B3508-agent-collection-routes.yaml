@@ -98,7 +98,7 @@ deviations:
 out_of_scope:
 - B3504 owns acreate and alist entry points that these routes delegate to.
 - B8801 owns the pre-call step of base_process_llm_request (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)); B014 owns the rest and _handle_llm_api_exception; this task only calls them.
-- B052 owns user_api_key_auth dependency and UserAPIKeyAuth type.
+- B2314 owns the UserAPIKeyAuth type; the server's authentication middleware runs user_api_key_auth before these routes.
 - B1100 owns _read_request_body and _safe_get_request_query_params.
 - FastAPI/Starlette Request, Response and HTTPException types; this task uses them as they are provided.
 - The proxy's installed route registration and dispatcher lifecycle; this task only defines two route handlers.

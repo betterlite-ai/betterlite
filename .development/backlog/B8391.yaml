@@ -2,7 +2,7 @@ id: B8391
 milestone: M8 platform
 title: Policy pipeline slots, streaming gates and model-level guardrails
 status: todo
-depends_on: [B8390, B3247, B3679]
+depends_on: [B8390, B3679, B3240, B3246, B206]
 file: tasks/B8391-pipeline-slots.yaml
 covers:
   - "litellm/proxy/utils.py"
