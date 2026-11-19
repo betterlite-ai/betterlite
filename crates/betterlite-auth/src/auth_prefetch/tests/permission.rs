@@ -651,6 +651,27 @@ async fn permission_table_other_actions_stay_unread() {
 }
 
 #[tokio::test]
+async fn permission_table_reports_the_missing_database() {
+    let store = PostgresStore { pool: None };
+    let table = PermissionTable {
+        reader: store.clone(),
+        writer: store,
+        availability: Arc::new(Availability::default()),
+        use_writer: false,
+    };
+    let outcome = table
+        .find_unique(FindOne {
+            filter: "perm-1".to_owned(),
+            include: Presence::Omitted,
+        })
+        .await;
+    assert!(matches!(
+        outcome,
+        Err(AuthReadError::Repository(DbError::NoDbConnected))
+    ));
+}
+
+#[tokio::test]
 async fn permission_no_negative_cache() {
     let cache = FakePermissionCache::empty();
     let normal = FakePermissionStore::missing();
