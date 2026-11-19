@@ -12,7 +12,7 @@ use super::page;
 use super::{
     AzureReadCall, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
     FineTuningReadOutcome, FineTuningReadParams, OpenAiReadCall, ReadOperation, ReadProvider,
-    ReadTarget, ReadTimeout, ReadTimeoutValue, ReadValues,
+    ReadTarget, ReadTimeout, ReadValues,
 };
 
 pub struct FineTuningRead<Dispatch> {
@@ -165,19 +165,27 @@ fn resolve_timeout(
     params: &FineTuningReadParams,
     provider: &str,
 ) -> Result<FineTuningTimeout, TimeoutError> {
-    match params.timeout.as_ref() {
+    let configured = match params.timeout.as_ref() {
         Some(ReadTimeout::Structured(structured)) => {
-            resolve_fine_tuning_timeout(None, provider, Some(StructuredTimeout::from(*structured)))
+            return resolve_fine_tuning_timeout(
+                None,
+                provider,
+                Some(StructuredTimeout::try_from(structured)?),
+            );
         }
-        Some(ReadTimeout::Plain(ReadTimeoutValue::Number(seconds))) if *seconds != 0.0_f64 => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider, None)
+        Some(ReadTimeout::Plain(value)) => Some(TimeoutValue::try_from(value)?),
+        None => None,
+    };
+    let selected = match configured {
+        Some(TimeoutValue::Number(seconds)) if seconds != 0.0_f64 => {
+            Some(TimeoutValue::Number(seconds))
         }
-        Some(ReadTimeout::Plain(ReadTimeoutValue::Text(text))) if !text.is_empty() => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::String(text.clone())), provider, None)
-        }
-        None | Some(ReadTimeout::Plain(_)) => {
-            let request = params.request_timeout.as_ref().map(TimeoutValue::from);
-            resolve_fine_tuning_timeout(request.as_ref(), provider, None)
-        }
-    }
+        Some(TimeoutValue::String(text)) if !text.is_empty() => Some(TimeoutValue::String(text)),
+        _ => params
+            .request_timeout
+            .as_ref()
+            .map(TimeoutValue::try_from)
+            .transpose()?,
+    };
+    resolve_fine_tuning_timeout(selected.as_ref(), provider, None)
 }

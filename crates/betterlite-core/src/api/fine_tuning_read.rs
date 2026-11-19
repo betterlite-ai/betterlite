@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 use secrecy::zeroize::Zeroize;
 use secrecy::{CloneableSecret, ExposeSecret as _, SecretBox, SecretString, SerializableSecret};
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
@@ -44,40 +45,54 @@ pub enum ReadTimeout {
     Structured(ReadStructuredTimeout),
 }
 
+// a float stays serde_json's Number because the workspace's arbitrary_precision loses it under flatten
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ReadTimeoutValue {
-    Number(f64),
+    Number(Number),
     Text(String),
 }
 
-impl From<&ReadTimeoutValue> for TimeoutValue {
-    fn from(value: &ReadTimeoutValue) -> Self {
+impl TryFrom<&ReadTimeoutValue> for TimeoutValue {
+    type Error = TimeoutError;
+
+    fn try_from(value: &ReadTimeoutValue) -> Result<Self, Self::Error> {
         match value {
-            ReadTimeoutValue::Number(seconds) => Self::Number(*seconds),
-            ReadTimeoutValue::Text(text) => Self::String(text.clone()),
+            ReadTimeoutValue::Number(number) => Ok(Self::Number(
+                number.as_f64().ok_or(TimeoutError::NonFinite)?,
+            )),
+            ReadTimeoutValue::Text(text) => Ok(Self::String(text.clone())),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReadStructuredTimeout {
-    pub connect: Option<f64>,
-    pub read: Option<f64>,
-    pub write: Option<f64>,
-    pub pool: Option<f64>,
+    pub connect: Option<Number>,
+    pub read: Option<Number>,
+    pub write: Option<Number>,
+    pub pool: Option<Number>,
 }
 
-impl From<ReadStructuredTimeout> for StructuredTimeout {
-    fn from(timeout: ReadStructuredTimeout) -> Self {
-        Self {
-            connect: timeout.connect,
-            read: timeout.read,
-            write: timeout.write,
-            pool: timeout.pool,
-        }
+impl TryFrom<&ReadStructuredTimeout> for StructuredTimeout {
+    type Error = TimeoutError;
+
+    fn try_from(timeout: &ReadStructuredTimeout) -> Result<Self, Self::Error> {
+        Ok(Self {
+            connect: optional_seconds(timeout.connect.as_ref())?,
+            read: optional_seconds(timeout.read.as_ref())?,
+            write: optional_seconds(timeout.write.as_ref())?,
+            pool: optional_seconds(timeout.pool.as_ref())?,
+        })
     }
+}
+
+// a buffered number reaches no finite f64 only when it is too large for one, which a timeout rejects
+fn optional_seconds(number: Option<&Number>) -> Result<Option<f64>, TimeoutError> {
+    number
+        .map(|value| value.as_f64().ok_or(TimeoutError::NonFinite))
+        .transpose()
 }
 
 // the key a case or the Python child carries as text, kept out of Debug by the SecretBox around it
