@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 use crate::passthrough::{CLOSE_REASON_MAX_BYTES, SENDABLE_CLOSE_CODES};
 
 mod passthrough_client_socket_open;
+mod passthrough_frames_corpus;
 mod passthrough_json_object_frame;
 mod passthrough_resolved_setup;
 mod passthrough_rewrite_setup_model;
