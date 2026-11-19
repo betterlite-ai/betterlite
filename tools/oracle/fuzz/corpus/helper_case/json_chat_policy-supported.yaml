@@ -1,0 +1,13 @@
+kind: helper
+name: json-chat-policy-supported-seed
+call:
+  json_chat_policy:
+    calls:
+      - kind: supported
+        model: sail/openai/gpt-oss-120b
+        environment: {}
+      - kind: supported
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {}
+env: {}
+compare: {ignore: []}
