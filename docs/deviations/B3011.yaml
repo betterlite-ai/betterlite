@@ -12,6 +12,9 @@ deviations:
   - what: The error text a failed chunk hands to the failure hook is the repo's DbError display or the schedule error's source chain, where LiteLLM passes the raw exception object and its traceback.
     why: DbError and DriverError keep the fields typed and stop the source chain before driver diagnostics can expose parameter or row values; the event still names the failure and the phase stops the same way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L929
+  - what: A failed chunk is reported through the injected PhaseFailureSink only, where LiteLLM also logs the exception through verbose_proxy_logger at error level before sending the failure hook.
+    why: Service logging and its delivery belong to the injected sink (B012), which owns whether the failure is logged, queued or awaited; the failure event already carries the error text, and the customer page failure keeps its own tracing warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L918-L924
 kept_bugs:
   - what: The tier phase's failure event carries call_type "reset_budget_endusers", the enduser phase's name, so a failure here is logged under the customers call type.
     why: LiteLLM sends that literal from this phase, and an alert or dashboard that groups failure events by call_type already reads these failures under that name.
