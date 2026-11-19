@@ -13,21 +13,19 @@ use serde_json::json;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    RedactEnvVars {
-        response: JsonObject,
-    },
-    RedactMapping {
-        record: JsonObject,
-    },
-    RedactModel {
+    #[serde(rename = "redact_env_vars")]
+    EnvVars { response: JsonObject },
+    #[serde(rename = "redact_mapping")]
+    Mapping { record: JsonObject },
+    #[serde(rename = "redact_model")]
+    Model {
         server_id: String,
         transport: MCPTransport,
         #[serde(default)]
         env_vars: Option<Vec<McpEnvVar>>,
     },
-    RedactOther {
-        record: Json,
-    },
+    #[serde(rename = "redact_other")]
+    Other { record: Json },
 }
 
 pub(crate) struct Op;
@@ -61,17 +59,17 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::RedactEnvVars { response } => {
+            Input::EnvVars { response } => {
                 let result = Json::Object(response.clone());
                 let mut redacted = response.clone();
                 redact_env_var_values(&mut redacted);
                 Ok(json!({"response": redacted, "result": result}))
             }
-            Input::RedactMapping { record } => {
+            Input::Mapping { record } => {
                 let record_json = Json::Object(record.clone());
                 Ok(json!({"record": redact_record_env_vars(&record_json)}))
             }
-            Input::RedactModel {
+            Input::Model {
                 server_id,
                 transport,
                 env_vars,
@@ -80,7 +78,7 @@ impl Helper for Op {
                 let redacted = redact_model_env_vars(&record);
                 Ok(json!({"env_vars": redacted.env_vars}))
             }
-            Input::RedactOther { record } => Ok(json!({"record": redact_record_env_vars(record)})),
+            Input::Other { record } => Ok(json!({"record": redact_record_env_vars(record)})),
         }
     }
 }
