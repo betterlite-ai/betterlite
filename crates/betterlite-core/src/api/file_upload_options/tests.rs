@@ -168,12 +168,20 @@ impl RecordingChecker {
 
 #[async_trait]
 impl ManagedResourceAccessChecker for RecordingChecker {
-    async fn can_call_unified_file_id(&self, id: &str, _principal: &Principal) -> bool {
-        self.record(&self.file_id, id)
+    async fn can_call_unified_file_id(
+        &self,
+        unified_file_id: &str,
+        _principal: &Principal,
+    ) -> bool {
+        self.record(&self.file_id, unified_file_id)
     }
 
-    async fn can_call_unified_object_id(&self, id: &str, _principal: &Principal) -> bool {
-        self.record(&self.object_id, id)
+    async fn can_call_unified_object_id(
+        &self,
+        unified_object_id: &str,
+        _principal: &Principal,
+    ) -> bool {
+        self.record(&self.object_id, unified_object_id)
     }
 }
 
@@ -225,20 +233,38 @@ fn creation_extraction() {
 
     let spaces = probe.extract(Some(&body), None, Some("   ")).unwrap();
     assert_eq!(spaces.target_storage, "default");
+}
 
+#[test]
+fn creation_extraction_reads_a_missing_body_once() {
+    let probe = Fixture::new(
+        Some(json_body("{\"model\": \" b \"}")),
+        &[("model", "q")],
+        &[("x-litellm-model", "h")],
+        &[],
+    );
     let read = probe.extract(None, None, None).unwrap();
     assert_eq!(read.model.as_deref(), Some(" b "));
     assert_eq!(probe.reads.get(), 1);
 
+    // a falsey read result is the empty body, so the request query decides the model
+    let falsey = Fixture::new(None, &[("model", "q")], &[("x-litellm-model", "h")], &[]);
+    let fallback = falsey.extract(None, None, None).unwrap();
+    assert_eq!(fallback.model.as_deref(), Some("q"));
+    assert_eq!(falsey.reads.get(), 1);
+}
+
+#[test]
+fn model_falls_from_the_body_to_the_query_then_the_header() {
     let empty_body = json_body("{\"model\": \"\"}");
-    let empty = Fixture::new(
+    let query = Fixture::new(
         Some(empty_body.clone()),
         &[("model", "q")],
         &[("x-litellm-model", "h")],
         &[],
     );
     assert_eq!(
-        empty
+        query
             .extract(Some(&empty_body), None, None)
             .unwrap()
             .model
@@ -247,13 +273,17 @@ fn creation_extraction() {
     );
 
     let header = Fixture::new(
-        Some(json_body("{\"model\": \"\"}")),
+        Some(empty_body.clone()),
         &[("model", "")],
         &[("x-litellm-model", "h")],
         &[],
     );
     assert_eq!(
-        header.extract(None, None, None).unwrap().model.as_deref(),
+        header
+            .extract(Some(&empty_body), None, None)
+            .unwrap()
+            .model
+            .as_deref(),
         Some("h")
     );
 
@@ -262,7 +292,10 @@ fn creation_extraction() {
         blank.extract(None, None, None).unwrap().model.as_deref(),
         Some("")
     );
+}
 
+#[test]
+fn null_body_model_falls_through() {
     let null_body = json_body("{\"model\": null}");
     let null_query = Fixture::new(Some(null_body.clone()), &[("model", "q")], &[], &[]);
     assert_eq!(
@@ -423,20 +456,24 @@ fn managed_id_checker_contract() {
         Some(&permit_files),
         &user,
     ));
-    assert!(file_outcome.is_ok());
+    assert_eq!(file_outcome, Ok(()));
     assert_eq!(
         permit_files.file_id.lock().unwrap().take(),
         Some(ENCODED_ID.to_owned())
     );
     assert_eq!(permit_files.object_id.lock().unwrap().take(), None);
+}
 
+#[test]
+fn managed_id_checker_denies_a_job_through_the_object_method() {
+    let runtime = Builder::new_current_thread().build().unwrap();
     let deny_job = recording(false);
     let job_outcome = runtime.block_on(validate_managed_id(
         true,
         Some(ENCODED_ID),
         ResourceKind::FineTuningJob,
         Some(&deny_job),
-        &user,
+        &principal(),
     ));
     assert_eq!(
         job_outcome
@@ -452,19 +489,28 @@ fn managed_id_checker_contract() {
         Some(ENCODED_ID.to_owned())
     );
     assert_eq!(deny_job.file_id.lock().unwrap().take(), None);
+}
 
+#[test]
+fn managed_id_checker_denies_a_batch_through_the_object_method() {
+    let runtime = Builder::new_current_thread().build().unwrap();
     let deny_batch = recording(false);
     let batch_outcome = runtime.block_on(validate_managed_id(
         true,
         Some(ENCODED_ID),
         ResourceKind::Batch,
         Some(&deny_batch),
-        &user,
+        &principal(),
     ));
     assert_eq!(
         batch_outcome.err().map(|error| error.to_string()),
         Some("The caller does not have access to this managed batch id.".to_owned())
     );
+    assert_eq!(
+        deny_batch.object_id.lock().unwrap().take(),
+        Some(ENCODED_ID.to_owned())
+    );
+    assert_eq!(deny_batch.file_id.lock().unwrap().take(), None);
 }
 
 #[test]
