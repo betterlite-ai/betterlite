@@ -43,7 +43,8 @@ use crate::api::file_http_content::config::{
 use crate::api::file_http_content::error::ContentError;
 use crate::api::file_http_content::service::{
     BufferedReply, ClientSource, ContentDeps, ContentRequest, ContentTransport, LogContext,
-    PreparedContent, RetrieveCall, StreamedReply, prepare,
+    PreparedContent, RetrieveCall, StreamedReply, prepare, retrieve_file_content,
+    retrieve_file_content_streaming,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
 
@@ -616,4 +617,61 @@ pub(crate) fn streaming(
 
 pub(crate) fn key(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
+}
+
+pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(crate) fn retrieve_call<'call>(
+    request: &'call FileContentRequest,
+    params: &'call ContentParams,
+    headers: &'call Headers,
+    timeout: Option<Duration>,
+) -> RetrieveCall<'call> {
+    RetrieveCall {
+        request,
+        params,
+        headers,
+        timeout,
+    }
+}
+
+pub(crate) fn wire_header<'request>(
+    request: &'request ContentRequest,
+    name: &str,
+) -> Option<&'request str> {
+    request
+        .headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+}
+
+pub(crate) async fn fetch<'deps, C, S>(
+    fixture: &mut Fixture,
+    deps: &'deps ContentDeps<'deps, C, S>,
+    call: &RetrieveCall<'_>,
+    events: &Events,
+) -> Result<BinaryContent, ContentError>
+where
+    C: FileContentConfig,
+    S: ClientSource,
+{
+    let prepared = fixture.prepare(deps, call, events)?;
+    retrieve_file_content(prepared, &mut fixture.state).await
+}
+
+pub(crate) async fn fetch_stream<'deps, C, S>(
+    fixture: &mut Fixture,
+    deps: &'deps ContentDeps<'deps, C, S>,
+    call: &RetrieveCall<'_>,
+    chunk: NonZeroUsize,
+    events: &Events,
+) -> Result<FileContentStreamingResult, ContentError>
+where
+    C: FileContentConfig,
+    S: ClientSource,
+{
+    let prepared = fixture.prepare(deps, call, events)?;
+    retrieve_file_content_streaming(prepared, chunk, &mut fixture.state).await
 }
