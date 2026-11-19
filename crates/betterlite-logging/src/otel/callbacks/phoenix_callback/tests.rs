@@ -9,7 +9,7 @@ use opentelemetry::KeyValue;
 use opentelemetry::trace::{SpanId, SpanKind, Status};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 
 use super::{
     CALLBACK_NAME, DEFAULT_PROJECT, HEALTHY_MESSAGE, MISSING_API_KEY_MESSAGE,
@@ -325,6 +325,46 @@ fn phoenix_routes_the_request_to_its_project_provider() {
     assert_eq!(
         project_names(&lifecycle.tracer_cache),
         vec!["project-a".to_owned()]
+    );
+    assert_eq!(rig.spans().len(), 1);
+}
+
+// an injected provider leaves the project routing on, unlike LiteLLM's injected branch
+#[test]
+fn phoenix_routes_to_the_project_even_with_an_injected_provider() {
+    let rig = Rig::new();
+    let env = in_memory_env();
+    let otel = init_legacy_otel(
+        LegacyOtelInit {
+            config: Some(OpenTelemetryConfig::from_env(&env)),
+            callback_name: Some(CALLBACK_NAME.to_owned()),
+            overrides: MetadataKeyOverrides::default(),
+            injected: InjectedProviders {
+                tracer: Some(SdkTracerProvider::builder().build()),
+                meter: None,
+                logger: None,
+            },
+            max_dynamic_tracer_providers: MAX_PROJECT_PROVIDERS,
+        },
+        &LegacyOtelEnvironment {
+            env: &env,
+            clients: shared_clients(),
+            shared_exporter: rig.exporter.clone(),
+            globals: &rig.globals,
+            proxy: Some(&rig.proxy),
+        },
+    )
+    .expect("legacy otel init");
+    let lifecycle = phoenix_lifecycle(otel, rig.options(), &BTreeMap::new());
+    handle_trace(
+        &lifecycle,
+        &call(&base_kwargs("call-injected")),
+        LifecycleEvent::Success,
+    )
+    .expect("the phoenix trace");
+    assert_eq!(
+        project_names(&lifecycle.tracer_cache),
+        vec![DEFAULT_PROJECT.to_owned()]
     );
     assert_eq!(rig.spans().len(), 1);
 }
