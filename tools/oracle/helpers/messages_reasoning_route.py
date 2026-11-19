@@ -85,10 +85,6 @@ def provided(script: ScriptT | None, failure: str) -> ScriptT:
     return script
 
 
-def record_call(record: list[JsonValue], seam: str, args: dict[str, JsonValue]) -> None:
-    record.append({"seam": seam, "args": args})
-
-
 class ModelInfoFake:
     def __init__(
         self, *, script: dict[str, JsonValue] | None, record: list[JsonValue]
@@ -99,10 +95,11 @@ class ModelInfoFake:
     def __call__(
         self, *, model: str | None, custom_llm_provider: str | None = None
     ) -> dict[str, JsonValue]:
-        record_call(
-            self.record,
-            "model_info",
-            {"model": model, "custom_llm_provider": custom_llm_provider},
+        self.record.append(
+            {
+                "seam": "model_info",
+                "args": {"model": model, "custom_llm_provider": custom_llm_provider},
+            }
         )
         return provided(self.script, "the model lookup fails")
 
@@ -120,15 +117,16 @@ class ProviderFake:
         api_base: str | None = None,
         api_key: str | None = None,
     ) -> tuple[str, str, str | None, str | None]:
-        record_call(
-            self.record,
-            "provider",
+        self.record.append(
             {
-                "model": model,
-                "custom_llm_provider": custom_llm_provider,
-                "api_base": api_base,
-                "api_key": api_key,
-            },
+                "seam": "provider",
+                "args": {
+                    "model": model,
+                    "custom_llm_provider": custom_llm_provider,
+                    "api_base": api_base,
+                    "api_key": api_key,
+                },
+            }
         )
         script = provided(self.script, "the provider lookup fails")
         return (script["local"], script["provider"], None, script["api_base"])
