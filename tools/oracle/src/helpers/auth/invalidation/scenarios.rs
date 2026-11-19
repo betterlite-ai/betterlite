@@ -9,7 +9,40 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::{Value, json};
 
-use super::{Store, field, invalidation, lock, number, text};
+use super::{Input, Store, field, invalidation, lock, number, text};
+
+pub(super) async fn dispatch(input: &Input) -> Result<Value, Box<HelperError>> {
+    match input {
+        Input::Management {
+            management_ttl,
+            team,
+        } => management(&Store::new(*management_ttl), team).await,
+        Input::Team {
+            management_ttl,
+            team_id,
+            team,
+            stale_alias,
+        } => team_refresh(&Store::new(*management_ttl), team_id, team, stale_alias).await,
+        Input::Key {
+            management_ttl,
+            hashed_token,
+            rehash_candidate,
+            auth,
+        } => {
+            let store = Store::new(*management_ttl);
+            key_refresh(&store, hashed_token, rehash_candidate, auth).await
+        }
+        Input::Access {
+            management_ttl,
+            access_group_ttl,
+            access_group_id,
+            table,
+        } => {
+            let store = Store::new(*management_ttl);
+            access_group(&store, *access_group_ttl, access_group_id, table).await
+        }
+    }
+}
 
 pub(super) async fn management(
     store: &Arc<Store>,
@@ -86,14 +119,9 @@ pub(super) async fn key_refresh(
         .cache_key_object(hashed_token, &mut original)
         .await
         .or_value_error()?;
-    let original_wire = serde_json::to_value(&original).or_value_error()?;
-    let original_timestamp = original_wire
-        .get("last_refreshed_at")
-        .and_then(Value::as_f64);
-    let original_route = original_wire
-        .get("request_route")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let wire = serde_json::to_value(&original).or_value_error()?;
+    let original_timestamp = wire.get("last_refreshed_at").and_then(Value::as_f64);
+    let original_route = wire.get("request_route").cloned().unwrap_or(Value::Null);
     let stored = store.entry(hashed_token);
     let stored_timestamp = number(&stored.0, "last_refreshed_at");
     Ok(json!({

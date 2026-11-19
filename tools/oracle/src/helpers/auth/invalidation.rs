@@ -1,7 +1,7 @@
 mod scenarios;
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::payload;
@@ -77,7 +77,10 @@ impl Store {
             .unwrap_or((Json::Null, None))
     }
 
-    fn seed<Value: Serialize>(&self, key: &str, value: &Value) {
+    fn seed<Value>(&self, key: &str, value: &Value)
+    where
+        Value: Serialize,
+    {
         lock(&self.entries).insert(
             key.to_owned(),
             (payload::encode(value).unwrap_or(Json::Null), None),
@@ -202,8 +205,10 @@ impl InvalidationClock for FixedClock {
 }
 
 fn invalidation(store: &Arc<Store>, access_group_ttl: f64) -> AuthInvalidation {
-    let auth: Arc<dyn AuthInvalidationCache> = Arc::clone(store);
-    let spend: Arc<dyn SpendCounterCache> = Arc::clone(store);
+    let auth_handle: Arc<Store> = Arc::clone(store);
+    let auth: Arc<dyn AuthInvalidationCache> = auth_handle;
+    let spend_handle: Arc<Store> = Arc::clone(store);
+    let spend: Arc<dyn SpendCounterCache> = spend_handle;
     AuthInvalidation {
         auth,
         usage: None,
@@ -221,51 +226,6 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread().enable_all().build()?;
-        match input {
-            Input::Management {
-                management_ttl,
-                team,
-            } => {
-                let store = Store::new(*management_ttl);
-                runtime.block_on(scenarios::management(&store, team))
-            }
-            Input::Team {
-                management_ttl,
-                team_id,
-                team,
-                stale_alias,
-            } => {
-                let store = Store::new(*management_ttl);
-                runtime.block_on(scenarios::team_refresh(&store, team_id, team, stale_alias))
-            }
-            Input::Key {
-                management_ttl,
-                hashed_token,
-                rehash_candidate,
-                auth,
-            } => {
-                let store = Store::new(*management_ttl);
-                runtime.block_on(scenarios::key_refresh(
-                    &store,
-                    hashed_token,
-                    rehash_candidate,
-                    auth,
-                ))
-            }
-            Input::Access {
-                management_ttl,
-                access_group_ttl,
-                access_group_id,
-                table,
-            } => {
-                let store = Store::new(*management_ttl);
-                runtime.block_on(scenarios::access_group(
-                    &store,
-                    *access_group_ttl,
-                    access_group_id,
-                    table,
-                ))
-            }
-        }
+        runtime.block_on(scenarios::dispatch(input))
     }
 }
