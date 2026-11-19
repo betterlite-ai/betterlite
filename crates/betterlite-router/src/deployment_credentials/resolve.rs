@@ -46,7 +46,7 @@ pub fn deployment_credentials(
 }
 
 // Router.get_deployment_credentials_with_provider: the selection, the projection, the named overlay, then the restored model and provider.
-pub fn deployment_credentials_with_provider(
+pub fn credentials_with_provider(
     catalog: &DeploymentCatalog,
     model_id: &str,
     team_id: Option<&str>,

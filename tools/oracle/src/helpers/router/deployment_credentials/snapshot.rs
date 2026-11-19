@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_credentials::resolve::{
-    deployment_credentials, deployment_credentials_with_provider,
+    credentials_with_provider, deployment_credentials,
 };
 use betterlite_router::deployment_credentials::selection::{
     credential_deployment, deployment_by_id,
@@ -35,7 +35,7 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
         .ok_or(Failure::Argument("model_id"))?;
     let (id, credentials) = match input.function {
         Function::GetDeploymentCredentials => simple(&catalog, model_id)?,
-        Function::GetDeploymentCredentialsWithProvider => rich(&catalog, model_id, input)?,
+        Function::CredentialsWithProvider => rich(&catalog, model_id, input)?,
     };
     Ok(Answer {
         id,
@@ -71,7 +71,7 @@ fn rich(
         .and_then(|selected| selected.deployment.id())
         .map(str::to_owned);
     let credentials = credential_snapshot(input);
-    let credentials = deployment_credentials_with_provider(catalog, model_id, team, &credentials)?
+    let credentials = credentials_with_provider(catalog, model_id, team, &credentials)?
         .map(|params| params.fields);
     Ok((id, credentials))
 }

@@ -5,9 +5,7 @@ use betterlite_models::model_registration::JsonObject;
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_credentials::error::CredentialError;
 use crate::deployment_credentials::params::CredentialParams;
-use crate::deployment_credentials::resolve::{
-    deployment_credentials, deployment_credentials_with_provider,
-};
+use crate::deployment_credentials::resolve::{credentials_with_provider, deployment_credentials};
 use crate::deployment_identity::spec::DeploymentSpec;
 
 use super::support::{captured, catalog_of, pairs, snapshot, spec, text};
@@ -27,7 +25,7 @@ fn rich(
     catalog: &DeploymentCatalog,
     credentials: &CredentialSnapshot,
 ) -> (Option<CredentialParams>, Vec<String>) {
-    captured(|| deployment_credentials_with_provider(catalog, "d1", None, credentials).unwrap())
+    captured(|| credentials_with_provider(catalog, "d1", None, credentials).unwrap())
 }
 
 #[test]

@@ -56,5 +56,6 @@ pub(crate) struct Arguments {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Function {
     GetDeploymentCredentials,
-    GetDeploymentCredentialsWithProvider,
+    #[serde(rename = "get_deployment_credentials_with_provider")]
+    CredentialsWithProvider,
 }
