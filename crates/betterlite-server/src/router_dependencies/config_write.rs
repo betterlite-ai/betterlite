@@ -217,7 +217,14 @@ where
 {
     let mut deserializer = serde_json::Deserializer::from_str(text);
     serde_path_to_error::deserialize(&mut deserializer).map_err(|source| {
-        let path = dotted(&source.path().to_string());
+        // serde_path_to_error writes a list index in brackets, LiteLLM writes it after a dot
+        let path = source
+            .path()
+            .to_string()
+            .replace('[', ".")
+            .replace(']', "")
+            .trim_start_matches('.')
+            .to_owned();
         let location = if path.is_empty() {
             fallback.to_owned()
         } else if prefix.is_empty() {
@@ -227,12 +234,6 @@ where
         };
         ComplexityConfigWriteError::InvalidField { location, source }
     })
-}
-
-// serde_path_to_error names a list element with brackets, and LiteLLM's error names it with a dot
-fn dotted(path: &str) -> String {
-    let unbracketed = path.replace('[', ".").replace(']', "");
-    unbracketed.trim_start_matches('.').to_owned()
 }
 
 // the settings the cross-field rules read that the section configs do not carry
