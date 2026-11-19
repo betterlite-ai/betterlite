@@ -638,10 +638,16 @@ fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
     assert!(log.contains("DEBUG"), "{log}");
     assert!(log.contains("resp_1"), "{log}");
     assert!(log.contains("WARN"), "{log}");
-    assert!(log.contains("request tag"), "{log}");
-    assert!(log.contains("policy-tag"), "{log}");
-    assert!(log.contains("request body's policies"), "{log}");
-    assert!(log.contains("policy-body"), "{log}");
+    let tag_line = log
+        .lines()
+        .find(|line| line.contains("request tag"))
+        .unwrap();
+    assert!(tag_line.contains("policy-tag"), "{log}");
+    let body_line = log
+        .lines()
+        .find(|line| line.contains("request body's policies"))
+        .unwrap();
+    assert!(body_line.contains("policy-body"), "{log}");
     let metadata = metadata_of(&request);
     assert_eq!(
         metadata.get("applied_policies"),
