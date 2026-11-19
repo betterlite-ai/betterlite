@@ -70,7 +70,7 @@ class Input(TypedDict):
 
 JSON_VALUE = TypeAdapter(JsonValue)
 STORES = TypeAdapter(list[Store])
-StoreList: TypeAlias = list[StoreRecord]
+StoreList: TypeAlias = list[StoreRecord]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
 
 
 class FakeTable(Generic[Row]):
