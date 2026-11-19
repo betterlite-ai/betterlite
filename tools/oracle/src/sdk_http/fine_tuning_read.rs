@@ -6,7 +6,6 @@ use betterlite_core::api::fine_tuning_read::{
     FineTuningListCall, FineTuningRead, FineTuningReadError, FineTuningReadInput,
     FineTuningReadOutcome, FineTuningRetrieveCall,
 };
-use betterlite_openai::fine_tuning::client::SdkError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -186,7 +185,14 @@ fn outcome(
 
 fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
     match error {
-        FineTuningReadError::Dispatch(ReadWireError::Sdk { source }) => sdk_failure(source),
+        FineTuningReadError::Dispatch(ReadWireError::Sdk { source }) => Failure {
+            class: class_for_status(source.status).to_owned(),
+            status: source.status,
+            kind: Some(source.error_type.clone()),
+            param: Some(source.param.clone()),
+            code: Some(source.code.clone()),
+            message: source.message.clone(),
+        },
         // list is undecorated and retrieve carries @client, but both re-raise the provider error
         FineTuningReadError::UnsupportedList { .. }
         | FineTuningReadError::UnsupportedRetrieve { .. } => Failure {
@@ -201,17 +207,6 @@ fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
         FineTuningReadError::Decode(_) => plain_failure("ValidationError", error),
         FineTuningReadError::Page { .. } => plain_failure("APIError", error),
         FineTuningReadError::Dispatch(_) => plain_failure("APIConnectionError", error),
-    }
-}
-
-fn sdk_failure(error: &SdkError) -> Failure {
-    Failure {
-        class: class_for_status(error.status).to_owned(),
-        status: error.status,
-        kind: Some(error.error_type.clone()),
-        param: Some(error.param.clone()),
-        code: Some(error.code.clone()),
-        message: error.message.clone(),
     }
 }
 

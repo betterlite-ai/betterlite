@@ -8,10 +8,9 @@ use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSe
 
 use super::page::{self, FineTuningPage};
 use super::{
-    AzureReadCall, FineTuningListCall, FineTuningReadDispatch, FineTuningReadError,
-    FineTuningReadInput, FineTuningReadOutcome, FineTuningReadParams, FineTuningRetrieveCall,
-    OpenAiReadCall, ReadOperation, ReadProvider, ReadTarget, ReadTimeout, ReadTimeoutValue,
-    ReadValues,
+    AzureReadCall, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
+    FineTuningReadOutcome, FineTuningReadParams, OpenAiReadCall, ReadOperation, ReadProvider,
+    ReadTarget, ReadTimeout, ReadTimeoutValue, ReadValues,
 };
 
 pub struct FineTuningRead<Dispatch> {
@@ -28,100 +27,82 @@ where
         input: &FineTuningReadInput,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
         match input {
-            FineTuningReadInput::List(call) => self.list(call, false).await,
-            FineTuningReadInput::AList(call) => self.list(call, true).await,
-            FineTuningReadInput::Retrieve(call) => self.retrieve(call, false).await,
-            FineTuningReadInput::ARetrieve(call) => self.retrieve(call, true).await,
+            FineTuningReadInput::List(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    ReadOperation::List {
+                        after: call.after.as_deref(),
+                        limit: call.limit,
+                    },
+                    false,
+                )
+                .await
+            }
+            FineTuningReadInput::AList(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    ReadOperation::List {
+                        after: call.after.as_deref(),
+                        limit: call.limit,
+                    },
+                    true,
+                )
+                .await
+            }
+            FineTuningReadInput::Retrieve(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    ReadOperation::Retrieve {
+                        job_id: &call.fine_tuning_job_id,
+                    },
+                    false,
+                )
+                .await
+            }
+            FineTuningReadInput::ARetrieve(call) => {
+                self.read(
+                    call.provider.as_ref(),
+                    &call.params,
+                    ReadOperation::Retrieve {
+                        job_id: &call.fine_tuning_job_id,
+                    },
+                    true,
+                )
+                .await
+            }
         }
     }
 
-    async fn list(
+    // all four calls share the provider chain, the timeout chain and the dispatch; the operation
+    // decides the unsupported message, and only retrieve decodes and normalizes a single job
+    async fn read(
         &self,
-        call: &FineTuningListCall,
+        provider: Option<&ReadProvider>,
+        params: &FineTuningReadParams,
+        operation: ReadOperation<'_>,
         is_async: bool,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
-        let provider = provider_name(call.provider.as_ref());
-        let timeout = resolve_timeout(&call.params, provider)?;
+        let provider = provider_name(provider);
+        let timeout = resolve_timeout(params, provider)?;
         let settings = ResourceSdkSettings::from(&self.settings);
-        let options = ResourceSdkRequestOptions::from(&call.params);
+        let options = ResourceSdkRequestOptions::from(params);
         let values = ReadValues {
             is_async,
-            operation: ReadOperation::List {
-                after: call.after.as_deref(),
-                limit: call.limit,
-            },
+            operation,
             timeout: &timeout,
-            max_retries: call.params.max_retries,
+            max_retries: params.max_retries,
         };
-        let target = match provider {
-            "openai" => ReadTarget::OpenAi(OpenAiReadCall {
-                values,
-                api_base: settings.openai_base(&options),
-                api_key: settings.openai_api_key(&options),
-                api_version: settings.openai_api_version(&options),
-                organization: settings.openai_organization(&options),
-            }),
-            "azure" => ReadTarget::Azure(AzureReadCall {
-                values,
-                api_base: settings.azure_base(&options),
-                api_key: settings.azure_api_key(&options),
-                api_version: settings.azure_version(&options),
-                organization: settings.azure_organization(&options),
-            }),
-            _ => {
-                return Err(FineTuningReadError::UnsupportedList {
-                    provider: provider.to_owned(),
-                });
-            }
-        };
-        let bytes = self
-            .dispatch
-            .read(target)
-            .await
-            .map_err(FineTuningReadError::Dispatch)?;
-        let page: FineTuningPage =
-            page::decode_page(&bytes).map_err(|source| FineTuningReadError::Page { source })?;
-        Ok(FineTuningReadOutcome::Page(page))
-    }
-
-    // only retrieve decodes a single job, so only its azure answer is normalized
-    async fn retrieve(
-        &self,
-        call: &FineTuningRetrieveCall,
-        is_async: bool,
-    ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
-        let provider = provider_name(call.provider.as_ref());
-        let timeout = resolve_timeout(&call.params, provider)?;
-        let settings = ResourceSdkSettings::from(&self.settings);
-        let options = ResourceSdkRequestOptions::from(&call.params);
-        let values = ReadValues {
-            is_async,
-            operation: ReadOperation::Retrieve {
-                job_id: &call.fine_tuning_job_id,
-            },
-            timeout: &timeout,
-            max_retries: call.params.max_retries,
-        };
-        let target = match provider {
-            "openai" => ReadTarget::OpenAi(OpenAiReadCall {
-                values,
-                api_base: settings.openai_base(&options),
-                api_key: settings.openai_api_key(&options),
-                api_version: settings.openai_api_version(&options),
-                organization: settings.openai_organization(&options),
-            }),
-            "azure" => ReadTarget::Azure(AzureReadCall {
-                values,
-                api_base: settings.azure_base(&options),
-                api_key: settings.azure_api_key(&options),
-                api_version: settings.azure_version(&options),
-                organization: settings.azure_organization(&options),
-            }),
-            _ => {
-                return Err(FineTuningReadError::UnsupportedRetrieve {
-                    provider: provider.to_owned(),
-                });
-            }
+        let Some(target) = read_target(provider, values, &settings, &options) else {
+            let provider = provider.to_owned();
+            return Err(match operation {
+                ReadOperation::List { .. } => FineTuningReadError::UnsupportedList { provider },
+                ReadOperation::Retrieve { .. } => {
+                    FineTuningReadError::UnsupportedRetrieve { provider }
+                }
+            });
         };
         let is_azure = matches!(target, ReadTarget::Azure(_));
         let bytes = self
@@ -129,8 +110,44 @@ where
             .read(target)
             .await
             .map_err(FineTuningReadError::Dispatch)?;
-        let job = decode_fine_tune_job(&bytes, is_azure)?;
-        Ok(FineTuningReadOutcome::Job(Box::new(job)))
+        match operation {
+            ReadOperation::List { .. } => {
+                let page: FineTuningPage = page::decode_page(&bytes)
+                    .map_err(|source| FineTuningReadError::Page { source })?;
+                Ok(FineTuningReadOutcome::Page(page))
+            }
+            ReadOperation::Retrieve { .. } => {
+                let job = decode_fine_tune_job(&bytes, is_azure)?;
+                Ok(FineTuningReadOutcome::Job(Box::new(job)))
+            }
+        }
+    }
+}
+
+// both calls read the same two provider chains; only their operation and their unsupported
+// message differ
+fn read_target<'call>(
+    provider: &str,
+    values: ReadValues<'call>,
+    settings: &'call ResourceSdkSettings,
+    options: &'call ResourceSdkRequestOptions,
+) -> Option<ReadTarget<'call>> {
+    match provider {
+        "openai" => Some(ReadTarget::OpenAi(OpenAiReadCall {
+            values,
+            api_base: settings.openai_base(options),
+            api_key: settings.openai_api_key(options),
+            api_version: settings.openai_api_version(options),
+            organization: settings.openai_organization(options),
+        })),
+        "azure" => Some(ReadTarget::Azure(AzureReadCall {
+            values,
+            api_base: settings.azure_base(options),
+            api_key: settings.azure_api_key(options),
+            api_version: settings.azure_version(options),
+            organization: settings.azure_organization(options),
+        })),
+        _ => None,
     }
 }
 

@@ -172,29 +172,8 @@ fn azure(calls: &[RecordedTarget]) -> &RecordedCall {
     }
 }
 
-fn page() -> Vec<u8> {
-    json!({
-        "object": "list",
-        "has_more": true,
-        "data": [{
-            "id": "ft_a",
-            "object": "fine_tuning.job",
-            "created_at": 1700000000,
-            "model": "gpt-4o-mini",
-            "organization_id": null,
-            "result_files": null,
-            "status": "canceling",
-            "training_file": "file_1",
-            "hyperparameters": {"n_epochs": 3},
-            "method": {"type": "supervised", "hyperparameters": {"n_epochs": "auto"}},
-            "unknown_top": 1
-        }]
-    })
-    .to_string()
-    .into_bytes()
-}
-
-fn job() -> Vec<u8> {
+// every fine-tuning job field the fixtures share; each fixture changes what its call reads
+fn job_json() -> Value {
     json!({
         "id": "ft_a",
         "object": "fine_tuning.job",
@@ -207,24 +186,32 @@ fn job() -> Vec<u8> {
         "hyperparameters": {"n_epochs": 3},
         "seed": 42
     })
-    .to_string()
-    .into_bytes()
 }
 
+fn page() -> Vec<u8> {
+    let mut entry = job_json();
+    entry["status"] = json!("canceling");
+    entry["organization_id"] = Value::Null;
+    entry["result_files"] = Value::Null;
+    entry["method"] = json!({"type": "supervised", "hyperparameters": {"n_epochs": "auto"}});
+    entry["unknown_top"] = json!(1);
+    let envelope = json!({"object": "list", "has_more": true, "data": [entry]});
+    envelope.to_string().into_bytes()
+}
+
+fn job() -> Vec<u8> {
+    let entry = job_json();
+    entry.to_string().into_bytes()
+}
+
+// the azure answer differs in the fields its normalization reads
 fn azure_job() -> Vec<u8> {
-    json!({
-        "id": "ft_a",
-        "object": "fine_tuning.job",
-        "created_at": 1700000000,
-        "model": "gpt-4o-mini",
-        "organization_id": null,
-        "result_files": null,
-        "status": "canceled",
-        "training_file": "file_1",
-        "hyperparameters": {"n_epochs": 3}
-    })
-    .to_string()
-    .into_bytes()
+    let mut entry = job_json();
+    entry["model"] = json!("gpt-4o-mini");
+    entry["organization_id"] = Value::Null;
+    entry["result_files"] = Value::Null;
+    entry["status"] = json!("canceled");
+    entry.to_string().into_bytes()
 }
 
 // list and alist with no pagination leave after and limit null, and the default provider is openai
@@ -248,6 +235,7 @@ async fn list_jobs_does_not_invent_limit() {
         }
     );
     assert_eq!(call.api_base.as_deref(), Some("https://api.openai.com/v1"));
+    assert_eq!(call.organization, None);
 
     let literal = Fake::answering(&page());
     let outcome = run(
@@ -532,6 +520,19 @@ async fn timeout_chain_and_structured_passthrough() {
     .expect("a listed page");
     assert_eq!(
         openai(&zero.calls()).timeout,
+        FineTuningTimeout::Seconds(9.0)
+    );
+
+    let empty = Fake::answering(&page());
+    run(
+        &empty,
+        &ConfiguredSettings::default(),
+        &input(json!({"list": {"timeout": "", "request_timeout": 9}})),
+    )
+    .await
+    .expect("a listed page");
+    assert_eq!(
+        openai(&empty.calls()).timeout,
         FineTuningTimeout::Seconds(9.0)
     );
 
