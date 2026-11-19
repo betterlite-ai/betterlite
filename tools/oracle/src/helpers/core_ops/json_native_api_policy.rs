@@ -7,7 +7,7 @@ use betterlite_core::json_messages_policy::{
 };
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
-use betterlite_openai::json_provider_policy::{
+use betterlite_openai::json_provider_policy::responses::{
     OpenAiLikeResponsesPolicy, ResponsesPolicy, ResponsesPolicyCache,
 };
 use betterlite_openai::openai_base_config::Headers as OpenAiHeaders;

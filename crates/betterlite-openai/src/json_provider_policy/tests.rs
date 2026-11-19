@@ -11,10 +11,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{
-    ChatCapabilities, ChatParent, ChatPolicy, OpenAiLikeResponsesPolicy, ResponsesPolicy,
-    ResponsesPolicyCache, TOOL_PARAMS, base_class_parent,
-};
+use super::responses::{OpenAiLikeResponsesPolicy, ResponsesPolicy, ResponsesPolicyCache};
+use super::{ChatCapabilities, ChatParent, ChatPolicy, TOOL_PARAMS, base_class_parent};
 use crate::chat::ChatMessage;
 use crate::openai_base_config::Headers;
 use crate::response_input::ResponsesInput;
