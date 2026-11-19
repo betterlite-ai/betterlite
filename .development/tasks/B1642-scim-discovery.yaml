@@ -4,7 +4,7 @@ description: >-
   Implement scim_discovery, owning _get_resource_types, _get_schemas and the six
   decorated discovery handlers. Register GET /scim/v2 and /scim/v2/ as separate accepted
   paths, /scim/v2/ResourceTypes, /ResourceTypes/{resource_type_id}, /Schemas,
-  /Schemas/{schema_id:path}, and /ServiceProviderConfig. All retain B052 authentication
+  /Schemas/{schema_id:path}, and /ServiceProviderConfig. All retain B003's key auth middleware
   and B1633's application/scim+json header; no database lookup is required by their bodies.
   ResourceTypes are exactly User then Group with /Users and /Groups endpoints. Their
   meta.location uses request.base_url with trailing slash removed plus /scim/v2; schema

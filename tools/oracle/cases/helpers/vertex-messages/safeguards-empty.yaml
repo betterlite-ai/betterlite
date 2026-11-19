@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-messages-safeguards-empty
+call:
+  vertex_messages:
+    access_token: fixed-token
+    credential_project: credential-project
+    model: claude-sonnet-4-6
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      max_tokens: 16
+      safeguards: {}
+    headers: {}
+    vertex_project: deployment-project
+    vertex_location: null
+    api_base: null
+env: {}
+compare: {ignore: []}

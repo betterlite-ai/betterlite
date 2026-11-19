@@ -1,0 +1,15 @@
+kind: helper
+name: azure-search-max-results-seed
+call:
+  azure_search:
+    max_results:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: seed
+          optional_params: {max_results: 0}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"seed claim","annotations":[{"type":"url_citation","url":"https://seed.example"}]}]}]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,18 @@
+name: release-info-conflicting-startup-hooks
+config: |
+  general_settings:
+    master_key: oracle-master
+env:
+  LITELLM_WORKER_STARTUP_HOOKS: "startup:other"
+latest_release_fixture: upstream
+request:
+  method: GET
+  path: /get/latest_release_info
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

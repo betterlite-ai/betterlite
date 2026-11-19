@@ -24,7 +24,7 @@ description: >-
 
   The empty response is SpendAnalyticsPaginatedResponse (B3090) with results [] and a DailySpendMetadata that has every field at its default except page = the requested page, total_pages = 0 and has_more = false (so total_spend 0.0, all totals 0, api_key_limit, total_api_keys and entity_total_api_keys null, and total_pages 0 where the default is 1).
 
-  `routes/agent_daily_activity.rs` exports `routes(state: &Arc<ServerState>) -> Router` like a B1100 stub, but no B1100 entry merges it: B8661 merges it in app/spend.rs. Fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once with B052 authentication.
+  `routes/agent_daily_activity.rs` exports `routes(state: &Arc<ServerState>) -> Router` like a B1100 stub, but no B1100 entry merges it: B8661 merges it in app/spend.rs. Fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once; it sits behind the server's authentication middleware.
 
   Oracle. B8661 mounts the route, so it owns the HTTP cases in tools/oracle/cases/agent-activity/ and proves the route over HTTP with the Postgres fixtures B860 provides. Here the tests drive the handler with tower's oneshot over the module's own Router and fake ports. Do not add a helper operation: every function here reaches the route.
 scope:
@@ -75,7 +75,7 @@ dod:
     proof: [request-tests]
   - text: A non-empty or unrestricted scope calls get_daily_activity with table litellm_dailyagentspend, entity field agent_id, the scoped ids (None or the list), the metadata, the exclusions and every date, model, key and page argument.
     proof: [request-tests]
-  - text: The handler answers GET /agent/daily/activity through tower's oneshot over the module's own Router with fake ports; B8661 merges the route behind B052 authentication and proves it over HTTP.
+  - text: The handler answers GET /agent/daily/activity through tower's oneshot over the module's own Router with fake ports; B8661 merges the route behind the server's authentication middleware and proves it over HTTP.
     proof: [request-tests]
 checks:
   optional: []

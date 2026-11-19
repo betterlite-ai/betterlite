@@ -16,7 +16,7 @@ description: >-
   - Never spawn detached tasks; polls and waits must be owned by the caller or tracked in the server shutdown manager.
   - get_health_check_status returns a dict with pod_id, redis_available, lock/cache TTLs, current lock owner (if any), lock in-progress flag, cache availability, cache age in seconds and last-checked-by pod_id.
 
-  Register GET /health/shared-status, authenticated via B052's user_api_key_auth, which checks a proxy_server flag (e.g., use_shared_health_check) and returns early if shared checks are disabled. If Redis is not configured, report redis_available: false. On error, return HTTP 500 with a descriptive error dict.
+  Register GET /health/shared-status behind the server's authentication middleware (LiteLLM's user_api_key_auth); the handler checks a proxy_server flag (e.g., use_shared_health_check) and returns early if shared checks are disabled. If Redis is not configured, report redis_available: false. On error, return HTTP 500 with a descriptive error dict.
 
   Also run the background loop of `_run_background_health_check` (proxy_server.py L4503) and its save caller (L4300-L4362), as `health_shared::background_loop`: each cycle runs perform_shared_health_check, fills `HealthResultsCache` (the latest results, declared in health_shared), the type that implements B4445's `HealthResultsSource` and that this task hands to B4445, and then saves the changed results by calling B7640's `save_background` through the window gate, which takes the pod lock of B1690 (job name `background_health_check_db_save`, no reentry) and keeps it after a completed save but releases it when the save reports failure or is cancelled. After the save each cycle passes its healthy and unhealthy endpoints and the per-model exceptions to B8388's `write_health_state`. The loop task runs on the server's `TaskTracker`, so it is never detached.
 
@@ -75,7 +75,7 @@ dod:
     proof: [no-redis-tests]
   - text: get_health_check_status returns a dict with pod_id, redis_available, lock_ttl, cache_ttl, lock_owner (if any), lock_in_progress bool, cache_available bool, and cache_age_seconds (if cached).
     proof: [status-tests]
-  - text: "GET /health/shared-status is registered with B052's user_api_key_auth dependency, responds with shared_health_check_enabled flag, and returns early if disabled without consulting Redis."
+  - text: "GET /health/shared-status is registered behind the server's authentication middleware, responds with shared_health_check_enabled flag, and returns early if disabled without consulting Redis."
     proof: [endpoint-auth-tests]
   - text: Redis errors during lock/cache operations are caught and logged without raising; cache miss and local fallback preserve the source's behavior.
     proof: [error-handling-tests]

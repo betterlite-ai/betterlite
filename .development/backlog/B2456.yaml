@@ -1,7 +1,7 @@
 id: B2456
 milestone: M5 API families
 title: Realtime HTTP session and SDP transport
-status: todo
+status: blocked
 depends_on: [B173, B1004, B1087, B2401, B2402, B9952, B249]
 file: tasks/B2456-realtime-http-transport.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B009
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Realtime API is used by few deployments"
 pr: null
