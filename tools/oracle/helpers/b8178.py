@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
@@ -22,7 +22,7 @@ class NoMessages(list[AllMessageValues]): ...
 
 
 class HeadersConfig(Protocol):
-    def validate_environment(
+    def validate_environment(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L50-L69
         self, headers: dict[str, str], model: str, messages: NoMessages,
         optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
         api_key: str | None, /,
@@ -40,16 +40,16 @@ class EmbeddingConfig(HeadersConfig, Protocol):
         optional_params: dict[str, JsonValue], headers: dict[str, JsonValue], /,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_embedding_response(
+    def transform_embedding_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L121-L131
         self, model: str, raw_response: httpx.Response, model_response: EmbeddingResponse,
         logging_obj: Logging, api_key: str | None, request_data: dict[str, JsonValue],
         optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
     ) -> EmbeddingResponse: ...
 
 
-EMBEDDING: Final[EmbeddingConfig] = GigaChatEmbeddingConfig()
+EMBEDDING: Final[EmbeddingConfig] = cast(EmbeddingConfig, GigaChatEmbeddingConfig())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L30-L197
 CONFIG: Final = GigaChatPassthroughConfig()
-VALIDATE: Final[HeadersConfig] = CONFIG
+VALIDATE: Final[HeadersConfig] = cast(HeadersConfig, CONFIG)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L50-L69
 LOG: Final = Logging(
     model="", messages=None, stream=False, call_type="", start_time=datetime.now(UTC),
     litellm_call_id="", function_id="",
