@@ -6,17 +6,13 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import httpx
 import litellm
-from litellm.constants import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 from litellm.litellm_core_utils import url_utils
 from litellm.llms.base_llm.ocr.transformation import OCRPage, OCRResponse
 from litellm.models.credentials import CredentialItem
-from litellm.rag import text_splitters
 from litellm.rag.ingestion import base_ingestion
 from litellm.rag.ingestion.base_ingestion import BaseRAGIngestion
-from litellm.rag.text_splitters.recursive_character_text_splitter import (
-    RecursiveCharacterTextSplitter,
-)
 from litellm.types.rag import (
+    RAGChunkingStrategy,
     RAGIngestEmbeddingOptions,
     RAGIngestOCROptions,
     RAGIngestOptions,
@@ -126,23 +122,28 @@ class TestIngestion(BaseRAGIngestion):
         del file_content, filename, content_type, chunks, embeddings, existing_file_id
         return None, None
 
-
-class GuardedSplitter(RecursiveCharacterTextSplitter):
-    def __init__(
+    @override
+    def chunk(
         self,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
-        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-        separators: list[str] | None = None,
-    ) -> None:
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be greater than zero")
-        if chunk_overlap < 0:
-            raise ValueError("chunk_overlap must not be negative")
-        if chunk_overlap >= chunk_size:
-            raise ValueError("chunk_overlap must be less than chunk_size")
-        super().__init__(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap, separators=separators
-        )
+        text: str | None,
+        file_content: bytes | None,
+        ocr_was_used: bool,
+    ) -> list[str]:
+        strategy = self.ingest_options.get("chunking_strategy")
+        if strategy is not None:
+            _check_chunking(strategy)
+        return super().chunk(text, file_content, ocr_was_used)
+
+
+def _check_chunking(strategy: RAGChunkingStrategy) -> None:
+    size = strategy.get("chunk_size")
+    overlap = strategy.get("chunk_overlap")
+    if size is not None and size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+    if overlap is not None and overlap < 0:
+        raise ValueError("chunk_overlap must not be negative")
+    if size is not None and overlap is not None and overlap >= size:
+        raise ValueError("chunk_overlap must be less than chunk_size")
 
 
 class OcrRecorder:
@@ -228,11 +229,12 @@ def _init(input_value: InitInput) -> InitView:
     instance = _build(input_value["options"], credentials)
     ocr_config, embedding_config = _option_config(input_value["options"])
     identifier = instance.ingest_id
+    ingest_id = IngestIdView(
+        prefixed=identifier.startswith("ingest_"),
+        suffix_len=len(identifier) - len("ingest_"),
+    )
     return InitView(
-        ingest_id=IngestIdView(
-            prefixed=identifier.startswith("ingest_"),
-            suffix_len=len(identifier) - len("ingest_"),
-        ),
+        ingest_id=ingest_id,
         ingest_name=input_value["options"].get("name"),
         ocr_config=ocr_config,
         chunking_strategy=instance.chunking_strategy,
@@ -286,8 +288,6 @@ def _ocr(input_value: OcrInput) -> OcrView:
 
 
 def _chunk(input_value: ChunkInput) -> ChunkView:
-    text_splitters.RecursiveCharacterTextSplitter = GuardedSplitter
-    importlib.reload(base_ingestion)
     instance = _build(input_value["options"], None)
     encoded = input_value.get("file_content_base64")
     content = None if encoded is None else base64.b64decode(encoded)

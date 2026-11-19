@@ -10,8 +10,8 @@ deviations:
       A caller-supplied strategy must not hang a gateway task. The typed error reaches
       the pipeline as a failed result with its message preserved, which is the same
       shape the pipeline gives every other chunk error. The oracle case chunk-config-invalid
-      cannot run LiteLLM's splitter for the same reason, so its Python side raises from a
-      GuardedSplitter subclass that applies these three checks before calling the real one.
+      cannot run LiteLLM's splitter for the same reason, so its Python side applies these
+      three checks in the helper's TestIngestion.chunk override before calling the real chunk.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L227-L242
   - what: >-
       The ingest options struct rejects keys it does not declare, so an ingest request
