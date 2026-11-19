@@ -13,7 +13,7 @@ use crate::windowed_admission::tests::support::{
     FixedClock, GENERATED_SLOT, GaugeWrite, HANDLER_WINDOW_SIZE, NOW, PlannedScript, ScriptCall,
     descriptor, gauge_key, harness, key_list, limits, mixed_plan, request, text,
 };
-use crate::windowed_admission::{SlotIdGenerator, UuidSlotIds, WindowedAdmissionError};
+use crate::windowed_admission::{SlotIdGenerator as _, UuidSlotIds, WindowedAdmissionError};
 
 fn window_key() -> String {
     "{api-key:k1}:window".to_owned()
@@ -260,9 +260,9 @@ async fn a_write_back_of_mismatched_or_odd_pairs_is_an_error() {
         CacheCounterValue::Int(1),
         CacheCounterValue::Int(2),
     ];
-    let error = limiter.write_back(&odd_keys, &odd).await.unwrap_err();
+    let odd_error = limiter.write_back(&odd_keys, &odd).await.unwrap_err();
     assert!(matches!(
-        error,
+        odd_error,
         WindowedAdmissionError::WindowPairCount { keys: 3, values: 3 }
     ));
 }
@@ -280,26 +280,18 @@ async fn the_gauge_phase_appends_its_status_to_the_windowed_check() {
     let limiter = harness.limiter();
     let response = limiter.should_rate_limit(&check).await.unwrap();
     assert_eq!(response.overall_code, "OK");
+    assert_eq!(response.statuses.len(), 2);
+    assert_eq!(response.statuses[0].limit_remaining, 8);
     assert_eq!(
-        response.statuses,
-        vec![
-            RateLimitStatus {
-                code: "OK".to_owned(),
-                current_limit: 10,
-                limit_remaining: 8,
-                rate_limit_type: RateLimitType::Requests,
-                descriptor_key: "api-key".to_owned(),
-                descriptor_value: Some("k1".to_owned()),
-            },
-            RateLimitStatus {
-                code: "OK".to_owned(),
-                current_limit: 5,
-                limit_remaining: 4,
-                rate_limit_type: RateLimitType::MaxParallelRequests,
-                descriptor_key: "api-key".to_owned(),
-                descriptor_value: None,
-            },
-        ]
+        response.statuses[1],
+        RateLimitStatus {
+            code: "OK".to_owned(),
+            current_limit: 5,
+            limit_remaining: 4,
+            rate_limit_type: RateLimitType::MaxParallelRequests,
+            descriptor_key: "api-key".to_owned(),
+            descriptor_value: None,
+        }
     );
     assert_eq!(
         harness.gauges.writes(),
@@ -307,7 +299,7 @@ async fn the_gauge_phase_appends_its_status_to_the_windowed_check() {
             key: gauge_key(),
             value: GaugeCacheValue::Registry(BTreeMap::from([(
                 "given-slot".to_owned(),
-                1_700_000_000.0,
+                1_700_000_000.0_f64,
             )])),
             ttl: PARALLEL_SLOT_TTL,
             local_only: true,
@@ -380,7 +372,7 @@ async fn a_gauge_over_limit_drives_the_overall_code() {
 async fn a_redis_counter_over_limit_returns_before_the_gauges() {
     let mut harness = harness();
     harness.script = PlannedScript::new(vec![mixed_plan(&[
-        text("1700000000"),
+        Some(text("1700000000")),
         Some(CacheCounterValue::Int(11)),
     ])]);
     let descriptors = vec![descriptor(

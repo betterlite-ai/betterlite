@@ -82,12 +82,12 @@ pub(crate) fn metadata_map(
         .collect()
 }
 
-pub(crate) fn int(value: i64) -> Option<CacheCounterValue> {
-    Some(CacheCounterValue::Int(value))
+pub(crate) fn int(value: i64) -> CacheCounterValue {
+    CacheCounterValue::Int(value)
 }
 
-pub(crate) fn text(value: &str) -> Option<CacheCounterValue> {
-    Some(CacheCounterValue::Text(value.to_owned()))
+pub(crate) fn text(value: &str) -> CacheCounterValue {
+    CacheCounterValue::Text(value.to_owned())
 }
 
 pub(crate) fn request(descriptors: Vec<RateLimitDescriptor>) -> AdmissionRequest {
@@ -105,8 +105,8 @@ pub(crate) struct FixedClock {
 }
 
 impl FixedClock {
-    pub(crate) fn at(seconds: i64) -> Arc<Self> {
-        let seconds = u64::try_from(seconds).expect("a positive clock time");
+    pub(crate) fn at(seconds_since_epoch: i64) -> Arc<Self> {
+        let seconds = u64::try_from(seconds_since_epoch).expect("a positive clock time");
         let at = UNIX_EPOCH
             .checked_add(Duration::from_secs(seconds))
             .expect("a representable clock time");
@@ -288,12 +288,12 @@ fn planned_reply(plan: Option<&ReplyPlan>) -> Result<ScriptReply, RedisCountersE
 }
 
 fn record_call(calls: &Mutex<Vec<ScriptCall>>, keys: &[String], args: &[RedisScalar]) -> usize {
-    let mut calls = calls.lock().unwrap_or_else(PoisonError::into_inner);
-    calls.push(ScriptCall {
+    let mut recorded = calls.lock().unwrap_or_else(PoisonError::into_inner);
+    recorded.push(ScriptCall {
         keys: keys.to_vec(),
         args: args.to_vec(),
     });
-    calls.len().saturating_sub(1)
+    recorded.len().saturating_sub(1)
 }
 
 pub(crate) struct PlannedScript {
@@ -319,7 +319,7 @@ impl PlannedScript {
 
 #[async_trait::async_trait]
 impl CounterScript for PlannedScript {
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "planned rate limiter script"
     }
 
@@ -344,13 +344,6 @@ impl PlannedBatch {
             plans,
             calls: Mutex::new(Vec::new()),
         })
-    }
-
-    pub(crate) fn calls(&self) -> Vec<ScriptCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
     }
 }
 
@@ -481,12 +474,11 @@ impl GaugeCache for RecordingGauges {
         local_only: bool,
     ) -> Option<Vec<Option<GaugeCacheValue>>> {
         self.record_batch_read(keys, local_only);
-        let stored = self.stored();
-        let mut values = Vec::with_capacity(keys.len());
-        for key in keys {
-            values.push(stored.get(key).cloned());
-        }
-        Some(values)
+        Some(
+            keys.iter()
+                .map(|key| self.stored().get(key).cloned())
+                .collect(),
+        )
     }
 }
 

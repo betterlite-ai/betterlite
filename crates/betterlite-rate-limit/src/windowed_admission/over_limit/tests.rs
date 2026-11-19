@@ -38,7 +38,7 @@ fn a_counter_over_its_limit_is_over_limit() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), int(11)];
+    let values = [Some(text("1700000000")), Some(int(11))];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OVER_LIMIT");
@@ -61,7 +61,7 @@ fn a_counter_at_its_limit_is_ok_when_the_check_incremented() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), int(10)];
+    let values = [Some(text("1700000000")), Some(int(10))];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OK");
@@ -73,7 +73,7 @@ fn an_absent_counter_is_ok_with_the_full_limit_remaining() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), None];
+    let values = [Some(text("1700000000")), None];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OK");
@@ -86,7 +86,7 @@ fn read_only_counts_one_pending_request() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), int(10)];
+    let values = [Some(text("1700000000")), Some(int(10))];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let read_only = check(&keys, &values, &metadata, true).unwrap();
     assert_eq!(read_only.overall_code, "OVER_LIMIT");
@@ -100,7 +100,10 @@ fn a_float_counter_is_cut_toward_zero() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), Some(CacheCounterValue::Float(9.9))];
+    let values = [
+        Some(text("1700000000")),
+        Some(CacheCounterValue::Float(9.9)),
+    ];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OK");
@@ -112,7 +115,7 @@ fn counter_text_that_is_not_a_whole_number_is_an_error() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), text("many")];
+    let values = [Some(text("1700000000")), Some(text("many"))];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let error = check(&keys, &values, &metadata, false).unwrap_err();
     assert!(matches!(error, WindowedAdmissionError::Counter(_)));
@@ -123,7 +126,7 @@ fn a_key_that_is_not_a_requests_or_tokens_counter_gives_no_status() {
     let window = window_key();
     let other = "{api-key:k1}:other".to_owned();
     let keys = [window.as_str(), other.as_str()];
-    let values = [text("1700000000"), int(11)];
+    let values = [Some(text("1700000000")), Some(int(11))];
     let metadata = [(window.as_str(), metadata(Some(10), Some(10), 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OK");
@@ -135,7 +138,7 @@ fn a_limit_that_is_none_gives_no_status() {
     let window = window_key();
     let tokens = tokens_key();
     let keys = [window.as_str(), tokens.as_str()];
-    let values = [text("1700000000"), int(11)];
+    let values = [Some(text("1700000000")), Some(int(11))];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert!(response.statuses.is_empty());
@@ -152,7 +155,12 @@ fn both_limits_report_one_status_each_in_key_order() {
         window.as_str(),
         tokens.as_str(),
     ];
-    let values = [text("1700000000"), int(5), text("1700000000"), int(25)];
+    let values = [
+        Some(text("1700000000")),
+        Some(int(5)),
+        Some(text("1700000000")),
+        Some(int(25)),
+    ];
     let metadata = [(window.as_str(), metadata(Some(10), Some(20), 60))];
     let response = check(&keys, &values, &metadata, false).unwrap();
     assert_eq!(response.overall_code, "OVER_LIMIT");
@@ -179,7 +187,7 @@ fn keys_and_values_of_different_lengths_are_an_error() {
         window.as_str(),
         tokens.as_str(),
     ];
-    let values = [text("1700000000"), int(1)];
+    let values = [Some(text("1700000000")), Some(int(1))];
     let metadata = [(window.as_str(), metadata(Some(10), Some(10), 60))];
     let error = check(&keys, &values, &metadata, false).unwrap_err();
     assert!(matches!(
@@ -193,7 +201,11 @@ fn an_odd_number_of_values_is_an_error() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str(), window.as_str()];
-    let values = [text("1700000000"), int(1), text("1700000000")];
+    let values = [
+        Some(text("1700000000")),
+        Some(int(1)),
+        Some(text("1700000000")),
+    ];
     let metadata = [(window.as_str(), metadata(Some(10), None, 60))];
     let error = check(&keys, &values, &metadata, false).unwrap_err();
     assert!(matches!(
@@ -207,7 +219,7 @@ fn a_window_key_without_metadata_is_an_error() {
     let window = window_key();
     let requests = requests_key();
     let keys = [window.as_str(), requests.as_str()];
-    let values = [text("1700000000"), int(1)];
+    let values = [Some(text("1700000000")), Some(int(1))];
     let error = check(&keys, &values, &[], false).unwrap_err();
     assert!(matches!(
         error,

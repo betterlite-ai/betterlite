@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use betterlite_rate_limit::limiter_records::{
     CacheCounterValue, RateLimitDescriptor, WindowKeyMetadata,
 };
-use betterlite_rate_limit::windowed_admission::WindowedAdmission;
 use betterlite_rate_limit::windowed_admission::over_limit::is_cache_list_over_limit;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -23,12 +22,12 @@ enum CounterValueInput {
     Text(String),
 }
 
-fn counter_value(value: Option<&CounterValueInput>) -> Option<CacheCounterValue> {
-    value.map(|value| match value {
+fn convert_counter(value: &CounterValueInput) -> CacheCounterValue {
+    match value {
         CounterValueInput::Int(number) => CacheCounterValue::Int(*number),
         CounterValueInput::Float(number) => CacheCounterValue::Float(*number),
         CounterValueInput::Text(text) => CacheCounterValue::Text(text.clone()),
-    })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +66,7 @@ impl Helper for Op {
 }
 
 fn collect(call: &CollectInput) -> Value {
-    let limiter: WindowedAdmission = admission(call.window_size);
+    let limiter = admission(call.window_size);
     let collected =
         limiter.collect_windowed_keys_and_gauges(&call.descriptors, call.skip_tpm_check);
     json!({
@@ -81,8 +80,7 @@ fn check_over_limit(call: &OverLimitInput) -> HelperResult {
     let values: Vec<Option<CacheCounterValue>> = call
         .cache_values
         .iter()
-        .map(Option::as_ref)
-        .map(counter_value)
+        .map(|entry| entry.as_ref().map(convert_counter))
         .collect();
     let response = is_cache_list_over_limit(
         &call.keys_to_fetch,

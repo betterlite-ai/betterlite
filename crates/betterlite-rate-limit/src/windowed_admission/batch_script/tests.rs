@@ -54,8 +54,8 @@ async fn each_hash_tag_group_runs_once_in_order() {
     let mut harness = harness();
     harness.cache.as_cluster();
     harness.script = PlannedScript::new(vec![
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(1))]),
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(2))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(1))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(2))]),
     ]);
     let keys = two_groups();
     let limiter = harness.limiter();
@@ -92,7 +92,7 @@ async fn a_failed_group_falls_back_to_the_sliding_window() {
     let mut harness = harness();
     harness.cache.as_cluster();
     harness.script = PlannedScript::new(vec![
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(7))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(7))]),
         ReplyPlan::Failure,
     ]);
     let capture = LogCapture::start();
@@ -123,7 +123,7 @@ async fn a_failed_group_with_fail_closed_refunds_the_earlier_groups_and_rejects(
     harness.cache.as_cluster();
     harness.fail_closed = FailClosedPolicy { enabled: true };
     harness.script = PlannedScript::new(vec![
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(7))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(7))]),
         ReplyPlan::Failure,
     ]);
     let capture = LogCapture::start();
@@ -133,12 +133,10 @@ async fn a_failed_group_with_fail_closed_refunds_the_earlier_groups_and_rejects(
         .execute_redis_batch_rate_limiter_script(&keys, NOW)
         .await
         .unwrap_err();
-    match error {
-        WindowedAdmissionError::Unverifiable(unverifiable) => {
-            assert_eq!(unverifiable.status_code, 503);
-        }
-        other => panic!("expected an unverifiable error, got {other}"),
-    }
+    let WindowedAdmissionError::Unverifiable(unverifiable) = error else {
+        panic!("the fail-closed rejection is the unverifiable error");
+    };
+    assert_eq!(unverifiable.status_code, 503);
     assert_eq!(
         harness.refunds.calls(),
         vec![ScriptCall {
@@ -156,9 +154,9 @@ async fn fail_closed_refunds_the_later_pipelined_groups() {
     harness.fail_closed = FailClosedPolicy { enabled: true };
     harness.batch_enabled = true;
     harness.batch = PlannedBatch::new(vec![
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(7))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(7))]),
         ReplyPlan::Failure,
-        mixed_plan(&[text("1700000000"), Some(CacheCounterValue::Int(9))]),
+        mixed_plan(&[Some(text("1700000000")), Some(CacheCounterValue::Int(9))]),
     ]);
     let mut keys = group_keys("api-key:a");
     keys.extend(group_keys("api-key:b"));
