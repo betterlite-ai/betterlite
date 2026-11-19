@@ -100,11 +100,10 @@ fn passthrough_headers_value(runtime: &Runtime, step: &PassthroughHeadersStep) -
 fn passthrough_key_value(step: &PassthroughKeyStep) -> Value {
     let settings = config(None, step.env_key.clone());
     let api_key = step.api_key.clone().map(SecretString::from);
-    let key = settings.get_api_key(api_key.as_ref());
-    match key {
-        Some(secret) => json!({"ok": true, "key": secret.expose_secret()}),
-        None => json!({"ok": true, "key": null}),
-    }
+    settings.get_api_key(api_key.as_ref()).map_or_else(
+        || json!({"ok": true, "key": null}),
+        |secret| json!({"ok": true, "key": secret.expose_secret()}),
+    )
 }
 
 fn config(base: Option<String>, key: Option<String>) -> GigachatPassthroughConfig {
