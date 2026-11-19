@@ -71,8 +71,8 @@ impl DiscoveryCache {
             .retain(|_model_id, (_record, expires_at)| *expires_at > now);
         evict_to_capacity(&mut state);
         let expires_at = match state.entries.get(model_id) {
-            Some((_record, expires_at)) if *expires_at > now => *expires_at,
-            None | Some(_) => expiry_after(now, self.ttl_seconds),
+            Some((_record, expires_at)) => *expires_at,
+            None => expiry_after(now, self.ttl_seconds),
         };
         let entry = (record, expires_at);
         state.entries.insert(model_id.to_owned(), entry);

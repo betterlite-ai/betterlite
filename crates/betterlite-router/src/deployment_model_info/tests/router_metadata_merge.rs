@@ -627,6 +627,43 @@ async fn absent_prices_become_null() {
 }
 
 #[tokio::test]
+async fn nonobject_cost_entry_truthiness() {
+    let catalog = catalog(vec![]);
+    let truthy = Case::new(
+        Arc::clone(&catalog),
+        FakeSource::failing(),
+        registry(r#"{"custom-id":5}"#),
+    );
+    assert!(truthy.info("custom-id", "unknown-name").await.is_none());
+    let falsy = Case::new(
+        Arc::clone(&catalog),
+        FakeSource::failing(),
+        registry(r#"{"custom-id":0}"#),
+    );
+    let info = falsy.info("custom-id", "unknown-name").await.unwrap();
+    assert!(info.is_empty());
+}
+
+#[tokio::test]
+async fn base_key_participates_in_price_omission() {
+    let catalog = catalog(vec![]);
+    let case = Case::new(
+        Arc::clone(&catalog),
+        FakeSource::answering(&[(
+            "openai/base",
+            r#"{"key":"openai/base","max_output_tokens":99}"#,
+        )]),
+        registry(
+            r#"{"custom-id":{"base_model":"openai/base"},"openai/base":{"input_cost_per_token":0.5}}"#,
+        ),
+    );
+    let info = case.info("custom-id", "unknown-name").await.unwrap();
+    assert_eq!(info.get("max_output_tokens"), Some(&number(99)));
+    assert!(info.get("input_cost_per_token").is_none());
+    assert!(info.get("output_cost_per_token").is_none());
+}
+
+#[tokio::test]
 async fn explicit_zero_or_null_price_key_present() {
     let catalog = catalog(vec![]);
     let zero = Case::new(

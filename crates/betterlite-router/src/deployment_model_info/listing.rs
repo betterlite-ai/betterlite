@@ -47,7 +47,7 @@ fn cost_map_keys(rows: &[ListedRow<'_>]) -> Vec<String> {
         let Some(Json::Text(key)) = chosen else {
             continue;
         };
-        if key.is_empty() || keys.contains(key) {
+        if keys.contains(key) {
             continue;
         }
         keys.push(key.clone());

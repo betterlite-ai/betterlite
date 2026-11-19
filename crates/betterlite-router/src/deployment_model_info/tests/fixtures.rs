@@ -419,6 +419,13 @@ pub fn client() -> ProxiedClient {
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
+pub fn authorization(requests: &[String], path: &str) -> Option<String> {
+    let sent = requests.iter().find(|sent| sent.contains(path))?;
+    let lower = sent.to_lowercase();
+    let (_prefix, rest) = lower.split_once("authorization: ")?;
+    Some(rest.lines().next().unwrap_or_default().trim().to_owned())
+}
+
 pub async fn read_request(stream: &mut TcpStream) -> String {
     let mut request = Vec::new();
     loop {
@@ -497,13 +504,17 @@ pub struct Resolver {
 
 impl Resolver {
     pub fn new(environment: &[(&str, &str)]) -> Self {
+        Self::with_known(environment, &[])
+    }
+
+    pub fn with_known(environment: &[(&str, &str)], known: &[&str]) -> Self {
         let mut built = BTreeMap::new();
         for (key, value) in environment {
             built.insert((*key).to_owned(), (*value).to_owned());
         }
         Self {
             catalog: ModelCatalog::parse(b"{}", UnknownFields::Reject).unwrap(),
-            known: BTreeSet::new(),
+            known: known.iter().map(|name| (*name).to_owned()).collect(),
             custom: BTreeSet::new(),
             environment: built,
             registry: JSONProviderRegistry::load(),

@@ -128,6 +128,8 @@ fn ordered_cost_key_dedup() {
         (r#"{"model":"openai/gpt-4o-mini"}"#, r#"{"id":"c"}"#),
         (r#"{"model":"openai/d"}"#, r#"{"id":"d","base_model":""}"#),
         (r#"{"model":"openai/e"}"#, r#"{"id":"e","base_model":5}"#),
+        (r#"{"model":"openai/f"}"#, r#"{"id":"f","base_model":0}"#),
+        (r#"{"model":"openai/g"}"#, r#"{"id":"g","base_model":-5}"#),
     ]);
     let discovery = DiscoveryCache::for_deployments(catalog.models.len());
     let keys = listing(&catalog, &discovery).unwrap().0;
@@ -136,7 +138,8 @@ fn ordered_cost_key_dedup() {
         vec![
             "openai/gpt-4o".to_owned(),
             "openai/gpt-4o-mini".to_owned(),
-            "openai/d".to_owned()
+            "openai/d".to_owned(),
+            "openai/f".to_owned()
         ]
     );
 }

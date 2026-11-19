@@ -11,8 +11,8 @@ use betterlite_openai::compatible_models::TokenLimits;
 
 use super::fixtures::{
     Counting, EXCHANGE_TIMEOUT, Events, Recorder, Resolver, accept_connections, answer_connections,
-    answer_replacing, capture, catalog, client, clock, credentials, dispatcher, handle, limits,
-    object, record,
+    answer_replacing, authorization, capture, catalog, client, clock, credentials, dispatcher,
+    handle, limits, object, record,
 };
 use crate::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -335,34 +335,74 @@ async fn dynamic_key_fallback() {
             r#"{"api_key":"sk-param"}"#,
         ),
     );
+    let empty_key = row(
+        "group",
+        "empty-key",
+        params_with(
+            "m2",
+            "hosted_vllm",
+            &format!("{base}/c"),
+            r#"{"api_key":""}"#,
+        ),
+    );
+    // The "openai" model group name turns off provider defaults, so the resolution keeps no key at all.
+    let prefixed = row(
+        "group",
+        "prefix-key",
+        params_with(
+            "openai/m3",
+            "openai",
+            &format!("{base}/d"),
+            r#"{"api_key":"sk-prefix"}"#,
+        ),
+    );
+    let prefixed_empty = row(
+        "group",
+        "prefix-empty",
+        params_with(
+            "openai/m4",
+            "openai",
+            &format!("{base}/e"),
+            r#"{"api_key":""}"#,
+        ),
+    );
     let rig = Rig::with_credentials(
-        catalog(vec![from_environment, from_params]),
-        DiscoveryCache::for_deployments(2),
+        catalog(vec![
+            from_environment,
+            from_params,
+            empty_key,
+            prefixed,
+            prefixed_empty,
+        ]),
+        DiscoveryCache::for_deployments(5),
         credentials(&[]),
-        Resolver::new(&[("HOSTED_VLLM_API_KEY", "sk-env")]),
+        Resolver::with_known(&[("HOSTED_VLLM_API_KEY", "sk-env")], &["openai"]),
     );
-    let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 2, TWO));
-    assert_eq!(requests.len(), 2);
-    let environment = requests
-        .iter()
-        .find(|request| request.contains("/a/v1/models"))
-        .map(|request| request.to_lowercase())
-        .unwrap();
-    assert!(
-        environment.contains("authorization: bearer sk-env"),
-        "{environment}"
+    let body = br#"{"data":[{"id":"m0","context_length":4096},{"id":"m1","context_length":4096},{"id":"m2","context_length":4096},{"id":"m3","context_length":4096},{"id":"m4","context_length":4096}]}"#;
+    let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 5, body));
+    assert_eq!(requests.len(), 5);
+    assert_eq!(
+        authorization(&requests, "/a/v1/models"),
+        Some("bearer sk-env".to_owned())
     );
-    let explicit = requests
-        .iter()
-        .find(|request| request.contains("/b/v1/models"))
-        .map(|request| request.to_lowercase())
-        .unwrap();
-    assert!(
-        explicit.contains("authorization: bearer sk-param"),
-        "{explicit}"
+    assert_eq!(
+        authorization(&requests, "/b/v1/models"),
+        Some("bearer sk-param".to_owned())
     );
+    assert_eq!(
+        authorization(&requests, "/c/v1/models"),
+        Some("bearer".to_owned())
+    );
+    assert_eq!(
+        authorization(&requests, "/d/v1/models"),
+        Some("bearer sk-prefix".to_owned())
+    );
+    assert_eq!(authorization(&requests, "/e/v1/models"), None);
     assert_eq!(rig.cached("env-key"), full_limits(4096));
     assert_eq!(rig.cached("param-key"), full_limits(4096));
+    assert_eq!(rig.cached("empty-key"), full_limits(4096));
+    assert_eq!(rig.cached("prefix-key"), full_limits(4096));
+    assert_eq!(rig.cached("prefix-empty"), full_limits(4096));
 }
 
 #[tokio::test]
@@ -407,6 +447,49 @@ async fn extra_headers_then_headers() {
         .map(|request| request.to_lowercase())
         .unwrap();
     assert!(headers.contains("x-base: two"), "{headers}");
+}
+
+#[tokio::test]
+async fn empty_header_containers_fall_through() {
+    let (listener, base) = endpoint().await;
+    let empty_object = row(
+        "group",
+        "object",
+        params_with(
+            "m0",
+            "openai",
+            &format!("{base}/a"),
+            r#"{"extra_headers":{},"headers":{"X-Base":"one"}}"#,
+        ),
+    );
+    let empty_list = row(
+        "group",
+        "list",
+        params_with(
+            "m1",
+            "openai",
+            &format!("{base}/b"),
+            r#"{"extra_headers":[],"headers":{"X-Base":"two"}}"#,
+        ),
+    );
+    let rig = Rig::new(
+        catalog(vec![empty_object, empty_list]),
+        DiscoveryCache::for_deployments(2),
+    );
+    let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 2, TWO));
+    assert_eq!(requests.len(), 2);
+    let object = requests
+        .iter()
+        .find(|request| request.contains("/a/v1/models"))
+        .map(|request| request.to_lowercase())
+        .unwrap();
+    assert!(object.contains("x-base: one"), "{object}");
+    let list = requests
+        .iter()
+        .find(|request| request.contains("/b/v1/models"))
+        .map(|request| request.to_lowercase())
+        .unwrap();
+    assert!(list.contains("x-base: two"), "{list}");
 }
 
 #[tokio::test]
