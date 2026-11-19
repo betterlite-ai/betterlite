@@ -172,26 +172,6 @@ fn create_request<'call, T>(
     })
 }
 
-fn get_request<'call, T>(call: GetThreadCall<'call, T>) -> PrepareRequest<'call, T> {
-    let GetThreadCall {
-        custom_llm_provider,
-        thread_id,
-        client,
-        kwargs,
-    } = call;
-    let flag = kwargs
-        .remove("aget_thread")
-        .map(|value| matches!(value, Json::Bool(true)));
-    PrepareRequest {
-        provider: custom_llm_provider,
-        operation: Operation::Retrieve(thread_id),
-        client,
-        kwargs: &*kwargs,
-        facade: ThreadOperation::Get,
-        flag,
-    }
-}
-
 // one implementation for both operations; the runtime stays a parameter so tests capture the prepared call
 async fn execute<'deps, 'call, T, Runtime>(
     threads: &AssistantThreads<'deps, T>,
@@ -205,7 +185,25 @@ where
 {
     let prepared = match call {
         FacadeCall::Create(create) => threads.prepare(create_request(create)?)?,
-        FacadeCall::Get(get) => threads.prepare(get_request(get))?,
+        FacadeCall::Get(get) => {
+            let GetThreadCall {
+                custom_llm_provider,
+                thread_id,
+                client,
+                kwargs,
+            } = get;
+            let flag = kwargs
+                .remove("aget_thread")
+                .map(|value| matches!(value, Json::Bool(true)));
+            threads.prepare(PrepareRequest {
+                provider: custom_llm_provider,
+                operation: Operation::Retrieve(thread_id),
+                client,
+                kwargs: &*kwargs,
+                facade: ThreadOperation::Get,
+                flag,
+            })?
+        }
     };
     runtime.run(prepared).await
 }

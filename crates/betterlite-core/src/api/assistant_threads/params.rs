@@ -73,10 +73,17 @@ pub(super) enum ThreadExtraBody {
     Body(BTreeMap<String, Json>),
 }
 
-impl<'de> Deserialize<'de> for ThreadExtraBody {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let body = Option::<BTreeMap<String, Json>>::deserialize(deserializer)?;
-        Ok(body.map_or(Self::Null, Self::Body))
+impl ThreadExtraBody {
+    fn from_kwarg(value: Option<&Json>) -> Result<Self, ThreadParamsError> {
+        match value {
+            None => Ok(Self::Absent),
+            Some(Json::Null) => Ok(Self::Null),
+            Some(Json::Object(body)) => Ok(Self::Body(body.clone().into_iter().collect())),
+            Some(other) => Err(ThreadParamsError {
+                field: Some(String::from("extra_body")),
+                message: format!("extra_body must be an object or null, found {other:?}"),
+            }),
+        }
     }
 }
 
@@ -98,6 +105,7 @@ pub(super) struct ThreadParams {
     pub azure_username: Option<String>,
     pub azure_password: Option<SecretString>,
     pub azure_scope: Option<String>,
+    #[serde(skip)]
     pub extra_body: ThreadExtraBody,
 }
 
@@ -109,10 +117,13 @@ impl ThreadParams {
             message: source.to_string(),
         })?;
         let mut decoder = serde_json::Deserializer::from_slice(&bytes);
-        serde_path_to_error::deserialize(&mut decoder).map_err(|error| ThreadParamsError {
-            field: Some(error.path().to_string()),
-            message: error.into_inner().to_string(),
-        })
+        let mut params: Self =
+            serde_path_to_error::deserialize(&mut decoder).map_err(|error| ThreadParamsError {
+                field: Some(error.path().to_string()),
+                message: error.into_inner().to_string(),
+            })?;
+        params.extra_body = ThreadExtraBody::from_kwarg(kwargs.get("extra_body"))?;
+        Ok(params)
     }
 }
 

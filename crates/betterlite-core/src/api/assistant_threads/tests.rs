@@ -523,6 +523,14 @@ fn an_empty_phase_map_falls_back_to_the_default() {
 }
 
 #[test]
+fn a_non_object_extra_body_is_refused_with_the_field_named() {
+    let refused = ThreadParams::from_kwargs(&kwargs_of(r#"{"extra_body":"token"}"#));
+    let error = refused.expect_err("the extra_body type is refused");
+    assert_eq!(error.field.as_deref(), Some("extra_body"));
+    assert!(error.message.contains("extra_body"));
+}
+
+#[test]
 fn openai_credentials_follow_the_shared_chain() {
     let mut harness = Harness::new();
     harness.resources.openai_api_key = Some(SecretString::from("env-key"));
