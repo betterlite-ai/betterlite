@@ -1,5 +1,5 @@
 use crate::anthropic_invokes::file_blocks::RemoteFileBlocks;
-use crate::anthropic_results::tool_result::FileBlocks;
+use crate::anthropic_results::tool_result::FileBlocks as _;
 
 use super::{MapSource, maps, object};
 
