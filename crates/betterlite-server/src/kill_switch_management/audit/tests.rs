@@ -30,25 +30,18 @@ fn caller(user_id: Option<&str>, api_key: Option<&str>) -> CallerIdentity {
     }
 }
 
-fn succeeded_result() -> AgentKillSwitchResult {
+fn result_with(
+    status_code: Option<u16>,
+    response_body: Option<&str>,
+    error: Option<&str>,
+) -> AgentKillSwitchResult {
     AgentKillSwitchResult {
         agent_id: String::from("agent-1"),
         url: String::from("https://agent.example/stop"),
         method: AgentKillSwitchMethod::Post,
-        status_code: Some(200),
-        response_body: Some(String::from("stopped")),
-        error: None,
-    }
-}
-
-fn failed_result() -> AgentKillSwitchResult {
-    AgentKillSwitchResult {
-        agent_id: String::from("agent-1"),
-        url: String::from("https://agent.example/stop"),
-        method: AgentKillSwitchMethod::Post,
-        status_code: None,
-        response_body: None,
-        error: Some(String::from("ConnectError")),
+        status_code,
+        response_body: response_body.map(String::from),
+        error: error.map(String::from),
     }
 }
 
@@ -71,7 +64,11 @@ fn audit_log(
 
 #[test]
 fn the_audit_log_records_the_fired_action_on_the_agent_table() {
-    let record = audit_log(&succeeded_result(), &caller(Some("operator"), None), None);
+    let record = audit_log(
+        &result_with(Some(200), Some("stopped"), None),
+        &caller(Some("operator"), None),
+        None,
+    );
     assert_eq!(record.action, AuditAction::KillSwitchFired);
     assert_eq!(record.action.as_str(), "kill_switch_fired");
     assert_eq!(record.table_name, AuditTable::Agent);
@@ -82,7 +79,11 @@ fn the_audit_log_records_the_fired_action_on_the_agent_table() {
 
 #[test]
 fn the_audit_log_uses_the_injected_id_and_timestamp() {
-    let record = audit_log(&succeeded_result(), &caller(None, None), None);
+    let record = audit_log(
+        &result_with(Some(200), Some("stopped"), None),
+        &caller(None, None),
+        None,
+    );
     assert_eq!(record.id, AUDIT_ID);
     assert_eq!(
         record.updated_at,
@@ -92,7 +93,11 @@ fn the_audit_log_uses_the_injected_id_and_timestamp() {
 
 #[test]
 fn the_audit_log_stores_the_result_as_json_text() {
-    let record = audit_log(&succeeded_result(), &caller(None, None), None);
+    let record = audit_log(
+        &result_with(Some(200), Some("stopped"), None),
+        &caller(None, None),
+        None,
+    );
     assert_eq!(
         record.updated_values,
         Some(JsonValue::String(String::from(
@@ -103,7 +108,11 @@ fn the_audit_log_stores_the_result_as_json_text() {
 
 #[test]
 fn the_audit_log_leaves_out_the_result_fields_that_are_absent() {
-    let record = audit_log(&failed_result(), &caller(None, None), None);
+    let record = audit_log(
+        &result_with(None, None, Some("ConnectError")),
+        &caller(None, None),
+        None,
+    );
     assert_eq!(
         record.updated_values,
         Some(JsonValue::String(String::from(
@@ -122,14 +131,18 @@ fn the_audit_log_names_the_caller_then_the_admin(
     #[case] admin: Option<&str>,
     #[case] changed_by: Option<&str>,
 ) {
-    let record = audit_log(&succeeded_result(), &caller(user_id, None), admin);
+    let record = audit_log(
+        &result_with(Some(200), Some("stopped"), None),
+        &caller(user_id, None),
+        admin,
+    );
     assert_eq!(record.changed_by.as_deref(), changed_by);
 }
 
 #[test]
 fn the_audit_log_carries_the_callers_api_key() {
     let record = audit_log(
-        &succeeded_result(),
+        &result_with(Some(200), Some("stopped"), None),
         &caller(Some("operator"), Some("sk-caller")),
         None,
     );
@@ -144,6 +157,10 @@ fn the_audit_log_carries_the_callers_api_key() {
 
 #[test]
 fn the_audit_log_has_no_api_key_when_the_caller_has_none() {
-    let record = audit_log(&succeeded_result(), &caller(Some("operator"), None), None);
+    let record = audit_log(
+        &result_with(Some(200), Some("stopped"), None),
+        &caller(Some("operator"), None),
+        None,
+    );
     assert!(record.changed_by_api_key.is_none());
 }

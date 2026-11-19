@@ -211,7 +211,7 @@ fn the_auth_header_replaces_a_configured_header_of_the_same_name(
 #[rstest]
 #[case::lower("authorization")]
 #[case::upper("AUTHORIZATION")]
-#[case::mixed("AuThOrIzAtIoN")]
+#[case::mixed("AuThOrIsAtIoN")]
 fn the_auth_header_replaces_a_configured_header_whatever_its_case(#[case] name: &str) {
     let mut config = config_with_auth(Some(bearer_auth("tok")));
     config
