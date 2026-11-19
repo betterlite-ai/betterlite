@@ -161,18 +161,18 @@ fn turn_savings(
     let encoded = serde_json::to_vec(metadata).map_err(AutorouterFactsError::Encode)?;
     let decoded: Metadata =
         serde_json::from_slice(&encoded).map_err(AutorouterFactsError::Decode)?;
-    let snapshot = match recorded_autorouter_savings(&decoded) {
-        Some(estimated) => SavingsSnapshot {
-            turns: 1,
-            actual_spend: spend,
-            saved_spend: estimated,
-        },
-        None => SavingsSnapshot {
+    let snapshot = recorded_autorouter_savings(&decoded).map_or(
+        SavingsSnapshot {
             turns: 0,
             actual_spend: Decimal::ZERO,
             saved_spend: Decimal::ZERO,
         },
-    };
+        |estimated| SavingsSnapshot {
+            turns: 1,
+            actual_spend: spend,
+            saved_spend: estimated,
+        },
+    );
     Ok((spend, snapshot))
 }
 

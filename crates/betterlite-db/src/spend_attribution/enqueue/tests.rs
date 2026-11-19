@@ -164,7 +164,7 @@ async fn team_without_a_user_queues_only_the_team() {
 #[test]
 fn org_member_keys_percent_encode_both_ids() {
     assert_eq!(
-        org_member_transaction_key("o::ne/ü", "u ser"),
+        org_member_transaction_key("o::ne/\u{fc}", "u ser"),
         "organization_id::o%3A%3Ane%2F%C3%BC::user_id::u%20ser"
     );
     assert_eq!(
@@ -581,8 +581,8 @@ fn tag_decoding_iterates_object_keys_in_order() {
 #[test]
 fn tag_decoding_iterates_string_characters() {
     assert_eq!(
-        decode_enqueue_tags("\"aü\"".as_bytes()).unwrap(),
-        names(&["a", "ü"])
+        decode_enqueue_tags("\"a\u{fc}\"".as_bytes()).unwrap(),
+        names(&["a", "\u{fc}"])
     );
 }
 

@@ -1,3 +1,5 @@
+use std::str;
+
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 
 const NAIVE_TURN_TIME_FORMATS: &[&str] = &[
@@ -25,15 +27,14 @@ pub fn turn_time_utc(start_time_iso: &str) -> Option<NaiveDateTime> {
             return Some(time);
         }
     }
-    NaiveDate::parse_from_str(start_time_iso, "%Y-%m-%d")
-        .ok()
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
+    let date = NaiveDate::parse_from_str(start_time_iso, "%Y-%m-%d").ok()?;
+    date.and_hms_opt(0, 0, 0)
 }
 
 // str(payload.get("startTime") or "") is what the source parses, and bytes that are not UTF-8 are not a timestamp.
 #[must_use]
 pub fn decode_turn_time(bytes: &[u8]) -> Option<NaiveDateTime> {
-    let Ok(text) = std::str::from_utf8(bytes) else {
+    let Ok(text) = str::from_utf8(bytes) else {
         return None;
     };
     turn_time_utc(text)

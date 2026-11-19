@@ -42,14 +42,14 @@ pub fn write_ttl_seconds(
     let Some(usage) = usage_object.filter(|usage| !usage.is_empty()) else {
         return Ok(None);
     };
-    let creation = match usage.get("prompt_tokens_details") {
+    let split = match usage.get("prompt_tokens_details") {
         Some(Json::Object(details)) => match details.get("cache_creation_token_details") {
             Some(Json::Object(creation)) => Some(creation),
             _ => None,
         },
         _ => None,
     };
-    if let Some(creation) = creation {
+    if let Some(creation) = split {
         if creation
             .get("ephemeral_1h_input_tokens")
             .is_some_and(counts_as_present)

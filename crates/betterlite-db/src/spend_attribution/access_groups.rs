@@ -14,9 +14,9 @@ pub fn served_model_access_groups(
     deployments: Option<&dyn ServedDeployments>,
     served_model_id: Option<&str>,
 ) -> Option<BTreeSet<String>> {
-    let deployments = deployments?;
-    let served_model_id = served_model_id.filter(|deployment_id| !deployment_id.is_empty())?;
-    let model_info = deployments.model_info(served_model_id)?;
+    let router = deployments?;
+    let deployment_id = served_model_id.filter(|id| !id.is_empty())?;
+    let model_info = router.model_info(deployment_id)?;
     let Some(Json::List(declared)) = model_info.get("access_groups") else {
         return Some(BTreeSet::new());
     };

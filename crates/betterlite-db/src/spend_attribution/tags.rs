@@ -48,7 +48,9 @@ pub fn decode_enqueue_tags(bytes: &[u8]) -> Result<Vec<String>, EnqueueTagsError
         Json::Null => Ok(Vec::new()),
         Json::Bool(flag) if !flag => Ok(Vec::new()),
         // a zero number is falsey; every other number is truthy and, unlike a list or object, does not iterate
-        Json::Number(number) if number.as_f64().is_some_and(|value| value == 0.0) => Ok(Vec::new()),
+        Json::Number(number) if number.as_f64().is_some_and(|value| value == 0.0_f64) => {
+            Ok(Vec::new())
+        }
         Json::Bool(_) | Json::Number(_) => Err(EnqueueTagsError::NotIterable),
     }
 }

@@ -100,7 +100,7 @@ pub async fn update_owner_db(
     user_id: Option<&str>,
     owner: OwnerKind,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(owner_id)) = (queue, owner_id) else {
+    let (Some(sink), Some(owner_key)) = (queue, owner_id) else {
         tracing::debug!(
             owner = ?owner,
             "No owner id or no database, not tracking spend"
@@ -111,8 +111,8 @@ pub async fn update_owner_db(
         OwnerKind::Team => (EntityType::Team, "team"),
         OwnerKind::Organization => (EntityType::Organization, "organization"),
     };
-    enqueue_row(queue, owner_type, owner_id, response_cost, owner_label).await?;
-    let Some(user_id) = user_id else {
+    enqueue_row(sink, owner_type, owner_key, response_cost, owner_label).await?;
+    let Some(member_user) = user_id else {
         return Ok(());
     };
     let (member_type, member_label) = match owner {
@@ -121,10 +121,10 @@ pub async fn update_owner_db(
     };
     // key is "team_id::<value>::user_id::<value>" for a team, with neither value escaped
     let member_key = match owner {
-        OwnerKind::Team => format!("team_id::{owner_id}::user_id::{user_id}"),
-        OwnerKind::Organization => org_member_transaction_key(owner_id, user_id),
+        OwnerKind::Team => format!("team_id::{owner_key}::user_id::{member_user}"),
+        OwnerKind::Organization => org_member_transaction_key(owner_key, member_user),
     };
-    let member = enqueue_row(queue, member_type, &member_key, response_cost, member_label).await;
+    let member = enqueue_row(sink, member_type, &member_key, response_cost, member_label).await;
     match owner {
         OwnerKind::Team => Ok(()),
         OwnerKind::Organization => member,
@@ -138,14 +138,14 @@ pub async fn update_row_db(
     row_id: Option<&str>,
     row: RowKind,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(row_id)) = (queue, row_id) else {
+    let (Some(sink), Some(row_key)) = (queue, row_id) else {
         return Ok(());
     };
     let (entity_type, label) = match row {
         RowKind::Project => (EntityType::Project, "project"),
         RowKind::Agent => (EntityType::Agent, "agent"),
     };
-    enqueue_row(queue, entity_type, row_id, response_cost, label).await
+    enqueue_row(sink, entity_type, row_key, response_cost, label).await
 }
 
 // _update_tag_db: a serialized payload decodes to its iterated names, a parsed list is used as sent, anything else returns silently.
@@ -154,13 +154,13 @@ pub async fn update_tag_db(
     response_cost: Option<SpendAmount>,
     request_tags: Option<RequestTags<'_>>,
 ) -> Result<(), SpendAttributionError> {
-    let Some(queue) = queue else {
+    let Some(sink) = queue else {
         return Ok(());
     };
-    let Some(request_tags) = request_tags else {
+    let Some(names) = request_tags else {
         return Ok(());
     };
-    let tags = match request_tags {
+    let tags = match names {
         RequestTags::Serialized(text) => {
             let tags = match decode_enqueue_tags(text.as_bytes()) {
                 Ok(tags) => tags,
@@ -178,7 +178,7 @@ pub async fn update_tag_db(
         RequestTags::Parsed(tags) => tags.to_vec(),
     };
     for tag in tags.iter().filter(|tag| !tag.is_empty()) {
-        enqueue_row(queue, EntityType::Tag, tag, response_cost, "tag").await?;
+        enqueue_row(sink, EntityType::Tag, tag, response_cost, "tag").await?;
     }
     Ok(())
 }
@@ -191,12 +191,12 @@ pub async fn update_model_access_group_db(
     served_model_id: Option<&str>,
     deployments: Option<&dyn ServedDeployments>,
 ) {
-    let Some(queue) = queue else {
+    let Some(sink) = queue else {
         return;
     };
     for group in debitable_model_access_groups(attributed, served_model_id, deployments) {
         if enqueue_row(
-            queue,
+            sink,
             EntityType::ModelAccessGroup,
             &group,
             response_cost,

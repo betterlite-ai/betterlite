@@ -108,5 +108,5 @@ fn bytes_that_are_not_utf8_read_none() {
 
 #[rstest]
 fn replays_the_turn_time_corpus(#[files("fuzz/corpus/turn_time/*")] path: PathBuf) {
-    drop(decode_turn_time(&read(path).unwrap()));
+    let _outcome = decode_turn_time(&read(path).unwrap());
 }

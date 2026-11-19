@@ -7,6 +7,7 @@ use chrono::NaiveDateTime;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use crate::autorouter_facts::session::SESSION_ID_MAX_CHARS;
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFlag, TurnTime};
 
 use super::{TurnPayload, turn_transaction};
@@ -192,10 +193,7 @@ fn an_aware_start_time_is_stored_in_utc() {
 
 #[test]
 fn an_oversized_session_id_is_digested_and_a_short_one_is_kept() {
-    let long = SUCCESS.replace(
-        "session-1",
-        &"a".repeat(crate::autorouter_facts::session::SESSION_ID_MAX_CHARS + 1),
-    );
+    let long = SUCCESS.replace("session-1", &"a".repeat(SESSION_ID_MAX_CHARS + 1));
     assert_eq!(
         record(&long, DECISION).session_id,
         "sha256:e8d95cc2b4bc198c54b40bd214df958afb65f5e73d2c2eafe0593cf5c635c1f0"
