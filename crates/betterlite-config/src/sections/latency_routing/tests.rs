@@ -78,7 +78,7 @@ fn converts(#[case] source: &str, #[case] expected: LatencyRoutingSettings) {
     PERCENTILE_PATH
 )]
 #[case::percentile_is_not_a_number(
-    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: .nan\n",
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: [0.5]\n",
     PERCENTILE_PATH
 )]
 #[case::buffer_is_no_number(
@@ -91,6 +91,14 @@ fn rejects(#[case] source: &str, #[case] path: &str) {
         matches!(&error, ConfigError::InvalidScalar { path: named, .. } if named == path),
         "the load answered {error:?}"
     );
+}
+
+// the YAML layer refuses a non-finite literal before any section reads the value
+#[test]
+fn rejects_a_non_finite_percentile_literal() {
+    let source = "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttft_percentile: .nan\n";
+    let error = load_with(source, &[]).expect_err("the fixture percentile is not finite");
+    assert_eq!(error.category(), "yaml");
 }
 
 #[rstest]
