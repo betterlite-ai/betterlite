@@ -227,7 +227,9 @@ async fn a_cancelled_read_leaves_the_request_clean() {
         true,
         &mut request
     ));
-    let selection = service(&pool, 0).select_async(&store, &tiers, &mut request, &mut first());
+    let router = service(&pool, 0);
+    let mut random = first();
+    let selection = router.select_async(&store, &tiers, &mut request, &mut random);
     let cancelled = tokio::time::timeout(Duration::ZERO, selection).await;
     assert!(cancelled.is_err());
     assert!(request.prefetch.is_none());
