@@ -1,6 +1,8 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         clippy::disallowed_types,
         clippy::shadow_unrelated,
         clippy::too_many_lines,
@@ -105,10 +107,8 @@ impl Case {
     }
 
     fn native_headers(&self) -> Result<NativeHeaders, NativeHeaderError> {
-        let messages =
-            convert::prompt_messages(&self.messages).expect("the case messages round trip");
-        let optional_params: IndexMap<String, PromptJson> =
-            convert::mapped(&self.optional_params).expect("the case params round trip");
+        let messages = convert::prompt_messages(&self.messages)?;
+        let optional_params: IndexMap<String, PromptJson> = convert::mapped(&self.optional_params)?;
         validate_native(&NativeHeadersRequest {
             model: self.model,
             caller_headers: &self.caller_headers,

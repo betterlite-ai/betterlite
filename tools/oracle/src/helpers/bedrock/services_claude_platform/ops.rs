@@ -145,11 +145,11 @@ fn headers_answer(input: &HeaderInput, route: Route) -> HelperResult {
         Route::Chat => Ok(chat_outcome(
             fixture.chat_headers(&chat_request(input, &platform)),
         )),
-        Route::Native => native_header_view(&fixture, input, &platform),
+        Route::Native => native_header_view(input, &platform),
     }
 }
 
-const fn chat_request<'input>(
+fn chat_request<'input>(
     input: &'input HeaderInput,
     platform: &'input PlatformInputsCase,
 ) -> ChatHeadersRequest<'input> {
@@ -170,11 +170,7 @@ fn chat_outcome(outcome: Result<AnthropicHeaders, ChatValidationError>) -> Value
     )
 }
 
-fn native_header_view(
-    fixture: &Fixture,
-    input: &HeaderInput,
-    platform: &PlatformInputsCase,
-) -> HelperResult {
+fn native_header_view(input: &HeaderInput, platform: &PlatformInputsCase) -> HelperResult {
     let messages = convert::prompt_messages(&input.messages).map_err(invalid)?;
     let optional_params: IndexMap<String, PromptJson> =
         convert::mapped(&input.optional_params).map_err(invalid)?;

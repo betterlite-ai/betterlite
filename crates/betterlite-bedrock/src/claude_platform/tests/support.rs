@@ -1,6 +1,7 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::disallowed_methods,
         clippy::disallowed_types,
         reason = "the decoded chunks compare as serde_json values"
     )
