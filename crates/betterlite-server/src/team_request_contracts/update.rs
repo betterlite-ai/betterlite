@@ -69,7 +69,7 @@ pub struct UpdateTeamRequest {
     #[serde(flatten)]
     pub fields: UpdateTeamFields,
     #[serde(skip)]
-    pub(crate) raw: JsonData,
+    pub raw: JsonData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -78,7 +78,7 @@ pub struct PatchTeamRequest {
     #[serde(flatten)]
     pub fields: UpdateTeamFields,
     #[serde(skip)]
-    pub(crate) raw: JsonData,
+    pub raw: JsonData,
 }
 
 impl PatchTeamRequest {

@@ -51,10 +51,9 @@ impl TryFrom<String> for KeyManagementRoutes {
     type Error = UnknownRouteError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let found = KEY_ENUM.iter().find(|route| route.value() == value);
-        match found {
-            Some(route) => Ok(Self(route.value().to_owned())),
-            None => Err(UnknownRouteError { value }),
-        }
+        found.map_or(Err(UnknownRouteError { value }), |route| {
+            Ok(Self(route.value().to_owned()))
+        })
     }
 }
 

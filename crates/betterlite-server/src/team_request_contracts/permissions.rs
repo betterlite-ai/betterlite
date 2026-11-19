@@ -29,6 +29,7 @@ struct PermissionGetResponseInput {
     all_available_permissions: Vec<String>,
 }
 
+#[must_use]
 pub const fn default_team_permissions() -> Option<Vec<String>> {
     Some(vec![])
 }

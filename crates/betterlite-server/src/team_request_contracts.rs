@@ -5,6 +5,7 @@ use betterlite_logging::private_json::safe_json::safe_json_loads;
 use serde::Serialize;
 
 use crate::key_fields::error::DecodeError as KeyDecodeError;
+use crate::proxy_request_contracts::ContractError;
 
 pub mod bulk_add;
 pub mod bulk_members;
@@ -42,7 +43,7 @@ pub enum TeamContractError {
     #[error("{message}")]
     Validation { message: String },
     #[error(transparent)]
-    Contract(#[from] crate::proxy_request_contracts::ContractError),
+    Contract(#[from] ContractError),
     #[error(transparent)]
     Row(#[from] TeamRowError),
     #[error(transparent)]

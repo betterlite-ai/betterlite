@@ -53,7 +53,7 @@ pub struct NewTeamRequest {
     #[serde(flatten)]
     pub extra: NewTeamFields,
     #[serde(skip)]
-    pub(crate) raw: JsonData,
+    pub raw: JsonData,
 }
 
 impl NewTeamRequest {

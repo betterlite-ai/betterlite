@@ -62,10 +62,10 @@ where
     T: Serialize + ?Sized,
 {
     let mut fields = to_object(request)?;
-    let Some(permission) = permission else {
+    let Some(found_permission) = permission else {
         return Ok(fields);
     };
-    let resolved = permission.resolved_json()?;
+    let resolved = found_permission.resolved_json()?;
     fields.insert("object_permission".to_owned(), resolved);
     Ok(fields)
 }
@@ -153,10 +153,10 @@ pub(crate) fn normalize_budget_aliases(fields: &mut Fields) {
 pub(crate) fn validate_router_settings(
     settings: Option<&BTreeMap<String, JsonData>>,
 ) -> Result<(), TeamContractError> {
-    let Some(settings) = settings else {
+    let Some(found_settings) = settings else {
         return Ok(());
     };
-    let text = serde_json::to_string(settings).map_err(ContractError::from)?;
+    let text = serde_json::to_string(found_settings).map_err(ContractError::from)?;
     let value: Json = serde_json::from_str(&text).map_err(ContractError::from)?;
     decode_router_weights(&value).map_err(|source| TeamContractError::Validation {
         message: source.to_string(),

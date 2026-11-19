@@ -62,7 +62,7 @@ const DELETION_KEYS: [&str; 5] = [
 ];
 
 // The smart union scores each member by declared keys, preferring enriched over live over deleted on ties.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum TeamListEntry {
     Enriched(TeamListItem),
