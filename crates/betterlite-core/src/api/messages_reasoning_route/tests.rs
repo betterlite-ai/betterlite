@@ -451,6 +451,13 @@ fn thinking_promotes_only_openai(
     None,
     r#"{"model":"openai/responses/o3","custom_llm_provider":"openai","reasoning_effort":{"effort":"high","summary":"detailed"}}"#
 )]
+#[case::dict_number_summary_is_used(
+    r#"{"model":"o3","custom_llm_provider":"openai","reasoning_effort":{"effort":"high"}}"#,
+    r#"{"type":"enabled","summary":7}"#,
+    false,
+    None,
+    r#"{"model":"openai/responses/o3","custom_llm_provider":"openai","reasoning_effort":{"effort":"high","summary":7}}"#
+)]
 #[case::empty_effort_unchanged(
     r#"{"model":"o3","custom_llm_provider":"openai","reasoning_effort":""}"#,
     r#"{"type":"enabled"}"#,

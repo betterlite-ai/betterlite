@@ -103,6 +103,13 @@ call:
         environment: null
       - function: route
         kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
+        thinking: {type: enabled, summary: 7}
+        model_info: null
+        provider: null
+        global_value: false
+        environment: null
+      - function: route
+        kwargs: {model: o3, custom_llm_provider: openai, reasoning_effort: {effort: high}}
         thinking: {type: enabled, summary: []}
         model_info: null
         provider: null
