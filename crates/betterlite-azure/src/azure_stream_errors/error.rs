@@ -74,29 +74,13 @@ impl Raised {
     }
 
     #[must_use]
-    pub fn key_error(name: &str) -> Self {
-        Self {
-            class: "KeyError".to_owned(),
-            status: Reported::Absent,
-            message: Reported::Absent,
-            headers: None,
-            response_headers: None,
-            body: None,
-            text: format!("'{name}'"),
-        }
-    }
-
-    #[must_use]
     pub fn plain(text: String) -> Self {
-        Self {
-            class: "Exception".to_owned(),
-            status: Reported::Absent,
-            message: Reported::Absent,
-            headers: None,
-            response_headers: None,
-            body: None,
+        Self::raised(
+            "Exception".to_owned(),
+            Reported::Absent,
+            Reported::Absent,
             text,
-        }
+        )
     }
 
     // A byte stream that failed while it was read, after the client call returned

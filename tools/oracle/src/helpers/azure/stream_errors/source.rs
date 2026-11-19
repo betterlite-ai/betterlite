@@ -147,7 +147,7 @@ impl ScriptedSource {
         let spec = case.supplied.as_ref().expect("the case supplies a client");
         let key = spec.api_key.clone().map(SecretString::from);
         let kind = kind_of(&spec.kind);
-        let payload = case.send.events.concat().into_bytes();
+        let events = case.send.events.concat().into_bytes();
         let payload = if case.send.events.is_empty() {
             case.send
                 .body
@@ -156,7 +156,7 @@ impl ScriptedSource {
                 .as_bytes()
                 .to_vec()
         } else {
-            payload
+            events
         };
         let requests = Arc::new(Mutex::new(Vec::new()));
         let transport = ScriptedTransport {

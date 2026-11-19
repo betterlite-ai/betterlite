@@ -1,7 +1,7 @@
 use std::future::Future;
 
-use betterlite_azure::azure_stream_errors::error::StreamingError;
 use betterlite_azure::azure_stream_errors::records::{StreamCall, StreamRuntime};
+use betterlite_azure::azure_stream_errors::stream::AzureChatStream;
 use betterlite_azure::azure_stream_errors::{async_streaming, streaming};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -73,42 +73,40 @@ fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>>
         }
     })?;
     match outcome {
-        Ok(stream) => {
-            let wrapper = view::wrapper_value(&stream);
-            let chunks = block_on(async move {
-                let mut items = stream.chunks;
-                let mut values = Vec::new();
-                while let Some(item) = items.next().await {
-                    match item {
-                        Ok(chunk) => values.push(view::chunk_value(&chunk)),
-                        Err(error) => return Err(view::failure(&error)),
-                    }
-                }
-                Ok(values)
-            })??;
-            Ok(view::report(
-                &source,
-                &sources,
-                &recorder,
-                "stream",
-                wrapper,
-                Json::List(chunks),
-                Json::Null,
-            ))
-        }
-        Err(error) => match error {
-            StreamingError::Azure(failure) => Ok(view::report(
-                &source,
-                &sources,
-                &recorder,
-                "error",
-                Json::Null,
-                Json::Null,
-                view::error_value(&failure),
-            )),
-            other => Err(view::failure(&other)),
-        },
+        Ok(stream) => stream_outcome(&source, &sources, &recorder, stream),
+        Err(error) => view::error_report(&source, &sources, &recorder, &error),
     }
+}
+
+fn stream_outcome(
+    source: &ScriptedSource,
+    sources: &ScriptedSources,
+    recorder: &Recorder,
+    stream: AzureChatStream,
+) -> Result<Json, Box<HelperError>> {
+    let wrapper = view::wrapper_value(&stream);
+    let chunks = block_on(async move {
+        let mut items = stream.chunks;
+        let mut values = Vec::new();
+        while let Some(item) = items.next().await {
+            match item {
+                Ok(chunk) => values.push(view::chunk_value(&chunk)),
+                Err(error) => return Err(view::failure(&error)),
+            }
+        }
+        Ok(values)
+    })??;
+    Ok(view::report(
+        source,
+        sources,
+        recorder,
+        view::Outcome {
+            name: "stream",
+            wrapper,
+            chunks: Json::List(chunks),
+            error: Json::Null,
+        },
+    ))
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {

@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use http::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 
-use crate::azure_stream_errors::error::{AzureStreamFailure, Raised, StreamingError};
+use crate::azure_stream_errors::error::{AzureStreamFailure, Raised, Reported, StreamingError};
 use crate::azure_stream_errors::stream::raw_headers;
 use crate::azure_stream_errors::{async_streaming, streaming};
 use crate::endpoints::projection::ClientKind;
@@ -121,16 +121,16 @@ fn azure_chat_streams_secret_safe_failure() {
     let secret = "super-secret-client-key";
     let headers = secret_headers(&[("authentication", secret), ("api-key", secret)]);
 
-    let mut failure = AzureStreamFailure::raised(Raised::azure(401, "unauthorized".to_owned()));
-    failure.headers = Some(headers.clone());
-    let debug = format!("{failure:?}");
+    let mut failed = AzureStreamFailure::raised(Raised::azure(401, "unauthorized".to_owned()));
+    failed.headers = Some(headers.clone());
+    let debug = format!("{failed:?}");
     assert!(!debug.contains(secret));
 
     let mut raised = raised_with(Some(401), "unauthorized".to_owned());
     raised.headers = Some(headers.clone());
     assert!(!format!("{raised:?}").contains(secret));
 
-    let error = StreamingError::Azure(failure);
+    let error = StreamingError::Azure(failed);
     assert!(!error.to_string().contains(secret));
 
     let wrapped = AzureStreamFailure::wrapped(raised);
@@ -146,18 +146,16 @@ fn azure_chat_streams_secret_safe_failure() {
     let fixture = CallFixture::default();
     let call = fixture.call();
     let mut recorder = Recorder::default();
-    let error = block_on(async_streaming(&source, &call, &mut recorder, runtime()))
-        .expect_err("the wrapped failure is reported");
-    assert!(!format!("{error:?}").contains(secret));
-    assert!(!error.to_string().contains(secret));
-    let failure = azure_failure(error);
-    assert_eq!(failure.class, "AzureOpenAIError");
-    assert_eq!(
-        failure.status,
-        crate::azure_stream_errors::error::Reported::Present(Some(401))
-    );
+    let stream_error = block_on(async_streaming(&source, &call, &mut recorder, runtime()))
+        .err()
+        .expect("the wrapped failure is reported");
+    assert!(!format!("{stream_error:?}").contains(secret));
+    assert!(!stream_error.to_string().contains(secret));
+    let stream_failure = azure_failure(stream_error);
+    assert_eq!(stream_failure.class, "AzureOpenAIError");
+    assert_eq!(stream_failure.status, Reported::Present(Some(401)));
     assert!(
-        failure.headers.as_ref().is_some_and(|values| values
+        stream_failure.headers.as_ref().is_some_and(|values| values
             .0
             .get("authentication")
             .map(String::as_str)

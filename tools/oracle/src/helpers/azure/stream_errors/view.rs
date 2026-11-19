@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::PoisonError;
 
 use betterlite_azure::azure_stream_errors::error::{AzureStreamFailure, Reported, StreamingError};
 use betterlite_azure::azure_stream_errors::records::PreCallRecord;
@@ -53,7 +54,7 @@ pub(super) fn gets(source: &ScriptedSource) -> Vec<Json> {
     source
         .gets
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .iter()
         .map(get_value)
         .collect()
@@ -67,13 +68,12 @@ fn form_value(form: &FormView) -> Json {
 }
 
 pub(super) fn exchanges(sources: &ScriptedSources) -> Vec<Json> {
-    sources
-        .forms
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter()
-        .map(form_value)
-        .collect()
+    let forms = sources.forms.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut values = Vec::with_capacity(forms.len());
+    for form in &*forms {
+        values.push(form_value(form));
+    }
+    values
 }
 
 // The input, headers and target logging_obj.pre_call saw
@@ -250,17 +250,43 @@ pub(super) fn failure(error: &StreamingError) -> Box<HelperError> {
     })
 }
 
+pub(super) struct Outcome {
+    pub(super) name: &'static str,
+    pub(super) wrapper: Json,
+    pub(super) chunks: Json,
+    pub(super) error: Json,
+}
+
+pub(super) fn error_report(
+    source: &ScriptedSource,
+    sources: &ScriptedSources,
+    recorder: &Recorder,
+    error: &StreamingError,
+) -> Result<Json, Box<HelperError>> {
+    match error {
+        StreamingError::Azure(raised) => Ok(report(
+            source,
+            sources,
+            recorder,
+            Outcome {
+                name: "error",
+                wrapper: Json::Null,
+                chunks: Json::Null,
+                error: error_value(raised),
+            },
+        )),
+        other => Err(failure(other)),
+    }
+}
+
 pub(super) fn report(
     source: &ScriptedSource,
     sources: &ScriptedSources,
     recorder: &Recorder,
-    outcome: &str,
-    wrapper: Json,
-    chunks: Json,
-    error: Json,
+    outcome: Outcome,
 ) -> Json {
     let mut fields = Extra::new();
-    fields.insert("outcome".to_owned(), Json::Text(outcome.to_owned()));
+    fields.insert("outcome".to_owned(), Json::Text(outcome.name.to_owned()));
     fields.insert("gets".to_owned(), Json::List(gets(source)));
     fields.insert("requests".to_owned(), Json::List(requests(source)));
     fields.insert("exchanges".to_owned(), Json::List(exchanges(sources)));
@@ -269,8 +295,8 @@ pub(super) fn report(
         Json::List(recorder.pre.iter().map(pre_value).collect()),
     );
     fields.insert("response_headers".to_owned(), response_headers(recorder));
-    fields.insert("wrapper".to_owned(), wrapper);
-    fields.insert("chunks".to_owned(), chunks);
-    fields.insert("error".to_owned(), error);
+    fields.insert("wrapper".to_owned(), outcome.wrapper);
+    fields.insert("chunks".to_owned(), outcome.chunks);
+    fields.insert("error".to_owned(), outcome.error);
     Json::Object(fields)
 }

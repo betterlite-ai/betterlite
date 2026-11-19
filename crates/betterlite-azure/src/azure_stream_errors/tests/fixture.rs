@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::azure_client_secret::SecretResolver;
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use crate::azure_stream_errors::error::{Raised, Reported};
+use crate::azure_stream_errors::error::{AzureStreamFailure, Raised, Reported, StreamingError};
 use crate::azure_stream_errors::records::{
     ChatStreamTransport, GetStreamClient, PreCallRecord, StreamAnswer, StreamCall, StreamClient,
     StreamHooks, StreamRuntime, StreamSource,
@@ -68,22 +68,12 @@ pub struct GetRecord {
     pub client_present: bool,
 }
 
+#[derive(Default)]
 pub struct ScriptedTransport {
     pub headers: Vec<(String, String)>,
     pub payload: Vec<Result<Vec<u8>, String>>,
     pub failure: Option<Raised>,
     pub requests: Arc<Mutex<Vec<RequestRecord>>>,
-}
-
-impl Default for ScriptedTransport {
-    fn default() -> Self {
-        Self {
-            headers: Vec::new(),
-            payload: Vec::new(),
-            failure: None,
-            requests: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
 }
 
 fn header_map(headers: &[(String, String)]) -> HeaderMap {
@@ -141,13 +131,7 @@ pub struct ScriptedSource {
 
 impl Default for ScriptedSource {
     fn default() -> Self {
-        Self {
-            kind: ClientKind::AzureOpenAi,
-            api_key: Some(SecretString::from("client-key")),
-            transport: Arc::new(ScriptedTransport::default()),
-            get_error: None,
-            gets: Arc::new(Mutex::new(Vec::new())),
-        }
+        scripted_source(ClientKind::AzureOpenAi, &[], Vec::new())
     }
 }
 
@@ -489,7 +473,7 @@ pub fn json_text(value: &Json) -> Option<&str> {
     }
 }
 
-pub fn block_on<Fut: std::future::Future>(future: Fut) -> Fut::Output {
+pub fn block_on<Fut: Future>(future: Fut) -> Fut::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -532,11 +516,9 @@ pub fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
     }
 }
 
-pub fn azure_failure(
-    error: crate::azure_stream_errors::error::StreamingError,
-) -> crate::azure_stream_errors::error::AzureStreamFailure {
+pub fn azure_failure(error: StreamingError) -> AzureStreamFailure {
     match error {
-        crate::azure_stream_errors::error::StreamingError::Azure(failure) => failure,
+        StreamingError::Azure(failure) => failure,
         other => panic!("expected an Azure failure, got {other:?}"),
     }
 }

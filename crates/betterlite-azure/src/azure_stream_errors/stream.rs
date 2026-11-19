@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::pin::Pin;
+use std::str;
 
 use betterlite_models::call_helpers::headers::{
     AdditionalHeaders, HeaderSource, process_response_headers,
@@ -48,7 +49,7 @@ pub struct AzureChatStream {
 
 // httpx decodes header bytes as ascii, then utf-8, then latin-1
 fn header_text(value: &[u8]) -> String {
-    match std::str::from_utf8(value) {
+    match str::from_utf8(value) {
         Ok(text) => text.to_owned(),
         Err(_) => value.iter().map(|byte| char::from(*byte)).collect(),
     }

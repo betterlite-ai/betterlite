@@ -38,7 +38,7 @@ pub async fn streaming<Source: StreamSource>(
 ) -> Result<AzureChatStream, StreamingError> {
     let unused = prepare::unused_client_params(call, sources)?;
     let client = source.get(get_client(call, false))?;
-    prepare::require_sync(&client)?;
+    prepare::require_stream_client(&client, false)?;
     let token = unused.logged_token().or(call.azure_ad_token);
     hooks.pre_call(prepare::pre_call(call, &client, token)?)?;
     let answer = client.transport.create(call.data, call.timeout).await?;
@@ -78,7 +78,7 @@ async fn async_inner<Source: StreamSource>(
     runtime: StreamRuntime,
 ) -> Result<AzureChatStream, Raised> {
     let client = source.get(get_client(call, true))?;
-    prepare::require_async(&client)?;
+    prepare::require_stream_client(&client, true)?;
     hooks
         .pre_call(prepare::pre_call(call, &client, call.azure_ad_token)?)
         .map_err(|error| Raised::plain(error.to_string()))?;

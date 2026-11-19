@@ -108,22 +108,19 @@ fn credential_entry(
     Ok(StreamCredential::Unset)
 }
 
-pub fn require_sync(client: &StreamClient) -> Result<(), Raised> {
-    match client.kind {
-        ClientKind::AzureOpenAi | ClientKind::OpenAi => Ok(()),
-        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi | ClientKind::Other => {
-            Err(Raised::azure(500, SYNC_CLIENT_MESSAGE.to_owned()))
-        }
+pub fn require_stream_client(client: &StreamClient, asynchronous: bool) -> Result<(), Raised> {
+    let fits = match client.kind {
+        ClientKind::AzureOpenAi | ClientKind::OpenAi => !asynchronous,
+        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => asynchronous,
+        ClientKind::Other => false,
+    };
+    if fits {
+        return Ok(());
     }
-}
-
-pub fn require_async(client: &StreamClient) -> Result<(), Raised> {
-    match client.kind {
-        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => Ok(()),
-        ClientKind::AzureOpenAi | ClientKind::OpenAi | ClientKind::Other => {
-            Err(Raised::value_error(ASYNC_CLIENT_MESSAGE.to_owned()))
-        }
+    if asynchronous {
+        return Err(Raised::value_error(ASYNC_CLIENT_MESSAGE.to_owned()));
     }
+    Err(Raised::azure(500, SYNC_CLIENT_MESSAGE.to_owned()))
 }
 
 fn secret_json(value: Option<&SecretString>) -> Json {
@@ -138,11 +135,14 @@ pub fn pre_call(
     client: &StreamClient,
     token: Option<&SecretString>,
 ) -> Result<PreCallRecord, Raised> {
-    let input = call
-        .data
-        .get("messages")
-        .cloned()
-        .ok_or_else(|| Raised::key_error("messages"))?;
+    let input = call.data.get("messages").cloned().ok_or_else(|| {
+        Raised::raised(
+            "KeyError".to_owned(),
+            Reported::Absent,
+            Reported::Absent,
+            "'messages'".to_owned(),
+        )
+    })?;
     let headers = IndexMap::from([
         ("api_key".to_owned(), secret_json(call.api_key)),
         ("azure_ad_token".to_owned(), secret_json(token)),
