@@ -346,7 +346,7 @@ fn ocr(
     let built = build(
         options_input,
         &[],
-        recorder.clone(),
+        Arc::clone(&recorder),
         Arc::new(RecordingFetch::answer(None)?),
     )?;
     let content = match file_content_base64 {
