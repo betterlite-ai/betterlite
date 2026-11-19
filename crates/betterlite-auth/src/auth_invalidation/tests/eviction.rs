@@ -220,10 +220,8 @@ fn outer_cancellation_propagates() {
         )
         .await
     });
-    assert!(
-        outcome.is_err(),
-        "cancelling the batch drops the pending child instead of waiting it out"
-    );
+    let _elapsed = outcome
+        .expect_err("cancelling the batch drops the pending child instead of waiting it out");
 }
 
 #[test]

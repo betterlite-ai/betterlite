@@ -368,10 +368,7 @@ fn cancellation_not_warning_fallback() {
             .await
         })
     });
-    assert!(
-        outcome.is_err(),
-        "cancellation is not turned into a warning"
-    );
+    let _elapsed = outcome.expect_err("cancellation is not turned into a warning");
     assert!(warnings.is_empty());
 }
 
@@ -434,10 +431,7 @@ fn inflight_wait_ignores_task_result() {
             .expect("the load still runs");
     };
     let (outcome, ()) = runtime.block_on(async { tokio::join!(reset_future, drive) });
-    assert!(
-        outcome.is_ok(),
-        "the wait never consumes or propagates the load's result"
-    );
+    outcome.expect("the wait never consumes or propagates the load's result");
 }
 
 #[test]
@@ -453,7 +447,9 @@ fn current_or_missing_task_not_awaited() {
         )
         .await
     });
-    assert!(missing.is_ok(), "a missing load never blocks the reset");
+    missing
+        .expect("a missing load never blocks the reset")
+        .expect("the reset succeeds without a pending load");
     let scoped = Arc::clone(&invalidation);
     let scoped_inflight = Arc::clone(&inflight);
     let joined = runtime.block_on(async move {
@@ -474,8 +470,9 @@ fn current_or_missing_task_not_awaited() {
         });
         tokio::time::timeout(Duration::from_millis(50), tasks.join_next()).await
     });
-    assert!(
-        joined.is_ok(),
-        "the reset never waits for its own membership load"
-    );
+    joined
+        .expect("the reset never waits for its own membership load")
+        .expect("the reset task ran and finished")
+        .expect("the reset task did not panic")
+        .expect("the reset succeeds without waiting for itself");
 }
