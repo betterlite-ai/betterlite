@@ -5,7 +5,7 @@ pub const REQUIREMENTS_FILE: &str = ".litellm_requirements.txt";
 pub const SKILL_REQUIREMENTS_FILE: &str = "requirements.txt";
 
 // the listing runs inside the container, so the extension filter and the walk live here
-pub const LISTING_CODE: &str = r"
+pub const LISTING_CODE: &str = "
 import os
 import json
 files = []
@@ -18,7 +18,7 @@ print(json.dumps(files))
 
 pub fn pip_install_code(filename: &str) -> String {
     format!(
-        r"
+        "
 import subprocess
 import sys
 subprocess.run(
@@ -32,7 +32,7 @@ subprocess.run(
 
 pub fn wrapped_code(code: &str) -> String {
     format!(
-        r"
+        "
 import os
 os.chdir('/sandbox')
 import sys

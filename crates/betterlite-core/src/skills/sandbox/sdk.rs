@@ -188,6 +188,7 @@ impl Drop for SdkSession {
                 .object
                 .bind(py)
                 .call_method1("__exit__", (py.None(), py.None(), py.None()))
+                .map(Bound::unbind)
         });
         if let Err(error) = outcome {
             tracing::warn!("the sandbox session could not be closed: {error}");

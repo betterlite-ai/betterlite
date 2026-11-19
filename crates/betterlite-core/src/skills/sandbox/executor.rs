@@ -17,10 +17,10 @@ use super::staging::{StageError, stage_file};
 
 const SDK_MISSING: &str = "llm-sandbox not installed. Install `llm-sandbox`.";
 
-pub struct SandboxRequest<'a> {
-    pub code: &'a str,
-    pub skill_files: &'a SkillFiles,
-    pub requirements: Option<&'a str>,
+pub struct SandboxRequest<'request> {
+    pub code: &'request str,
+    pub skill_files: &'request SkillFiles,
+    pub requirements: Option<&'request str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -17,7 +17,7 @@ use super::super::session::{RunResult, SessionError, SessionOpener, SessionOptio
 // the interpreter and sys.modules are shared, so the SDK tests run one at a time
 static SDK_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-const FAKE_SDK: &str = r"
+const FAKE_SDK: &str = "
 fail_run = False
 _instances = []
 def last_instance():
@@ -270,7 +270,7 @@ async fn sdk_drop_exits_a_session_that_was_not_closed() {
     let host = start_host();
     install_fake(&host);
     let instance = {
-        let session = sdk_sessions(&host)
+        let _session = sdk_sessions(&host)
             .open(&session_options(None))
             .await
             .unwrap();
