@@ -1,3 +1,4 @@
+use crate::audit::payload::StandardAuditLogPayload;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
@@ -80,6 +81,15 @@ impl CallbackLogger for S3BatchLogger {
     }
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.async_log_success_event(event).await
+    }
+    // S3Logger.async_log_audit_log_event batches the record under audit_logs/ and logs its own failure
+    async fn async_log_audit_event(
+        &self,
+        audit_log: &StandardAuditLogPayload,
+    ) -> Result<(), LoggerError> {
+        self.log_audit_event(audit_log, DateTime::<Utc>::from(self.clock.now()))
+            .await;
+        Ok(())
     }
 }
 fn naive_utc(seconds: Decimal) -> Option<NaiveDateTime> {
