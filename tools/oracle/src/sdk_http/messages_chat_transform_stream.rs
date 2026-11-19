@@ -1,10 +1,10 @@
+mod steps;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 
 use async_trait::async_trait;
 use betterlite_anthropic::stream_state::state::UuidV4;
-use betterlite_core::api::messages_chat_stream::sse::SyncFrames;
-use betterlite_core::api::messages_chat_stream::view::AnthropicSseStream;
 use betterlite_core::api::messages_chat_transform::adapter::AnthropicAdapter;
 use betterlite_core::api::messages_chat_transform::stream::{StreamOptions, StreamOutput};
 use betterlite_core::api::messages_context_clear::result::{
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
-use super::wrapper_stream::{self, NORMALIZED_ID, WireCall};
+use super::wrapper_stream::{self, WireCall};
 use super::{ChatMessage, OracleLimits};
 use crate::sdk_http::call_checks::validate_timeout;
 
@@ -243,136 +243,20 @@ async fn run(
     let output = AnthropicAdapter::new()
         .translate_completion_output_params_streaming(source, options, UuidV4);
     match output {
-        StreamOutput::Async(view) => async_steps(*view, &spec.steps).await,
-        StreamOutput::Sync(frames) => sync_steps(*frames, &spec.steps),
+        StreamOutput::Async(view) => self::steps::async_steps(*view, &spec.steps).await,
+        StreamOutput::Sync(frames) => self::steps::sync_steps(*frames, &spec.steps),
     }
 }
 
 fn message_json(message: &ChatMessage) -> decisions::Json {
-    let mut object = IndexMap::new();
-    object.insert(
-        "role".to_owned(),
-        decisions::Json::Text(message.role.clone()),
-    );
-    object.insert(
-        "content".to_owned(),
-        decisions::Json::Text(message.content.clone()),
-    );
-    decisions::Json::Object(object)
-}
-
-async fn async_steps(
-    mut view: AnthropicSseStream<Prefetched, UuidV4>,
-    steps: &[Step],
-) -> Result<RunOutcome, SdkHttpError> {
-    let mut outcomes = Vec::with_capacity(steps.len());
-    for step in steps {
-        let (frames, end) = async_step(&mut view, *step).await?;
-        outcomes.push(StepOutcome {
-            frames,
-            end,
-            view: Some(view_outcome(&view)),
-        });
-    }
-    Ok(RunOutcome {
-        is_async: true,
-        steps: outcomes,
-    })
-}
-
-async fn async_step(
-    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
-    step: Step,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    match step {
-        Step::Close => {
-            view.aclose();
-            Ok((Vec::new(), false))
-        }
-        Step::Next => match view.next_frame().await {
-            Some(frame) => {
-                let frame = normalized_frame(&frame, &view.stream.state.message_id)?;
-                Ok((vec![frame], false))
-            }
-            None => Ok((Vec::new(), true)),
-        },
-        Step::Drain => drain_async(view).await,
-    }
-}
-
-async fn drain_async(
-    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    let mut frames = Vec::new();
-    while let Some(frame) = view.next_frame().await {
-        frames.push(normalized_frame(&frame, &view.stream.state.message_id)?);
-    }
-    Ok((frames, true))
-}
-
-fn sync_steps(
-    mut frames: SyncFrames<Prefetched, UuidV4>,
-    steps: &[Step],
-) -> Result<RunOutcome, SdkHttpError> {
-    let mut outcomes = Vec::with_capacity(steps.len());
-    for step in steps {
-        let (collected, end) = sync_step(&mut frames, *step)?;
-        outcomes.push(StepOutcome {
-            frames: collected,
-            end,
-            view: None,
-        });
-    }
-    Ok(RunOutcome {
-        is_async: false,
-        steps: outcomes,
-    })
-}
-
-fn sync_step(
-    frames: &mut SyncFrames<Prefetched, UuidV4>,
-    step: Step,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    match step {
-        Step::Next => match frames.next() {
-            Some(Ok(frame)) => {
-                let frame = normalized_frame(&frame, &frames.driver.state.message_id)?;
-                Ok((vec![frame], false))
-            }
-            Some(Err(error)) => Err(SdkHttpError::Invalid(error.to_string())),
-            None => Ok((Vec::new(), true)),
-        },
-        Step::Drain => drain_sync(frames),
-        Step::Close => Err(SdkHttpError::Invalid(
-            "a sync run cannot be closed".to_owned(),
-        )),
-    }
-}
-
-fn drain_sync(
-    frames: &mut SyncFrames<Prefetched, UuidV4>,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    let mut collected = Vec::new();
-    while let Some(item) = frames.next() {
-        let frame = item.map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-        collected.push(normalized_frame(&frame, &frames.driver.state.message_id)?);
-    }
-    Ok((collected, true))
-}
-
-// The message id is a fresh uuid4 on each side, so both replace it before comparing
-fn normalized_frame(frame: &[u8], message_id: &str) -> Result<String, SdkHttpError> {
-    Ok(String::from_utf8(frame.to_vec())
-        .map_err(SdkHttpError::FrameUtf8)?
-        .replace(message_id, NORMALIZED_ID))
-}
-
-fn view_outcome(view: &AnthropicSseStream<Prefetched, UuidV4>) -> ViewOutcome {
-    ViewOutcome {
-        model: view.model().to_owned(),
-        messages: view.messages().map(<[decisions::Json]>::to_vec),
-        chunks: view
-            .chunks()
-            .map(|chunks| chunks.iter().map(|chunk| chunk.id.clone()).collect()),
-    }
+    decisions::Json::Object(IndexMap::from([
+        (
+            "role".to_owned(),
+            decisions::Json::Text(message.role.clone()),
+        ),
+        (
+            "content".to_owned(),
+            decisions::Json::Text(message.content.clone()),
+        ),
+    ]))
 }

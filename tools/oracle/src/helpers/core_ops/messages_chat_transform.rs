@@ -1,5 +1,4 @@
-use std::convert::Infallible;
-use std::future::{Future, ready};
+mod fixtures;
 
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
 use betterlite_core::api::messages_chat_transform::adapter::AnthropicAdapter;
@@ -9,9 +8,6 @@ use betterlite_core::api::messages_chat_transform::settings::AdapterSettings;
 use betterlite_core::api::messages_context_clear::result::{
     AppliedEdit, CompactionBlock, PolyfillResult, UsageIteration,
 };
-use betterlite_models::decisions::Json as DecisionJson;
-use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
-use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
 use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::{Builder, Runtime};
@@ -70,64 +66,6 @@ impl PolyfillInput {
             compaction_block: self.compaction_block.clone(),
             iterations_usage: self.iterations_usage.clone(),
         }
-    }
-}
-
-// The provider's declared parameters are unknown to a case, so every option step reads them as absent.
-struct Declared;
-
-impl SupportedParameterSource for Declared {
-    type Error = Infallible;
-
-    fn supported_openai_params(
-        &self,
-        _model: &str,
-        _custom_llm_provider: Option<&str>,
-    ) -> Result<Option<Vec<String>>, Infallible> {
-        Ok(None)
-    }
-}
-
-// LiteLLM reads capabilities from its pinned model map, so a case never reaches a real lookup here.
-struct Unsupported;
-
-impl CapabilityPredicates for Unsupported {
-    fn supports_factory(
-        &mut self,
-        _request: &CapabilityRequest<'_>,
-        _key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn declared_value_factory(
-        &mut self,
-        _request: &CapabilityRequest<'_>,
-        _key: &str,
-    ) -> impl Future<Output = Option<String>> + Send {
-        ready(None)
-    }
-
-    fn is_explicitly_disabled_factory(
-        &mut self,
-        _request: &CapabilityRequest<'_>,
-        _key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn supports_native_streaming(
-        &mut self,
-        _request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = DecisionJson> + Send {
-        ready(DecisionJson::Null)
-    }
-
-    fn supports_response_schema(
-        &mut self,
-        _request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
     }
 }
 
@@ -207,10 +145,10 @@ fn wrapped_answer(
     runtime: &Runtime,
 ) -> Result<WrappedAnswer, Box<HelperError>> {
     let mut kwargs = input_kwargs.clone();
-    let declared = Declared;
+    let declared = fixtures::Declared;
     let mut settings = AdapterSettings::new(&declared);
     settings.custom_llm_provider = custom_llm_provider;
-    let mut capabilities = Unsupported;
+    let mut capabilities = fixtures::Unsupported;
     let adapter = AnthropicAdapter::new();
     if with_tool_mapping {
         let (request, tool_name_mapping) = runtime
@@ -247,11 +185,11 @@ fn compose_answer(
 ) -> HelperResult {
     let runtime = build_runtime()?;
     let mut anthropic_request = source.clone();
-    let declared = Declared;
+    let declared = fixtures::Declared;
     let mut settings = AdapterSettings::new(&declared);
     settings.custom_llm_provider = custom_llm_provider;
     settings.preserve_midturn_system = preserve_midturn_system;
-    let mut capabilities = Unsupported;
+    let mut capabilities = fixtures::Unsupported;
     let (request, tool_name_mapping) = runtime
         .block_on(translate_anthropic_to_openai(
             &mut anthropic_request,
