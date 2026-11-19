@@ -21,8 +21,8 @@ use super::connection::{CreateParams, CreateTimeout};
 use super::service::{FineTuningCreate, prepare_azure_extra_body};
 use super::{
     AzureCreateCall, CreateFineTuningJobCall, FineTuningCreateDispatch, FineTuningCreateError,
-    FineTuningCreateTarget, OpenAiCreateCall, UNSUPPORTED_MODEL, UNSUPPORTED_REQUEST_METHOD,
-    UNSUPPORTED_REQUEST_URL, UNSUPPORTED_RESPONSE_BODY, UnsupportedProviderError, VertexCreateCall,
+    FineTuningCreateTarget, OpenAiCreateCall, UNSUPPORTED_REQUEST_METHOD, UNSUPPORTED_REQUEST_URL,
+    UNSUPPORTED_RESPONSE_BODY, UnsupportedProviderError, VertexCreateCall,
 };
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::{
@@ -122,7 +122,7 @@ fn base_call(provider: &str) -> CreateFineTuningJobCall {
     CreateFineTuningJobCall {
         model: "gpt-4o-mini".to_owned(),
         training_file: "file_train".to_owned(),
-        hyperparameters: None,
+        hyperparameters: Extra::new(),
         suffix: None,
         validation_file: None,
         integrations: None,
@@ -217,14 +217,14 @@ async fn openai_defaults() {
 
 async fn openai_supplied() {
     let mut call = base_call("openai");
-    call.hyperparameters = Some(object(&[
+    call.hyperparameters = object(&[
         ("batch_size", text("auto")),
         ("n_epochs", number(3)),
         ("learning_rate_multiplier", number(1)),
         ("extra_flag", text("x")),
         // the Azure-only extraction never touches a non-Azure caller's map
         ("prompt_loss_weight", number(1)),
-    ]));
+    ]);
     call.suffix = Some(String::new());
     call.validation_file = Some(String::new());
     call.integrations = Some(Vec::new());
@@ -268,19 +268,32 @@ async fn openai_ignored_inputs() {
     );
 }
 
+async fn openai_null_hyperparameters() {
+    let mut call = base_call("openai");
+    call.hyperparameters = object(&[
+        ("batch_size", text("auto")),
+        ("n_epochs", Json::Null),
+        ("extra_flag", Json::Null),
+    ]);
+    let (outcome, calls) = ran(settings(), &call).await;
+    outcome.expect("the provider answered");
+    assert_eq!(
+        body(&openai_target("openai", calls).data).get("hyperparameters"),
+        Some(&Json::Object(object(&[("batch_size", text("auto"))])))
+    );
+}
+
 #[tokio::test]
 async fn openai_tuning_body() {
     openai_defaults().await;
     openai_supplied().await;
     openai_ignored_inputs().await;
+    openai_null_hyperparameters().await;
 }
 
 async fn azure_split() {
     let mut call = base_call("azure");
-    call.hyperparameters = Some(object(&[
-        ("n_epochs", number(2)),
-        ("prompt_loss_weight", number(1)),
-    ]));
+    call.hyperparameters = object(&[("n_epochs", number(2)), ("prompt_loss_weight", number(1))]);
     call.extra_body = Some(object(&[
         ("trainingType", number(9)),
         ("ignored", Json::Bool(true)),
@@ -327,6 +340,33 @@ async fn azure_training_type() {
     );
 }
 
+async fn azure_is_async() {
+    let (outcome, calls) = ran(settings(), &base_call("azure")).await;
+    outcome.expect("the provider answered");
+    assert!(!azure_target(calls).is_async);
+    let mut asynchronous = base_call("azure");
+    asynchronous.is_async = true;
+    let (asynchronous_outcome, asynchronous_calls) = ran(settings(), &asynchronous).await;
+    asynchronous_outcome.expect("the provider answered");
+    assert!(azure_target(asynchronous_calls).is_async);
+}
+
+async fn azure_null_hyperparameters() {
+    let mut call = base_call("azure");
+    call.hyperparameters = object(&[("n_epochs", Json::Null), ("prompt_loss_weight", Json::Null)]);
+    let (outcome, calls) = ran(settings(), &call).await;
+    outcome.expect("the provider answered");
+    let fields = body(&azure_target(calls).data);
+    assert_eq!(
+        fields.get("hyperparameters"),
+        Some(&Json::Object(Extra::new()))
+    );
+    assert_eq!(
+        fields.get("extra_body"),
+        Some(&Json::Object(object(&[("prompt_loss_weight", Json::Null)])))
+    );
+}
+
 fn prepare(mut existing: Extra, training_type: Option<&Json>, specific: &Extra) -> Extra {
     prepare_azure_extra_body(&mut existing, training_type, specific);
     existing
@@ -336,6 +376,8 @@ fn prepare(mut existing: Extra, training_type: Option<&Json>, specific: &Extra) 
 async fn azure_training_parameters() {
     azure_split().await;
     azure_training_type().await;
+    azure_is_async().await;
+    azure_null_hyperparameters().await;
     let training_type = number(2);
     let specific = object(&[("prompt_loss_weight", number(1))]);
     let existing = object(&[("trainingType", number(9)), ("keep", Json::Bool(true))]);
@@ -359,10 +401,7 @@ async fn vertex_request() {
     let mut call = base_call("vertex_ai");
     call.model = "gemini-1.5-pro".to_owned();
     call.training_file = "gs://bucket/train.jsonl".to_owned();
-    call.hyperparameters = Some(object(&[
-        ("n_epochs", number(2)),
-        ("adapter_size", number(4)),
-    ]));
+    call.hyperparameters = object(&[("n_epochs", number(2)), ("adapter_size", number(4))]);
     call.validation_file = Some("gs://bucket/valid.jsonl".to_owned());
     call.suffix = Some("custom".to_owned());
     call.params.api_base = Some("https://ignored.example/v1".to_owned());
@@ -650,10 +689,9 @@ async fn structured_timeouts() {
     azure.params.timeout = Some(CreateTimeout::Structured(structured()));
     let (azure_outcome, azure_calls) = ran(settings(), &azure).await;
     azure_outcome.expect("the provider answered");
-    assert_eq!(
-        azure_target(azure_calls).timeout,
-        FineTuningTimeout::Structured(structured())
-    );
+    let target = azure_target(azure_calls);
+    assert_eq!(target.max_retries, Some(4));
+    assert_eq!(target.timeout, FineTuningTimeout::Structured(structured()));
     let mut vertex = timeout_call("vertex_ai");
     vertex.params.timeout = Some(CreateTimeout::Structured(structured()));
     let (vertex_outcome, vertex_calls) = ran(settings(), &vertex).await;
@@ -826,7 +864,6 @@ async fn unsupported_error() {
             url: UNSUPPORTED_REQUEST_URL,
         })
     );
-    assert_eq!(UNSUPPORTED_MODEL, "n/a");
     assert!(calls.is_empty());
 }
 

@@ -1,10 +1,10 @@
 import asyncio
 from collections.abc import Awaitable, Coroutine
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
 import openai
-from litellm import acreate_fine_tuning_job, create_fine_tuning_job
+from litellm import acreate_fine_tuning_job, create_fine_tuning_job  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L77-L89
 from litellm.fine_tuning import main as fine_tuning_main
 from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
@@ -85,9 +85,9 @@ class CreateOptions(TypedDict):
     validation_file: str | None
     integrations: list[str] | None
     seed: int | None
-    custom_llm_provider: str
+    custom_llm_provider: Literal["openai", "azure", "vertex_ai"]
     extra_headers: dict[str, str] | None
-    extra_body: dict[str, Json] | None
+    extra_body: dict[str, str] | None
     api_base: str
     api_key: str | None
     api_version: str | None
@@ -140,7 +140,7 @@ class VertexRecorder(httpx.AsyncBaseTransport):
         return await self.inner.handle_async_request(forwarded)
 
 
-def request_options(run: Run, api_base: str) -> dict[str, Json]:
+def request_options(run: Run, api_base: str) -> CreateOptions:
     options: CreateOptions = {
         "model": run.model,
         "training_file": run.training_file,
@@ -149,9 +149,9 @@ def request_options(run: Run, api_base: str) -> dict[str, Json]:
         "validation_file": run.validation_file,
         "integrations": run.integrations,
         "seed": run.seed,
-        "custom_llm_provider": run.provider,
+        "custom_llm_provider": cast(Literal["openai", "azure", "vertex_ai"], run.provider),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L162
         "extra_headers": run.extra_headers,
-        "extra_body": run.extra_body,
+        "extra_body": cast(dict[str, str] | None, run.extra_body),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L164
         "api_base": api_base,
         "api_key": run.params.api_key,
         "api_version": run.params.api_version,
@@ -165,19 +165,19 @@ def request_options(run: Run, api_base: str) -> dict[str, Json]:
     }
     if run.params.training_type is not None:
         options["trainingType"] = run.params.training_type
-    return TypeAdapter(dict[str, Json]).validate_python(options)
+    return options
 
 
 def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
     options = request_options(run, api_base)
     if run.is_async:
-        held: Coroutine[None, None, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
+        held: Coroutine[object, object, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
             **options
         )
         return asyncio.run(held)
     answer: CreateAnswer = create_fine_tuning_job(**options)
     if asyncio.iscoroutine(answer):
-        pending: Coroutine[None, None, LiteLLMFineTuningJob] = answer
+        pending: Coroutine[object, object, LiteLLMFineTuningJob] = answer
         return asyncio.run(pending)
     return TypeAdapter(LiteLLMFineTuningJob).validate_python(answer)
 

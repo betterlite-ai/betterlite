@@ -12,4 +12,5 @@ deviations:
   - what: An Azure call's organization reaches the Azure SDK client in LiteLLM as the openai-organization header; betterlite stops at the Azure call record because B542's client projection has no organization input.
     why: The Azure client contract belongs to B542; the value stays on AzureCreateCall for that owner to forward.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L286-L286
-kept_bugs: []
+kept_bugs:
+  - {what: "The extra_headers and extra_body arguments are accepted and never forwarded; Azure overwrites extra_body from the params bag at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L257-L262.", why: "A working setup sends no header or body field through these arguments today, so forwarding them would change its request.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L163-L164"}

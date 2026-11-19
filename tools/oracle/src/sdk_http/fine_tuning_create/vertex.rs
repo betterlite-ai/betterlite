@@ -86,19 +86,13 @@ fn transport(
     api_base: &str,
     urls: Arc<Mutex<Vec<String>>>,
 ) -> Result<RecordingTransport, SendError> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(|error| {
-            SendError::Setup {
-                message: error.to_string(),
-            }
-        })?,
-    );
-    let inner = ProxiedClient::outbound(&policy).map_err(|error| SendError::Setup {
-        message: error.to_string(),
-    })?;
-    let mut parsed = url::Url::parse(api_base).map_err(|error| SendError::Setup {
-        message: error.to_string(),
-    })?;
+    let policy = Arc::new(ProxyPolicy::resolve(
+        &ProxyTrust::default(),
+        &BTreeMap::new(),
+    )?);
+    let inner =
+        ProxiedClient::outbound(&policy).map_err(|source| SendError::Client(Box::new(source)))?;
+    let mut parsed = url::Url::parse(api_base)?;
     parsed.set_path("");
     parsed.set_query(None);
     let origin = parsed.as_str().trim_end_matches('/').to_owned();

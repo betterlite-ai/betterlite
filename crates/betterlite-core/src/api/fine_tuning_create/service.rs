@@ -31,7 +31,7 @@ where
         }
         let outcome = async {
             let timeout = connection::resolve_timeout(call)?;
-            let hyperparameters = call.hyperparameters.clone().unwrap_or_default();
+            let hyperparameters = call.hyperparameters.clone();
             let target = self.target(call, timeout, hyperparameters)?;
             self.dispatch
                 .create(target)
@@ -122,7 +122,7 @@ where
 }
 // Azure pops prompt_loss_weight from the caller's map before the OpenAI-spec hyperparameters are built
 fn split_hyperparameters(call: &CreateFineTuningJobCall) -> (Extra, Extra) {
-    let mut hyperparameters = call.hyperparameters.clone().unwrap_or_default();
+    let mut hyperparameters = call.hyperparameters.clone();
     let mut azure = Extra::new();
     if call.custom_llm_provider == "azure"
         && let Some(value) = hyperparameters.shift_remove("prompt_loss_weight")
@@ -142,7 +142,7 @@ pub fn prepare_azure_extra_body(
     }
     extra_body.extend(azure_specific_hyperparameters.clone());
 }
-// _build_fine_tuning_job_data().model_dump(exclude_none=True): unset fields are left out of the wire body
+// _build_fine_tuning_job_data().model_dump(exclude_none=True): unset fields and null hyperparameters are left out of the wire body
 fn job_data<DispatchError>(
     call: &CreateFineTuningJobCall,
     hyperparameters: &Extra,
@@ -157,10 +157,9 @@ where
         "training_file".to_owned(),
         Json::Text(call.training_file.clone()),
     );
-    fields.insert(
-        "hyperparameters".to_owned(),
-        Json::Object(hyperparameters.clone()),
-    );
+    let mut retained = hyperparameters.clone();
+    retained.retain(|_, value| !matches!(value, Json::Null));
+    fields.insert("hyperparameters".to_owned(), Json::Object(retained));
     if let Some(seed) = call.seed {
         fields.insert("seed".to_owned(), Json::Number(Number::from(seed)));
     }

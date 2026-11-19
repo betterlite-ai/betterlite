@@ -147,7 +147,6 @@ impl CredentialSources for Sources {
         Err(source_failure())
     }
 }
-#[derive(Default)]
 struct Cache;
 impl ClientCache for Cache {
     fn get(&self, _identity: &ClientIdentity) -> Option<ClientKind> {

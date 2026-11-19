@@ -15,8 +15,10 @@ use betterlite_core::api::fine_tuning_create::{
 };
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
+use betterlite_env::EnvError;
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
-use betterlite_openai::fine_tuning::client::{ClientSettings, Connection, SdkError};
+use betterlite_openai::fine_tuning::client::{ClientSettings, Connection};
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use betterlite_openai::fine_tuning::{JobRequest, request_fine_tuning_job};
@@ -35,8 +37,14 @@ pub(crate) enum SendError {
     Azure(#[from] AzureFineTuneError),
     #[error(transparent)]
     Vertex(#[from] TuningExecutionError),
-    #[error("the oracle client could not be built: {message}")]
-    Setup { message: String },
+    #[error("cannot resolve the oracle proxy policy: {0}")]
+    ProxyPolicy(#[from] EnvError),
+    #[error("cannot build the oracle HTTP client: {0}")]
+    Client(#[source] Box<HttpError>),
+    #[error("the oracle base URL is not valid: {0}")]
+    BaseUrl(#[from] url::ParseError),
+    #[error("the oracle blocking create task stopped: {0}")]
+    Join(#[from] tokio::task::JoinError),
 }
 pub(crate) async fn run(
     runs: &[Run],
@@ -107,23 +115,19 @@ fn project(error: &FineTuningCreateError<SendError>) -> Failure {
         FineTuningCreateError::Dispatch(
             SendError::OpenAi(FineTuneError::Sdk { source })
             | SendError::Azure(AzureFineTuneError::Sdk { source }),
-        ) => sdk_failure(source),
+        ) => Failure {
+            class: client::error_class(source.status).to_owned(),
+            status: source.status,
+            kind: Some(source.error_type.clone()),
+            param: Some(source.param.clone()),
+            code: Some(source.code.clone()),
+            message: source.message.clone(),
+        },
         FineTuningCreateError::Timeout(_)
         | FineTuningCreateError::Data(_)
         | FineTuningCreateError::Dispatch(_) => exception_failure(&error.to_string()),
     }
 }
-fn sdk_failure(error: &SdkError) -> Failure {
-    Failure {
-        class: client::error_class(error.status).to_owned(),
-        status: error.status,
-        kind: Some(error.error_type.clone()),
-        param: Some(error.param.clone()),
-        code: Some(error.code.clone()),
-        message: error.message.clone(),
-    }
-}
-#[derive(Default)]
 struct Dispatch {
     urls: Arc<Mutex<Vec<String>>>,
 }
@@ -136,8 +140,12 @@ impl FineTuningCreateDispatch for Dispatch {
         let urls = Arc::clone(&self.urls);
         async move {
             match target {
-                FineTuningCreateTarget::OpenAi(call) => openai(call),
-                FineTuningCreateTarget::Azure(call) => azure::create(call),
+                FineTuningCreateTarget::OpenAi(call) => {
+                    tokio::task::spawn_blocking(move || openai(call)).await?
+                }
+                FineTuningCreateTarget::Azure(call) => {
+                    tokio::task::spawn_blocking(move || azure::create(call)).await?
+                }
                 FineTuningCreateTarget::Vertex(call) => vertex::create(call, urls).await,
             }
         }
@@ -215,7 +223,8 @@ fn create_call(run: &Run, api_base: &str) -> CreateFineTuningJobCall {
         hyperparameters: run
             .hyperparameters
             .as_ref()
-            .and_then(|value| serde_json::from_value(value.clone()).ok()),
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default(),
         suffix: run.suffix.clone(),
         validation_file: run.validation_file.clone(),
         integrations: run

@@ -29,4 +29,4 @@ compare:
   headers_present: []
   upstream_headers: [content-type]
   ignore:
-    - {pointer: /upstream/0/body/supervisedTuningSpec/hyperParameters/adapter_size, why: B1384 types adapter_size as the declared literal string, so the caller's number reaches Vertex as a decimal string}
+    - {pointer: /upstream/0/body/supervisedTuningSpec/hyperParameters/adapter_size, why: "B1384 types adapter_size as the declared literal string, so the caller's number reaches Vertex as a decimal string"}

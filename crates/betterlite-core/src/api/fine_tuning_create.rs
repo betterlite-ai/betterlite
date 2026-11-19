@@ -7,6 +7,7 @@ use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde_with::{As, DefaultOnNull};
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::timeout::{FineTuningTimeout, TimeoutError};
@@ -20,7 +21,6 @@ use connection::CreateParams;
 pub const UNSUPPORTED_RESPONSE_BODY: &str = "Unsupported provider";
 pub const UNSUPPORTED_REQUEST_METHOD: &str = "create_thread";
 pub const UNSUPPORTED_REQUEST_URL: &str = "https://github.com/BerriAI/litellm";
-pub const UNSUPPORTED_MODEL: &str = "n/a";
 
 fn default_provider() -> String {
     "openai".to_owned()
@@ -32,8 +32,8 @@ fn default_provider() -> String {
 pub struct CreateFineTuningJobCall {
     pub model: String,
     pub training_file: String,
-    #[serde(default)]
-    pub hyperparameters: Option<Extra>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub hyperparameters: Extra,
     #[serde(default)]
     pub suffix: Option<String>,
     #[serde(default)]
