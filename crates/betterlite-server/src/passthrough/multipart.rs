@@ -77,16 +77,14 @@ impl MultipartForm {
     // httpx writes the data fields first and the file entries after them
     fn into_parts(self) -> Vec<MultipartPart> {
         let mut parts = Vec::new();
-        if let Some(fields) = &self.data {
-            for field in fields {
-                for value in &field.values {
-                    parts.push(MultipartPart {
-                        name: field.field_name.clone(),
-                        file_name: None,
-                        content_type: None,
-                        data: value.clone().into_bytes(),
-                    });
-                }
+        for field in self.data.unwrap_or_default() {
+            for value in field.values {
+                parts.push(MultipartPart {
+                    name: field.field_name.clone(),
+                    file_name: None,
+                    content_type: None,
+                    data: value.into_bytes(),
+                });
             }
         }
         for file in self.files {

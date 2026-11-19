@@ -22,10 +22,10 @@ pub enum NonStreamingError {
     Transport(#[from] TransportError),
 }
 
-pub struct NonStreamingRequest<'a> {
+pub struct NonStreamingRequest<'request> {
     pub target: UpstreamTarget,
-    pub parsed_body: Option<&'a Value>,
-    pub form: Option<&'a FormParts>,
+    pub parsed_body: Option<&'request Value>,
+    pub form: Option<&'request FormParts>,
     pub forward_multipart: bool,
     pub boundary: String,
 }
