@@ -7,7 +7,7 @@ use betterlite_models::json_provider_registry::{
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::json_provider_policy::{ChatCapabilities, ChatPolicy};
 use betterlite_prompts::arguments::json::Object;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -167,14 +167,14 @@ fn policy(
         .ok_or_else(|| helper_error("ValueError", format!("{slug} is not a JSON provider")))
 }
 
-fn capabilities(call: &Call) -> ChatCapabilities {
+const fn capabilities(call: &Call) -> ChatCapabilities {
     ChatCapabilities {
         supports_function_calling: call.supports_function_calling,
         supports_reasoning: call.supports_reasoning,
     }
 }
 
-fn parent_params(model: &str) -> Vec<&str> {
+fn parent_params(model: &str) -> Vec<&'static str> {
     let mut params = BASE_PARAMS.to_vec();
     if model != "gpt-3.5-turbo-16k" && model != "gpt-4" {
         params.push("response_format");
@@ -198,7 +198,7 @@ fn identity(
         "model": model,
         "provider": slug,
         "base": base,
-        "key": key.map(|secret| secrecy::ExposeSecret::expose_secret(&secret).to_owned()),
+        "key": key.map(|secret| secret.expose_secret().to_owned()),
     }))
 }
 
