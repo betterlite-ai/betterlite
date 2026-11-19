@@ -5,6 +5,8 @@ use betterlite_core::api::responses_stream_driver::live::{
 use betterlite_core::api::responses_stream_driver::source::PrefetchedSource;
 use betterlite_core::api::responses_stream_driver::synthetic::{SyntheticSetup, SyntheticStream};
 use betterlite_core::api::responses_stream_events::StreamTimes;
+use betterlite_core::api::responses_stream_hooks::failure::await_pending_logging;
+use betterlite_core::api::responses_stream_hooks::ports::Dispatch;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use chrono::DateTime;
@@ -29,21 +31,21 @@ impl Stream<'_> {
     async fn next_async(&mut self) -> Result<Option<Event>, DriverError> {
         match self {
             Self::Live(stream) => stream.next_event().await,
-            Self::Synthetic(stream) => stream.next_event_async().await,
+            Self::Synthetic(stream) => stream.advance(Dispatch::Spawned).await,
         }
     }
 
     fn next_blocking(&mut self) -> Result<Option<Event>, DriverError> {
         match self {
-            Self::Live(stream) => stream.next_event_blocking(),
-            Self::Synthetic(stream) => stream.next_event(),
+            Self::Live(stream) => futures_executor::block_on(stream.drive(Dispatch::Inline)),
+            Self::Synthetic(stream) => futures_executor::block_on(stream.advance(Dispatch::Inline)),
         }
     }
 
     async fn drain_logging(&mut self) {
         match self {
-            Self::Live(stream) => stream.drain_logging().await,
-            Self::Synthetic(stream) => stream.drain_logging().await,
+            Self::Live(stream) => await_pending_logging(&mut stream.callback).await,
+            Self::Synthetic(stream) => await_pending_logging(&mut stream.callback).await,
         }
     }
 }
@@ -55,34 +57,20 @@ pub(super) async fn run(
     api_base: &str,
 ) -> Result<RunOutcome, SdkHttpError> {
     match spec.mode {
-        Mode::LiveSync => drive_live(client, call, spec, api_base, false).await,
-        Mode::LiveAsync => drive_live(client, call, spec, api_base, true).await,
-        Mode::ScriptedSync => drive_scripted(call, spec, false).await,
-        Mode::ScriptedAsync => drive_scripted(call, spec, true).await,
+        Mode::LiveSync | Mode::LiveAsync => {
+            let asynchronous = matches!(spec.mode, Mode::LiveAsync);
+            let items = source::prefetch(client, call, api_base).await?;
+            drive_payloads(call, spec, items, asynchronous).await
+        }
+        Mode::ScriptedSync | Mode::ScriptedAsync => {
+            let asynchronous = matches!(spec.mode, Mode::ScriptedAsync);
+            drive_payloads(call, spec, source::scripted(spec), asynchronous).await
+        }
         Mode::FakeSync => drive_fake(call, spec, false).await,
         Mode::FakeAsync => drive_fake(call, spec, true).await,
         Mode::CachedSync => drive_cached(call, spec, false).await,
         Mode::CachedAsync => drive_cached(call, spec, true).await,
     }
-}
-
-async fn drive_live(
-    client: &ProxiedClient,
-    call: &Call,
-    spec: &RunSpec,
-    api_base: &str,
-    asynchronous: bool,
-) -> Result<RunOutcome, SdkHttpError> {
-    let items = source::prefetch(client, call, api_base).await?;
-    drive_payloads(call, spec, items, asynchronous).await
-}
-
-async fn drive_scripted(
-    call: &Call,
-    spec: &RunSpec,
-    asynchronous: bool,
-) -> Result<RunOutcome, SdkHttpError> {
-    drive_payloads(call, spec, source::scripted(spec), asynchronous).await
 }
 
 async fn drive_payloads(

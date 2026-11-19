@@ -90,10 +90,9 @@ class Recorder(CustomLogger):
         self.effects: list[str] = []
 
     @override
-    async def async_post_call_streaming_deployment_hook(  # ast-grep-ignore: no-long-names
+    async def async_post_call_streaming_deployment_hook(
         self,
         request_data: dict[str, Json],
-        # ast-grep-ignore: no-loose-types
         response_chunk: object,
         call_type: CallTypes | None,
     ) -> object | None:
