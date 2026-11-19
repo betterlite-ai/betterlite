@@ -47,7 +47,7 @@ fn embedding_params() -> IndexMap<String, Json> {
 
 fn full_params(trigger: usize) -> String {
     format!(
-        "    enabled: false\n    compression_trigger: {trigger}\n    compression_target: 700\n    embedding_model: text-embedding-3-small\n    embedding_model_params:\n      dimensions: 512\n"
+        "litellm_settings:\n  compression_interception_params:\n    enabled: false\n    compression_trigger: {trigger}\n    compression_target: 700\n    embedding_model: text-embedding-3-small\n    embedding_model_params:\n      dimensions: 512\n"
     )
 }
 
@@ -86,14 +86,8 @@ const NO_ENVIRONMENT: &[(&str, &str)] = &[];
     )
 )]
 #[case::callback_fallback(
-    "callback_settings:\n  compression_interception:\n    enabled: false\n    compression_trigger: 1234\n    compression_target: 700\n    embedding_model: text-embedding-3-small\n    embedding_model_params:\n      dimensions: 512\n",
-    expected(
-        false,
-        1234,
-        Some(700),
-        Some("text-embedding-3-small"),
-        Some(embedding_params())
-    )
+    "callback_settings:\n  compression_interception:\n    enabled: false\n    compression_trigger: 1234\n    compression_target: 700\n    embedding_model: text-embedding-3-small\n",
+    expected(false, 1234, Some(700), Some("text-embedding-3-small"), None)
 )]
 #[case::top_level_wins(
     "litellm_settings:\n  compression_interception_params:\n    compression_trigger: 1234\ncallback_settings:\n  compression_interception:\n    compression_trigger: 99\n",
@@ -214,4 +208,12 @@ fn an_unknown_parameter_is_unsupported() {
         load(source, NO_ENVIRONMENT),
         Err(ConfigError::Unsupported { .. })
     ));
+}
+
+#[test]
+fn a_nested_parameter_under_the_callback_entry_is_unsupported() {
+    let source = "callback_settings:\n  compression_interception:\n    embedding_model_params:\n      dimensions: 512\n";
+    let error = load(source, NO_ENVIRONMENT).unwrap_err();
+    let path = "callback_settings.compression_interception.embedding_model_params".to_owned();
+    assert!(matches!(error, ConfigError::Unsupported { paths } if paths == [path]));
 }

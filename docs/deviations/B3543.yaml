@@ -45,4 +45,14 @@ deviations:
       text; docs/compatibility.md limits parity to declared types, and a count keeps its JSON
       value instead of going through Python formatting.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L194-L207
+  - what: >-
+      A nested map under callback_settings.compression_interception, embedding_model_params
+      included, fails configuration loading as an unsupported key, where LiteLLM reads the whole
+      callback dict as compression parameters; the map is accepted under
+      litellm_settings.compression_interception_params.
+    why: >-
+      betterlite's callback settings layer keeps scalar callback values only and rejects a nested
+      value whose section has not registered with it, and that registry lives in the callback
+      settings section, outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
 kept_bugs: []
