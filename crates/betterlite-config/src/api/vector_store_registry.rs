@@ -95,29 +95,25 @@ where
     match value {
         Json::Text(text) => resolve_string(text, path, lookup).map(Json::Text),
         Json::Object(fields) => resolve_object(fields, path, lookup).map(Json::Object),
-        Json::List(items) => resolve_items(items, path, lookup).map(Json::List),
+        Json::List(items) => {
+            let mut resolved = Vec::with_capacity(items.len());
+            for (index, item) in items.into_iter().enumerate() {
+                let item_path = format!("{path}.{index}");
+                // _resolved_config_value resolves an object inside a list but never a bare string
+                let value = match item {
+                    Json::Object(fields) => {
+                        resolve_object(fields, &item_path, lookup).map(Json::Object)?
+                    }
+                    other @ (Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_)) => other,
+                };
+                resolved.push(value);
+            }
+            Ok(Json::List(resolved))
+        }
         other @ (Json::Null | Json::Bool(_) | Json::Number(_)) => Ok(other),
     }
-}
-
-fn resolve_items<L>(items: Vec<Json>, path: &str, lookup: &L) -> Result<Vec<Json>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let mut resolved = Vec::with_capacity(items.len());
-    for (index, item) in items.into_iter().enumerate() {
-        let item_path = format!("{path}.{index}");
-        // _resolved_config_value resolves an object inside a list but never a bare string, so a
-        // listed string reaches the record as written
-        let value = match item {
-            Json::Object(fields) => resolve_object(fields, &item_path, lookup).map(Json::Object)?,
-            other @ (Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)) => other,
-        };
-        resolved.push(value);
-    }
-    Ok(resolved)
 }
