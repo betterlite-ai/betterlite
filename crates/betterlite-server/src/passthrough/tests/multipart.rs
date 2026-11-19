@@ -16,14 +16,15 @@ fn field(name: &str, value: &str) -> FormPart {
 }
 
 fn upload(name: &str, filename: &str, content_type: Option<&str>, content: &[u8]) -> FormPart {
+    let uploaded = UploadFile {
+        filename: filename.to_owned(),
+        content_type: content_type.map(str::to_owned),
+        content: content.to_vec(),
+        size: Some(u64::try_from(content.len()).unwrap()),
+    };
     FormPart {
         name: name.to_owned(),
-        value: PartValue::Upload(UploadFile {
-            filename: filename.to_owned(),
-            content_type: content_type.map(str::to_owned),
-            content: content.to_vec(),
-            size: Some(u64::try_from(content.len()).unwrap()),
-        }),
+        value: PartValue::Upload(uploaded),
     }
 }
 
@@ -67,7 +68,8 @@ fn rows_of(parts: Vec<MultipartPart>) -> Vec<SentPart> {
         .collect()
 }
 
-fn row(name: &str, file_name: Option<&str>, content_type: Option<&str>, data: &[u8]) -> SentPart {
+fn row(name: &str, part_type: Option<(&str, &str)>, data: &[u8]) -> SentPart {
+    let (file_name, content_type) = part_type.unzip();
     SentPart {
         name: name.to_owned(),
         file_name: file_name.map(str::to_owned),
@@ -189,11 +191,11 @@ mod passthrough_make_multipart {
         assert_eq!(
             rows_of(parts),
             vec![
-                row("mode", None, None, b"fast"),
-                row("mode", None, None, b"slow"),
-                row("tag", None, None, b"one"),
-                row("file", Some("a.txt"), Some("text/plain"), b"AAA"),
-                row("file", Some("b.txt"), Some("text/plain"), b"BBB"),
+                row("mode", None, b"fast"),
+                row("mode", None, b"slow"),
+                row("tag", None, b"one"),
+                row("file", Some(("a.txt", "text/plain")), b"AAA"),
+                row("file", Some(("b.txt", "text/plain")), b"BBB"),
             ]
         );
     }
@@ -228,9 +230,9 @@ mod passthrough_make_multipart {
         assert_eq!(
             rows_of(parts),
             vec![
-                row("a", None, None, b"1"),
-                row("b", None, None, b"2"),
-                row("a", None, None, b"3"),
+                row("a", None, b"1"),
+                row("b", None, b"2"),
+                row("a", None, b"3"),
             ]
         );
     }
@@ -262,7 +264,7 @@ mod passthrough_make_multipart {
         };
         assert_eq!(
             rows_of(parts),
-            vec![row("f", Some("a.txt"), Some("text/plain"), b"\x00\x01")]
+            vec![row("f", Some(("a.txt", "text/plain")), b"\x00\x01")]
         );
     }
 
@@ -284,15 +286,14 @@ mod passthrough_make_multipart {
         assert_eq!(
             rows_of(parts),
             vec![
-                row("kept", Some("a.txt"), Some("application/pdf"), b"A"),
-                row("guessed", Some("b.txt"), Some("text/plain"), b"B"),
+                row("kept", Some(("a.txt", "application/pdf")), b"A"),
+                row("guessed", Some(("b.txt", "text/plain")), b"B"),
                 row(
                     "unknown",
-                    Some("noextension"),
-                    Some("application/octet-stream"),
+                    Some(("noextension", "application/octet-stream")),
                     b"C"
                 ),
-                row("unnamed", None, None, b"D"),
+                row("unnamed", None, b"D"),
             ]
         );
     }

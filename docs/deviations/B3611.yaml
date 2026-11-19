@@ -35,7 +35,7 @@ deviations:
       clause does not catch, and the request fails with a 500.
     why: >-
       Same as the entry above: the 500 comes from an unhandled exception on a body no working client sends,
-      and betterlite treats an unparseable body the way LiteLLM treats a syntax error in one.
+      and betterlite treats an unparsable body the way LiteLLM treats a syntax error in one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1944-L1951
   - what: >-
       parse_request_by_content_type returns query_params, custom_body and stream. LiteLLM returns a 4-tuple
