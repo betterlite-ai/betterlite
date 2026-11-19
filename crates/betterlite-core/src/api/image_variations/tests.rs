@@ -499,7 +499,7 @@ async fn invalid_providers_raise_before_http() {
         .expect_err("anthropic is not a variation provider");
     assert_eq!(
         anthropic_error.to_string(),
-        "Invalid image variation provider: anthropic. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>"
+        "Invalid image variation provider: anthropic_text. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>"
     );
     assert_eq!(transport.take().len(), 0);
 }
