@@ -89,6 +89,7 @@ description: >-
   This task adds no route or server state, so leave routes.rs and state.rs to B1100.
 scope:
   paths:
+  - "crates/betterlite-config/src/loader.rs"
   - "crates/betterlite-config/src/types.rs"
   - "crates/betterlite-config"
   - crates/betterlite-server/Cargo.toml
