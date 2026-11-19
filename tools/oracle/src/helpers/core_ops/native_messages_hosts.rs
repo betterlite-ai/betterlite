@@ -168,7 +168,7 @@ fn environment(call: &EnvironmentCall) -> HelperResult {
             validate_inherited_environment(request, &credentials(&call.environment)?)
         }
     }
-    .map_err(host_failure)?;
+    .map_err(|error| host_failure(&error))?;
     Ok(json!({ "headers": headers, "api_base": api_base }))
 }
 
@@ -192,7 +192,7 @@ fn transform(call: &TransformCall, runtime: &Runtime) -> HelperResult {
     let mut capabilities = Plain;
     let body = runtime
         .block_on(transform_for(call.host, &mut capabilities, request))
-        .map_err(host_failure)?;
+        .map_err(|error| host_failure(&error))?;
     Ok(json!({
         "system": body.get("system"),
         "messages": body.get("messages"),
@@ -229,7 +229,7 @@ fn credentials(
     })
 }
 
-fn host_failure(error: HostError) -> Box<HelperError> {
+fn host_failure(error: &HostError) -> Box<HelperError> {
     Box::new(HelperError {
         class: error.class_name().to_owned(),
         status: error.status_code(),

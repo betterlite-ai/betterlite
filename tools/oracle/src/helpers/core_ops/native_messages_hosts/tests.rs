@@ -48,8 +48,8 @@ fn seed_covers_each_host() {
         .flat_map(|path| {
             let case = parse_case(path);
             assert_eq!(case.call.operation, OPERATION, "{}", path.display());
-            let input: Input = serde_json::from_value(case.call.input.clone())
-                .expect("the seed names a typed input");
+            let input: Input =
+                serde_json::from_value(case.call.input).expect("the seed names a typed input");
             input
                 .calls
                 .iter()
