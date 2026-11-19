@@ -1,0 +1,40 @@
+kind: probe
+name: affinity-claims-same-session-different-key
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      affinity_claims:
+        shared: false
+        steps:
+          - kind: key
+            request: {kind: session, model_group: group-a, session_id: session-1, user_key: caller-one}
+          - kind: key
+            request: {kind: session, model_group: group-a, session_id: session-1, user_key: caller-two}
+          - kind: key
+            request: {kind: session, model_group: group-a, session_id: session-1}
+          - kind: key
+            request: {kind: affinity, model_group: group-a, user_key: caller-one}
+          - kind: key
+            request: {kind: affinity, model_group: group-a, user_key: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+          - kind: key
+            request: {kind: affinity, model_group: gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg, user_key: caller-one}
+          - kind: user_key
+            metadata:
+              litellm_metadata: {user_api_key_user_id: user-1}
+          - kind: user_key
+            metadata:
+              litellm_metadata: {user_api_key_user_id: user-1}
+              metadata: {user_api_key_hash: be0fee6e8d015955e8fe18ca777cf70ad550e88b7a576eb87c4dc359fc68b4f2}
+compare:
+  expected_difference:
+    - pointer: /output/affinity_claims/steps/4/key
+      reference: deployment_affinity:v1:group-a:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      rust: deployment_affinity:v1:group-a:0d5762414eac965dbfb8e14cd1f3ff571aca2c6ca1a8bcfb8f481db9ddf788d2
+      why: betterlite keeps a pre-hashed caller key only when it is 64 ASCII hex digits, while Python int(value, 16) also accepts a 0x prefix and keeps it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L115-L122
+    - pointer: /output/affinity_claims/steps/5/key
+      reference: deployment_affinity:v1:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg:be0fee6e8d015955e8fe18ca777cf70ad550e88b7a576eb87c4dc359fc68b4f2
+      rust: null
+      why: betterlite stores the affinity key under a route key capped at 1024 bytes and reports the refusal, while LiteLLM sends a cache key of any length
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L233-L235

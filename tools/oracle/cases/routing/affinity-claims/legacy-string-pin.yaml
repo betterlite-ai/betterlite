@@ -1,0 +1,43 @@
+kind: probe
+name: affinity-claims-legacy-string-pin
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      affinity_claims:
+        shared: true
+        steps:
+          - kind: seed
+            target: shared
+            key: legacy-shared
+            raw: '"dep-a"'
+            ttl_seconds: 60
+          - kind: claim
+            key: legacy-shared
+            pin: [{name: model_id, value: dep-a}]
+            ttl_seconds: 45
+          - kind: ttl
+            key: legacy-shared
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      affinity_claims:
+        shared: false
+        steps:
+          - kind: seed
+            target: local
+            key: legacy-local
+            raw: dep-a
+            ttl_seconds: 60
+          - kind: claim
+            key: legacy-local
+            pin: [{name: model_id, value: dep-a}]
+            ttl_seconds: 60
+          - kind: claim
+            key: legacy-local
+            pin: [{name: model_id, value: dep-a}]
+            ttl_seconds: 60
+          - kind: claim
+            key: legacy-local
+            pin: [{name: model_id, value: dep-b}]
+            ttl_seconds: 60
