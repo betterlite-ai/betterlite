@@ -7,7 +7,8 @@ use axum::Extension;
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{OriginalUri, State};
+use axum::extract::State;
+use axum::http::Uri;
 use axum::routing::post;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::alert_settings::types::AlertType;
@@ -50,14 +51,14 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         })
 }
 
-// Both paths share the verdict shape, so one handler reads the matched path to pick the regulation.
+// The root-path layer strips its prefix from the routed URI, so the matched Uri picks the regulation.
 async fn check(
     State(state): State<RouteState>,
-    uri: OriginalUri,
+    uri: Uri,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<ComplianceResponse>, ComplianceError> {
-    let regulation = if uri.0.path() == GDPR_PATH {
+    let regulation = if uri.path() == GDPR_PATH {
         Regulation::Gdpr
     } else {
         Regulation::EuAiAct

@@ -10,6 +10,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::request_root_paths::Settings as RootSettings;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::Config;
 use rstest::rstest;
@@ -20,6 +21,7 @@ use super::decode::decode_compliance_request;
 use super::error::{ComplianceError, Issue, LocPart};
 use super::model::{ComplianceRequest, GuardrailMode, GuardrailStatus};
 use super::router;
+use crate::middleware::request_root_paths::RootPaths;
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -512,6 +514,29 @@ async fn both_routes_answer_ordered_article_results() {
     assert_eq!(body["compliant"], true);
     assert_eq!(body["checks"][1]["article"], "Art. 5(1)(c)");
     assert_eq!(body["checks"][2]["article"], "Art. 30");
+}
+
+#[tokio::test]
+async fn a_root_prefix_still_selects_the_gdpr_articles() {
+    let loaded = config();
+    let application = router::routes(&state_for(&loaded));
+    let roots = RootSettings {
+        server_root_path: String::new(),
+        server_root_paths: vec!["/tenant-a".to_owned()],
+    };
+    let wrapped = RootPaths::from_settings(&roots).unwrap().wrap(application);
+    let (status, text) = post(
+        wrapped,
+        "/tenant-a/compliance/gdpr",
+        r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t",
+            "guardrail_information":[{"guardrail_status":"success"}]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body: JsonValue = serde_json::from_str(&text).unwrap();
+    assert_eq!(body["regulation"], "GDPR");
+    assert_eq!(body["checks"][0]["article"], "Art. 32");
+    assert_eq!(body["checks"][1]["article"], "Art. 5(1)(c)");
 }
 
 #[tokio::test]
