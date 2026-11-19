@@ -56,7 +56,8 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let config = BraveSearchConfig::load(&input.environment, Some(today()));
+        let today = NaiveDate::from_ymd_opt(2024, 3, 5).unwrap_or_default();
+        let config = BraveSearchConfig::load(&input.environment, Some(today));
         let outcomes: Vec<Value> = input
             .calls
             .iter()
@@ -66,10 +67,6 @@ impl Helper for Op {
             .map(|calls| json!({"calls": calls}))
             .or_value_error()
     }
-}
-
-fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2024, 3, 5).unwrap_or_default()
 }
 
 fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, Box<dyn std::error::Error>> {
@@ -119,7 +116,8 @@ fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, Box<dyn std:
                 dayfirst: *dayfirst,
                 yearfirst: *yearfirst,
             };
-            let date = to_yyyy_mm_dd(&DateValue::from_literal(&literal), today(), flags);
+            let today = NaiveDate::from_ymd_opt(2024, 3, 5).unwrap_or_default();
+            let date = to_yyyy_mm_dd(&DateValue::from_literal(&literal), today, flags);
             Ok(json!(date))
         }
     }

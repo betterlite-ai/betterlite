@@ -1,5 +1,7 @@
 use chrono::{Datelike as _, Days, NaiveDate};
 
+use resolve::Resolved;
+
 use super::DateFlags;
 
 mod parser;
@@ -18,22 +20,18 @@ fn build(parser: &parser::Parser<'_>) -> Option<NaiveDate> {
     if !parser.saw && parser.fields.items.is_empty() {
         return None;
     }
-    let resolved = resolve::resolve(&parser.fields, parser.flags)?;
-    let has_day = resolved.day.is_some();
+    let Resolved(year, month, day) = resolve::resolve(&parser.fields, parser.flags)?;
+    let has_day = day.is_some();
     let current = i64::from(parser.today.year());
-    let year = resolved.year.map_or(current, |year| {
+    let year = year.map_or(current, |year| {
         resolve::convert_year(year, parser.fields.century, current)
     });
     if !(1..=9999).contains(&year) {
         return None;
     }
-    let month = resolved
-        .month
-        .unwrap_or_else(|| i64::from(parser.today.month()));
+    let month = month.unwrap_or_else(|| i64::from(parser.today.month()));
     let last = i64::from(resolve::days_in_month(year, month)?);
-    let day = resolved
-        .day
-        .unwrap_or_else(|| i64::from(parser.today.day()).min(last));
+    let day = day.unwrap_or_else(|| i64::from(parser.today.day()).min(last));
     let date = NaiveDate::from_ymd_opt(
         i32::try_from(year).ok()?,
         u32::try_from(month).ok()?,

@@ -15,17 +15,11 @@ pub(super) struct Field {
 
 // the calendar members a run of numbers names; a member the source fills from its own day is None
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Resolved {
-    pub(super) year: Option<i64>,
-    pub(super) month: Option<i64>,
-    pub(super) day: Option<i64>,
-}
-
-impl Resolved {
-    fn new(year: Option<i64>, month: Option<i64>, day: Option<i64>) -> Self {
-        Self { year, month, day }
-    }
-}
+pub(super) struct Resolved(
+    pub(super) Option<i64>,
+    pub(super) Option<i64>,
+    pub(super) Option<i64>,
+);
 
 // the year, month and day list the source's parser fills as it walks the tokens
 #[derive(Debug, Clone, Default)]
@@ -50,12 +44,6 @@ impl Fields {
         self.push(text.parse().ok()?, label, long)
     }
 
-    // a number; anything above 100 is the year, whatever its label
-    pub(super) fn push_value(&mut self, value: i64, label: Option<Label>) -> Option<()> {
-        let long = value > 100;
-        self.push(value, label, long)
-    }
-
     fn push(&mut self, value: i64, label: Option<Label>, long: bool) -> Option<()> {
         self.century |= long;
         let label = label.or(long.then_some(Label::Year));
@@ -70,7 +58,7 @@ impl Fields {
 pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
     let items = &fields.items;
     if items.is_empty() {
-        return Some(Resolved::new(None, None, None));
+        return Some(Resolved(None, None, None));
     }
     let mut slots = [
         fields.index(Label::Year),
@@ -89,7 +77,7 @@ pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
                 .map(|field| field.value)
         };
         let [year, month, day] = slots;
-        return Some(Resolved::new(value(year), value(month), value(day)));
+        return Some(Resolved(value(year), value(month), value(day)));
     }
     let month_index = slots.get(1).copied().flatten();
     let values: Vec<i64> = items.iter().map(|field| field.value).collect();
@@ -104,12 +92,12 @@ pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
 fn single(values: &[i64], month_index: Option<usize>) -> Option<Resolved> {
     let value = values.first().copied()?;
     if month_index.is_some() {
-        return Some(Resolved::new(None, Some(value), None));
+        return Some(Resolved(None, Some(value), None));
     }
     if value > 31 {
-        return Some(Resolved::new(Some(value), None, None));
+        return Some(Resolved(Some(value), None, None));
     }
-    Some(Resolved::new(None, None, Some(value)))
+    Some(Resolved(None, None, Some(value)))
 }
 
 fn pair(values: &[i64], month_index: Option<usize>, flags: DateFlags) -> Option<Resolved> {
@@ -119,21 +107,21 @@ fn pair(values: &[i64], month_index: Option<usize>, flags: DateFlags) -> Option<
         let other = if index == 0 { second } else { first };
         let month = values.get(index).copied();
         return Some(if other > 31 {
-            Resolved::new(Some(other), month, None)
+            Resolved(Some(other), month, None)
         } else {
-            Resolved::new(None, month, Some(other))
+            Resolved(None, month, Some(other))
         });
     }
     if first > 31 {
-        return Some(Resolved::new(Some(first), Some(second), None));
+        return Some(Resolved(Some(first), Some(second), None));
     }
     if second > 31 {
-        return Some(Resolved::new(Some(second), Some(first), None));
+        return Some(Resolved(Some(second), Some(first), None));
     }
     if flags.dayfirst && second <= 12 {
-        return Some(Resolved::new(None, Some(second), Some(first)));
+        return Some(Resolved(None, Some(second), Some(first)));
     }
-    Some(Resolved::new(None, Some(first), Some(second)))
+    Some(Resolved(None, Some(first), Some(second)))
 }
 
 // where each member of a three-number run lands, as year, month and day positions
@@ -161,7 +149,7 @@ fn triple(
         _ => numeric_shape(values, fields, flags)?,
     };
     let [year, month, day] = slots;
-    Some(Resolved::new(
+    Some(Resolved(
         values.get(year).copied(),
         values.get(month).copied(),
         values.get(day).copied(),

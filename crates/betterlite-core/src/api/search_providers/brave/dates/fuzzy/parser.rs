@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use super::super::DateFlags;
 use super::resolve::{self, Fields, Label};
-use super::tokens::{Token, WEEKDAYS, is_jump, lookup, month_of};
+use super::tokens::{MONTHS, Token, WEEKDAYS, is_jump, lookup};
 
 pub(super) struct Parser<'a> {
     pub(super) tokens: &'a [Token],
@@ -84,7 +84,7 @@ impl<'a> Parser<'a> {
 
     fn word_token(&mut self, index: usize) -> Option<usize> {
         let token = self.tokens.get(index)?.clone();
-        if let Some(month) = month_of(&token) {
+        if let Some(month) = lookup(&token, &MONTHS).map(|index| index.saturating_add(1)) {
             self.fields
                 .push_text(&month.to_string(), Some(Label::Month))?;
             return self.month_member(index);
@@ -119,7 +119,7 @@ impl<'a> Parser<'a> {
         match token {
             Token::Number(text) => self.fields.push_text(text, None),
             Token::Word(_) => {
-                let month = month_of(token)?;
+                let month = lookup(token, &MONTHS).map(|index| index.saturating_add(1))?;
                 self.fields
                     .push_text(&month.to_string(), Some(Label::Month))
             }
@@ -142,7 +142,8 @@ impl<'a> Parser<'a> {
         // a clock time after this number is read on its own, so this one closes the date
         let closes = following.is_none_or(is_jump) || self.starts_time(index.saturating_add(1));
         if closes || self.could_be_day(value)? {
-            self.fields.push_value(value, None)?;
+            let long = value > 100;
+            self.fields.push(value, None, long)?;
         }
         Some(index)
     }

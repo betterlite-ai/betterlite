@@ -7,7 +7,7 @@ pub(super) enum Token {
 
 // the words the source skips; an ordinal suffix needs no entry because any unknown word is skipped
 const JUMPS: [&str; 7] = ["at", "on", "and", "ad", "m", "t", "of"];
-const MONTHS: [&str; 12] = [
+pub(super) const MONTHS: [&str; 12] = [
     "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
 ];
 pub(super) const WEEKDAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -20,10 +20,6 @@ pub(super) fn lookup(token: &Token, names: &[&str]) -> Option<i64> {
     let lowered = word.to_ascii_lowercase();
     let index = names.iter().position(|name| lowered.starts_with(name))?;
     i64::try_from(index).ok()
-}
-
-pub(super) fn month_of(token: &Token) -> Option<i64> {
-    lookup(token, &MONTHS).map(|index| index.saturating_add(1))
 }
 
 pub(super) fn tokenize(text: &str) -> Vec<Token> {
