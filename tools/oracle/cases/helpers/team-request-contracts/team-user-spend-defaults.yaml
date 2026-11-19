@@ -1,0 +1,17 @@
+kind: helper
+name: team_user_spend_defaults
+call:
+  team_request_contracts:
+    operation: spend_row
+    document: {"team_id": "t", "user_id": "u"}
+calls:
+  - team_request_contracts: {operation: spend_row, document: {"team_id": "t", "user_id": "u", "team_alias": "a", "user_email": "e@x", "user_alias": "ua", "spend": 1.25, "prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "api_requests": 4, "successful_requests": 5, "failed_requests": 6}}
+  - team_request_contracts: {operation: spend_row, document: {"team_id": "t"}}
+  - team_request_contracts: {operation: spend_row, document: {"team_id": "t", "user_id": "u", "prompt_tokens": 1.5}}
+  - team_request_contracts: {operation: spend_response, document: {"start_date": "2024-01-01", "end_date": "2024-02-01", "results": []}}
+  - team_request_contracts: {operation: spend_response, document: {"start_date": "2024-01-01", "end_date": "2024-02-01", "results": [{"team_id": "t", "user_id": "u", "spend": 2.5}]}}
+  - team_request_contracts: {operation: spend_response, document: {"start_date": "not-a-date", "end_date": "2024-13-45", "results": []}}
+  - team_request_contracts: {operation: spend_response, document: {"start_date": "2024-01-01", "end_date": "2024-02-01"}}
+  - team_request_contracts: {operation: spend_response, document: {"start_date": "2024-01-01", "end_date": "2024-02-01", "results": null}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: team_patch_null
+call:
+  team_request_contracts:
+    operation: patch
+    document: {"team_id": null, "team_alias": null, "blocked": null}
+calls:
+  - team_request_contracts: {operation: patch, document: {}}
+  - team_request_contracts: {operation: patch, document: {"team_id": "t"}}
+  - team_request_contracts: {operation: patch, document: {"max_budget": 0.0, "models": [], "metadata": {}}}
+env: {}
+compare: {ignore: []}

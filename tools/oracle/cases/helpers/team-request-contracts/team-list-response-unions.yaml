@@ -1,0 +1,14 @@
+kind: helper
+name: team_list_response_unions
+call:
+  team_request_contracts:
+    operation: team_list
+    document: {"teams": [{"team_id": "a", "deleted_at": "2024-06-01T00:00:00Z"}, {"team_id": "b", "deleted_at": null, "members_count": 1}, {"team_id": "c", "deleted_by": "admin", "id": "row"}, {"team_id": "d", "members_count": 1, "keys_count": 2, "deleted_at": null}, {"team_id": "e", "members_count": 1, "deleted_at": null, "deleted_by": "admin"}, {"team_id": "f"}, {"team_id": "g", "members_count": 3, "keys_count": 2, "access_group_models": ["gpt-4o"], "access_group_mcp_server_ids": null, "access_group_agent_ids": ["agent-1"]}], "total": 7, "page": 1, "page_size": 7, "total_pages": 1}
+calls:
+  - team_request_contracts: {operation: team_list, document: {"teams": [], "total": 0, "page": 1, "page_size": 0, "total_pages": 0}}
+  - team_request_contracts: {operation: team_list, document: {"teams": [{"team_id": "t", "members_count": 1.5}], "total": 1, "page": 1, "page_size": 1, "total_pages": 1}}
+  - team_request_contracts: {operation: team_list, document: {"teams": [{"team_id": "t", "id": "row", "deleted_at": "2024-06-01T00:00:00+02:00", "deleted_by": "a", "deleted_by_api_key": "k", "litellm_changed_by": "c"}], "total": 1, "page": 1, "page_size": 1, "total_pages": 1}}
+  - team_request_contracts: {operation: team_list, document: {"teams": null, "total": 0, "page": 1, "page_size": 0, "total_pages": 0}}
+  - team_request_contracts: {operation: team_list, document: {"teams": []}}
+env: {}
+compare: {ignore: []}
