@@ -449,19 +449,6 @@ fn answer_with_type(status: u16, content_type: &'static str, body: &[u8]) -> Scr
     })
 }
 
-fn redirect(location: &str) -> Scripted {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        LOCATION,
-        HeaderValue::from_str(location).expect("the location is a header value"),
-    );
-    Scripted::Answer(UpstreamResponse {
-        status: 302,
-        headers,
-        body: Vec::new(),
-    })
-}
-
 fn id_reply(id: &str) -> Scripted {
     answer(200, &format!(r#"{{"id":"{id}"}}"#))
 }
@@ -761,6 +748,15 @@ async fn a_transport_download_failure_returns_none() {
 }
 
 #[tokio::test]
+async fn a_body_over_the_client_limit_returns_none() {
+    let fixture = fixture(setup());
+    let oversized = vec![b'x'; TransportLimits::DEFAULT.body_bytes.saturating_add(1)];
+    fixture.script_download(answer_with_type(200, "image/png", &oversized));
+    assert_eq!(fixture.uploader.upload(IMAGE_URL).await, None);
+    assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
 async fn a_transport_upload_failure_returns_none_and_is_not_cached() {
     let fixture = fixture(setup());
     fixture.script_upload(Scripted::Fail);
@@ -960,7 +956,16 @@ async fn an_internal_image_url_is_refused_before_any_request(
 #[tokio::test]
 async fn a_redirected_download_checks_the_next_hop(#[case] location: &str, #[case] followed: bool) {
     let fixture = fixture(setup());
-    fixture.script_download(redirect(location));
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        LOCATION,
+        HeaderValue::from_str(location).expect("the location is a header value"),
+    );
+    fixture.script_download(Scripted::Answer(UpstreamResponse {
+        status: 302,
+        headers,
+        body: Vec::new(),
+    }));
     fixture.script_download(answer_with_type(200, "image/png", b"y"));
     fixture.script_upload(id_reply("file-2"));
     let id = fixture.uploader.upload(IMAGE_URL).await;
