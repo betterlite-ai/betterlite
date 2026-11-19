@@ -115,12 +115,15 @@ def steps_of(steps: list[RunStep]) -> JsonValue:
 
 
 def steps_of_variant(argument: Input) -> list[RunStep]:
-    s = argument.get("run_poll") or argument.get("run_stream") or argument.get("run_instructions_tools")
-    s = s or argument.get("run_failure") or argument.get("run_dispatch") or argument.get("instructions_tools_overrides")
-    s = s or argument.get("stream_event_handler") or argument.get("assistants_beta_default")
-    if s is None:
+    steps = argument.get("run_poll") or argument.get("run_stream")
+    steps = steps or argument.get("run_instructions_tools")
+    steps = steps or argument.get("run_failure") or argument.get("run_dispatch")
+    steps = steps or argument.get("instructions_tools_overrides")
+    steps = steps or argument.get("stream_event_handler")
+    steps = steps or argument.get("assistants_beta_default")
+    if steps is None:
         raise ValueError("expected one azure assistants variant")
-    return s
+    return steps
 
 
 def run(argument: Input) -> JsonValue:
