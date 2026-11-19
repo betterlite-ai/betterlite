@@ -2,8 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTokenEndpointAuthMethod};
 use betterlite_mcp::server_record::{MCPServer, OAuth2Flow, SecretCredential};
@@ -14,7 +16,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::auth::{McpAuthOverride, McpAuthValue};
 use super::error::OAuthCacheError;
-use super::per_user::PerUserTokenBackend;
 use super::request::auth_method_name;
 use super::{
     MCPOAuth2TokenCache, MCPPerUserTokenCache, compute_per_user_token_ttl, resolve_mcp_auth,
@@ -24,6 +25,7 @@ use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use crate::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome,
 };
+use crate::mcp::outbound_credentials::dual_cache::{AsyncCache, DualCacheTokenCacheBackend};
 use crate::mcp::outbound_credentials::{PER_USER_TOKEN_KEY_PREFIX, WallClock};
 
 fn base_server() -> MCPServer {
@@ -133,7 +135,7 @@ fn success(body: &str) -> TokenEndpointOutcome {
 fn cache_with(post: &Arc<ScriptedPost>, clock: &Arc<ManualClock>) -> MCPOAuth2TokenCache {
     let poster: Arc<dyn M2mTokenEndpointPost> = Arc::<ScriptedPost>::clone(post);
     let wall_clock: Arc<dyn WallClock> = Arc::<ManualClock>::clone(clock);
-    MCPOAuth2TokenCache::new(poster, wall_clock)
+    MCPOAuth2TokenCache::new(poster, wall_clock).expect("the cache builds")
 }
 
 #[test]
@@ -227,6 +229,14 @@ async fn async_get_token_serves_the_cached_token_until_the_ttl_lapses() {
         .await
         .expect("the cached read succeeds");
     assert_eq!(cached, Some("tok-0".to_owned()));
+    assert_eq!(post.calls().len(), 1);
+    // LiteLLM expires an entry only when the clock passes its expiry, so the boundary second still serves it.
+    clock.advance(1);
+    let on_the_boundary = cache
+        .async_get_token(&server)
+        .await
+        .expect("the boundary read succeeds");
+    assert_eq!(on_the_boundary, Some("tok-0".to_owned()));
     assert_eq!(post.calls().len(), 1);
     clock.advance(1);
     let refetched = cache
@@ -578,18 +588,32 @@ async fn invalidate_leaves_other_servers_cached() {
 }
 
 #[test]
-fn the_cache_evicts_the_oldest_entry_at_the_max_size() {
+fn the_cache_evicts_the_earliest_expiry_at_the_max_size() {
     let post = Arc::new(ScriptedPost::new(Vec::new()));
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     (0..super::OAUTH2_TOKEN_CACHE_MAX_SIZE).for_each(|index| {
-        cache.insert(format!("srv-1:{index}"), "token".to_owned(), 600);
+        let ttl = if index == 0 { 60 } else { 600 };
+        cache
+            .insert(&format!("srv-1:{index}"), "token", ttl)
+            .expect("the entry fits");
     });
-    assert_eq!(cache.cached("srv-1:0"), Some("token".to_owned()));
-    cache.insert("srv-1:new".to_owned(), "fresh".to_owned(), 600);
-    assert_eq!(cache.cached("srv-1:0"), None);
-    assert_eq!(cache.cached("srv-1:new"), Some("fresh".to_owned()));
-    assert_eq!(cache.cached("srv-1:1"), Some("token".to_owned()));
+    assert_eq!(
+        cache.cached("srv-1:0").expect("the cache reads"),
+        Some("token".to_owned())
+    );
+    cache
+        .insert("srv-1:new", "fresh", 600)
+        .expect("the entry fits");
+    assert_eq!(cache.cached("srv-1:0").expect("the cache reads"), None);
+    assert_eq!(
+        cache.cached("srv-1:new").expect("the cache reads"),
+        Some("fresh".to_owned())
+    );
+    assert_eq!(
+        cache.cached("srv-1:1").expect("the cache reads"),
+        Some("token".to_owned())
+    );
 }
 
 #[test]
@@ -598,12 +622,25 @@ fn the_cache_keeps_an_existing_identity_at_the_max_size() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     (0..super::OAUTH2_TOKEN_CACHE_MAX_SIZE).for_each(|index| {
-        cache.insert(format!("srv-1:{index}"), "token".to_owned(), 600);
+        cache
+            .insert(&format!("srv-1:{index}"), "token", 600)
+            .expect("the entry fits");
     });
     let last = format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_SIZE - 1);
-    cache.insert(last.clone(), "fresh".to_owned(), 600);
-    assert_eq!(cache.cached("srv-1:0"), Some("token".to_owned()));
-    assert_eq!(cache.cached(&last), Some("fresh".to_owned()));
+    cache.insert(&last, "fresh", 600).expect("the entry fits");
+    // Equal expiries evict the smallest key first, and the overwritten identity keeps its place with the new token.
+    assert_eq!(cache.cached("srv-1:0").expect("the cache reads"), None);
+    assert_eq!(
+        cache.cached(&last).expect("the cache reads"),
+        Some("fresh".to_owned())
+    );
+    // An overwrite at capacity still evicts the earliest expiry first, so the cache ends one entry short.
+    let entries = cache
+        .entries
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .ttl_entries();
+    assert_eq!(entries.len(), super::OAUTH2_TOKEN_CACHE_MAX_SIZE - 1);
 }
 
 #[test]
@@ -683,20 +720,25 @@ impl FakeBackend {
 }
 
 #[async_trait]
-impl PerUserTokenBackend for FakeBackend {
+impl AsyncCache for FakeBackend {
     type Error = FakeError;
 
-    async fn get(&self, key: &str) -> Result<Option<String>, FakeError> {
+    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, FakeError> {
         self.refuse(Failure::Get)?;
-        Ok(self.value(key))
+        Ok(self.value(key).map(CacheValue::Text))
     }
 
-    async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), FakeError> {
+    async fn async_set_cache(
+        &self,
+        key: &str,
+        value: &str,
+        ttl: Option<Duration>,
+    ) -> Result<(), FakeError> {
         self.refuse(Failure::Set)?;
         self.set_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), ttl));
+            .push((key.to_owned(), ttl_seconds(ttl)));
         drop(
             self.entries
                 .lock()
@@ -706,7 +748,7 @@ impl PerUserTokenBackend for FakeBackend {
         Ok(())
     }
 
-    async fn delete(&self, key: &str) -> Result<(), FakeError> {
+    async fn async_delete_cache(&self, key: &str) -> Result<(), FakeError> {
         self.refuse(Failure::Delete)?;
         self.delete_calls
             .lock()
@@ -722,10 +764,28 @@ impl PerUserTokenBackend for FakeBackend {
     }
 }
 
+fn ttl_seconds(ttl: Option<Duration>) -> i64 {
+    ttl.map_or(0, |lifetime| {
+        i64::try_from(lifetime.as_secs()).unwrap_or(i64::MAX)
+    })
+}
+
 fn codec() -> OAuthTokenCacheCodec {
     OAuthTokenCacheCodec {
         encrypt: Box::new(|plain: &str| format!("sealed:{plain}")),
         decrypt: Box::new(|blob: &str| blob.strip_prefix("sealed:").map(str::to_owned)),
+    }
+}
+
+fn per_user_cache(
+    backend: FakeBackend,
+) -> MCPPerUserTokenCache<DualCacheTokenCacheBackend<FakeBackend>> {
+    MCPPerUserTokenCache {
+        backend: DualCacheTokenCacheBackend {
+            cache: backend,
+            codec: codec(),
+            key_prefix: PER_USER_TOKEN_KEY_PREFIX,
+        },
     }
 }
 
@@ -737,15 +797,13 @@ fn per_user_cache_key_matches_litellm() {
 
 #[tokio::test]
 async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::new(),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::new());
     cache
         .set("user-1", "srv-1", "tok", 120, Some("proof"))
         .await;
     let stored = cache
         .backend
+        .cache
         .value("mcp:per_user_token:user-1:srv-1")
         .expect("the value is stored");
     assert_ne!(stored, "tok");
@@ -754,6 +812,7 @@ async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
     assert_eq!(
         cache
             .backend
+            .cache
             .set_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -771,13 +830,11 @@ async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
 
 #[tokio::test]
 async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::new(),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::new());
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     let stored = cache
         .backend
+        .cache
         .value("mcp:per_user_token:user-1:srv-1")
         .expect("the value is stored");
     assert_eq!(stored, "sealed:tok");
@@ -785,56 +842,62 @@ async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
 }
 
 #[tokio::test]
+async fn per_user_set_skips_a_ttl_that_is_not_positive() {
+    let cache = per_user_cache(FakeBackend::new());
+    cache.set("user-1", "srv-1", "tok", 0, None).await;
+    cache.set("user-1", "srv-1", "tok", -5, None).await;
+    assert!(
+        cache
+            .backend
+            .cache
+            .set_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
+    );
+    assert_eq!(cache.get("user-1", "srv-1").await, None);
+}
+
+#[tokio::test]
 async fn per_user_set_swallows_a_backend_failure() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::failing(Failure::Set),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::failing(Failure::Set));
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_get_token_reads_an_undecryptable_value_as_a_miss() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::with_entry("mcp:per_user_token:user-1:srv-1", "not-a-sealed-value"),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::with_entry(
+        "mcp:per_user_token:user-1:srv-1",
+        "not-a-sealed-value",
+    ));
     assert_eq!(cache.get_token("user-1", "srv-1").await, None);
     assert_eq!(cache.get("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_get_token_swallows_a_backend_failure() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::failing(Failure::Get),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::failing(Failure::Get));
     assert_eq!(cache.get_token("user-1", "srv-1").await, None);
 }
 
 #[tokio::test]
 async fn per_user_delete_evicts_the_key_and_swallows_failures() {
-    let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::new(),
-        codec: codec(),
-    };
+    let cache = per_user_cache(FakeBackend::new());
     cache.set("user-1", "srv-1", "tok", 60, None).await;
     cache.delete("user-1", "srv-1").await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
     assert_eq!(
         cache
             .backend
+            .cache
             .delete_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_slice(),
         &["mcp:per_user_token:user-1:srv-1".to_owned()]
     );
-    let failing = MCPPerUserTokenCache {
-        backend: FakeBackend::failing(Failure::Delete),
-        codec: codec(),
-    };
+    let failing = per_user_cache(FakeBackend::failing(Failure::Delete));
     failing.delete("user-1", "srv-1").await;
 }
 

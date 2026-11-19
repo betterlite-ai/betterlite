@@ -1,7 +1,10 @@
+use betterlite_context::local_ttl_cache::CacheError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum OAuthCacheError {
+    #[error("the MCP OAuth2 token cache failed: {0}")]
+    Cache(#[from] CacheError),
     #[error(
         "MCP server '{server_id}' missing required OAuth2 fields: client_id={client_id}, client_secret={client_secret}, token_url={token_url}"
     )]

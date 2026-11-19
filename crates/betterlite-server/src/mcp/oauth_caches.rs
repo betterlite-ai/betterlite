@@ -4,26 +4,29 @@ pub mod per_user;
 mod request;
 mod tests;
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use betterlite_context::local_ttl_cache::credential::{Credential, CredentialHandle};
+use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use betterlite_mcp::oauth_resource::resource_identity::{
     UpstreamServer, resolve_upstream_resource,
 };
 use betterlite_mcp::server_record::MCPServer;
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use tokio::sync::Mutex as AsyncMutex;
 
+use crate::mcp::outbound_credentials::TokenCacheBackend;
 use crate::mcp::outbound_credentials::WallClock;
-use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use crate::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome,
 };
 use auth::{McpAuthOverride, McpAuthValue};
 use error::OAuthCacheError;
-use per_user::PerUserTokenBackend;
 use request::{auth_method_name, expires_in_seconds, token_request_form, token_request_inputs};
 
 pub const OAUTH2_TOKEN_CACHE_MAX_SIZE: usize = 200;
@@ -36,22 +39,32 @@ pub const PER_USER_TTL_BUFFER: i64 = 60;
 // The identity material is \x00-joined exactly as LiteLLM joins it, so both sides hash the same bytes.
 const TOKEN_IDENTITY_SEPARATOR: &str = "\u{0}";
 
+// The entries are an InMemoryCache: LiteLLM inherits max_size_in_memory 200 and default_ttl 3600 from it.
 pub struct MCPOAuth2TokenCache {
     poster: Arc<dyn M2mTokenEndpointPost>,
-    clock: Arc<dyn WallClock>,
-    entries: Mutex<IndexMap<String, (String, DateTime<Utc>)>>,
+    entries: Mutex<LocalTtlCache>,
     locks: Mutex<IndexMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 impl MCPOAuth2TokenCache {
-    #[must_use]
-    pub fn new(poster: Arc<dyn M2mTokenEndpointPost>, clock: Arc<dyn WallClock>) -> Self {
-        Self {
+    pub fn new(
+        poster: Arc<dyn M2mTokenEndpointPost>,
+        clock: Arc<dyn WallClock>,
+    ) -> Result<Self, CacheError> {
+        let default_ttl =
+            Duration::from_secs(u64::try_from(OAUTH2_TOKEN_CACHE_DEFAULT_TTL).unwrap_or_default());
+        let entries = LocalTtlCache::with_clock(
+            i64::try_from(OAUTH2_TOKEN_CACHE_MAX_SIZE).ok(),
+            Some(default_ttl.as_secs_f64()),
+            None,
+            1024,
+            Arc::new(move || elapsed_seconds(clock.now())),
+        )?;
+        Ok(Self {
             poster,
-            clock,
-            entries: Mutex::new(IndexMap::new()),
+            entries: Mutex::new(entries),
             locks: Mutex::new(IndexMap::new()),
-        }
+        })
     }
 
     // The sha256 covers every input the token request puts on the wire, so a config change misses the cache.
@@ -105,16 +118,16 @@ impl MCPOAuth2TokenCache {
             return Ok(None);
         }
         let identity = Self::token_identity(server);
-        if let Some(token) = self.cached(&identity) {
+        if let Some(token) = self.cached(&identity)? {
             return Ok(Some(token));
         }
         let lock = self.lock_for(&identity);
         let _guard = lock.lock().await;
-        if let Some(token) = self.cached(&identity) {
+        if let Some(token) = self.cached(&identity)? {
             return Ok(Some(token));
         }
         let (token, ttl) = self.fetch_token(server).await?;
-        self.insert(identity, token.clone(), ttl);
+        self.insert(&identity, &token, ttl)?;
         Ok(Some(token))
     }
 
@@ -161,30 +174,48 @@ impl MCPOAuth2TokenCache {
     pub fn invalidate(&self, server_id: &str) {
         let prefix = format!("{server_id}:");
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.retain(|key, _value| !key.starts_with(&prefix));
+        for (key, _expiry) in entries.ttl_entries() {
+            if key.starts_with(&prefix) {
+                entries.delete(&key);
+            }
+        }
     }
 
-    fn cached(&self, identity: &str) -> Option<String> {
-        let now = self.clock.now();
+    // Every stored entry carries an expiry, so ttl_entries names the same keys as LiteLLM's cache_dict.
+    fn cached(&self, identity: &str) -> Result<Option<String>, CacheError> {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some((token, valid_until)) = entries.get(identity)
-            && now < *valid_until
-        {
-            return Some(token.clone());
+        match entries.get(identity)? {
+            Some(CacheValue::Credential(handle)) => {
+                Ok(Some(handle.0.token.expose_secret().to_owned()))
+            }
+            Some(
+                CacheValue::Bytes(_)
+                | CacheValue::Null
+                | CacheValue::Boolean(_)
+                | CacheValue::Integer(_)
+                | CacheValue::Float(_)
+                | CacheValue::Text(_)
+                | CacheValue::Array(_)
+                | CacheValue::Object(_),
+            )
+            | None => Ok(None),
         }
-        drop(entries.shift_remove(identity));
-        None
     }
 
-    fn insert(&self, identity: String, token: String, ttl: i64) {
-        let valid_until = TimeDelta::try_seconds(ttl)
-            .and_then(|lifetime| self.clock.now().checked_add_signed(lifetime))
-            .unwrap_or(DateTime::<Utc>::MAX_UTC);
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        if !entries.contains_key(&identity) && entries.len() >= OAUTH2_TOKEN_CACHE_MAX_SIZE {
-            drop(entries.shift_remove_index(0));
-        }
-        drop(entries.insert(identity, (token, valid_until)));
+    fn insert(&self, identity: &str, token: &str, ttl: i64) -> Result<(), CacheError> {
+        let credential = Credential {
+            token: SecretString::from(token.to_owned()),
+            headers: BTreeMap::new(),
+        };
+        let lifetime = Duration::from_secs(u64::try_from(ttl).unwrap_or_default());
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .set(
+                identity,
+                CacheValue::Credential(CredentialHandle(Arc::new(credential))),
+                Some(lifetime.as_secs_f64()),
+            )
     }
 
     // The lock map is capped, so a stream of distinct configs cannot grow it without bound.
@@ -202,9 +233,9 @@ impl MCPOAuth2TokenCache {
     }
 }
 
-pub struct MCPPerUserTokenCache<B: PerUserTokenBackend> {
+// The per-user entries live in a TokenCacheBackend, which encrypts them with its codec and reads failures as a miss.
+pub struct MCPPerUserTokenCache<B: TokenCacheBackend> {
     pub backend: B,
-    pub codec: OAuthTokenCacheCodec,
 }
 
 #[must_use]
@@ -250,6 +281,14 @@ pub fn resolved_token_header<'server>(
         Some(header) if !header.is_empty() => None,
         Some(_) | None => server.fields.upstream_token_header.as_deref(),
     }
+}
+
+// LocalTtlCache reads fractional epoch seconds; a DateTime has no cast-free path to one.
+fn elapsed_seconds(now: DateTime<Utc>) -> f64 {
+    now.signed_duration_since(DateTime::<Utc>::UNIX_EPOCH)
+        .to_std()
+        .unwrap_or_default()
+        .as_secs_f64()
 }
 
 fn client_secret(server: &MCPServer) -> Option<&str> {

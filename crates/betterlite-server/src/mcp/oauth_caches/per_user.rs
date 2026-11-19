@@ -1,48 +1,24 @@
-use std::error::Error;
+use std::time::Duration;
 
-use async_trait::async_trait;
-
-use crate::mcp::outbound_credentials::{OAuthToken, PER_USER_TOKEN_KEY_PREFIX};
+use crate::mcp::outbound_credentials::{OAuthToken, TokenCacheBackend, TokenKey};
 
 use super::MCPPerUserTokenCache;
 
-// The shared cache layer this store writes through; delete is the evict-and-broadcast path every peer worker observes.
-#[async_trait]
-pub trait PerUserTokenBackend: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
-
-    async fn get(&self, key: &str) -> Result<Option<String>, Self::Error>;
-
-    async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), Self::Error>;
-
-    async fn delete(&self, key: &str) -> Result<(), Self::Error>;
-}
-
-impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
+impl<B: TokenCacheBackend> MCPPerUserTokenCache<B> {
     pub async fn get(&self, user_id: &str, server_id: &str) -> Option<String> {
         self.get_token(user_id, server_id)
             .await
             .map(|token| token.access_token)
     }
 
-    // LiteLLM reads a cache or decrypt failure as a miss and debug-logs it, so an unavailable cache never fails a request.
+    // The backend decodes the stored entry and reads a missing or undecryptable value as a miss.
     pub async fn get_token(&self, user_id: &str, server_id: &str) -> Option<OAuthToken> {
-        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
-        let encrypted = match self.backend.get(&key).await {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::debug!(
-                    user_id,
-                    server_id,
-                    error = %error,
-                    "MCPPerUserTokenCache.get failed"
-                );
-                return None;
-            }
-        };
-        self.codec.decode(encrypted.as_deref()?)
+        self.backend
+            .get(&per_user_token_key(user_id, server_id))
+            .await
     }
 
+    // The backend encrypts the token with its codec and reads every cache failure as a no-op.
     pub async fn set(
         &self,
         user_id: &str,
@@ -51,7 +27,6 @@ impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
         ttl: i64,
         identity_binding_proof: Option<&str>,
     ) {
-        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
         let token = OAuthToken {
             access_token: access_token.to_owned(),
             expires_at: None,
@@ -59,38 +34,22 @@ impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
             scopes: Vec::new(),
             identity_binding_proof: identity_binding_proof.map(str::to_owned),
         };
-        let encrypted = match self.codec.encode(&token) {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::debug!(
-                    user_id,
-                    server_id,
-                    error = %error,
-                    "MCPPerUserTokenCache.set failed"
-                );
-                return;
-            }
-        };
-        if let Err(error) = self.backend.set(&key, &encrypted, ttl).await {
-            tracing::debug!(
-                user_id,
-                server_id,
-                ttl,
-                error = %error,
-                "MCPPerUserTokenCache.set failed"
-            );
-        }
+        let lifetime = Duration::from_secs(u64::try_from(ttl).unwrap_or_default());
+        self.backend
+            .set(&per_user_token_key(user_id, server_id), &token, lifetime)
+            .await;
     }
 
     pub async fn delete(&self, user_id: &str, server_id: &str) {
-        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
-        if let Err(error) = self.backend.delete(&key).await {
-            tracing::debug!(
-                user_id,
-                server_id,
-                error = %error,
-                "MCPPerUserTokenCache.delete failed"
-            );
-        }
+        self.backend
+            .delete(&per_user_token_key(user_id, server_id))
+            .await;
+    }
+}
+
+fn per_user_token_key(user_id: &str, server_id: &str) -> TokenKey {
+    TokenKey {
+        user_id: user_id.to_owned(),
+        server_id: server_id.to_owned(),
     }
 }
