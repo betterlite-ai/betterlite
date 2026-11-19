@@ -2,13 +2,14 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::seams::{ModelMetadata, ProviderLookup, ReasoningSeams};
-use super::values::{carries_value, text};
+use super::values::text;
 use super::{
     CUSTOM_LLM_PROVIDER, DETAILED, EFFORT, GENERATE_SUMMARY, MODEL, REASONING_EFFORT,
     RESPONSES_PREFIX, SUMMARY,
 };
 use crate::api::messages_thinking::bridge::local_model_name;
 use crate::api::messages_thinking::effort::{degrade_effort, normalize_reasoning_effort};
+use crate::api::response_synthetic_events::python_value::has_content;
 
 // the enabled thinking map's summary reaches the reasoning dict the routed call is given
 pub(super) fn convert_effort(
@@ -44,7 +45,7 @@ fn effort_object(
 ) -> IndexMap<String, Json> {
     let mut reasoning = IndexMap::new();
     reasoning.insert(EFFORT.to_owned(), Json::Text(effort.to_owned()));
-    if let Some(summary) = summary.filter(|value| carries_value(value)) {
+    if let Some(summary) = summary.filter(|value| has_content(value)) {
         reasoning.insert(SUMMARY.to_owned(), summary.clone());
     } else if auto_summary {
         reasoning.insert(SUMMARY.to_owned(), Json::Text(DETAILED.to_owned()));
@@ -62,7 +63,7 @@ fn summary_object(
         return None;
     }
     let effective = summary
-        .filter(|value| carries_value(value))
+        .filter(|value| has_content(value))
         .cloned()
         .or_else(|| auto_summary.then(|| Json::Text(DETAILED.to_owned())))?;
     reasoning.insert(SUMMARY.to_owned(), effective);
@@ -123,7 +124,7 @@ pub(super) fn plain_target<'kwargs>(
     kwargs: &'kwargs super::CompletionKwargs,
     thinking: Option<&Json>,
 ) -> Option<(&'kwargs IndexMap<String, Json>, &'kwargs str, &'kwargs str)> {
-    if !thinking.is_some_and(carries_value) {
+    if !thinking.is_some_and(has_content) {
         return None;
     }
     let Some(Json::Object(reasoning)) = kwargs.fields.get(REASONING_EFFORT) else {
