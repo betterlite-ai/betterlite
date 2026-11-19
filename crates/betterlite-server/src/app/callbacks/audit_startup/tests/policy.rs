@@ -21,6 +21,10 @@ async fn a_false_setting_warns_with_the_exact_litellm_text() {
     drop(guard);
     let output = captured.text();
     assert!(output.contains(WARNING), "{output}");
+    assert!(
+        output.contains("WARN"),
+        "the diagnostic is a warning: {output}"
+    );
     assert_eq!(
         installed_names(&fixture.service).len(),
         1,
@@ -111,9 +115,12 @@ async fn a_broken_handler_fails_with_auditing_disabled() {
     let loaded = load(source, &environment(&[]));
     let fixture = start(&loaded.settings);
     let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
+    let (captured, guard) = capture();
     let error = install(&fixture, &hooks, &loaded)
         .await
         .expect_err("a disabled policy cannot make a broken handler valid");
+    drop(guard);
+    assert!(!captured.text().contains(WARNING));
     match error {
         AuditStartupError::Load { entry, .. } => assert_eq!(entry, "b8872_broken.handler"),
     }
