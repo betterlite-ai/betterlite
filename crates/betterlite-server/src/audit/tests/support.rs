@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +25,7 @@ use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
 use tempfile::TempDir;
+use tokio::task::yield_now;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::audit::callbacks::AuditCallbackEntry;
@@ -214,12 +216,15 @@ impl DedicatedAuditLoggerBuilder for MapBuilder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(params.clone());
-        match &self.logger {
-            Some(logger) => Ok(Arc::clone(logger)),
-            None => Err(AuditLoggerBuildError::Parameters {
-                source: serde_json::from_str::<JsonValue>("{").expect_err("the text is not JSON"),
-            }),
-        }
+        self.logger.as_ref().map_or_else(
+            || {
+                Err(AuditLoggerBuildError::Parameters {
+                    source: serde_json::from_str::<JsonValue>("{")
+                        .expect_err("the text is not JSON"),
+                })
+            },
+            |logger| Ok(Arc::clone(logger)),
+        )
     }
 }
 
@@ -264,11 +269,11 @@ impl AuditLogRepository for RecordingRepository {
     async fn insert_audit_log(&self, record: &AuditLogRecord) -> Result<(), AuditRepositoryError> {
         if let Some(gate) = &self.callback_gate {
             // the callback worker runs on the same thread, so give it exactly as many turns as it needs to start
-            for _ in 0..64 {
+            for _ in 0_i32..64_i32 {
                 if gate.load(Ordering::SeqCst) {
                     break;
                 }
-                tokio::task::yield_now().await;
+                yield_now().await;
             }
         }
         let reached = self.callback_reached.load(Ordering::SeqCst);
@@ -391,7 +396,7 @@ impl Workspace {
     pub(super) fn new() -> Self {
         let directory = tempfile::tempdir().expect("the workspace exists");
         let config_path = directory.path().join("config.yaml");
-        std::fs::write(&config_path, b"model_list: []\n").expect("the config is written");
+        fs::write(&config_path, b"model_list: []\n").expect("the config is written");
         Self {
             directory,
             config_path,
@@ -401,9 +406,9 @@ impl Workspace {
     pub(super) fn file(&self, relative: &str, source: &str) {
         let path = self.directory.path().join(relative);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("the package directory is created");
+            fs::create_dir_all(parent).expect("the package directory is created");
         }
-        std::fs::write(path, source).expect("the fixture module is written");
+        fs::write(path, source).expect("the fixture module is written");
     }
 
     pub(super) fn module(&self, name: &str, source: &str) -> String {

@@ -17,7 +17,7 @@ use url::Url;
 use super::support::payload;
 use crate::azure_sentinel_logging::logger::{AzureSentinelLogger, SentinelDeps};
 use crate::azure_sentinel_logging::settings::{SentinelInit, SentinelSettings};
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::datadog_logging::clock::SystemClock;
 use crate::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
@@ -96,6 +96,7 @@ async fn the_azure_sentinel_logger_queues_audit_events_on_its_audit_stream() {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     assert!(model.is_empty());
+    drop(model);
 }
 
 fn sentinel_settings() -> SentinelSettings {

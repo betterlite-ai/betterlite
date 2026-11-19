@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -58,7 +59,7 @@ impl CallbackLogger for PythonAuditCallback {
 
 fn delivery_error<Source>(source: &Source) -> LoggerError
 where
-    Source: std::fmt::Display,
+    Source: Display,
 {
     LoggerError::Delivery {
         callback: AUDIT_PYTHON_CALLBACK.to_owned(),

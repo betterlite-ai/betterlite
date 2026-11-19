@@ -10,11 +10,11 @@ use crate::audit_events::payload::build_audit_log_payload;
 use crate::python_hooks::PythonHooks;
 use crate::python_hooks::slots::{ListKey, LoadedCallback, LoadedHook};
 
-const CUSTOM_LOGGER: &str = r#"
+const CUSTOM_LOGGER: &str = "
 class CustomLogger:
     async def async_log_audit_log_event(self, audit_log):
         pass
-"#;
+";
 
 const MODULE: &str = r#"
 from betterlite.integrations.custom_logger import CustomLogger

@@ -147,7 +147,7 @@ pub struct AuditWriteJob {
 impl Callback for AuditWriteJob {
     type Error = Infallible;
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "audit_log_write"
     }
 

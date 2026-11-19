@@ -20,6 +20,8 @@ use super::super::callbacks::{
 use super::support::{
     FailingBuilder, FakeBuilder, FakeResolver, RecordingLogger, capture, payload,
 };
+use crate::callback_logger::CallbackLogger;
+use crate::registry::catalog::CatalogInputs;
 
 fn named(
     resolver: Arc<FakeResolver>,
@@ -97,7 +99,7 @@ fn s3_v2_with_audit_params_builds_a_dedicated_logger() {
     let first = callbacks
         .resolve("s3_v2", Some(&audit_params))
         .expect("the dedicated logger builds");
-    let expected: Arc<dyn crate::callback_logger::CallbackLogger> = dedicated;
+    let expected: Arc<dyn CallbackLogger> = dedicated;
     assert!(Arc::ptr_eq(&first, &expected));
     let second = callbacks
         .resolve("s3_v2", Some(&audit_params))
@@ -110,17 +112,17 @@ fn s3_v2_with_audit_params_builds_a_dedicated_logger() {
 #[test]
 fn s3_v2_without_audit_params_uses_the_shared_resolver() {
     let shared = Arc::new(RecordingLogger::new("s3_v2", false));
-    let expected: Arc<dyn crate::callback_logger::CallbackLogger> = shared;
+    let expected: Arc<dyn CallbackLogger> = shared;
     let resolver = Arc::new(FakeResolver::new(
         vec![("s3_v2", Arc::clone(&expected))],
         false,
     ));
     let builder = Arc::new(FakeBuilder::new(Arc::new(RecordingLogger::new("x", false))));
     let callbacks = named(Arc::clone(&resolver), Arc::<FakeBuilder>::clone(&builder));
-    let resolved = callbacks
+    let found = callbacks
         .resolve("s3_v2", None)
         .expect("the resolver answers");
-    assert!(Arc::ptr_eq(&resolved, &expected));
+    assert!(Arc::ptr_eq(&found, &expected));
     assert!(builder.calls.lock().unwrap().is_empty());
     assert_eq!(*resolver.calls.lock().unwrap(), vec!["s3_v2".to_owned()]);
 }
@@ -128,8 +130,7 @@ fn s3_v2_without_audit_params_uses_the_shared_resolver() {
 #[test]
 fn an_empty_s3_override_still_selects_the_dedicated_logger() {
     let dedicated = Arc::new(RecordingLogger::new("dedicated", false));
-    let expected: Arc<dyn crate::callback_logger::CallbackLogger> =
-        Arc::<RecordingLogger>::clone(&dedicated);
+    let expected: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&dedicated);
     let resolver = Arc::new(FakeResolver::new(
         vec![("s3_v2", Arc::new(RecordingLogger::new("shared", false)))],
         false,
@@ -137,8 +138,8 @@ fn an_empty_s3_override_still_selects_the_dedicated_logger() {
     let builder = Arc::new(FakeBuilder::new(dedicated));
     let callbacks = named(Arc::clone(&resolver), Arc::<FakeBuilder>::clone(&builder));
     let empty = params("{}");
-    let resolved = callbacks.resolve("s3_v2", Some(&empty)).expect("dedicated");
-    assert!(Arc::ptr_eq(&resolved, &expected));
+    let found = callbacks.resolve("s3_v2", Some(&empty)).expect("dedicated");
+    assert!(Arc::ptr_eq(&found, &expected));
     assert_eq!(*builder.calls.lock().unwrap(), vec![empty]);
     assert!(resolver.calls.lock().unwrap().is_empty());
 }
@@ -230,7 +231,7 @@ fn build_source(text: &str) -> JsonValue {
     }
 }
 
-fn inputs(source_text: &str) -> crate::registry::catalog::CatalogInputs {
+fn inputs(source_text: &str) -> CatalogInputs {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -241,7 +242,7 @@ fn inputs(source_text: &str) -> crate::registry::catalog::CatalogInputs {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .expect("the proxy policy resolves"),
     );
-    crate::registry::catalog::CatalogInputs {
+    CatalogInputs {
         config: Arc::new(config),
         http: ProxiedClient::outbound(&policy).expect("the HTTP client builds"),
         env: credentials(),

@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::worker::Rejection;
@@ -91,9 +92,11 @@ async fn object_events_emit_the_pinned_payload_shape() {
         .create_object_audit_log(object(&caller, Some("header-actor")))
         .await;
     flush(&service).await;
-    let delivered = recorder.delivered.lock().unwrap();
-    assert_eq!(delivered.len(), 1);
-    let payload = &delivered[0];
+    let payload = {
+        let delivered = recorder.delivered.lock().unwrap();
+        assert_eq!(delivered.len(), 1);
+        delivered[0].clone()
+    };
     assert_eq!(payload.id, "audit-id-1");
     assert_eq!(payload.updated_at, "2024-05-06T07:08:09.123000+00:00");
     assert_eq!(payload.changed_by, "header-actor");
@@ -294,8 +297,7 @@ async fn the_configured_s3_parameters_build_the_dedicated_logger() {
     });
     let resolver = Arc::new(MapResolver::default());
     let resolver_dyn: Arc<dyn LoggerResolver> = Arc::<MapResolver>::clone(&resolver);
-    let params: betterlite_config::sections::settings::JsonValue =
-        serde_json::from_str(r#"{"s3_bucket_name": "audit-bucket"}"#).unwrap();
+    let params: JsonValue = serde_json::from_str(r#"{"s3_bucket_name": "audit-bucket"}"#).unwrap();
     let mut settings = enabled();
     settings.config.s3_audit_callback_params = Some(params.clone());
     let service = Fixture {

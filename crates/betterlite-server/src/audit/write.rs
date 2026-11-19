@@ -11,11 +11,11 @@ use crate::audit_events::payload::build_audit_log_payload;
 use crate::audit_events::record::AuditLogRecord;
 use crate::audit_events::sink::AuditLogRepository;
 
-pub(super) struct AuditWriteTarget<'a> {
-    pub settings: &'a AuditSettings,
-    pub entries: &'a [AuditCallbackEntry],
-    pub delivery: &'a AuditDelivery,
-    pub repository: &'a dyn AuditLogRepository,
+pub(super) struct AuditWriteTarget<'audit> {
+    pub settings: &'audit AuditSettings,
+    pub entries: &'audit [AuditCallbackEntry],
+    pub delivery: &'audit AuditDelivery,
+    pub repository: &'audit dyn AuditLogRepository,
 }
 
 // create_audit_log_for_update: recheck the policy, deliver to every callback, then insert and never fail the caller
