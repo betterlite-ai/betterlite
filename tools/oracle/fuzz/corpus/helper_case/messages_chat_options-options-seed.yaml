@@ -1,0 +1,17 @@
+kind: helper
+name: messages-chat-options-options-seed
+call:
+  messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: enabled
+        budget_tokens: 2048
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,106 @@
+kind: helper
+name: messages-chat-options-nonclaude-thinking-carriers
+call:
+  messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+calls:
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        summary: concise
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: enabled
+        budget_tokens: 1023
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: disabled
+        summary: detailed
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: bogus
+      output_config:
+        effort: high
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking: null
+    custom_llm_provider: openai
+    auto_summary: true
+    declared: null
+env: {}
+compare: {ignore: []}

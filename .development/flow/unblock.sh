@@ -151,6 +151,8 @@ if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']
     [[ -n "${covered}" ]] && continue
     grep -q -F "${path}" <<< "${excluded}" && exit 1
     crate=$(crate_of "${path}")
+    # a wildcard like crates/* names no crate, and grep -E reads its star as any number of slashes, so it matched every scope line (B3772, 11-19)
+    [[ ${crate} == *'*'* ]] && continue
     # a path in a crate the task doesn't touch is often only context (another task's code), so it never goes in, and the rest still can
     grep -q -E "^${crate}(/|$)" <<< "${scope}" || continue
     added="${added} ${path}"
