@@ -9,9 +9,10 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfig
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.router import GenericLiteLLMParams
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 Operation = Literal["retrieve", "input_items"]
@@ -98,7 +99,7 @@ class Failure(BaseModel):
 
 
 class Retrieved(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: str
     created_at: int
@@ -140,8 +141,9 @@ class Handlers(Protocol):
     def list_responses_input_items(self) -> InputItemsCall: ...
 
     @property
-    # ast-grep-ignore: no-long-names
-    def async_list_responses_input_items(self) -> AsyncInputItemsCall: ...
+    def async_list_responses_input_items(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncInputItemsCall: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
@@ -153,8 +155,8 @@ class Prepared:
     config: BaseResponsesAPIConfig
     params: GenericLiteLLMParams
     logging_obj: Logging
-    extra_headers: dict[str, object] | None
-    extra_body: dict[str, object] | None
+    extra_headers: JsonValue
+    extra_body: JsonValue
     timeout: float | None
 
 
@@ -172,16 +174,20 @@ def prepared_run(run: TransportRun, config: BaseResponsesAPIConfig, api_base: st
             litellm_call_id="responses-read-transport",
             function_id="responses-read-transport",
         ),
-        extra_headers=OBJECTS.validate_python(run.extra_headers),
-        extra_body=OBJECTS.validate_python(run.extra_body),
+        extra_headers=run.extra_headers,
+        extra_body=run.extra_body,
         timeout=None if run.timeout_seconds is None else float(run.timeout_seconds),
     )
 
 
 def run_transport(run: TransportRun, api_base: str) -> RunOutcome:
-    config: BaseResponsesAPIConfig = OpenAIResponsesAPIConfig()
+    provider_config = ProviderConfigManager.get_provider_responses_api_config(
+        provider=LlmProviders.OPENAI
+    )
+    if provider_config is None:
+        raise ValueError("no OpenAI responses config")
     try:
-        outcome = execute(run, config, api_base)
+        outcome = execute(run, provider_config, api_base)
     except PROVIDER_ERROR as error:
         return RunOutcome(failure=Failure.model_validate(error))
     except ValidationError:
@@ -193,92 +199,61 @@ def execute(run: TransportRun, config: BaseResponsesAPIConfig, api_base: str) ->
     prepared = prepared_run(run, config, api_base)
     if run.operation == "retrieve":
         return RunOutcome(retrieved=retrieve(prepared))
-    return RunOutcome(result=JSON.validate_python(input_items(prepared)))
+    return RunOutcome(result=input_items(prepared))
 
 
 def retrieve(prepared: Prepared) -> Retrieved:
     run = prepared.run
+    extra_headers = OBJECTS.validate_python(prepared.extra_headers)
+    extra_body = OBJECTS.validate_python(prepared.extra_body)
     if run.mode == "sync":
-        return project_response(
-            HANDLER.get_responses(
-                run.response_id,
-                prepared.config,
-                prepared.params,
-                prepared.logging_obj,
-                "openai",
-                prepared.extra_headers,
-                prepared.extra_body,
-                prepared.timeout,
-            )
+        work = HANDLER.get_responses(
+            run.response_id,
+            prepared.config,
+            prepared.params,
+            prepared.logging_obj,
+            "openai",
+            extra_headers,
+            extra_body,
+            prepared.timeout,
         )
-    return project_response(
-        asyncio.run(
+    else:
+        work = asyncio.run(
             HANDLER.async_get_responses(
                 run.response_id,
                 prepared.config,
                 prepared.params,
                 prepared.logging_obj,
                 "openai",
-                prepared.extra_headers,
-                prepared.extra_body,
+                extra_headers,
+                extra_body,
                 prepared.timeout,
             )
         )
-    )
+    return Retrieved.model_validate(work)
 
 
-def input_items(prepared: Prepared) -> dict[str, object]:
+def input_items(prepared: Prepared) -> JsonValue:
     run = prepared.run
+    arguments = (
+        run.response_id,
+        prepared.config,
+        prepared.params,
+        prepared.logging_obj,
+        "openai",
+        run.query.after,
+        run.query.before,
+        run.query.include,
+        run.query.limit,
+        run.query.order,
+        OBJECTS.validate_python(prepared.extra_headers),
+        prepared.timeout,
+    )
     if run.mode == "sync":
-        value = HANDLER.list_responses_input_items(
-            run.response_id,
-            prepared.config,
-            prepared.params,
-            prepared.logging_obj,
-            "openai",
-            run.query.after,
-            run.query.before,
-            run.query.include,
-            run.query.limit,
-            run.query.order,
-            prepared.extra_headers,
-            prepared.timeout,
-        )
+        work = HANDLER.list_responses_input_items(*arguments)
     else:
-        value = asyncio.run(
-            HANDLER.async_list_responses_input_items(
-                run.response_id,
-                prepared.config,
-                prepared.params,
-                prepared.logging_obj,
-                "openai",
-                run.query.after,
-                run.query.before,
-                run.query.include,
-                run.query.limit,
-                run.query.order,
-                prepared.extra_headers,
-                prepared.timeout,
-            )
-        )
-    match value:
-        case Coroutine():
-            raise TypeError("the sync handler returned a coroutine")
-        case _:
-            return value
-
-
-def project_response(value: RetrieveWork) -> Retrieved:
-    match value:
-        case ResponsesAPIResponse():
-            return Retrieved(
-                id=value.id,
-                created_at=value.created_at,
-                status=value.status,
-                model=value.model,
-            )
-        case _:
-            raise TypeError("the sync handler returned a coroutine")
+        work = asyncio.run(HANDLER.async_list_responses_input_items(*arguments))
+    return JSON.validate_python(work)
 
 
 class ResponsesReadTransportRequest(BaseModel):
