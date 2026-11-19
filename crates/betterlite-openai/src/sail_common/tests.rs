@@ -6,10 +6,10 @@ use rstest::rstest;
 use serde_json::{Number, Value, json};
 
 use super::error::SailError;
+use super::responses::responses_params_with_completion_window;
 use super::{
     CompletionWindow, SailSettings, chat_request_for_sail, completion_window_for_service_tier,
     describe, extra_body_for_sail, metadata_without_caller_window,
-    responses_params_with_completion_window,
 };
 
 const MODEL: &str = "sail/llama-3-70b";

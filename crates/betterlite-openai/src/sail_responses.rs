@@ -11,7 +11,7 @@ use crate::response_params::params::{ResponsesOptions, ResponsesParams};
 use crate::sail_common::SailSettings;
 
 // ast-grep-ignore: no-long-names
-use crate::sail_common::responses_params_with_completion_window as window_params;
+use crate::sail_common::responses::responses_params_with_completion_window as window_params;
 
 pub mod error;
 mod tests;

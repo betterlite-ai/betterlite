@@ -4,7 +4,7 @@ use betterlite_openai::sail_common::error::SailError;
 use betterlite_openai::sail_common::completion_window_for_service_tier as window_for;
 
 // ast-grep-ignore: no-long-names
-use betterlite_openai::sail_common::responses_params_with_completion_window as params_with_window;
+use betterlite_openai::sail_common::responses::responses_params_with_completion_window as params_with_window;
 
 use betterlite_openai::sail_common::{
     CompletionWindow, SailSettings, chat_request_for_sail, extra_body_for_sail,
