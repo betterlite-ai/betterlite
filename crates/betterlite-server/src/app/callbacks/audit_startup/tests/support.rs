@@ -244,7 +244,8 @@ pub(super) fn start(settings: &AuditSettings) -> AuditFixture {
         delivered: Mutex::new(Vec::new()),
     });
     let mut available: BTreeMap<String, Arc<dyn CallbackLogger>> = BTreeMap::new();
-    let callback: Arc<dyn CallbackLogger> = Arc::clone(&logger);
+    let named = Arc::clone(&logger);
+    let callback: Arc<dyn CallbackLogger> = named;
     available.insert("otel".to_owned(), callback);
     let resolver = Arc::new(NamedResolver {
         calls: Mutex::new(Vec::new()),
