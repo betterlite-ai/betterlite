@@ -91,7 +91,11 @@ impl Selection<'_> {
             let Some(deployment) = self.deployments.get(row.index) else {
                 continue;
             };
-            if self.over_limits(&row, limits(deployment)?) {
+            let limits = Limits {
+                tpm: limit(deployment, TPM)?,
+                rpm: limit(deployment, RPM)?,
+            };
+            if self.over_limits(&row, limits) {
                 continue;
             }
             // a counter memory did not hold counts as zero, which is what the pinned dict fills it with
@@ -215,15 +219,17 @@ fn current(values: Option<&[Option<RouteValue>]>, position: usize) -> Option<i64
 }
 
 fn read(values: Option<&[Option<RouteValue>]>, position: usize) -> Option<i64> {
-    match values.and_then(|values| values.get(position)) {
-        Some(Some(RouteValue::Counter(value))) => Some(*value),
-        Some(Some(
+    let Some(value) = values.and_then(|values| values.get(position)) else {
+        return None;
+    };
+    match value {
+        Some(RouteValue::Counter(value)) => Some(*value),
+        Some(
             RouteValue::Spend(_)
             | RouteValue::Pin(_)
             | RouteValue::SchedulerTuple(_)
             | RouteValue::Members(_),
-        ))
-        | Some(None)
+        )
         | None => None,
     }
 }
