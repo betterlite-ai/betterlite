@@ -117,7 +117,7 @@ fn check_optional_count(body: &JsonValue, name: &str, issues: &mut Vec<Issue>) {
     }
 }
 
-// An integer field takes a JSON integer only: pydantic's lax mode would also read strings and bools.
+// An integer field takes a JSON integer only: pydantic's lax mode also parses numeric strings.
 fn count_value(value: &JsonValue, name: &str, issues: &mut Vec<Issue>) {
     let Some(count) = value.as_i64() else {
         issues.push(field_issue("int_type", name, INTEGER));
