@@ -27,7 +27,7 @@ description: >-
 
   `route_a2a_model<L, G, B>(lookup: &L, gate: &G, bridge: &B, request: A2aModelRequest) -> Result<Option<B::Output>, RoutingError>` mirrors route_a2a_agent_request (a2a_routing.py L17-L81). A2aModelRequest { model: serde_json::Value, route_type: String, data: serde_json::Map, auth: Option<RoutingAuth> } and RoutingAuth { is_proxy_admin: bool, key: ... whatever the gate port needs }. Ports (native async traits, defined in a2a_routing.rs): AgentLookup { async fn get(&self, id_or_name: &str) -> Result<Option<AgentResponse>, _> } (the B124 registry read-through is the real impl), InvocationGate { async fn is_allowed(&self, agent_id: &str, auth: Option<&RoutingAuth>) -> bool } (wired over betterlite-auth is_agent_allowed from B4780), and CompletionBridge { type Output; async fn call(&self, route_type: &str, data: serde_json::Map) -> Result<Self::Output, _> } (the caller of litellm.<route_type>(**data); route_type is a method name such as "acompletion" or "aresponses"). Steps, in order:
   1. When `model` is not a string or does not start with "a2a/", return Ok(None). Nothing else happens.
-  2. agent_name is model without the 4 byte prefix. Look it up. None gives RoutingError::ModelNotFound { route, model } where route is ROUTE_ENDPOINT_MAPPING[route_type] or route_type itself when not in the map. ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError live in route_llm_request.py and have no owner: take the route name from a `route_name: String` field of A2aModelRequest the caller fills in, and say so in notes. Log an error line "[A2A] Agent '<name>' not found in registry".
+  2. agent_name is model without the 4 byte prefix. Look it up. None gives RoutingError::ModelNotFound. It wraps B9964's ProxyModelNotFoundError (betterlite_error::proxy_model_not_found) by `#[from]`. Build it with the route name `route_endpoint(&route_type).unwrap_or(&route_type)` from B9964, the whole model text ("a2a/<name>") as the model name and the retry flag false (a2a_routing.py L49-L53), and add betterlite-error to this crate's Cargo.toml. Log an error line "[A2A] Agent '<name>' not found in registry".
   3. The permission check runs when the caller is not a proxy admin OR the agent has identity_managed true. With no auth at all it also runs (not admin). If the gate says no, return RoutingError::Forbidden with message "Agent '<agent_name>' is not allowed for your key/team. Contact proxy admin for access." (HTTP 403).
   4. Set data["api_base"] = agent.agent_card_params.url, log a debug line "[A2A] Routing <model> to <api_base>", and return Some(bridge.call(route_type, data)).
 
@@ -105,7 +105,7 @@ oracle_cases:
   - tools/oracle/cases/agents/a2a-forwarding/push-url-http-rejected.yaml
   - tools/oracle/cases/agents/a2a-forwarding/push-url-private-host-rejected.yaml
 deviations:
-  - what: Failures return typed ForwardingError and RoutingError values. LiteLLM raises HTTPException (400, 403) and ProxyModelNotFoundError. The messages are the same; the caller picks the status.
+  - what: Failures return typed ForwardingError and RoutingError values. LiteLLM raises HTTPException (400, 403) and ProxyModelNotFoundError. ModelNotFound carries B9964's ProxyModelNotFoundError with its 400; for the rest the messages are the same and the caller picks the status.
     why: The route layer is B8589's, and Rust errors carry no HTTP framework.
   - what: The no-url branch of route_a2a_agent_request is dropped.
     why: AgentCard.url is a required field in betterlite, so the state cannot exist.
@@ -116,7 +116,7 @@ out_of_scope:
   - "_build_message_send_params is B6950."
   - "_served_version is B8589's and the 0.3/1.0 conversion is B4812."
   - "resolve_a2a_hop_auth_header stays B8100's. This task only calls it through the HopAuth port."
-  - "get_chain_id_from_headers is B1105's (betterlite-core api::request_metadata_safety). ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError have no owner in the backlog. The callers pass all three results in."
+  - "get_chain_id_from_headers is B1105's (betterlite-core api::request_metadata_safety). ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError are B9964's (betterlite-error proxy_model_not_found). The callers pass the chain id in."
 pitfalls:
   - The header map keeps names with their exact case. "x-trace" and "X-Trace" are two entries, but the passthrough filter and the backend-auth filter compare lowercase.
   - Python's `if user_id` drops an empty string as well as None. Do the same.

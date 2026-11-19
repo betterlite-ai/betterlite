@@ -185,3 +185,10 @@ path = "fuzz_targets/lemonade_models_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_costs_page"
+path = "fuzz_targets/openai_costs_page.rs"
+test = false
+doc = false
+bench = false

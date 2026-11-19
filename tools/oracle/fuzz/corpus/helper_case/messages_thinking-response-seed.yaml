@@ -1,0 +1,12 @@
+kind: helper
+name: messages-thinking-response-seed
+call:
+  messages_thinking:
+    model_cost: {}
+    calls:
+      - function: response
+        model: alias
+        status: 200
+        body: "{\"id\":\"msg_a\",\"model\":\"provider\"}"
+env: {}
+compare: {ignore: []}

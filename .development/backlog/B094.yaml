@@ -2,7 +2,7 @@ id: B094
 milestone: M5 api families
 title: Containers API
 status: todo
-depends_on: [B8635, B9740, B5076]
+depends_on: [B8635, B9740, B9942]
 file: tasks/B094-container-composition-http.yaml
 covers:
   - "litellm/proxy/container_endpoints/endpoints.py"

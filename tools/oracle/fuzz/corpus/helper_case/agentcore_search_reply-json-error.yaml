@@ -1,0 +1,9 @@
+kind: helper
+name: agentcore-search-reply-json-error
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result":'
+env: {}
+compare: {ignore: []}
