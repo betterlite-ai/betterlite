@@ -706,6 +706,19 @@ fn deferring_keeps_step_guardrails_that_run_elsewhere() {
 }
 
 #[test]
+fn deferring_keeps_a_claim_entry_it_cannot_name() {
+    let mut request = deferral_data(
+        &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
+        vec![("applied_guardrails", json!(["pii", 7]))],
+    );
+    let policies = post_call_pipelines(&request);
+    let deferred = context(&[("policy-a", &["pii"])], &[]);
+    defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
+    let metadata = metadata_of(&request);
+    assert_eq!(metadata.get("applied_guardrails"), Some(&json!([7])));
+}
+
+#[test]
 fn deferring_leaves_a_non_object_policy_sources_alone() {
     let mut request = deferral_data(
         &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
@@ -899,6 +912,21 @@ fn model_guardrails_with_an_unknown_id_leave_the_data() {
 }
 
 #[test]
+fn model_guardrails_treat_a_non_string_id_as_an_unknown_deployment() {
+    let request = object(vec![
+        ("model", json!("alias")),
+        ("metadata", json!({"model_info": {"id": 7}})),
+    ]);
+    let lookup = FakeDeployments {
+        by_id: BTreeMap::new(),
+        by_name: deployments_by_name("alias", None, vec![json!(["pii"])]),
+    };
+    let finder: &dyn DeploymentGuardrails = &lookup;
+    let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
+    assert_eq!(merged, request);
+}
+
+#[test]
 fn model_guardrails_ignore_the_id_when_client_model_info_is_untrusted() {
     let request = object(vec![
         ("model", json!("alias")),
@@ -962,6 +990,24 @@ fn model_guardrails_read_the_team_from_litellm_metadata() {
     assert_eq!(
         merged.get("metadata"),
         Some(&json!({"guardrails": ["pii"]}))
+    );
+}
+
+#[test]
+fn model_guardrails_treat_a_non_string_team_id_as_unset() {
+    let request = object(vec![
+        ("model", json!("alias")),
+        ("metadata", json!({"user_api_key_team_id": 7})),
+    ]);
+    let lookup = FakeDeployments {
+        by_id: BTreeMap::new(),
+        by_name: deployments_by_name("alias", None, vec![json!(["pii"])]),
+    };
+    let finder: &dyn DeploymentGuardrails = &lookup;
+    let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
+    assert_eq!(
+        merged.get("metadata"),
+        Some(&json!({"user_api_key_team_id": 7, "guardrails": ["pii"]}))
     );
 }
 
@@ -1036,6 +1082,17 @@ fn guardrail_merge_deduplicates_names() {
             "guardrails": ["pii", "block", "moderation"],
             "team": "acme",
         }))
+    );
+}
+
+#[test]
+fn guardrail_merge_keeps_a_nested_entry_once() {
+    let request = object(vec![("metadata", json!({"guardrails": [{"name": "pii"}]}))]);
+    let merged =
+        merge_guardrails_with_existing(&request, &json!([{"name": "pii"}, "block"])).unwrap();
+    assert_eq!(
+        merged.get("metadata"),
+        Some(&json!({"guardrails": [{"name": "pii"}, "block"]}))
     );
 }
 
