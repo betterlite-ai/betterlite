@@ -1,5 +1,4 @@
-// ast-grep-ignore: no-long-names
-use betterlite_db::compliance_redaction::{RedactionKeys, redact_nested_match_and_regex_keys};
+use betterlite_db::compliance_redaction::{self, RedactionKeys};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -62,7 +61,10 @@ pub fn violation_category_names(response: &Response) -> Vec<String> {
 pub fn redact_assessments(assessments: &[Json]) -> Vec<Json> {
     let keys = RedactionKeys::default();
     // ast-grep-ignore: no-long-names
-    let redacted = redact_nested_match_and_regex_keys(&Json::List(assessments.to_vec()), &keys);
+    let redacted = compliance_redaction::redact_nested_match_and_regex_keys(
+        &Json::List(assessments.to_vec()),
+        &keys,
+    );
     if let Json::List(items) = redacted {
         return items;
     }

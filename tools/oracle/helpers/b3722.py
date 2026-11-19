@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, TypeAlias, TypedDict, cast
 
 import httpx
@@ -13,7 +13,7 @@ from litellm.types.proxy.guardrails.guardrail_hooks.bedrock_guardrails import (
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
-START_TIME = datetime.fromtimestamp(100.25, tz=timezone.utc)
+START_TIME = datetime.fromtimestamp(100.25, tz=UTC)
 
 
 class Input(TypedDict):
