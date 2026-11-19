@@ -16,10 +16,12 @@ use betterlite_core::operation::embedding::{
     EmbeddingCall, EmbeddingCallInput, EmbeddingFailure,
     EmbeddingRequest as DispatchEmbeddingRequest, EmbeddingResult, EmbeddingRoute, route_error,
 };
+use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_openai::chat::provider_error::ProviderFailure;
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
@@ -28,7 +30,9 @@ use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
+use crate::route_read_through::{ModelReadThrough, route_with_read_through};
 use crate::routing::simple_shuffle::pick_deployment;
+use crate::server::RouterErrorFields;
 use crate::server::chat_setup::provider_call::CallError;
 use crate::server::chat_setup::provider_call::embedding::provider_embedding;
 
@@ -49,11 +53,14 @@ struct ErrorObject {
     error_type: String,
     param: Option<String>,
     code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_specific_fields: Option<RouterErrorFields>,
 }
 
 pub(crate) fn embedding_routes(
     executor: Arc<ChatExecutor>,
     vertex: Option<Arc<dyn EmbeddingCall>>,
+    read_through: Option<Arc<dyn ModelReadThrough>>,
 ) -> Router {
     let calls = vertex::calls(Arc::clone(&executor), vertex);
     let log = Arc::new(TracingCallLog);
@@ -71,6 +78,7 @@ pub(crate) fn embedding_routes(
         executor,
         calls,
         dispatch,
+        read_through,
     })
 }
 
@@ -79,6 +87,7 @@ struct EmbeddingState {
     executor: Arc<ChatExecutor>,
     calls: Arc<dyn EmbeddingCall>,
     dispatch: Arc<Dispatch>,
+    read_through: Option<Arc<dyn ModelReadThrough>>,
 }
 
 // the existing embedding implementation, reached through the dispatch pipeline's port
@@ -133,17 +142,28 @@ async fn embeddings(
                 route_error(&error, &state.executor.redactor),
                 &call_id,
                 None,
+                None,
             );
         }
     };
     let model = path_model
         .map(|Path(model)| model)
-        .or_else(|| request.model.clone())
-        .unwrap_or_else(|| String::from("None"));
-    let Ok(deployment) = pick_deployment(&state.executor, &model) else {
-        let missing = DispatchError::MissingDeployment { model_id: model };
-        return dispatch_failure(missing, &call_id, None, &state.executor.redactor);
+        .or_else(|| request.model.clone());
+    let model_text = model.as_deref().unwrap_or("None");
+    let route = route_endpoint("aembedding").unwrap_or("aembedding");
+    let attempt = || async {
+        pick_deployment(&state.executor, model_text)
+            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
     };
+    let deployment =
+        match route_with_read_through(model.as_deref(), state.read_through.as_deref(), attempt)
+            .await
+        {
+            Ok(deployment) => deployment,
+            Err(error) => {
+                return not_found_response(&error, &call_id, &state.executor.redactor);
+            }
+        };
     execute(&state, request, deployment, &call_id, started).await
 }
 
@@ -193,11 +213,14 @@ fn dispatch_failure(
     redactor: &Redactor,
 ) -> Response {
     match error {
-        DispatchError::Embedding { source } => render(source.route(redactor), call_id, deployment),
+        DispatchError::Embedding { source } => {
+            render(source.route(redactor), call_id, deployment, None)
+        }
         DispatchError::MissingDeployment { model_id } => render(
             route_error(&EmbeddingError::UnknownModel { model: model_id }, redactor),
             call_id,
             deployment,
+            None,
         ),
         DispatchError::DeadlineExpired { .. } => render(
             route_error(
@@ -208,6 +231,7 @@ fn dispatch_failure(
             ),
             call_id,
             deployment,
+            None,
         ),
         DispatchError::Rules { source } => {
             internal_message(&source.to_string(), call_id, deployment, redactor)
@@ -229,7 +253,12 @@ fn dispatch_failure(
     }
 }
 
-fn render(route: EmbeddingRoute, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
+fn render(
+    route: EmbeddingRoute,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+    provider_specific_fields: Option<String>,
+) -> Response {
     let status_code =
         StatusCode::from_u16(route.failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = ErrorBody {
@@ -238,6 +267,8 @@ fn render(route: EmbeddingRoute, call_id: &str, deployment: Option<&ChatDeployme
             error_type: route.failure.error_type,
             param: route.failure.param,
             code: route.failure.status.to_string(),
+            provider_specific_fields: provider_specific_fields
+                .map(|error| RouterErrorFields { error }),
         },
     };
     (
@@ -246,6 +277,24 @@ fn render(route: EmbeddingRoute, call_id: &str, deployment: Option<&ChatDeployme
         Json(body),
     )
         .into_response()
+}
+
+fn not_found_response(
+    error: &ProxyModelNotFoundError,
+    call_id: &str,
+    redactor: &Redactor,
+) -> Response {
+    let message = redactor.redact_internal_details(&error.detail.error);
+    let route = EmbeddingRoute {
+        failure: ProviderFailure {
+            status: ProxyModelNotFoundError::STATUS.as_u16(),
+            error_type: String::from("invalid_request_error"),
+            param: None,
+        },
+        message: message.clone(),
+        upstream_headers: None,
+    };
+    render(route, call_id, None, Some(message))
 }
 
 fn internal_message(
@@ -258,6 +307,7 @@ fn internal_message(
         EmbeddingRoute::internal(redactor.redact_internal_details(message)),
         call_id,
         deployment,
+        None,
     )
 }
 
