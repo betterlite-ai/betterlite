@@ -1,0 +1,15 @@
+kind: helper
+name: azure-search-settings-seed
+call:
+  azure_search:
+    settings:
+      urls:
+        - environment: {BING_GROUNDING_PROJECT_ENDPOINT: "https://seed.example/api/projects/seed/"}
+          api_base: null
+      requests:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: seed
+          optional_params: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: ragflow-chat-url-id-encoded
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {RAGFLOW_API_BASE: 'http://host:9380'}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat/abc/m', api_base: null}
+      - {model: 'ragflow/chat/a b/m', api_base: null}
+      - {model: 'ragflow/chat/a?b#c/m', api_base: null}
+      - {model: 'ragflow/chat/my.id-1_2~3/m', api_base: null}
+      - {model: 'ragflow/chat/%41/m', api_base: null}
+      - {model: 'ragflow/chat/ü/m', api_base: null}

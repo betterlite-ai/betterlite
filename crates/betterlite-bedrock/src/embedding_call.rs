@@ -18,7 +18,7 @@ use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
@@ -92,7 +92,7 @@ pub fn embeddings<'run, Source, Factory, Transport>(
     dependencies: Dependencies<'run, Source, Factory, Transport>,
     supplied: Option<SuppliedClient<'run, Factory::Client>>,
     log: &'run mut LogContext<'_, '_>,
-) -> LocalBoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
+) -> BoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
     Source: CredentialSource + Sync,
     Factory: ClientFactory + Sync,

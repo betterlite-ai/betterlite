@@ -1,0 +1,45 @@
+kind: helper
+name: azure-message-attachments-list-messages-no-query
+call:
+  azure_message_attachments:
+    list_messages:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        reply:
+          status: 200
+          body: '{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed","marker":"kept"}],"first_id":"msg_1","last_id":"msg_1","has_more":true}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        reply:
+          status: 200
+          body: '{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[]}],"first_id":"msg_1","last_id":"msg_1","has_more":false}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: false
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: true
+calls:
+  - azure_message_attachments:
+      list_messages:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+          thread_id: "thread a/b?c"
+  - azure_message_attachments:
+      list_messages:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+          reply:
+            status: 404
+            body: '{"error":{"message":"no thread","type":"invalid_request_error"}}'
+env: {}
+compare: {ignore: []}

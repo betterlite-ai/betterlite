@@ -1,0 +1,146 @@
+kind: helper
+name: caching-partial-embedding-hits
+call:
+  b4305:
+    scenarios:
+    - operation: async
+      model: text-embedding-3-small
+      call_type: aembedding
+      original_function: aembedding
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: text-embedding-3-small
+        input:
+        - hello
+        - world
+      entries:
+      - input: hello
+        value:
+          embedding:
+          - 0.1
+          - 0.2
+          index: 0
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 3
+          prompt_tokens_details: null
+          format_version: 2
+    - operation: async
+      model: text-embedding-3-small
+      call_type: aembedding
+      original_function: aembedding
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: text-embedding-3-small
+        input:
+        - hello
+        - world
+      entries:
+      - input: hello
+        value:
+          embedding:
+          - 0.1
+          - 0.2
+          index: 0
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 3
+          prompt_tokens_details: null
+          format_version: 2
+      - input: world
+        value:
+          embedding:
+          - 0.3
+          - 0.4
+          index: 1
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 4
+          prompt_tokens_details: null
+          format_version: 2
+    - operation: async
+      model: text-embedding-3-small
+      call_type: aembedding
+      original_function: aembedding
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: s3
+      kwargs:
+        model: text-embedding-3-small
+        input:
+        - hello
+        - world
+      entries:
+      - input: hello
+        value:
+          embedding:
+          - 0.1
+          - 0.2
+          index: 0
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 3
+          prompt_tokens_details: null
+          format_version: 2
+    - operation: async
+      model: text-embedding-3-small
+      call_type: aembedding
+      original_function: aembedding
+      supported_call_types:
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: text-embedding-3-small
+        input:
+        - hello
+        - world
+      entries:
+      - input: hello
+        value:
+          embedding:
+          - 0.1
+          - 0.2
+          index: 0
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 3
+          prompt_tokens_details: null
+          format_version: 1
+    - operation: async
+      model: text-embedding-3-small
+      call_type: aembedding
+      original_function: aembedding
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: text-embedding-3-small
+        input:
+        - hello
+        - world
+      entries: []
+env: {}
+compare:
+  ignore: []
