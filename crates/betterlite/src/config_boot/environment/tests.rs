@@ -139,6 +139,26 @@ fn a_non_mapping_environment_variables_is_refused() {
 }
 
 #[test]
+fn the_license_key_is_laid_over_like_any_other_entry() {
+    let config = config_from_yaml("environment_variables:\n  LITELLM_LICENSE: sk-license\n");
+    let overlay = env_overlay(&config, &process_env(&[]), &secret_lookup(None)).unwrap();
+    assert_eq!(
+        overlay.get("LITELLM_LICENSE").map(String::as_str),
+        Some("sk-license")
+    );
+}
+
+#[test]
+fn entries_are_laid_over_in_sorted_key_order() {
+    let config = config_from_yaml(
+        "environment_variables:\n  ZFIRST: literal\n  ASECOND: os.environ/ZFIRST\n",
+    );
+    let overlay = env_overlay(&config, &process_env(&[]), &secret_lookup(None)).unwrap();
+    assert_eq!(overlay.get("ZFIRST").map(String::as_str), Some("literal"));
+    assert!(!overlay.contains_key("ASECOND"));
+}
+
+#[test]
 fn existing_process_values_survive_alongside_config_entries() {
     let config = config_from_yaml("environment_variables:\n  ADDED: value\n");
     let overlay = env_overlay(
