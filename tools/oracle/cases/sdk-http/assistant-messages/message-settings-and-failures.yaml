@@ -71,6 +71,20 @@ call:
         role: user
         content: hello
         params: {api_key: request-key}
+      - mode: async
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: request-key}
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: request-key}
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -98,10 +112,27 @@ upstream:
     headers: {content-type: application/json}
     body:
       error: {message: no such model, type: invalid_request_error, code: model_not_found}
+  - status: 400
+    headers: {content-type: application/json}
+    body:
+      error: {message: bad request, type: invalid_request_error, param: role, code: bad_code}
+  - status: 400
+    headers: {content-type: application/json}
+    body:
+      error: boom
+      type: invalid_request_error
+      param: role
+      code: stale
 compare:
   headers: []
   headers_present: []
   upstream_headers: [accept, api-key, authorization, content-type, openai-beta, openai-organization]
   ignore:
-    - {pointer: /assistant_messages/value/runs/8/failure/message, why: LiteLLM writes the HTTP status and a Python repr of the parsed body, betterlite writes its own text}
-    - {pointer: /assistant_messages/value/runs/9/failure/message, why: LiteLLM prefixes the mapped class and a provider message, betterlite writes its own text}
+    - pointer: /assistant_messages/value/runs/8/failure/message
+      why: LiteLLM writes the HTTP status and a Python repr of the parsed body, betterlite writes its own text
+    - pointer: /assistant_messages/value/runs/9/failure/message
+      why: LiteLLM prefixes the mapped class and a provider message, betterlite writes its own text
+    - pointer: /assistant_messages/value/runs/10/failure/message
+      why: LiteLLM prefixes the mapped class and a provider message, betterlite writes its own text
+    - pointer: /assistant_messages/value/runs/11/failure/message
+      why: LiteLLM writes the HTTP status and a Python repr of the parsed body, betterlite writes its own text

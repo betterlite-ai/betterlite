@@ -41,7 +41,7 @@ call:
         provider: openai
         thread_id: thread_a
         role: user
-        content: [{type: text, text: {value: hi, annotations: []}}]
+        content: [{type: text, text: hi}]
         params: {api_key: sk-case}
 upstream:
   - status: 200

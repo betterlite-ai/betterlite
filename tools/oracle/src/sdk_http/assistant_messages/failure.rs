@@ -149,23 +149,20 @@ const fn class_name(class: &ErrorClass) -> &'static str {
     }
 }
 
-// openai.APIError.__init__ reads type/param/code off the top level of the parsed body
+// _make_status_error hands APIError the object under "error" when the parsed body is a mapping (openai/_client.py#L687)
 fn body_fields(body: &[u8]) -> (Nullable, Nullable, Nullable) {
-    let Ok(Value::Object(fields)) = serde_json::from_slice::<Value>(body) else {
+    let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(body) else {
         return (Some(None), Some(None), Some(None));
     };
-    let kind = fields
-        .get("type")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let param = fields
-        .get("param")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let code = fields
-        .get("code")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let flat = match fields.shift_remove("error") {
+        Some(Value::Object(inner)) => inner,
+        // a non-mapping body leaves APIError's type/param/code unset
+        Some(_) => return (Some(None), Some(None), Some(None)),
+        None => fields,
+    };
+    let kind = flat.get("type").and_then(Value::as_str).map(str::to_owned);
+    let param = flat.get("param").and_then(Value::as_str).map(str::to_owned);
+    let code = flat.get("code").and_then(Value::as_str).map(str::to_owned);
     (Some(kind), Some(param), Some(code))
 }
 
