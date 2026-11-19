@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs::read;
+use std::path::PathBuf;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use rstest::rstest;
 
@@ -100,4 +103,9 @@ fn bytes_that_are_not_utf8_read_none() {
         decode_turn_time(b"2024-01-02T03:04:05Z"),
         Some(expected("2024-01-02T03:04:05"))
     );
+}
+
+#[rstest]
+fn replays_the_turn_time_corpus(#[files("fuzz/corpus/turn_time/*")] path: PathBuf) {
+    drop(decode_turn_time(&read(path).unwrap()));
 }
