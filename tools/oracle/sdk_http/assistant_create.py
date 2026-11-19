@@ -153,8 +153,6 @@ def to_timeout(timeout: float | str | Phases | None) -> float | str | httpx.Time
     match timeout:
         case Phases() as phases:
             return httpx.Timeout(**phases.given())
-        case int() as seconds:
-            return float(seconds)
         case float() | str() | None:
             return timeout
 
