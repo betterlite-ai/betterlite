@@ -132,7 +132,7 @@ def json_messages_url(call: Call) -> JsonValue:
 def messages_body(config: NativeMessagesConfig, call: Call) -> JsonValue:
     messages, optional_params = messages_parts(call)
     body = cast(JsonObject, config.transform_anthropic_messages_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
-        call["model"].split("/", 1)[1], messages, optional_params, GenericLiteLLMParams(), {},
+        call["model"].split("/", 1)[1], messages, optional_params, GenericLiteLLMParams(), EMPTY,
     ))
     return JSON_OBJECT.validate_json(json.dumps(body))
 
@@ -182,7 +182,7 @@ def responses_headers(call: Call) -> JsonValue:
 def responses_body(config: OpenAILikeResponsesConfig, call: Call) -> JsonValue:
     prompt, params = responses_parts(call)
     body = cast(JsonObject, config.transform_responses_api_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L228-L244
-        call["model"].split("/", 1)[1], prompt, params, GenericLiteLLMParams(), {},
+        call["model"].split("/", 1)[1], prompt, params, GenericLiteLLMParams(), EMPTY,
     ))
     return JSON_OBJECT.validate_json(json.dumps(body))
 
