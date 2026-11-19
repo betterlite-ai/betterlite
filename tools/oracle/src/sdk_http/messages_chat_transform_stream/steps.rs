@@ -8,8 +8,8 @@ use betterlite_models::decisions;
 
 // One step loop drives both factory modes; each variant hands over its next frame and its view.
 pub(super) enum Pump {
-    Async(AnthropicSseStream<Prefetched, UuidV4>),
-    Sync(SyncFrames<Prefetched, UuidV4>),
+    Async(Box<AnthropicSseStream<Prefetched, UuidV4>>),
+    Sync(Box<SyncFrames<Prefetched, UuidV4>>),
 }
 
 impl Pump {
@@ -22,7 +22,7 @@ impl Pump {
         }
     }
 
-    async fn close(&mut self) -> Result<(), SdkHttpError> {
+    fn close(&mut self) -> Result<(), SdkHttpError> {
         let Self::Async(view) = self else {
             return Err(SdkHttpError::Invalid(
                 "a sync run cannot be closed".to_owned(),
@@ -67,7 +67,7 @@ pub(super) async fn run_steps(mut pump: Pump, steps: &[Step]) -> Result<RunOutco
 async fn one_step(pump: &mut Pump, step: Step) -> Result<(Vec<String>, bool), SdkHttpError> {
     match step {
         Step::Close => {
-            pump.close().await?;
+            pump.close()?;
             Ok((Vec::new(), false))
         }
         Step::Next => {

@@ -244,11 +244,11 @@ async fn run(
         .translate_completion_output_params_streaming(source, options, UuidV4);
     match output {
         StreamOutput::Async(view) => {
-            let pump = self::steps::Pump::Async(*view);
+            let pump = self::steps::Pump::Async(view);
             self::steps::run_steps(pump, &spec.steps).await
         }
         StreamOutput::Sync(frames) => {
-            let pump = self::steps::Pump::Sync(*frames);
+            let pump = self::steps::Pump::Sync(frames);
             self::steps::run_steps(pump, &spec.steps).await
         }
     }
