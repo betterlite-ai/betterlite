@@ -117,15 +117,12 @@ impl Recorder {
     }
 
     pub(super) fn first(&self) -> Result<CompletionCall, Box<HelperError>> {
-        let recorded = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        recorded.first().map_or_else(
-            || {
-                Err(super::input_failure(String::from(
-                    "the chat arm called no handler",
-                )))
-            },
-            |call| Ok(call.clone()),
-        )
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .first()
+            .cloned()
+            .ok_or_else(|| super::input_failure(String::from("the chat arm called no handler")))
     }
 }
 

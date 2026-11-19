@@ -13,9 +13,6 @@ litellm.suppress_debug_info = True
 UPSTREAM: Final = "{{upstream}}"
 KEPT_HEADERS: Final[tuple[str, ...]] = ("authorization", "x-scope")
 ENV_PREFIXES: Final[tuple[str, ...]] = ("GROQ_", "CLOUDFLARE_", "FIREWORKS_AI_")
-CHAT_ENDPOINT: Final = "/chat/completions"
-EMBEDDING_ENDPOINT: Final = "/embeddings"
-REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 CHAT_ANSWER: Final[dict[str, object]] = {
     "id": "chatcmpl-1",
@@ -112,7 +109,7 @@ class AnswerHandler(BaseHTTPRequestHandler):
                 "headers": {
                     name: lowered[name] for name in KEPT_HEADERS if name in lowered
                 },
-                "body": None if not content else REPLY.validate_json(content),
+                "body": None if not content else TypeAdapter(JsonValue).validate_json(content),
             }
         )
         payload = server.answer["body"].encode()
@@ -260,9 +257,9 @@ def value(case: Case, server: AnswerServer) -> JsonValue:
     except openai.APIError as raised:
         error = {"status": Raised.model_validate(raised, from_attributes=True).status_code}
     if case["op"] == "embedding":
-        recorded = first_request(server.requests, EMBEDDING_ENDPOINT)
+        recorded = first_request(server.requests, "/embeddings")
         return {"request": request_view(recorded, server.base)}
-    recorded = first_request(server.requests, CHAT_ENDPOINT)
+    recorded = first_request(server.requests, "/chat/completions")
     return {
         "request": request_view(recorded, server.base),
         "params": params_view(recorded),

@@ -2,10 +2,9 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_provider::hosted_platform_dispatch::call::CompletionCall;
 use betterlite_provider::hosted_platform_dispatch::chat::dispatch;
 use betterlite_provider::hosted_platform_dispatch::context::{
     CallLogging, DispatchContext, DispatchSettings,
@@ -75,7 +74,16 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
         ))
         .ok_or_else(|| input_failure(format!("{} has no chat arm", case.provider.slug())))?;
     let call = handler.first()?;
-    let url = chat_url(case.provider, &call)?;
+    let base = call
+        .api_base
+        .as_deref()
+        .ok_or_else(|| input_failure(String::from("the chat arm resolved no api_base")))?;
+    let url = match case.provider {
+        Provider::Cloudflare => base.to_owned(),
+        Provider::FireworksAi | Provider::TogetherAi | Provider::Groq => {
+            format!("{base}{CHAT_ENDPOINT}")
+        }
+    };
     Ok(json!({
         "request": request_view(&url, call.api_key.as_ref(), call.headers.as_ref()),
         "params": params_view(&call.optional_params)?,
@@ -106,20 +114,6 @@ fn pre_resolved(case: &Case, env: &BTreeMap<String, String>) -> PreResolved {
 
 fn nonempty(value: Option<&str>) -> Option<&str> {
     value.filter(|text| !text.is_empty())
-}
-
-// the URL the shared HTTP handler builds from the arm's base
-fn chat_url(provider: Provider, call: &CompletionCall) -> Result<String, Box<HelperError>> {
-    let base = call
-        .api_base
-        .as_deref()
-        .ok_or_else(|| input_failure(String::from("the chat arm resolved no api_base")))?;
-    match provider {
-        Provider::Cloudflare => Ok(base.to_owned()),
-        Provider::FireworksAi | Provider::TogetherAi | Provider::Groq => {
-            Ok(format!("{base}{CHAT_ENDPOINT}"))
-        }
-    }
 }
 
 // B2221 owns the model lookup; the case states the answer the arm is given

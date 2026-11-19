@@ -47,15 +47,11 @@ pub(super) fn params_view(optional_params: &Object) -> Result<Value, Box<HelperE
 pub(super) fn error_or_null<T>(outcome: &Result<T, DispatchError>) -> Value {
     match outcome {
         Ok(_) => Value::Null,
-        Err(error) => json!({"status": status_of(error)}),
-    }
-}
-
-fn status_of(error: &DispatchError) -> Option<u16> {
-    match error {
-        DispatchError::Handler(handler) => handler.status_code(),
-        DispatchError::NotBuilt { .. }
-        | DispatchError::Cloudflare(_)
-        | DispatchError::Encode { .. } => None,
+        Err(DispatchError::Handler(handler)) => json!({"status": handler.status_code()}),
+        Err(
+            DispatchError::NotBuilt { .. }
+            | DispatchError::Cloudflare(_)
+            | DispatchError::Encode { .. },
+        ) => json!({"status": null}),
     }
 }
