@@ -312,7 +312,7 @@ async fn adds_a_positive_expiry_to_the_injected_now() {
     let dual = Arc::new(FakeCache {
         spend: None,
         spend_fails: false,
-        expiry: Some(90.0),
+        expiry: Some(90.0_f64),
         keys: Mutex::new(Vec::new()),
     });
     let view = ProviderBudgetView {
@@ -333,7 +333,7 @@ async fn adds_a_negative_expiry_to_the_injected_now() {
     let dual = Arc::new(FakeCache {
         spend: None,
         spend_fails: false,
-        expiry: Some(-30.0),
+        expiry: Some(-30.0_f64),
         keys: Mutex::new(Vec::new()),
     });
     let view = ProviderBudgetView {
@@ -354,7 +354,7 @@ async fn prints_microseconds_only_when_the_reset_time_has_them() {
     let dual = Arc::new(FakeCache {
         spend: None,
         spend_fails: false,
-        expiry: Some(0.0),
+        expiry: Some(0.0_f64),
         keys: Mutex::new(Vec::new()),
     });
     let view = ProviderBudgetView {
@@ -375,7 +375,7 @@ async fn rounds_a_fractional_expiry_half_to_even_microseconds() {
     let dual = Arc::new(FakeCache {
         spend: None,
         spend_fails: false,
-        expiry: Some(0.000_001_5),
+        expiry: Some(0.000_001_5_f64),
         keys: Mutex::new(Vec::new()),
     });
     let view = ProviderBudgetView {
@@ -394,7 +394,7 @@ async fn rounds_a_fractional_expiry_half_to_even_microseconds() {
 #[rstest]
 #[case::infinite(f64::INFINITY)]
 #[case::nan(f64::NAN)]
-#[case::huge(1e300)]
+#[case::huge(1e300_f64)]
 #[tokio::test]
 async fn an_expiry_no_calendar_can_add_is_an_error(#[case] seconds: f64) {
     let dual = Arc::new(FakeCache {

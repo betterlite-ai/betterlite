@@ -51,10 +51,10 @@ impl ProviderBudgetReads for ProviderBudgetView {
         let Some(key) = self.spend_key(provider) else {
             return Ok(None);
         };
-        let cache = match &self.redis {
-            Some(redis) => redis.as_ref(),
-            None => self.dual.as_ref(),
-        };
+        let cache = self
+            .redis
+            .as_ref()
+            .map_or_else(|| self.dual.as_ref(), |redis| redis.as_ref());
         let spend = cache.spend(&key).await?;
         Ok(Some(spend.unwrap_or(Decimal::ZERO)))
     }
@@ -67,10 +67,10 @@ impl ProviderBudgetReads for ProviderBudgetView {
         let Some(key) = self.spend_key(provider) else {
             return Ok(None);
         };
-        let cache = match &self.redis {
-            Some(redis) => redis.as_ref(),
-            None => self.dual.as_ref(),
-        };
+        let cache = self
+            .redis
+            .as_ref()
+            .map_or_else(|| self.dual.as_ref(), |redis| redis.as_ref());
         let Some(seconds) = cache.expiry_seconds(&key).await else {
             return Ok(None);
         };
@@ -78,7 +78,7 @@ impl ProviderBudgetReads for ProviderBudgetView {
         let delta = chrono::Duration::microseconds(micros);
         let moment = now
             .checked_add_signed(delta)
-            .ok_or_else(|| ProviderBudgetViewError::Expiry { key })?;
+            .ok_or(ProviderBudgetViewError::Expiry { key })?;
         Ok(Some(isoformat(moment)))
     }
 }
