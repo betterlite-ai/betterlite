@@ -24,14 +24,4 @@ deviations:
       It is an import-time switch that types the modules in both codebases, not a type any caller imports from a
       types module; every name either module defines is exported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L4
-  - what: >-
-      betterlite.types.llms.openai does not re-export 33 module-level aliases and constants that
-      litellm.types.llms.openai defines (for example AllMessageValues, OpenAIMessageContent, ResponsesTerminalEvent,
-      PART_UNION_TYPES and REASONING_EFFORT), so from betterlite.types.llms.openai import AllMessageValues fails
-      where the same import from LiteLLM works.
-    why: >-
-      Each of the 33 has a local definition in a betterlite.types.llms.openai submodule, but this package's
-      __init__.py spends 294 of the 300 lines the repository's Python file limit allows on the other 209 names,
-      and re-exporting the 33 renders 338 lines; they stay importable from their defining submodules.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
 kept_bugs: []
