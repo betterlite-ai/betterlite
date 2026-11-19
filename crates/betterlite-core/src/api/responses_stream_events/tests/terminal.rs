@@ -30,8 +30,7 @@ async fn deltas_accumulate_only_string_text_and_arguments() {
     assert_eq!(rig.state.generated_tool_arguments, "{}XY");
 }
 
-#[tokio::test]
-async fn terminal_estimation_receives_the_request_and_joined_generation() {
+fn estimation_rig() -> Rig<TransformMode> {
     let mut rig = Rig::new(Some(TransformMode::Direct));
     rig.tokenization = Some(Tokenization::new(30, 50));
     rig.calculator = Some(Calculator::missing());
@@ -41,14 +40,19 @@ async fn terminal_estimation_receives_the_request_and_joined_generation() {
     rig.state
         .request_data
         .insert("model".to_owned(), Json::Text("gpt-4o".to_owned()));
+    rig
+}
+
+#[tokio::test]
+async fn terminal_estimation_receives_the_request_and_joined_generation() {
+    let mut rig = estimation_rig();
     rig.process(TEXT_DELTA)
         .await
         .expect("the text delta is processed");
     rig.process(ARGS_DELTA)
         .await
         .expect("the argument delta is processed");
-    let event = rig
-        .process(COMPLETED)
+    rig.process(COMPLETED)
         .await
         .expect("the terminal is processed")
         .expect("the terminal is handed on");
@@ -65,6 +69,22 @@ async fn terminal_estimation_receives_the_request_and_joined_generation() {
         Json::Object(rig.state.request_data.clone())
     );
     assert_eq!(calls[0].generated, "hi{}");
+}
+
+#[tokio::test]
+async fn terminal_estimation_writes_the_usage_totals() {
+    let mut rig = estimation_rig();
+    rig.process(TEXT_DELTA)
+        .await
+        .expect("the text delta is processed");
+    rig.process(ARGS_DELTA)
+        .await
+        .expect("the argument delta is processed");
+    let event = rig
+        .process(COMPLETED)
+        .await
+        .expect("the terminal is processed")
+        .expect("the terminal is handed on");
     let json = event_json(&event);
     assert_eq!(
         number_text(at(&json, &["response", "usage", "input_tokens"])),
@@ -291,10 +311,7 @@ async fn terminal_cost_is_stamped_only_when_the_calculator_answers_positive(
 ) {
     let mut rig = Rig::new(Some(TransformMode::Direct));
     rig.tokenization = Some(Tokenization::new(30, 50));
-    rig.calculator = Some(match answer {
-        Some(cost) => Calculator::charging(cost),
-        None => Calculator::missing(),
-    });
+    rig.calculator = Some(answer.map_or_else(Calculator::missing, Calculator::charging));
     let event = rig
         .process(payload)
         .await

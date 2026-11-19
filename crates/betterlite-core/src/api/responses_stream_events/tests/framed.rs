@@ -80,7 +80,8 @@ async fn missing_provider_config_fails_once_with_the_litellm_message() {
         error.to_string(),
         "responses_api_provider_config is required to process live streaming chunks"
     );
-    assert!(rig.process(CREATED).await.is_err());
+    let second = rig.process(CREATED).await.unwrap_err();
+    assert!(matches!(second, ProcessEventError::MissingProviderConfig));
     await_pending_logging(&mut rig.callback).await;
     assert!(rig.state.failure_handled);
     assert_eq!(rig.ports.failure.calls.entries(), vec!["async", "sync"]);
@@ -110,11 +111,11 @@ async fn provider_transform_receives_model_chunk_and_details() {
     rig.process(TEXT_DELTA)
         .await
         .expect("the delta is processed");
-    let seen = seen.entries();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].0, "gpt-4o");
+    let entries = seen.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].0, "gpt-4o");
     let parsed: Json = serde_json::from_str(TEXT_DELTA).expect("the fixture parses");
-    assert_eq!(seen[0].1, parsed);
+    assert_eq!(entries[0].1, parsed);
     assert_eq!(
         rig.details.get("transform_type"),
         Some(&Json::Text("response.output_text.delta".to_owned()))

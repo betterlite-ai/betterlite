@@ -45,8 +45,9 @@ use crate::api::response_synthetic_events::stamping::{CostTarget, ResponsesCostC
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
 use crate::api::responses_stream_hooks::failure::await_pending_logging;
 use crate::api::responses_stream_hooks::ports::{
-    CacheWrite, Dispatch, FailureDelivery, PortFailure, ResponsesStreamCacheHandler,
-    ResponsesStreamCacheTarget, ResponsesStreamFailureTarget, ResponsesStreamSuccessTarget,
+    CacheWrite, Dispatch, DynamicCacheObject, FailureDelivery, PortFailure,
+    ResponsesStreamCacheHandler, ResponsesStreamCacheTarget, ResponsesStreamFailureTarget,
+    ResponsesStreamSuccessTarget,
 };
 use crate::api::responses_stream_hooks::state::ResponsesStreamHookState;
 
@@ -263,7 +264,10 @@ impl SuccessClock for TickingClock {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         let next = calls.saturating_add(1);
         *calls = next;
-        self.start + chrono::TimeDelta::seconds(next)
+        drop(calls);
+        self.start
+            .checked_add_signed(chrono::TimeDelta::seconds(next))
+            .expect("the fixture time fits")
     }
 }
 
@@ -424,7 +428,7 @@ impl ResponsesStreamCacheHandler for StreamCacheHandler {
         Some("aresponses")
     }
 
-    fn dual_cache(&self) -> Option<crate::api::responses_stream_hooks::ports::DynamicCacheObject> {
+    fn dual_cache(&self) -> Option<DynamicCacheObject> {
         None
     }
 
@@ -538,8 +542,8 @@ fn generic_event(chunk: &Json) -> ResponsesAPIStreamingResponse {
             match (name.as_str(), value) {
                 ("type", Json::Text(text)) => event_type.clone_from(text),
                 ("type", _) => {}
-                (_, value) => {
-                    extra.insert(name.clone(), value.clone());
+                (_, item) => {
+                    extra.insert(name.clone(), item.clone());
                 }
             }
         }
@@ -638,6 +642,7 @@ impl ResponsesCostCalculator for Calculator {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         let next = calls.saturating_add(1);
         *calls = next;
+        drop(calls);
         Ok(self.cost)
     }
 }
@@ -681,7 +686,7 @@ struct Rig<T> {
     clock: Arc<dyn SuccessClock>,
 }
 
-impl<T: ResponsesEventTransform> Rig<T> {
+impl<T: ResponsesEventTransform + Send + Sync> Rig<T> {
     fn new(transform: Option<T>) -> Self {
         Self::with_ports(Ports::recording(), transform)
     }
