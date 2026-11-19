@@ -134,7 +134,7 @@ async fn embeddings(
         Ok(deployment) => deployment,
         Err(not_found) => return read_through::not_found_response(not_found, &call_id),
     };
-    execute(&state, request, deployment, &call_id, started).await
+    execute(&state, request, &deployment, &call_id, started).await
 }
 
 async fn execute(

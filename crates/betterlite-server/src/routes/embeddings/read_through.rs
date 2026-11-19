@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::response::Response;
 use betterlite_core::operation::embedding::EmbeddingRoute;
 use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
@@ -13,15 +15,23 @@ pub(super) struct NotFound {
     pub(super) message: String,
 }
 
-pub(super) async fn deployment_or_answer<'state>(
-    state: &'state EmbeddingState,
+pub(super) async fn deployment_or_answer(
+    state: &EmbeddingState,
     model: Option<&str>,
-) -> Result<&'state ChatDeployment, NotFound> {
-    let model_text = model.unwrap_or("None");
-    let endpoint = route_endpoint("aembedding").unwrap_or("aembedding");
-    let attempt = move || async move {
-        pick_deployment(&state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(endpoint, model_text, true))
+) -> Result<ChatDeployment, NotFound> {
+    let model_text = model.map(str::to_owned);
+    let executor = Arc::clone(&state.executor);
+    // the AsyncFn bound cannot prove Send for a captured reference, so the attempt owns its reads
+    let attempt = move || {
+        let executor = Arc::clone(&executor);
+        let model_text = model_text.clone();
+        async move {
+            let text = model_text.as_deref().unwrap_or("None");
+            let endpoint = route_endpoint("aembedding").unwrap_or("aembedding");
+            let deployment = pick_deployment(&executor, text)
+                .map_err(|_error| ProxyModelNotFoundError::new(endpoint, text, true))?;
+            Ok(deployment.clone())
+        }
     };
     let read_through = state.read_through.as_deref();
     match route_with_read_through(model, read_through, attempt).await {

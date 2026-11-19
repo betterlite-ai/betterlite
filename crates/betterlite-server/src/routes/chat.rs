@@ -168,7 +168,7 @@ async fn chat_completion(
         Err(error) => return not_found_failure(&call, &error),
     };
     let has_content = first_message_has_content(&body);
-    execute_chat(&state, &request, has_content, deployment, &call).await
+    execute_chat(&state, &request, has_content, &deployment, &call).await
 }
 
 async fn execute_chat(

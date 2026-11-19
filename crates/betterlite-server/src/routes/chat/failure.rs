@@ -34,18 +34,26 @@ pub(super) fn parse_chat_request(
     Ok(request)
 }
 
-pub(super) async fn routed_deployment<'state>(
-    state: &'state ChatRouteState,
+pub(super) async fn routed_deployment(
+    state: &ChatRouteState,
     model: Option<&str>,
     server: Option<Extension<Arc<ServerState>>>,
-) -> Result<&'state ChatDeployment, ProxyModelNotFoundError> {
-    let model_text = model.unwrap_or("None");
+) -> Result<ChatDeployment, ProxyModelNotFoundError> {
+    let model_text = model.map(str::to_owned);
     let read_through =
         server.and_then(|Extension(server)| server.model_read_through.read_through.clone());
-    let route = route_endpoint("acompletion").unwrap_or("acompletion");
-    let attempt = move || async move {
-        pick_deployment(&state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
+    let executor = Arc::clone(&state.executor);
+    // the AsyncFn bound cannot prove Send for a captured reference, so the attempt owns its reads
+    let attempt = move || {
+        let executor = Arc::clone(&executor);
+        let model_text = model_text.clone();
+        async move {
+            let text = model_text.as_deref().unwrap_or("None");
+            let route = route_endpoint("acompletion").unwrap_or("acompletion");
+            let deployment = pick_deployment(&executor, text)
+                .map_err(|_error| ProxyModelNotFoundError::new(route, text, true))?;
+            Ok(deployment.clone())
+        }
     };
     route_with_read_through(model, read_through.as_deref(), attempt).await
 }

@@ -184,7 +184,7 @@ async fn completions(
         Ok(deployment) => deployment,
         Err(answer) => return render(&answer, &call_id, state.include_call_id),
     };
-    execute(&state, request, deployment, &call_id, started).await
+    execute(&state, request, &deployment, &call_id, started).await
 }
 
 async fn execute(
