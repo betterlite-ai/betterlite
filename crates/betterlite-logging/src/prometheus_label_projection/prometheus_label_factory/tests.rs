@@ -265,6 +265,29 @@ fn tag_labels_are_merged_on_both_paths() {
 }
 
 #[test]
+fn supported_labels_without_a_value_are_filled_with_none() {
+    let values = test_support::values(&[("user", "u1")]);
+    let settings = test_support::settings(&[]);
+    let supported = ["user", "my_key"];
+    let raw = prometheus_label_factory(
+        &texts(&supported),
+        &values,
+        LabelSource::Values {
+            settings: &settings,
+            end_user_settings: EndUserCostTrackingSettings::default(),
+        },
+    )
+    .expect("the raw labels");
+    let context = context_for(&values, &settings, Resolution::Missing);
+    let from_context =
+        prometheus_label_factory(&texts(&supported), &values, LabelSource::Context(&context))
+            .expect("the context labels");
+    let expected = map_of(&[("my_key", None), ("user", Some("u1"))]);
+    assert_eq!(raw, expected);
+    assert_eq!(from_context, expected);
+}
+
+#[test]
 fn the_context_path_resolves_the_end_user_once() {
     let values = test_support::values(&[("end_user", "e1")]);
     let settings = test_support::settings(&[]);
