@@ -100,7 +100,7 @@ pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
             };
             summary.retries = Some(v1.max_retries);
             summary.timeout = v1.timeout;
-            summary.url = v1.base_url.clone();
+            summary.url.clone_from(&v1.base_url);
         }
         None => {}
     }

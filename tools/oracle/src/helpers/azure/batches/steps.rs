@@ -10,7 +10,6 @@ use betterlite_azure::endpoints::projection::{
 };
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_openai::batches::records::{BatchCreate, BatchQuery};
-use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
@@ -34,14 +33,6 @@ enum Action {
     List,
 }
 
-// The handler takes timeout and max_retries beside the api arguments and never passes them on, so they stay unread
-#[derive(Clone, Deserialize)]
-struct Args {
-    api_key: Option<String>,
-    api_base: Option<String>,
-    api_version: Option<String>,
-}
-
 #[derive(Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BuilderMode {
@@ -54,7 +45,8 @@ pub(crate) enum BuilderMode {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Step {
     action: Action,
-    args: Args,
+    // The handler takes timeout and max_retries beside the api arguments and never passes them on, so they stay unread
+    args: ClientSettings,
     #[serde(default)]
     is_async: bool,
     client: Option<String>,
@@ -120,24 +112,30 @@ fn perform(
             Ok(outcome) => project_value(&outcome, &connection),
             Err(error) => raised(&error),
         },
-        Action::Create => match step.data.as_ref() {
-            Some(data) => reply_value(operate(runtime, connection, Operation::Create(data))),
-            None => json!({
-                "raised": { "class": "ValueError", "message": "a create step carries no data" },
-            }),
-        },
-        Action::Retrieve => match step.query.as_ref() {
-            Some(query) => reply_value(operate(runtime, connection, Operation::Retrieve(query))),
-            None => json!({
-                "raised": { "class": "ValueError", "message": "a retrieve step carries no query" },
-            }),
-        },
-        Action::Cancel => match step.query.as_ref() {
-            Some(query) => reply_value(operate(runtime, connection, Operation::Cancel(query))),
-            None => json!({
-                "raised": { "class": "ValueError", "message": "a cancel step carries no query" },
-            }),
-        },
+        Action::Create => step.data.as_ref().map_or_else(
+            || {
+                json!({
+                    "raised": { "class": "ValueError", "message": "a create step carries no data" },
+                })
+            },
+            |data| reply_value(operate(runtime, connection, Operation::Create(data))),
+        ),
+        Action::Retrieve => step.query.as_ref().map_or_else(
+            || {
+                json!({
+                    "raised": { "class": "ValueError", "message": "a retrieve step carries no query" },
+                })
+            },
+            |query| reply_value(operate(runtime, connection, Operation::Retrieve(query))),
+        ),
+        Action::Cancel => step.query.as_ref().map_or_else(
+            || {
+                json!({
+                    "raised": { "class": "ValueError", "message": "a cancel step carries no query" },
+                })
+            },
+            |query| reply_value(operate(runtime, connection, Operation::Cancel(query))),
+        ),
         Action::List => reply_value(operate(
             runtime,
             connection,
@@ -146,14 +144,6 @@ fn perform(
                 limit: step.limit,
             },
         )),
-    }
-}
-
-fn client_settings(step: &Step) -> ClientSettings {
-    ClientSettings {
-        api_key: step.args.api_key.clone().map(SecretString::from),
-        api_base: step.args.api_base.clone(),
-        api_version: step.args.api_version.clone(),
     }
 }
 
@@ -180,7 +170,7 @@ pub(crate) fn run_step(runtime: &Runtime, step: &Step) -> Value {
     let mut cache = Cache;
     let mut refresh = RefreshProviderCache::new(&sources);
     let connection = Connection {
-        settings: client_settings(step),
+        settings: step.args.clone(),
         params: step.params.clone().unwrap_or_default(),
         provider: None,
         supplied: supplied(step),
