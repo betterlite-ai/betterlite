@@ -1,0 +1,21 @@
+task: B3122
+deviations:
+  - what: parse_observed_cache decodes the request body and response as strict typed models (serde structs rejected on any schema mismatch) instead of LiteLLM's manual field access on already-built httpx and pydantic objects.
+    why: Typed decoding enforces validation at the boundary and refuses a wire format change instead of silently missing a field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L669-L674
+  - what: The observer is built as PromptCacheObserver with cache, parser and clock fields and an async_log_success_event taking a SuccessEvent, not as a CustomLogger subclass whose kwargs pydantic validates.
+    why: The logging crate's callback event carries no wire request, response object or request start time, so the proxy passes them in one typed event where it still holds them; B8399 registers the observer under the built-in prompt_cache_prediction identity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L97-L102
+  - what: Observation storage goes through an injected cache port whose set takes the retention ttl and a local_only flag, and whose has_redis replaces reading dual_cache.redis_cache.
+    why: DualCache lives in betterlite-cache, which depends on betterlite-logging, so the observer cannot name it; the port keeps the 86400-second retention and the one-second local copy explicit without managing the cache's encoding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L135-L142
+  - what: lookup reads the exact fingerprint and then prefix.fingerprints[1:], without a separate lookback helper reconstructing the windows.
+    why: B3120's PromptPrefix already carries the exact fingerprint at index 0 and the lookback ones after it, so the observer consumes that order directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L44-L50
+  - what: read_exact reads through the injected port whose get carries no ttl, where LiteLLM's _read_exact passes ttl=1 to DualCache.async_get_cache so a local entry older than a second reads as absent.
+    why: The port models the cache as a plain key-value store, so the one-second freshness LiteLLM enforces on reads is carried by the one-second local_only copy written beside the 24-hour entry instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L56-L64
+  - what: An observation whose CacheObservation fields fail validation, such as a non-finite or negative clock reading, is dropped without a write instead of raising a ValidationError out of the logging callback.
+    why: parse_observed_cache already guarantees a 64-hex fingerprint and positive cache tokens, so the guard only fires for a broken injected clock; dropping it keeps the shared logging path alive and avoids storing a JSON null for a non-finite time where LiteLLM's model_dump_json would raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L132-L140
+kept_bugs: []
