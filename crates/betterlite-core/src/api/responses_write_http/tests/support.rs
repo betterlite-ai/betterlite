@@ -169,6 +169,10 @@ impl Fixture {
     pub(crate) fn input(&self) -> Option<&Json> {
         self.state.model_call_details.get("input")
     }
+
+    pub(crate) fn details(&self, name: &str) -> Option<&Json> {
+        self.state.model_call_details.get(name)
+    }
 }
 
 #[derive(Clone)]

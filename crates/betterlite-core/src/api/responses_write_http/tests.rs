@@ -144,6 +144,7 @@ async fn delete_omits_empty_body(#[case] mode: ClientKind) {
     );
     assert_eq!(fixture.logged("complete_input_dict"), Some(&json("{}")));
     assert_eq!(fixture.logged("extra_body"), None);
+    assert_eq!(fixture.details("api_key"), None);
     assert!(fixture.logged("headers").is_some());
     let plain = caller_headers(&[("Content-Type", "text/plain")]);
     let mut typed_fixture = Fixture::new("responses");
@@ -272,6 +273,7 @@ async fn cancel_posts_empty_object(#[case] mode: ClientKind) {
     assert_eq!(fixture.logged("complete_input_dict"), Some(&json("{}")));
     assert_eq!(fixture.logged("extra_body"), None);
     assert_eq!(fixture.logged("api_key"), None);
+    assert_eq!(fixture.details("api_key"), None);
     let Json::Object(headers) = fixture
         .logged("headers")
         .expect("the pre-call carries the headers")

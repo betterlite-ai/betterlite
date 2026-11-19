@@ -18,6 +18,9 @@ deviations:
   - what: "The async \"Creating HTTP client\" debug line renders shared_session as Some or None, where LiteLLM prints id(shared_session) or None."
     why: "The session id is a process-local integer that no log reader can act on, and betterlite's pooled client is not an aiohttp session; presence is the only portable fact."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2928-L2932"
+  - what: "The pre-call records no api_key, where both handlers pass api_key=\"\" into the call details their callbacks read."
+    why: "B249's typed pre-call boundary, which this service writes through, has no api_key field and stores no secret there; the empty value carries no credential and B249's api_key_is_not_stored covers the omission for every caller."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4261-L4269"
 kept_bugs:
   - what: Caller extra_headers cannot override Authorization. Validation rewrites the caller's map in place with the provider Bearer key, and the handler's later headers.update re-applies that same, already rewritten map, so the caller's Authorization is gone. Every other caller header, a caller Content-Type included, survives.
     why: A setup passing its own Authorization gets the provider key on the wire, and code depending on that would send the wrong credential if the caller's header won.
