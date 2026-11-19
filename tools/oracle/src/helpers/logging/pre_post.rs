@@ -69,7 +69,8 @@ pub(crate) struct Input {
     failures: FailureFlags,
     #[serde(default)]
     turn_off_message_logging: bool,
-    input: Option<Json>,
+    #[serde(rename = "input")]
+    payload: Option<Json>,
     model: Option<String>,
     original_response: Option<Json>,
     #[serde(default)]
@@ -254,14 +255,14 @@ fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) ->
     if matches!(input.action, Action::Post) {
         let call = PostCall {
             original_response: input.original_response.clone().unwrap_or(Json::Null),
-            input: input.input.clone().unwrap_or(Json::Null),
+            input: input.payload.clone().unwrap_or(Json::Null),
             additional_args: input.additional_args.clone(),
         };
         post_call(state, &call, env);
         return Value::Null;
     }
     let call = PreCall {
-        input: input.input.clone().unwrap_or(Json::Null),
+        input: input.payload.clone().unwrap_or(Json::Null),
         model: input.model.clone(),
         additional_args: input.additional_args.clone(),
     };
