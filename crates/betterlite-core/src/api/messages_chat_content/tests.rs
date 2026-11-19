@@ -86,10 +86,12 @@ async fn run(
         supported: supported.to_vec(),
         probes: Vec::new(),
     };
-    let translated =
-        translate_messages(&json(messages), &target(model), preserve, &mut capabilities)
-            .await
-            .expect("the fixture translates");
+    let Json::List(messages) = json(messages) else {
+        panic!("the fixture is a message list");
+    };
+    let translated = translate_messages(&messages, &target(model), preserve, &mut capabilities)
+        .await
+        .expect("the fixture translates");
     (Json::List(translated), capabilities.probes)
 }
 

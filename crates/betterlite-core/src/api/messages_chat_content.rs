@@ -17,9 +17,9 @@ use crate::api::messages_native_prepare::system_turns::{
 use self::error::ChatContentError;
 
 // The stateless adapter holds nothing else: every turn is shaped for this target alone.
-pub struct ChatTarget<'a> {
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
+pub struct ChatTarget<'target> {
+    pub model: Option<&'target str>,
+    pub custom_llm_provider: Option<&'target str>,
 }
 
 // A trailing system turn keeps its role only when the caller or the model's capability says so.
