@@ -87,6 +87,19 @@ fn foreign_name_skipped() {
 }
 
 #[test]
+fn non_text_owner_shared_by_nobody() {
+    let numbered = spec(
+        "numbered",
+        "n1",
+        &[("model", text("openai/n"))],
+        &[("team_id", Json::Number(serde_json::Number::from(7_i64)))],
+    );
+    let catalog = catalog_of(vec![numbered]);
+    assert_eq!(chosen(&catalog, "numbered", None), None);
+    assert_eq!(chosen(&catalog, "numbered", Some("team-a")), None);
+}
+
+#[test]
 fn caller_without_team() {
     let shared = catalog_of(vec![row("shared", "s1", "openai/shared")]);
     assert_eq!(chosen(&shared, "shared", None).as_deref(), Some("s1"));

@@ -109,6 +109,36 @@ fn empty_name_still_lookup() {
 }
 
 #[test]
+fn null_name_resolves_nothing() {
+    let catalog = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("api_key", text("sk-deployment")),
+        ("litellm_credential_name", Json::Null),
+    ])]);
+    let credentials = snapshot(&[("creds", pairs(&[("api_key", text("sk-record"))]))]);
+    let (result, warnings) = rich(&catalog, &credentials);
+    let params = result.unwrap();
+    assert_eq!(field(&params, "api_key"), Some("sk-deployment"));
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn non_text_name_is_a_type_error() {
+    let catalog = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("litellm_credential_name", Json::Bool(true)),
+    ])]);
+    let report = credentials_with_provider(&catalog, "d1", None, &snapshot(&[])).unwrap_err();
+    assert!(matches!(
+        report,
+        CredentialError::FieldType {
+            field,
+            expected: "a string"
+        } if field == "litellm_credential_name"
+    ));
+}
+
+#[test]
 fn missing_name_warns_and_returns_base() {
     let catalog = catalog_of(vec![named(&[
         ("model", text("openai/gpt-4o")),
