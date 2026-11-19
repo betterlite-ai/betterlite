@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::future::ready;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -140,11 +142,14 @@ fn refusal() -> GeneralSettingsError {
 }
 
 impl GeneralSettingsStore for FakeStore {
-    async fn get_field(&self, name: &str) -> Result<ConfigFieldInfo, GeneralSettingsError> {
+    fn get_field(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<ConfigFieldInfo, GeneralSettingsError>> + Send {
         if self.read_fails {
-            return Err(refusal());
+            return ready(Err(refusal()));
         }
-        Ok(ConfigFieldInfo {
+        ready(Ok(ConfigFieldInfo {
             field_name: name.to_owned(),
             field_value: self
                 .cells
@@ -152,18 +157,21 @@ impl GeneralSettingsStore for FakeStore {
                 .unwrap_or_else(PoisonError::into_inner)
                 .field
                 .clone(),
-        })
+        }))
     }
 
-    async fn update_field(&self, update: ConfigFieldUpdate) -> Result<(), GeneralSettingsError> {
+    fn update_field(
+        &self,
+        update: ConfigFieldUpdate,
+    ) -> impl Future<Output = Result<(), GeneralSettingsError>> + Send {
         if self.write_fails {
-            return Err(refusal());
+            return ready(Err(refusal()));
         }
         let mut cells = self.cells.lock().unwrap_or_else(PoisonError::into_inner);
         cells.field = update.field_value.clone();
         cells.writes.push(update.field_value);
         drop(cells);
-        Ok(())
+        ready(Ok(()))
     }
 }
 
