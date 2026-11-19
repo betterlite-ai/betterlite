@@ -18,6 +18,17 @@ description: >-
   resolution.
 
 
+  Interceptor seam. B1118 owns LiteLLM's interceptor contract (interceptors/base.py) and get_messages_interceptors: it
+  declares the `MessagesInterceptor` trait in crates/betterlite-core/src/api/messages_native_execute.rs, and its entry
+  pipeline tries the interceptor slice it is given, in order. Implement that trait for AdvisorOrchestrationHandler, with
+  can_handle from L48-L57 by calling B1118's advisor_requested, and handle from L59-L186; the struct keeps the name AdvisorOrchestrationHandler. LiteLLM's `_interceptors` list holds this handler as its only entry;
+  here that entry is the slice the gateway passes, and it stays empty until this task. B081's route state in
+  crates/betterlite-server/src/routes/anthropic_messages.rs builds the Messages dispatch. Read its merged code and the
+  B1134 and B982 constructors it calls, find where the interceptor slice goes in, and put the advisor there as the only
+  entry, built from the route state's collaborators. Change nothing else in that file, since B7980, B8804 and B9825 edit
+  it for their own constructions.
+
+
   Write adjacent tests.rs behavior functions advisor_tool_loop, advisor_max_uses, caller_credentials_disabled, advisor_deployment_credentials,
   advisor_context_injection under api::messages_advisor::tests. Each named function drives production code and asserts
   its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
@@ -53,24 +64,24 @@ description: >-
   litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _extract_response_text (L280-L286); litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py:
   _build_advisor_context (L292-L325); litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _inject_advisor_turn
   (L328-L353); litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _resolve_advisor_router (L383-L398);
-  litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _call_messages_handler (L401-L427); litellm/llms/anthropic/pass_through/messages/interceptors/base.py:
-  MessagesInterceptor.can_handle (L22-L27); litellm/llms/anthropic/pass_through/messages/interceptors/base.py: MessagesInterceptor.handle
-  (L30-L41); litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py: get_messages_interceptors (L11-L17).
+  litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _call_messages_handler (L401-L427); litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py:
+  the `_interceptors` entry for AdvisorOrchestrationHandler (L6-L8).
   Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
   partial function span is the explicit preparation/transition stage described above, with typed values passed to
   the following stage.
 
 
-  Sizing: 299 owned nonblank/non-comment/non-docstring Python lines (377 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 319 implementation,
+  Sizing: 284 owned nonblank/non-comment/non-docstring Python lines (356 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 300 implementation,
   70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds and
-  30 wiring; 605 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
+  50 wiring; 606 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
 
 
   Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B014 (Call dispatch across providers
   and call types, shared settings and helpers), B061 (Stored credentials and their encryption), B171 (Direct helper
   oracle and URL path encoding), B967 (Messages chat transform), B1087 (Api boundaries), B732 (Typed authentication
-  principals and grant resolution). These are callable/type/config owners, not provider-family umbrellas; the external
+  principals and grant resolution), B1118 (the MessagesInterceptor trait and the entry pipeline) and B081 (the Messages
+  route state the advisor joins). These are callable/type/config owners, not provider-family umbrellas; the external
   B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
@@ -90,6 +101,7 @@ scope:
   - tools/oracle/cases/helpers/messages-advisor/**
   - crates/betterlite-config/src/sections/messages_advisor.rs
   - crates/betterlite-config/src/sections/messages_advisor/**
+  - crates/betterlite-server/src/routes/anthropic_messages.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py#L205-L205
@@ -100,11 +112,14 @@ references:
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py#L381-L427
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/base.py#L1-L41
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py#L1-L17
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py#L6-L8
+  why: The `_interceptors` list, whose only entry is AdvisorOrchestrationHandler.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/base.py#L9-L41
+  why: The MessagesInterceptor contract B1118 declares and this handler implements.
 dod:
+- text: The gateway's Messages route state passes AdvisorOrchestrationHandler as the only entry of B1118's interceptor slice.
+  proof:
+  - advisor-registered
 - text: 'advisor tool loop: the named production behavior test asserts the result and effects described above.'
   proof:
   - case-advisor-tool-loop
@@ -186,6 +201,9 @@ checks:
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-advisor)"
+  - id: advisor-registered
+    why: the gateway still passes an empty interceptor slice, so the advisor never runs on /v1/messages
+    run: grep -q -F AdvisorOrchestrationHandler crates/betterlite-server/src/routes/anthropic_messages.rs
 oracle_cases:
 - tools/oracle/cases/helpers/messages-advisor/advisor-tool-loop.yaml
 - tools/oracle/cases/helpers/messages-advisor/advisor-max-uses.yaml
@@ -194,6 +212,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/messages-advisor/advisor-context-injection.yaml
 deviations: []
 out_of_scope:
+- 'litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py: B1118 owns get_messages_interceptors (L11-L17),
+  and B1118 owns interceptors/base.py with the MessagesInterceptor contract too.'
 - 'litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py: _inject_max_uses_error L356-L380 are out
   of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
 - Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared

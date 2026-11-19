@@ -163,7 +163,7 @@ oracle_cases:
   - tools/oracle/cases/guardrails/m-z-guard-http/no-auth.yaml
 deviations: []
 out_of_scope:
-  - "The classes and their initializers: B8210 (decision model), B8211 (PromptGuard), B8212 (Qostodian Nexus over B3770 and B3771's generic guardrail API), B8213 (Qualifire), B8215 (Singulr) and B8216 (Zscaler). Registry arms: B8521. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683. The decisions call: B3513 to B3515 and B524."
+  - "The classes and their initializers: B8210 (decision model), B8211 (PromptGuard), B8212 (Qostodian Nexus over B3770 and B3771's generic guardrail API), B8213 (Qualifire), B8215 (Singulr) and B8216 (Zscaler). Registry arms: B8521, and B8210 for decision_model. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683. The decisions call: B3513 to B3515 and B524."
   - "The `/upstream/{i}/body` selector the Qostodian cases use: B9850. The fields inside the generic guardrail API body, the forwarded x-qostodian-nexus-identifiers-* headers included, are left to B3770's, B3771's and B8212's tests."
   - "Semantic guard (B8214, B3808): semantic-router is not in tools/oracle/litellm's lock file, so LiteLLM cannot load the class in the oracle (see the B108 report notes)."
   - "The four class runtimes and their cases: B9460 to B9464. Noma, Ovalix, Pangea, Prompt Security, Repello, custom code and the judge: B9465."

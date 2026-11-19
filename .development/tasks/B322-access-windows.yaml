@@ -1,7 +1,7 @@
 id: B322
 title: Team-scoped deployment access and reserved windows
-description: 'Add typed team candidate filtering and model_info.access_windows, using B052''s authenticated
-  principal and an injected clock/time-zone database. Keep catalog lookup and reservation filtering distinct
+description: 'Add typed team candidate filtering and model_info.access_windows, using B302''s typed caller Authority
+  (team_id, proxy_admin) and an injected clock/time-zone database. Keep catalog lookup and reservation filtering distinct
   so direct deployment IDs cannot skip authorization. Surface the blocking window through typed no-deployment
   errors. Add config corpus cases for IANA zones, overnight windows, overlapping windows and invalid bounds.
   Configuration boundary keys introduced or consumed here: access_windows. Pinned declaration defaults:
