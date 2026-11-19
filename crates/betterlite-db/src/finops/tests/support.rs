@@ -99,14 +99,9 @@ pub(crate) fn cipher_with_key(key: &str) -> DbCipher {
 }
 
 pub(crate) fn cipher_without_key() -> DbCipher {
-    DbCipher {
-        settings: CipherSettings {
-            signing_key: None,
-            algorithm: Algorithm::XSalsa20Poly1305,
-        },
-        nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
-    }
+    let mut cipher = cipher_with_key(CIPHER_KEY);
+    cipher.settings.signing_key = None;
+    cipher
 }
 
 pub(crate) fn seal(text: &str) -> String {
