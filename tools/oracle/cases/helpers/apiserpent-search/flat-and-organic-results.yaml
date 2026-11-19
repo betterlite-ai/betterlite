@@ -1,0 +1,69 @@
+kind: helper
+name: apiserpent-flat-and-organic-results
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: |-
+      {"results": [{"title": "t", "url": "u", "snippet": "s", "date": "2024-01-02"}]}
+calls:
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {"results": {"organic": [{"title": "t", "url": "u", "snippet": "s"}]}}
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {"results": {}}
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {"results": [{}]}
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {"results": [{"title": null}]}
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: |-
+        {"results": "abc"}
+env: {}
+compare: {ignore: []}

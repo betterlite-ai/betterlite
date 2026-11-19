@@ -111,7 +111,7 @@ fn guardrail_time(
     }
 }
 
-pub(super) fn create_guardrail_span(
+pub(crate) fn create_guardrail_span(
     lifecycle: &LegacyLifecycle,
     kwargs: &MetadataMap,
     context: &Context,

@@ -1090,7 +1090,12 @@ name = "betterlite-anthropic-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-anthropic",
+ "betterlite-logging",
+ "betterlite-models",
+ "http 1.5.0",
  "libfuzzer-sys",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -2949,6 +2954,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -4551,6 +4557,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-models",
  "betterlite-server",
  "form_urlencoded",
