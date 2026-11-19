@@ -787,7 +787,7 @@ fn normalize_then_route_looks_up_the_original_model() {
     r#"{"model":"o3","custom_llm_provider":"openai","reasoning_effort":{"effort":"high","summary":null}}"#,
     r#"{"type":"enabled"}"#,
     Some(("o3", "litellm_proxy")),
-    Some("responses"),
+    Some("chat"),
     None
 )]
 fn plain_effort_requires_chat(
