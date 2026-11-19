@@ -109,12 +109,10 @@ def answer(call: Call) -> JsonValue:
 
 def outcome(call: Call) -> JsonValue:
     try:
-        value: dict[str, JsonValue] = {"ok": True, "value": answer(call)}
-        return JSON.validate_python(value)
+        return JSON.validate_python({"ok": True, "value": answer(call)})  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L28-L61
     # the source raises these for a missing key, an untrusted base or a reply it cannot read
     except (AttributeError, TypeError, ValueError):
-        failure: dict[str, JsonValue] = {"ok": False}
-        return JSON.validate_python(failure)
+        return JSON.validate_python({"ok": False})  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L28-L61
 
 
 def run(input_value: Input) -> JsonValue:
