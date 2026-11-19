@@ -1,12 +1,9 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock_guardrails::bedrock_credentials::CredentialSource;
-use betterlite_bedrock_guardrails::bedrock_post::GuardrailTransport;
 use betterlite_bedrock_guardrails::bedrock_transport::{BedrockGuardrail, BedrockGuardrailInit};
 use betterlite_bedrock_guardrails::guardrail_checks::ChecksInput;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -22,16 +19,16 @@ use betterlite_guardrails::bedrock_records::{Response, Source};
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use reqwest::header::HeaderMap;
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
+
+mod sent;
+
+use self::sent::Sent;
 
 const RECORDS_KEY: &str = "standard_logging_guardrail_information";
 const GUARDRAIL_NAME: &str = "bedrock-checks";
@@ -93,87 +90,6 @@ impl CredentialSource for Creds {
             secret_access_key: SecretString::from(SECRET_KEY.to_owned()),
             session_token: None,
         }))
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct Recorded {
-    url: String,
-    authorization: Option<String>,
-    content_type: Option<String>,
-    body: Value,
-}
-
-struct Sent {
-    reply: Mutex<Option<UpstreamResponse>>,
-    requests: Mutex<Vec<Recorded>>,
-}
-
-impl Sent {
-    fn new(reply: &Reply) -> Result<Self, Box<HelperError>> {
-        let body = match reply.raw.as_ref() {
-            Some(text) => text.as_bytes().to_vec(),
-            None => serde_json::to_vec(&reply.body).or_value_error()?,
-        };
-        Ok(Self {
-            reply: Mutex::new(Some(UpstreamResponse {
-                status: reply.status,
-                headers: HeaderMap::new(),
-                body,
-            })),
-            requests: Mutex::new(Vec::new()),
-        })
-    }
-
-    fn requests(&self) -> Vec<Recorded> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn record(&self, request: &OutboundRequest) {
-        let recorded = Recorded {
-            url: request.url.to_string(),
-            authorization: header(&request.headers, "authorization"),
-            content_type: header(&request.headers, "content-type"),
-            body: recorded_body(&request.body),
-        };
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded);
-    }
-}
-
-fn header(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned)
-}
-
-fn recorded_body(body: &RequestBody) -> Value {
-    match body {
-        RequestBody::Json(bytes) => serde_json::from_slice(bytes).unwrap_or(Value::Null),
-        RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-            Value::Null
-        }
-    }
-}
-
-impl GuardrailTransport for Sent {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(&request);
-        let reply = self
-            .reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        ready(reply.ok_or(TransportError::Closed))
     }
 }
 
