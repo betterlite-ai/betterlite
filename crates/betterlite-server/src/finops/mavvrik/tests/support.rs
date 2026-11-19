@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{pending, ready};
+use std::future::{Future, pending, ready};
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -94,6 +94,36 @@ pub(super) enum EngineCall {
     },
 }
 
+impl EngineCall {
+    fn into_delivered(self) -> Option<Vec<u8>> {
+        let EngineCall::Deliver { content, .. } = self else {
+            return None;
+        };
+        Some(content)
+    }
+
+    fn into_window(self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+        let EngineCall::Deliver { start, end, .. } = self else {
+            return None;
+        };
+        Some((start, end))
+    }
+
+    fn into_frequency(self) -> Option<String> {
+        let EngineCall::Deliver { frequency, .. } = self else {
+            return None;
+        };
+        Some(frequency)
+    }
+
+    fn into_limit(self) -> Option<i64> {
+        let EngineCall::Rows { limit, .. } = self else {
+            return None;
+        };
+        Some(limit)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecordedSettings {
     pub(super) provider: String,
@@ -144,6 +174,10 @@ impl Default for Recorder {
 }
 
 impl Recorder {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
     pub(super) fn factory(&self) -> FakeFactory {
         FakeFactory {
             recorder: self.clone(),
@@ -170,31 +204,19 @@ impl Recorder {
     }
 
     pub(super) fn delivered(&self) -> Vec<Vec<u8>> {
-        self.collected(|call| match call {
-            EngineCall::Deliver { content, .. } => Some(content),
-            _ => None,
-        })
+        self.collected(EngineCall::into_delivered)
     }
 
     pub(super) fn windows(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
-        self.collected(|call| match call {
-            EngineCall::Deliver { start, end, .. } => Some((start, end)),
-            _ => None,
-        })
+        self.collected(EngineCall::into_window)
     }
 
     pub(super) fn frequencies(&self) -> Vec<String> {
-        self.collected(|call| match call {
-            EngineCall::Deliver { frequency, .. } => Some(frequency),
-            _ => None,
-        })
+        self.collected(EngineCall::into_frequency)
     }
 
     pub(super) fn limits(&self) -> Vec<i64> {
-        self.collected(|call| match call {
-            EngineCall::Rows { limit, .. } => Some(limit),
-            _ => None,
-        })
+        self.collected(EngineCall::into_limit)
     }
 
     pub(super) fn record(&self, call: EngineCall) {
@@ -256,17 +278,21 @@ impl MavvrikEngineFactory for FakeFactory {
 impl MavvrikExporter for FakeEngine {
     type Error = TestError;
 
-    fn metrics_marker(&self) -> BoxFuture<'_, Result<MetricsMarker, TestError>> {
+    fn metrics_marker(&self) -> impl Future<Output = Result<MetricsMarker, TestError>> + Send {
         self.recorder.record(EngineCall::Marker);
-        if let Some(gate) = &self.recorder.gate {
-            gate.notify_one();
-            return Box::pin(pending());
-        }
-        if self.recorder.fail {
-            return Box::pin(ready(Err(TestError)));
-        }
+        let gate = self.recorder.gate.clone();
+        let fail = self.recorder.fail;
         let marker = self.recorder.marker.clone();
-        Box::pin(ready(Ok(marker)))
+        async move {
+            if let Some(gate) = gate {
+                gate.notify_one();
+                pending::<()>().await;
+            }
+            if fail {
+                return Err(TestError);
+            }
+            Ok(marker)
+        }
     }
 
     fn usage_rows(
@@ -274,10 +300,10 @@ impl MavvrikExporter for FakeEngine {
         limit: i64,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-    ) -> BoxFuture<'_, Result<Vec<UsageRow>, TestError>> {
+    ) -> impl Future<Output = Result<Vec<UsageRow>, TestError>> + Send {
         self.recorder.record(EngineCall::Rows { limit, start, end });
         let rows = self.recorder.rows.clone();
-        Box::pin(ready(Ok(rows)))
+        ready(Ok::<Vec<UsageRow>, TestError>(rows))
     }
 
     fn payload(&self, rows: &[UsageRow]) -> Result<Vec<u8>, TestError> {
@@ -303,7 +329,7 @@ impl MavvrikExporter for FakeEngine {
         content: &[u8],
         window: &FocusTimeWindow,
         filename: &str,
-    ) -> BoxFuture<'_, Result<(), TestError>> {
+    ) -> impl Future<Output = Result<(), TestError>> + Send {
         self.recorder.record(EngineCall::Deliver {
             content: content.to_vec(),
             start: window.start_time,
@@ -311,7 +337,7 @@ impl MavvrikExporter for FakeEngine {
             frequency: window.frequency.clone(),
             filename: filename.to_owned(),
         });
-        Box::pin(ready(Ok(())))
+        ready(Ok::<(), TestError>(()))
     }
 }
 
@@ -355,7 +381,7 @@ pub(super) fn pod_lock(
     acquired: Option<bool>,
 ) -> (Arc<FakePodLock>, Arc<dyn FocusPodLock>) {
     let lock = Arc::new(FakePodLock::new(has_cache, acquired));
-    let port: Arc<dyn FocusPodLock> = Arc::clone(&lock);
+    let port: Arc<dyn FocusPodLock> = Arc::<FakePodLock>::clone(&lock);
     (lock, port)
 }
 

@@ -82,12 +82,10 @@ fn catch_up_start(
     last_ingested: Option<DateTime<Utc>>,
     earliest: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
-    match last_ingested {
-        None => Some(earliest),
-        Some(last) => last
-            .checked_add_days(Days::new(1))
-            .map(|next| next.max(earliest)),
-    }
+    last_ingested.map_or(Some(earliest), |last| {
+        last.checked_add_days(Days::new(1))
+            .map(|next| next.max(earliest))
+    })
 }
 
 // a marker more than seven days behind: the warning names where it stands and where the re-export starts
@@ -105,8 +103,8 @@ fn warn_when_behind(
     if next < earliest {
         warn!(
             "Mavvrik FOCUS export: metricsMarker is more than {MAX_CATCHUP_DAYS} days behind ({}). Catching up from {} only; earlier data will not be re-exported.",
-            marker_date.date(),
-            start.date()
+            marker_date.date_naive(),
+            start.date_naive()
         );
     }
 }
@@ -128,7 +126,7 @@ where
             .ok_or(MavvrikError::TimeWindowOutOfRange)?;
         tracing::info!(
             "Mavvrik FOCUS export: catching up missed date {}",
-            catch_up.date()
+            catch_up.date_naive()
         );
         let window = FocusTimeWindow {
             start_time: catch_up,

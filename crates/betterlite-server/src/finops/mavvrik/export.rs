@@ -14,7 +14,8 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 
-use super::error::ConfigError;
+use super::error::{ConfigError, MavvrikError};
+use super::export_window::warn_at_row_cap;
 use crate::finops::focus::export_schedule::FocusPodLock;
 
 #[path = "export/tests/frequency_daily_only.rs"]
@@ -142,6 +143,32 @@ impl<F: MavvrikEngineFactory> MavvrikFocusLogger<F> {
         Ok(engine)
     }
 
+    // _export_window: the row cap warns, an empty export is still delivered, and the window reaches the destination
+    pub async fn export_window(
+        &self,
+        window: &FocusTimeWindow,
+        limit: Option<i64>,
+    ) -> Result<(), MavvrikError<<F::Engine as MavvrikExporter>::Error>> {
+        let effective_limit = limit.unwrap_or(self.max_rows);
+        let engine = self.ensure_engine().map_err(MavvrikError::Export)?;
+        let rows = engine
+            .usage_rows(effective_limit, window.start_time, window.end_time)
+            .await
+            .map_err(MavvrikError::Export)?;
+        warn_at_row_cap(effective_limit, window, rows.len());
+        let payload = if rows.is_empty() {
+            tracing::debug!("Mavvrik FOCUS export: no usage data for window {window:?}");
+            Vec::new()
+        } else {
+            engine.payload(&rows).map_err(MavvrikError::Export)?
+        };
+        let filename = engine.filename(window).map_err(MavvrikError::Export)?;
+        engine
+            .deliver(&payload, window, &filename)
+            .await
+            .map_err(MavvrikError::Export)
+    }
+
     // the composition root calls this once scheduling stops: lock releases a cancelled export left behind finish here
     pub async fn drain(&self) {
         self.tasks.close();
@@ -207,7 +234,7 @@ pub(super) fn parse_metrics_marker(marker: &MetricsMarker) -> Option<DateTime<Ut
                 return Some(parsed);
             }
             tracing::warn!(
-                "Mavvrik FOCUS: could not parse metricsMarker {trimmed:?} — skipping catch-up"
+                "Mavvrik FOCUS: could not parse metricsMarker {trimmed:?} \u{2014} skipping catch-up"
             );
             None
         }
@@ -217,7 +244,7 @@ pub(super) fn parse_metrics_marker(marker: &MetricsMarker) -> Option<DateTime<Ut
 fn parse_epoch(seconds: i64) -> Option<DateTime<Utc>> {
     let Some(parsed) = DateTime::from_timestamp(seconds, 0) else {
         tracing::warn!(
-            "Mavvrik FOCUS: could not parse metricsMarker {seconds} — skipping catch-up"
+            "Mavvrik FOCUS: could not parse metricsMarker {seconds} \u{2014} skipping catch-up"
         );
         return None;
     };
