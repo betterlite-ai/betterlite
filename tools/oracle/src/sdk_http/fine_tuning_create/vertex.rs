@@ -9,6 +9,7 @@ use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
+use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use betterlite_vertex::vertex_fine_tuning::execution::TuningTransport;
 use betterlite_vertex::vertex_fine_tuning::execution::create::{
@@ -58,7 +59,7 @@ pub async fn create(
         timeout: seconds(timeout).and_then(|value| Duration::try_from_secs_f64(value).ok()),
     };
     create_tuning_job(&transport, &request, |_, _| {
-        ready(Ok(AccessToken {
+        ready(Ok::<AccessToken, CredentialCacheError>(AccessToken {
             token: SecretString::from("vertex-test".to_owned()),
             project: "mock-project-id".to_owned(),
         }))
