@@ -51,14 +51,14 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Identity(case) => identity(case),
+            Input::Identity(case) => Ok(identity(case)),
             Input::Payload(case) => payload(case),
         }
     }
 }
 
 // get_audit_log_changed_by: the authenticated user wins unless the key's metadata grants the header
-fn identity(case: &IdentityInput) -> HelperResult {
+fn identity(case: &IdentityInput) -> JsonValue {
     let caller = CallerIdentity {
         user_id: case.user_id.clone(),
         api_key: None,
@@ -70,7 +70,7 @@ fn identity(case: &IdentityInput) -> HelperResult {
         &caller,
         case.admin_name.as_deref(),
     );
-    Ok(json!({ "changed_by": changed_by }))
+    json!({ "changed_by": changed_by })
 }
 
 // A LiteLLM_AuditLogs model, validated and masked by the record constructor, then read as the callback payload
