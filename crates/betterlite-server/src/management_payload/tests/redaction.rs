@@ -42,36 +42,6 @@ fn sample_response() -> JsonObject {
     }))
 }
 
-fn sample_redacted() -> JsonObject {
-    json_object(json!({
-        "env_vars": [
-            {"name": "TOP", "scope": "global", "description": null, "value": ""}
-        ],
-        "items": [
-            {
-                "server_id": "alpha",
-                "env_vars": [
-                    {"name": "ALPHA", "scope": "user", "description": null, "value": ""}
-                ],
-                "nested": {
-                    "env_vars": [
-                        {"name": "DEEP", "value": "deep-secret", "scope": "global"}
-                    ]
-                },
-                "items": [
-                    {"env_vars": [{"name": "INNER", "value": "inner-secret"}]}
-                ]
-            },
-            {
-                "server_id": "beta",
-                "env_vars": [
-                    {"name": "BETA", "scope": "global", "description": null, "value": ""}
-                ]
-            }
-        ]
-    }))
-}
-
 #[test]
 fn dict_and_list_only() {
     assert!(object_mapping(&json_value(json!({"a": 1}))).is_some());
@@ -205,7 +175,39 @@ fn arbitrary_object_unchanged(#[case] value: Json) {
 fn top_level_and_items_one_level() {
     let mut response = sample_response();
     redact_env_var_values(&mut response);
-    assert_eq!(response, sample_redacted());
+
+    assert_eq!(
+        response["env_vars"],
+        json_value(json!([
+            {"name": "TOP", "scope": "global", "description": null, "value": ""}
+        ]))
+    );
+    let items = object_list(&response["items"]).expect("items is a list");
+    let first = object_mapping(&items[0]).expect("the first item is an object");
+    assert_eq!(
+        first["env_vars"],
+        json_value(json!([
+            {"name": "ALPHA", "scope": "user", "description": null, "value": ""}
+        ]))
+    );
+    let second = object_mapping(&items[1]).expect("the second item is an object");
+    assert_eq!(
+        second["env_vars"],
+        json_value(json!([
+            {"name": "BETA", "scope": "global", "description": null, "value": ""}
+        ]))
+    );
+    // only one level: the nested record and the items inside the item keep their values
+    assert_eq!(
+        first["nested"],
+        json_value(json!({
+            "env_vars": [{"name": "DEEP", "value": "deep-secret", "scope": "global"}]
+        }))
+    );
+    assert_eq!(
+        first["items"],
+        json_value(json!([{"env_vars": [{"name": "INNER", "value": "inner-secret"}]}]))
+    );
 }
 
 #[test]
