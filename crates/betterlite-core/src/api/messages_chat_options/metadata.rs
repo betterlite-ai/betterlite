@@ -19,8 +19,8 @@ pub fn translate_metadata(
     {
         kwargs.insert("user".to_owned(), user_id.clone());
         if let Json::Text(text) = user_id {
-            let key = decode_messages_thinking(text.as_bytes(), &context.limits)?;
-            if let Some(key) = key.filter(|_| supports_prompt_cache_key(context)) {
+            let session = decode_messages_thinking(text.as_bytes(), &context.limits)?;
+            if let Some(key) = session.filter(|_| supports_prompt_cache_key(context)) {
                 kwargs.insert("prompt_cache_key".to_owned(), Json::Text(key));
             }
         }

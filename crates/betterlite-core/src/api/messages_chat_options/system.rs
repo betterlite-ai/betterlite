@@ -39,8 +39,8 @@ pub fn mid_turn_system_message(message: &Object, model: Option<&str>) -> Option<
         return None;
     };
     let mut parts = Vec::new();
-    for block in blocks {
-        let Some(block) = block.as_object() else {
+    for entry in blocks {
+        let Some(block) = entry.as_object() else {
             continue;
         };
         if block.get(TYPE).and_then(Json::as_str) != Some(TEXT_BLOCK) {
@@ -75,8 +75,8 @@ pub fn insert_system_message(messages: &mut Vec<Json>, request: &Object) {
     };
     let model = request.get("model").and_then(Json::as_str);
     let mut parts = Vec::new();
-    for block in blocks {
-        let Some(block) = block.as_object() else {
+    for entry in blocks {
+        let Some(block) = entry.as_object() else {
             continue;
         };
         if block.get(TYPE).and_then(Json::as_str) != Some(TEXT_BLOCK) {

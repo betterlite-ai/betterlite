@@ -38,7 +38,7 @@ struct Declared {
 impl Declared {
     fn new(names: Option<&[&str]>) -> Self {
         Self {
-            names: names.map(|names| names.iter().map(|name| String::from(*name)).collect()),
+            names: names.map(|values| values.iter().map(|name| String::from(*name)).collect()),
             probes: Mutex::new(Vec::new()),
         }
     }
@@ -244,9 +244,7 @@ fn system_insertion_does_not_merge() {
 
 #[test]
 fn system_mid_turn_cache_control_and_breakpoint() {
-    let block = object(
-        r#"{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}, "prompt_cache_breakpoint": false}"#,
-    );
+    let block = r#"{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}, "prompt_cache_breakpoint": false}"#;
     let message = object(&format!(r#"{{"role": "system", "content": [{block}]}}"#));
     assert_eq!(
         mid_turn_system_message(&message, Some("anthropic/claude-sonnet-4-5")).map(Json::Object),
@@ -264,9 +262,7 @@ fn system_mid_turn_cache_control_and_breakpoint() {
 
 #[test]
 fn system_top_level_cache_control_and_breakpoint() {
-    let block = object(
-        r#"{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}, "prompt_cache_breakpoint": false}"#,
-    );
+    let block = r#"{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}, "prompt_cache_breakpoint": false}"#;
     let claude_request = object(&format!(
         r#"{{"model": "claude-sonnet-4-5", "system": [{block}]}}"#
     ));
@@ -299,9 +295,9 @@ fn system_top_level_cache_control_and_breakpoint() {
 fn metadata_user_and_session(#[case] request: &str, #[case] expected: &str) {
     let parameters = Declared::new(Some(&["prompt_cache_key"]));
     let options = context(&parameters, "claude-3", Some("anthropic"));
-    let mut request = object(request);
+    let mut fields = object(request);
     let mut kwargs = Object::new();
-    translate_metadata(&mut request, &mut kwargs, &options).expect("metadata translates");
+    translate_metadata(&mut fields, &mut kwargs, &options).expect("metadata translates");
     assert_eq!(kwargs, object(expected));
     assert!(parameters.calls().is_empty());
 }
@@ -552,7 +548,9 @@ fn claude_thinking_carriers_skip_non_adaptive_effort() {
     );
     assert_eq!(
         bedrock,
-        object(r#"{"thinking": {"type": "enabled", "budget_tokens": 9000}}"#)
+        object(
+            r#"{"thinking": {"type": "enabled", "budget_tokens": 9000}, "output_config": {"effort": "high"}}"#
+        )
     );
 }
 

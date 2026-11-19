@@ -137,12 +137,11 @@ fn wrapped_effort(
     output_config: Option<&Json>,
     context: &OptionsContext<'_>,
 ) -> Result<Option<Json>, OptionsError> {
-    let declared = adaptive_effort(thinking, output_config)?;
-    let effort = match declared {
-        Some(effort) => Some(effort),
+    let chosen = match adaptive_effort(thinking, output_config)? {
+        Some(declared) => Some(declared),
         None => thinking_effort(thinking, context.thresholds)?,
     };
-    let Some(effort) = effort else {
+    let Some(effort) = chosen else {
         return Ok(None);
     };
     Ok(Some(summary_wrapped_effort(
