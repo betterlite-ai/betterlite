@@ -192,6 +192,14 @@ fn the_lookup_receives_the_whole_request() {
 }
 
 #[test]
+fn the_encrypted_failure_names_itself_on_the_wire() {
+    assert_eq!(
+        CompatibilityFailure::EncryptedTaskUnsupported.wire_name(),
+        "encrypted_task_unsupported"
+    );
+}
+
+#[test]
 fn the_compatibility_failure_is_an_api_connection_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
     let class = responses_compatibility_failure(
