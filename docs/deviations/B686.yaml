@@ -1,0 +1,44 @@
+task: B686
+deviations:
+  - what: >-
+      A litellm_params.timeout that is negative, NaN or infinite is refused with a Timeout error before any request,
+      where LiteLLM forwards it into the Azure SDK client constructor, which accepts the value and sends it as the
+      request timeout.
+    why: >-
+      betterlite carries the request deadline as a std::time::Duration, which cannot represent a negative or
+      non-finite duration; a timeout that can never be a deadline is refused instead of handed to the HTTP client.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L52-L60
+  - what: >-
+      The OpenAI SDK's implicit retries of 408, 409, 429 and 5xx replies are not repeated: a failed list,
+      create or delete returns the first status error, and max_retries is carried on the client's inputs
+      but not acted on here.
+    why: >-
+      Retry and backoff policy belongs to the shared transport task B173, so this module sends each
+      request once and leaves retry planning to that layer; the async getter takes the same max_retries at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L77-L87
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L51-L60
+  - what: >-
+      The SDK constructor's OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS fallbacks are not
+      read: betterlite sends no OpenAI-Organization or OpenAI-Project header, and no header parsed from
+      OPENAI_CUSTOM_HEADERS, while LiteLLM's AzureOpenAI inherits all three from the SDK constructor.
+    why: >-
+      The environment is resolved by betterlite-config and a provider leaf may not read it, so this
+      client takes only what its caller passes. The SDK reads the organization and project variables at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L235-L240, parses
+      OPENAI_CUSTOM_HEADERS at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L256-L263, and builds
+      its default_headers from them at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L541-L542.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L51-L60
+kept_bugs:
+  - what: >-
+      Only the literal True async flag selects the async SDK client: any other truthy facade value, such as 1 or
+      "yes", keeps the sync client. The same predicate guards the create and delete facades.
+    why: >-
+      A caller that passes a truthy flag other than True gets the sync client from LiteLLM today, so its calls run
+      on the sync client here too; widening the check would silently move those calls to the async client.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L166

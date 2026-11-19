@@ -25,11 +25,14 @@ const REMOVED_KEYS: [&str; 5] = [
     "stream_chunk_size",
 ];
 
-pub(crate) fn chat_fields(
+pub(crate) struct ChatRequestFields {
+    pub(crate) messages: JsonValue,
+    pub(crate) params: IndexMap<String, JsonValue>,
+}
+
+pub(crate) fn chat_request_fields(
     request: &ChatRequest,
-    model: &str,
-    catalog: &CatalogCapabilities,
-) -> Result<IndexMap<String, JsonValue>, OperationError> {
+) -> Result<ChatRequestFields, OperationError> {
     let mut requested = request_fields(request, "chat")?;
     let messages = requested
         .shift_remove("messages")
@@ -37,7 +40,19 @@ pub(crate) fn chat_fields(
     for key in REMOVED_KEYS {
         requested.shift_remove(key);
     }
-    let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = requested
+    Ok(ChatRequestFields {
+        messages,
+        params: requested,
+    })
+}
+
+pub(crate) fn chat_fields(
+    request: &ChatRequest,
+    model: &str,
+    catalog: &CatalogCapabilities,
+) -> Result<IndexMap<String, JsonValue>, OperationError> {
+    let ChatRequestFields { messages, params } = chat_request_fields(request)?;
+    let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
         .into_iter()
         .partition(|(name, _value)| KNOWN_PARAMS.split(' ').any(|known| known == name));
     let policy = OpenAiConfig {

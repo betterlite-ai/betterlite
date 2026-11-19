@@ -1,0 +1,44 @@
+kind: helper
+name: azure-assistant-definitions-create-assistant
+call:
+  azure_assistant_definitions:
+    create_assistant:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data:
+          model: gpt-4o
+          name: Helper
+          instructions: answer
+          description: null
+          metadata: {team: a}
+          tools:
+            - {type: code_interpreter}
+            - {type: file_search, file_search: {max_num_results: 4}}
+            - {type: function, function: {name: lookup, parameters: {type: object}}}
+          tool_resources: {code_interpreter: {file_ids: [file-1]}}
+          temperature: 0.2
+          top_p: 0.9
+          response_format: {type: json_object}
+          reasoning_effort: high
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: true
+        data: {model: gpt-4o, name: null}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {model: gpt-4o}
+        reply:
+          status: 200
+          body: '{"id":"asst_1","object":"assistant","created_at":7,"model":"gpt-4o","tools":[],"marker":"kept"}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {model: gpt-4o}
+        reply:
+          status: 400
+          body: '{"error":{"message":"bad model","type":"invalid_request_error","param":"model"}}'
+env: {}
+compare: {ignore: []}
