@@ -42,23 +42,19 @@ pub async fn collect_generated_files(
     }
     let decoded = decode_generated_paths(&stdout);
     if let Some(refusal) = decoded.refusal {
-        warn_refusal(refusal);
+        match refusal {
+            ListingRefusal::TooLarge => tracing::warn!(
+                "SkillsSandboxExecutor: The generated file listing is past {MAX_LISTING_BYTES} bytes, so nothing is collected"
+            ),
+            ListingRefusal::Malformed => tracing::warn!(
+                "SkillsSandboxExecutor: The generated file listing is not a JSON list of paths, so nothing is collected"
+            ),
+            ListingRefusal::TooManyEntries => tracing::warn!(
+                "SkillsSandboxExecutor: The generated file listing is past {MAX_LISTING_ENTRIES} entries, so only the first ones are collected"
+            ),
+        }
     }
     copy_generated_files(session, original, scratch, &decoded.paths).await
-}
-
-fn warn_refusal(refusal: ListingRefusal) {
-    match refusal {
-        ListingRefusal::TooLarge => tracing::warn!(
-            "SkillsSandboxExecutor: The generated file listing is past {MAX_LISTING_BYTES} bytes, so nothing is collected"
-        ),
-        ListingRefusal::Malformed => tracing::warn!(
-            "SkillsSandboxExecutor: The generated file listing is not a JSON list of paths, so nothing is collected"
-        ),
-        ListingRefusal::TooManyEntries => tracing::warn!(
-            "SkillsSandboxExecutor: The generated file listing is past {MAX_LISTING_ENTRIES} entries, so only the first ones are collected"
-        ),
-    }
 }
 
 async fn copy_generated_files(

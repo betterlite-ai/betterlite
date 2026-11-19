@@ -257,6 +257,7 @@ async fn sdk_close_exits_the_manager_once() {
         .await
         .unwrap();
     session.close().await.unwrap();
+    assert_eq!(exits_of(&host, &last_instance(&host)), 1);
     session.close().await.unwrap();
     let instance = last_instance(&host);
     drop(session);

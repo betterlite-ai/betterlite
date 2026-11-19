@@ -57,6 +57,13 @@ fn the_listing_walk_names_every_collected_extension() {
     );
 }
 
+#[test]
+fn the_caps_hold_their_documented_values() {
+    assert_eq!(MAX_LISTING_BYTES, 1_048_576);
+    assert_eq!(MAX_LISTING_ENTRIES, 4096);
+    assert_eq!(MAX_COLLECTED_BYTES, 67_108_864);
+}
+
 #[rstest]
 #[case::two_paths("[\"/sandbox/a.png\", \"/sandbox/b.pdf\"]", 2)]
 #[case::empty("[]", 0)]
