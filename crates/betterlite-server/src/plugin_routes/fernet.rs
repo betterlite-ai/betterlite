@@ -44,7 +44,7 @@ pub(crate) enum FernetError {
     Ciphertext,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct FernetKey {
     signing: [u8; HALF_KEY_BYTES],
     encryption: [u8; HALF_KEY_BYTES],

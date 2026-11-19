@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::loader::startup::process_environment;
 use hmac::{Hmac, KeyInit as _, Mac as _};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use uuid::Uuid;
@@ -25,7 +26,7 @@ pub struct Claim {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClaimMaterial<'value> {
-    pub(crate) salt: &'value str,
+    pub(crate) salt: &'value SecretString,
     pub(crate) plugin: &'value str,
     pub(crate) user_id: Option<&'value str>,
     pub(crate) user_role: Option<&'value str>,
@@ -42,9 +43,10 @@ pub fn issue_plugin_session_claim(
     let salt = process_environment()
         .get(SALT_VARIABLE)
         .cloned()
+        .map(SecretString::from)
         .unwrap_or_default();
     let material = ClaimMaterial {
-        salt: salt.as_str(),
+        salt: &salt,
         plugin: plugin_name,
         user_id,
         user_role,
@@ -64,11 +66,12 @@ pub fn verify_plugin_session_claim(
     let salt = process_environment()
         .get(SALT_VARIABLE)
         .cloned()
+        .map(SecretString::from)
         .unwrap_or_default();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
-    verify_claim_at(salt.as_str(), plugin_name, ciphertext, now)
+    verify_claim_at(&salt, plugin_name, ciphertext, now)
 }
 
 pub(crate) fn issue_claim(material: &ClaimMaterial<'_>) -> Result<String, PluginError> {
@@ -84,7 +87,7 @@ pub(crate) fn issue_claim(material: &ClaimMaterial<'_>) -> Result<String, Plugin
 }
 
 pub(crate) fn verify_claim_at(
-    salt: &str,
+    salt: &SecretString,
     plugin_name: &str,
     ciphertext: &str,
     now: u64,
@@ -104,8 +107,8 @@ pub(crate) fn verify_claim_at(
     Ok(claim)
 }
 
-fn plugin_key(salt: &str, plugin_name: &str) -> Result<FernetKey, PluginError> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(salt.as_bytes())
+fn plugin_key(salt: &SecretString, plugin_name: &str) -> Result<FernetKey, PluginError> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(salt.expose_secret().as_bytes())
         .map_err(|source| PluginError::ClaimKey { source })?;
     mac.update(plugin_name.as_bytes());
     let material = <[u8; KEY_BYTES]>::from(mac.finalize().into_bytes());

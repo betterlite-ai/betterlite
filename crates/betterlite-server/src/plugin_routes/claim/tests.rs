@@ -1,8 +1,13 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::PathBuf;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use betterlite_pyhost::json_values::JsonObject;
+use rstest::rstest;
+use secrecy::SecretString;
 
 use super::{
     CLAIM_TTL_SECONDS, Claim, ClaimMaterial, SALT_VARIABLE, issue_claim,
@@ -15,9 +20,9 @@ use crate::plugin_routes::test_support::{
     LONG_SALT_KEY_HEX, PLUGIN, SALT,
 };
 
-fn material(now: u64) -> ClaimMaterial<'static> {
+fn material(salt: &SecretString, now: u64) -> ClaimMaterial<'_> {
     ClaimMaterial {
-        salt: SALT,
+        salt,
         plugin: PLUGIN,
         user_id: Some("u1"),
         user_role: Some("proxy_admin"),
@@ -32,15 +37,16 @@ fn python_key(hex_key: &str) -> FernetKey {
     FernetKey::from_material(key)
 }
 
-fn sealed(plaintext: &[u8], timestamp: u64) -> String {
-    let key = plugin_key(SALT, PLUGIN).unwrap();
+fn sealed(salt: &SecretString, plaintext: &[u8], timestamp: u64) -> String {
+    let key = plugin_key(salt, PLUGIN).unwrap();
     fernet::seal(&key, plaintext, timestamp, CLAIM_IV)
 }
 
 #[test]
 fn round_trips_a_claim() {
-    let token = issue_claim(&material(CLAIM_TIMESTAMP)).unwrap();
-    let claim = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
+    let salt = SecretString::from(SALT);
+    let token = issue_claim(&material(&salt, CLAIM_TIMESTAMP)).unwrap();
+    let claim = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(claim.plugin, PLUGIN);
     assert_eq!(claim.user_id, "u1");
     assert_eq!(claim.user_role, "proxy_admin");
@@ -49,7 +55,8 @@ fn round_trips_a_claim() {
 
 #[test]
 fn verifies_the_python_claim_token() {
-    let claim = verify_claim_at(SALT, PLUGIN, CLAIM_TOKEN, CLAIM_TIMESTAMP).unwrap();
+    let salt = SecretString::from(SALT);
+    let claim = verify_claim_at(&salt, PLUGIN, CLAIM_TOKEN, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(claim.plugin, PLUGIN);
     assert_eq!(claim.user_id, "u1");
     assert_eq!(claim.user_role, "proxy_admin");
@@ -58,8 +65,9 @@ fn verifies_the_python_claim_token() {
 
 #[test]
 fn accepts_the_claim_at_its_expiry_second() {
+    let salt = SecretString::from(SALT);
     let claim = verify_claim_at(
-        SALT,
+        &salt,
         PLUGIN,
         CLAIM_TOKEN,
         CLAIM_TIMESTAMP + CLAIM_TTL_SECONDS,
@@ -70,8 +78,9 @@ fn accepts_the_claim_at_its_expiry_second() {
 
 #[test]
 fn rejects_the_claim_one_second_after_expiry() {
+    let salt = SecretString::from(SALT);
     let result = verify_claim_at(
-        SALT,
+        &salt,
         PLUGIN,
         CLAIM_TOKEN,
         CLAIM_TIMESTAMP + CLAIM_TTL_SECONDS + 1,
@@ -81,63 +90,71 @@ fn rejects_the_claim_one_second_after_expiry() {
 
 #[test]
 fn rejects_a_claim_whose_own_exp_passed() {
+    let salt = SecretString::from(SALT);
     let plaintext = r#"{"plugin":"litellm-platform-plugin","user_id":"u1","user_role":"proxy_admin","exp":1699999999}"#;
-    let token = sealed(plaintext.as_bytes(), CLAIM_TIMESTAMP);
-    let result = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP);
+    let token = sealed(&salt, plaintext.as_bytes(), CLAIM_TIMESTAMP);
+    let result = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::ClaimExpired)));
 }
 
 #[test]
 fn accepts_a_claim_expiring_exactly_now() {
+    let salt = SecretString::from(SALT);
     let plaintext = r#"{"plugin":"litellm-platform-plugin","user_id":"u1","user_role":"proxy_admin","exp":1700000000}"#;
-    let token = sealed(plaintext.as_bytes(), CLAIM_TIMESTAMP);
-    let claim = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
+    let token = sealed(&salt, plaintext.as_bytes(), CLAIM_TIMESTAMP);
+    let claim = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(claim.exp, 1_700_000_000);
 }
 
 #[test]
 fn rejects_a_claim_for_another_plugin() {
+    let salt = SecretString::from(SALT);
     let plaintext =
         r#"{"plugin":"other-plugin","user_id":"u1","user_role":"proxy_admin","exp":1700000030}"#;
-    let token = sealed(plaintext.as_bytes(), CLAIM_TIMESTAMP);
-    let result = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP);
+    let token = sealed(&salt, plaintext.as_bytes(), CLAIM_TIMESTAMP);
+    let result = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::AudienceMismatch)));
 }
 
 #[test]
 fn rejects_a_claim_signed_under_another_salt() {
-    let result = verify_claim_at("another-salt", PLUGIN, CLAIM_TOKEN, CLAIM_TIMESTAMP);
+    let salt = SecretString::from("another-salt");
+    let result = verify_claim_at(&salt, PLUGIN, CLAIM_TOKEN, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::InvalidClaim)));
 }
 
 #[test]
 fn rejects_a_tampered_claim() {
+    let salt = SecretString::from(SALT);
     let mut raw = URL_SAFE.decode(CLAIM_TOKEN).unwrap();
     raw[30] ^= 0x01;
     let token = URL_SAFE.encode(raw);
-    let result = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP);
+    let result = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::InvalidClaim)));
 }
 
 #[test]
 fn rejects_a_claim_that_is_not_json() {
-    let token = sealed(b"not json", CLAIM_TIMESTAMP);
-    let result = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP);
+    let salt = SecretString::from(SALT);
+    let token = sealed(&salt, b"not json", CLAIM_TIMESTAMP);
+    let result = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::InvalidClaim)));
 }
 
 #[test]
 fn rejects_a_claim_with_another_type_for_exp() {
+    let salt = SecretString::from(SALT);
     let plaintext = r#"{"plugin":"litellm-platform-plugin","user_id":"u1","user_role":"proxy_admin","exp":"soon"}"#;
-    let token = sealed(plaintext.as_bytes(), CLAIM_TIMESTAMP);
-    let result = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP);
+    let token = sealed(&salt, plaintext.as_bytes(), CLAIM_TIMESTAMP);
+    let result = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP);
     assert!(matches!(result, Err(PluginError::InvalidClaim)));
 }
 
 #[test]
 fn carries_only_the_four_claim_fields() {
-    let key = plugin_key(SALT, PLUGIN).unwrap();
-    let token = issue_claim(&material(CLAIM_TIMESTAMP)).unwrap();
+    let salt = SecretString::from(SALT);
+    let key = plugin_key(&salt, PLUGIN).unwrap();
+    let token = issue_claim(&material(&salt, CLAIM_TIMESTAMP)).unwrap();
     let plaintext = fernet::open(&key, &token, CLAIM_TTL_SECONDS, CLAIM_TIMESTAMP).unwrap();
     let object: JsonObject = serde_json::from_slice(&plaintext).unwrap();
     let mut names: Vec<&str> = object.keys().map(String::as_str).collect();
@@ -147,27 +164,30 @@ fn carries_only_the_four_claim_fields() {
 
 #[test]
 fn leaves_the_caller_fields_empty_when_absent() {
-    let mut absent = material(CLAIM_TIMESTAMP);
+    let salt = SecretString::from(SALT);
+    let mut absent = material(&salt, CLAIM_TIMESTAMP);
     absent.user_id = None;
     absent.user_role = None;
     let token = issue_claim(&absent).unwrap();
-    let claim = verify_claim_at(SALT, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
+    let claim = verify_claim_at(&salt, PLUGIN, &token, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(claim.user_id, "");
     assert_eq!(claim.user_role, "");
 }
 
 #[test]
 fn derives_the_python_key_for_a_plain_salt() {
+    let salt = SecretString::from(SALT);
     let expected = python_key(KEY_HEX);
-    let token = sealed(b"payload", CLAIM_TIMESTAMP);
+    let token = sealed(&salt, b"payload", CLAIM_TIMESTAMP);
     let plaintext = fernet::open(&expected, &token, CLAIM_TTL_SECONDS, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(plaintext, b"payload".to_vec());
 }
 
 #[test]
 fn derives_the_python_key_for_a_salt_longer_than_a_hmac_block() {
+    let salt = SecretString::from(LONG_SALT);
     let expected = python_key(LONG_SALT_KEY_HEX);
-    let key = plugin_key(LONG_SALT, PLUGIN).unwrap();
+    let key = plugin_key(&salt, PLUGIN).unwrap();
     let token = fernet::seal(&key, b"payload", CLAIM_TIMESTAMP, CLAIM_IV);
     let plaintext = fernet::open(&expected, &token, CLAIM_TTL_SECONDS, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(plaintext, b"payload".to_vec());
@@ -175,8 +195,9 @@ fn derives_the_python_key_for_a_salt_longer_than_a_hmac_block() {
 
 #[test]
 fn derives_the_python_key_for_an_empty_salt() {
+    let salt = SecretString::from("");
     let expected = python_key(EMPTY_SALT_KEY_HEX);
-    let key = plugin_key("", PLUGIN).unwrap();
+    let key = plugin_key(&salt, PLUGIN).unwrap();
     let token = fernet::seal(&key, b"payload", CLAIM_TIMESTAMP, CLAIM_IV);
     let plaintext = fernet::open(&expected, &token, CLAIM_TTL_SECONDS, CLAIM_TIMESTAMP).unwrap();
     assert_eq!(plaintext, b"payload".to_vec());
@@ -184,8 +205,9 @@ fn derives_the_python_key_for_an_empty_salt() {
 
 #[test]
 fn saturates_the_claim_expiry_at_the_end_of_time() {
-    let token = issue_claim(&material(u64::MAX)).unwrap();
-    let key = plugin_key(SALT, PLUGIN).unwrap();
+    let salt = SecretString::from(SALT);
+    let token = issue_claim(&material(&salt, u64::MAX)).unwrap();
+    let key = plugin_key(&salt, PLUGIN).unwrap();
     let plaintext = fernet::open(&key, &token, CLAIM_TTL_SECONDS, u64::MAX).unwrap();
     let claim: Claim = serde_json::from_slice(&plaintext).unwrap();
     assert_eq!(claim.exp, i64::MAX);
@@ -201,4 +223,16 @@ async fn issues_and_verifies_through_the_environment() {
         assert_eq!(claim.plugin, PLUGIN);
     })
     .await;
+}
+
+#[rstest]
+fn replays_the_plugin_session_claim_corpus(
+    #[files("fuzz/corpus/plugin_session_claim/*")] path: PathBuf,
+) {
+    let token = fs::read_to_string(path).expect("a corpus seed should be readable");
+    temp_env::with_vars([(SALT_VARIABLE, None::<&str>)], || {
+        let first = verify_plugin_session_claim(PLUGIN, &token);
+        let second = verify_plugin_session_claim(PLUGIN, &token);
+        assert_eq!(first.is_ok(), second.is_ok());
+    });
 }
