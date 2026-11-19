@@ -86,19 +86,25 @@ pub fn normalize_value(value: &str) -> String {
     normalized.trim_matches('_').to_owned()
 }
 
+// get_datadog_tags() without a standard_logging_object: the five tags every payload carries
+#[must_use]
+pub fn base_tags(environment: &Environment) -> Vec<String> {
+    vec![
+        format!("env:{}", environment.env),
+        format!("service:{}", environment.service),
+        format!("version:{}", environment.version),
+        format!("HOSTNAME:{}", environment.hostname),
+        format!("POD_NAME:{}", environment.pod_name),
+    ]
+}
+
 #[must_use]
 pub fn tags(
     environment: &Environment,
     request_tags: &[RequestTagValue],
     team: &TeamMetadata,
 ) -> Vec<String> {
-    let mut tags = vec![
-        format!("env:{}", environment.env),
-        format!("service:{}", environment.service),
-        format!("version:{}", environment.version),
-        format!("HOSTNAME:{}", environment.hostname),
-        format!("POD_NAME:{}", environment.pod_name),
-    ];
+    let mut tags = base_tags(environment);
     for tag in request_tags {
         tags.push(format!(
             "request_tag:{}",
