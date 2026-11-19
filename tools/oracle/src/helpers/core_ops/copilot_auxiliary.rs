@@ -36,8 +36,7 @@ pub(crate) struct EmbeddingCall {
     env_base: Option<String>,
 }
 
-// LiteLLM discards the caller's base, so the input carries none: the case still sends one and
-// serde drops it, which proves the resolved session host is what receives the token.
+// LiteLLM discards the caller base, so no field holds it: the seed sends one and serde drops it
 #[derive(Debug, Deserialize)]
 pub(crate) struct MessagesCall {
     model: String,

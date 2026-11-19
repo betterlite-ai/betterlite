@@ -24,22 +24,33 @@ HEADERS: Final = TypeAdapter(dict[str, JsonValue])
 EmbeddingValues: TypeAlias = str | list[str] | list[int] | list[list[int]]
 
 
-class Input(TypedDict, total=False):
-    action: Literal["embedding", "messages"]
+class EmbeddingCase(TypedDict):
+    action: Literal["embedding"]
     model: str
-    # an absent token or a False-like one both reach LiteLLM's AuthenticationError
-    copilot_key: str | None
-    headers: dict[str, str]
-    cached_base: str | None
-    # embedding fields
     input: EmbeddingValues
     non_default_params: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
+    headers: dict[str, str]
+    # an absent token and a False-like one both reach LiteLLM's AuthenticationError
+    copilot_key: str | None
     api_base: str | None
+    cached_base: str | None
     env_base: str | None
-    # messages fields; LiteLLM discards the untrusted caller base it is handed
+
+
+class MessagesCase(TypedDict):
+    action: Literal["messages"]
+    model: str
+    headers: dict[str, str]
+    optional_params: dict[str, JsonValue]
     messages: list[JsonValue]
+    copilot_key: str | None
+    cached_base: str | None
+    # LiteLLM discards the untrusted caller base it is handed
     caller_api_base: str | None
+
+
+Case: TypeAlias = EmbeddingCase | MessagesCase
 
 
 class EnvironmentArgs(TypedDict):
@@ -79,6 +90,7 @@ class EmbeddingConfig(Protocol):
 
     def map_openai_params(
         self,
+        *,
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
@@ -88,7 +100,7 @@ class EmbeddingConfig(Protocol):
 
 @runtime_checkable
 class MessagesConfig(Protocol):
-    def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
+    def validate_anthropic_messages_environment(
         self, **kwargs: Unpack[EnvironmentArgs]
     ) -> tuple[dict[str, str], str | None]: ...
 
@@ -129,12 +141,12 @@ def key_record(copilot_key: str | None, cached_base: str | None) -> str:
 
 def restore(previous: str | None, name: str) -> None:
     if previous is None:
-        _ = os.environ.pop(name, None)
+        os.environ.pop(name, None)
     else:
         os.environ[name] = previous
 
 
-def embedding_answer(root: str, case: Input) -> JsonValue:
+def embedding_answer(root: str, case: EmbeddingCase) -> JsonValue:
     _ = (Path(root) / RECORD_FILE).write_text(
         key_record(case["copilot_key"], case["cached_base"])
     )
@@ -169,7 +181,7 @@ def embedding_answer(root: str, case: Input) -> JsonValue:
     return {"headers": HEADERS.validate_python(headers), "url": url, "body": body}
 
 
-def messages_answer(root: str, case: Input) -> JsonValue:
+def messages_answer(root: str, case: MessagesCase) -> JsonValue:
     _ = (Path(root) / RECORD_FILE).write_text(
         key_record(case["copilot_key"], case["cached_base"])
     )
@@ -199,7 +211,7 @@ def messages_answer(root: str, case: Input) -> JsonValue:
     }
 
 
-def embedding(case: Input) -> JsonValue:
+def embedding(case: EmbeddingCase) -> JsonValue:
     with TemporaryDirectory() as root:
         previous_dir = os.environ.get(DIRECTORY_VARIABLE)
         previous_base = os.environ.get(API_BASE_VARIABLE)
@@ -213,7 +225,7 @@ def embedding(case: Input) -> JsonValue:
             restore(previous_base, API_BASE_VARIABLE)
 
 
-def messages(case: Input) -> JsonValue:
+def messages(case: MessagesCase) -> JsonValue:
     with TemporaryDirectory() as root:
         previous = os.environ.get(DIRECTORY_VARIABLE)
         os.environ[DIRECTORY_VARIABLE] = root
@@ -223,8 +235,10 @@ def messages(case: Input) -> JsonValue:
             restore(previous, DIRECTORY_VARIABLE)
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: Case) -> JsonValue:
     litellm.suppress_debug_info = True
-    if input_value["action"] == "embedding":
-        return embedding(input_value)
-    return messages(input_value)
+    match input_value["action"]:
+        case "embedding":
+            return embedding(input_value)
+        case "messages":
+            return messages(input_value)
