@@ -98,7 +98,10 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
 }
 
 // The WARN messages production logs while the call runs.
-pub(crate) fn captured<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
+pub(crate) fn captured<T, F>(run: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let value = with_default(subscriber, run);

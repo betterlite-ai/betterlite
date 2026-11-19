@@ -306,7 +306,7 @@ fn missing_null_false_blocked_allowed() {
             &[("blocked", Json::Bool(false))],
         ),
     ]);
-    for name in ["missing-flag", "null-flag", "false-flag"] {
-        assert!(chosen(&catalog, name, None).is_some());
-    }
+    assert!(chosen(&catalog, "missing-flag", None).is_some());
+    assert!(chosen(&catalog, "null-flag", None).is_some());
+    assert!(chosen(&catalog, "false-flag", None).is_some());
 }
