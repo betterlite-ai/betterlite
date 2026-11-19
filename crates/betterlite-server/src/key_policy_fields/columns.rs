@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::{Utf8Error, from_utf8};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
@@ -14,7 +15,7 @@ pub enum ColumnError {
     #[error("{0} is not JSON text")]
     Json(String, #[source] serde_json::Error),
     #[error("{0} is not UTF-8 text")]
-    Utf8(String, #[source] std::str::Utf8Error),
+    Utf8(String, #[source] Utf8Error),
     #[error(transparent)]
     Decode(#[from] DecodeError),
 }
@@ -33,19 +34,19 @@ pub fn decode_json_string_column(column: &str, value: &JsonData) -> Result<JsonD
 
 // the fuzz target and its corpus replay hand over the bytes a stored column holds, invalid UTF-8 included
 pub fn decode_json_column_bytes(column: &str, bytes: &[u8]) -> Result<JsonData, ColumnError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|source| ColumnError::Utf8(column.to_owned(), source))?;
-    decode_json_string_column(column, &JsonData::String(text.to_owned()))
+    from_utf8(bytes)
+        .map_err(|source| ColumnError::Utf8(column.to_owned(), source))
+        .and_then(|text| decode_json_string_column(column, &JsonData::String(text.to_owned())))
 }
 
 // a row naming organization_id keeps it, even when null; only a row without that key falls back to org_id
 pub fn verification_token_from_row(
     row: &BTreeMap<String, JsonData>,
 ) -> Result<LiteLLMVerificationToken, ColumnError> {
-    let organization = match row.get("organization_id") {
-        Some(value) => value.clone(),
-        None => row.get("org_id").cloned().unwrap_or(JsonData::Null),
-    };
+    let organization = row
+        .get("organization_id")
+        .cloned()
+        .unwrap_or_else(|| row.get("org_id").cloned().unwrap_or(JsonData::Null));
     let mut fields = row.clone();
     fields.insert("org_id".to_owned(), organization);
     Ok(decode_group(&fields)?)

@@ -19,7 +19,7 @@ pub fn validate_key_alias_format(
     }
     match rule {
         None => Ok(()),
-        Some(rule) if rule.accepts(alias) => Ok(()),
-        Some(rule) => Err(bad_request_for_alias(rule.message())),
+        Some(selected) if selected.accepts(alias) => Ok(()),
+        Some(selected) => Err(bad_request_for_alias(selected.message())),
     }
 }

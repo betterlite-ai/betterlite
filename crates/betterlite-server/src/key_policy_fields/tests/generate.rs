@@ -138,7 +138,7 @@ fn budget_windows_empty_and_order() {
     let windows = [
         BudgetLimitEntry {
             budget_duration: "1d".to_owned(),
-            max_budget: Decimal::from(10),
+            max_budget: Decimal::from(10_i32),
             reset_at: None,
         },
         BudgetLimitEntry {
@@ -175,15 +175,10 @@ fn assert_windows(fixture: &Fixture, built: &[JsonData]) {
     assert!(matches!(first.get("max_budget"), Some(JsonData::Number(_))));
 }
 
-#[rstest]
-#[case::absent(None)]
-#[case::explicit_null(Some(None))]
-fn key_type_absent_removes_the_column(#[case] key_type: Option<Option<LiteLLMKeyType>>) {
-    let columns = handle_key_type(
-        key_type.flatten(),
-        object(r#"{"key_type":"llm_api","other":1}"#),
-    );
-    assert!(columns.get("key_type").is_none());
+#[test]
+fn key_type_absent_removes_the_column() {
+    let columns = handle_key_type(None, object(r#"{"key_type":"llm_api","other":1}"#));
+    assert!(!columns.contains_key("key_type"));
     assert_eq!(columns.get("other"), Some(&super::json("1")));
 }
 

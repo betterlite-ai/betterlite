@@ -1,6 +1,10 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::fs;
 use std::path::PathBuf;
+use std::str;
 
 use betterlite_db::identity_rows::Payload;
 use rstest::rstest;
@@ -41,7 +45,8 @@ fn malformed_column_json() {
     assert!(matches!(&error, ColumnError::Json(column, ..) if column == "budget_limits"));
     let bytes = decode_json_column_bytes("router_settings", &[0xff, 0xfe]).unwrap_err();
     assert!(matches!(&bytes, ColumnError::Utf8(column, ..) if column == "router_settings"));
-    assert!(decode_json_column_bytes("router_settings", b"{\"a\":").is_err());
+    let truncated = decode_json_column_bytes("router_settings", b"{\"a\":").unwrap_err();
+    assert!(matches!(&truncated, ColumnError::Json(column, ..) if column == "router_settings"));
     assert_eq!(
         decode_json_column_bytes("router_settings", b"{}").unwrap(),
         super::json("{}")
@@ -76,7 +81,7 @@ fn effective_patch_clears_permission() {
     assert!(effective.object_permission.is_none());
     assert_eq!(
         effective.router_settings,
-        Some(Payload(std::collections::BTreeMap::from([(
+        Some(Payload(BTreeMap::from([(
             "b".to_owned(),
             super::json("2")
         )])))
@@ -114,16 +119,16 @@ fn policy_operation_and_original_request() {
 fn replays_the_key_policy_json_column_corpus(
     #[files("fuzz/corpus/key_policy_json_column/*")] path: PathBuf,
 ) {
-    let bytes = std::fs::read(&path).unwrap();
+    let bytes = fs::read(&path).unwrap();
     let separator = bytes
         .iter()
         .position(|byte| *byte == b'\n')
         .expect("every seed names its column on the first line");
-    let column = std::str::from_utf8(&bytes[..separator]).unwrap();
-    let stored = &bytes[separator + 1..];
+    let column = str::from_utf8(&bytes[..separator]).unwrap();
+    let stored = &bytes[separator.saturating_add(1)..];
     let expected_error = path
         .file_name()
-        .and_then(std::ffi::OsStr::to_str)
+        .and_then(OsStr::to_str)
         .is_some_and(|name| name.contains("-invalid"));
     assert_eq!(
         decode_json_column_bytes(column, stored).is_err(),

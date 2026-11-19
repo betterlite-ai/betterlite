@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::PathBuf;
 
 use axum::http::StatusCode;
@@ -71,8 +72,8 @@ struct Workspace {
 fn workspace() -> Workspace {
     let directory = tempfile::tempdir().unwrap();
     let config = directory.path().join("config.yaml");
-    std::fs::write(&config, b"model_list: []\n").unwrap();
-    std::fs::write(directory.path().join("b1224_hooks.py"), UPDATE_HOOKS).unwrap();
+    fs::write(&config, b"model_list: []\n").unwrap();
+    fs::write(directory.path().join("b1224_hooks.py"), UPDATE_HOOKS).unwrap();
     Workspace {
         _directory: directory,
         config,
@@ -118,12 +119,10 @@ async fn hook_getters() {
 #[tokio::test]
 async fn missing_hooks_noop() {
     let data = update_request(r#"{"key_alias":"alias"}"#);
-    assert!(enforce_key_update_hook(None, &data).await.is_ok());
-    assert!(
-        enforce_key_policy_hook(None, || panic!("the builder must not run"))
-            .await
-            .is_ok()
-    );
+    enforce_key_update_hook(None, &data).await.unwrap();
+    enforce_key_policy_hook(None, || panic!("the builder must not run"))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

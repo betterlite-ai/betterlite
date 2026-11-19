@@ -64,7 +64,7 @@ fn builtin_alias_boundaries() {
             .all(|alias| rule.accepts(alias))
     );
     assert!(
-        ["a", "-ab", "ab-", "a b", "a!b", "aéb", "_ab"]
+        ["a", "-ab", "ab-", "a b", "a!b", "a\u{e9}b", "_ab"]
             .iter()
             .all(|alias| !rule.accepts(alias))
     );

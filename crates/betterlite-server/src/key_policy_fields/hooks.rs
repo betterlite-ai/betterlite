@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_pyhost::call_error::CallError;
@@ -126,10 +128,11 @@ fn policy_payload(request: &CustomKeyPolicyRequest) -> Result<JsonValue, HookPol
         PolicyRequestBody::Update(inner) => inner.project()?.resolved,
         PolicyRequestBody::Regenerate(inner) => inner.project()?.resolved,
     };
-    Ok(serde_json::json!({
-        "operation": &request.operation,
-        "existing_key": existing_key,
-        "effective_key": &request.effective_key,
-        "request": body,
-    }))
+    let fields = BTreeMap::from([
+        ("operation".to_owned(), to_json(&request.operation)?),
+        ("existing_key".to_owned(), existing_key),
+        ("effective_key".to_owned(), to_json(&request.effective_key)?),
+        ("request".to_owned(), to_json(&body)?),
+    ]);
+    Ok(serde_json::to_value(JsonData::Object(fields)).map_err(DecodeError::Document)?)
 }
