@@ -270,16 +270,15 @@ async fn assert_store_projection(stores: &dyn ManagedVectorStoreRows) {
 async fn postgres_permission_rows() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = Arc::new(pool.get().await.expect("the database connection"));
-        let permissions = open_grant_rows(
-            client,
-            ObjectPermissionTable,
-            AuthReadAdapter::ObjectPermission,
-            context(),
-        );
-        assert_permission_rows(&permissions).await
-    };
+    let client = Arc::new(pool.get().await.expect("the database connection"));
+    let permissions = open_grant_rows(
+        client,
+        ObjectPermissionTable,
+        AuthReadAdapter::ObjectPermission,
+        context(),
+    );
+    assert_permission_rows(&permissions).await;
+    drop(permissions);
     close(fixture, &pool).await;
 }
 
@@ -287,16 +286,15 @@ async fn postgres_permission_rows() {
 async fn postgres_vector_rows() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = Arc::new(pool.get().await.expect("the database connection"));
-        let stores = open_grant_rows(
-            client,
-            ManagedVectorStoreTable,
-            AuthReadAdapter::VectorStore,
-            context(),
-        );
-        assert_store_queries(&stores).await;
-        assert_store_projection(&stores).await
-    };
+    let client = Arc::new(pool.get().await.expect("the database connection"));
+    let stores = open_grant_rows(
+        client,
+        ManagedVectorStoreTable,
+        AuthReadAdapter::VectorStore,
+        context(),
+    );
+    assert_store_queries(&stores).await;
+    assert_store_projection(&stores).await;
+    drop(stores);
     close(fixture, &pool).await;
 }
