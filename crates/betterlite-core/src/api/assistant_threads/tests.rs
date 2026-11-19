@@ -820,6 +820,7 @@ async fn the_async_wrapper_maps_the_provider_error_through_b011(#[case] typed: b
         .expect_err("the mock failed");
     let metadata = failure.class.metadata();
     assert_eq!(metadata.status_code, 404);
+    assert_eq!(metadata.provider.as_deref(), Some("openai"));
     if typed {
         assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
         assert_eq!(
