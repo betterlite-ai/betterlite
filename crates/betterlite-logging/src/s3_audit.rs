@@ -56,11 +56,14 @@ pub(crate) fn current_granularity(logger: &S3BatchLogger) -> PartitionGranularit
     )
 }
 
-pub(crate) fn audit_record<Audit: Serialize>(
+pub(crate) fn audit_record<Audit>(
     logger: &S3BatchLogger,
     audit_log: &Audit,
     now: DateTime<Utc>,
-) -> Result<Element, AuditLogError> {
+) -> Result<Element, AuditLogError>
+where
+    Audit: Serialize,
+{
     let encoded = serde_json::to_value(audit_log).map_err(AuditLogError::Serialize)?;
     let record: Json = serde_json::from_value(encoded).map_err(AuditLogError::Serialize)?;
     let element = audit_element(

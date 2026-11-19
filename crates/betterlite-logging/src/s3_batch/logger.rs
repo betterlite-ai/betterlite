@@ -150,11 +150,10 @@ impl S3BatchLogger {
         }
     }
     // an audit record shares the model-event queue, and the one that fills a batch flushes it at once
-    pub async fn log_audit_event<Audit: Serialize + Sync>(
-        &self,
-        audit_log: &Audit,
-        now: DateTime<Utc>,
-    ) {
+    pub async fn log_audit_event<Audit>(&self, audit_log: &Audit, now: DateTime<Utc>)
+    where
+        Audit: Serialize + Sync,
+    {
         let outcome = match audit_record(self, audit_log, now) {
             Ok(element) => append_audit_element(self, element).await,
             Err(error) => Err(error),
