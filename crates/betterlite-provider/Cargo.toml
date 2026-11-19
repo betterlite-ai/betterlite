@@ -58,6 +58,7 @@ uuid.workspace = true
 zeroize = "1.9.1"
 
 [dev-dependencies]
+betterlite-http-fixture = { path = "../../tools/http-fixture" }
 mutants = "0.0.4"
 rstest = "=0.27.0"
 serde-saphyr = "2.0.0"
