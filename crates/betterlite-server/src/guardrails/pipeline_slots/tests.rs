@@ -264,8 +264,8 @@ fn merge_pipeline_metadata_writes_replaces_a_non_object_bucket() {
 
 fn response(status: Option<&str>) -> ResponsesApiResponse {
     let mut value = json!({"id": "resp_1", "created_at": 0, "output": []});
-    if let Some(status) = status {
-        value["status"] = json!(status);
+    if let Some(label) = status {
+        value["status"] = json!(label);
     }
     serde_json::from_value(value).unwrap()
 }

@@ -99,10 +99,10 @@ fn merge_pipeline_metadata_bucket(
     bucket_key: &str,
     modified_bucket: Option<&JsonValue>,
 ) {
-    let Some(JsonValue::Object(modified_bucket)) = modified_bucket else {
+    let Some(JsonValue::Object(writes)) = modified_bucket else {
         return;
     };
-    let surviving: JsonMap = modified_bucket
+    let surviving: JsonMap = writes
         .iter()
         .filter(|(key, _)| key.as_str() != GUARDRAILS)
         .map(|(key, value)| (key.clone(), value.clone()))

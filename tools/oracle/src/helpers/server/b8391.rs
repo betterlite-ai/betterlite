@@ -47,9 +47,9 @@ impl Helper for Op {
             } => {
                 let merged = merge_guardrails_with_existing(data, model_level_guardrails)
                     .map_err(failure)?;
-                let mut merged = Value::Object(merged);
-                sort_guardrails(&mut merged);
-                Ok(merged)
+                let mut answer = Value::Object(merged);
+                sort_guardrails(&mut answer);
+                Ok(answer)
             }
         }
     }
@@ -65,9 +65,9 @@ fn sort_guardrails(merged: &mut Value) {
     guardrails.sort_by_key(Value::to_string);
 }
 
-fn failure<E>(error: E) -> Box<HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    E: Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ModelGuardrailsError".to_owned(),

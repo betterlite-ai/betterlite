@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_policy::pipeline::GuardrailPipeline;
@@ -18,9 +17,9 @@ pub trait PipelineCallbacks {
 }
 
 #[must_use]
-pub fn step_supports_streaming<T: BaseTranslation>(
+pub fn step_supports_streaming<Translation: BaseTranslation>(
     guardrail_name: &str,
-    translation: Option<&T>,
+    translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
 ) -> bool {
     let Some(support) = callbacks.find_guardrail_callback(guardrail_name) else {
@@ -29,13 +28,13 @@ pub fn step_supports_streaming<T: BaseTranslation>(
     if support.unified_execution {
         return true;
     }
-    translation.is_some() && T::ASSEMBLES_STREAMED_RESPONSE && support.streaming_execution
+    translation.is_some() && Translation::ASSEMBLES_STREAMED_RESPONSE && support.streaming_execution
 }
 
 #[must_use]
-pub fn unsupported_stream_guardrails<T: BaseTranslation>(
+pub fn unsupported_stream_guardrails<Translation: BaseTranslation>(
     pipeline: &GuardrailPipeline,
-    translation: Option<&T>,
+    translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
 ) -> Vec<String> {
     let mut seen = BTreeSet::new();
@@ -52,10 +51,10 @@ pub fn unsupported_stream_guardrails<T: BaseTranslation>(
 }
 
 #[must_use]
-pub fn pipeline_is_streamable<T: BaseTranslation>(
+pub fn pipeline_is_streamable<Translation: BaseTranslation>(
     policy_name: &str,
     pipeline: &GuardrailPipeline,
-    translation: Option<&T>,
+    translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
 ) -> bool {
     let unsupported = unsupported_stream_guardrails(pipeline, translation, callbacks);
@@ -70,9 +69,9 @@ pub fn pipeline_is_streamable<T: BaseTranslation>(
 }
 
 #[must_use]
-pub fn stream_gated_guardrail_names<T: BaseTranslation>(
+pub fn stream_gated_guardrail_names<Translation: BaseTranslation>(
     data: &JsonMap,
-    translation: Option<&T>,
+    translation: Option<&Translation>,
     callbacks: &dyn PipelineCallbacks,
 ) -> BTreeSet<String> {
     let Some(found) = translation else {
@@ -88,9 +87,9 @@ pub fn stream_gated_guardrail_names<T: BaseTranslation>(
 }
 
 #[must_use]
-pub fn streamable_post_call_pipelines<T: BaseTranslation>(
+pub fn streamable_post_call_pipelines<Translation: BaseTranslation>(
     data: &JsonMap,
-    translation: Option<&T>,
+    translation: Option<&Translation>,
     route: Option<&str>,
     callbacks: &dyn PipelineCallbacks,
 ) -> Vec<(String, GuardrailPipeline)> {
@@ -100,9 +99,9 @@ pub fn streamable_post_call_pipelines<T: BaseTranslation>(
     }
     let Some(found) = translation else {
         let names = policy_names(&post_call);
-        let route = route.unwrap_or_default();
+        let shown_route = route.unwrap_or_default();
         tracing::warn!(
-            "Policies with post_call guardrail pipelines cannot scan streaming responses on route {route} yet (no endpoint guardrail translation); the stream skips the pipelines and their guardrails run on their own: {names}"
+            "Policies with post_call guardrail pipelines cannot scan streaming responses on route {shown_route} yet (no endpoint guardrail translation); the stream skips the pipelines and their guardrails run on their own: {names}"
         );
         return Vec::new();
     };

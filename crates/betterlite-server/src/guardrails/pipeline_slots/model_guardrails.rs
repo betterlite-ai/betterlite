@@ -47,10 +47,10 @@ pub fn merge_model_level_guardrails(
         .filter(|id_value| !id_value.is_null());
     let model_level = match trusted_id {
         Some(id_value) => {
-            let deployment = id_value
+            let found = id_value
                 .as_str()
                 .and_then(|model_id| finder.get_deployment(model_id));
-            let Some(deployment) = deployment else {
+            let Some(deployment) = found else {
                 return Ok(data.clone());
             };
             trusted_guardrails(deployment.guardrails.as_ref())
@@ -62,10 +62,10 @@ pub fn merge_model_level_guardrails(
             resolve_team_id(metadata, litellm_metadata),
         ),
     };
-    let Some(model_level) = model_level else {
+    let Some(levels) = model_level else {
         return Ok(data.clone());
     };
-    merge_guardrails_with_existing(data, &JsonValue::Array(model_level))
+    merge_guardrails_with_existing(data, &JsonValue::Array(levels))
 }
 
 pub fn merge_guardrails_with_existing(
