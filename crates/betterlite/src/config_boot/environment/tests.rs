@@ -159,6 +159,18 @@ fn entries_are_laid_over_in_sorted_key_order() {
 }
 
 #[test]
+fn config_entries_replace_existing_process_values() {
+    let config = config_from_yaml("environment_variables:\n  LITERAL: replaced\n");
+    let overlay = env_overlay(
+        &config,
+        &process_env(&[("LITERAL", "original")]),
+        &secret_lookup(None),
+    )
+    .unwrap();
+    assert_eq!(overlay.get("LITERAL").map(String::as_str), Some("replaced"));
+}
+
+#[test]
 fn existing_process_values_survive_alongside_config_entries() {
     let config = config_from_yaml("environment_variables:\n  ADDED: value\n");
     let overlay = env_overlay(
