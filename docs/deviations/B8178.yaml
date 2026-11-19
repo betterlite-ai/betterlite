@@ -12,7 +12,7 @@ deviations:
   - what: The upload is sent over a certificate-verifying client; LiteLLM disables TLS verification for the upload as well as for the image download.
     why: The skipped checks are only needed to fetch the caller's image, and the upload carries the bearer token, so verifying it is a security fix no working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L131-L139
-  - what: An upload reply whose id is absent, empty or not a string returns none and is not cached; LiteLLM returns an absent id as None, an empty one as "" and any other value as it is, caching the last two.
+  - what: An upload reply whose id is absent, empty or not a string returns none and is not cached; LiteLLM returns an absent id as None, an empty one as "" and any other value as it is, caching only a truthy one.
     why: The uploader answers with a non-empty file id string that is sent back to GigaChat, and a value of another type or an empty one cannot be used as one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L140-L147
   - what: A pass-through chat reply without a created value logs created 0, where LiteLLM's chat transform fills in int(time.time()).
@@ -24,6 +24,7 @@ deviations:
   - what: A collected chunk that is JSON but not an object, or that the GigaChat chunk parser cannot decode, is skipped; LiteLLM raises on it after the client has already received the stream.
     why: Spend logging must not fail the request on one malformed chunk of a stream that was already relayed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L158-L183
+  - {what: "The embedding error keeps the response headers it is given, where LiteLLM's get_error_class builds GigaChatEmbeddingError without passing the headers it receives.", why: "The headers are a fact of the failed upstream reply that a caller can use, and no working setup relies on the error carrying none.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L192-L197"}
 kept_bugs:
   - what: Any upload failure is logged and reported as no attachment instead of failing the chat call, keeping LiteLLM's error swallowing.
     why: A working setup depends on the message going out without the image when the upload fails.
