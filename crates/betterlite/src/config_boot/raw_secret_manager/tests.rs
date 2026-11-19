@@ -51,12 +51,6 @@ fn initialize_with(
         .unwrap();
 }
 
-fn initialized_with(source: &str, environment: &BTreeMap<String, String>) -> RawSecretManager {
-    let mut state = RawSecretManager::new(secret_lookup(None));
-    initialize_with(&mut state, source, environment);
-    state
-}
-
 fn primary_secret_name(state: &RawSecretManager) -> Option<&str> {
     state
         .settings
@@ -329,7 +323,9 @@ fn selection_error_keeps_settings() {
 #[test]
 fn settings_without_a_mapping_are_retained() {
     let environment = env(&[("AWS_REGION_NAME", "us-east-1")]);
-    let mut state = initialized_with(
+    let mut state = RawSecretManager::new(secret_lookup(None));
+    initialize_with(
+        &mut state,
         "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings:\n    primary_secret_name: primary\n",
         &environment,
     );
@@ -391,7 +387,8 @@ fn missing_azure_uri_can_retry() {
 fn manager_only_credential_resolves_on_first_load() {
     let source = "model_list:\n- model_name: gpt\n  litellm_params:\n    model: openai/gpt-4o-mini\n    api_key: os.environ/MODEL_KEY\ngeneral_settings:\n  key_management_system: hashicorp_vault\n";
     let environment = env(&[("HCP_VAULT_TOKEN", "token")]);
-    let mut state = initialized_with(source, &environment);
+    let mut state = RawSecretManager::new(secret_lookup(None));
+    initialize_with(&mut state, source, &environment);
     assert_eq!(
         state.lookup.manager.as_ref().unwrap().system,
         Some(KeyManagementSystem::HashicorpVault)
