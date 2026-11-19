@@ -6,16 +6,12 @@ use http::Method;
 
 use super::support::{Events, Fixture, Reply, Source, Wire, json, openai_config, params};
 use super::{run, target};
-use crate::api::responses_read_http::config::{
-    NoWorkloadIdentity, OpenAiReadConfig, ReadEnvironment,
-};
+use crate::api::responses_read_http::config::ReadEnvironment;
 use crate::api::responses_read_http::service::{
     ClientKind, InputItemsCall, ReadCall, ReadDeps, ReadOutcome,
 };
 
 const LIST: &str = r#"{"object":"list","data":[],"has_more":false}"#;
-
-type Deps<'deps> = ReadDeps<'deps, OpenAiReadConfig<NoWorkloadIdentity>, Source>;
 
 pub(super) async fn input_items(mode: ClientKind) {
     let config = openai_config(ReadEnvironment::default());
@@ -28,37 +24,9 @@ pub(super) async fn input_items(mode: ClientKind) {
         supplied: None,
     };
     let mut fixture = Fixture::new("responses");
-    defaults(&mut fixture, &deps, mode, &events).await;
-    overrides(&mut fixture, &deps, mode, &events).await;
-    omitted(&mut fixture, &deps, mode, &events).await;
-    assert_requests(&wire);
-}
-
-async fn defaults<'deps>(
-    fixture: &mut Fixture,
-    deps: &'deps Deps<'deps>,
-    mode: ClientKind,
-    events: &Events,
-) {
-    let query = ListInputItemsQuery::default();
-    let outcome = read(fixture, deps, mode, events, &query).await;
-    let ReadOutcome::InputItems(value) = outcome else {
-        panic!("an input items read returns the provider object");
-    };
-    assert_eq!(value, json(LIST));
-    assert_eq!(
-        fixture.logged("complete_input_dict"),
-        Some(&json(r#"{"limit":20,"order":"desc"}"#))
-    );
-}
-
-async fn overrides<'deps>(
-    fixture: &mut Fixture,
-    deps: &'deps Deps<'deps>,
-    mode: ClientKind,
-    events: &Events,
-) {
-    let query = ListInputItemsQuery {
+    let api = params("http://mock.test/v1", "sk-provider");
+    let defaults = ListInputItemsQuery::default();
+    let overrides = ListInputItemsQuery {
         after: Some(String::new()),
         before: Some(String::from("b")),
         include: Some(vec![
@@ -68,47 +36,36 @@ async fn overrides<'deps>(
         limit: Some(3),
         order: Some(InputItemsOrder::Asc),
     };
-    read(fixture, deps, mode, events, &query).await;
-    assert_eq!(
-        fixture.logged("complete_input_dict"),
-        Some(&json(
-            r#"{"after":"","before":"b","include":"message.input_image.image_url,computer_call_output.output.image_url","limit":3,"order":"asc"}"#
-        ))
-    );
-}
-
-async fn omitted<'deps>(
-    fixture: &mut Fixture,
-    deps: &'deps Deps<'deps>,
-    mode: ClientKind,
-    events: &Events,
-) {
-    let query = ListInputItemsQuery {
+    let omitted = ListInputItemsQuery {
         after: None,
         before: None,
         include: Some(Vec::new()),
         limit: None,
         order: None,
     };
-    read(fixture, deps, mode, events, &query).await;
-    assert_eq!(fixture.logged("complete_input_dict"), Some(&json("{}")));
-}
-
-async fn read<'deps>(
-    fixture: &mut Fixture,
-    deps: &'deps Deps<'deps>,
-    mode: ClientKind,
-    events: &Events,
-    query: &ListInputItemsQuery,
-) -> ReadOutcome {
-    let api = params("http://mock.test/v1", "sk-provider");
-    let call = ReadCall::InputItems(InputItemsCall {
-        target: target("resp_a", &api, None, Some(Duration::from_secs(7))),
-        query,
-    });
-    run(fixture, deps, mode, &call, events)
-        .await
-        .expect("the input items read succeeds")
+    let cases = [
+        (&defaults, r#"{"limit":20,"order":"desc"}"#),
+        (
+            &overrides,
+            r#"{"after":"","before":"b","include":"message.input_image.image_url,computer_call_output.output.image_url","limit":3,"order":"asc"}"#,
+        ),
+        (&omitted, "{}"),
+    ];
+    for (query, logged) in cases {
+        let call = ReadCall::InputItems(InputItemsCall {
+            target: target("resp_a", &api, None, Some(Duration::from_secs(7))),
+            query,
+        });
+        let outcome = run(&mut fixture, &deps, mode, &call, &events)
+            .await
+            .expect("the input items read succeeds");
+        let ReadOutcome::InputItems(value) = outcome else {
+            panic!("an input items read returns the provider object");
+        };
+        assert_eq!(value, json(LIST));
+        assert_eq!(fixture.logged("complete_input_dict"), Some(&json(logged)));
+    }
+    assert_requests(&wire);
 }
 
 // Every read sends one GET with a body-less request, and the timeout never becomes a wire argument
