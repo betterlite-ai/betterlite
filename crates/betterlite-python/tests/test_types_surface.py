@@ -21,49 +21,11 @@ MODULES: Final[list[tuple[str, str]]] = [
     ("mcp", "mcp"),
     ("proxy.policy_engine", "proxy.policy_engine"),
     ("proxy.guardrails.guardrail_hooks", "proxy.guardrails.guardrail_hooks"),
+    ("proxy.guardrails.guardrail_hooks.ibm", "proxy.guardrails.guardrail_hooks.ibm"),
+    ("management_endpoints", "management_endpoints"),
 ]
 NOT_PORTED: Final[dict[str, frozenset[str]]] = {
     "llms.openai": frozenset({"HttpxBinaryResponseContent"}),
-}
-# re-exporting these 33 takes betterlite/types/llms/openai/__init__.py past the 300-line file limit
-NOT_EXPORTED: Final[dict[str, frozenset[str]]] = {
-    "llms.openai": frozenset(
-        {
-            "ALL_RESPONSES_API_TOOL_PARAMS",
-            "AllEmbeddingInputValues",
-            "AllMessageValues",
-            "AllPromptValues",
-            "AttachmentTool",
-            "BatchJobStatus",
-            "CREATE_FILE_REQUESTS_PURPOSE",
-            "ChatCompletionAssistantContentValue",
-            "ChatCompletionToolChoiceStringValues",
-            "ChatCompletionToolChoiceValues",
-            "EmbeddingInput",
-            "FileContent",
-            "FileTypes",
-            "OpenAIAudioTranscriptionOptionalParams",
-            "OpenAIChatCompletionFinishReason",
-            "OpenAICreateFileRequestOptionalParams",
-            "OpenAIFilesPurpose",
-            "OpenAIImageEditOptionalParams",
-            "OpenAIImageGenerationOptionalParams",
-            "OpenAIImageVariationOptionalParams",
-            "OpenAIMessageContent",
-            "OpenAIMessageContentListBlock",
-            "OpenAIRealtimeEvents",
-            "OpenAIRealtimeStreamList",
-            "PART_UNION_TYPES",
-            "REASONING_EFFORT",
-            "ResponsesAPIStatus",
-            "ResponsesAPIStreamingResponse",
-            "ResponsesTerminalEvent",
-            "ToolMessageContentPart",
-            "ValidAssistantMessageContentTypesLiteral",
-            "ValidChatCompletionMessageContentTypesLiteral",
-            "ValidUserMessageContentTypesLiteral",
-        }
-    ),
 }
 SURFACE_SCRIPT: Final = """
 import ast
@@ -172,10 +134,8 @@ def test_names_match_litellm() -> None:
     for litellm_path, betterlite_path in MODULES:
         absent = set(report[litellm_path])
         exempt = set[str]()
-        for skipped in (NOT_PORTED, NOT_EXPORTED):
-            entries = skipped.get(litellm_path)
-            if entries is None:
-                continue
+        entries = NOT_PORTED.get(litellm_path)
+        if entries is not None:
             exempt |= entries
         missing = sorted(absent - exempt)
         stale = sorted(exempt - absent)
