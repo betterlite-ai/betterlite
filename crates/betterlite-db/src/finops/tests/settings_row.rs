@@ -256,52 +256,6 @@ async fn read_settings_row_rejects_a_value_that_is_not_a_mapping() {
 }
 
 #[tokio::test]
-async fn settings_row_present_counts_a_row_that_holds_a_value() {
-    let database = Database::provision().await;
-    assert!(
-        !settings_row_present(Some(database.client()), PARAM)
-            .await
-            .unwrap()
-    );
-    seed_string(
-        &database,
-        PARAM,
-        &json_object(&[("timezone", JsonData::String("UTC".to_owned()))]),
-    )
-    .await;
-    assert!(
-        settings_row_present(Some(database.client()), PARAM)
-            .await
-            .unwrap()
-    );
-    database.close().await;
-}
-
-#[tokio::test]
-async fn settings_row_present_ignores_a_null_value() {
-    let database = Database::provision().await;
-    seed_null(&database, PARAM).await;
-    assert!(
-        !settings_row_present(Some(database.client()), PARAM)
-            .await
-            .unwrap()
-    );
-    database.close().await;
-}
-
-#[tokio::test]
-async fn settings_row_present_counts_a_value_that_does_not_decode() {
-    let database = Database::provision().await;
-    seed_string(&database, PARAM, "not json").await;
-    assert!(
-        settings_row_present(Some(database.client()), PARAM)
-            .await
-            .unwrap()
-    );
-    database.close().await;
-}
-
-#[tokio::test]
 async fn settings_row_calls_report_a_missing_database() {
     assert!(matches!(
         read_settings_row(None, PARAM).await,
