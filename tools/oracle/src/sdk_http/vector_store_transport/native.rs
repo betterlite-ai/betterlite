@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::types::Config;
 use betterlite_core::api::vector_store_http_write::config::{OpenAiWriteConfig, WriteParams};
-use betterlite_core::api::vector_store_http_write::error::{BaseLlmException, WriteError};
+use betterlite_core::api::vector_store_http_write::error::WriteError;
 use betterlite_core::api::vector_store_http_write::service::{
     DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget, prepare, send,
 };
@@ -23,8 +22,18 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let config = load(env)?;
-    let provider = openai_config(&config);
+    let config = ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("model_list: []")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    // The OpenAI provider config over the env's key, exactly as the proxy wires B527
+    let provider = OpenAiWriteConfig::new(
+        &config.sections.openai_credentials,
+        LiteLlmGlobals::default(),
+        config.sections.resource_sdk_settings.openai_api_key.clone(),
+        None,
+    );
     let origin = source(&config, env)?;
     let mut fixture = Fixture::new(call.logging_call_type())?;
     let params = WriteParams {
@@ -43,24 +52,6 @@ pub(super) async fn execute(
     Ok(SdkResult::VectorStoreTransport {
         value: Box::new(answer),
     })
-}
-
-fn load(env: &BTreeMap<String, String>) -> Result<Config, SdkHttpError> {
-    ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load("model_list: []")
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
-}
-
-// The OpenAI provider config over the env's key, exactly as the proxy wires B527
-fn openai_config(config: &Config) -> OpenAiWriteConfig<'_> {
-    OpenAiWriteConfig::new(
-        &config.sections.openai_credentials,
-        LiteLlmGlobals::default(),
-        config.sections.resource_sdk_settings.openai_api_key.clone(),
-        None,
-    )
 }
 
 fn write_call<'call>(
@@ -96,17 +87,13 @@ fn outcome(result: Result<Json, WriteError>) -> Result<Outcome, SdkHttpError> {
         }),
         Err(WriteError::Provider(error)) => Ok(Outcome {
             result: None,
-            failure: Some(failure(&error)),
+            failure: Some(Failure {
+                status: error.status_code,
+                synthesized: error.status_code_is_synthesized,
+                message: error.message.clone(),
+                headers: error.headers.clone(),
+            }),
         }),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
-    }
-}
-
-fn failure(error: &BaseLlmException) -> Failure {
-    Failure {
-        status: error.status_code,
-        synthesized: error.status_code_is_synthesized,
-        message: error.message.clone(),
-        headers: error.headers.clone(),
     }
 }

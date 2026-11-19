@@ -7,8 +7,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use url::Url;
 
-use super::super::config::WriteConfig;
-use super::super::error::WriteError;
+use super::super::{config::WriteConfig, error::WriteError};
 use super::{ClientKind, ClientSource, Selected, WriteCall, WriteDeps, WriteTarget};
 
 pub(super) fn select_client<'borrow, 'deps, C, S>(

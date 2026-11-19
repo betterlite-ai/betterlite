@@ -103,7 +103,6 @@ pub struct UpdateCall<'call> {
 
 pub struct DeleteCall<'call> {
     pub target: WriteTarget<'call>,
-    // the delete handlers take extra_body and never read it, so it stays on the call without reaching the body
     pub extra_body: Option<&'call IndexMap<String, Json>>,
 }
 
