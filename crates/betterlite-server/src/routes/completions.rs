@@ -28,7 +28,6 @@ use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRe
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::answer_chat;
 use crate::state::ServerState;
 
@@ -43,6 +42,7 @@ use self::error::{FailureAnswer, failure_answer, render};
 
 mod bridge;
 mod error;
+mod read_through;
 pub(crate) mod streaming;
 mod tests;
 
@@ -183,13 +183,13 @@ async fn completions(
     };
     let model = path_model
         .map(|Path(model)| model)
-        .or_else(|| request.model.clone())
-        .unwrap_or_else(|| String::from("None"));
-    let Ok(deployment) = pick_deployment(&state.state.executor, &model) else {
-        let missing = DispatchError::MissingDeployment { model_id: model };
-        return render(&failure_answer(missing), &call_id, state.include_call_id);
+        .or_else(|| request.model.clone());
+    let deployment = match read_through::deployment_or_answer(&state.state, model.as_deref()).await
+    {
+        Ok(deployment) => deployment,
+        Err(answer) => return render(&answer, &call_id, state.include_call_id),
     };
-    execute(&state, request, deployment, &call_id, started).await
+    execute(&state, request, &deployment, &call_id, started).await
 }
 
 async fn execute(

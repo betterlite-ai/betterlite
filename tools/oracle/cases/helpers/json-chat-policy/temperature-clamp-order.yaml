@@ -1,0 +1,84 @@
+kind: helper
+name: json-chat-policy-temperature-clamp-order
+call:
+  json_chat_policy:
+    calls:
+      - kind: params
+        model: darkbloom/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 0.5, temperature_min: 0.7, temperature_min_with_n_gt_1: 0.9}
+        non_default: {temperature: 5, n: 4}
+        optional: {}
+      - kind: params
+        model: libertai/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 0.5, temperature_min: 0.7, temperature_min_with_n_gt_1: 0.9}
+        non_default: {temperature: 0.4, n: 4}
+        optional: {}
+      - kind: params
+        model: tensormesh/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 0.5, temperature_min: 0.7, temperature_min_with_n_gt_1: 0.9}
+        non_default: {n: 2}
+        optional: {temperature: 0.2}
+      - kind: params
+        model: crusoe/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 1.5, temperature_min: 0.2, temperature_min_with_n_gt_1: 0.9}
+        non_default: {temperature: 0.9, n: 2}
+        optional: {}
+      - kind: params
+        model: aihubmix/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 1.5, temperature_min: 0.2, temperature_min_with_n_gt_1: 0.9}
+        non_default: {temperature: 0.95, n: 2}
+        optional: {}
+      - kind: params
+        model: gmi/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_max: 1.99}
+        non_default: {temperature: 5}
+        optional: {}
+      - kind: params
+        model: veniceai/probe-model
+        environment: {}
+        supports_function_calling: false
+        supports_reasoning: false
+        descriptor:
+          base_url: "https://clamp.invalid/v1"
+          api_key_env: PROBE_KEY
+          constraints: {temperature_min: 0.7}
+        non_default: {temperature: 0.1}
+        optional: {}
+env: {}
+compare: {ignore: []}
