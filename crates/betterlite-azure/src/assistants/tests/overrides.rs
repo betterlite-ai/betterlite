@@ -17,6 +17,28 @@ pub(super) async fn check() {
     passes_sdk_errors_through().await;
     keeps_the_callers_deadline_per_request().await;
     merges_a_base_url_query().await;
+    drops_an_empty_query_value().await;
+}
+
+// The SDK's query builder leaves out a parameter with an empty value, so a base blank never rides along.
+async fn drops_an_empty_query_value() {
+    let recorder = Recorder::start();
+    recorder.queue_poll(200, CREATED);
+    recorder.queue_poll(200, COMPLETED);
+    let mut fixture = support::Fixture::new();
+    fixture.api_base = Some(String::from(
+        "https://example.test/openai/deployments/dep?drop=&api-version=old",
+    ));
+    support::polled(&recorder, &fixture, &run_request()).await;
+    let seen = recorder.requests();
+    assert_eq!(
+        seen[0].url,
+        "https://example.test/openai/deployments/dep?api-version=2024-02-01"
+    );
+    assert_eq!(
+        seen[1].url,
+        "https://example.test/openai/deployments/dep?api-version=2024-02-01"
+    );
 }
 
 // The SDK joins the tail onto the raw URL, so a base query keeps the tail in its last value and api-version wins.

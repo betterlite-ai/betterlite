@@ -139,9 +139,10 @@ fn merge_version(query: Option<&str>, api_version: &str) -> Option<String> {
             merged.push((name, value));
         }
     }
-    if !named && !api_version.is_empty() {
+    if !named {
         merged.push((String::from("api-version"), api_version.to_owned()));
     }
+    // The SDK's query builder drops a parameter whose value is empty.
     merged.retain(|(_, value)| !value.is_empty());
     encoded_query(&merged)
 }
