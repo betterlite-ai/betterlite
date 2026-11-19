@@ -10,24 +10,31 @@ use crate::team_request_contracts::values::{KeyManagementRoutes, TeamIdSearchMat
 fn permission_request_defaults() {
     let get: PermissionGetRequest = decode_request(&parse(r#"{"team_id": "t"}"#)).unwrap();
     assert_eq!(get.team_id, "t");
-    assert!(decode_request::<PermissionGetRequest>(&parse("{}")).is_err());
     let update: PermissionUpdateRequest = decode_request(&parse(
         r#"{"team_id": "t", "team_member_permissions": ["/key/info"]}"#,
     ))
     .unwrap();
     assert_eq!(update.team_member_permissions, vec!["/key/info".to_owned()]);
-    assert!(decode_request::<PermissionUpdateRequest>(&parse(r#"{"team_id": "t"}"#)).is_err());
-    assert!(
-        decode_request::<PermissionUpdateRequest>(&parse(
-            r#"{"team_id": "t", "team_member_permissions": null}"#
-        ))
-        .is_err()
-    );
     let bulk: BulkPermissionUpdateRequest =
         decode_request(&parse(r#"{"permissions": ["/key/generate", "/key/list"]}"#)).unwrap();
     assert_eq!(bulk.permissions.len(), 2);
     assert_eq!(bulk.team_ids, None);
     assert!(!bulk.apply_to_all_teams);
+}
+
+#[test]
+fn permission_request_rejects_missing_fields() {
+    decode_request::<PermissionGetRequest>(&parse("{}")).unwrap_err();
+    decode_request::<PermissionUpdateRequest>(&parse(r#"{"team_id": "t"}"#)).unwrap_err();
+    decode_request::<PermissionUpdateRequest>(&parse(
+        r#"{"team_id": "t", "team_member_permissions": null}"#,
+    ))
+    .unwrap_err();
+    decode_request::<BulkPermissionUpdateRequest>(&parse(r#"{"team_ids": ["t"]}"#)).unwrap_err();
+}
+
+#[test]
+fn permission_bulk_selection_values() {
     let explicit_null: BulkPermissionUpdateRequest = decode_request(&parse(
         r#"{"permissions": [], "team_ids": null, "apply_to_all_teams": true}"#,
     ))
@@ -40,23 +47,16 @@ fn permission_request_defaults() {
     ))
     .unwrap();
     assert_eq!(ids.team_ids, Some(vec!["a".to_owned(), "b".to_owned()]));
-    assert!(
-        decode_request::<BulkPermissionUpdateRequest>(&parse(r#"{"team_ids": ["t"]}"#)).is_err()
-    );
-    assert!(
-        decode_request::<BulkPermissionUpdateRequest>(&parse(r#"{"permissions": ["/nope"]}"#))
-            .is_err()
-    );
-    assert!(
-        decode_request::<BulkPermissionUpdateRequest>(&parse(
-            r#"{"permissions": [], "apply_to_all_teams": null}"#
-        ))
-        .is_err()
-    );
+}
+
+#[test]
+fn key_management_routes_accept_only_known() {
     let routes: KeyManagementRoutes = serde_json::from_str(r#""/key/generate""#).unwrap();
     assert_eq!(to_data(&routes).unwrap(), parse(r#""/key/generate""#));
-    assert!(serde_json::from_str::<KeyManagementRoutes>(r#""key/generate""#).is_err());
-    assert!(serde_json::from_str::<KeyManagementRoutes>(r#""/key/nope""#).is_err());
+    serde_json::from_str::<KeyManagementRoutes>(r#""key/generate""#).unwrap_err();
+    serde_json::from_str::<KeyManagementRoutes>(r#""/key/nope""#).unwrap_err();
+    decode_request::<BulkPermissionUpdateRequest>(&parse(r#"{"permissions": ["/nope"]}"#))
+        .unwrap_err();
 }
 
 #[test]
@@ -121,12 +121,17 @@ fn permission_response_fields() {
             r#"{"team_id": "t", "team_member_permissions": null, "all_available_permissions": []}"#
         )
     );
-    assert!(decode_request::<PermissionGetResponse>(&parse(r#"{"team_id": "t"}"#)).is_err());
-    assert!(
-        decode_request::<PermissionGetResponse>(&parse(r#"{"all_available_permissions": []}"#))
-            .is_err()
-    );
+}
 
+#[test]
+fn permission_response_rejects_missing_fields() {
+    decode_request::<PermissionGetResponse>(&parse(r#"{"team_id": "t"}"#)).unwrap_err();
+    decode_request::<PermissionGetResponse>(&parse(r#"{"all_available_permissions": []}"#))
+        .unwrap_err();
+}
+
+#[test]
+fn bulk_permission_response_fields() {
     let bulk: BulkPermissionUpdateResponse =
         decode_request(&parse(r#"{"message": "ok", "teams_updated": 2}"#)).unwrap();
     assert_eq!(bulk.message, "ok");
@@ -144,15 +149,19 @@ fn permission_response_fields() {
         to_data(&bulk).unwrap(),
         parse(r#"{"message": "ok", "teams_updated": 2, "permissions_appended": null}"#)
     );
-    assert!(
-        decode_request::<BulkPermissionUpdateResponse>(&parse(r#"{"message": "ok"}"#)).is_err()
-    );
-    assert!(
-        decode_request::<BulkPermissionUpdateResponse>(&parse(
-            r#"{"message": "ok", "teams_updated": "2"}"#
-        ))
-        .is_err()
-    );
+}
+
+#[test]
+fn bulk_permission_rejects_invalid_values() {
+    decode_request::<BulkPermissionUpdateResponse>(&parse(r#"{"message": "ok"}"#)).unwrap_err();
+    decode_request::<BulkPermissionUpdateResponse>(&parse(
+        r#"{"message": "ok", "teams_updated": "2"}"#,
+    ))
+    .unwrap_err();
+    decode_request::<BulkPermissionUpdateRequest>(&parse(
+        r#"{"permissions": [], "apply_to_all_teams": null}"#,
+    ))
+    .unwrap_err();
 }
 
 #[test]
@@ -163,7 +172,7 @@ fn team_id_search_modes() {
     assert_eq!(prefix, TeamIdSearchMatch::Prefix);
     assert_eq!(to_data(&prefix).unwrap(), parse(r#""prefix""#));
     assert_eq!(to_data(&exact).unwrap(), parse(r#""exact""#));
-    assert!(serde_json::from_str::<TeamIdSearchMatch>(r#""Exact""#).is_err());
-    assert!(serde_json::from_str::<TeamIdSearchMatch>(r#""fuzzy""#).is_err());
-    assert!(serde_json::from_str::<TeamIdSearchMatch>(r#""""#).is_err());
+    serde_json::from_str::<TeamIdSearchMatch>(r#""Exact""#).unwrap_err();
+    serde_json::from_str::<TeamIdSearchMatch>(r#""fuzzy""#).unwrap_err();
+    serde_json::from_str::<TeamIdSearchMatch>(r#""""#).unwrap_err();
 }

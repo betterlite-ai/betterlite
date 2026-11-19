@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
+
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{object, parse};
-use crate::key_fields::values::{AllowedVectorStoreIndexItem, Amount, IndexPermission};
-use crate::team_request_contracts::shared::RequestProjection;
+use crate::key_fields::values::{Amount, IndexPermission};
+use crate::team_request_contracts::shared::RequestProjection as _;
 use crate::team_request_contracts::update::{PatchTeamRequest, UpdateTeamRequest};
 use crate::team_request_contracts::values::PositiveInt;
 
@@ -49,6 +51,12 @@ fn team_update_all_fields() {
     assert_eq!(fields.models, Some(vec![parse(r#""gpt-4o""#)]));
     assert_eq!(fields.blocked, Some(true));
     assert_eq!(fields.budget_duration.as_deref(), Some("30d"));
+}
+
+#[test]
+fn team_update_list_fields() {
+    let request = UpdateTeamRequest::from_value(&parse(UPDATE_FIELDS)).unwrap();
+    let fields = &request.fields;
     assert_eq!(fields.tags, Some(vec![parse(r#""t""#)]));
     assert_eq!(
         fields
@@ -73,11 +81,14 @@ fn team_update_all_fields() {
         fields.allowed_passthrough_routes,
         Some(vec![parse(r#""/v1/models""#)])
     );
+}
+
+#[test]
+fn team_update_map_fields() {
+    let request = UpdateTeamRequest::from_value(&parse(UPDATE_FIELDS)).unwrap();
+    let fields = &request.fields;
     assert_eq!(
-        fields
-            .secret_manager_settings
-            .as_ref()
-            .map(|values| values.len()),
+        fields.secret_manager_settings.as_ref().map(BTreeMap::len),
         Some(1)
     );
     assert_eq!(fields.prompts, Some(vec!["pr".to_owned()]));
@@ -110,6 +121,12 @@ fn team_update_all_fields() {
             .and_then(|values| values.get("mcp")),
         Some(&3)
     );
+}
+
+#[test]
+fn team_update_index_and_expiry_fields() {
+    let request = UpdateTeamRequest::from_value(&parse(UPDATE_FIELDS)).unwrap();
+    let fields = &request.fields;
     let indexes = fields.allowed_vector_store_indexes.as_ref().unwrap();
     assert_eq!(indexes[0].index_name, "i");
     assert_eq!(
@@ -145,6 +162,11 @@ fn team_update_all_fields() {
             .and_then(|config| config.max_budget),
         Some(Amount(Decimal::from(10_i64)))
     );
+}
+
+#[test]
+fn team_update_supplied_and_resolved_projection() {
+    let request = UpdateTeamRequest::from_value(&parse(UPDATE_FIELDS)).unwrap();
     assert_eq!(request.supplied().unwrap(), parse(UPDATE_FIELDS));
     let resolved = request.resolved().unwrap();
     let permission = object(object(&resolved).get("object_permission").unwrap());
@@ -177,9 +199,9 @@ fn patch_optional_team_id(#[case] body: &str, #[case] expected: Option<&str>) {
 
 #[test]
 fn update_requires_team_id() {
-    assert!(UpdateTeamRequest::from_value(&parse(r#"{"team_alias": "a"}"#)).is_err());
-    assert!(UpdateTeamRequest::from_value(&parse(r#"{"team_id": null}"#)).is_err());
-    assert!(UpdateTeamRequest::from_value(&parse(r#"{"team_id": 7}"#)).is_err());
+    UpdateTeamRequest::from_value(&parse(r#"{"team_alias": "a"}"#)).unwrap_err();
+    UpdateTeamRequest::from_value(&parse(r#"{"team_id": null}"#)).unwrap_err();
+    UpdateTeamRequest::from_value(&parse(r#"{"team_id": 7}"#)).unwrap_err();
     assert_eq!(
         UpdateTeamRequest::from_value(&parse(r#"{"team_id": "t"}"#))
             .unwrap()
@@ -237,13 +259,9 @@ fn update_budget_aliases_normalized() {
             r#"{"team_id": "t", "model_max_budget": {"gpt": {"max_budget": 3.0, "budget_duration": "1d"}}}"#
         )
     );
-    assert!(
-        UpdateTeamRequest::from_value(&parse(
-            r#"{"team_id": "t", "router_settings": {"weights": {"g": {"d": 0}}}}"#,
-        ))
-        .is_err()
-    );
-    assert!(
-        PatchTeamRequest::from_value(&parse(r#"{"router_settings": {"weights": []}}"#)).is_err()
-    );
+    UpdateTeamRequest::from_value(&parse(
+        r#"{"team_id": "t", "router_settings": {"weights": {"g": {"d": 0}}}}"#,
+    ))
+    .unwrap_err();
+    PatchTeamRequest::from_value(&parse(r#"{"router_settings": {"weights": []}}"#)).unwrap_err();
 }

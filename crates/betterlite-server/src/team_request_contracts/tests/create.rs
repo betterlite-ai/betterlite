@@ -7,8 +7,8 @@ use rust_decimal::Decimal;
 use super::support::{object, parse};
 use crate::key_fields::values::{Amount, IndexPermission};
 use crate::team_request_contracts::bulk_members::TeamMemberRef;
-use crate::team_request_contracts::create::NewTeamRequest;
-use crate::team_request_contracts::shared::RequestProjection;
+use crate::team_request_contracts::create::{NewTeamFields, NewTeamRequest};
+use crate::team_request_contracts::shared::RequestProjection as _;
 use crate::team_request_contracts::team_list::TeamListEntry;
 use crate::team_request_contracts::values::{PositiveInt, ThroughputLimitType};
 
@@ -64,6 +64,12 @@ fn team_create_all_fields() {
     );
     assert_eq!(team.tpm_limit, Some(10));
     assert_eq!(team.rpm_limit, Some(20));
+}
+
+#[test]
+fn team_create_team_base_fields() {
+    let request = NewTeamRequest::from_value(&parse(CREATE_FIELDS)).unwrap();
+    let team = &request.team;
     assert_eq!(team.tpd_limit, Some(30));
     assert_eq!(team.max_budget, Some(Decimal::new(105, 1)));
     assert_eq!(team.soft_budget, Some(Decimal::from(5_i64)));
@@ -77,7 +83,11 @@ fn team_create_all_fields() {
         team.default_team_member_models,
         Some(vec!["gpt-4o".to_owned()])
     );
+}
 
+#[test]
+fn team_create_extra_fields() {
+    let request = NewTeamRequest::from_value(&parse(CREATE_FIELDS)).unwrap();
     let extra = &request.extra;
     assert_eq!(
         extra
@@ -104,6 +114,32 @@ fn team_create_all_fields() {
         Some(vec![parse(r#""/v1/models""#)])
     );
     assert_eq!(extra.disable_global_guardrails, Some(true));
+}
+
+#[test]
+fn team_create_extra_defaults_and_nulls() {
+    let absent = NewTeamRequest::from_value(&parse(r#"{"team_id": "t"}"#)).unwrap();
+    assert_eq!(absent.extra, NewTeamFields::default());
+    let nulls = NewTeamRequest::from_value(&parse(
+        r#"{"tags": null, "guardrails": null, "object_permission": null, "team_member_budget": null, "router_settings": null}"#,
+    ))
+    .unwrap();
+    assert_eq!(nulls.extra.tags, None);
+    assert_eq!(nulls.extra.object_permission, None);
+    assert_eq!(nulls.extra.team_member_budget, None);
+    assert_eq!(nulls.team.router_settings, None);
+    assert_eq!(
+        nulls.supplied().unwrap(),
+        parse(
+            r#"{"tags": null, "guardrails": null, "object_permission": null, "team_member_budget": null, "router_settings": null}"#
+        )
+    );
+}
+
+#[test]
+fn team_create_extra_limit_fields() {
+    let request = NewTeamRequest::from_value(&parse(CREATE_FIELDS)).unwrap();
+    let extra = &request.extra;
     assert_eq!(
         extra.secret_manager_settings.as_ref().map(BTreeMap::len),
         Some(1)
@@ -132,6 +168,12 @@ fn team_create_all_fields() {
             .and_then(|values| values.get("gpt-4o")),
         Some(&PositiveInt(11))
     );
+}
+
+#[test]
+fn team_create_extra_budget_and_index_fields() {
+    let request = NewTeamRequest::from_value(&parse(CREATE_FIELDS)).unwrap();
+    let extra = &request.extra;
     assert_eq!(
         extra
             .mcp_rpm_limit
@@ -164,7 +206,11 @@ fn team_create_all_fields() {
             .and_then(|values| values.get("h")),
         Some(&parse("48"))
     );
+}
 
+#[test]
+fn team_create_object_permission_projection() {
+    let request = NewTeamRequest::from_value(&parse(CREATE_FIELDS)).unwrap();
     let resolved = request.resolved().unwrap();
     let permission = object(object(&resolved).get("object_permission").unwrap());
     assert_eq!(permission.len(), 12);
@@ -247,7 +293,9 @@ fn throughput_enum_values(#[case] text: &str, #[case] expected: Option<Throughpu
             assert_eq!(request.extra.rpm_limit_type, Some(kind));
             assert_eq!(request.extra.tpm_limit_type, Some(kind));
         }
-        None => assert!(outcome.is_err()),
+        None => {
+            outcome.unwrap_err();
+        }
     }
 }
 
@@ -284,7 +332,10 @@ fn budget_config_aliases() {
         .unwrap();
     assert_eq!(config.max_budget, Some(Amount(Decimal::from(10_i64))));
     assert_eq!(config.tpm_limit, None);
+}
 
+#[test]
+fn budget_config_alias_precedence() {
     let both = NewTeamRequest::from_value(&parse(
         r#"{"model_max_budget": {"gpt": {"max_budget": 4, "budget_limit": 3, "budget_duration": "2d", "time_period": "1d"}}}"#,
     ))
@@ -297,7 +348,10 @@ fn budget_config_aliases() {
         .unwrap();
     assert_eq!(config.max_budget, Some(Amount(Decimal::from(3_i64))));
     assert_eq!(config.budget_duration.as_deref(), Some("1d"));
+}
 
+#[test]
+fn budget_config_empty_entry() {
     let empty = NewTeamRequest::from_value(&parse(r#"{"model_max_budget": {"gpt": {}}}"#)).unwrap();
     assert_eq!(
         empty.supplied().unwrap(),
@@ -312,7 +366,10 @@ fn budget_config_aliases() {
             r#"{"max_budget": null, "budget_duration": null, "tpm_limit": null, "rpm_limit": null}"#
         )
     );
+}
 
-    assert!(NewTeamRequest::from_value(&parse(r#"{"model_max_budget": []}"#)).is_err());
-    assert!(NewTeamRequest::from_value(&parse(r#"{"model_max_budget": {"gpt": null}}"#)).is_err());
+#[test]
+fn budget_config_rejects_invalid_values() {
+    NewTeamRequest::from_value(&parse(r#"{"model_max_budget": []}"#)).unwrap_err();
+    NewTeamRequest::from_value(&parse(r#"{"model_max_budget": {"gpt": null}}"#)).unwrap_err();
 }

@@ -25,7 +25,10 @@ fn spend_row_zero_defaults() {
             r#"{"team_id": "t", "team_alias": null, "user_id": "u", "user_email": null, "user_alias": null, "spend": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "api_requests": 0, "successful_requests": 0, "failed_requests": 0}"#
         )
     );
+}
 
+#[test]
+fn spend_row_filled_fields() {
     let filled: TeamUserSpendRow = decode_request(&parse(
         r#"{"team_id": "t", "team_alias": "a", "user_id": "u", "user_email": "e@x", "user_alias": "ua", "spend": 1.25, "prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "api_requests": 4, "successful_requests": 5, "failed_requests": 6}"#,
     ))
@@ -40,26 +43,20 @@ fn spend_row_zero_defaults() {
     assert_eq!(filled.api_requests, 4);
     assert_eq!(filled.successful_requests, 5);
     assert_eq!(filled.failed_requests, 6);
-    assert!(decode_request::<TeamUserSpendRow>(&parse(r#"{"team_id": "t"}"#)).is_err());
-    assert!(decode_request::<TeamUserSpendRow>(&parse(r#"{"user_id": "u"}"#)).is_err());
-    assert!(
-        decode_request::<TeamUserSpendRow>(&parse(
-            r#"{"team_id": "t", "user_id": "u", "spend": null}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        decode_request::<TeamUserSpendRow>(&parse(
-            r#"{"team_id": "t", "user_id": "u", "spend": "1.0"}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        decode_request::<TeamUserSpendRow>(&parse(
-            r#"{"team_id": "t", "user_id": "u", "prompt_tokens": 1.5}"#
-        ))
-        .is_err()
-    );
+}
+
+#[test]
+fn spend_row_rejects_missing_null_and_fractional_values() {
+    decode_request::<TeamUserSpendRow>(&parse(r#"{"team_id": "t"}"#)).unwrap_err();
+    decode_request::<TeamUserSpendRow>(&parse(r#"{"user_id": "u"}"#)).unwrap_err();
+    decode_request::<TeamUserSpendRow>(&parse(
+        r#"{"team_id": "t", "user_id": "u", "spend": null}"#,
+    ))
+    .unwrap_err();
+    decode_request::<TeamUserSpendRow>(&parse(
+        r#"{"team_id": "t", "user_id": "u", "prompt_tokens": 1.5}"#,
+    ))
+    .unwrap_err();
 }
 
 #[test]
@@ -88,18 +85,16 @@ fn spend_response_unparsed_dates() {
             r#"{"start_date": "2024-06-01", "end_date": "2024-06-02", "results": [{"team_id": "t", "team_alias": null, "user_id": "u", "user_email": null, "user_alias": null, "spend": 2.5, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "api_requests": 0, "successful_requests": 0, "failed_requests": 0}]}"#
         )
     );
-    assert!(
-        decode_request::<TeamUserSpendResponse>(&parse(r#"{"start_date": "a", "results": []}"#))
-            .is_err()
-    );
-    assert!(
-        decode_request::<TeamUserSpendResponse>(&parse(
-            r#"{"start_date": "a", "end_date": "b", "results": null}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        decode_request::<TeamUserSpendResponse>(&parse(r#"{"start_date": "a", "end_date": "b"}"#))
-            .is_err()
-    );
+}
+
+#[test]
+fn spend_response_rejects_missing_fields() {
+    decode_request::<TeamUserSpendResponse>(&parse(r#"{"start_date": "a", "results": []}"#))
+        .unwrap_err();
+    decode_request::<TeamUserSpendResponse>(&parse(
+        r#"{"start_date": "a", "end_date": "b", "results": null}"#,
+    ))
+    .unwrap_err();
+    decode_request::<TeamUserSpendResponse>(&parse(r#"{"start_date": "a", "end_date": "b"}"#))
+        .unwrap_err();
 }

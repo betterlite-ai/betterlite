@@ -80,47 +80,37 @@ fn empty_identifier_accepted() {
 
 #[test]
 fn forbidden_vs_ignored_extra_fields() {
-    assert!(TeamMemberRef::from_value(&parse(r#"{"user_id": "u", "role": "admin"}"#)).is_err());
-    assert!(
-        TeamMemberBudgetPatch::from_value(
-            &parse(r#"{"user_id": "u", "tpm_limit": 1, "extra": true}"#),
-            &settings(),
-            clocks(),
-            &DATABASE(),
-        )
-        .is_err()
-    );
-    assert!(
-        BulkTeamMemberDeleteRequest::from_value(&parse(
-            r#"{"members": [{"user_id": "u"}], "x": 1}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        BulkTeamMemberDeleteRequest::from_value(&parse(
-            r#"{"members": [{"user_id": "u", "n": 1}]}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        BulkBudgetUpdateRequest::from_value(
-            &parse(r#"{"members": [{"user_id": "u"}], "x": 1}"#),
-            &settings(),
-            clocks(),
-            &DATABASE(),
-        )
-        .is_err()
-    );
-    assert!(
-        BulkBudgetUpdateRequest::from_value(
-            &parse(r#"{"members": [{"user_id": "u", "x": 1}]}"#),
-            &settings(),
-            clocks(),
-            &DATABASE(),
-        )
-        .is_err()
-    );
-    assert!(TeamMetadataFieldSchema::from_value(&parse(r#"{"key": "k", "x": 1}"#)).is_err());
+    TeamMemberRef::from_value(&parse(r#"{"user_id": "u", "role": "admin"}"#)).unwrap_err();
+    TeamMemberBudgetPatch::from_value(
+        &parse(r#"{"user_id": "u", "tpm_limit": 1, "extra": true}"#),
+        &settings(),
+        clocks(),
+        &DATABASE(),
+    )
+    .unwrap_err();
+    BulkTeamMemberDeleteRequest::from_value(&parse(r#"{"members": [{"user_id": "u"}], "x": 1}"#))
+        .unwrap_err();
+    BulkTeamMemberDeleteRequest::from_value(&parse(r#"{"members": [{"user_id": "u", "n": 1}]}"#))
+        .unwrap_err();
+    BulkBudgetUpdateRequest::from_value(
+        &parse(r#"{"members": [{"user_id": "u"}], "x": 1}"#),
+        &settings(),
+        clocks(),
+        &DATABASE(),
+    )
+    .unwrap_err();
+    BulkBudgetUpdateRequest::from_value(
+        &parse(r#"{"members": [{"user_id": "u", "x": 1}]}"#),
+        &settings(),
+        clocks(),
+        &DATABASE(),
+    )
+    .unwrap_err();
+    TeamMetadataFieldSchema::from_value(&parse(r#"{"key": "k", "x": 1}"#)).unwrap_err();
+}
+
+#[test]
+fn ignored_extra_fields_survive() {
     let result: TeamMemberDeleteResult =
         decode_request(&parse(r#"{"success": true, "extra": 1}"#)).unwrap();
     assert_eq!(
@@ -135,7 +125,7 @@ fn forbidden_vs_ignored_extra_fields() {
     let added =
         decode_request::<BulkTeamMemberAddRequest>(&parse(r#"{"team_id": "t", "x": 1}"#)).unwrap();
     assert_eq!(added.team_id, "t");
-    assert!(NewTeamRequest::from_value(&parse(r#"{"team_id": "t", "x": 1}"#)).is_ok());
+    NewTeamRequest::from_value(&parse(r#"{"team_id": "t", "x": 1}"#)).unwrap();
 }
 
 #[test]
@@ -197,11 +187,9 @@ fn bulk_members_empty_and_over_limit() {
         over_updates.to_string(),
         "Tuple should have at most 500 items after validation, not 600"
     );
-    assert!(BulkTeamMemberDeleteRequest::from_value(&parse("{}")).is_err());
-    assert!(
-        BulkBudgetUpdateRequest::from_value(&parse("{}"), &settings(), clocks(), &DATABASE())
-            .is_err()
-    );
+    BulkTeamMemberDeleteRequest::from_value(&parse("{}")).unwrap_err();
+    BulkBudgetUpdateRequest::from_value(&parse("{}"), &settings(), clocks(), &DATABASE())
+        .unwrap_err();
 }
 
 #[test]
@@ -276,7 +264,10 @@ fn member_budget_patch_presence() {
     assert_eq!(explicit.supplied_fields.len(), 6);
     assert!(explicit.supplied_fields.contains("max_budget_in_team"));
     assert!(explicit.supplied_fields.contains("allowed_models"));
+}
 
+#[test]
+fn member_budget_patch_zero_values() {
     let zero = TeamMemberBudgetPatch::from_value(
         &parse(r#"{"user_id": "u", "max_budget_in_team": 0, "tpm_limit": 0, "rpm_limit": 0, "allowed_models": []}"#),
         &settings(),
@@ -347,6 +338,10 @@ fn member_budget_duration_error_ordering() {
         both.to_string(),
         "Each member must be identified by exactly one of user_id or user_email"
     );
+}
+
+#[test]
+fn member_budget_duration_null() {
     let null_duration = TeamMemberBudgetPatch::from_value(
         &parse(r#"{"user_id": "u", "budget_duration": null}"#),
         &settings(),
@@ -376,13 +371,23 @@ fn budget_source_enum_and_data_envelope() {
         default_source.max_budget_source,
         Some(BudgetSource::TeamDefault)
     );
-    assert!(
-        decode_request::<TeamMemberBudgetUpdateResult>(&parse(
-            r#"{"user_id": "u", "success": true, "max_budget_source": "other"}"#
-        ))
-        .is_err()
-    );
-    assert!(decode_request::<TeamMemberBudgetUpdateResult>(&parse(r#"{"user_id": "u"}"#)).is_err());
+}
+
+#[test]
+fn budget_update_result_rejects_invalid_values() {
+    decode_request::<TeamMemberBudgetUpdateResult>(&parse(
+        r#"{"user_id": "u", "success": true, "max_budget_source": "other"}"#,
+    ))
+    .unwrap_err();
+    decode_request::<TeamMemberBudgetUpdateResult>(&parse(r#"{"user_id": "u"}"#)).unwrap_err();
+}
+
+#[test]
+fn bulk_response_data_envelopes() {
+    let result: TeamMemberBudgetUpdateResult = decode_request(&parse(
+        r#"{"user_id": "u", "success": true, "max_budget": 2.5, "max_budget_source": "member", "allowed_models": ["gpt-4o"]}"#,
+    ))
+    .unwrap();
     let response = BulkBudgetUpdateResponse { data: vec![result] };
     assert_eq!(
         to_data(&response).unwrap(),
@@ -441,7 +446,7 @@ fn bulk_add_defaults_and_no_selection_validator() {
     ))
     .unwrap();
     assert_eq!(null_flag.all_users, None);
-    assert!(decode_request::<BulkTeamMemberAddRequest>(&parse(r#"{"members": []}"#)).is_err());
+    decode_request::<BulkTeamMemberAddRequest>(&parse(r#"{"members": []}"#)).unwrap_err();
 }
 
 #[test]
@@ -471,6 +476,10 @@ fn bulk_add_response_counts() {
             .and_then(|values| values.get("team_id")),
         Some(&parse(r#""t""#))
     );
+}
+
+#[test]
+fn bulk_add_response_serializes() {
     let one = BulkTeamMemberAddResponse {
         team_id: "t".to_owned(),
         results: vec![TeamMemberAddResult {
@@ -492,16 +501,12 @@ fn bulk_add_response_counts() {
             r#"{"team_id": "t", "results": [{"user_id": "u", "user_email": null, "success": true, "error": null, "updated_user": null, "updated_team_membership": null}], "total_requested": 1, "successful_additions": 1, "failed_additions": 0, "updated_team": null}"#
         )
     );
-    assert!(
-        decode_request::<BulkTeamMemberAddResponse>(&parse(
-            r#"{"team_id": "t", "results": [], "total_requested": 0, "successful_additions": 0}"#
-        ))
-        .is_err()
-    );
-    assert!(
-        decode_request::<BulkTeamMemberAddResponse>(&parse(
-            r#"{"team_id": "t", "results": [{"user_id": "u"}]}"#
-        ))
-        .is_err()
-    );
+    decode_request::<BulkTeamMemberAddResponse>(&parse(
+        r#"{"team_id": "t", "results": [], "total_requested": 0, "successful_additions": 0}"#,
+    ))
+    .unwrap_err();
+    decode_request::<BulkTeamMemberAddResponse>(&parse(
+        r#"{"team_id": "t", "results": [{"user_id": "u"}]}"#,
+    ))
+    .unwrap_err();
 }

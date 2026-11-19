@@ -24,7 +24,10 @@ fn membership_info_optional_fields() {
             r#"{"user_id": "u", "team_id": "t", "budget_id": null, "spend": 0, "total_spend": 0, "litellm_budget_table": null, "role": null, "user_email": null, "team_alias": null}"#
         )
     );
+}
 
+#[test]
+fn membership_info_filled_fields() {
     let filled: TeamMemberInfoResponse = decode_request(&parse(
         r#"{"user_id": "u", "team_id": "t", "budget_id": "b", "spend": 1.5, "total_spend": 2, "role": "user", "user_email": "e@x", "team_alias": "alias", "extra": 1}"#,
     ))
@@ -41,18 +44,19 @@ fn membership_info_optional_fields() {
             r#"{"user_id": "u", "team_id": "t", "budget_id": "b", "spend": 1.5, "total_spend": 2, "litellm_budget_table": null, "role": "user", "user_email": "e@x", "team_alias": "alias"}"#
         )
     );
+}
 
+#[test]
+fn membership_info_nulls_and_required_fields() {
     let nulls: TeamMemberInfoResponse = decode_request(&parse(
         r#"{"user_id": "u", "team_id": "t", "role": null, "user_email": null, "team_alias": null}"#,
     ))
     .unwrap();
     assert_eq!(nulls.role, None);
-    assert!(decode_request::<TeamMemberInfoResponse>(&parse(r#"{"team_id": "t"}"#)).is_err());
-    assert!(decode_request::<TeamMemberInfoResponse>(&parse(r#"{"user_id": "u"}"#)).is_err());
-    assert!(
-        decode_request::<TeamMemberInfoResponse>(&parse(
-            r#"{"user_id": "u", "team_id": "t", "role": 7}"#
-        ))
-        .is_err()
-    );
+    decode_request::<TeamMemberInfoResponse>(&parse(r#"{"team_id": "t"}"#)).unwrap_err();
+    decode_request::<TeamMemberInfoResponse>(&parse(r#"{"user_id": "u"}"#)).unwrap_err();
+    decode_request::<TeamMemberInfoResponse>(&parse(
+        r#"{"user_id": "u", "team_id": "t", "role": 7}"#,
+    ))
+    .unwrap_err();
 }

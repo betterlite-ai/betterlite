@@ -1,3 +1,4 @@
+use std::fs::{read, read_dir};
 use std::path::{Path, PathBuf};
 
 use betterlite_logging::private_json::error::PrivateJsonError;
@@ -15,8 +16,8 @@ fn nested_arrays(levels: usize) -> String {
     text
 }
 
-fn seed(directory: &Path, name: &str) -> Result<TypedValue, DecodeError> {
-    decode_team_request(&std::fs::read(directory.join(name)).unwrap())
+fn seed(directory: &Path, name: &str) -> bool {
+    decode_team_request(&read(directory.join(name)).unwrap()).is_ok()
 }
 
 #[test]
@@ -39,13 +40,13 @@ fn request_byte_limit() {
             MAX_JSON_BYTES + 1
         )
     );
-    assert!(decode_team_request(&[]).is_err());
+    decode_team_request(&[]).unwrap_err();
 }
 
 #[test]
 fn request_json_depth_limit() {
     let at_limit = nested_arrays(MAX_JSON_DEPTH - 1);
-    assert!(decode_team_request(at_limit.as_bytes()).is_ok());
+    decode_team_request(at_limit.as_bytes()).unwrap();
     let over = nested_arrays(MAX_JSON_DEPTH);
     let error = decode_team_request(over.as_bytes()).unwrap_err();
     assert!(matches!(
@@ -57,9 +58,9 @@ fn request_json_depth_limit() {
         format!("the JSON payload nests deeper than {MAX_JSON_DEPTH} levels")
     );
     let brackets_in_text = format!(r#"{{"a": "{}"}}"#, "[".repeat(200));
-    assert!(decode_team_request(brackets_in_text.as_bytes()).is_ok());
+    decode_team_request(brackets_in_text.as_bytes()).unwrap();
     let accepted_object = format!(r#"{{"a": {}}}"#, nested_arrays(1));
-    assert!(decode_team_request(accepted_object.as_bytes()).is_ok());
+    decode_team_request(accepted_object.as_bytes()).unwrap();
 }
 
 #[test]
@@ -102,22 +103,22 @@ fn decode_rejects_malformed_and_non_objects() {
 fn replays_the_team_request_contracts_corpus() {
     let directory =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/team_request_contracts");
-    let seeds: Vec<PathBuf> = std::fs::read_dir(&directory)
+    let seeds: Vec<PathBuf> = read_dir(&directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect();
     assert!(seeds.len() >= 6);
     let outcomes: Vec<Result<TypedValue, DecodeError>> = seeds
         .iter()
-        .map(|path| decode_team_request(&std::fs::read(path).unwrap()))
+        .map(|path| decode_team_request(&read(path).unwrap()))
         .collect();
     assert!(outcomes.iter().any(Result::is_ok));
     assert!(outcomes.iter().any(Result::is_err));
-    assert!(seed(&directory, "valid-team-create.json").is_ok());
-    assert!(seed(&directory, "valid-bulk-members.json").is_ok());
-    assert!(seed(&directory, "duplicate-team-id.json").is_ok());
-    assert!(seed(&directory, "truncated.json").is_err());
-    assert!(seed(&directory, "malformed.json").is_err());
-    assert!(seed(&directory, "not-an-object.json").is_err());
-    assert!(seed(&directory, "too-deep.json").is_err());
+    assert!(seed(&directory, "valid-team-create.json"));
+    assert!(seed(&directory, "valid-bulk-members.json"));
+    assert!(seed(&directory, "duplicate-team-id.json"));
+    assert!(!seed(&directory, "truncated.json"));
+    assert!(!seed(&directory, "malformed.json"));
+    assert!(!seed(&directory, "not-an-object.json"));
+    assert!(!seed(&directory, "too-deep.json"));
 }

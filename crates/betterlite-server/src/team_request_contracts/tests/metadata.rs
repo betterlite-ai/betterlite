@@ -23,10 +23,17 @@ fn metadata_key_and_required_fields() {
     );
     let empty = TeamMetadataFieldSchema::from_value(&parse(r#"{"key": ""}"#)).unwrap_err();
     assert_eq!(empty.to_string(), "String should have at least 1 character");
-    assert!(TeamMetadataFieldSchema::from_value(&parse(r#"{"label": "L"}"#)).is_err());
-    assert!(TeamMetadataFieldSchema::from_value(&parse(r#"{"key": 1}"#)).is_err());
-    assert!(TeamMetadataFieldSchema::from_value(&parse(r#"{"key": null}"#)).is_err());
+}
 
+#[test]
+fn metadata_field_rejects_invalid_values() {
+    TeamMetadataFieldSchema::from_value(&parse(r#"{"label": "L"}"#)).unwrap_err();
+    TeamMetadataFieldSchema::from_value(&parse(r#"{"key": 1}"#)).unwrap_err();
+    TeamMetadataFieldSchema::from_value(&parse(r#"{"key": null}"#)).unwrap_err();
+}
+
+#[test]
+fn metadata_schema_fields() {
     let empty_schema = TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": []}"#)).unwrap();
     assert_eq!(empty_schema.fields, Vec::new());
     let schema = TeamMetadataSchemaResponse::from_value(&parse(
@@ -40,13 +47,13 @@ fn metadata_key_and_required_fields() {
         to_data(&schema).unwrap(),
         parse(r#"{"fields": [{"key": "a", "label": null}, {"key": "b", "label": null}]}"#)
     );
-    assert!(TeamMetadataSchemaResponse::from_value(&parse("{}")).is_err());
-    assert!(TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": null}"#)).is_err());
-    assert!(
-        TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": [{"key": ""}]}"#)).is_err()
-    );
-    assert!(
-        TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": [{"key": "a", "x": 1}]}"#))
-            .is_err()
-    );
+}
+
+#[test]
+fn metadata_schema_rejects_invalid_values() {
+    TeamMetadataSchemaResponse::from_value(&parse("{}")).unwrap_err();
+    TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": null}"#)).unwrap_err();
+    TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": [{"key": ""}]}"#)).unwrap_err();
+    TeamMetadataSchemaResponse::from_value(&parse(r#"{"fields": [{"key": "a", "x": 1}]}"#))
+        .unwrap_err();
 }
