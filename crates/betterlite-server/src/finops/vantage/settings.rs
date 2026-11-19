@@ -36,6 +36,7 @@ pub struct VantageSettings {
 
 impl VantageSettings {
     // the source's __init__ order: the parameter, then the environment, then the default
+    #[must_use]
     pub fn resolve<L>(params: &VantageLoggerParams, environment: &L) -> Self
     where
         L: EnvironmentLookup + ?Sized,
