@@ -12,6 +12,7 @@ path = "lib.rs"
 async-trait = "0.1.92"
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-error = { path = "../../../../../crates/betterlite-error" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
@@ -20,6 +21,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-sdk = { path = "../../../../../crates/betterlite-sdk" }
 chrono.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
