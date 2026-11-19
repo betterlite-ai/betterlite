@@ -26,37 +26,21 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 struct Step {
     kind: String,
-    #[serde(default)]
     payload: Option<Value>,
-    #[serde(default)]
     metadata: Option<Value>,
-    #[serde(default)]
     saved_spend: Option<Value>,
-    #[serde(default)]
     entity: Option<String>,
-    #[serde(default)]
     response_cost: Option<Value>,
-    #[serde(default)]
     team_id: Option<String>,
-    #[serde(default)]
     org_id: Option<String>,
-    #[serde(default)]
     project_id: Option<String>,
-    #[serde(default)]
     agent_id: Option<String>,
-    #[serde(default)]
     user_id: Option<String>,
-    #[serde(default)]
     request_tags: Option<String>,
-    #[serde(default)]
     attributed: Option<Vec<String>>,
-    #[serde(default)]
     served_model_id: Option<String>,
-    #[serde(default)]
     deployments: Option<BTreeMap<String, JsonObject>>,
-    #[serde(default)]
     fail_at: Option<usize>,
-    #[serde(default)]
     database: Option<bool>,
 }
 

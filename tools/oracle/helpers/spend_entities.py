@@ -143,14 +143,14 @@ class CaseWriter(DBSpendUpdateWriter):
     ) -> None:
         match step.get("entity"):
             case "team":
-                await self._update_team_db(
+                await self._update_team_db(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1232
                     response_cost=cost,
                     team_id=step.get("team_id"),
                     user_id=step.get("user_id"),
                     prisma_client=client,
                 )
             case "org":
-                await self._update_org_db(
+                await self._update_org_db(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1286
                     response_cost=cost,
                     org_id=step.get("org_id"),
                     user_id=step.get("user_id"),
@@ -163,13 +163,13 @@ class CaseWriter(DBSpendUpdateWriter):
                     prisma_client=client,
                 )
             case "agent":
-                await self._update_agent_db(
+                await self._update_agent_db(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1352
                     response_cost=cost,
                     agent_id=step.get("agent_id"),
                     prisma_client=client,
                 )
             case "tag":
-                await self._update_tag_db(
+                await self._update_tag_db(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1379
                     response_cost=cost,
                     request_tags=step.get("request_tags"),
                     prisma_client=client,
