@@ -5,10 +5,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use super::super::config::WriteConfig;
-use super::super::error::{
-    BaseLlmException, FailureFacts, HeaderMap, ResponseFacts, body_text, handle_error, header_text,
-};
+use super::super::error::{FailureFacts, HeaderMap, ResponseFacts, header_text};
 use super::{ClientKind, Operation};
 
 // What the timeout message needs from the send that just failed
@@ -20,21 +17,6 @@ pub(super) struct Sent {
     pub(super) elapsed: Duration,
 }
 
-pub(super) fn handle_reply<C: WriteConfig>(
-    reply: &UpstreamResponse,
-    config: &C,
-) -> BaseLlmException {
-    handle_error(&status_facts(reply), Some(config))
-}
-
-pub(super) fn handle_transport<C: WriteConfig>(
-    error: &TransportError,
-    sent: &Sent,
-    config: &C,
-) -> BaseLlmException {
-    handle_error(&transport_facts(error, sent), Some(config))
-}
-
 pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>> {
     let mut response = http::Response::new(reply.body.clone());
     *response.status_mut() =
@@ -44,8 +26,11 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
 }
 
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less the two content headers
-fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    let text = body_text(&reply.body);
+pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    let text = std::str::from_utf8(&reply.body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+        std::string::ToString::to_string,
+    );
     let headers = error_headers(&reply.headers);
     FailureFacts {
         response_status: Some(i64::from(reply.status)),
@@ -69,7 +54,7 @@ fn error_headers(headers: &http::HeaderMap) -> HeaderMap {
         .collect()
 }
 
-fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
+pub(super) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
     if caught_timeout(error, sent.mode, sent.operation) {
         return FailureFacts {
             response_status: None,

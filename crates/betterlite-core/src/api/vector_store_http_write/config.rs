@@ -7,7 +7,6 @@ use betterlite_openai::vector_stores::{
     validate_environment as openai_validate_environment,
 };
 use secrecy::SecretString;
-use serde::Serialize;
 
 use super::error::{BaseLlmException, HeaderMap, UrlFailure, header_map};
 
@@ -90,13 +89,14 @@ impl WriteConfig for OpenAiWriteConfig<'_> {
     ) -> Result<Json, BaseLlmException> {
         let status = response.status().as_u16();
         let headers = header_map(response.headers());
-        match transform_response(ReplyKind::Create, response) {
-            Ok(VectorReply::Record(record)) => as_json(&*record)
-                .map_err(|source| self.error_class(&source.to_string(), status, headers)),
-            Ok(VectorReply::Json(value)) => as_json(&value)
-                .map_err(|source| self.error_class(&source.to_string(), status, headers)),
-            Err(source) => Err(self.error_class(&source.to_string(), status, headers)),
+        let encoded = match transform_response(ReplyKind::Create, response) {
+            Ok(VectorReply::Record(record)) => serde_json::to_value(&*record),
+            Ok(VectorReply::Json(value)) => serde_json::to_value(&value),
+            Err(source) => return Err(self.error_class(&source.to_string(), status, headers)),
         }
+        .map_err(|source| self.error_class(&source.to_string(), status, headers))?;
+        serde_json::from_value(encoded)
+            .map_err(|source| self.error_class(&source.to_string(), status, headers))
     }
 
     // BaseVectorStoreConfig.get_error_class raises this exception, so asking it and building one are the same answer here
@@ -108,9 +108,4 @@ impl WriteConfig for OpenAiWriteConfig<'_> {
             status_code_is_synthesized: false,
         }
     }
-}
-
-fn as_json<T: Serialize>(value: &T) -> Result<Json, serde_json::Error> {
-    let encoded = serde_json::to_value(value)?;
-    serde_json::from_value(encoded)
 }

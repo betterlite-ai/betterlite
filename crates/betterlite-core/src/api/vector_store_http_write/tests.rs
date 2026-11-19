@@ -22,7 +22,7 @@ use self::support::{
 };
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, WriteError, body_text, handle_error, header_text,
+    FailureFacts, HeaderMap, ResponseFacts, WriteError, handle_error, header_text,
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
@@ -836,9 +836,45 @@ async fn transport_failure(#[case] case: FailureCase) {
     }
 }
 
-#[test]
-fn binary_bodies_and_headers_are_named_by_their_length() {
-    assert_eq!(body_text(&[0xff, 0xfe]), "2 bytes that are not UTF-8");
+#[tokio::test]
+async fn binary_bodies_and_headers_are_named_by_their_length() {
+    let events = Events::new();
+    let wire = Wire::replying(
+        Reply {
+            status: 400,
+            headers: http::HeaderMap::new(),
+            body: vec![0xff, 0xfe],
+        },
+        &events,
+    );
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://unused.test");
+    let optional = UpdateParams::default();
+    let mut fixture = Fixture::new("vector_store_update");
+    let call = WriteCall::Update(UpdateCall {
+        target: target("vs_a", &params, None, None),
+        optional_params: &optional,
+        extra_body: None,
+    });
+    let result = run(
+        &mut fixture,
+        &deps,
+        ClientKind::Asynchronous,
+        &call,
+        &events,
+    )
+    .await;
+    let Err(WriteError::Provider(error)) = result else {
+        panic!("a 400 is a provider error");
+    };
+    assert_eq!(error.status_code, 400);
+    assert_eq!(error.message, "2 bytes that are not UTF-8");
     let value = http::HeaderValue::from_bytes(&[0xff, 0xfe]).expect("the bytes form a value");
     assert_eq!(header_text(&value), "2 bytes that are not UTF-8");
 }

@@ -190,13 +190,9 @@ impl Wire {
     }
 
     pub(crate) fn failing(error: TransportError, events: &Events) -> Self {
-        Self {
-            reply: Reply::json(200, "{}"),
-            failure: Arc::new(Mutex::new(Some(error))),
-            requests: Arc::default(),
-            events: events.clone(),
-            default_timeout: Duration::from_secs(60),
-        }
+        let wire = Self::replying(Reply::json(200, "{}"), events);
+        *wire.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+        wire
     }
 
     pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<WriteRequest>> {

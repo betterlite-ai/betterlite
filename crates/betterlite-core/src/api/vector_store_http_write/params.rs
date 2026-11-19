@@ -79,15 +79,14 @@ fn insert<T: Serialize>(
             body.insert(key.to_owned(), Json::Null);
         }
         Some(Some(value)) => {
-            body.insert(key.to_owned(), encode(value)?);
+            let encoded = serde_json::to_value(value).map_err(WriteError::Encode)?;
+            body.insert(
+                key.to_owned(),
+                serde_json::from_value(encoded).map_err(WriteError::Encode)?,
+            );
         }
     }
     Ok(())
-}
-
-fn encode<T: Serialize>(value: &T) -> Result<Json, WriteError> {
-    let encoded = serde_json::to_value(value).map_err(WriteError::Encode)?;
-    serde_json::from_value(encoded).map_err(WriteError::Encode)
 }
 
 // B668's filter reads serde_json's value; the metadata map round-trips through it and comes back typed
@@ -95,5 +94,6 @@ fn cleaned_metadata(metadata: &IndexMap<String, Json>) -> Result<Json, WriteErro
     let encoded = serde_json::to_value(metadata).map_err(WriteError::Encode)?;
     let map = serde_json::from_value(encoded).map_err(WriteError::Encode)?;
     let cleaned = metadata_filter_limit(Some(&map));
-    encode(&cleaned)
+    let encoded = serde_json::to_value(&cleaned).map_err(WriteError::Encode)?;
+    serde_json::from_value(encoded).map_err(WriteError::Encode)
 }

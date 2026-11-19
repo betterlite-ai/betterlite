@@ -105,8 +105,8 @@ class TransportCall(BaseModel):
     mode: Mode
     vector_store_id: str
     optional_params: OptionalParams = Field(default_factory=OptionalParams)
-    extra_headers: dict[str, object] | None = None  # ast-grep-ignore: no-loose-types
-    extra_body: dict[str, object] | None = None  # ast-grep-ignore: no-loose-types
+    extra_headers: dict[str, object] | None = None
+    extra_body: dict[str, object] | None = None
     timeout_seconds: int | None = None
 
 
@@ -137,7 +137,7 @@ class Handlers(Protocol):
     def vector_store_update_handler(self) -> UpdateCall: ...
 
     @property
-    def async_vector_store_update_handler(  # ast-grep-ignore: no-long-names
+    def async_vector_store_update_handler(
         self,
     ) -> AsyncUpdateCall: ...
 
@@ -145,7 +145,7 @@ class Handlers(Protocol):
     def vector_store_delete_handler(self) -> DeleteCall: ...
 
     @property
-    def async_vector_store_delete_handler(  # ast-grep-ignore: no-long-names
+    def async_vector_store_delete_handler(
         self,
     ) -> AsyncDeleteCall: ...
 
@@ -199,77 +199,63 @@ def execute(
     logging_obj = logging_fixture(call.operation)
     litellm_params = GenericLiteLLMParams(api_base=api_base)
     if call.operation == "update":
-        return update(call, config, logging_obj, litellm_params, timeout)
-    return delete(call, config, logging_obj, litellm_params, timeout)
-
-
-def update(
-    call: TransportCall,
-    config: BaseVectorStoreConfig,
-    logging_obj: Logging,
-    litellm_params: GenericLiteLLMParams,
-    timeout: float | None,
-) -> JsonValue:
-    optional = requested_params(call.optional_params)
+        optional = requested_params(call.optional_params)
+        if call.mode == "sync":
+            return JSON.validate_python(
+                HANDLER.vector_store_update_handler(
+                    call.vector_store_id,
+                    optional,
+                    config,
+                    "openai",
+                    litellm_params,
+                    logging_obj,
+                    call.extra_headers,
+                    call.extra_body,
+                    timeout,
+                )
+            )
+        return JSON.validate_python(
+            asyncio.run(
+                HANDLER.async_vector_store_update_handler(
+                    call.vector_store_id,
+                    optional,
+                    config,
+                    "openai",
+                    litellm_params,
+                    logging_obj,
+                    call.extra_headers,
+                    call.extra_body,
+                    timeout,
+                )
+            )
+        )
     if call.mode == "sync":
-        reply = HANDLER.vector_store_update_handler(
-            call.vector_store_id,
-            optional,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            call.extra_headers,
-            call.extra_body,
-            timeout,
+        return JSON.validate_python(
+            HANDLER.vector_store_delete_handler(
+                call.vector_store_id,
+                config,
+                "openai",
+                litellm_params,
+                logging_obj,
+                call.extra_headers,
+                call.extra_body,
+                timeout,
+            )
         )
-    else:
-        pending = HANDLER.async_vector_store_update_handler(
-            call.vector_store_id,
-            optional,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            call.extra_headers,
-            call.extra_body,
-            timeout,
+    return JSON.validate_python(
+        asyncio.run(
+            HANDLER.async_vector_store_delete_handler(
+                call.vector_store_id,
+                config,
+                "openai",
+                litellm_params,
+                logging_obj,
+                call.extra_headers,
+                call.extra_body,
+                timeout,
+            )
         )
-        reply = asyncio.run(pending)
-    return JSON.validate_python(reply)
-
-
-def delete(
-    call: TransportCall,
-    config: BaseVectorStoreConfig,
-    logging_obj: Logging,
-    litellm_params: GenericLiteLLMParams,
-    timeout: float | None,
-) -> JsonValue:
-    if call.mode == "sync":
-        reply = HANDLER.vector_store_delete_handler(
-            call.vector_store_id,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            call.extra_headers,
-            call.extra_body,
-            timeout,
-        )
-    else:
-        pending = HANDLER.async_vector_store_delete_handler(
-            call.vector_store_id,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            call.extra_headers,
-            call.extra_body,
-            timeout,
-        )
-        reply = asyncio.run(pending)
-    return JSON.validate_python(reply)
+    )
 
 
 class VectorStoreTransportRequest(BaseModel):

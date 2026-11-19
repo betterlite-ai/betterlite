@@ -18,9 +18,9 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
-use self::facts::{Sent, handle_reply, handle_transport};
+use self::facts::Sent;
 use super::config::{WriteConfig, WriteParams};
-use super::error::{ClientError, WriteError};
+use super::error::{ClientError, WriteError, handle_error};
 use super::params::UpdateParams;
 
 mod facts;
@@ -284,8 +284,12 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
         timeout,
         elapsed: started.elapsed(),
     };
-    let reply =
-        reply.map_err(|error| WriteError::Provider(handle_transport(&error, &sent, config)))?;
+    let reply = reply.map_err(|error| {
+        WriteError::Provider(handle_error(
+            &facts::transport_facts(&error, &sent),
+            Some(config as &dyn WriteConfig),
+        ))
+    })?;
     if reply.status < 400 {
         return match operation {
             Operation::Update => config
@@ -294,5 +298,8 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
             Operation::Delete => serde_json::from_slice(&reply.body).map_err(WriteError::Reply),
         };
     }
-    Err(WriteError::Provider(handle_reply(&reply, config)))
+    Err(WriteError::Provider(handle_error(
+        &facts::status_facts(&reply),
+        Some(config as &dyn WriteConfig),
+    )))
 }

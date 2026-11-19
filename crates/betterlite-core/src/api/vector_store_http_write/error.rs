@@ -95,18 +95,9 @@ pub enum WriteError {
 #[must_use]
 pub fn header_text(value: &http::HeaderValue) -> String {
     value.to_str().map_or_else(
-        |_| not_utf8(value.as_bytes()),
+        |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
         std::string::ToString::to_string,
     )
-}
-
-#[must_use]
-pub fn body_text(body: &[u8]) -> String {
-    std::str::from_utf8(body).map_or_else(|_| not_utf8(body), std::string::ToString::to_string)
-}
-
-fn not_utf8(bytes: &[u8]) -> String {
-    format!("{} bytes that are not UTF-8", bytes.len())
 }
 
 #[must_use]
