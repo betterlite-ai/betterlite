@@ -16,8 +16,8 @@ pub fn decode_page(bytes: &[u8]) -> Result<FineTuningPage, serde_json::Error> {
 // a declared key is always written with its shape, and an undeclared one stays as the provider wrote it
 enum Shape {
     Any,
-    Object(&'static [(&'static str, Shape)]),
-    Objects(&'static Shape),
+    Object(&'static [(&'static str, Self)]),
+    Objects(&'static Self),
 }
 
 fn normalize(value: &Json, shape: &Shape) -> Json {

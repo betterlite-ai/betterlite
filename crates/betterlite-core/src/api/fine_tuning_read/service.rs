@@ -31,7 +31,7 @@ where
         match input {
             FineTuningReadInput::List(call) => {
                 self.read(
-                    call.provider.as_ref(),
+                    call.provider.0.as_ref(),
                     &call.params,
                     call.operation(),
                     false,
@@ -39,12 +39,17 @@ where
                 .await
             }
             FineTuningReadInput::AList(call) => {
-                self.read(call.provider.as_ref(), &call.params, call.operation(), true)
-                    .await
+                self.read(
+                    call.provider.0.as_ref(),
+                    &call.params,
+                    call.operation(),
+                    true,
+                )
+                .await
             }
             FineTuningReadInput::Retrieve(call) => {
                 self.read(
-                    call.provider.as_ref(),
+                    call.provider.0.as_ref(),
                     &call.params,
                     call.operation(),
                     false,
@@ -52,8 +57,13 @@ where
                 .await
             }
             FineTuningReadInput::ARetrieve(call) => {
-                self.read(call.provider.as_ref(), &call.params, call.operation(), true)
-                    .await
+                self.read(
+                    call.provider.0.as_ref(),
+                    &call.params,
+                    call.operation(),
+                    true,
+                )
+                .await
             }
         }
     }

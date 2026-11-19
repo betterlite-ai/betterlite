@@ -25,8 +25,15 @@ mod tests;
 #[serde(transparent)]
 pub struct ReadProvider(pub String);
 
-fn default_provider() -> Option<ReadProvider> {
-    Some(ReadProvider("openai".to_owned()))
+// the field defaults through this type so an absent key takes openai and an explicit null stays None
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ReadProviderField(pub Option<ReadProvider>);
+
+impl Default for ReadProviderField {
+    fn default() -> Self {
+        Self(Some(ReadProvider("openai".to_owned())))
+    }
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout, and only a str is converted
@@ -124,8 +131,8 @@ pub struct FineTuningListCall {
     pub after: Option<String>,
     #[serde(default)]
     pub limit: Option<i64>,
-    #[serde(default = "default_provider")]
-    pub provider: Option<ReadProvider>,
+    #[serde(default)]
+    pub provider: ReadProviderField,
     #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
     // LiteLLM forwards extra_body as the caller's own JSON, so a non-string value still parses
@@ -138,8 +145,8 @@ pub struct FineTuningListCall {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FineTuningRetrieveCall {
     pub fine_tuning_job_id: String,
-    #[serde(default = "default_provider")]
-    pub provider: Option<ReadProvider>,
+    #[serde(default)]
+    pub provider: ReadProviderField,
     #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
     #[serde(default)]

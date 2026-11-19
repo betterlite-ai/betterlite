@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
 use betterlite_openai::fine_tuning::job::{FineTuneJob, JobStatus};
-use secrecy::zeroize::Zeroize;
+use secrecy::zeroize::Zeroize as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 use thiserror::Error;
@@ -88,13 +88,14 @@ impl Fake {
 impl FineTuningReadDispatch for Fake {
     type Error = FakeError;
 
-    async fn read(&self, target: ReadTarget<'_>) -> Result<Vec<u8>, Self::Error> {
+    fn read(&self, target: ReadTarget<'_>) -> std::future::Ready<Result<Vec<u8>, Self::Error>> {
         let mut state = self.state.lock().expect("the fake state");
         state.calls.push(record(&target));
-        match &state.error {
-            Some(error) => Err(error.clone()),
-            None => Ok(state.reply.clone()),
-        }
+        let answer = state
+            .error
+            .as_ref()
+            .map_or_else(|| Ok(state.reply.clone()), |error| Err(error.clone()));
+        std::future::ready(answer)
     }
 }
 
@@ -282,12 +283,16 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(job["status"], json!("canceling"));
     assert_eq!(job["organization_id"], json!(null));
     assert_eq!(job["training_file"], json!("file_1"));
-    assert_eq!(job["unknown_top"], json!(1));
+    assert_eq!(job["unknown_top"], json!(1_i32));
     assert_eq!(job["error"], json!(null));
-    assert_eq!(
-        job["hyperparameters"],
-        json!({"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 3})
-    );
+    let hyperparameters = &job["hyperparameters"];
+    assert_eq!(hyperparameters["batch_size"], json!(null));
+    assert_eq!(hyperparameters["learning_rate_multiplier"], json!(null));
+    assert_eq!(hyperparameters["n_epochs"], json!(3_i32));
+    let fields = hyperparameters
+        .as_object()
+        .expect("a hyperparameters object");
+    assert_eq!(fields.len(), 3);
     assert_eq!(job["method"]["hyperparameters"]["n_epochs"], json!("auto"));
     assert_eq!(job.as_object().expect("a job object").len(), 20);
 }
@@ -306,10 +311,11 @@ async fn list_page_keeps_absent_keys_absent() {
     let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
         panic!("list answered a job");
     };
-    assert_eq!(
-        serde_json::to_value(page).expect("a page serializes"),
-        json!({"data": null, "has_more": null})
-    );
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    assert_eq!(page_json["data"], json!(null));
+    assert_eq!(page_json["has_more"], json!(null));
+    let fields = page_json.as_object().expect("a page object");
+    assert_eq!(fields.len(), 2);
 }
 
 // azure list entries come back exactly as the page wrote them; only retrieve normalizes a job
@@ -567,10 +573,10 @@ async fn structured_timeout_passes_through() {
     assert_eq!(
         azure(&fake.calls()).timeout,
         FineTuningTimeout::Structured(StructuredTimeout {
-            connect: Some(1.0),
-            read: Some(2.0),
-            write: Some(3.0),
-            pool: Some(4.0)
+            connect: Some(1.0_f64),
+            read: Some(2.0_f64),
+            write: Some(3.0_f64),
+            pool: Some(4.0_f64)
         })
     );
 }
@@ -748,10 +754,10 @@ fn provider_defaults_only_when_absent() {
     let FineTuningReadInput::List(absent) = input(r#"{"list": {}}"#) else {
         panic!("a list call");
     };
-    assert_eq!(absent.provider, Some(ReadProvider("openai".to_owned())));
+    assert_eq!(absent.provider.0, Some(ReadProvider("openai".to_owned())));
 
     let FineTuningReadInput::List(null) = input(r#"{"list": {"provider": null}}"#) else {
         panic!("a list call");
     };
-    assert_eq!(null.provider, None);
+    assert_eq!(null.provider.0, None);
 }
