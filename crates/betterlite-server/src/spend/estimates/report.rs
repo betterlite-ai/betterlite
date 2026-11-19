@@ -67,16 +67,16 @@ pub async fn spend_report_for_time_range(
     start_date: &str,
     end_date: &str,
 ) -> Result<Option<SpendReport>, ReportDateError> {
-    let Some(source) = source else {
+    let Some(query_source) = source else {
         tracing::error!("{DATABASE_NOT_CONNECTED}");
         return Ok(None);
     };
     let start = utc_midnight(start_date, "start_date")?;
     let end = utc_midnight(end_date, "end_date")?;
-    let Some(teams) = rows(source, SpendTotals::Teams, start, end).await else {
+    let Some(teams) = rows(query_source, SpendTotals::Teams, start, end).await else {
         return Ok(None);
     };
-    let Some(tags) = rows(source, SpendTotals::Tags, start, end).await else {
+    let Some(tags) = rows(query_source, SpendTotals::Tags, start, end).await else {
         return Ok(None);
     };
     Ok(Some((teams, tags)))

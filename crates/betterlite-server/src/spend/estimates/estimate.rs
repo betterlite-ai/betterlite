@@ -52,9 +52,8 @@ pub(crate) async fn estimate(
     let Some(messages) = &request.messages else {
         return Err(EstimateError::MessagesRequired);
     };
-    let matched = router.and_then(|router| {
-        find_deployment(router.deployments(), router.model_group_alias(), requested)
-    });
+    let matched = router
+        .and_then(|port| find_deployment(port.deployments(), port.model_group_alias(), requested));
     let (model, custom_cost_per_token) = match matched {
         Some(deployment) => {
             let fields = matched_deployment(deployment)?;
@@ -94,11 +93,11 @@ async fn price_response(
 }
 
 // Both paths bill one completion call and leave every other option unset; they differ only in what they carry.
-fn billing_input<'a>(
-    model: Option<&'a str>,
-    messages: &'a [Json],
-    response: Option<&'a ResponseView<'a>>,
-) -> CompletionBillingInput<'a> {
+const fn billing_input<'input>(
+    model: Option<&'input str>,
+    messages: &'input [Json],
+    response: Option<&'input ResponseView<'input>>,
+) -> CompletionBillingInput<'input> {
     CompletionBillingInput {
         model,
         prompt: "",
@@ -148,11 +147,12 @@ fn count(value: u64, field: &'static str) -> Result<i64, EstimateError> {
 }
 
 fn details(map: Option<&BTreeMap<String, Option<u64>>>) -> Option<IndexMap<String, Json>> {
-    let map = map?;
+    let fields = map?;
     Some(
-        map.iter()
+        fields
+            .iter()
             .filter_map(|(name, count)| {
-                count.map(|count| (name.clone(), Json::Number(Number::from(count))))
+                count.map(|tokens| (name.clone(), Json::Number(Number::from(tokens))))
             })
             .collect(),
     )
@@ -174,13 +174,13 @@ async fn price(
     service
         .completion_cost(&call, &mut clock, None::<&mut NoBreakdown>)
         .await
-        .map_err(cost_error)
+        .map_err(|error| cost_error(&error))
 }
 
 // An unmapped model is ModelNotMappedError; no resolvable provider is BadRequestError, which keeps its null type and param.
-fn cost_error(error: CompletionCostError<ImagePolicyError>) -> EstimateError {
+fn cost_error(error: &CompletionCostError<ImagePolicyError>) -> EstimateError {
     if matches!(
-        &error,
+        error,
         CompletionCostError::Price(CallPriceError::Generic(TokenCostError::UnknownModel))
     ) {
         return EstimateError::ModelNotMapped {
@@ -188,7 +188,7 @@ fn cost_error(error: CompletionCostError<ImagePolicyError>) -> EstimateError {
         };
     }
     if matches!(
-        &error,
+        error,
         CompletionCostError::Price(CallPriceError::Resolution { .. })
     ) {
         return EstimateError::ProviderMissing {

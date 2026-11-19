@@ -26,13 +26,13 @@ pub async fn provider_budgets(
     router: Option<&dyn EstimateRouterPort>,
     now: DateTime<Utc>,
 ) -> Result<IndexMap<String, ProviderBudgetResponseObject>, EstimateError> {
-    let Some(router) = router else {
+    let Some(port) = router else {
         return Err(EstimateError::NoRouter);
     };
-    let Some(config) = router.provider_budget_config() else {
+    let Some(config) = port.provider_budget_config() else {
         return Err(EstimateError::NoProviderBudgetConfig);
     };
-    let Some(limiter) = router.budget_limiter() else {
+    let Some(limiter) = port.budget_limiter() else {
         return Err(EstimateError::NoBudgetLimiter);
     };
     let mut providers = IndexMap::with_capacity(config.len());

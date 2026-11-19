@@ -113,10 +113,10 @@ impl Clock for FixedClock {
 }
 
 pub(crate) fn deployment(name: &str, params: &str) -> DeploymentSpec {
-    let params: JsonObject = serde_json::from_str(params).unwrap();
+    let fields: JsonObject = serde_json::from_str(params).unwrap();
     DeploymentSpec::new(
         name.to_owned(),
-        params,
+        fields,
         JsonObject::new(),
         JsonObject::new(),
         || "spec-id".to_owned(),

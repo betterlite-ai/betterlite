@@ -43,10 +43,10 @@ fn parse_body(bytes: &[u8]) -> Result<IndexMap<String, Json>, EstimateError> {
             "missing", REQUIRED,
         )]));
     }
-    let parsed = str::from_utf8(bytes)
+    let decoded = str::from_utf8(bytes)
         .ok()
         .and_then(|text| serde_json::from_str::<Json>(text).ok());
-    let Some(parsed) = parsed else {
+    let Some(parsed) = decoded else {
         return Err(EstimateError::Request(vec![body_issue(
             "json_invalid",
             JSON_DECODE,

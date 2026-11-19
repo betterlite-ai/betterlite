@@ -7,7 +7,6 @@ use rust_decimal::Decimal;
 use crate::spend::estimates::decode::decode_spend_estimate;
 use crate::spend::estimates::error::EstimateError;
 use crate::spend::estimates::estimate::estimate;
-use crate::spend::estimates::ports::Clock as _;
 use crate::spend::estimates::router::EstimatesState;
 
 use super::support::{alias, configured_router, decimal, deployment, state};

@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{TextInput, TokenRequest};
-use betterlite_tokenizer::reservation::{RequestBody, count_input_tokens_for_model};
+use betterlite_tokenizer::reservation::count_input_tokens_for_model;
 use indexmap::IndexMap;
 
 // completion_cost counts the request's messages with LiteLLM's token_counter, which the reservation port implements.

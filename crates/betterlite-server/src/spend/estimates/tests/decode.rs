@@ -1,12 +1,22 @@
+use std::fmt::Debug;
+
 use betterlite_models::decisions::Json;
 
 use crate::spend::estimates::decode::decode_spend_estimate;
-use crate::spend::estimates::error::EstimateError;
+use crate::spend::estimates::error::{EstimateError, Issue};
 
-fn issues(error: EstimateError) -> Vec<crate::spend::estimates::error::Issue> {
+fn issues(error: EstimateError) -> Vec<Issue> {
     match error {
         EstimateError::Request(issues) => issues,
-        other => panic!("expected a request error, got {other}"),
+        other @ (EstimateError::InputRequired
+        | EstimateError::MessagesRequired
+        | EstimateError::ModelNotMapped { .. }
+        | EstimateError::ProviderMissing { .. }
+        | EstimateError::Failure { .. }
+        | EstimateError::NoRouter
+        | EstimateError::NoProviderBudgetConfig
+        | EstimateError::NoBudgetLimiter
+        | EstimateError::BudgetRead { .. }) => panic!("expected a request error, got {other}"),
     }
 }
 
@@ -48,11 +58,7 @@ fn decode_keeps_a_null_field_absent() {
 
 #[test]
 fn decode_rejects_an_empty_body() {
-    let issue = issues_of(
-        decode_spend_estimate(b""),
-        "missing",
-        vec!["body".to_owned()],
-    );
+    let issue = issues_of(decode_spend_estimate(b""), "missing", &["body".to_owned()]);
     assert_eq!(issue, "Field required");
 }
 
@@ -61,7 +67,7 @@ fn decode_rejects_malformed_json() {
     let issue = issues_of(
         decode_spend_estimate(b"{"),
         "json_invalid",
-        vec!["body".to_owned()],
+        &["body".to_owned()],
     );
     assert_eq!(issue, "JSON decode error");
 }
@@ -71,7 +77,7 @@ fn decode_rejects_a_non_object_body() {
     let issue = issues_of(
         decode_spend_estimate(b"[]"),
         "model_attributes_type",
-        vec!["body".to_owned()],
+        &["body".to_owned()],
     );
     assert_eq!(
         issue,
@@ -84,7 +90,7 @@ fn decode_rejects_a_non_string_model() {
     let issue = issues_of(
         decode_spend_estimate(br#"{"model":5}"#),
         "string_type",
-        vec!["body".to_owned(), "model".to_owned()],
+        &["body".to_owned(), "model".to_owned()],
     );
     assert_eq!(issue, "Input should be a valid string");
 }
@@ -94,7 +100,7 @@ fn decode_rejects_a_non_list_messages() {
     let issue = issues_of(
         decode_spend_estimate(br#"{"messages":{}}"#),
         "list_type",
-        vec!["body".to_owned(), "messages".to_owned()],
+        &["body".to_owned(), "messages".to_owned()],
     );
     assert_eq!(issue, "Input should be a valid list");
 }
@@ -104,7 +110,7 @@ fn decode_rejects_a_non_object_completion_response() {
     let issue = issues_of(
         decode_spend_estimate(br#"{"completion_response":"done"}"#),
         "dict_type",
-        vec!["body".to_owned(), "completion_response".to_owned()],
+        &["body".to_owned(), "completion_response".to_owned()],
     );
     assert_eq!(issue, "Input should be a valid dictionary");
 }
@@ -127,13 +133,13 @@ fn decode_keeps_message_entries_as_they_came() {
     assert!(matches!(messages[2], Json::Object(_)));
 }
 
-fn issues_of<E>(error: Result<E, EstimateError>, kind: &str, loc: Vec<String>) -> String
+fn issues_of<E>(error: Result<E, EstimateError>, kind: &str, loc: &[String]) -> String
 where
-    E: std::fmt::Debug,
+    E: Debug,
 {
     let issues = issues(error.unwrap_err());
     let issue = issues.first().expect("one issue");
     assert_eq!(issue.kind, kind);
-    assert_eq!(issue.loc, loc);
+    assert_eq!(issue.loc.as_slice(), loc);
     issue.msg.clone()
 }

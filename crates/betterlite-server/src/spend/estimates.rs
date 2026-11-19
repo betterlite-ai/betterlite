@@ -6,6 +6,6 @@ pub mod error;
 mod estimate;
 pub mod ports;
 pub mod report;
-pub(crate) mod router;
+pub mod router;
 
 mod tests;

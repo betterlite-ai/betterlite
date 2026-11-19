@@ -22,7 +22,7 @@ use crate::cost_service::CostService;
 pub(crate) const MAX_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 
 // The two endpoints' dependencies, so a test can drive them with fake ports.
-pub(crate) struct EstimatesState {
+pub struct EstimatesState {
     pub(crate) cost: Arc<CostService<ProviderFormulas>>,
     pub(crate) counter: Arc<dyn BillingTokenCounter>,
     pub(crate) router: Option<Arc<dyn EstimateRouterPort>>,
@@ -36,7 +36,7 @@ pub(crate) struct SpendCalculateResponse {
     pub(crate) cost: Decimal,
 }
 
-pub(crate) fn routes(state: Arc<EstimatesState>) -> Router {
+pub fn routes(state: Arc<EstimatesState>) -> Router {
     Router::new()
         .route("/spend/calculate", post(calculate))
         .route("/provider/budgets", get(read_budgets))

@@ -7,7 +7,7 @@ use chrono::Utc;
 
 use crate::key_fields::values::Amount;
 use crate::spend::estimates::ports::{Clock as _, SystemClock};
-use crate::spend::estimates::router::MAX_REQUEST_BYTES;
+use crate::spend::estimates::router::{EstimatesState, MAX_REQUEST_BYTES};
 
 use super::support::{
     budgets_of, configured_router, cost_of, decimal, deployment, error_of, fake_reads, get_budgets,
@@ -16,7 +16,7 @@ use super::support::{
 
 const MESSAGES: &str = r#"[{"role":"user","content":"hi"}]"#;
 
-fn mini_state() -> Arc<crate::spend::estimates::router::EstimatesState> {
+fn mini_state() -> Arc<EstimatesState> {
     state(Some(configured_router(
         vec![deployment("mini", r#"{"model":"openai/gpt-4o-mini"}"#)],
         AliasMap::new(),
@@ -252,9 +252,9 @@ fn the_system_clock_answers_the_current_time() {
 #[tokio::test]
 async fn the_calculate_route_accepts_a_body_near_the_two_mebibyte_limit() {
     let padding = "x".repeat(1_100_000);
-    let body =
+    let request_body =
         format!(r#"{{"model":"mini","messages":[{{"role":"user","content":"{padding}"}}]}}"#);
-    let (status, body) = post_json(mini_state(), &body).await;
+    let (status, body) = post_json(mini_state(), &request_body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(cost_of(&body), decimal("0.0000015"));
 }
