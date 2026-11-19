@@ -18,6 +18,7 @@ pub const FIELD_REQUIRED: &str = "Field required";
 pub const JSON_DECODE_ERROR: &str = "JSON decode error";
 pub const MODEL_ATTRIBUTES_MESSAGE: &str =
     "Input should be a valid dictionary or object to extract fields from";
+pub const EXTRA_FORBIDDEN_MESSAGE: &str = "Extra inputs are not permitted";
 pub const MODE_LITERAL: &str = "Input should be 'live' or 'demo'";
 pub const UNHANDLED_MESSAGE: &str = "Internal server error";
 
@@ -31,6 +32,8 @@ pub enum RoiRoutesError {
     Conflict(&'static str),
     #[error("the request does not match the declared types")]
     Request(Vec<QueryIssue>),
+    #[error("the body carries the unknown field {field}")]
+    UnknownField { field: String },
     #[error("Enter a GitHub login and a valid email address.")]
     InvalidIdentity,
     #[error("the stored sync time {value:?} is not a date-time")]
@@ -64,6 +67,19 @@ struct IssuesBody {
 }
 
 #[derive(Serialize)]
+struct OwnedIssue {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    loc: Vec<String>,
+    msg: String,
+}
+
+#[derive(Serialize)]
+struct OwnedIssuesBody {
+    detail: Vec<OwnedIssue>,
+}
+
+#[derive(Serialize)]
 struct InternalBody {
     error: InternalMessage,
 }
@@ -86,6 +102,18 @@ impl IntoResponse for RoiRoutesError {
                 Json(IssuesBody { detail: issues }),
             )
                 .into_response(),
+            Self::UnknownField { field } => {
+                let issues = vec![OwnedIssue {
+                    kind: "extra_forbidden",
+                    loc: vec!["body".to_owned(), field],
+                    msg: EXTRA_FORBIDDEN_MESSAGE.to_owned(),
+                }];
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(OwnedIssuesBody { detail: issues }),
+                )
+                    .into_response()
+            }
             Self::InvalidIdentity => {
                 detail_response(StatusCode::UNPROCESSABLE_ENTITY, INVALID_IDENTITY)
             }

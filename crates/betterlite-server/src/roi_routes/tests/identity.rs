@@ -1,3 +1,11 @@
+use std::ffi::OsStr;
+use std::fs;
+use std::path::PathBuf;
+
+use rstest::rstest;
+
+use crate::roi_routes::identity::parse_identity_body;
+
 #[tokio::test]
 async fn identity_inserts_a_normalized_login() {
     let harness = Harness::new();
@@ -285,7 +293,7 @@ async fn identity_rejects_a_wrong_email_type() {
 }
 
 #[tokio::test]
-async fn identity_ignores_an_unknown_field() {
+async fn identity_rejects_an_unknown_field() {
     let harness = Harness::new();
     let reply = call(
         harness.app(),
@@ -296,7 +304,26 @@ async fn identity_ignores_an_unknown_field() {
         ),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    let body: IdentityReply = reply.json();
-    assert!(body.identity_map.is_empty());
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let issues = reply.issues();
+    assert_eq!(issues[0].kind, "extra_forbidden");
+    assert_eq!(issues[0].loc, vec!["body".to_owned(), "extra".to_owned()]);
+    assert_eq!(issues[0].msg, "Extra inputs are not permitted");
+}
+
+#[rstest]
+fn identity_replays_the_roi_identity_body_corpus(
+    #[files("fuzz/corpus/roi_identity_body/*")] path: PathBuf,
+) {
+    let raw = fs::read(&path).expect("a corpus file");
+    let parsed = parse_identity_body(&raw);
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return;
+    };
+    if name.starts_with("accepted-") {
+        assert!(parsed.is_ok(), "{name}");
+    }
+    if name.starts_with("refused-") {
+        assert!(parsed.is_err(), "{name}");
+    }
 }

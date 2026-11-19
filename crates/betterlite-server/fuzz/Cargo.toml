@@ -341,3 +341,10 @@ path = "fuzz_targets/credential_request.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "roi_identity_body"
+path = "fuzz_targets/roi_identity_body.rs"
+test = false
+doc = false
+bench = false

@@ -3,7 +3,7 @@ use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use betterlite_roi::records::ROIReport;
 use betterlite_roi::settings::{normalize_email, normalize_login};
-use betterlite_roi::summary::identity_map::ROIIdentityMapResponse;
+use betterlite_roi::summary::identity_map::{ROIIdentityMapResponse, ROIIdentityMapUpdate};
 use betterlite_roi::summary::summarize;
 use serde::Deserialize;
 
@@ -18,10 +18,20 @@ use super::state::RoiRouteState;
 use super::stored::{load_ciphertexts, save_settings};
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct IdentityBody {
     github_login: String,
     #[serde(deserialize_with = "Option::deserialize")]
     email: Option<String>,
+}
+
+pub fn parse_identity_body(body: &[u8]) -> Result<ROIIdentityMapUpdate, RoiRoutesError> {
+    let payload: IdentityBody = decode_body(body)?;
+    let github_login = normalized_login(&payload.github_login)?;
+    Ok(ROIIdentityMapUpdate {
+        github_login,
+        email: payload.email,
+    })
 }
 
 pub(super) async fn update_identity_map(
@@ -34,8 +44,7 @@ pub(super) async fn update_identity_map(
     let Some(repository) = state.repository.clone() else {
         return Err(RoiRoutesError::DbNotConnected);
     };
-    let payload: IdentityBody = decode_body(&body)?;
-    let login = normalized_login(&payload.github_login)?;
+    let payload = parse_identity_body(&body)?;
     let mut settings = load_settings(repository.as_ref(), state.cipher.as_ref()).await?;
     let stored = load_ciphertexts(repository.as_ref()).await?;
     let new_email = payload
@@ -46,9 +55,13 @@ pub(super) async fn update_identity_map(
         return Err(RoiRoutesError::InvalidIdentity);
     }
     if payload.email.is_some() {
-        settings.identity_map.insert(login, new_email);
+        settings
+            .identity_map
+            .insert(payload.github_login, new_email);
     } else {
-        settings.identity_map.shift_remove(login.as_str());
+        settings
+            .identity_map
+            .shift_remove(payload.github_login.as_str());
     }
     save_settings(repository.as_ref(), &settings, &stored).await?;
     let stored_report = load_parameter::<ROIReport, _>(

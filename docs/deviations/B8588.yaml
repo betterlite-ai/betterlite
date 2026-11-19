@@ -68,4 +68,12 @@ deviations:
       sync store reports betterlite-db's DbError. Widening that helper is outside this task's
       files, so every store failure takes the generic 500 path and is logged at error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
+  - what: >-
+      PUT /roi-calculator/identity-map refuses an unknown body field with 422 extra_forbidden at
+      body.<field> and "Extra inputs are not permitted", where LiteLLM's ROIIdentityMapUpdate keeps
+      pydantic's default config and ignores the field.
+    why: >-
+      Rule no-silent-drops, and B3151's ROIIdentityMapUpdate already refuses unknown fields for the
+      same reason; the route decodes the same shape, so the endpoint and the type agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435
 kept_bugs: []
