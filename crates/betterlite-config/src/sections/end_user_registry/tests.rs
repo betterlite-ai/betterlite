@@ -48,36 +48,13 @@ fn validation_disables_skip() {
     )
     .expect("the text form loads");
     assert!(text.validate_end_user_id_in_db);
-    let environment = settings(
+    // the value may also come from the environment the loader is given
+    let from_environment = settings(
         "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
         &[("VALIDATE_END_USERS", "1")],
     )
     .expect("the reference resolves");
-    assert!(environment.validate_end_user_id_in_db);
-    let off = settings(
-        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
-        &[("VALIDATE_END_USERS", "off")],
-    )
-    .expect("the false text loads");
-    assert!(!off.validate_end_user_id_in_db);
-    // an empty value counts as unset, so the pinned false default stays
-    let empty = settings(
-        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
-        &[("VALIDATE_END_USERS", "")],
-    )
-    .expect("an empty reference is unset");
-    assert!(!empty.validate_end_user_id_in_db);
-    // an unset reference names both the variable and the setting
-    let missing = settings(
-        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
-        &[],
-    )
-    .expect_err("an unset reference fails the load");
-    assert!(missing.contains("VALIDATE_END_USERS"), "{missing}");
-    assert!(
-        missing.contains("litellm_settings.validate_end_user_id_in_db"),
-        "{missing}"
-    );
+    assert!(from_environment.validate_end_user_id_in_db);
     // unreadable text is a load error naming the setting
     let unreadable = settings(
         "litellm_settings:\n  validate_end_user_id_in_db: sometimes",
@@ -108,19 +85,62 @@ fn default_budget_disables_skip() {
         configured.max_end_user_budget_id.as_deref(),
         Some("budget-global")
     );
-    let resolved = settings(
+    // the id may also come from the environment the loader is given
+    let from_environment = settings(
         "litellm_settings:\n  max_end_user_budget_id: os.environ/END_USER_BUDGET",
         &[("END_USER_BUDGET", "budget-env")],
     )
     .expect("the reference resolves");
     assert_eq!(
-        resolved.max_end_user_budget_id.as_deref(),
+        from_environment.max_end_user_budget_id.as_deref(),
         Some("budget-env")
     );
     // an empty literal is used as given, so it still disables the skip
     let empty = settings("litellm_settings:\n  max_end_user_budget_id: ''", &[])
         .expect("an empty text loads");
     assert_eq!(empty.max_end_user_budget_id.as_deref(), Some(""));
+    let null = settings("litellm_settings:\n  max_end_user_budget_id: null", &[])
+        .expect("null is the default");
+    assert_eq!(null.max_end_user_budget_id, None);
+    // a non-string is a field error naming the setting
+    let wrong = settings("litellm_settings:\n  max_end_user_budget_id: 12", &[])
+        .expect_err("a number is not an id");
+    assert!(
+        wrong.contains("litellm_settings.max_end_user_budget_id"),
+        "{wrong}"
+    );
+}
+
+#[test]
+fn validation_reads_environment() {
+    let off = settings(
+        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
+        &[("VALIDATE_END_USERS", "off")],
+    )
+    .expect("the false text loads");
+    assert!(!off.validate_end_user_id_in_db);
+    // an empty value counts as unset, so the pinned false default stays
+    let empty = settings(
+        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
+        &[("VALIDATE_END_USERS", "")],
+    )
+    .expect("an empty reference is unset");
+    assert!(!empty.validate_end_user_id_in_db);
+    // an unset reference names both the variable and the setting
+    let missing = settings(
+        "litellm_settings:\n  validate_end_user_id_in_db: os.environ/VALIDATE_END_USERS",
+        &[],
+    )
+    .expect_err("an unset reference fails the load");
+    assert!(missing.contains("VALIDATE_END_USERS"), "{missing}");
+    assert!(
+        missing.contains("litellm_settings.validate_end_user_id_in_db"),
+        "{missing}"
+    );
+}
+
+#[test]
+fn default_budget_reads_environment() {
     // an empty environment variable counts as unset, so the skip stays on
     let unset = settings(
         "litellm_settings:\n  max_end_user_budget_id: os.environ/END_USER_BUDGET",
@@ -128,9 +148,6 @@ fn default_budget_disables_skip() {
     )
     .expect("an empty reference is unset");
     assert_eq!(unset.max_end_user_budget_id, None);
-    let null = settings("litellm_settings:\n  max_end_user_budget_id: null", &[])
-        .expect("null is the default");
-    assert_eq!(null.max_end_user_budget_id, None);
     // an unset reference names both the variable and the setting
     let missing = settings(
         "litellm_settings:\n  max_end_user_budget_id: os.environ/END_USER_BUDGET",
@@ -141,12 +158,5 @@ fn default_budget_disables_skip() {
     assert!(
         missing.contains("litellm_settings.max_end_user_budget_id"),
         "{missing}"
-    );
-    // a non-string is a field error naming the setting
-    let wrong = settings("litellm_settings:\n  max_end_user_budget_id: 12", &[])
-        .expect_err("a number is not an id");
-    assert!(
-        wrong.contains("litellm_settings.max_end_user_budget_id"),
-        "{wrong}"
     );
 }
