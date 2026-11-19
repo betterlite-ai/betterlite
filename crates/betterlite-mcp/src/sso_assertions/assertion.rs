@@ -126,7 +126,7 @@ fn decoded_assertion(id_token: &str, refresh_token: Option<&str>) -> Option<SsoI
 }
 
 fn expiration(seconds: f64) -> Option<DateTime<Utc>> {
-    let negative = seconds < 0.0_f64;
+    let negative = seconds.is_sign_negative();
     let duration = Duration::try_from_secs_f64(seconds.abs()).ok()?;
     let whole = i64::try_from(duration.as_secs()).ok()?;
     let fraction = duration.subsec_nanos();
