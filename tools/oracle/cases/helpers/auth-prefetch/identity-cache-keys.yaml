@@ -1,0 +1,20 @@
+kind: helper
+name: auth-prefetch-identity-cache-keys
+call:
+  auth_prefetch:
+    op: identity_cache_keys
+    calls:
+      - api_key: Bearer sk-abc
+        end_user_id: null
+        key_is_resolved: false
+      - api_key: sk-abc
+        end_user_id: ""
+        key_is_resolved: true
+      - api_key: sk-abc
+        end_user_id: user-2
+        key_is_resolved: true
+      - api_key: sk-abc
+        end_user_id: user-2
+        key_is_resolved: false
+env: {}
+compare: {ignore: []}

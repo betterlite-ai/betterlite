@@ -19,7 +19,7 @@ description: >-
   its routes with the native tests below. The Python-only types/ui_crud __init__ files supply
   import barrels, not another native router or a second metadata catalog.
   Own callback_management_endpoints.py's GET /callbacks/list and GET /callbacks/configs in
-  callback_metadata_routes. Both use B052 auth. List returns B189's current success, failure
+  callback_metadata_routes. Both sit behind B003's key auth middleware. List returns B189's current success, failure
   and success_and_failure classification, including general callbacks and deduplication;
   compare each array as a set because the pin uses Python sets. Configs returns the complete
   pinned callback_configs.json metadata already owned by B189, not a list filtered to installed

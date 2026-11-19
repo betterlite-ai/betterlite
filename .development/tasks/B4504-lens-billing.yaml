@@ -11,8 +11,8 @@ description: >-
   worker model route calls analyze. This task registers no route.
 
   Every outside service comes in through a trait on the struct's constructor, so tests use fakes. Ports: KeyResolver (B870 IdentityStore.resolve
-  by hashed token, giving the resolved key with blocked, is_session_token and team_id), InternalAuthorizer (B052's internal-job adapter,
-  authorize_internal_virtual_key, which resolves the stored key hash and runs the route and budget checks as if the key had called
+  by hashed token, giving the resolved key with blocked, is_session_token and team_id), InternalAuthorizer (a port for the internal-job key check that B8682 backs with the server adapter,
+  LiteLLM's authorize_internal_virtual_key, which resolves the stored key hash and runs the route and budget checks as if the key had called
   /v1/chat/completions), ChatRunner (the B014 chat dispatch plus the B004 chat route's error mapping, returning the validated completion and
   the value of the x-litellm-response-cost response header), ReservationReleaser (B3003 release of an unbound budget reservation),
   ClientIp (B743 get_mcp_client_ip), ModelCatalog (B844 get_model_list(model_name, team_id)), ModelPrices (B2225 get_model_info) and
@@ -76,7 +76,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L34-L98
     why: complete, the in-process request, ordering of authorize, reserve and pipeline, the cost header read, the 402 mapping and the reservation release in finally.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3938-L3977
-    why: authorize_internal_virtual_key, the port complete calls (owned by B052).
+    why: authorize_internal_virtual_key, what the InternalAuthorizer port that complete calls stands for (B8682 wires the real one).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L468-L478
     why: release_unbound_budget_reservation skips a reservation marked callback_bound (owned by B3003).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L18-L87
@@ -176,7 +176,7 @@ deviations:
 out_of_scope:
   - "ChatRunner implementation: B004 does not cover _handle_llm_api_exception, so it does not own it. B5102 owns only that handler's status mapping. No task owns the failure hook itself (limit release and failure recording), so the ChatRunner implementation owner must be named when the proxy chat route task is written; this task only calls the hook."
   - "Routes and access checks: B4503 owns the billing-key route that calls validate_key, B4505 owns the worker model route that calls analyze. This task registers nothing, so HTTP oracle cases come with those tasks: B132 for model billing, B9030 for credential administration, and B8682 for unavailable-dependency cases."
-  - "authorize_internal_virtual_key and its route, budget and rate checks: B052 owns them. Reservation counters and release_unbound_budget_reservation: B3003. This task only calls them."
+  - "authorize_internal_virtual_key and its route, budget and rate checks: B052 owns them, and this task reaches them only through the InternalAuthorizer port. Reservation counters and release_unbound_budget_reservation: B3003. This task only calls them."
   - "get_model_list, get_model_info and completion_cost: B844, B2225 and B068 own them. Message privacy scope: B188. The Lens spend flag: B4001. Client IP resolution: B743."
   - "Repository persistence and the version-checked update: B4501. Lens records and renew_budget, current_job, replace_job: B4500."
 pitfalls:

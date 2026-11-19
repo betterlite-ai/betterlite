@@ -1,0 +1,43 @@
+kind: helper
+name: bedrock-services-realtime-transport-failure-seed
+call:
+  bedrock_services_realtime_transport:
+    runs:
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: 0
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: resolved
+      auth:
+        access_key_id: AKIAFIXTUREACCESS
+        secret_access_key: fixture-secret-key
+        session_token: fixture-session-token
+      api_base: null
+      endpoint: null
+      region: us-east-1
+      committed: false
+      failure: null
+    - model: amazon.nova-sonic-v1:0
+      pending: null
+      frames: []
+      chunks: []
+      block: client
+      receive_failure: null
+      send_failure: null
+      open_error: false
+      client_send_failure: null
+      credentials: absent
+      auth: null
+      api_base: null
+      endpoint: null
+      region: us-east-1
+      committed: true
+      failure: 'ModelStreamErrorException: the committed stream broke'
+env: {}
+compare:
+  ignore: []

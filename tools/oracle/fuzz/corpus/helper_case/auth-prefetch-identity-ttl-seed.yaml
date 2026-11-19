@@ -1,0 +1,5 @@
+kind: helper
+name: auth-prefetch-identity-ttl-seed
+call: {auth_prefetch: {op: identity_ttl, ttls: [{value: seeded, management_ttl: 30.0}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,34 @@
+kind: helper
+name: bedrock-services-claude-platform-chat-platform-headers
+call:
+  bedrock_services_claude_platform:
+    chat_platform_headers:
+      model: claude-sonnet-4-5
+      messages:
+        - {role: user, content: hi}
+      optional_params:
+        output_config: {effort: high}
+        mcp_servers: [{type: url, url: 'https://example.test/mcp'}]
+        container: {skills: [{type: anthropic, skill_id: pdf}]}
+        tools: [{type: code_execution_20250825, name: code_execution}]
+        workspace_id: request-workspace
+      headers:
+        anthropic-beta: alpha,beta
+        x-api-key: caller-key
+        x-custom: kept
+      api_key: request-key
+      deployment: {workspace_id: deployment-workspace}
+      environment: {ANTHROPIC_AWS_API_KEY: environment-key}
+env:
+  ANTHROPIC_AWS_API_KEY: environment-key
+calls:
+  - bedrock_services_claude_platform:
+      chat_platform_headers:
+        model: claude-sonnet-4-5
+        messages:
+          - {role: user, content: hi}
+        optional_params: {workspace_id: request-workspace}
+        api_key: null
+        deployment: {workspace_id: deployment-workspace}
+        environment: {ANTHROPIC_AWS_API_KEY: environment-key}
+compare: {ignore: []}

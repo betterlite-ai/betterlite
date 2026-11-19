@@ -4,7 +4,7 @@ description: >-
   The admin UI's model dashboard reads four routes from proxy_server.py that aggregate spend and error logs per model
   group. Build crates/betterlite-server/src/model_metrics_routes.rs (declared by the skeleton) with `pub fn routes()`
   like the sibling route modules; B8676 mounts it. All four are GET, behind the normal key check
-  (B052) and nothing more, hidden from the OpenAPI schema, and read through the reader (B714). Query parameters:
+  (B003's middleware) and nothing more, hidden from the OpenAPI schema, and read through the reader (B714). Query parameters:
   _selected_model_group, startTime and endTime (ISO datetimes), and api_key and customer where noted. Error enum
   ModelMetricsError.
 

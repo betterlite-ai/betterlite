@@ -1,7 +1,7 @@
 id: B355
 title: Benchmark and per-key session read APIs
 description: 'Implement benchmark and per-key session read endpoints over B387 aggregates and B344 rollup
-  repository. Use B052 admin-viewer and canonical-user/key filters before data access. Keep query adapters
+  repository. Use _require_admin_viewer (B345) and the canonical-user/key filters on the caller UserAPIKeyAuth (B2314) before data access. Keep query adapters
   in betterlite-server and call the public B051 repository API; raw spend-log scans and schema changes
   remain out of scope. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native

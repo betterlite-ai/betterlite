@@ -1,7 +1,7 @@
 id: B3454
 milestone: M5 api families
 title: Gemini RAG stores and resumable uploads
-status: todo
+status: blocked
 depends_on: [B3451]
 file: tasks/B3454-gemini-rag-store.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B097
 split_from: B097
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
 pr: null
