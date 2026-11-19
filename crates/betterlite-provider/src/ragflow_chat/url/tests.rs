@@ -69,7 +69,7 @@ fn only_a_trailing_version_suffix_is_removed(#[case] base: &str, #[case] kept: &
 #[case::query_and_fragment("a?b#c", "a%3Fb%23c")]
 #[case::unreserved("my.id-1_2~3", "my.id-1_2~3")]
 #[case::percent("%41", "%2541")]
-#[case::unicode("ü", "%C3%BC")]
+#[case::unicode("\u{fc}", "%C3%BC")]
 fn the_entity_id_is_percent_encoded(#[case] id: &str, #[case] encoded: &str) {
     let case = base_case(&format!("ragflow/chat/{id}/m"), "http://host:9380");
     assert_eq!(

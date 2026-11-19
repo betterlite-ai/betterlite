@@ -124,23 +124,23 @@ fn validate_environment_adds_the_bearer_header_from_the_chain() {
     case.api_key = Some(key("explicit-key"));
     case.global_api_key = Some(key("global-key"));
     case.environment = environment(&[("RAGFLOW_API_KEY", "env-key")]);
-    let (headers, _params) = validated(&case);
+    let (explicit_headers, _) = validated(&case);
     assert_eq!(
-        headers.get("Authorization"),
+        explicit_headers.get("Authorization"),
         Some(&String::from("Bearer explicit-key"))
     );
 
     case.api_key = Some(key(""));
-    let (headers, _params) = validated(&case);
+    let (global_headers, _) = validated(&case);
     assert_eq!(
-        headers.get("Authorization"),
+        global_headers.get("Authorization"),
         Some(&String::from("Bearer global-key"))
     );
 
     case.global_api_key = None;
-    let (headers, _params) = validated(&case);
+    let (environment_headers, _) = validated(&case);
     assert_eq!(
-        headers.get("Authorization"),
+        environment_headers.get("Authorization"),
         Some(&String::from("Bearer env-key"))
     );
 }
@@ -224,9 +224,9 @@ fn validate_environment_stores_the_parsed_model() {
     );
 
     case.model = String::from("ragflow/agent/abc/glm-4");
-    let (_headers, params) = validated(&case);
+    let (_, agent_params) = validated(&case);
     assert_eq!(
-        params.get("_ragflow_actual_model"),
+        agent_params.get("_ragflow_actual_model"),
         Some(&Json::Text(String::from("glm-4")))
     );
 }

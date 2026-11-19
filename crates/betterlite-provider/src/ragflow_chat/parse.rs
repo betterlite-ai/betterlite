@@ -42,7 +42,7 @@ pub fn parse_model(model: &str) -> Result<ParsedModel, RagflowError> {
             model: model.to_owned(),
         });
     }
-    let endpoint = match endpoint {
+    let endpoint_type = match endpoint {
         CHAT => EndpointType::Chat,
         AGENT => EndpointType::Agent,
         other => {
@@ -52,7 +52,7 @@ pub fn parse_model(model: &str) -> Result<ParsedModel, RagflowError> {
         }
     };
     Ok(ParsedModel {
-        endpoint,
+        endpoint: endpoint_type,
         entity_id: entity_id.to_owned(),
         model: model_name.join("/"),
     })

@@ -24,11 +24,10 @@ pub fn complete_url(input: &CredentialsInput<'_>) -> Result<String, RagflowError
     };
     // /api/v1 is checked first because it ends with /v1, and only one suffix goes
     let trimmed = base.trim_end_matches('/');
-    let stripped = if let Some(rest) = trimmed.strip_suffix(API_V1) {
-        rest
-    } else {
-        trimmed.strip_suffix(V1).unwrap_or(trimmed)
-    };
+    let stripped = trimmed
+        .strip_suffix(API_V1)
+        .or_else(|| trimmed.strip_suffix(V1))
+        .unwrap_or(trimmed);
     Ok(format!(
         "{stripped}{API_V1}/{endpoint}/{encoded}{CHAT_COMPLETIONS}"
     ))
