@@ -29,6 +29,7 @@ scope:
   - "crates/betterlite-router/src/router_core/services.rs"
   - "crates/betterlite-router/src/router_core/route.rs"
   - "crates/betterlite-router/src/router_core/pipeline.rs"
+  - crates/betterlite-router/src/router_core/pipeline/attempt.rs
   - crates/betterlite-router/src/model_rate_limits.rs
   - crates/betterlite-router/src/model_rate_limits/**
   - crates/betterlite-router/src/context/model_rate_limits.rs
