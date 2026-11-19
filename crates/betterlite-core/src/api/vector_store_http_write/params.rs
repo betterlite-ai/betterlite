@@ -54,11 +54,15 @@ impl UpdateParams {
         extra_body: Option<&IndexMap<String, Json>>,
     ) -> Result<IndexMap<String, Json>, WriteError> {
         let mut body = IndexMap::new();
-        insert(&mut body, "name", &self.name)?;
-        insert(&mut body, "file_ids", &self.file_ids)?;
-        insert(&mut body, "expires_after", &self.expires_after)?;
-        insert(&mut body, "chunking_strategy", &self.chunking_strategy)?;
-        insert(&mut body, "metadata", &self.metadata)?;
+        insert(&mut body, "name", self.name.as_ref())?;
+        insert(&mut body, "file_ids", self.file_ids.as_ref())?;
+        insert(&mut body, "expires_after", self.expires_after.as_ref())?;
+        insert(
+            &mut body,
+            "chunking_strategy",
+            self.chunking_strategy.as_ref(),
+        )?;
+        insert(&mut body, "metadata", self.metadata.as_ref())?;
         if let Some(Some(metadata)) = &self.metadata {
             body.insert("metadata".to_owned(), cleaned_metadata(metadata)?);
         }
@@ -74,7 +78,7 @@ impl UpdateParams {
 fn insert<T>(
     body: &mut IndexMap<String, Json>,
     key: &str,
-    field: &Maybe<T>,
+    field: Option<&Option<T>>,
 ) -> Result<(), WriteError>
 where
     T: Serialize,

@@ -95,7 +95,7 @@ async fn update_http_order(#[case] mode: ClientKind) {
             .await
             .expect("the update succeeds");
         assert_eq!(value, json(CREATED));
-    }
+    };
     let many: IndexMap<String, Json> = (1..=18_u32)
         .map(|index| (format!("k{index:02}"), Json::Text(format!("v{index}"))))
         .collect();
@@ -115,7 +115,7 @@ async fn update_http_order(#[case] mode: ClientKind) {
         run(&mut fixture, &deps, mode, &call, &events)
             .await
             .expect("the capped update succeeds");
-    }
+    };
     let extra = extra_body(r#"{"metadata":{"count":2},"name":"replacement"}"#);
     {
         let call = WriteCall::Update(UpdateCall {
@@ -126,7 +126,7 @@ async fn update_http_order(#[case] mode: ClientKind) {
         run(&mut fixture, &deps, mode, &call, &events)
             .await
             .expect("the overridden update succeeds");
-    }
+    };
     let requests = wire.requests();
     assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].method, Method::POST);
@@ -172,8 +172,8 @@ async fn write_headers(#[case] beta: Option<&str>, #[case] expected_beta: &str) 
         ("Content-Type", "text/plain"),
         ("X-Trace", "trace-a"),
     ];
-    if let Some(beta) = beta {
-        pairs.push(("OpenAI-Beta", beta));
+    if let Some(chosen) = beta {
+        pairs.push(("OpenAI-Beta", chosen));
     }
     let headers = caller_headers(&pairs);
     let mut fixture = Fixture::new("vector_store_update");
@@ -188,10 +188,8 @@ async fn write_headers(#[case] beta: Option<&str>, #[case] expected_beta: &str) 
     let requests = wire.requests();
     assert_eq!(requests.len(), 1);
     let sent = |name: &str| {
-        requests[0]
-            .headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
+        let value = requests[0].headers.get(name)?;
+        value.to_str().ok()
     };
     assert_eq!(sent("authorization"), Some("Bearer sk-provider"));
     assert_eq!(sent("content-type"), Some("application/json"));
@@ -251,8 +249,8 @@ async fn delete_http_ignores_body(#[case] case: DeleteCase) {
         extra_body: Some(&ignored),
     });
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
-    if let Some(expected) = expected {
-        assert_eq!(result.expect("the delete succeeds"), expected);
+    if let Some(reply) = expected {
+        assert_eq!(result.expect("the delete succeeds"), reply);
     } else {
         assert!(matches!(result, Err(WriteError::Reply(_))));
         assert!(config.errors().is_empty());

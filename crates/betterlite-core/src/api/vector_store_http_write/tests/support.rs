@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -210,7 +212,10 @@ impl WriteTransport for Wire {
         self.default_timeout
     }
 
-    async fn send(&self, request: WriteRequest) -> Result<UpstreamResponse, TransportError> {
+    fn send(
+        &self,
+        request: WriteRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.events.push("send");
         let failure = self
             .failure
@@ -222,13 +227,13 @@ impl WriteTransport for Wire {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
         if let Some(error) = failure {
-            return Err(error);
+            return ready(Err(error));
         }
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: self.reply.status,
             headers: self.reply.headers.clone(),
             body: self.reply.body.clone(),
-        })
+        }))
     }
 }
 
@@ -383,20 +388,15 @@ pub(crate) fn proxied_client(limits: TransportLimits) -> ProxiedClient {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .expect("the proxy policy resolves"),
     );
-    ProxiedClient::build(
-        betterlite_http::proxy::base_builder().http1_only(),
-        &policy,
-        limits,
-    )
-    .expect("the proxied client builds")
+    ProxiedClient::build(base_builder().http1_only(), &policy, limits)
+        .expect("the proxied client builds")
 }
 
 pub(crate) fn body_bytes(request: &WriteRequest) -> Option<&[u8]> {
     match &request.body {
-        RequestBody::Empty => None,
         RequestBody::Json(body) => Some(body),
         RequestBody::Bytes { data, .. } => Some(data),
-        RequestBody::Multipart { .. } => None,
+        RequestBody::Empty | RequestBody::Multipart { .. } => None,
     }
 }
 

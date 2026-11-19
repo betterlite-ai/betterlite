@@ -134,13 +134,14 @@ pub struct PreparedWrite<'deps, C: WriteConfig, S: ClientSource> {
 }
 
 // The four handlers' shared front half: client selection, environment validation, the base plus encoded id, the body, the pre-call and the wire headers
-pub fn prepare<'borrow, 'deps: 'borrow, C, S>(
+pub fn prepare<'borrow, 'deps, C, S>(
     deps: &'borrow WriteDeps<'deps, C, S>,
     mode: ClientKind,
     call: &WriteCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<PreparedWrite<'borrow, C, S>, WriteError>
 where
+    'deps: 'borrow,
     C: WriteConfig,
     S: ClientSource,
 {
@@ -168,12 +169,13 @@ where
     })
 }
 
-fn select_client<'borrow, 'deps: 'borrow, C, S>(
+fn select_client<'borrow, 'deps, C, S>(
     deps: &'borrow WriteDeps<'deps, C, S>,
     mode: ClientKind,
     ssl_verify: Option<bool>,
 ) -> Result<Selected<'borrow, S::Client>, WriteError>
 where
+    'deps: 'borrow,
     C: WriteConfig,
     S: ClientSource,
 {
@@ -278,12 +280,12 @@ fn wire_headers(headers: &OpenAiHeaders) -> Result<HttpHeaders, WriteError> {
 }
 
 fn wire_body(body: Option<&IndexMap<String, Json>>) -> Result<RequestBody, WriteError> {
-    match body {
-        Some(body) => serde_json::to_vec(body)
-            .map(RequestBody::Json)
-            .map_err(WriteError::Encode),
-        None => Ok(RequestBody::Empty),
-    }
+    let Some(payload) = body else {
+        return Ok(RequestBody::Empty);
+    };
+    serde_json::to_vec(payload)
+        .map(RequestBody::Json)
+        .map_err(WriteError::Encode)
 }
 
 // One send, no retry: a transport failure becomes a provider error, and a status of 400 or more becomes one too
