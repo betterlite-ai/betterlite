@@ -3,9 +3,12 @@ deviations:
   - what: The example root exposes eight inputs (project_id, region, tenant, env, image, litellm_master_key, lb_domains, allow_plaintext_lb) in one module call, and image and litellm_master_key have no default. LiteLLM's example passes about twenty inputs, defaults image_registry and image_tag, and treats the master key as optional because its module generates one.
     why: The betterlite module takes one image instead of composing four from a registry and a tag, and betterlite does not generate a master key, so the caller has to supply one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/variables.tf#L55-L89
-  - what: The example configures only the google provider. LiteLLM's example configures google and google-beta and hands both to the module.
-    why: The betterlite module declares and uses only the google provider, so a google-beta block in the example would configure a provider no resource reads.
+  - what: The example configures only the google provider, and the lock file pins google and random. LiteLLM's example configures google and google-beta, hands both to the module, and locks google, google-beta and random.
+    why: The betterlite module declares and uses only the google and random providers, so a google-beta block in the example would configure a provider no resource reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/providers.tf#L14-L17
+  - what: The example re-exports five module outputs (lb_url, lb_ip, service_url, migration_job_name, cloud_run_service_name) where LiteLLM's example re-exports seventeen, including separate gateway, backend and ui service URLs, the Cloud SQL and Redis endpoints, the bucket name and db_name and db_username.
+    why: The one-service module has one service URL and drops the per-component and per-component-detail outputs; the module's output list is documented in the B8146 deviation log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/outputs.tf#L1-L89
   - what: deploystack.json prompts for image and litellm_master_key and drops LiteLLM's tenant, env, image_tag, image_registry and allow_plaintext_lb prompts. tenant and env keep the module defaults demo and dev, and TLS stays off until the caller sets lb_domains.
     why: The image and the master key are required by the module, while tenant, env and TLS posture are already variables with defaults in the example.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/deploystack.json#L12-L41
