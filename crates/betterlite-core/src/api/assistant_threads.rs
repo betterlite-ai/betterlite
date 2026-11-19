@@ -25,7 +25,6 @@ use self::error::{ThreadError, ThreadFailure};
 use self::runtime::{SdkThreadRuntime, ThreadRuntime};
 use self::target::{Operation, PrepareRequest, create_body};
 
-// the two facades differ only in their name inside the unsupported-provider message
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadOperation {
     Create,

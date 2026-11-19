@@ -9,7 +9,6 @@ use thiserror::Error;
 
 use crate::api::resource_sdk_settings::timeout::TimeoutError;
 
-// Litellm's own BadRequestError for a provider these two facades don't serve: model "n/a", an empty body
 const UNSUPPORTED_MODEL: &str = "n/a";
 
 #[derive(Debug, Error)]
