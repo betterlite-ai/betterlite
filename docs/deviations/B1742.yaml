@@ -1,0 +1,18 @@
+task: B1742
+deviations:
+  - what: request_tags is read through a bounded reader that refuses a payload over 1 MiB or nested deeper than 64 containers; LiteLLM loads it unbounded.
+    why: A spent log column is caller-influenced and the proxy must not allocate or recurse without a limit; the bounds are the ones B192's reader already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1400
+  - what: A startTime parses as RFC 3339, a space-separated timestamp, minute precision or a date alone; the compact ISO form datetime.fromisoformat also accepts ("20240102T030405") does not parse.
+    why: Spend logs write startTime from datetime.isoformat(), so the compact form is not a value a working proxy produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L168-L175
+  - what: A non-string router_type records "unknown" instead of its str() text.
+    why: str() of a mapping or list is Python repr text that no consumer parses; the field is declared as a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L267
+  - what: Turn spend, savings and classifier costs accumulate as exact decimals rather than floats.
+    why: A queued balance is money and a sum of float costs drifts; the oracle compares both sides at ten decimal places.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L260
+kept_bugs:
+  - what: A request_tags JSON string iterates its characters, so a tag of "ab" queues two tags named "a" and "b".
+    why: Literal str iteration is what the source does, and a working setup that sends a bare JSON string relies on the tags it produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1410-L1411
