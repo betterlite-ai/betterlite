@@ -16,7 +16,7 @@ use super::framing::ChunkFraming;
 use super::generator::{DEFAULT_LIMITS, SharedStreamGenerator};
 use super::passthrough::PassThroughHooks;
 use super::ports::{BufferedOutput, CostInjection, ReservationRelease};
-use super::sse::Emitted;
+use super::sse::{Emitted, SseFraming};
 use super::tail::{ANTHROPIC_PING_BYTES, ANTHROPIC_PING_CHUNK};
 use crate::keepalive_interval::PingSetting;
 use crate::sse_data_generator::types::{
@@ -338,6 +338,17 @@ fn texts(body: BoxStream<'static, Result<Emitted, StreamAbort>>) -> Vec<String> 
         .collect()
 }
 
+fn sse_body<H>(
+    generator: &SharedStreamGenerator<String, H>,
+    call: SharedCall<String>,
+    restamp_model: Option<String>,
+) -> BoxStream<'static, Result<Emitted, StreamAbort>>
+where
+    H: StreamHooks<String> + 'static,
+{
+    generator.generate(call, SseFraming::new(restamp_model, generator.limits))
+}
+
 fn abort_of<Out>(results: &[Result<Out, StreamAbort>], index: usize) -> StreamAbort {
     match results.get(index) {
         Some(Err(abort)) => abort.clone(),
@@ -351,10 +362,11 @@ fn wrap_iterator_always_runs() {
     let mut config = HookConfig::plain();
     config.wrap_prefix = true;
     let rig = Rig::new(config);
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("body"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("body"))]),
+        None,
+    ));
     assert_eq!(frames, vec![String::from("wrapped"), String::from("body")]);
     assert_eq!(rig.events(), vec![String::from("wrap:requested")]);
 }
@@ -362,9 +374,7 @@ fn wrap_iterator_always_runs() {
 #[test]
 fn starts_only_on_first_poll() {
     let rig = Rig::new(HookConfig::plain());
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None);
+    let mut body = sse_body(&rig.generator, call(vec![Ok(text_chunk("x"))]), None);
     assert_eq!(rig.events().len(), 0);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     assert_eq!(text_of(first.expect("frame").expect("ok")), "x");
@@ -374,10 +384,11 @@ fn starts_only_on_first_poll() {
 #[test]
 fn fast_path_skips_chunk_hook() {
     let rig = Rig::new(HookConfig::plain());
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x")), Ok(text_chunk("y"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x")), Ok(text_chunk("y"))]),
+        None,
+    ));
     assert_eq!(frames, vec![String::from("x"), String::from("y")]);
     assert_eq!(rig.events(), vec![String::from("wrap:requested")]);
 }
@@ -393,7 +404,7 @@ fn pass_through_hooks_take_the_fast_path() {
 #[test]
 fn standalone_streams_without_wiring() {
     let generator = SharedStreamGenerator::<String, PassThroughHooks>::standalone(None);
-    let frames = texts(generator.sse_data_generator(call(vec![Ok(text_chunk("x"))]), None));
+    let frames = texts(sse_body(&generator, call(vec![Ok(text_chunk("x"))]), None));
     assert_eq!(frames, vec![String::from("x")]);
 }
 
@@ -403,16 +414,19 @@ fn chunk_hook_sees_str_so_far() {
     config.per_chunk = true;
     let rig = Rig::new(config);
     let items = vec![
-        Ok(model_chunk("Hel")),
-        Ok(event_chunk(&[("content", Json::Text(String::from("lo")))])),
+        Ok(model_chunk("Hi")),
+        Ok(event_chunk(&[(
+            "content",
+            Json::Text(String::from(" there")),
+        )])),
         Ok(text_chunk("!")),
     ];
-    let frames = texts(rig.generator.sse_data_generator(call(items), None));
+    let frames = texts(sse_body(&rig.generator, call(items), None));
     assert_eq!(
         frames,
         vec![
-            String::from("data: {\"choices\": [{\"delta\": {\"content\": \"Hel\"}}]}\n\n"),
-            String::from("data: {\"content\": \"lo\"}\n\n"),
+            String::from("data: {\"choices\": [{\"delta\": {\"content\": \"Hi\"}}]}\n\n"),
+            String::from("data: {\"content\": \" there\"}\n\n"),
             String::from("!"),
         ]
     );
@@ -421,8 +435,8 @@ fn chunk_hook_sees_str_so_far() {
         vec![
             String::from("wrap:requested"),
             String::from("chunk:"),
-            String::from("chunk:Hel"),
-            String::from("chunk:Hello"),
+            String::from("chunk:Hi"),
+            String::from("chunk:Hi there"),
         ]
     );
 }
@@ -441,7 +455,7 @@ fn event_content_grows_text() {
         )])),
         Ok(event_chunk(&[("content", Json::Text(String::from("z")))])),
     ];
-    let frames = texts(rig.generator.sse_data_generator(call(items), None));
+    let frames = texts(sse_body(&rig.generator, call(items), None));
     assert_eq!(frames.len(), 4);
     assert_eq!(
         rig.events(),
@@ -465,7 +479,7 @@ fn bytes_and_text_do_not_grow() {
         Ok(StreamItem::Bytes(Bytes::from_static(b"data: x\n\n"))),
         Ok(text_chunk("visible")),
     ];
-    let frames = texts(rig.generator.sse_data_generator(call(items), None));
+    let frames = texts(sse_body(&rig.generator, call(items), None));
     assert_eq!(frames.len(), 2);
     assert_eq!(
         rig.events(),
@@ -483,10 +497,11 @@ fn chunk_hook_replacement_is_written() {
     config.per_chunk = true;
     config.rewrite = true;
     let rig = Rig::new(config);
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x"))]),
+        None,
+    ));
     assert_eq!(frames, vec![String::from("hooked")]);
 }
 
@@ -496,10 +511,11 @@ fn chunk_hook_failure_ends_stream() {
     config.per_chunk = true;
     config.chunk_failure = Some(status_failure("guardrail", 400));
     let rig = Rig::new(config);
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None),
-    );
+    let results = drive(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x"))]),
+        None,
+    ));
     assert_eq!(results.len(), 1);
     match results.first() {
         Some(Ok(Emitted::AnthropicError(frame))) => assert_eq!(frame.status_code, 400),
@@ -524,10 +540,11 @@ fn chunk_hook_failure_ends_stream() {
 #[test]
 fn cost_injection_uses_model() {
     let rig = Rig::new(HookConfig::plain()).with_cost();
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x"))]),
+        None,
+    ));
     assert_eq!(frames, vec![String::from("cost x")]);
     assert_eq!(rig.costs(), vec![String::from("requested")]);
 }
@@ -537,7 +554,7 @@ fn cost_without_a_text_model_injects_empty() {
     let rig = Rig::new(HookConfig::plain()).with_cost();
     let mut shared_call = call(vec![Ok(text_chunk("x"))]);
     shared_call.request_data = object(&[("model", Json::Null)]);
-    let frames = texts(rig.generator.sse_data_generator(shared_call, None));
+    let frames = texts(sse_body(&rig.generator, shared_call, None));
     assert_eq!(frames, vec![String::from("cost x")]);
     assert_eq!(rig.costs(), vec![String::new()]);
 }
@@ -545,10 +562,11 @@ fn cost_without_a_text_model_injects_empty() {
 #[test]
 fn cost_keeps_chunk_hook_on() {
     let rig = Rig::new(HookConfig::plain()).with_cost();
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x"))]),
+        None,
+    ));
     assert_eq!(frames.len(), 1);
     assert_eq!(
         rig.events(),
@@ -559,10 +577,11 @@ fn cost_keeps_chunk_hook_on() {
 #[test]
 fn cleanup_after_clean_end() {
     let rig = Rig::new(HookConfig::plain());
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(text_chunk("x")), Ok(text_chunk("y"))]), None),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(text_chunk("x")), Ok(text_chunk("y"))]),
+        None,
+    ));
     assert_eq!(frames.len(), 2);
     let outcomes = rig.outcomes();
     assert_eq!(outcomes.len(), 1);
@@ -581,10 +600,11 @@ fn cleanup_after_clean_end() {
 #[test]
 fn cleanup_once_after_failure() {
     let rig = Rig::new(HookConfig::plain());
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Err(other_failure("boom"))]), None),
-    );
+    let results = drive(sse_body(
+        &rig.generator,
+        call(vec![Err(other_failure("boom"))]),
+        None,
+    ));
     assert_eq!(results.len(), 1);
     let outcomes = rig.outcomes();
     assert_eq!(outcomes.len(), 1);
@@ -634,7 +654,7 @@ fn framing_failure_aborts_the_body() {
 fn drop_before_chunk_releases() {
     let rig = Rig::new(HookConfig::plain());
     let ping = StreamItem::Bytes(Bytes::from_static(ANTHROPIC_PING_BYTES));
-    let mut body = rig.generator.sse_data_generator(call(vec![Ok(ping)]), None);
+    let mut body = sse_body(&rig.generator, call(vec![Ok(ping)]), None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     assert_eq!(
         text_of(first.expect("frame").expect("ok")),
@@ -651,9 +671,7 @@ fn drop_before_chunk_releases() {
 #[test]
 fn drop_after_chunk_keeps_charge() {
     let rig = Rig::new(HookConfig::plain());
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Ok(text_chunk("x"))]), None);
+    let mut body = sse_body(&rig.generator, call(vec![Ok(text_chunk("x"))]), None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     assert_eq!(text_of(first.expect("frame").expect("ok")), "x");
     drop(body);
@@ -666,9 +684,7 @@ fn drop_after_chunk_keeps_charge() {
 #[test]
 fn drop_at_the_error_frame_still_counts_the_disconnect() {
     let rig = Rig::new(HookConfig::plain());
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Err(other_failure("boom"))]), None);
+    let mut body = sse_body(&rig.generator, call(vec![Err(other_failure("boom"))]), None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     match first.expect("frame") {
         Ok(Emitted::AnthropicError(frame)) => assert_eq!(frame.status_code, 500),
@@ -687,9 +703,11 @@ fn drop_at_the_error_frame_still_counts_the_disconnect() {
 fn the_tail_is_written_before_the_stream_completes() {
     let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Ok(torn)]), Some(String::from("client-model")));
+    let mut body = sse_body(
+        &rig.generator,
+        call(vec![Ok(torn)]),
+        Some(String::from("client-model")),
+    );
     let runtime = Runtime::new().expect("runtime");
     let first = runtime.block_on(body.next());
     assert_eq!(text_of(first.expect("frame").expect("ok")), "");
@@ -710,9 +728,11 @@ fn the_tail_is_written_before_the_stream_completes() {
 fn polling_past_the_tail_completes_the_cleanup() {
     let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Ok(torn)]), Some(String::from("client-model")));
+    let mut body = sse_body(
+        &rig.generator,
+        call(vec![Ok(torn)]),
+        Some(String::from("client-model")),
+    );
     let runtime = Runtime::new().expect("runtime");
     runtime.block_on(body.next()).expect("frame").expect("ok");
     runtime.block_on(body.next()).expect("frame").expect("ok");
@@ -730,9 +750,7 @@ fn polling_past_the_tail_completes_the_cleanup() {
 fn text_ping_counts_delivered() {
     let rig = Rig::new(HookConfig::plain());
     let ping_text = StreamItem::Text(ANTHROPIC_PING_CHUNK.to_owned());
-    let mut body = rig
-        .generator
-        .sse_data_generator(call(vec![Ok(ping_text)]), None);
+    let mut body = sse_body(&rig.generator, call(vec![Ok(ping_text)]), None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     assert_eq!(
         text_of(first.expect("frame").expect("ok")),
@@ -748,7 +766,7 @@ fn buffered_output_keeps_charge() {
     let ping = StreamItem::Bytes(Bytes::from_static(ANTHROPIC_PING_BYTES));
     let mut shared_call = call(vec![Ok(ping)]);
     shared_call.source.buffered = Some(Arc::new(FixedBuffered(true)));
-    let mut body = rig.generator.sse_data_generator(shared_call, None);
+    let mut body = sse_body(&rig.generator, shared_call, None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
     assert_eq!(
         text_of(first.expect("frame").expect("ok")),
@@ -761,7 +779,7 @@ fn buffered_output_keeps_charge() {
 #[test]
 fn pending_stream_times_out_disconnected() {
     let rig = Rig::new(HookConfig::plain());
-    let mut body = rig.generator.sse_data_generator(pending_call(), None);
+    let mut body = sse_body(&rig.generator, pending_call(), None);
     let polled = Runtime::new().expect("runtime").block_on(async {
         tokio::time::timeout(std::time::Duration::from_millis(20), body.next()).await
     });

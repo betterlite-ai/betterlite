@@ -128,22 +128,13 @@ where
     H: StreamHooks<Key> + 'static,
 {
     #[must_use]
-    pub fn sse_data_generator(
-        &self,
-        call: SharedCall<Key>,
-        restamp_model: Option<String>,
-    ) -> BoxStream<'static, Result<Emitted, StreamAbort>> {
-        self.generate(call, SseFraming::new(restamp_model, self.limits))
-    }
-
-    #[must_use]
     pub fn messages_stream(
         &self,
         call: SharedCall<Key>,
         client_model: Option<&str>,
     ) -> BoxStream<'static, Result<Emitted, StreamAbort>> {
         let restamp = restamp_model_for(&call.request_data, client_model);
-        let body = self.sse_data_generator(call, restamp);
+        let body = self.generate(call, SseFraming::new(restamp, self.limits));
         with_sse_pings(body, self.anthropic_ping.as_ref(), ANTHROPIC_PING_CHUNK)
     }
 }

@@ -10,7 +10,7 @@ use super::super::failure::failure_exception;
 use super::super::sse::Emitted;
 use super::super::tail::ANTHROPIC_PING_CHUNK;
 use super::{
-    HookConfig, Rig, StreamFailure, abort_of, call, drive, other_failure, status_failure,
+    HookConfig, Rig, StreamFailure, abort_of, call, drive, other_failure, sse_body, status_failure,
     text_chunk,
 };
 use crate::sse_data_generator::types::{FailureKind, FailureParam, FailureType};
@@ -30,7 +30,7 @@ fn closed_frame() -> Result<StreamItem, StreamFailure> {
 fn error_frame_after_closed_frame() {
     let rig = Rig::new(HookConfig::plain());
     let items = vec![closed_frame(), Err(status_failure("slow down", 429))];
-    let results = drive(rig.generator.sse_data_generator(call(items), None));
+    let results = drive(sse_body(&rig.generator, call(items), None));
     assert_eq!(results.len(), 2);
     match results.get(1) {
         Some(Ok(Emitted::AnthropicError(frame))) => {
@@ -60,7 +60,7 @@ fn error_seals_after_torn_bytes() {
         Ok(text_chunk("data: {")),
         Err(status_failure("slow down", 429)),
     ];
-    let results = drive(rig.generator.sse_data_generator(call(items), None));
+    let results = drive(sse_body(&rig.generator, call(items), None));
     assert_eq!(results.len(), 2);
     let expected = format!(
         "\n{ANTHROPIC_PING_CHUNK}{}",
@@ -84,7 +84,7 @@ fn no_deployments_becomes_429() {
             500,
         )),
     ];
-    let results = drive(rig.generator.sse_data_generator(call(items), None));
+    let results = drive(sse_body(&rig.generator, call(items), None));
     match results.get(1) {
         Some(Ok(Emitted::AnthropicError(frame))) => {
             assert_eq!(frame.status_code, 429);
@@ -112,7 +112,7 @@ fn tag_routing_becomes_401() {
             400,
         )),
     ];
-    let results = drive(rig.generator.sse_data_generator(call(items), None));
+    let results = drive(sse_body(&rig.generator, call(items), None));
     match results.get(1) {
         Some(Ok(Emitted::AnthropicError(frame))) => {
             assert_eq!(frame.status_code, 401);
@@ -177,10 +177,7 @@ fn generator_redacts_failure() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
     rig.generator.redactor = Some(Arc::new(redactor));
     let failure = status_failure("Bearer abcdefghij1234567890", 400);
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Err(failure)]), None),
-    );
+    let results = drive(sse_body(&rig.generator, call(vec![Err(failure)]), None));
     match results.first() {
         Some(Ok(Emitted::AnthropicError(frame))) => {
             assert_eq!(frame.body, error_frame("REDACTED", "invalid_request_error"));
@@ -197,7 +194,7 @@ fn http_failure_aborts_body() {
     let mut failure = status_failure("blocked", 400);
     failure.kind = FailureKind::Http;
     let items = vec![Ok(text_chunk("x")), Err(failure)];
-    let results = drive(rig.generator.sse_data_generator(call(items), None));
+    let results = drive(sse_body(&rig.generator, call(items), None));
     assert_eq!(results.len(), 2);
     let abort = abort_of(&results, 1);
     assert_eq!(abort.status, 400);
@@ -214,10 +211,7 @@ fn http_failure_status_defaults() {
     let rig = Rig::new(HookConfig::plain());
     let mut failure = other_failure("gone");
     failure.kind = FailureKind::Http;
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Err(failure)]), None),
-    );
+    let results = drive(sse_body(&rig.generator, call(vec![Err(failure)]), None));
     let abort = abort_of(&results, 0);
     assert_eq!(abort.status, 500);
     assert_eq!(abort.detail, "gone");
@@ -231,10 +225,11 @@ fn wire_limit_failure_aborts_the_body() {
         max_event_bytes: 4,
         max_items: 100,
     };
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Err(status_failure("a long message", 400))]), None),
-    );
+    let results = drive(sse_body(
+        &rig.generator,
+        call(vec![Err(status_failure("a long message", 400))]),
+        None,
+    ));
     let abort = abort_of(&results, 0);
     assert_eq!(abort.status, 500);
     assert_eq!(abort.detail, "messages JSON exceeds the configured limit");
@@ -251,10 +246,11 @@ fn hook_replacement_aborts() {
     let mut config = HookConfig::plain();
     config.replacement = Some(replacement);
     let rig = Rig::new(config);
-    let results = drive(
-        rig.generator
-            .sse_data_generator(call(vec![Err(other_failure("provider exploded"))]), None),
-    );
+    let results = drive(sse_body(
+        &rig.generator,
+        call(vec![Err(other_failure("provider exploded"))]),
+        None,
+    ));
     let abort = abort_of(&results, 0);
     assert_eq!(abort.status, 503);
     assert_eq!(abort.detail, "blocked by hook");

@@ -14,7 +14,9 @@ use super::super::tail::{
     ANTHROPIC_PING_CHUNK, SSE_COMMENT_PING, SSE_STREAM_START_TAIL, advance_sse_tail,
     seal_open_sse_frame,
 };
-use super::{HookConfig, Rig, call, event_chunk, object, pending_call, text_chunk, text_of, texts};
+use super::{
+    HookConfig, Rig, call, event_chunk, object, pending_call, sse_body, text_chunk, text_of, texts,
+};
 use crate::keepalive_interval::PingSetting;
 use crate::stream_chunks::StreamItem;
 
@@ -27,7 +29,7 @@ fn sse_uses_python_json() {
         ("n", Json::Number(serde_json::Number::from(7_i64))),
         ("t", Json::Text(String::from("é"))),
     ]);
-    let frames = texts(rig.generator.sse_data_generator(call(vec![Ok(item)]), None));
+    let frames = texts(sse_body(&rig.generator, call(vec![Ok(item)]), None));
     assert_eq!(
         frames,
         vec![String::from(
@@ -43,7 +45,7 @@ fn sse_passes_bytes_and_text() {
         Ok(StreamItem::Bytes(Bytes::from_static(b"event: raw\n\n"))),
         Ok(text_chunk("plain text")),
     ];
-    let frames = texts(rig.generator.sse_data_generator(call(items), None));
+    let frames = texts(sse_body(&rig.generator, call(items), None));
     assert_eq!(
         frames,
         vec![String::from("event: raw\n\n"), String::from("plain text")]
@@ -63,10 +65,11 @@ fn sse_restamps_message_start() {
             ])),
         ),
     ]);
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(item)]), Some(String::from("client-model"))),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(item)]),
+        Some(String::from("client-model")),
+    ));
     assert_eq!(
         frames,
         vec![String::from(
@@ -85,7 +88,7 @@ fn sse_no_restamp_without_model() {
             Json::Object(object(&[("model", Json::Text(String::from("provider")))])),
         ),
     ]);
-    let frames = texts(rig.generator.sse_data_generator(call(vec![Ok(item)]), None));
+    let frames = texts(sse_body(&rig.generator, call(vec![Ok(item)]), None));
     assert_eq!(
         frames,
         vec![String::from(
@@ -104,10 +107,11 @@ fn sse_empty_model_no_restamp() {
             Json::Object(object(&[("model", Json::Text(String::from("provider")))])),
         ),
     ]);
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(item)]), Some(String::new())),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(item)]),
+        Some(String::new()),
+    ));
     assert_eq!(
         frames,
         vec![String::from(
@@ -120,10 +124,11 @@ fn sse_empty_model_no_restamp() {
 fn sse_holds_torn_frame() {
     let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
-    let frames = texts(
-        rig.generator
-            .sse_data_generator(call(vec![Ok(torn)]), Some(String::from("client-model"))),
-    );
+    let frames = texts(sse_body(
+        &rig.generator,
+        call(vec![Ok(torn)]),
+        Some(String::from("client-model")),
+    ));
     assert_eq!(frames, vec![String::new(), String::from("data: {\"x\":")]);
 }
 
@@ -131,7 +136,7 @@ fn sse_holds_torn_frame() {
 fn sse_without_restamper_writes_torn() {
     let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
-    let frames = texts(rig.generator.sse_data_generator(call(vec![Ok(torn)]), None));
+    let frames = texts(sse_body(&rig.generator, call(vec![Ok(torn)]), None));
     assert_eq!(frames, vec![String::from("data: {\"x\":")]);
 }
 
