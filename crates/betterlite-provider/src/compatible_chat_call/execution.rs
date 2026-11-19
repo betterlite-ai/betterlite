@@ -11,7 +11,6 @@ use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_openai::compatible_wire::{EndpointType, validate_environment};
 use betterlite_openai::openai_base_config::Headers;
-use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -27,7 +26,7 @@ const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 // B2230's selection passes Some only for the OpenAI/GPT configs, the ones that transform messages
-pub trait MessageTransformer {
+pub trait MessageTransformer: Send + Sync {
     fn transform(
         &self,
         model: &str,
@@ -235,17 +234,14 @@ impl<'source> CompatibleChatExecution<'source> {
         }
     }
 
-    #[must_use]
-    pub fn execute<'execution>(
+    pub async fn execute<'execution>(
         &'execution self,
         client: &'execution ProxiedClient,
         state: &'execution mut LoggingState,
         env: &'execution PrePostEnv<'_>,
-    ) -> LocalBoxFuture<'execution, Result<CompatibleChatOutcome, CompatibleChatError>> {
-        Box::pin(async move {
-            let plan = self.plan(state, env)?;
-            let answer = send_chat(client, &plan).await?;
-            finish_chat(&plan, answer, state, env)
-        })
+    ) -> Result<CompatibleChatOutcome, CompatibleChatError> {
+        let plan = self.plan(state, env)?;
+        let answer = send_chat(client, &plan).await?;
+        finish_chat(&plan, answer, state, env)
     }
 }

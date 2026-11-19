@@ -1,0 +1,49 @@
+kind: helper
+name: scope-token-header
+call:
+  azure_search:
+    headers:
+      scenarios:
+        - environment: {BING_GROUNDING_TOKEN: env-token, BING_GROUNDING_PROJECT_ENDPOINT: "https://project.services.ai.azure.com/api/projects/example"}
+          headers: {Authorization: "Bearer caller", x-existing: "1"}
+          api_key: azure-key
+          api_base: null
+          minter: {token: minted-token, error: null}
+        - environment: {BING_GROUNDING_TOKEN: env-token}
+          headers: {}
+          api_key: null
+          api_base: null
+          minter: {token: minted-token}
+        - environment: {BING_GROUNDING_TOKEN: ""}
+          headers: {}
+          api_key: null
+          api_base: null
+          minter: {token: minted-token}
+        - environment: {BING_GROUNDING_TOKEN: env-token, BING_GROUNDING_PROJECT_ENDPOINT: "https://project.services.ai.azure.com/api/projects/example"}
+          headers: {}
+          api_key: null
+          api_base: "https://attacker.example"
+          minter: {token: minted-token}
+        - environment: {BING_GROUNDING_TOKEN: env-token, BING_GROUNDING_PROJECT_ENDPOINT: "https://project.services.ai.azure.com/api/projects/example"}
+          headers: {}
+          api_key: null
+          api_base: "https://PROJECT.services.ai.azure.com/api/projects/example"
+          minter: {token: minted-token}
+        - environment: {}
+          headers: {}
+          api_key: null
+          api_base: null
+          minter: {token: unused, error: no identity source}
+        - environment: {BING_GROUNDING_TOKEN: env-token}
+          headers: {}
+          api_key: ""
+          api_base: null
+          minter: {token: minted-token}
+        - environment: {}
+          headers: {}
+          api_key: azure-key
+          api_base: "https://attacker.example"
+          minter: {token: unused}
+env: {}
+compare:
+  ignore: []

@@ -175,6 +175,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "request_form"
+path = "fuzz_targets/request_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_event_stream"
 path = "fuzz_targets/bedrock_event_stream.rs"
 test = false
@@ -352,6 +359,13 @@ bench = false
 [[bin]]
 name = "pass_through_config_writes"
 path = "fuzz_targets/pass_through_config_writes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cost_estimate_request"
+path = "fuzz_targets/cost_estimate_request.rs"
 test = false
 doc = false
 bench = false

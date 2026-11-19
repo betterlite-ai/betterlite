@@ -1,0 +1,9 @@
+task: B925
+deviations:
+  - what: A framed data payload larger than 1 MiB is dropped like malformed JSON, where json.loads in _process_chunk parses a payload of any size the process can hold.
+    why: The task requires every payload to pass through B2413's one bounded decoder, so a frame past the limit never reaches the provider transform and produces neither an event nor a failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L381-L383
+kept_bugs:
+  - what: An encrypted_content that already carries the litellm_enc wrapper is wrapped again, so a re-processed item leaves the stream with two prefixes.
+    why: LiteLLM wraps unconditionally and a setup that sends an item back through the stream depends on the original wrapper staying readable inside the new one, so betterlite keeps the same bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L468-L480

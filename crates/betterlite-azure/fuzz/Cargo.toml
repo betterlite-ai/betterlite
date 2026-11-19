@@ -84,3 +84,10 @@ path = "fuzz_targets/azure_responses.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_search"
+path = "fuzz_targets/azure_search.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,56 @@
+kind: helper
+name: messages-chat-content-assistant-tool-signatures
+call:
+  messages_chat_content:
+    messages:
+    - role: assistant
+      content:
+      - type: tool_use
+        id: t
+        name: lookup
+        input:
+          x: 1
+      - type: tool_use
+        id: u
+        name: nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+        input: null
+        provider_specific_fields:
+          signature: sig
+        cache_control:
+          type: ephemeral
+      - type: tool_use
+        id: v
+        name: lookup
+        provider_specific_fields:
+          signature: ''
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+calls:
+- messages_chat_content:
+    messages:
+    - role: assistant
+      content:
+      - type: tool_use
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+- messages_chat_content:
+    messages:
+    - role: assistant
+      content:
+      - type: tool_use
+        id: t
+        name: lookup
+        input:
+          x: 1
+        cache_control:
+          type: ephemeral
+    model: gpt-4o
+    custom_llm_provider: openai
+    preserve_midturn_system: false
+    supported: []
+env: {}
+compare: {ignore: []}
