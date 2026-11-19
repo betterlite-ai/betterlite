@@ -126,13 +126,19 @@ where
     })
 }
 
-fn answered<T: Serialize>(built: Result<T, TeamContractError>) -> HelperResult {
+fn answered<T>(built: Result<T, TeamContractError>) -> HelperResult
+where
+    T: Serialize,
+{
     let value = built.map_err(invalid)?;
     let output = serde_json::to_value(value)?;
     Ok(output)
 }
 
-fn supplied<T: RequestProjection>(built: Result<T, TeamContractError>) -> HelperResult {
+fn supplied<T>(built: Result<T, TeamContractError>) -> HelperResult
+where
+    T: RequestProjection,
+{
     let request = built.map_err(invalid)?;
     let projection = request.supplied().map_err(invalid)?;
     let output = serde_json::to_value(&projection)?;

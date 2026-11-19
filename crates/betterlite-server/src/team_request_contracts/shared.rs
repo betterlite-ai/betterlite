@@ -18,9 +18,7 @@ pub fn decode_request<T>(value: &JsonData) -> Result<T, TeamContractError>
 where
     T: DeserializeOwned,
 {
-    let fields = object(value)?;
-    let decoded = decode(fields)?;
-    Ok(decoded)
+    Ok(decode(object(value)?)?)
 }
 
 pub(crate) fn object(value: &JsonData) -> Result<&Fields, TeamContractError> {

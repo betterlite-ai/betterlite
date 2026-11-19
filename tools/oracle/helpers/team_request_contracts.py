@@ -43,13 +43,11 @@ class Input(TypedDict):
 
 
 def dumped(model: BaseModel) -> JsonValue:
-    text = model.model_dump_json()
-    return _JSON.validate_json(text)
+    return _JSON.validate_json(model.model_dump_json())
 
 
 def dumped_supplied(model: BaseModel) -> JsonValue:
-    text = model.model_dump_json(exclude_unset=True)
-    return _JSON.validate_json(text)
+    return _JSON.validate_json(model.model_dump_json(exclude_unset=True))
 
 
 def dump_member_ref(document: dict[str, JsonValue]) -> JsonValue:
@@ -128,14 +126,10 @@ def bulk_add_response_answer(document: dict[str, JsonValue]) -> JsonValue:
 
 
 def supplied_answer(operation: Operation, document: dict[str, JsonValue]) -> JsonValue:
-    model: BaseModel
-    if operation == "create":
-        model = _NEW_TEAM.model_validate(document)
-    elif operation == "update":
-        model = _UPDATE_TEAM.model_validate(document)
-    else:
-        model = _PATCH_TEAM.model_validate(document)
-    return dumped_supplied(model)
+    models: dict[str, type[BaseModel]] = {
+        "create": _NEW_TEAM, "update": _UPDATE_TEAM, "patch": _PATCH_TEAM,
+    }
+    return dumped_supplied(models[operation].model_validate(document))
 
 
 _CUSTOM: Final[dict[str, Handler]] = {
@@ -155,5 +149,4 @@ def answer(operation: Operation, document: dict[str, JsonValue]) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    operation = input_value["operation"]
-    return answer(operation, input_value["document"])
+    return answer(input_value["operation"], input_value["document"])
