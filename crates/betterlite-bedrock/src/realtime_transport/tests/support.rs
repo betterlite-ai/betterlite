@@ -880,7 +880,11 @@ impl Fixture {
             pending_session_update: options
                 .pending
                 .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-            session_committed: Json::Bool(options.committed),
+            session_committed: if options.committed {
+                Json::Bool(true)
+            } else {
+                Json::Null
+            },
             committed_failure: options
                 .committed_failure
                 .map_or(Json::Null, |text| Json::Text(text.to_owned())),

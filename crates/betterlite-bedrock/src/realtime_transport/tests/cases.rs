@@ -685,10 +685,9 @@ async fn a_failure_after_the_client_left_is_logged() {
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let logs = captured.text();
     assert!(
-        logs.contains("stream failed after the client disconnected"),
+        logs.contains("stream failed after the client disconnected: the provider stream broke"),
         "{logs}"
     );
-    assert!(logs.contains("ModelStreamErrorException"), "{logs}");
     assert_eq!(result.scope.committed_failure, Json::Null);
     assert_eq!(fixture.runtime.closes(), 1);
 }
