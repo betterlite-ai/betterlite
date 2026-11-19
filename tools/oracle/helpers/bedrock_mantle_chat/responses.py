@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import JsonValue
@@ -32,7 +34,15 @@ def messages_response(call: ResponseCall) -> JsonValue:
     response = MESSAGES.transform_anthropic_messages_response(
         "claude",
         httpx.Response(call["status"], content=call["body"].encode("utf-8")),
-        Logging(),
+        Logging(
+            model="claude",
+            messages=None,
+            stream=False,
+            call_type="anthropic_messages",
+            start_time=datetime.now(tz=UTC),
+            litellm_call_id="mantle-chat",
+            function_id="mantle-chat",
+        ),
     )
     outcome: Object = {"response": response}
     return outcome
