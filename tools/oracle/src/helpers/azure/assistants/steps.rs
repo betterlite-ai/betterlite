@@ -64,10 +64,9 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     let supplied = step
         .supplied
         .map(|chosen| supplied_client(chosen.kind, &harness.recorder));
-    let attached = recording.as_ref().map(|recorded| {
-        let object: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(recorded);
-        object
-    });
+    let attached: Option<Arc<dyn RunEventHandler>> = recording
+        .as_ref()
+        .map(|recorded| -> Arc<dyn RunEventHandler> { Arc::<RecordingHandler>::clone(recorded) });
     match runtime.block_on(harness.runs().run(
         &request,
         supplied,
@@ -111,15 +110,21 @@ fn consumed(
 ) -> HelperResult {
     let outcome = runtime.block_on(manager.consume());
     let calls = recording.map_or_else(Vec::new, |handler| handler.calls());
-    let mut output = json!({
-        "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
-        "calls": calls,
-    });
+    let requests = mem::take(
+        &mut *harness
+            .recorder
+            .seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    );
     match outcome {
-        Ok(events) => output["events"] = json!(events),
-        Err(error) => output["error"] = reports::failure(&AssistantsRunError::Runs(error))?,
+        Ok(events) => Ok(json!({"requests": requests, "calls": calls, "events": events})),
+        Err(error) => Ok(json!({
+            "requests": requests,
+            "calls": calls,
+            "error": reports::failure(&AssistantsRunError::Runs(error))?,
+        })),
     }
-    Ok(output)
 }
 
 struct Harness {
