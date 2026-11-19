@@ -1,7 +1,7 @@
 id: B8062
 milestone: M12 python
 title: Python get_llm_provider and the provider lookup helpers
-status: todo
+status: blocked
 depends_on: [B5369, B157, B158, B5658, B174, B209, B210, B211, B9951]
 file: tasks/B8062-python-provider-lookup.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B166
 split_from: B166
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null
