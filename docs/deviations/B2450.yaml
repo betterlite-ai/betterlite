@@ -1,0 +1,30 @@
+task: B2450
+deviations:
+  - what: "The response object handed to the config starts with created=0, where LiteLLM hands it litellm.ImageResponse() and its __init__ stamps created=int(time.time())."
+    why: "A config that fills the reply overwrites created anyway, and a config that leaves it alone records a stable zero instead of a wall clock the oracle could not compare."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7031-L7040"
+  - what: "An error body that is not UTF-8 becomes \"{bytes} bytes that are not UTF-8\", where LiteLLM reads it through response.text with replacement characters."
+    why: "betterlite records the message as JSON text; replacement characters hide that the bytes were binary, and the byte count keeps the record truthful without inventing text."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6085"
+  - what: "A response header whose bytes are not text fails the call with the typed HeaderText error, where LiteLLM keeps whatever dict(headers) decodes."
+    why: "betterlite stores provider headers as strings; naming the header that could not be read beats silently storing a replacement-character value that claims to be the provider's."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6091-L6094"
+  - what: "An extra header whose name or value HTTP cannot carry fails with the typed HeaderName or HeaderValue error after the pre-call and before anything is sent, where LiteLLM hands the strings to httpx, whose own encoding raises inside the handler's try and becomes a synthesized 500 BaseLLMException."
+    why: "HTTP cannot carry those bytes on either side, so both send nothing; betterlite names the header and skips a made-up 500 that would claim the provider answered."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7005-L7029"
+  - what: "A complete base URL that does not parse as a URL fails with the typed RequestUrl error before the pre-call runs, where LiteLLM builds the URL string, logs the pre-call, and only the send raises httpx's InvalidURL or UnsupportedProtocol for the handler's catch to turn into a synthesized 500 BaseLLMException."
+    why: "Nothing reaches the network on either side; betterlite names the unusable base instead of reporting a 500 as if the provider had answered, and no working setup has an api_base that is not a URL."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6978-L7005"
+  - what: "The timeout message renders durations from typed values, so a whole-second timeout prints as 5.0 and the elapsed time as seconds plus zero-padded milliseconds, where LiteLLM interpolates Python floats."
+    why: "The message still reports the timeout the caller passed and the time the failed request took, the same numbers LiteLLM shows; only the float rendering differs, since betterlite keeps durations typed."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866"
+kept_bugs:
+  - what: The handler accepts extra_body and never merges it into the request it sends, so a caller passing extra_body gets a request without those fields.
+    why: The image generation signature carries extra_body for callers shared with other endpoints; a working setup already gets requests without those fields, and merging them would change what is sent on the wire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6920-L6937
+  - what: The handler accepts fake_stream and litellm_metadata and never reads either in these methods.
+    why: Both appear in the shared signature; a working setup that passes them sees no streaming and no metadata on the request, so betterlite keeps that silence rather than inventing behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6933-L6935
+  - what: Multipart generation forces multipart encoding by adding a sentinel file part named none with empty contents, so every multipart request carries an extra empty file the provider never asked for.
+    why: The sentinel is how LiteLLM makes httpx pick multipart at all; dropping it would turn the request back into JSON, and a working Stability-style setup depends on the request being multipart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7007-L7015
