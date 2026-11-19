@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_core::rules::RuleEvaluator;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -27,7 +26,7 @@ struct RawLogging {
     correlation: CorrelationContext,
 }
 
-fn raw_logging<E>(wrapper: &CallWrapper<E>, request: &RequestMap) -> Option<RawLogging> {
+pub(super) fn raw_logging<E>(wrapper: &CallWrapper<E>, request: &RequestMap) -> Option<RawLogging> {
     let mut correlation = CorrelationContext::default();
     let next_trace_id = || wrapper.ids.next_call_id();
     let mut clock = || wrapper.clock.monotonic();
@@ -89,32 +88,24 @@ fn failure_text(error: &CallError) -> String {
     error.to_string()
 }
 
-fn error_object(message: String) -> Json {
-    Json::Object(IndexMap::from([("error".to_owned(), Json::Text(message))]))
-}
-
-pub async fn return_raw_request<E>(
-    wrapper: &CallWrapper<E>,
+pub(super) async fn capture(
+    logging: Option<RawLogging>,
     target: &dyn CallTarget,
-    mut request: RequestMap,
-) -> Json
-where
-    E: RuleEvaluator,
-{
-    let Some(raw) = raw_logging(wrapper, &request) else {
-        return error_object(String::from(
-            "the raw request logging state could not be built",
-        ));
+    request: RequestMap,
+) -> Json {
+    let Some(raw) = logging else {
+        return Json::Object(IndexMap::from([(
+            "error".to_owned(),
+            Json::Text(String::from(
+                "the raw request logging state could not be built",
+            )),
+        )]));
     };
     let handle = LoggingHandle {
         state: Arc::new(Mutex::new(raw.state)),
         correlation: Arc::new(Mutex::new(raw.correlation)),
         deferred: Arc::new(Mutex::new(None)),
     };
-    request.insert(
-        "api_key".to_owned(),
-        Json::Text(RAW_REQUEST_FAKE_KEY.to_owned()),
-    );
     let failure = match target.call(request, Some(&handle)).await {
         Ok(_outcome) => None,
         Err(error) => Some(error),
@@ -129,5 +120,6 @@ where
     if let Some(value) = captured.filter(is_truthy) {
         return value;
     }
-    error_object(failure.as_ref().map_or_else(String::new, failure_text))
+    let message = failure.as_ref().map_or_else(String::new, failure_text);
+    Json::Object(IndexMap::from([("error".to_owned(), Json::Text(message))]))
 }

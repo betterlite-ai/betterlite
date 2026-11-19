@@ -5,7 +5,7 @@ use betterlite_router::retry_policy::policy::RetryPolicy;
 use indexmap::IndexMap;
 
 use super::error::{CallError, class_status, field_error};
-use super::fields::{int_field, object_field};
+use super::fields::{field, object_field};
 use crate::call_setup::RequestMap;
 
 // litellm.num_retries and litellm.num_retries_per_request, the module state the decorator retries from
@@ -13,6 +13,13 @@ use crate::call_setup::RequestMap;
 pub struct WrapperRetryDefaults {
     pub num_retries: Option<i64>,
     pub num_retries_per_request: Option<i64>,
+}
+
+// The sync path replaces the count with the policy's answer; the async path keeps it unless the policy names one
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryMode {
+    Sync,
+    Async,
 }
 
 // Newer endpoints carry litellm_metadata, older ones carry metadata, and only one of them holds request_retry_count
@@ -43,8 +50,10 @@ pub fn max_retries_per_request_hit(request: &RequestMap, limit: Option<i64>) -> 
 
 // The router keeps model_group in the request's own metadata, never in litellm_metadata
 pub fn is_router_call(request: &RequestMap) -> Result<bool, CallError> {
-    let metadata = object_field(request, "metadata")?;
-    Ok(metadata.is_some_and(|fields| fields.contains_key("model_group")))
+    match object_field(request, "metadata")? {
+        None => Ok(false),
+        Some(fields) => Ok(fields.contains_key("model_group")),
+    }
 }
 
 // Only a plain Exception, BudgetExceededError and GuardrailRaisedException sit outside openai.APIError
@@ -56,11 +65,6 @@ pub const fn is_api_error(class: &ErrorClass) -> bool {
             | ErrorClass::BudgetExceeded(_)
             | ErrorClass::GuardrailRaised(_)
     )
-}
-
-#[must_use]
-pub const fn is_context_window(class: &ErrorClass) -> bool {
-    matches!(class, ErrorClass::ContextWindowExceeded(_))
 }
 
 // RateLimitError takes the exponential branch before the generic APIError one
@@ -109,45 +113,19 @@ fn policy_from(request: &RequestMap) -> Result<Option<RetryPolicy>, CallError> {
     Ok(Some(policy))
 }
 
-fn policy_count(policy: &RetryPolicy, error: &CallError) -> Option<i64> {
-    policy.retries_for(FailureClass::from(&error.class), class_status(&error.class))
-}
-
-fn reset_policy(request: &mut RequestMap) {
-    request.insert("retry_policy".to_owned(), Json::Object(IndexMap::new()));
-}
-
-// kwargs.get("num_retries") or litellm.num_retries; a retry policy then replaces the count and is reset
-pub fn sync_num_retries(
+pub fn num_retries(
     request: &mut RequestMap,
     default: Option<i64>,
     error: &CallError,
+    mode: RetryMode,
 ) -> Result<Option<i64>, CallError> {
-    let mut num_retries = int_field(request, "num_retries")?;
-    if num_retries.is_none() {
-        num_retries = default;
-    }
+    let from_request: Option<i64> = field(request, "num_retries")?;
+    let mut num_retries = from_request.or(default);
     if let Some(policy) = policy_from(request)? {
-        num_retries = policy_count(&policy, error);
-        reset_policy(request);
-    }
-    Ok(num_retries)
-}
-
-// _get_wrapper_num_retries: the policy only overrides the count when it names one for this error
-pub fn async_num_retries(
-    request: &mut RequestMap,
-    default: Option<i64>,
-    error: &CallError,
-) -> Result<Option<i64>, CallError> {
-    let mut num_retries = int_field(request, "num_retries")?;
-    if num_retries.is_none() {
-        num_retries = default;
-    }
-    if let Some(policy) = policy_from(request)? {
-        let from_policy = policy_count(&policy, error);
-        reset_policy(request);
-        if from_policy.is_some() {
+        let from_policy =
+            policy.retries_for(FailureClass::from(&error.class), class_status(&error.class));
+        request.insert("retry_policy".to_owned(), Json::Object(IndexMap::new()));
+        if mode == RetryMode::Sync || from_policy.is_some() {
             num_retries = from_policy;
         }
     }

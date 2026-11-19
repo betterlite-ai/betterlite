@@ -94,11 +94,6 @@ pub fn field_error(field: &str, expected: &str) -> CallError {
     )))
 }
 
-#[must_use]
-pub fn retry_limit_error() -> CallError {
-    CallError::from(plain_error("Max retries per request hit!"))
-}
-
 // The class name Python's type(e).__name__ reports, so a wire report can compare the two sides
 #[must_use]
 pub const fn class_name(class: &ErrorClass) -> &'static str {

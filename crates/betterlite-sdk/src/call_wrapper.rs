@@ -15,6 +15,7 @@ pub mod target;
 mod order_async;
 mod order_sync;
 mod raw_request;
+mod steps;
 
 mod tests;
 
@@ -30,7 +31,7 @@ use indexmap::IndexMap;
 
 use self::cache::CacheHandler;
 use self::error::CallError;
-use self::logging::{CallLogging, SuccessLogScheduler};
+use self::logging::CallLogging;
 use self::metadata::ResponseMetadataUpdater;
 use self::ports::{BlockingBridge, IdSource, WrapperClock};
 use self::retry::WrapperRetryDefaults;
@@ -46,6 +47,7 @@ use crate::call_setup::function_setup::{
 };
 use crate::call_setup::hooks::DeploymentHook;
 use crate::call_setup::providers::ProviderRegistry;
+use crate::call_setup::request_flags::is_async_request;
 
 // What function_setup reads besides the request: module-level state in LiteLLM, injected here
 pub struct SetupState {
@@ -73,7 +75,7 @@ pub struct WrapperFlags {
 pub struct CallWrapper<E> {
     pub rules: E,
     pub setup: SetupState,
-    pub cache: Arc<dyn CacheHandler>,
+    pub cache: Option<Arc<dyn CacheHandler>>,
     pub budget: budget::BudgetState,
     pub retry: WrapperRetryDefaults,
     pub clock: Arc<dyn WrapperClock>,
@@ -83,7 +85,7 @@ pub struct CallWrapper<E> {
     pub metadata: Arc<dyn ResponseMetadataUpdater>,
     pub credentials: Arc<dyn CredentialLookup>,
     pub logging: Arc<dyn CallLogging>,
-    pub scheduler: Arc<dyn SuccessLogScheduler>,
+    pub scheduler: Arc<dyn logging::SuccessLogScheduler>,
     pub debugging: bool,
     pub flags: WrapperFlags,
 }
@@ -153,7 +155,9 @@ where
         request: RequestMap,
         options: WrapperOptions,
     ) -> Result<CallOutcome, CallError> {
-        order_async::run(self, target, request, options).await
+        order_async::AsyncRun::new(self, target, request, options)
+            .run()
+            .await
     }
 
     // wrapper: the sync order, which never stamps correlation ids and logs failures on the calling thread
@@ -167,11 +171,24 @@ where
     where
         B: BlockingBridge,
     {
-        order_sync::run(self, target, request, options, bridge)
+        if is_async_request(&request, false) {
+            let logging = options.logging.as_ref();
+            return order_sync::async_request_path(self, target, bridge, &request, logging);
+        }
+        order_sync::SyncRun::new(self, target, request, options, bridge).run()
     }
 
     // return_raw_request: the target runs with a raw request logging object whose key is never the caller's
-    pub async fn return_raw_request(&self, target: &dyn CallTarget, request: RequestMap) -> Json {
-        raw_request::return_raw_request(self, target, request).await
+    pub async fn return_raw_request(
+        &self,
+        target: &dyn CallTarget,
+        mut request: RequestMap,
+    ) -> Json {
+        request.insert(
+            "api_key".to_owned(),
+            Json::Text(raw_request::RAW_REQUEST_FAKE_KEY.to_owned()),
+        );
+        let logging = raw_request::raw_logging(self, &request);
+        raw_request::capture(logging, target, request).await
     }
 }

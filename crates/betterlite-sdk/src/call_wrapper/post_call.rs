@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::error::{CallError, field_error, plain_error};
-use super::fields::{bool_field, object_field};
+use super::fields::{field, object_field};
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CallOutcome;
 
@@ -72,7 +72,7 @@ fn json_schema_validation_enabled(
     request: &RequestMap,
     validation: Validation,
 ) -> Result<bool, CallError> {
-    match bool_field(request, "enable_json_schema_validation")? {
+    match field::<bool>(request, "enable_json_schema_validation")? {
         Some(value) => Ok(value),
         None => Ok(validation.enable_json_schema_validation),
     }

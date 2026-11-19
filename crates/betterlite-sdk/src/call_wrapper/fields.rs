@@ -4,49 +4,60 @@ use indexmap::IndexMap;
 use super::error::{CallError, field_error};
 use crate::call_setup::RequestMap;
 
-// absent and null both take the declared default, and a value of the wrong type names its field
-pub fn text_field(request: &RequestMap, field: &'static str) -> Result<Option<String>, CallError> {
-    match request.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field_error(field, "a string"))
+// One reader per declared value type: absent and null take the default, a wrong type names its field
+pub trait FieldValue: Sized {
+    fn read(field: &'static str, value: &Json) -> Result<Self, CallError>;
+}
+
+impl FieldValue for String {
+    fn read(field: &'static str, value: &Json) -> Result<Self, CallError> {
+        if let Json::Text(text) = value {
+            return Ok(text.clone());
         }
+        Err(field_error(field, "a string"))
     }
 }
 
-pub fn int_field(request: &RequestMap, field: &'static str) -> Result<Option<i64>, CallError> {
-    match request.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
+impl FieldValue for i64 {
+    fn read(field: &'static str, value: &Json) -> Result<Self, CallError> {
+        let Json::Number(number) = value else {
+            return Err(field_error(field, "an integer"));
+        };
+        number
             .as_i64()
-            .map(Some)
-            .ok_or_else(|| field_error(field, "an integer")),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field_error(field, "an integer"))
+            .ok_or_else(|| field_error(field, "an integer"))
+    }
+}
+
+impl FieldValue for bool {
+    fn read(field: &'static str, value: &Json) -> Result<Self, CallError> {
+        match value {
+            Json::Bool(flag) => Ok(*flag),
+            _ => Err(field_error(field, "a boolean")),
         }
     }
 }
 
-pub fn bool_field(request: &RequestMap, field: &'static str) -> Result<Option<bool>, CallError> {
-    match request.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field_error(field, "a boolean"))
-        }
+pub fn field<T>(request: &RequestMap, name: &'static str) -> Result<Option<T>, CallError>
+where
+    T: FieldValue,
+{
+    let Some(value) = request.get(name) else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
+    T::read(name, value).map(Some)
 }
 
 pub fn object_field<'request>(
     request: &'request RequestMap,
-    field: &'static str,
+    name: &'static str,
 ) -> Result<Option<&'request IndexMap<String, Json>>, CallError> {
-    match request.get(field) {
+    match request.get(name) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(field_error(field, "an object"))
-        }
+        Some(_) => Err(field_error(name, "an object")),
     }
 }
