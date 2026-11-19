@@ -1,0 +1,123 @@
+use std::mem;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use tokio::sync::Semaphore;
+use tokio::task::{JoinSet, yield_now};
+use tracing::warn;
+
+use super::endpoint::AuthPubSub;
+use super::eviction::LocalEviction;
+use super::message::{self, Invalidation};
+
+pub const MAX_PENDING_PUBLISHES: usize = 1024;
+pub const MAX_IN_FLIGHT_PUBLISHES: usize = 16;
+
+pub struct PublishTasks {
+    pending: Mutex<JoinSet<()>>,
+    in_flight: Arc<Semaphore>,
+}
+
+impl Default for PublishTasks {
+    fn default() -> Self {
+        Self {
+            pending: Mutex::new(JoinSet::new()),
+            in_flight: Arc::new(Semaphore::new(MAX_IN_FLIGHT_PUBLISHES)),
+        }
+    }
+}
+
+impl PublishTasks {
+    pub async fn shutdown(&self) {
+        let mut pending = mem::take(&mut *lock(&self.pending));
+        pending.abort_all();
+        while pending.join_next().await.is_some() {}
+    }
+}
+
+pub async fn publish_invalidation<E>(
+    tasks: &PublishTasks,
+    endpoint: Option<&Arc<E>>,
+    invalidation: &Invalidation,
+) where
+    E: AuthPubSub + 'static,
+{
+    let Some(target) = endpoint else {
+        return;
+    };
+    let cache_key = invalidation.cache_key.clone();
+    {
+        let mut pending = lock(&tasks.pending);
+        while pending.try_join_next().is_some() {}
+        if pending.len() >= MAX_PENDING_PUBLISHES {
+            drop(pending);
+            warn!(
+                subject = cache_key.as_str(),
+                pending = MAX_PENDING_PUBLISHES,
+                "auth cache invalidation publish for {cache_key} dropped: {MAX_PENDING_PUBLISHES} publishes already waiting on redis; other workers keep their cached copy until its TTL expires"
+            );
+            return;
+        }
+        let message = message::encode(invalidation);
+        let owner = Arc::clone(target);
+        let in_flight = Arc::clone(&tasks.in_flight);
+        pending.spawn(publish_message(owner, message, cache_key, in_flight))
+    };
+    yield_now().await;
+}
+
+async fn publish_message<E>(
+    endpoint: Arc<E>,
+    message: String,
+    cache_key: String,
+    in_flight: Arc<Semaphore>,
+) where
+    E: AuthPubSub + 'static,
+{
+    let Ok(_permit) = in_flight.acquire().await else {
+        warn!(
+            subject = cache_key.as_str(),
+            "auth cache invalidation publish for {cache_key} found the in-flight limit closed"
+        );
+        return;
+    };
+    if let Err(error) = endpoint.publish(&message).await {
+        let reason = error.message();
+        warn!(
+            subject = cache_key.as_str(),
+            error = reason.as_str(),
+            "auth cache invalidation publish for {cache_key} failed: {reason}"
+        );
+    }
+}
+
+pub async fn evict_and_broadcast<E>(
+    cache_keys: &[String],
+    eviction: &dyn LocalEviction,
+    tasks: &PublishTasks,
+    endpoint: Option<&Arc<E>>,
+) where
+    E: AuthPubSub + 'static,
+{
+    for cache_key in cache_keys {
+        let invalidation = Invalidation {
+            cache_key: cache_key.clone(),
+            new_value: None,
+            ttl: None,
+        };
+        if let Err(error) = eviction.apply(invalidation.clone()) {
+            warn!(
+                subject = cache_key.as_str(),
+                error = %error,
+                "Failed to evict cached entry {cache_key}; a stale object may be served until its TTL expires: {error}"
+            );
+        }
+        publish_invalidation(tasks, endpoint, &invalidation).await;
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}

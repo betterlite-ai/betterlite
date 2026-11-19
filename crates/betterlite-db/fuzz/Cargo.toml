@@ -173,3 +173,17 @@ path = "fuzz_targets/pod_owner.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enqueue_tags"
+path = "fuzz_targets/enqueue_tags.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "turn_time"
+path = "fuzz_targets/turn_time.rs"
+test = false
+doc = false
+bench = false

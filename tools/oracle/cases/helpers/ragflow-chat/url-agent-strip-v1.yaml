@@ -1,0 +1,14 @@
+kind: helper
+name: ragflow-chat-url-agent-strip-v1
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {RAGFLOW_API_BASE: 'http://host:9380/v1/'}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/agent/abc/glm-4', api_base: null}
+      - {model: 'ragflow/agent/abc/glm-4', api_base: 'http://host:9380/v1'}
+      - {model: 'ragflow/agent/abc/glm-4', api_base: 'http://host:9380/apiv1'}
+      - {model: 'ragflow/agent/abc/glm-4', api_base: 'http://host:9380/v1/root'}
