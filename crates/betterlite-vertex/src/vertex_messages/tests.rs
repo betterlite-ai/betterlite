@@ -160,6 +160,36 @@ fn deployment_headers_unchanged() {
 }
 
 #[test]
+fn a_differently_spelled_header_survives_the_overwrite() {
+    let headers = AnthropicHeaders {
+        values: IndexMap::from([
+            ("authorization".to_owned(), "Bearer caller".to_owned()),
+            ("Content-Type".to_owned(), "text/plain".to_owned()),
+        ]),
+    };
+    let outcome = validated(
+        &headers,
+        &Object::new(),
+        &VertexSettings::default(),
+        deployment(),
+        None,
+    );
+    assert_eq!(
+        header(&outcome.headers, AUTHORIZATION),
+        Some("Bearer fixed-token")
+    );
+    assert_eq!(
+        header(&outcome.headers, "authorization"),
+        Some("Bearer caller")
+    );
+    assert_eq!(
+        header(&outcome.headers, CONTENT_TYPE),
+        Some(JSON_CONTENT_TYPE)
+    );
+    assert_eq!(header(&outcome.headers, "Content-Type"), Some("text/plain"));
+}
+
+#[test]
 fn an_absent_existing_header_gets_no_empty_beta_header() {
     let outcome = validated(
         &AnthropicHeaders::default(),
@@ -332,6 +362,46 @@ fn a_failed_lookup_is_a_500() {
     ))
     .expect_err("the lookup fails");
     assert_eq!(error.status_code(), Some(500));
+}
+
+#[test]
+fn the_configured_credentials_reach_the_lookup() {
+    let credentials = ConfiguredCredentials::from_text("credentials.json".to_owned())
+        .expect("the text stays a text credential");
+    let catalog = catalog();
+    let environment = block_on(validate_environment(
+        &EnvironmentRequest {
+            headers: &AnthropicHeaders::default(),
+            model: MODEL,
+            messages: &[],
+            optional_params: &Object::new(),
+            params: VertexParams {
+                project: None,
+                ai_project: None,
+                location: None,
+                ai_location: None,
+                credentials: Some(&credentials),
+                ai_credentials: None,
+            },
+            settings: &VertexSettings::default(),
+            catalog: &catalog,
+            api_base: None,
+        },
+        |given, project| {
+            let forwarded = given.is_some_and(|value| value.as_text() == Some("credentials.json"));
+            let no_hint = project.is_none();
+            if forwarded && no_hint {
+                ready(Ok::<AccessToken, CredentialCacheError>(access()))
+            } else {
+                ready(Err(CredentialCacheError::MissingCredentials))
+            }
+        },
+    ))
+    .expect("the lookup receives the configured credentials");
+    assert_eq!(
+        header(&environment.headers, AUTHORIZATION),
+        Some("Bearer fixed-token")
+    );
 }
 
 fn url(region: &str, project: &str, endpoint: &str) -> String {
