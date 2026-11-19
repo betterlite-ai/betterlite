@@ -77,26 +77,20 @@ fn metadata_project(kwargs: &MetadataMap, key: &str, proxy_mode: bool) -> Option
                 .and_then(OtelModelValue::as_object)
         })
         .find_map(|metadata| {
-            auth_project(metadata, key).or_else(|| {
-                if proxy_mode {
-                    None
-                } else {
-                    normalized(metadata.get(key))
-                }
-            })
+            if let Some(auth) = metadata
+                .get("user_api_key_auth_metadata")
+                .and_then(OtelModelValue::as_object)
+                && let Some(project) = auth.get(key).and_then(OtelModelValue::as_str)
+                && !project.trim().is_empty()
+            {
+                return Some(project.trim().to_owned());
+            }
+            if proxy_mode {
+                return None;
+            }
+            let text = metadata.get(key)?.as_str()?.trim();
+            (!text.is_empty()).then(|| text.to_owned())
         })
-}
-
-fn auth_project(metadata: &MetadataMap, key: &str) -> Option<String> {
-    metadata
-        .get("user_api_key_auth_metadata")
-        .and_then(OtelModelValue::as_object)
-        .and_then(|auth| normalized(auth.get(key)))
-}
-
-fn normalized(value: Option<&OtelModelValue>) -> Option<String> {
-    let text = value?.as_str()?.trim();
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 fn env_project_name(environment: &BTreeMap<String, String>) -> Option<String> {

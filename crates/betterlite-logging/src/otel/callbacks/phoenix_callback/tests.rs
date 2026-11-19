@@ -212,25 +212,6 @@ fn with_traceparent(kwargs: &mut MetadataMap, traceparent: &str) {
     params.insert("proxy_server_request".to_owned(), request);
 }
 
-fn with_guardrail(kwargs: &mut MetadataMap) {
-    let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object") else {
-        panic!("standard_logging_object must be an object");
-    };
-    payload.insert(
-        "guardrail_information".to_owned(),
-        serde_json::from_str(
-            r#"[{
-                "guardrail_name": "pii",
-                "guardrail_mode": "pre_call",
-                "guardrail_status": "success",
-                "start_time": 1704067200.5,
-                "end_time": 1704067200.75
-            }]"#,
-        )
-        .expect("guardrail entry"),
-    );
-}
-
 fn names(spans: &[SpanData]) -> Vec<String> {
     spans.iter().map(|span| span.name.to_string()).collect()
 }
@@ -580,7 +561,25 @@ fn phoenix_routes_the_guardrail_to_the_project_provider() {
         "phoenix_project_name",
         "guard-project",
     );
-    with_guardrail(&mut kwargs);
+    {
+        let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object")
+        else {
+            panic!("standard_logging_object must be an object");
+        };
+        payload.insert(
+            "guardrail_information".to_owned(),
+            serde_json::from_str(
+                r#"[{
+                    "guardrail_name": "pii",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "success",
+                    "start_time": 1704067200.5,
+                    "end_time": 1704067200.75
+                }]"#,
+            )
+            .expect("guardrail entry"),
+        );
+    }
     handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).expect("the guardrail call");
     assert_eq!(
         lifecycle.tracer_cache.project_names(),

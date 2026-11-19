@@ -25,7 +25,7 @@ pub enum PhoenixSettingsError {
 impl PhoenixConfig {
     pub fn from_env(environment: &dyn EnvironmentLookup) -> Result<Self, PhoenixSettingsError> {
         let read = |name: &str| environment.lookup(name).filter(|value| !value.is_empty());
-        let collector_endpoint = read(vendor_env::PHOENIX_COLLECTOR_HTTP_ENDPOINT)
+        let collector_endpoint = read(vendor_env::PHOENIX_HTTP_ENDPOINT)
             .or_else(|| read(vendor_env::PHOENIX_COLLECTOR_ENDPOINT));
         let (protocol, endpoint) = match collector_endpoint {
             None => (OtlpProtocol::Http, DEFAULT_ENDPOINT.to_owned()),
