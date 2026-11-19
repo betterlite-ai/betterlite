@@ -323,6 +323,20 @@ fn form_fallback_needs_an_empty_simple_result() {
 }
 
 #[test]
+fn an_empty_list_text_still_asks_for_the_form() {
+    let parts = vec![text_part("target_model_names", "from_form")];
+    let probe = Fixture::new(None, &[], &[], &parts);
+    let empty_text = Json::List(vec![Json::Text(String::new())]);
+    assert_eq!(
+        probe
+            .extract(None, Some(&empty_text), None)
+            .unwrap()
+            .target_model_names,
+        names(&["from_form"])
+    );
+}
+
+#[test]
 fn repeated_targets() {
     let parts = [
         text_part("target_model_names[]", "a"),
@@ -471,6 +485,19 @@ fn list_bools_and_objects_are_rejected() {
     assert_eq!(
         probe.extract(None, Some(&object), None),
         Err(FileUploadOptionsError::NamesNotText)
+    );
+    let nested = Json::List(vec![Json::List(vec![Json::Text("a".to_owned())])]);
+    assert_eq!(
+        probe.extract(None, Some(&nested), None),
+        Err(FileUploadOptionsError::NamesNotText)
+    );
+    let empty = Json::List(vec![Json::List(Vec::new()), Json::Object(IndexMap::new())]);
+    assert_eq!(
+        probe
+            .extract(None, Some(&empty), None)
+            .unwrap()
+            .target_model_names,
+        Vec::<String>::new()
     );
 }
 

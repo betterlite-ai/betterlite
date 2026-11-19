@@ -104,10 +104,10 @@ fn normalized_name(name: String) -> Option<String> {
 }
 
 fn extract_target_storage_simple(target_storage_form: Option<&str>) -> String {
-    match target_storage_form {
-        Some(form) if !form.is_empty() => strip_space(form).to_owned(),
-        Some(_empty) | None => DEFAULT_TARGET_STORAGE.to_owned(),
-    }
+    let Some(form) = target_storage_form else {
+        return DEFAULT_TARGET_STORAGE.to_owned();
+    };
+    strip_space(form).to_owned()
 }
 
 fn simple_model_names(form: Option<&Json>) -> Result<Vec<String>, FileUploadOptionsError> {
