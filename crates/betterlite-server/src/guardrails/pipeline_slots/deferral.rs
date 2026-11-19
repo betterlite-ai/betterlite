@@ -34,14 +34,13 @@ pub fn defer_post_call_pipelines(
     tracing::debug!(
         "Post_call guardrail pipelines wait for background response {response_id} (status={status}) to be retrieved complete: {names}"
     );
-    let tag_matched = tag_matched_deferrals(data, policies);
+    let (tag_matched, body_selected) = deferral_matches(data, policies);
     if !tag_matched.is_empty() {
         let tag_names = tag_matched.join(", ");
         tracing::warn!(
             "Policy engine: background response {response_id} matched post_call policies through a request tag at submit; retrieval re-matches only the key, team, and model scopes, so a tag carried in the request body does not govern the completed response: {tag_names}"
         );
     }
-    let body_selected = body_selected_deferrals(data, policies);
     if !body_selected.is_empty() {
         let body_names = body_selected.join(", ");
         tracing::warn!(
@@ -51,34 +50,25 @@ pub fn defer_post_call_pipelines(
     withdraw_deferred_claims(data, policies, context);
 }
 
-fn tag_matched_deferrals(data: &JsonMap, policies: &[(String, GuardrailPipeline)]) -> Vec<String> {
-    let Some(sources) = policy_sources(data) else {
-        return Vec::new();
-    };
-    policies
-        .iter()
-        .filter(|(policy_name, _)| {
-            sources
-                .get(policy_name)
-                .and_then(JsonValue::as_str)
-                .is_some_and(|reason| reason.contains(TAG_MARK))
-        })
-        .map(|(policy_name, _)| policy_name.clone())
-        .collect()
-}
-
-fn body_selected_deferrals(
+fn deferral_matches(
     data: &JsonMap,
     policies: &[(String, GuardrailPipeline)],
-) -> Vec<String> {
-    let attributed = policy_sources(data);
-    policies
-        .iter()
-        .filter(|(policy_name, _)| {
-            attributed.is_none_or(|sources| !sources.contains_key(policy_name))
-        })
-        .map(|(policy_name, _)| policy_name.clone())
-        .collect()
+) -> (Vec<String>, Vec<String>) {
+    let sources = policy_sources(data);
+    let mut tag_matched = Vec::new();
+    let mut body_selected = Vec::new();
+    for (policy_name, _) in policies {
+        let attributed = sources.and_then(|bucket| bucket.get(policy_name));
+        let matched_by_tag = attributed
+            .and_then(JsonValue::as_str)
+            .is_some_and(|reason| reason.contains(TAG_MARK));
+        if matched_by_tag {
+            tag_matched.push(policy_name.clone());
+        } else if attributed.is_none() {
+            body_selected.push(policy_name.clone());
+        }
+    }
+    (tag_matched, body_selected)
 }
 
 fn policy_sources(data: &JsonMap) -> Option<&JsonMap> {
@@ -102,9 +92,23 @@ fn withdraw_deferred_claims(
     let withdrawn_guardrails: BTreeSet<String> =
         step_names.difference(&running_elsewhere).cloned().collect();
     let bucket = metadata_bucket_mut(data);
-    without_names(bucket, APPLIED_POLICIES, &withdrawn_policies);
-    without_names(bucket, APPLIED_GUARDRAILS, &withdrawn_guardrails);
-    drop_withdrawn_sources(bucket, &withdrawn_policies);
+    without_names(
+        bucket,
+        &[
+            (APPLIED_POLICIES, &withdrawn_policies),
+            (APPLIED_GUARDRAILS, &withdrawn_guardrails),
+        ],
+    );
+    let JsonValue::Object(state) = bucket else {
+        return;
+    };
+    let Some(JsonValue::Object(sources)) = state.get_mut(POLICY_SOURCES) else {
+        return;
+    };
+    sources.retain(|policy_name, _| !withdrawn_policies.contains(policy_name));
+    if sources.is_empty() {
+        state.remove(POLICY_SOURCES);
+    }
 }
 
 fn outside_sets(
@@ -147,40 +151,17 @@ fn metadata_bucket_mut(data: &mut JsonMap) -> &mut JsonValue {
     value
 }
 
-fn without_names(bucket_value: &mut JsonValue, slot: &str, names: &BTreeSet<String>) {
+fn without_names(bucket_value: &mut JsonValue, slots: &[(&str, &BTreeSet<String>)]) {
     let JsonValue::Object(bucket) = bucket_value else {
         return;
     };
-    let Some(JsonValue::Array(claimed)) = bucket.get(slot) else {
-        return;
-    };
-    let remaining: Vec<JsonValue> = claimed
-        .iter()
-        .filter(|name| name.as_str().is_none_or(|text| !names.contains(text)))
-        .cloned()
-        .collect();
-    if remaining.is_empty() {
-        bucket.remove(slot);
-    } else {
-        bucket.insert(slot.to_owned(), JsonValue::Array(remaining));
-    }
-}
-
-fn drop_withdrawn_sources(bucket_value: &mut JsonValue, withdrawn: &BTreeSet<String>) {
-    let JsonValue::Object(bucket) = bucket_value else {
-        return;
-    };
-    let Some(JsonValue::Object(sources)) = bucket.get(POLICY_SOURCES) else {
-        return;
-    };
-    let remaining: JsonMap = sources
-        .iter()
-        .filter(|(policy_name, _)| !withdrawn.contains(*policy_name))
-        .map(|(policy_name, reason)| (policy_name.clone(), reason.clone()))
-        .collect();
-    if remaining.is_empty() {
-        bucket.remove(POLICY_SOURCES);
-    } else {
-        bucket.insert(POLICY_SOURCES.to_owned(), JsonValue::Object(remaining));
+    for &(slot, names) in slots {
+        let Some(JsonValue::Array(claimed)) = bucket.get_mut(slot) else {
+            continue;
+        };
+        claimed.retain(|name| name.as_str().is_none_or(|text| !names.contains(text)));
+        if claimed.is_empty() {
+            bucket.remove(slot);
+        }
     }
 }

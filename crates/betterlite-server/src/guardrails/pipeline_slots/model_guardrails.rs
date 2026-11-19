@@ -38,9 +38,9 @@ pub fn merge_model_level_guardrails(
     let Some(finder) = deployments else {
         return Ok(data.clone());
     };
-    let metadata = metadata_object(data, METADATA)?;
-    let litellm_metadata = metadata_object(data, LITELLM_METADATA)?;
-    let model_info = model_info_object(metadata)?;
+    let metadata = object_field(Some(data), METADATA, METADATA)?;
+    let litellm_metadata = object_field(Some(data), LITELLM_METADATA, LITELLM_METADATA)?;
+    let model_info = object_field(metadata, MODEL_INFO, MODEL_INFO_FIELD)?;
     let trusted_id = model_info
         .and_then(|info| info.get(MODEL_ID))
         .filter(|_| trust_client_model_info)
@@ -94,27 +94,18 @@ pub fn merge_guardrails_with_existing(
     Ok(modified)
 }
 
-fn metadata_object(
-    data: &JsonMap,
+fn object_field(
+    parent: Option<&JsonMap>,
+    key: &'static str,
     field: &'static str,
 ) -> Result<Option<&JsonMap>, ModelGuardrailsError> {
-    match data.get(field) {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Object(bucket)) => Ok(Some(bucket)),
-        Some(_) => Err(ModelGuardrailsError::NotAnObject { field }),
-    }
-}
-
-fn model_info_object(metadata: Option<&JsonMap>) -> Result<Option<&JsonMap>, ModelGuardrailsError> {
-    let Some(bucket) = metadata else {
+    let Some(bucket) = parent else {
         return Ok(None);
     };
-    match bucket.get(MODEL_INFO) {
+    match bucket.get(key) {
         None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Object(info)) => Ok(Some(info)),
-        Some(_) => Err(ModelGuardrailsError::NotAnObject {
-            field: MODEL_INFO_FIELD,
-        }),
+        Some(JsonValue::Object(inner)) => Ok(Some(inner)),
+        Some(_) => Err(ModelGuardrailsError::NotAnObject { field }),
     }
 }
 

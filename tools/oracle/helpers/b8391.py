@@ -5,7 +5,7 @@ from typing import Final, Literal, TypeAlias, TypedDict, cast
 from litellm.proxy import utils as proxy_utils
 from pydantic import JsonValue, TypeAdapter
 
-POLICY_STATE: Final = proxy_utils._policy_state_metadata  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L547
+POLICY_STATE: Final = proxy_utils._policy_state_metadata  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L547
 MERGE_WRITES: Final = cast(Callable[[dict[str, JsonValue], Mapping[str, object]], None], proxy_utils._merge_pipeline_metadata_writes)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L622
 MERGE_GUARDRAILS: Final = cast(Callable[[dict[str, JsonValue], JsonValue], dict[str, JsonValue]], proxy_utils._merge_guardrails_with_existing)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8100
 
