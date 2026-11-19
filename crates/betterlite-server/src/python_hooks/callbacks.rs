@@ -1,31 +1,13 @@
 use betterlite_pyhost::hook_object::LoadedKind;
 use pyo3::types::PyAnyMethods as _;
 
-use super::slots::{HookSlot, ListKey, LoadedCallback, LoadedHook};
-use super::{HooksError, PythonHooks};
+use super::HooksError;
+use super::slots::LoadedHook;
 
 // B6030 ships the class at this path; until then nothing matches it and the callable check decides
 const LOGGER_CLASS: &str = "betterlite.integrations.custom_logger.CustomLogger";
 
-pub(super) async fn load_callback(
-    service: &PythonHooks,
-    list_key: ListKey,
-    entry: &str,
-) -> Result<LoadedCallback, HooksError> {
-    if !entry.contains('.') {
-        // LiteLLM's own callbacks are plain names like "langfuse" and never Python objects
-        return Ok(LoadedCallback::Named(entry.to_owned()));
-    }
-    let hook = service
-        .load_hook(HookSlot::Callback(list_key), entry)
-        .await?;
-    if list_key == ListKey::Callbacks {
-        check_dispatchable(&hook, entry)?;
-    }
-    Ok(LoadedCallback::Loaded(hook))
-}
-
-fn check_dispatchable(hook: &LoadedHook, entry: &str) -> Result<(), HooksError> {
+pub(super) fn check_dispatchable(hook: &LoadedHook, entry: &str) -> Result<(), HooksError> {
     match hook.object.kind(&hook.host, LOGGER_CLASS) {
         LoadedKind::Logger | LoadedKind::Function => Ok(()),
         LoadedKind::Class { module, qualname } => Err(HooksError::CallbackIsClass {

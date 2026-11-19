@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use betterlite_pyhost::blocking_work::WorkError;
 use betterlite_pyhost::call_error::{CallError, PythonError};
 use betterlite_pyhost::callable_handle::CallableHandle;
-use betterlite_pyhost::hook_object::HookObject;
 use betterlite_pyhost::return_check::check_literal_true_return;
 use pyo3::types::PyAnyMethods as _;
 use pyo3::{Bound, Py, PyAny, Python};
 
 use super::deadline::LOAD_DEADLINE;
-use super::slots::{HookSlot, LoadedHook};
+use super::slots::LoadedHook;
 use super::{HooksError, HooksRuntime, PythonHooks};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,74 +17,7 @@ pub struct CustomProviderItem {
     pub custom_handler: String,
 }
 
-pub(super) async fn load_hook(
-    service: &PythonHooks,
-    slot: HookSlot,
-    value: &str,
-) -> Result<LoadedHook, HooksError> {
-    let runtime = service
-        .inner
-        .get_or_try_init(|| service.start_runtime())
-        .await?;
-    let loaded = runtime
-        .loader
-        .load(&runtime.tracker, value, service.config_file_path.as_deref())
-        .await
-        .map_err(|source| HooksError::Load {
-            slot: slot.as_str(),
-            value: value.to_owned(),
-            source: Box::new(source),
-        })?;
-    Ok(LoadedHook {
-        slot,
-        value: value.to_owned(),
-        object: HookObject { loaded },
-        host: runtime.host.clone(),
-        tracker: Arc::clone(&runtime.tracker),
-    })
-}
-
-pub(super) async fn load_post_call_rules(
-    service: &PythonHooks,
-    value: &str,
-) -> Result<Vec<LoadedHook>, HooksError> {
-    load_hook(service, HookSlot::PostCallRules, value)
-        .await
-        .map(|hook| vec![hook])
-}
-
-pub(super) async fn load_custom_providers(
-    service: &PythonHooks,
-    items: &[CustomProviderItem],
-) -> Result<Vec<(String, HookObject)>, HooksError> {
-    let mut providers = Vec::with_capacity(items.len());
-    for item in items {
-        let hook = load_hook(service, HookSlot::CustomProvider, &item.custom_handler).await?;
-        providers.push((item.provider.clone(), hook.object));
-    }
-    Ok(providers)
-}
-
-pub(super) async fn load_custom_validate(
-    service: &PythonHooks,
-    value: &str,
-) -> Result<LoadedHook, HooksError> {
-    let hook = load_hook(service, HookSlot::CustomValidate, value).await?;
-    require_literal_true_return(&hook, value)?;
-    Ok(hook)
-}
-
-pub(super) async fn run_startup_hooks(
-    service: &PythonHooks,
-    specs: &[String],
-) -> Result<(), HooksError> {
-    for spec in specs {
-        run_startup_hook(service, spec).await?;
-    }
-    Ok(())
-}
-
-async fn run_startup_hook(service: &PythonHooks, spec: &str) -> Result<(), HooksError> {
+pub(super) async fn run_startup_hook(service: &PythonHooks, spec: &str) -> Result<(), HooksError> {
     let Some((module_path, function_name)) = spec.rsplit_once(':') else {
         return Err(HooksError::StartupSpec {
             spec: spec.to_owned(),
@@ -113,7 +44,10 @@ async fn run_startup_hook(service: &PythonHooks, spec: &str) -> Result<(), Hooks
     }
 }
 
-fn require_literal_true_return(hook: &LoadedHook, value: &str) -> Result<(), HooksError> {
+pub(super) fn require_literal_true_return(
+    hook: &LoadedHook,
+    value: &str,
+) -> Result<(), HooksError> {
     let handle = hook.object.loaded.handle(&hook.host)?;
     check_literal_true_return(&hook.host, Some(&handle)).map_err(|source| {
         HooksError::Validate {

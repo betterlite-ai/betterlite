@@ -77,7 +77,23 @@ impl PythonHooks {
     }
 
     pub async fn load_hook(&self, slot: HookSlot, value: &str) -> Result<LoadedHook, HooksError> {
-        load::load_hook(self, slot, value).await
+        let runtime = self.inner.get_or_try_init(|| self.start_runtime()).await?;
+        let loaded = runtime
+            .loader
+            .load(&runtime.tracker, value, self.config_file_path.as_deref())
+            .await
+            .map_err(|source| HooksError::Load {
+                slot: slot.as_str(),
+                value: value.to_owned(),
+                source: Box::new(source),
+            })?;
+        Ok(LoadedHook {
+            slot,
+            value: value.to_owned(),
+            object: HookObject { loaded },
+            host: runtime.host.clone(),
+            tracker: Arc::clone(&runtime.tracker),
+        })
     }
 
     pub async fn load_callback(
@@ -85,30 +101,54 @@ impl PythonHooks {
         list_key: ListKey,
         entry: &str,
     ) -> Result<LoadedCallback, HooksError> {
-        callbacks::load_callback(self, list_key, entry).await
+        if !entry.contains('.') {
+            // LiteLLM's own callbacks are plain names like "langfuse" and never Python objects
+            return Ok(LoadedCallback::Named(entry.to_owned()));
+        }
+        let hook = self.load_hook(HookSlot::Callback(list_key), entry).await?;
+        if list_key == ListKey::Callbacks {
+            callbacks::check_dispatchable(&hook, entry)?;
+        }
+        Ok(LoadedCallback::Loaded(hook))
     }
 
     pub async fn load_post_call_rules(&self, value: &str) -> Result<Vec<LoadedHook>, HooksError> {
-        load::load_post_call_rules(self, value).await
+        self.load_hook(HookSlot::PostCallRules, value)
+            .await
+            .map(|hook| vec![hook])
     }
 
     pub async fn load_custom_providers(
         &self,
         items: &[CustomProviderItem],
     ) -> Result<Vec<(String, HookObject)>, HooksError> {
-        load::load_custom_providers(self, items).await
+        let mut providers = Vec::with_capacity(items.len());
+        for item in items {
+            let hook = self
+                .load_hook(HookSlot::CustomProvider, &item.custom_handler)
+                .await?;
+            providers.push((item.provider.clone(), hook.object));
+        }
+        Ok(providers)
     }
 
     pub async fn load_custom_validate(&self, value: &str) -> Result<LoadedHook, HooksError> {
-        load::load_custom_validate(self, value).await
+        let hook = self.load_hook(HookSlot::CustomValidate, value).await?;
+        load::require_literal_true_return(&hook, value)?;
+        Ok(hook)
     }
 
     pub async fn run_startup_hooks(&self, specs: &[String]) -> Result<(), HooksError> {
-        load::run_startup_hooks(self, specs).await
+        for spec in specs {
+            load::run_startup_hook(self, spec).await?;
+        }
+        Ok(())
     }
 
     pub async fn shutdown(&self) {
-        shutdown::shutdown(self).await;
+        if let Some(runtime) = self.inner.get() {
+            runtime.tracker.shutdown().await;
+        }
     }
 }
 
