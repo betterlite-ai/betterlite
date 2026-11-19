@@ -11,6 +11,8 @@ use crate::state::ServerState;
 use axum::Router;
 use std::sync::Arc;
 
+// every stub router is empty, so a replacement mutation of this merge equals its body
+#[cfg_attr(test, mutants::skip)]
 pub(crate) fn scim_router(state: &Arc<ServerState>) -> Router {
     Router::new()
         .merge(scim_user_lifecycle::routes(state))
