@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use super::support::{cache as content, manual_clock};
 use crate::api::compression_interception::cache::CompressionCache;
 
@@ -27,7 +29,7 @@ fn pruning_keeps_a_younger_entry() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
-    *now.lock().expect("the clock lock") = 1099.0;
+    *now.lock().expect("the clock lock") = 1099.0_f64;
     cache.prune();
     assert!(cache.entry(CALL_ID).is_some());
 }
@@ -37,7 +39,7 @@ fn pruning_keeps_an_entry_exactly_nine_hundred_seconds_old() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
-    *now.lock().expect("the clock lock") = 1000.0;
+    *now.lock().expect("the clock lock") = 1000.0_f64;
     cache.prune();
     assert!(cache.entry(CALL_ID).is_some());
 }
@@ -47,7 +49,7 @@ fn pruning_drops_an_entry_older_than_nine_hundred_seconds() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
-    *now.lock().expect("the clock lock") = 1001.0;
+    *now.lock().expect("the clock lock") = 1001.0_f64;
     cache.prune();
     assert_eq!(cache.entry(CALL_ID), None);
 }
@@ -57,9 +59,9 @@ fn reading_an_entry_does_not_refresh_its_creation_time() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
-    *now.lock().expect("the clock lock") = 800.0;
+    *now.lock().expect("the clock lock") = 800.0_f64;
     assert!(cache.entry(CALL_ID).is_some());
-    *now.lock().expect("the clock lock") = 1001.0;
+    *now.lock().expect("the clock lock") = 1001.0_f64;
     cache.prune();
     assert_eq!(cache.entry(CALL_ID), None);
 }
@@ -69,7 +71,7 @@ fn storing_the_same_call_again_replaces_the_content_and_the_time() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "first")]));
-    *now.lock().expect("the clock lock") = 200.0;
+    *now.lock().expect("the clock lock") = 200.0_f64;
     cache.store(CALL_ID.to_owned(), content(&[("key", "second")]));
     let entry = cache.entry(CALL_ID).expect("the entry is stored");
     assert_eq!(entry.content, content(&[("key", "second")]));
@@ -81,9 +83,9 @@ fn pruning_leaves_only_the_expired_entries_out() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store("old".to_owned(), content(&[("key", "old")]));
-    *now.lock().expect("the clock lock") = 500.0;
+    *now.lock().expect("the clock lock") = 500.0_f64;
     cache.store("young".to_owned(), content(&[("key", "young")]));
-    *now.lock().expect("the clock lock") = 1001.0;
+    *now.lock().expect("the clock lock") = 1001.0_f64;
     cache.prune();
     assert_eq!(cache.entry("old"), None);
     assert!(cache.entry("young").is_some());
@@ -92,8 +94,8 @@ fn pruning_leaves_only_the_expired_entries_out() {
 #[test]
 fn the_default_cache_stamps_from_the_wall_clock() {
     let cache = CompressionCache::default();
-    let before = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .expect("the clock is after the epoch")
         .as_secs_f64();
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));

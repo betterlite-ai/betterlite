@@ -20,7 +20,7 @@ pub struct CompressionCall<'call> {
 }
 
 // The source reads compress's result dict field by field, so the token counts stay as sent.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompressionOutput {
     pub messages: Vec<Json>,
     pub tools: Vec<Json>,

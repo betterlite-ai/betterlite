@@ -35,7 +35,7 @@ pub enum CompressionHookError<Failure> {
 pub struct CompressionInterception<Engine> {
     pub settings: Settings,
     pub cache: CompressionCache,
-    engine: Arc<Engine>,
+    pub engine: Arc<Engine>,
 }
 
 impl<Engine> CompressionInterception<Engine>
@@ -68,7 +68,7 @@ where
         if !self.settings.enabled {
             return Ok(HookResult::Skipped);
         }
-        if call_type.is_some_and(|call_type| call_type != CallType::AnthropicMessages) {
+        if call_type.is_some_and(|kind| kind != CallType::AnthropicMessages) {
             return Ok(HookResult::Skipped);
         }
         if agentic_loop_depth(request) > 0 {
@@ -97,10 +97,10 @@ where
 
     #[must_use]
     pub fn get_cache(&self, call_id: Option<&str>) -> IndexMap<String, String> {
-        let Some(call_id) = call_id else {
+        let Some(stored_id) = call_id else {
             return IndexMap::new();
         };
-        match self.cache.entry(call_id) {
+        match self.cache.entry(stored_id) {
             Some(entry) => entry.content,
             None => IndexMap::new(),
         }
@@ -134,17 +134,7 @@ where
         let cached_keys = output.cache.len();
         request.insert(MESSAGES_FIELD.to_owned(), Json::List(output.messages));
         if !output.tools.is_empty() {
-            let merged = {
-                let existing: &[Json] = match request.get(TOOLS_FIELD) {
-                    None | Some(Json::Null) => &[],
-                    Some(Json::List(tools)) => tools.as_slice(),
-                    Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-                        return Err(CompressionHookError::ToolsNotAList { field: TOOLS_FIELD });
-                    }
-                };
-                merge_tools(existing, &output.tools)
-            };
-            request.insert(TOOLS_FIELD.to_owned(), Json::List(merged));
+            apply_tools::<Engine::Failure>(request, &output.tools)?;
         }
         let call_id = self.store_content(request, &output.cache);
         if let Some(savings) =
@@ -180,17 +170,30 @@ where
                 | Json::Text(_),
             ) => None,
         };
-        let call_id = match existing {
-            Some(call_id) => call_id,
-            None => {
-                let generated = Uuid::new_v4().to_string();
-                request.insert(CALL_ID_FIELD.to_owned(), Json::Text(generated.clone()));
-                generated
-            }
-        };
+        let call_id = existing.unwrap_or_else(|| {
+            let generated = Uuid::new_v4().to_string();
+            request.insert(CALL_ID_FIELD.to_owned(), Json::Text(generated.clone()));
+            generated
+        });
         self.cache.store(call_id.clone(), content.clone());
         call_id
     }
+}
+
+fn apply_tools<Failure>(
+    request: &mut IndexMap<String, Json>,
+    compressed: &[Json],
+) -> Result<(), CompressionHookError<Failure>> {
+    let existing: &[Json] = match request.get(TOOLS_FIELD) {
+        None | Some(Json::Null) => &[],
+        Some(Json::List(tools)) => tools.as_slice(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(CompressionHookError::ToolsNotAList { field: TOOLS_FIELD });
+        }
+    };
+    let merged = merge_tools(existing, compressed);
+    request.insert(TOOLS_FIELD.to_owned(), Json::List(merged));
+    Ok(())
 }
 
 #[must_use]

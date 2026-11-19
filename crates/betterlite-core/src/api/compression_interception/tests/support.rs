@@ -26,14 +26,14 @@ use crate::api::compression_interception::hook::{
 };
 use crate::routes::CallType;
 
-pub const NOW: f64 = 1000.0;
+pub(super) const NOW: f64 = 1000.0;
 
 #[derive(Debug, Error)]
 #[error("the scripted engine failed")]
-pub struct ScriptError;
+pub(super) struct ScriptError;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RecordedCall {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct RecordedCall {
     pub model: String,
     pub call_type: CallType,
     pub messages: Vec<Json>,
@@ -43,20 +43,20 @@ pub struct RecordedCall {
     pub embedding_model_params: Option<IndexMap<String, Json>>,
 }
 
-pub struct ScriptedEngine {
+pub(super) struct ScriptedEngine {
     outputs: Mutex<VecDeque<Result<CompressionOutput, ScriptError>>>,
     calls: Mutex<Vec<RecordedCall>>,
 }
 
 impl ScriptedEngine {
-    pub fn new(outputs: Vec<Result<CompressionOutput, ScriptError>>) -> Arc<Self> {
+    pub(super) fn new(outputs: Vec<Result<CompressionOutput, ScriptError>>) -> Arc<Self> {
         Arc::new(Self {
             outputs: Mutex::new(VecDeque::from(outputs)),
             calls: Mutex::new(Vec::new()),
         })
     }
 
-    pub fn calls(&self) -> Vec<RecordedCall> {
+    pub(super) fn calls(&self) -> Vec<RecordedCall> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -83,14 +83,11 @@ impl CompressionEngine for ScriptedEngine {
             .unwrap_or_else(PoisonError::into_inner)
             .push(recorded);
         let mut outputs = self.outputs.lock().unwrap_or_else(PoisonError::into_inner);
-        match outputs.pop_front() {
-            Some(output) => output,
-            None => Err(ScriptError),
-        }
+        outputs.pop_front().unwrap_or(Err(ScriptError))
     }
 }
 
-pub fn disabled() -> Settings {
+pub(super) fn disabled() -> Settings {
     Settings {
         enabled: false,
         compression_trigger: 200_000,
@@ -100,7 +97,7 @@ pub fn disabled() -> Settings {
     }
 }
 
-pub fn compressed_output(cache: IndexMap<String, String>) -> CompressionOutput {
+pub(super) fn compressed_output(cache: IndexMap<String, String>) -> CompressionOutput {
     output(
         vec![object(vec![
             ("role", text("user")),
@@ -113,23 +110,23 @@ pub fn compressed_output(cache: IndexMap<String, String>) -> CompressionOutput {
     )
 }
 
-pub fn fixed_clock(now: f64) -> Clock {
+pub(super) fn fixed_clock(now: f64) -> Clock {
     Arc::new(move || now)
 }
 
-pub fn manual_clock(start: f64) -> (Clock, Arc<Mutex<f64>>) {
+pub(super) fn manual_clock(start: f64) -> (Clock, Arc<Mutex<f64>>) {
     let value = Arc::new(Mutex::new(start));
     let handle = Arc::clone(&value);
     let clock: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
     (clock, value)
 }
 
-pub struct Harness {
+pub(super) struct Harness {
     pub interception: CompressionInterception<ScriptedEngine>,
     pub engine: Arc<ScriptedEngine>,
 }
 
-pub fn harness(
+pub(super) fn harness(
     settings: Settings,
     clock: Clock,
     outputs: Vec<Result<CompressionOutput, ScriptError>>,
@@ -141,11 +138,7 @@ pub fn harness(
     }
 }
 
-pub fn applied_harness(outputs: Vec<Result<CompressionOutput, ScriptError>>) -> Harness {
-    harness(Settings::default(), fixed_clock(NOW), outputs)
-}
-
-pub fn output(
+pub(super) fn output(
     messages: Vec<Json>,
     tools: Vec<Json>,
     original_tokens: Json,
@@ -162,7 +155,7 @@ pub fn output(
     }
 }
 
-pub fn skipped_output(reason: CompressionSkippedReason, tokens: i64) -> CompressionOutput {
+pub(super) fn skipped_output(reason: CompressionSkippedReason, tokens: i64) -> CompressionOutput {
     CompressionOutput {
         messages: Vec::new(),
         tools: Vec::new(),
@@ -173,37 +166,37 @@ pub fn skipped_output(reason: CompressionSkippedReason, tokens: i64) -> Compress
     }
 }
 
-pub fn cache(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+pub(super) fn cache(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
     pairs
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
 }
 
-pub fn number(value: i64) -> Json {
+pub(super) fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
 }
 
-pub fn text(value: &str) -> Json {
+pub(super) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
-pub fn list(items: Vec<Json>) -> Json {
+pub(super) fn list(items: Vec<Json>) -> Json {
     Json::List(items)
 }
 
-pub fn object(pairs: Vec<(&str, Json)>) -> Json {
+pub(super) fn object(pairs: Vec<(&str, Json)>) -> Json {
     Json::Object(index(pairs))
 }
 
-pub fn index(pairs: Vec<(&str, Json)>) -> IndexMap<String, Json> {
+pub(super) fn index(pairs: Vec<(&str, Json)>) -> IndexMap<String, Json> {
     pairs
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
         .collect()
 }
 
-pub fn request() -> IndexMap<String, Json> {
+pub(super) fn request() -> IndexMap<String, Json> {
     index(vec![
         ("model", text("claude-sonnet-4")),
         (
@@ -216,13 +209,13 @@ pub fn request() -> IndexMap<String, Json> {
     ])
 }
 
-pub fn request_with_tools(tools: Json) -> IndexMap<String, Json> {
+pub(super) fn request_with_tools(tools: Json) -> IndexMap<String, Json> {
     let mut body = request();
     body.insert("tools".to_owned(), tools);
     body
 }
 
-pub async fn apply(
+pub(super) async fn apply(
     harness: &Harness,
     body: &mut IndexMap<String, Json>,
     call_type: Option<CallType>,
@@ -233,13 +226,13 @@ pub async fn apply(
         .await
 }
 
-pub async fn applied(harness: &Harness, body: &mut IndexMap<String, Json>) {
+pub(super) async fn applied(harness: &Harness, body: &mut IndexMap<String, Json>) {
     let result = apply(harness, body, Some(CallType::AnthropicMessages)).await;
     assert_eq!(result.expect("the hook succeeds"), HookResult::Applied);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Recorded {
+pub(super) struct Recorded {
     pub level: Level,
     pub kind: String,
     pub reason: Option<String>,
@@ -250,10 +243,10 @@ pub struct Recorded {
 }
 
 #[derive(Clone, Default)]
-pub struct Captured(Arc<Mutex<Vec<Recorded>>>);
+pub(super) struct Captured(Arc<Mutex<Vec<Recorded>>>);
 
 impl Captured {
-    pub fn events(&self) -> Vec<Recorded> {
+    pub(super) fn events(&self) -> Vec<Recorded> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -325,7 +318,7 @@ impl<Inner: Subscriber> Layer<Inner> for Captured {
     }
 }
 
-pub fn capture() -> (Captured, DefaultGuard) {
+pub(super) fn capture() -> (Captured, DefaultGuard) {
     let captured = Captured::default();
     let guard = set_default(registry().with(captured.clone()));
     (captured, guard)

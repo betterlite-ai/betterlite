@@ -41,11 +41,8 @@ fn expected(
     }
 }
 
-fn embedding_params() -> Option<IndexMap<String, Json>> {
-    Some(IndexMap::from([(
-        "dimensions".to_owned(),
-        Json::Number(Number::from(512_u16)),
-    )]))
+fn embedding_params() -> IndexMap<String, Json> {
+    IndexMap::from([("dimensions".to_owned(), Json::Number(Number::from(512_u16)))])
 }
 
 fn full_params(trigger: usize) -> String {
@@ -80,7 +77,13 @@ const NO_ENVIRONMENT: &[(&str, &str)] = &[];
 )]
 #[case::full_params(
     &full_params(1234),
-    expected(false, 1234, Some(700), Some("text-embedding-3-small"), embedding_params())
+    expected(
+        false,
+        1234,
+        Some(700),
+        Some("text-embedding-3-small"),
+        Some(embedding_params()),
+    )
 )]
 #[case::callback_fallback(
     "callback_settings:\n  compression_interception:\n    enabled: false\n    compression_trigger: 1234\n    compression_target: 700\n    embedding_model: text-embedding-3-small\n    embedding_model_params:\n      dimensions: 512\n",
@@ -89,7 +92,7 @@ const NO_ENVIRONMENT: &[(&str, &str)] = &[];
         1234,
         Some(700),
         Some("text-embedding-3-small"),
-        embedding_params()
+        Some(embedding_params())
     )
 )]
 #[case::top_level_wins(

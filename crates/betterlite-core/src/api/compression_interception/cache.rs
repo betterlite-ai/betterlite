@@ -49,9 +49,11 @@ impl CompressionCache {
 
     #[must_use]
     pub fn entry(&self, call_id: &str) -> Option<CachedContent> {
-        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        let stored = entries.get(call_id)?;
-        Some(stored.clone())
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(call_id)
+            .cloned()
     }
 }
 

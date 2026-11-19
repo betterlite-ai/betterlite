@@ -39,7 +39,7 @@ async fn a_pre_call_prunes_an_entry_older_than_the_ttl() {
     first.insert("litellm_call_id".to_owned(), text("call-1"));
     applied(&harness, &mut first).await;
     assert!(harness.interception.cache.entry("call-1").is_some());
-    *now.lock().expect("the clock lock") = 1001.0;
+    *now.lock().expect("the clock lock") = 1001.0_f64;
     let mut second = request();
     applied(&harness, &mut second).await;
     assert_eq!(harness.interception.cache.entry("call-1"), None);
@@ -59,7 +59,7 @@ async fn a_pre_call_keeps_an_entry_exactly_the_ttl_old() {
     let mut first = request();
     first.insert("litellm_call_id".to_owned(), text("call-1"));
     applied(&harness, &mut first).await;
-    *now.lock().expect("the clock lock") = 1000.0;
+    *now.lock().expect("the clock lock") = 1000.0_f64;
     let mut second = request();
     applied(&harness, &mut second).await;
     assert!(harness.interception.cache.entry("call-1").is_some());
@@ -87,8 +87,8 @@ fn get_cache_returns_nothing_without_a_matching_entry(#[case] call_id: Option<&s
 
 fn body_with(call_id: Option<Json>) -> IndexMap<String, Json> {
     let mut body = request();
-    if let Some(call_id) = call_id {
-        body.insert("litellm_call_id".to_owned(), call_id);
+    if let Some(field) = call_id {
+        body.insert("litellm_call_id".to_owned(), field);
     }
     body
 }

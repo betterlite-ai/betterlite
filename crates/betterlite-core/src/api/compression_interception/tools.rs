@@ -9,10 +9,10 @@ const NAME_FIELD: &str = "name";
 
 #[must_use]
 pub fn has_retrieval_tool(tools: Option<&Json>) -> bool {
-    let Some(Json::List(tools)) = tools else {
+    let Some(Json::List(items)) = tools else {
         return false;
     };
-    tools.iter().any(is_retrieval_tool)
+    items.iter().any(is_retrieval_tool)
 }
 
 #[must_use]
