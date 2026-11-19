@@ -438,6 +438,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "dataforseo_reply"
+path = "fuzz_targets/dataforseo_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "duckduckgo_reply"
 path = "fuzz_targets/duckduckgo_reply.rs"
 test = false
