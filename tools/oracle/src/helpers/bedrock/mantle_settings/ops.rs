@@ -101,10 +101,9 @@ fn base_cases(model_cost: &ParamMap, cases: &[BaseCase]) -> HelperResult {
         }
     }
     let config = MantleChatConfig::new(None);
-    let attributes = config.get_config().map_err(fixtures::failure)?;
     Ok(json!({
         "provider": <&'static str>::from(CUSTOM_LLM_PROVIDER),
-        "get_config": serde_json::to_value(attributes)?,
+        "get_config": serde_json::to_value(config.get_config())?,
         "signers": signers,
         "chat": chat,
         "standalone": standalone,

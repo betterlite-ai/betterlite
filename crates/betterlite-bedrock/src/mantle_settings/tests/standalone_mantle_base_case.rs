@@ -124,12 +124,7 @@ pub(super) fn standalone_mantle_base() {
         "ap-south-1"
     );
     let config = MantleChatConfig::new(None);
-    assert_eq!(
-        config
-            .get_config()
-            .expect("the default attributes serialize"),
-        Object::new()
-    );
+    assert_eq!(config.get_config(), Object::new());
     assert_eq!(CUSTOM_LLM_PROVIDER.to_string(), "bedrock_mantle");
     assert!(config.credential_cache.is_none());
     let cache = support::credential_cache();

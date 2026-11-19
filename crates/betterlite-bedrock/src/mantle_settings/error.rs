@@ -23,8 +23,6 @@ pub enum MantleSettingsError {
     Constructor(#[from] ConstructorError),
     #[error("the field {field} is not a string")]
     Field { field: &'static str },
-    #[error("the config attributes are not an object")]
-    Attributes,
     #[error("a request parameter could not be encoded")]
     Encode(#[source] serde_json::Error),
     #[error(transparent)]

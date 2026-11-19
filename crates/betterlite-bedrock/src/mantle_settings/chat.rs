@@ -19,8 +19,6 @@ use crate::aws_settings::credential_cache::CredentialCache;
 use crate::bedrock_settings::{BedrockError, HeaderError};
 use crate::messages::transport::get_error_class as bedrock_error;
 
-use super::error::MantleSettingsError;
-
 pub const CUSTOM_LLM_PROVIDER: ProviderId = ProviderId::BedrockMantle;
 pub const PROJECT_HEADER: &str = "OpenAI-Project";
 
@@ -55,12 +53,31 @@ impl MantleChatConfig {
         }
     }
 
-    // The inherited attributes hold only defaults, so this answers an empty object and the empty-Ok mutant is equivalent.
+    // BedrockMantleChatConfig.get_config: the inherited GPT settings as the object OpenAiSettings serializes, which the constructor's defaults leave empty.
     #[cfg_attr(test, mutants::skip)]
-    pub fn get_config(&self) -> Result<Object, MantleSettingsError> {
-        let attributes =
-            serde_json::to_value(&self.openai.settings).map_err(MantleSettingsError::Encode)?;
-        serde_json::from_value(attributes).map_err(|_error| MantleSettingsError::Attributes)
+    #[must_use]
+    pub fn get_config(&self) -> Object {
+        let settings = &self.openai.settings;
+        let mut attributes = Object::new();
+        for (name, stored) in [
+            ("frequency_penalty", &settings.frequency_penalty),
+            ("function_call", &settings.function_call),
+            ("functions", &settings.functions),
+            ("logit_bias", &settings.logit_bias),
+            ("max_completion_tokens", &settings.max_completion_tokens),
+            ("max_tokens", &settings.max_tokens),
+            ("n", &settings.number),
+            ("presence_penalty", &settings.presence_penalty),
+            ("stop", &settings.stop),
+            ("temperature", &settings.temperature),
+            ("top_p", &settings.top_p),
+            ("response_format", &settings.response_format),
+        ] {
+            if let Some(value) = stored {
+                attributes.insert(name.to_owned(), value.clone());
+            }
+        }
+        attributes
     }
 
     // Inherited GPT validation, then a truthy aws_bedrock_project_id overwrites the exact OpenAI-Project header; no bearer fallback runs here.
