@@ -10,7 +10,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::call::CompletionCall;
 use super::context::{CallLogging, DispatchContext, DispatchGlobals};

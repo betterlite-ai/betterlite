@@ -8,7 +8,6 @@ use self::call::CompletionCall;
 use self::context::{CallLogging, DispatchContext};
 use self::error::DispatchError;
 use self::handler::{ChatCompletionHandler, HandlerError};
-use self::logging;
 
 pub mod call;
 pub mod context;
