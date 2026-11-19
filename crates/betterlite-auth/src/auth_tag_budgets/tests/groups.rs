@@ -107,6 +107,17 @@ async fn one_query_for_misses() {
     assert_eq!(rows.group_queries(), vec![vec!["group-b", "group-c"]]);
 }
 
+#[tokio::test]
+async fn all_hits_skip_the_database() {
+    let cache = RecordingCache::new(TTL).with_group(group_budget(GROUP_A));
+    let rows = RecordingRows::new(Vec::new(), vec![group_row(GROUP_A)]);
+    let found = batch(&cache, &rows, &["group-a"])
+        .await
+        .expect("the cached budget is served without a row query");
+    assert_eq!(found.len(), 1);
+    assert!(rows.group_queries().is_empty());
+}
+
 #[test]
 fn requested_names_and_budget_include() {
     let names = vec!["group-a".to_owned(), "group-b".to_owned()];

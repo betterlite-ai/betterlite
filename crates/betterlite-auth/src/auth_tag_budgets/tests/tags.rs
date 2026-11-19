@@ -101,6 +101,18 @@ async fn one_query_for_misses() {
     assert_eq!(rows.tag_queries(), vec![vec!["tag-b", "tag-c"]]);
 }
 
+#[tokio::test]
+async fn all_hits_skip_the_registry() {
+    let cache = RecordingCache::new(TTL).with_tag(tag(TAG_A));
+    let rows = RecordingRows::new(vec![tag(TAG_A)], Vec::new());
+    let found = batch(&cache, &rows, &["tag-a"])
+        .await
+        .expect("the cached tag is served without a registry read");
+    assert_eq!(found.len(), 1);
+    assert!(rows.tag_queries().is_empty());
+    assert!(rows.registry_takes().is_empty());
+}
+
 #[test]
 fn requested_names_and_budget_include() {
     let names = vec!["tag-a".to_owned(), "tag-b".to_owned()];
