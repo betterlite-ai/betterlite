@@ -300,8 +300,10 @@ fn a_config_write_message_names_the_key_and_the_load() {
     );
     let unreadable = validate_config_write(Some(&json(r#"{"classifier_type":"nope"}"#)))
         .expect_err("the classifier type is unknown");
+    assert!(std::error::Error::source(&unreadable).is_some());
     let message = unreadable.to_string();
     assert!(message.starts_with("complexity_router_config is invalid at classifier_type: "));
+    assert!(message.contains("unknown variant `nope`"));
     assert!(message.ends_with(
         "The router would drop this deployment at load time, so the write is rejected instead."
     ));
