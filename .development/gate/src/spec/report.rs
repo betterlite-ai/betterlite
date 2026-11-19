@@ -34,9 +34,8 @@ pub(crate) struct Report {
     pub(crate) mutants: Vec<MutantTest>,
     #[schemars(description = "Facts the architect needs and nothing else.")]
     pub(crate) notes: Vec<String>,
-    #[serde(default)]
     #[schemars(
-        description = "Parts copied from your last done answer on this branch instead of written again: owned, prior_art or mutants. Name a part only when nothing it lists changed since that answer, and leave its list empty here. The gate fills it in and checks the whole report as before."
+        description = "Parts copied from your last done answer on this branch instead of written again: owned, prior_art or mutants. Name a part only when nothing it lists changed since that answer, and mutants only when no Rust file changed since then, since each mutant line carries its line number. Leave a kept part's list empty here, and leave kept empty on a first answer. The gate fills it in and checks the whole report as before."
     )]
     pub(crate) kept: Vec<KeptPart>,
 }
