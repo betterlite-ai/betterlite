@@ -4,7 +4,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::openai_like_settings::Settings as OpenAiLikeSettings;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::{
-    BaseClass, JSONProviderRegistry, ProviderDescriptor,
+    BaseClass, JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Message, convert_message_content_lists};
@@ -33,8 +33,9 @@ const REASONING_EFFORT: &str = "reasoning_effort";
 const CHAT_COMPLETIONS_SUFFIX: &str = "/chat/completions";
 const RESPONSES_SUFFIX: &str = "/responses";
 
-// the generated class keeps OpenAIGPTConfig's base params and its child OpenAILikeChatConfig adds nothing
-fn base_class_parent(base_class: &BaseClass) -> ChatParent {
+// openai_gpt selects B503/B668, every other base_class selects B1425's compatible policy
+#[must_use]
+pub fn base_class_parent(base_class: &BaseClass) -> ChatParent {
     if base_class.0.as_bytes() == b"openai_gpt" {
         ChatParent::Gpt
     } else {
@@ -42,18 +43,46 @@ fn base_class_parent(base_class: &BaseClass) -> ChatParent {
     }
 }
 
-// openai_gpt selects B503/B668, every other base_class selects B1425's compatible policy
+// explicit base, then the declared api_base_env, then base_url
+fn resolve_descriptor_base(
+    config: &ProviderConfig,
+    explicit: Option<&str>,
+    lookup: &dyn EnvironmentLookup,
+) -> String {
+    if let Some(base) = explicit.filter(|value| !value.is_empty()) {
+        return base.to_owned();
+    }
+    let from_env = config
+        .api_base_env
+        .as_deref()
+        .and_then(|name| lookup.lookup(name));
+    match from_env {
+        Some(base) if !base.is_empty() => base,
+        _ => config.base_url.clone(),
+    }
+}
+
+// an explicit key wins only while it is non-empty, then the declared api_key_env answers
+fn resolve_descriptor_key(
+    config: &ProviderConfig,
+    explicit: Option<&SecretString>,
+    lookup: &dyn EnvironmentLookup,
+) -> Option<SecretString> {
+    explicit
+        .filter(|key| !key.expose_secret().is_empty())
+        .cloned()
+        .or_else(|| {
+            lookup
+                .lookup(&config.api_key_env)
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from)
+        })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChatParent {
     Gpt,
     Compatible,
-}
-
-impl ChatParent {
-    #[must_use]
-    pub fn for_base_class(base_class: &BaseClass) -> Self {
-        base_class_parent(base_class)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -64,35 +93,10 @@ pub struct ChatCapabilities {
 
 #[derive(Clone, Debug)]
 pub struct ChatPolicy {
-    descriptor: ProviderDescriptor,
+    pub descriptor: ProviderDescriptor,
 }
 
 impl ChatPolicy {
-    #[must_use]
-    pub const fn new(descriptor: ProviderDescriptor) -> Self {
-        Self { descriptor }
-    }
-
-    #[must_use]
-    pub fn for_provider(registry: &JSONProviderRegistry, provider: ProviderId) -> Option<Self> {
-        registry.providers.get(&provider).cloned().map(Self::new)
-    }
-
-    #[must_use]
-    pub const fn descriptor(&self) -> &ProviderDescriptor {
-        &self.descriptor
-    }
-
-    #[must_use]
-    pub const fn provider(&self) -> ProviderId {
-        self.descriptor.provider
-    }
-
-    #[must_use]
-    pub fn parent(&self) -> ChatParent {
-        base_class_parent(&self.descriptor.config.base_class)
-    }
-
     // explicit base, then the declared api_base_env, then base_url; the key is explicit, then api_key_env
     #[must_use]
     pub fn resolve_provider_info(
@@ -102,26 +106,8 @@ impl ChatPolicy {
         lookup: &dyn EnvironmentLookup,
     ) -> (String, Option<SecretString>) {
         let config = &self.descriptor.config;
-        let base = api_base
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                config
-                    .api_base_env
-                    .as_deref()
-                    .and_then(|name| lookup.lookup(name))
-                    .filter(|value| !value.is_empty())
-            })
-            .unwrap_or_else(|| config.base_url.clone());
-        let key = api_key
-            .filter(|key| !key.expose_secret().is_empty())
-            .cloned()
-            .or_else(|| {
-                lookup
-                    .lookup(&config.api_key_env)
-                    .filter(|value| !value.is_empty())
-                    .map(SecretString::from)
-            });
+        let base = resolve_descriptor_base(config, api_base, lookup);
+        let key = resolve_descriptor_key(config, api_key, lookup);
         (base, key)
     }
 
@@ -188,17 +174,18 @@ impl ChatPolicy {
         {
             return Ok(());
         }
+        // a constraint is a JSON number too, so it goes back through its decimal text to keep its scale
         let mut value = temperature.clone();
         if let Some(max) = constraints.temperature_max {
             let current = decimal_of(&value)?;
             if max < current {
-                value = number_of(max);
+                value = serde_json::from_str(&max.to_string()).unwrap_or(Json::Null);
             }
         }
         if let Some(min) = constraints.temperature_min {
             let current = decimal_of(&value)?;
             if min > current {
-                value = number_of(min);
+                value = serde_json::from_str(&min.to_string()).unwrap_or(Json::Null);
             }
         }
         if let Some(min_with_n) = constraints.temperature_min_with_n_gt_1 {
@@ -212,7 +199,7 @@ impl ChatPolicy {
             if n > Decimal::ONE {
                 let current = decimal_of(&value)?;
                 if current < min_with_n {
-                    value = number_of(min_with_n);
+                    value = serde_json::from_str(&min_with_n.to_string()).unwrap_or(Json::Null);
                 }
             }
         }
@@ -251,77 +238,32 @@ impl ChatPolicy {
 
 #[derive(Clone, Debug)]
 pub struct ResponsesPolicy {
-    descriptor: ProviderDescriptor,
+    pub descriptor: ProviderDescriptor,
 }
 
 impl ResponsesPolicy {
-    #[must_use]
-    pub const fn new(descriptor: ProviderDescriptor) -> Self {
-        Self { descriptor }
-    }
-
-    #[must_use]
-    pub fn for_provider(registry: &JSONProviderRegistry, provider: ProviderId) -> Option<Self> {
-        registry.providers.get(&provider).cloned().map(Self::new)
-    }
-
-    #[must_use]
-    pub const fn descriptor(&self) -> &ProviderDescriptor {
-        &self.descriptor
-    }
-
-    #[must_use]
-    pub const fn provider(&self) -> ProviderId {
-        self.descriptor.provider
-    }
-
-    #[must_use]
-    pub fn resolve_base(&self, api_base: Option<&str>, lookup: &dyn EnvironmentLookup) -> String {
-        let config = &self.descriptor.config;
-        api_base
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                config
-                    .api_base_env
-                    .as_deref()
-                    .and_then(|name| lookup.lookup(name))
-                    .filter(|value| !value.is_empty())
-            })
-            .unwrap_or_else(|| config.base_url.clone())
-    }
-
     // every trailing slash goes, and /responses is always appended, even when the base already ends with it
     #[must_use]
     pub fn complete_url(&self, api_base: Option<&str>, lookup: &dyn EnvironmentLookup) -> String {
-        let base = self.resolve_base(api_base, lookup);
-        format!("{}{RESPONSES_SUFFIX}", base.trim_end_matches('/'))
+        format!(
+            "{}{RESPONSES_SUFFIX}",
+            resolve_descriptor_base(&self.descriptor.config, api_base, lookup)
+                .trim_end_matches('/')
+        )
     }
 
     // only a truthy key writes Authorization, and the caller's other headers stay as they are
     #[must_use]
     pub fn validate_environment(
         &self,
-        mut headers: Headers,
+        headers: Headers,
         api_key: Option<&SecretString>,
         lookup: &dyn EnvironmentLookup,
     ) -> Headers {
-        let key = api_key
-            .filter(|key| !key.expose_secret().is_empty())
-            .cloned()
-            .or_else(|| {
-                lookup
-                    .lookup(&self.descriptor.config.api_key_env)
-                    .filter(|value| !value.is_empty())
-                    .map(SecretString::from)
-            });
-        if let Some(key) = key {
-            headers.insert(
-                "Authorization".to_owned(),
-                format!("Bearer {}", key.expose_secret()),
-            );
+        match resolve_descriptor_key(&self.descriptor.config, api_key, lookup) {
+            Some(key) => authorized_headers(headers, Some(&key)),
+            None => headers,
         }
-        headers
     }
 
     // force_store_false overwrites the caller's store value, then B508 builds the wire body
@@ -350,18 +292,24 @@ impl ResponsesPolicy {
     }
 }
 
+// a truthy Bearer key overwrites Authorization, and every other caller header stays as it is
+fn authorized_headers(mut headers: Headers, key: Option<&SecretString>) -> Headers {
+    if let Some(key) = key {
+        headers.insert(
+            "Authorization".to_owned(),
+            format!("Bearer {}", key.expose_secret()),
+        );
+    }
+    headers
+}
+
 // LiteLLM caches the generated Responses class by slug for the life of the process, so the first descriptor wins
 #[derive(Debug, Default)]
 pub struct ResponsesPolicyCache {
-    policies: BTreeMap<ProviderId, ResponsesPolicy>,
+    pub policies: BTreeMap<ProviderId, ResponsesPolicy>,
 }
 
 impl ResponsesPolicyCache {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn policy(
         &mut self,
         registry: &JSONProviderRegistry,
@@ -370,7 +318,7 @@ impl ResponsesPolicyCache {
         if !self.policies.contains_key(&provider) {
             let descriptor = registry.providers.get(&provider)?.clone();
             self.policies
-                .insert(provider, ResponsesPolicy::new(descriptor));
+                .insert(provider, ResponsesPolicy { descriptor });
         }
         self.policies.get(&provider)
     }
@@ -380,37 +328,17 @@ impl ResponsesPolicyCache {
         let provider = descriptor.provider;
         self.policies
             .entry(provider)
-            .or_insert_with(|| ResponsesPolicy::new(descriptor))
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.policies.is_empty()
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.policies.len()
+            .or_insert_with(|| ResponsesPolicy { descriptor })
     }
 }
 
 // OpenAILikeResponsesConfig's generic identity over the OPENAI_LIKE_API_KEY/API_BASE settings
 #[derive(Clone, Debug)]
 pub struct OpenAiLikeResponsesPolicy {
-    settings: OpenAiLikeSettings,
+    pub settings: OpenAiLikeSettings,
 }
 
 impl OpenAiLikeResponsesPolicy {
-    #[must_use]
-    pub const fn new(settings: OpenAiLikeSettings) -> Self {
-        Self { settings }
-    }
-
-    #[must_use]
-    pub const fn settings(&self) -> &OpenAiLikeSettings {
-        &self.settings
-    }
-
     // the base must come from the caller or OPENAI_LIKE_API_BASE; there is no default endpoint
     pub fn complete_url(&self, api_base: Option<&str>) -> Result<String, JsonProviderPolicyError> {
         match self.settings.responses_base_required(api_base) {
@@ -422,19 +350,14 @@ impl OpenAiLikeResponsesPolicy {
     #[must_use]
     pub fn validate_environment(
         &self,
-        mut headers: Headers,
+        headers: Headers,
         api_key: Option<&SecretString>,
     ) -> Headers {
-        let key = api_key
-            .filter(|key| !key.expose_secret().is_empty())
-            .or(self.settings.api_key.as_ref());
-        if let Some(key) = key {
-            headers.insert(
-                "Authorization".to_owned(),
-                format!("Bearer {}", key.expose_secret()),
-            );
+        let fallback = self.settings.api_key.as_ref();
+        if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
+            return authorized_headers(headers, Some(key));
         }
-        headers
+        authorized_headers(headers, fallback)
     }
 }
 
@@ -448,9 +371,4 @@ fn decimal_of(value: &Json) -> Result<Decimal, JsonProviderPolicyError> {
             Err(JsonProviderPolicyError::TemperatureNotANumber)
         }
     }
-}
-
-// the constraint is a JSON number too, so it goes back through the decimal text to keep its scale
-fn number_of(value: Decimal) -> Json {
-    serde_json::from_str(&value.to_string()).unwrap_or(Json::Null)
 }

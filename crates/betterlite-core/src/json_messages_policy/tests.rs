@@ -97,8 +97,12 @@ fn descriptor(provider: ProviderId, base_url: &str) -> ProviderDescriptor {
     }
 }
 
+fn messages_policy(descriptor: ProviderDescriptor) -> JsonMessagesPolicy {
+    JsonMessagesPolicy { descriptor }
+}
+
 fn policy(provider: ProviderId, base_url: &str) -> JsonMessagesPolicy {
-    JsonMessagesPolicy::new(descriptor(provider, base_url))
+    messages_policy(descriptor(provider, base_url))
 }
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -131,16 +135,20 @@ fn assert_object(actual: &Object, expected: &str) {
 #[test]
 fn policy_accessors_and_lookup_report_the_descriptor() {
     let policy = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1");
-    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(policy.descriptor.provider, ProviderId::Cortecs);
     assert_eq!(
-        policy.descriptor().config.base_url.as_str(),
+        policy.descriptor.config.base_url.as_str(),
         "https://descriptor.invalid/v1"
     );
     let registry = JSONProviderRegistry::load();
-    let from_registry = JsonMessagesPolicy::for_provider(&registry, ProviderId::Cortecs)
+    let from_registry = registry
+        .providers
+        .get(&ProviderId::Cortecs)
+        .cloned()
+        .map(messages_policy)
         .expect("cortecs is pinned");
-    assert_eq!(from_registry.provider(), ProviderId::Cortecs);
-    assert!(JsonMessagesPolicy::for_provider(&registry, ProviderId::Openai).is_none());
+    assert_eq!(from_registry.descriptor.provider, ProviderId::Cortecs);
+    assert!(registry.providers.get(&ProviderId::Openai).is_none());
 }
 
 #[rstest::rstest]
@@ -169,16 +177,15 @@ fn generic_url_drops_one_trailing_v1_and_appends_the_path(
     );
 }
 
-#[test]
-fn generic_url_requires_a_truthy_base() {
-    for api_base in [None, Some("")] {
-        let error =
-            generic_complete_url(api_base).expect_err("the generic provider has no default");
-        assert_eq!(
-            error.to_string(),
-            "api_base is required to forward Anthropic /v1/messages to a native endpoint"
-        );
-    }
+#[rstest::rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn generic_url_requires_a_truthy_base(#[case] api_base: Option<&str>) {
+    let error = generic_complete_url(api_base).expect_err("the generic provider has no default");
+    assert_eq!(
+        error.to_string(),
+        "api_base is required to forward Anthropic /v1/messages to a native endpoint"
+    );
 }
 
 #[rstest::rstest]
@@ -380,10 +387,10 @@ fn cache_control_ttl_defaults_to_false_and_reads_the_descriptor() {
     assert!(!policy(ProviderId::Cortecs, "https://x.invalid").cache_control_ttl());
     let mut enabled = descriptor(ProviderId::Cortecs, "https://x.invalid");
     enabled.config.constraints.cache_control_ttl = Some(true);
-    assert!(JsonMessagesPolicy::new(enabled).cache_control_ttl());
+    assert!(messages_policy(enabled).cache_control_ttl());
     let mut disabled = descriptor(ProviderId::Cortecs, "https://x.invalid");
     disabled.config.constraints.cache_control_ttl = Some(false);
-    assert!(!JsonMessagesPolicy::new(disabled).cache_control_ttl());
+    assert!(!messages_policy(disabled).cache_control_ttl());
 }
 
 const REQUEST_PARAMS: &str = r#"{"max_tokens":32,"system":[{"type":"text","text":"x-anthropic-billing-header: probe"},{"type":"text","text":"kept"}]}"#;
@@ -412,7 +419,7 @@ async fn json_transform_strips_billing_and_the_ttl_hint() {
 async fn json_transform_keeps_the_ttl_when_the_descriptor_opts_in() {
     let mut descriptor = descriptor(ProviderId::Cortecs, "https://descriptor.invalid/v1");
     descriptor.config.constraints.cache_control_ttl = Some(true);
-    let body = JsonMessagesPolicy::new(descriptor)
+    let body = messages_policy(descriptor)
         .transform_request(
             &mut NoCapabilities,
             "example-model",

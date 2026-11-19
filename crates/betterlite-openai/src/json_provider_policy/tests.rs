@@ -13,7 +13,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
     ChatCapabilities, ChatParent, ChatPolicy, OpenAiLikeResponsesPolicy, ResponsesPolicy,
-    ResponsesPolicyCache, TOOL_PARAMS,
+    ResponsesPolicyCache, TOOL_PARAMS, base_class_parent,
 };
 use crate::chat::ChatMessage;
 use crate::openai_base_config::Headers;
@@ -35,15 +35,23 @@ fn config(base_url: &str, base_class: &str) -> ProviderConfig {
     }
 }
 
+fn chat_policy(descriptor: ProviderDescriptor) -> ChatPolicy {
+    ChatPolicy { descriptor }
+}
+
+fn responses_policy_from(descriptor: ProviderDescriptor) -> ResponsesPolicy {
+    ResponsesPolicy { descriptor }
+}
+
 fn chat(base_url: &str) -> ChatPolicy {
-    ChatPolicy::new(ProviderDescriptor {
+    chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: config(base_url, "openai_like"),
     })
 }
 
 fn responses(base_url: &str) -> ResponsesPolicy {
-    ResponsesPolicy::new(ProviderDescriptor {
+    responses_policy_from(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: config(base_url, "openai_like"),
     })
@@ -82,11 +90,15 @@ fn decimal(value: &str) -> Json {
 #[case::other("custom", ChatParent::Compatible)]
 fn parent_follows_the_base_class(#[case] base_class: &str, #[case] parent: ChatParent) {
     assert_eq!(
-        ChatPolicy::new(ProviderDescriptor {
-            provider: ProviderId::Cortecs,
-            config: config("https://example.invalid/v1", base_class),
-        })
-        .parent(),
+        base_class_parent(
+            &chat_policy(ProviderDescriptor {
+                provider: ProviderId::Cortecs,
+                config: config("https://example.invalid/v1", base_class),
+            })
+            .descriptor
+            .config
+            .base_class
+        ),
         parent
     );
 }
@@ -94,38 +106,58 @@ fn parent_follows_the_base_class(#[case] base_class: &str, #[case] parent: ChatP
 #[test]
 fn pinned_publicai_and_sail_descriptors_drive_the_policy() {
     let registry = JSONProviderRegistry::load();
-    let publicai = ChatPolicy::for_provider(&registry, ProviderId::Publicai).expect("publicai");
+    let publicai = registry
+        .providers
+        .get(&ProviderId::Publicai)
+        .cloned()
+        .map(|descriptor| ChatPolicy { descriptor })
+        .expect("publicai");
     assert!(publicai.converts_content_lists());
-    assert_eq!(publicai.parent(), ChatParent::Gpt);
+    assert_eq!(
+        base_class_parent(&publicai.descriptor.config.base_class),
+        ChatParent::Gpt
+    );
     assert_eq!(
         publicai.complete_url(None),
         "https://api.publicai.co/v1/chat/completions"
     );
-    let sail = ChatPolicy::for_provider(&registry, ProviderId::Sail).expect("sail");
+    let sail = registry
+        .providers
+        .get(&ProviderId::Sail)
+        .cloned()
+        .map(|descriptor| ChatPolicy { descriptor })
+        .expect("sail");
     assert!(!sail.converts_content_lists());
-    assert_eq!(sail.parent(), ChatParent::Gpt);
-    assert!(ChatPolicy::for_provider(&registry, ProviderId::Openai).is_none());
+    assert_eq!(
+        base_class_parent(&sail.descriptor.config.base_class),
+        ChatParent::Gpt
+    );
+    assert!(registry.providers.get(&ProviderId::Openai).is_none());
 }
 
 #[test]
 fn policy_accessors_and_lookup_report_the_descriptor() {
     let policy = chat("https://example.invalid/v1");
-    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(policy.descriptor.provider, ProviderId::Cortecs);
     assert_eq!(
-        policy.descriptor().config.base_url.as_str(),
+        policy.descriptor.config.base_url.as_str(),
         "https://example.invalid/v1"
     );
     let policy = responses("https://descriptor.invalid/v1");
-    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(policy.descriptor.provider, ProviderId::Cortecs);
     assert_eq!(
-        policy.descriptor().config.base_url.as_str(),
+        policy.descriptor.config.base_url.as_str(),
         "https://descriptor.invalid/v1"
     );
     let registry = JSONProviderRegistry::load();
-    let from_registry =
-        ResponsesPolicy::for_provider(&registry, ProviderId::Parasail).expect("parasail is pinned");
-    assert_eq!(from_registry.provider(), ProviderId::Parasail);
-    assert!(ResponsesPolicy::for_provider(&registry, ProviderId::Openai).is_none());
+    let from_registry = registry
+        .providers
+        .get(&ProviderId::Parasail)
+        .cloned()
+        .map(|descriptor| ResponsesPolicy { descriptor })
+        .expect("parasail is pinned");
+    assert_eq!(from_registry.descriptor.provider, ProviderId::Parasail);
+    assert!(registry.providers.get(&ProviderId::Openai).is_none());
 }
 
 #[test]
@@ -249,7 +281,7 @@ fn mapping_wins_before_the_supported_check() {
     provider
         .param_mappings
         .insert("tools".to_owned(), "mapped_tools".to_owned());
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -293,7 +325,7 @@ fn temperature_clamps_run_in_max_min_then_n_order(
 ) {
     let mut provider = config("https://example.invalid/v1", "openai_like");
     constrained(&mut provider);
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -313,7 +345,7 @@ fn a_temperature_at_every_limit_keeps_the_callers_number() {
     provider.constraints.temperature_max = Some("1000".parse().expect("decimal"));
     provider.constraints.temperature_min = Some("1000".parse().expect("decimal"));
     provider.constraints.temperature_min_with_n_gt_1 = Some("1000".parse().expect("decimal"));
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -330,7 +362,7 @@ fn the_n_step_can_exceed_the_max_it_ran_before() {
     provider.constraints.temperature_max = Some("0.5".parse().expect("decimal"));
     provider.constraints.temperature_min = Some("0.2".parse().expect("decimal"));
     provider.constraints.temperature_min_with_n_gt_1 = Some("0.9".parse().expect("decimal"));
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -345,7 +377,7 @@ fn the_n_step_can_exceed_the_max_it_ran_before() {
 fn a_temperature_at_or_above_the_n_limit_stays() {
     let mut provider = config("https://example.invalid/v1", "openai_like");
     provider.constraints.temperature_min_with_n_gt_1 = Some("0.9".parse().expect("decimal"));
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -365,7 +397,7 @@ fn a_temperature_at_or_above_the_n_limit_stays() {
 fn null_temperature_is_an_error_only_when_a_comparison_runs() {
     let mut provider = config("https://example.invalid/v1", "openai_like");
     provider.constraints.temperature_min_with_n_gt_1 = Some("0.5".parse().expect("decimal"));
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -378,7 +410,7 @@ fn null_temperature_is_an_error_only_when_a_comparison_runs() {
     assert!(policy.map_params(&Object::new(), &mut with_n, &[]).is_err());
     let mut only_max = config("https://example.invalid/v1", "openai_like");
     only_max.constraints.temperature_max = Some("0.5".parse().expect("decimal"));
-    let max_policy = ChatPolicy::new(ProviderDescriptor {
+    let max_policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: only_max,
     });
@@ -394,7 +426,7 @@ fn null_temperature_is_an_error_only_when_a_comparison_runs() {
 fn null_n_is_an_error_when_the_n_constraint_runs() {
     let mut provider = config("https://example.invalid/v1", "openai_like");
     provider.constraints.temperature_min_with_n_gt_1 = Some("0.5".parse().expect("decimal"));
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Cortecs,
         config: provider,
     });
@@ -421,7 +453,7 @@ fn transform_messages_collapses_only_when_the_descriptor_asks() {
         "name": "probe",
     });
     let messages = [message(message_json.clone())];
-    let collapsing = ChatPolicy::new(ProviderDescriptor {
+    let collapsing = chat_policy(ProviderDescriptor {
         provider: ProviderId::Publicai,
         config: ProviderConfig {
             special_handling: BTreeMap::from([("convert_content_list_to_string".to_owned(), true)]),
@@ -446,7 +478,7 @@ fn transform_messages_collapses_only_when_the_descriptor_asks() {
 
 #[test]
 fn empty_content_lists_stay_lists() {
-    let policy = ChatPolicy::new(ProviderDescriptor {
+    let policy = chat_policy(ProviderDescriptor {
         provider: ProviderId::Publicai,
         config: ProviderConfig {
             special_handling: BTreeMap::from([("convert_content_list_to_string".to_owned(), true)]),
@@ -521,7 +553,7 @@ fn responses_store_follows_the_force_store_flag() {
     provider
         .special_handling
         .insert("force_store_false".to_owned(), true);
-    let forced = ResponsesPolicy::new(ProviderDescriptor {
+    let forced = responses_policy_from(ProviderDescriptor {
         provider: ProviderId::Parasail,
         config: provider,
     });
@@ -550,8 +582,8 @@ fn responses_store_follows_the_force_store_flag() {
 
 #[test]
 fn the_responses_cache_keeps_the_first_descriptor_for_a_slug() {
-    let mut cache = ResponsesPolicyCache::new();
-    assert!(cache.is_empty());
+    let mut cache = ResponsesPolicyCache::default();
+    assert!(cache.policies.is_empty());
     let first = ProviderDescriptor {
         provider: ProviderId::Parasail,
         config: config("https://first.invalid/v1", "openai_gpt"),
@@ -572,8 +604,8 @@ fn the_responses_cache_keeps_the_first_descriptor_for_a_slug() {
             .complete_url(None, &environment(&[])),
         "https://first.invalid/v1/responses"
     );
-    assert_eq!(cache.len(), 1);
-    assert!(!cache.is_empty());
+    assert_eq!(cache.policies.len(), 1);
+    assert!(!cache.policies.is_empty());
     let other = ProviderDescriptor {
         provider: ProviderId::Edenai,
         config: config("https://edenai.invalid/v1", "openai_gpt"),
@@ -584,22 +616,22 @@ fn the_responses_cache_keeps_the_first_descriptor_for_a_slug() {
             .complete_url(None, &environment(&[])),
         "https://edenai.invalid/v1/responses"
     );
-    assert_eq!(cache.len(), 2);
+    assert_eq!(cache.policies.len(), 2);
 }
 
 #[test]
 fn the_responses_cache_reads_the_registry_by_provider() {
     let registry = JSONProviderRegistry::load();
-    let mut cache = ResponsesPolicyCache::new();
+    let mut cache = ResponsesPolicyCache::default();
     let policy = cache
         .policy(&registry, ProviderId::Parasail)
         .expect("parasail is pinned");
-    assert_eq!(policy.provider(), ProviderId::Parasail);
+    assert_eq!(policy.descriptor.provider, ProviderId::Parasail);
     assert!(
         cache.policy(&registry, ProviderId::Openai).is_none(),
         "a provider without a descriptor is never cached"
     );
-    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.policies.len(), 1);
 }
 
 #[rstest]
@@ -621,7 +653,7 @@ fn openai_like_responses_requires_a_base(
 ) {
     let mut settings = OpenAiLikeSettings::default();
     settings.api_base = environment_base.map(str::to_owned);
-    let policy = OpenAiLikeResponsesPolicy::new(settings);
+    let policy = OpenAiLikeResponsesPolicy { settings };
     match expected {
         Ok(url) => assert_eq!(policy.complete_url(explicit).expect("a base"), url),
         Err(()) => assert_eq!(
@@ -638,8 +670,8 @@ fn openai_like_responses_requires_a_base(
 fn openai_like_responses_preserves_headers_for_a_truthy_key() {
     let mut settings = OpenAiLikeSettings::default();
     settings.api_key = Some(SecretString::from("sk-env"));
-    let policy = OpenAiLikeResponsesPolicy::new(settings);
-    assert!(policy.settings().api_key.is_some());
+    let policy = OpenAiLikeResponsesPolicy { settings };
+    assert!(policy.settings.api_key.is_some());
     let headers = Headers::from([("X-Trace".to_owned(), "1".to_owned())]);
     let with_environment = policy.validate_environment(headers.clone(), None);
     assert_eq!(
@@ -650,7 +682,9 @@ fn openai_like_responses_preserves_headers_for_a_truthy_key() {
         with_environment.get("X-Trace").map(String::as_str),
         Some("1")
     );
-    let without_key = OpenAiLikeResponsesPolicy::new(OpenAiLikeSettings::default())
-        .validate_environment(headers, Some(&SecretString::from("")));
+    let without_key = OpenAiLikeResponsesPolicy {
+        settings: OpenAiLikeSettings::default(),
+    }
+    .validate_environment(headers, Some(&SecretString::from("")));
     assert!(!without_key.contains_key("Authorization"));
 }

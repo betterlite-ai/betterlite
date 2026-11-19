@@ -2,8 +2,7 @@ use std::collections::BTreeSet;
 
 use betterlite_anthropic::message_replay::cache_control::normalize_cache_control;
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
+use betterlite_models::json_provider_registry::ProviderDescriptor;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
@@ -106,6 +105,40 @@ fn synthesize_betas(
     Ok(merged)
 }
 
+// the two native classes differ only in their provider slug, billing strip and ttl handling
+fn native_request<'call>(
+    model: &'call str,
+    messages: Vec<Json>,
+    optional_params: Object,
+    provider: &'call str,
+    strips_billing_metadata: bool,
+) -> TransformRequest<'call> {
+    TransformRequest {
+        model,
+        messages,
+        optional_params,
+        custom_llm_provider: provider,
+        strips_billing_metadata,
+    }
+}
+
+// the JSON class's provider slug, billing strip and ttl option are all that differ from the generic class
+async fn native_body<Capabilities>(
+    capabilities: &mut Capabilities,
+    request: TransformRequest<'_>,
+    cache_control_ttl: bool,
+) -> Result<Object, JsonMessagesPolicyError>
+where
+    Capabilities: ThinkingCapabilities + Send,
+{
+    let body = transform_native_request(capabilities, request).await?;
+    if cache_control_ttl {
+        Ok(body)
+    } else {
+        Ok(normalize_cache_control(&body))
+    }
+}
+
 // the generic OpenAILikeAnthropicMessagesConfig: the caller's base is required and its key is used as given
 pub fn generic_complete_url(api_base: Option<&str>) -> Result<String, JsonMessagesPolicyError> {
     match api_base.filter(|value| !value.is_empty()) {
@@ -139,47 +172,21 @@ pub async fn generic_transform_request<Capabilities>(
 where
     Capabilities: ThinkingCapabilities + Send,
 {
-    let body = transform_native_request(
+    native_body(
         capabilities,
-        TransformRequest {
-            model,
-            messages,
-            optional_params,
-            custom_llm_provider: GENERIC_PROVIDER,
-            strips_billing_metadata: false,
-        },
+        native_request(model, messages, optional_params, GENERIC_PROVIDER, false),
+        false,
     )
-    .await?;
-    Ok(normalize_cache_control(&body))
+    .await
 }
 
 // JSONProviderAnthropicMessagesConfig: the slug's env vars and the descriptor's constraints drive the request
 #[derive(Clone, Debug)]
 pub struct JsonMessagesPolicy {
-    descriptor: ProviderDescriptor,
+    pub descriptor: ProviderDescriptor,
 }
 
 impl JsonMessagesPolicy {
-    #[must_use]
-    pub const fn new(descriptor: ProviderDescriptor) -> Self {
-        Self { descriptor }
-    }
-
-    #[must_use]
-    pub fn for_provider(registry: &JSONProviderRegistry, provider: ProviderId) -> Option<Self> {
-        registry.providers.get(&provider).cloned().map(Self::new)
-    }
-
-    #[must_use]
-    pub const fn descriptor(&self) -> &ProviderDescriptor {
-        &self.descriptor
-    }
-
-    #[must_use]
-    pub const fn provider(&self) -> ProviderId {
-        self.descriptor.provider
-    }
-
     // a deployment's cache_control_ttl defaults to false, and the JSON subclass reads its descriptor's constraints
     #[must_use]
     pub fn cache_control_ttl(&self) -> bool {
@@ -188,24 +195,6 @@ impl JsonMessagesPolicy {
             .constraints
             .cache_control_ttl
             .unwrap_or(false)
-    }
-
-    // explicit, then the declared api_base_env, then the descriptor's base_url
-    #[must_use]
-    pub fn resolve_base(&self, credentials: &MessagesCredentials<'_>) -> String {
-        let config = &self.descriptor.config;
-        credentials
-            .api_base
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                config
-                    .api_base_env
-                    .as_deref()
-                    .and_then(|name| credentials.lookup.lookup(name))
-                    .filter(|value| !value.is_empty())
-            })
-            .unwrap_or_else(|| config.base_url.clone())
     }
 
     // explicit, then the descriptor's api_key_env, then litellm.api_key
@@ -230,11 +219,24 @@ impl JsonMessagesPolicy {
             })
     }
 
+    // explicit, then the declared api_base_env, then the descriptor's base_url; an empty result is refused
     pub fn complete_url(
         &self,
         credentials: &MessagesCredentials<'_>,
     ) -> Result<String, JsonMessagesPolicyError> {
-        let base = self.resolve_base(credentials);
+        let config = &self.descriptor.config;
+        let base = credentials
+            .api_base
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .or_else(|| {
+                config
+                    .api_base_env
+                    .as_deref()
+                    .and_then(|name| credentials.lookup.lookup(name))
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_else(|| config.base_url.clone());
         if base.is_empty() {
             return Err(JsonMessagesPolicyError::BaseRequired);
         }
@@ -248,12 +250,9 @@ impl JsonMessagesPolicy {
         optional_params: &Object,
         messages: &[Json],
     ) -> Result<Headers, JsonMessagesPolicyError> {
-        let authorization = self.resolve_api_key(credentials);
-        synthesize_betas(
-            default_anthropic_headers(headers, authorization),
-            optional_params,
-            messages,
-        )
+        let key = self.resolve_api_key(credentials);
+        let headers = default_anthropic_headers(headers, key);
+        synthesize_betas(headers, optional_params, messages)
     }
 
     // B962 does the native preparation and billing strip, then B571 reduces cache hints unless ttl is on
@@ -268,21 +267,8 @@ impl JsonMessagesPolicy {
         Capabilities: ThinkingCapabilities + Send,
     {
         let provider = self.descriptor.provider.to_string();
-        let body = transform_native_request(
-            capabilities,
-            TransformRequest {
-                model,
-                messages,
-                optional_params,
-                custom_llm_provider: &provider,
-                strips_billing_metadata: true,
-            },
-        )
-        .await?;
-        if self.cache_control_ttl() {
-            Ok(body)
-        } else {
-            Ok(normalize_cache_control(&body))
-        }
+        let request = native_request(model, messages, optional_params, &provider, true);
+        let cache_control_ttl = self.cache_control_ttl();
+        native_body(capabilities, request, cache_control_ttl).await
     }
 }

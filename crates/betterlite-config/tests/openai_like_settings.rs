@@ -51,12 +51,14 @@ const ENVIRONMENT: &[(&str, &str)] = &[
 #[case::empty_explicit_without_environment(&[], Some(""), None)]
 fn responses_base_required(
     #[case] environment: &[(&str, &str)],
-    #[case] explicit_base: Option<&str>,
-    #[case] base: Option<&str>,
+    #[case] explicit: Option<&str>,
+    #[case] expected: Option<&str>,
 ) {
-    let loaded = settings(environment);
-    let required = loaded.responses_base_required(explicit_base);
-    assert_eq!(required.as_deref(), base);
+    assert_eq!(required_from(environment, explicit).as_deref(), expected);
+}
+
+fn required_from(environment: &[(&str, &str)], explicit: Option<&str>) -> Option<String> {
+    settings(environment).responses_base_required(explicit)
 }
 
 #[rstest]
