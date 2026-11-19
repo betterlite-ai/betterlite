@@ -53,6 +53,18 @@ call:
         dayfirst: false
         yearfirst: false
       - kind: date
+        value: "Mar 5, 2024 3h,7"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Mar 5, 2024 3xPM"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Mar 5 3PM2023"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
         value: "Sept 5 2024"
         dayfirst: false
         yearfirst: false
