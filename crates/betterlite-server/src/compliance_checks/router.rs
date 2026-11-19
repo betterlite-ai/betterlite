@@ -7,7 +7,7 @@ use axum::Extension;
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{OriginalUri, State};
 use axum::routing::post;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::alert_settings::types::AlertType;
@@ -28,57 +28,41 @@ use crate::management_payload::alerts::ManagementAlertTransport;
 use crate::management_payload::otel_span::{ManagementSpanDeps, ManagementSpanTransport};
 use crate::state::ServerState;
 
-use super::checker::ComplianceChecker;
+use super::checker::{ComplianceChecker, Regulation};
 use super::decode::decode_compliance_request;
 use super::error::ComplianceError;
-use super::model::ComplianceRequest;
 use super::response::ComplianceResponse;
+
+const EU_AI_ACT_PATH: &str = "/compliance/eu-ai-act";
+const GDPR_PATH: &str = "/compliance/gdpr";
 
 #[derive(Clone)]
 struct RouteState {
     server: Arc<ServerState>,
 }
 
-#[derive(Clone, Copy)]
-enum Regulation {
-    EuAiAct,
-    Gdpr,
-}
-
-impl Regulation {
-    const fn function_name(self) -> &'static str {
-        match self {
-            Self::EuAiAct => "check_eu_ai_act_compliance",
-            Self::Gdpr => "check_gdpr_compliance",
-        }
-    }
-}
-
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     Router::new()
-        .route("/compliance/eu-ai-act", post(eu_ai_act))
-        .route("/compliance/gdpr", post(gdpr))
+        .route(EU_AI_ACT_PATH, post(check))
+        .route(GDPR_PATH, post(check))
         .with_state(RouteState {
             server: Arc::clone(state),
         })
 }
 
-async fn eu_ai_act(
+// Both paths share the verdict shape, so one handler reads the matched path to pick the regulation.
+async fn check(
     State(state): State<RouteState>,
+    uri: OriginalUri,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<ComplianceResponse>, ComplianceError> {
-    let response = evaluate(&state, caller, &body, Regulation::EuAiAct).await?;
-    Ok(Json(response))
-}
-
-async fn gdpr(
-    State(state): State<RouteState>,
-    caller: Option<Extension<AuthContext>>,
-    body: Bytes,
-) -> Result<Json<ComplianceResponse>, ComplianceError> {
-    let response = evaluate(&state, caller, &body, Regulation::Gdpr).await?;
-    Ok(Json(response))
+    let regulation = if uri.0.path() == GDPR_PATH {
+        Regulation::Gdpr
+    } else {
+        Regulation::EuAiAct
+    };
+    evaluate(&state, caller, &body, regulation).await.map(Json)
 }
 
 // LiteLLM validates the body in a FastAPI dependency, so a 422 never reaches the management wrapper.
@@ -93,6 +77,7 @@ async fn evaluate(
         .as_ref()
         .and_then(|extension| extension.0.principal.source_key.0.clone());
     let default_auth = resolve_default_auth(source_key.as_ref())?;
+    let (_, function_name) = regulation.names();
     let limits = ApiLimits::default();
     let cache = NoCache;
     let deps = ManagementDeps {
@@ -108,7 +93,7 @@ async fn evaluate(
         clock: Arc::new(SystemClock),
     };
     let call = ManagementCall {
-        function_name: regulation.function_name(),
+        function_name,
         request_kwargs: JsonObject::new(),
         data: None,
         user_api_key_dict: source_key.as_ref(),
@@ -118,17 +103,9 @@ async fn evaluate(
     management_endpoint_wrapper::<ComplianceResponse, ComplianceError, _, NoAlert, NoSpan, NoCache>(
         call,
         deps,
-        async move { Ok(evaluate_request(&request, regulation)) },
+        async move { Ok(ComplianceChecker::new(&request).response(regulation)) },
     )
     .await
-}
-
-fn evaluate_request(request: &ComplianceRequest, regulation: Regulation) -> ComplianceResponse {
-    let checker = ComplianceChecker::new(request);
-    match regulation {
-        Regulation::EuAiAct => checker.eu_ai_act_response(),
-        Regulation::Gdpr => checker.gdpr_response(),
-    }
 }
 
 // LiteLLM's kwargs carry the authenticated key; the wrapper falls back to UserAPIKeyAuth() without one.

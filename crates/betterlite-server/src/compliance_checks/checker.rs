@@ -1,13 +1,55 @@
 use super::model::{ComplianceRequest, GuardrailEvidence, GuardrailStatus};
 use super::response::{ComplianceCheckResult, ComplianceResponse};
 
-pub const EU_AI_ACT: &str = "EU AI Act";
-pub const GDPR: &str = "GDPR";
 const PRE_CALL: &str = "pre_call";
 const USER_ID: &str = "user_id";
 const MODEL: &str = "model";
 const TIMESTAMP: &str = "timestamp";
 const GUARDRAIL_RESULTS: &str = "guardrail_results";
+
+#[derive(Clone, Copy)]
+pub enum Regulation {
+    EuAiAct,
+    Gdpr,
+}
+
+impl Regulation {
+    pub(crate) const fn names(self) -> (&'static str, &'static str) {
+        match self {
+            Self::EuAiAct => ("EU AI Act", "check_eu_ai_act_compliance"),
+            Self::Gdpr => ("GDPR", "check_gdpr_compliance"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CountedLabels {
+    check_name: &'static str,
+    article: &'static str,
+    counted: &'static str,
+    empty: &'static str,
+}
+
+const APPLIED_LABELS: CountedLabels = CountedLabels {
+    check_name: "Guardrails applied",
+    article: "Art. 9",
+    counted: "guardrail(s) applied",
+    empty: "No guardrails applied",
+};
+
+const SCREENING_LABELS: CountedLabels = CountedLabels {
+    check_name: "Content screened before LLM",
+    article: "Art. 5",
+    counted: "pre-call guardrail(s) screened content",
+    empty: "No pre-call screening applied",
+};
+
+const PROTECTION_LABELS: CountedLabels = CountedLabels {
+    check_name: "Data protection applied",
+    article: "Art. 32",
+    counted: "pre-call guardrail(s) protect data",
+    empty: "No pre-call data protection applied",
+};
 
 pub struct ComplianceChecker<'request> {
     request: &'request ComplianceRequest,
@@ -29,90 +71,41 @@ impl<'request> ComplianceChecker<'request> {
     }
 
     #[must_use]
-    pub fn check_eu_ai_act(&self) -> Vec<ComplianceCheckResult> {
-        vec![self.art_9(), self.art_5(), self.art_12()]
-    }
-
-    #[must_use]
-    pub fn check_gdpr(&self) -> Vec<ComplianceCheckResult> {
-        vec![self.art_32(), self.art_5_1c(), self.art_30()]
-    }
-
-    #[must_use]
-    pub fn eu_ai_act_response(&self) -> ComplianceResponse {
-        ComplianceResponse::from_checks(EU_AI_ACT, self.check_eu_ai_act())
-    }
-
-    #[must_use]
-    pub fn gdpr_response(&self) -> ComplianceResponse {
-        ComplianceResponse::from_checks(GDPR, self.check_gdpr())
+    pub fn response(&self, regulation: Regulation) -> ComplianceResponse {
+        let (name, _) = regulation.names();
+        let checks = match regulation {
+            Regulation::EuAiAct => vec![
+                counted(self.guardrails.len(), APPLIED_LABELS),
+                counted(self.by_mode(PRE_CALL).len(), SCREENING_LABELS),
+                self.audit("Art. 12"),
+            ],
+            Regulation::Gdpr => vec![
+                counted(self.by_mode(PRE_CALL).len(), PROTECTION_LABELS),
+                self.sensitive(),
+                self.audit("Art. 30"),
+            ],
+        };
+        ComplianceResponse::from_checks(name, checks)
     }
 
     fn by_mode(&self, mode: &str) -> Vec<&'request GuardrailEvidence> {
-        self.guardrails
-            .iter()
-            .copied()
-            .filter(|evidence| evidence.mode.matches(mode))
-            .collect()
-    }
-
-    fn art_9(&self) -> ComplianceCheckResult {
-        let applied = self.guardrails.len();
-        let passed = applied > 0;
-        let detail = if passed {
-            format!("{applied} guardrail(s) applied")
-        } else {
-            "No guardrails applied".to_owned()
-        };
-        ComplianceCheckResult {
-            check_name: "Guardrails applied",
-            article: "Art. 9",
-            passed,
-            detail,
+        let mut matched = Vec::new();
+        for evidence in &self.guardrails {
+            if evidence.mode.matches(mode) {
+                matched.push(*evidence);
+            }
         }
+        matched
     }
 
-    fn art_5(&self) -> ComplianceCheckResult {
-        let screened = self.by_mode(PRE_CALL).len();
-        let passed = screened > 0;
-        let detail = if passed {
-            format!("{screened} pre-call guardrail(s) screened content")
-        } else {
-            "No pre-call screening applied".to_owned()
-        };
-        ComplianceCheckResult {
-            check_name: "Content screened before LLM",
-            article: "Art. 5",
-            passed,
-            detail,
-        }
-    }
-
-    fn art_12(&self) -> ComplianceCheckResult {
-        self.audit("Art. 12")
-    }
-
-    fn art_32(&self) -> ComplianceCheckResult {
-        let protected = self.by_mode(PRE_CALL).len();
-        let passed = protected > 0;
-        let detail = if passed {
-            format!("{protected} pre-call guardrail(s) protect data")
-        } else {
-            "No pre-call data protection applied".to_owned()
-        };
-        ComplianceCheckResult {
-            check_name: "Data protection applied",
-            article: "Art. 32",
-            passed,
-            detail,
-        }
-    }
-
-    fn art_5_1c(&self) -> ComplianceCheckResult {
+    fn sensitive(&self) -> ComplianceCheckResult {
         let pre_call = self.by_mode(PRE_CALL);
-        let intervened = pre_call
-            .iter()
-            .any(|evidence| evidence.status.is_intervention());
+        let intervened = pre_call.iter().any(|evidence| {
+            matches!(
+                evidence.status,
+                GuardrailStatus::Intervened | GuardrailStatus::Failed | GuardrailStatus::Blocked
+            )
+        });
         let all_passed = !pre_call.is_empty()
             && pre_call
                 .iter()
@@ -132,19 +125,15 @@ impl<'request> ComplianceChecker<'request> {
         }
     }
 
-    fn art_30(&self) -> ComplianceCheckResult {
-        self.audit("Art. 30")
-    }
-
     fn audit(&self, article: &'static str) -> ComplianceCheckResult {
         let mut missing = Vec::new();
-        if absent(self.request.user_id.as_deref()) {
+        if self.request.user_id.as_deref().is_none_or(str::is_empty) {
             missing.push(USER_ID);
         }
-        if absent(self.request.model.as_deref()) {
+        if self.request.model.as_deref().is_none_or(str::is_empty) {
             missing.push(MODEL);
         }
-        if absent(self.request.timestamp.as_deref()) {
+        if self.request.timestamp.as_deref().is_none_or(str::is_empty) {
             missing.push(TIMESTAMP);
         }
         if self.guardrails.is_empty() {
@@ -165,7 +154,16 @@ impl<'request> ComplianceChecker<'request> {
     }
 }
 
-// LiteLLM's bool() over an optional audit field: an empty string is missing, as an absent one is.
-fn absent(value: Option<&str>) -> bool {
-    value.is_none_or(str::is_empty)
+fn counted(matched: usize, labels: CountedLabels) -> ComplianceCheckResult {
+    let (passed, detail) = if matched == 0 {
+        (false, labels.empty.to_owned())
+    } else {
+        (true, format!("{matched} {}", labels.counted))
+    };
+    ComplianceCheckResult {
+        check_name: labels.check_name,
+        article: labels.article,
+        passed,
+        detail,
+    }
 }

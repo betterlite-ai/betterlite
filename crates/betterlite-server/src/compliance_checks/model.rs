@@ -33,11 +33,6 @@ impl GuardrailStatus {
             _ => Self::Other,
         }
     }
-
-    #[must_use]
-    pub const fn is_intervention(self) -> bool {
-        matches!(self, Self::Intervened | Self::Failed | Self::Blocked)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,7 +80,7 @@ impl GuardrailMode {
         match self {
             Self::Absent => mode == PRE_CALL,
             Self::Text(text) => text == mode,
-            Self::List(branches) => list_matches(branches, mode),
+            Self::List(branches) => list_runs_in(branches, mode),
             Self::Mapping(mapping) => mapping.matches(mode),
             Self::Unsupported => false,
         }
@@ -118,19 +113,19 @@ pub enum ModeBranch {
 impl ModeBranch {
     #[must_use]
     pub fn from_value(value: &JsonValue) -> Self {
-        match value {
-            JsonValue::String(text) => Self::Text(text.clone()),
-            JsonValue::Array(items) => Self::List(items.iter().map(Self::from_value).collect()),
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_) => {
-                Self::Other
-            }
+        if let JsonValue::String(text) = value {
+            return Self::Text(text.clone());
         }
+        let JsonValue::Array(items) = value else {
+            return Self::Other;
+        };
+        Self::List(items.iter().map(Self::from_value).collect())
     }
 
     fn runs_in(&self, mode: &str) -> bool {
         match self {
             Self::Text(text) => text == mode,
-            Self::List(branches) => list_matches(branches, mode),
+            Self::List(branches) => list_runs_in(branches, mode),
             Self::Other => false,
         }
     }
@@ -151,8 +146,11 @@ fn tag_branches(tags: &JsonValue) -> Option<Vec<ModeBranch>> {
     Some(branches.values().map(ModeBranch::from_value).collect())
 }
 
-fn list_matches(branches: &[ModeBranch], mode: &str) -> bool {
-    !branches.is_empty() && branches.iter().all(|branch| branch.equals(mode))
+fn list_runs_in(branches: &[ModeBranch], mode: &str) -> bool {
+    if branches.is_empty() {
+        return false;
+    }
+    branches.iter().all(|branch| branch.equals(mode))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

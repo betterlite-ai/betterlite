@@ -13,7 +13,7 @@ use betterlite_config::types::Config;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
-use super::checker::ComplianceChecker;
+use super::checker::{ComplianceChecker, Regulation};
 use super::decode::decode_compliance_request;
 use super::error::{ComplianceError, Issue, LocPart};
 use super::model::{ComplianceRequest, GuardrailMode, GuardrailStatus};
@@ -179,13 +179,18 @@ fn decode_reports_invalid_field_shapes(
     assert_eq!(found[0].msg, message);
 }
 
+#[rstest]
+#[case("[]")]
+#[case(r#""text""#)]
+#[case("null")]
+fn decode_rejects_a_non_object_body(#[case] body: &str) {
+    let found = issues(body);
+    assert_eq!(found[0].kind, "model_attributes_type");
+    assert_eq!(found[0].loc, vec![LocPart::Name("body")]);
+}
+
 #[test]
-fn decode_rejects_a_non_object_body() {
-    for body in ["[]", "\"text\"", "null"] {
-        let found = issues(body);
-        assert_eq!(found[0].kind, "model_attributes_type");
-        assert_eq!(found[0].loc, vec![LocPart::Name("body")]);
-    }
+fn decode_rejects_malformed_and_empty_bodies() {
     let malformed = issues("{");
     assert_eq!(malformed[0].kind, "json_invalid");
     let missing = issues("");
@@ -263,7 +268,9 @@ fn the_checker_discards_only_not_run_evidence() {
             "guardrail_information":[{"guardrail_status":"not_run"},{"guardrail_status":"success"},
                 {"logged":"x"}]}"#,
     );
-    let checks = ComplianceChecker::new(&request).check_eu_ai_act();
+    let checks = ComplianceChecker::new(&request)
+        .response(Regulation::EuAiAct)
+        .checks;
     assert!(checks[0].passed);
     assert_eq!(checks[0].detail, "2 guardrail(s) applied");
 }
@@ -272,7 +279,7 @@ fn the_checker_discards_only_not_run_evidence() {
 fn eu_ai_act_returns_the_three_articles_in_order() {
     let request =
         decode(r#"{"request_id":"r","guardrail_information":[{"guardrail_status":"success"}]}"#);
-    let response = ComplianceChecker::new(&request).eu_ai_act_response();
+    let response = ComplianceChecker::new(&request).response(Regulation::EuAiAct);
     assert_eq!(response.regulation, "EU AI Act");
     assert!(!response.compliant);
     let articles = response
@@ -305,7 +312,7 @@ fn gdpr_returns_the_three_articles_in_order() {
         r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t",
             "guardrail_information":[{"guardrail_status":"success"}]}"#,
     );
-    let response = ComplianceChecker::new(&request).gdpr_response();
+    let response = ComplianceChecker::new(&request).response(Regulation::Gdpr);
     assert_eq!(response.regulation, "GDPR");
     assert!(response.compliant);
     let articles = response
@@ -335,7 +342,9 @@ fn sensitive_protection_passes_on_every_intervention_status(#[case] status: &str
             "guardrail_information":[{{"guardrail_status":"{status}","guardrail_mode":"pre_call"}}]}}"#
     );
     let request = decode(&body);
-    let checks = ComplianceChecker::new(&request).check_gdpr();
+    let checks = ComplianceChecker::new(&request)
+        .response(Regulation::Gdpr)
+        .checks;
     assert!(checks[1].passed);
     assert_eq!(
         checks[1].detail,
@@ -350,7 +359,9 @@ fn an_intervention_wins_over_other_successful_pre_call_guardrails() {
             "guardrail_information":[{"guardrail_status":"success","guardrail_mode":"pre_call"},
                 {"guardrail_status":"failed","guardrail_mode":"pre_call"}]}"#,
     );
-    let checks = ComplianceChecker::new(&request).check_gdpr();
+    let checks = ComplianceChecker::new(&request)
+        .response(Regulation::Gdpr)
+        .checks;
     assert_eq!(
         checks[1].detail,
         "Guardrail intervened to protect sensitive data"
@@ -385,7 +396,9 @@ fn sensitive_protection_needs_a_nonempty_successful_pre_call_set(
             "guardrail_information":[{entries}]}}"#
     );
     let request = decode(&body);
-    let checks = ComplianceChecker::new(&request).check_gdpr();
+    let checks = ComplianceChecker::new(&request)
+        .response(Regulation::Gdpr)
+        .checks;
     assert_eq!(checks[1].passed, passed);
     assert_eq!(checks[1].detail, detail);
 }
@@ -431,10 +444,14 @@ fn audit_completeness_lists_the_source_fields_in_order(
     #[case] detail: &str,
 ) {
     let request = decode(body);
-    let checks = ComplianceChecker::new(&request).check_eu_ai_act();
+    let checks = ComplianceChecker::new(&request)
+        .response(Regulation::EuAiAct)
+        .checks;
     assert_eq!(checks[2].passed, passed);
     assert_eq!(checks[2].detail, detail);
-    let gdpr = ComplianceChecker::new(&request).check_gdpr();
+    let gdpr = ComplianceChecker::new(&request)
+        .response(Regulation::Gdpr)
+        .checks;
     assert_eq!(gdpr[2].detail, detail);
 }
 
@@ -446,7 +463,7 @@ fn a_response_is_compliant_only_when_every_check_passes() {
     );
     assert!(
         ComplianceChecker::new(&passing)
-            .eu_ai_act_response()
+            .response(Regulation::EuAiAct)
             .compliant
     );
 
@@ -454,7 +471,7 @@ fn a_response_is_compliant_only_when_every_check_passes() {
         r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t",
             "guardrail_information":[{"guardrail_status":"success","guardrail_mode":"post_call"}]}"#,
     );
-    let response = ComplianceChecker::new(&missing_screening).eu_ai_act_response();
+    let response = ComplianceChecker::new(&missing_screening).response(Regulation::EuAiAct);
     assert!(!response.compliant);
     assert!(response.checks[0].passed);
     assert!(!response.checks[1].passed);
