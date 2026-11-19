@@ -111,47 +111,32 @@ async fn batched_misses_take_count() {
 
 #[test]
 fn row_projection_precedence() {
-    let dump = row(
-        r#"{"model_dump":{"vector_store_id":"dump","custom_llm_provider":"openai"},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-    );
-    let projected_dump = project_row(&dump)
-        .expect("the model_dump projection")
-        .expect("the projected row");
-    assert_eq!(projected_dump.vector_store_id, "dump");
-    let dict_row = row(
-        r#"{"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-    );
-    let projected_dict = project_row(&dict_row)
-        .expect("the dict projection")
-        .expect("the projected row");
-    assert_eq!(projected_dict.vector_store_id, "dict");
-    // LiteLLM's empty model_dump() is falsy, so it falls straight to dict(row), the iterable form
-    let empty_dump = row(
-        r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-    );
-    let projected_empty_dump = project_row(&empty_dump)
-        .expect("the empty dump falls back")
-        .expect("the projected row");
-    assert_eq!(projected_empty_dump.vector_store_id, "fields");
-    let iterable = row(
-        r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-    );
-    let projected_fields = project_row(&iterable)
-        .expect("the iterable projection")
-        .expect("the projected row");
-    assert_eq!(projected_fields.vector_store_id, "fields");
-    let unreadable = row(r#"{"model_dump":"text","dict":{},"fields":{}}"#);
-    assert!(
-        project_row(&unreadable)
-            .expect("the unreadable projection is skipped")
-            .is_none()
-    );
-    let nothing = row("{}");
-    assert!(
-        project_row(&nothing)
-            .expect("the empty row is skipped")
-            .is_none()
-    );
+    let cases = [
+        (
+            r#"{"model_dump":{"vector_store_id":"dump","custom_llm_provider":"openai"},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+            Some("dump"),
+        ),
+        (
+            r#"{"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+            Some("dict"),
+        ),
+        // LiteLLM's empty model_dump() is falsy, so it falls straight to dict(row), the iterable form
+        (
+            r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+            Some("fields"),
+        ),
+        (
+            r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+            Some("fields"),
+        ),
+        (r#"{"model_dump":"text","dict":{},"fields":{}}"#, None),
+        ("{}", None),
+    ];
+    for (fixture, expected) in cases {
+        let projected = project_row(&row(fixture)).expect("the projection reads");
+        let projected_id = projected.map(|store| store.vector_store_id);
+        assert_eq!(projected_id.as_deref(), expected, "{fixture}");
+    }
 }
 
 #[tokio::test]
