@@ -43,8 +43,7 @@ pub fn issue_plugin_session_claim(
     let salt = process_environment()
         .get(SALT_VARIABLE)
         .cloned()
-        .map(SecretString::from)
-        .unwrap_or_default();
+        .map_or_else(SecretString::default, SecretString::from);
     let material = ClaimMaterial {
         salt: &salt,
         plugin: plugin_name,
@@ -66,8 +65,7 @@ pub fn verify_plugin_session_claim(
     let salt = process_environment()
         .get(SALT_VARIABLE)
         .cloned()
-        .map(SecretString::from)
-        .unwrap_or_default();
+        .map_or_else(SecretString::default, SecretString::from);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
