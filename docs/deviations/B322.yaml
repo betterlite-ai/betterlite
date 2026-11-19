@@ -16,6 +16,15 @@ deviations:
       betterlite runs no pydantic; the location ("0.start") matches, the sentence does not.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L23-L32
+  - what: >-
+      A caller from one team that names another team's deployment id gets no deployment, while LiteLLM returns that
+      deployment unchanged: it gives the resolved single deployment to filter_team_based_models as a dict, and the
+      function returns a dict before any team check.
+    why: >-
+      Naming a deployment id would otherwise read another team's deployment and credentials. The task keeps catalog
+      lookup and the team filter separate so a direct id cannot skip authorization.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L192-L194
 kept_bugs:
   - what: >-
       A proxy admin request without a team id keeps only the deployments no team owns; the ambiguity refusal fires
