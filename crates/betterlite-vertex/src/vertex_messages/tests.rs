@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
@@ -67,7 +67,7 @@ fn access() -> AccessToken {
 fn lookup(
     _credentials: Option<&ConfiguredCredentials>,
     _project: Option<&str>,
-) -> ready::Ready<Result<AccessToken, CredentialCacheError>> {
+) -> Ready<Result<AccessToken, CredentialCacheError>> {
     ready(Ok(access()))
 }
 
@@ -512,7 +512,7 @@ impl OutputSanitizer for Recording {
         body: &'body mut IndexMap<String, ContractJson>,
         model: &'body str,
     ) -> impl Future<Output = ()> + Send + 'body {
-        self.calls += 1;
+        self.calls = self.calls.saturating_add(1);
         self.model = Some(model.to_owned());
         self.saw_version = body.contains_key(ANTHROPIC_VERSION_FIELD);
         self.saw_model = body.contains_key(MODEL_FIELD);

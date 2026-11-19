@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, Ready, ready};
+use std::future::{Future, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
@@ -47,7 +47,12 @@ struct FakeCapabilities {
 }
 
 impl ThinkingCapabilities for FakeCapabilities {
-    fn supports(&mut self, _model: &str, key: &str, provider: &str) -> Ready<bool> {
+    fn supports(
+        &mut self,
+        _model: &str,
+        key: &str,
+        provider: &str,
+    ) -> impl Future<Output = bool> + Send {
         self.asked.push((key.to_owned(), provider.to_owned()));
         ready(self.mid_system && key == MID_SYSTEM)
     }
@@ -57,7 +62,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &'seam str,
         _effort: &'seam str,
         _provider: &'seam str,
-    ) -> Ready<Result<Option<Thinking>, ReasoningEffortError>> {
+    ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
         ready(Ok(None))
     }
 
@@ -66,11 +71,15 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _effort: Option<&str>,
         _provider: &str,
-    ) -> Ready<Option<String>> {
+    ) -> impl Future<Output = Option<String>> + Send {
         ready(None)
     }
 
-    fn supports_effort_param(&mut self, _model: &str, _provider: &str) -> Ready<bool> {
+    fn supports_effort_param(
+        &mut self,
+        _model: &str,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
         ready(false)
     }
 
@@ -79,14 +88,14 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _params: &mut OptionalParams,
         _provider: &str,
-    ) -> Ready<bool> {
+    ) -> impl Future<Output = bool> + Send {
         ready(false)
     }
 
     fn translate_legacy_thinking<'seam>(
         &'seam mut self,
         _request: &'seam mut LegacyShapes<'seam>,
-    ) -> Ready<Result<(), ThinkingError>> {
+    ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
         ready(Ok(()))
     }
 }
@@ -98,9 +107,7 @@ struct OverrideFailure;
 #[derive(Default)]
 struct RecordingOverrides {
     calls: usize,
-    saw_system: bool,
-    saw_scope: bool,
-    saw_model: bool,
+    seen: Option<Object>,
     fail: bool,
 }
 
@@ -112,10 +119,8 @@ impl VertexMessagesOverrides for RecordingOverrides {
         body: &'body mut Object,
         _model: &'body str,
     ) -> impl Future<Output = Result<(), OverrideFailure>> + Send + 'body {
-        self.calls += 1;
-        self.saw_system = body.contains_key("system");
-        self.saw_scope = carries_scope(body);
-        self.saw_model = body.contains_key("model");
+        self.calls = self.calls.saturating_add(1);
+        self.seen = Some(body.clone());
         body.insert(
             "anthropic_version".to_owned(),
             Json::Text("vertex-2023-10-16".to_owned()),
@@ -131,12 +136,12 @@ impl VertexMessagesOverrides for RecordingOverrides {
 
 fn carries_scope(value: &Json) -> bool {
     match value {
-        Json::Object(fields) => fields.iter().any(|(key, value)| {
+        Json::Object(fields) => fields.iter().any(|(key, field_value)| {
             (key == "cache_control"
-                && value
+                && field_value
                     .as_object()
                     .is_some_and(|control| control.contains_key("scope")))
-                || carries_scope(value)
+                || carries_scope(field_value)
         }),
         Json::List(items) => items.iter().any(carries_scope),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => false,
@@ -184,9 +189,10 @@ async fn native_vertex_adapter() {
     );
     assert!(!body.contains_key("model"));
     assert_eq!(overrides.calls, 1);
-    assert!(overrides.saw_system);
-    assert!(!overrides.saw_scope);
-    assert!(overrides.saw_model);
+    let seen = overrides.seen.expect("the override ran on the body");
+    assert!(seen.contains_key("system"));
+    assert!(!seen.values().any(carries_scope));
+    assert!(seen.contains_key("model"));
     assert!(
         capabilities
             .asked
@@ -285,9 +291,7 @@ async fn native_vertex_adapter_override_failure_is_a_500() {
     };
     let mut overrides = RecordingOverrides {
         calls: 0,
-        saw_system: false,
-        saw_scope: false,
-        saw_model: false,
+        seen: None,
         fail: true,
     };
     let error = adapt(

@@ -104,10 +104,10 @@ fn add_context_management(
     let mut compact = false;
     let mut managed = false;
     for (index, edit) in edits.iter().enumerate() {
-        let Json::Object(fields) = edit else {
+        let Json::Object(edit_fields) = edit else {
             return Err(BetaError::Context(BetaHeaderError::EditNotObject { index }));
         };
-        if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == COMPACT_EDIT) {
+        if matches!(edit_fields.get("type"), Some(Json::Text(kind)) if kind == COMPACT_EDIT) {
             compact = true;
         } else {
             managed = true;
