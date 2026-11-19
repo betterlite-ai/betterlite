@@ -7,7 +7,7 @@ use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -50,7 +50,7 @@ pub struct ResolvedCall<Client, Encoding> {
     pub config: Option<ChatConfigTag>,
 }
 
-pub type HandlerFuture<'call, Reply, Failure> = LocalBoxFuture<'call, Result<Reply, Failure>>;
+pub type HandlerFuture<'call, Reply, Failure> = BoxFuture<'call, Result<Reply, Failure>>;
 
 // B584's chat call and B010's legacy HTTP call are supplied at their native call seam.
 pub trait CompletionHandler<Client, Encoding> {
@@ -74,9 +74,9 @@ pub fn complete<'call, Client, Encoding, Handler>(
     log: &'call mut CallLogging<'_, '_>,
 ) -> HandlerFuture<'call, Handler::Reply, DispatchError<Handler::Failure>>
 where
-    Client: 'call,
-    Encoding: 'call,
-    Handler: CompletionHandler<Client, Encoding>,
+    Client: Send + 'call,
+    Encoding: Send + 'call,
+    Handler: CompletionHandler<Client, Encoding> + Send,
 {
     Box::pin(async move {
         let config = resolve(surface, &mut call, settings).map_err(DispatchError::Selection)?;

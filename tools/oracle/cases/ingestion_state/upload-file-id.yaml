@@ -1,0 +1,11 @@
+kind: helper
+name: upload-file-id
+call:
+  b3451:
+    mode: upload
+    options:
+      vector_store:
+        custom_llm_provider: openai
+    file_id: file_123
+env: {}
+compare: {ignore: []}

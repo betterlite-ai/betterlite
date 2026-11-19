@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      tpm: 1000
+      rpm: 60
+    model_info:
+      id: gpt-4o-primary
+
+router_settings:
+  routing_strategy: latency-based-routing
+  routing_strategy_args:
+    lowest_latency_buffer: 0.2
+    ttft_percentile: 0.9

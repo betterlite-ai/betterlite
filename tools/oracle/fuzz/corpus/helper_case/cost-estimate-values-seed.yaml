@@ -1,0 +1,17 @@
+kind: helper
+name: cost-estimate-values-seed
+call:
+  cost_estimate_values:
+    model_list:
+      - model_name: seed-quote
+        litellm_params:
+          model: gpt-4o-mini
+          custom_llm_provider: openai
+          input_cost_per_token: 0.0000001
+          output_cost_per_token: 0.0000002
+    request:
+      model: seed-quote
+      input_tokens: 10
+      output_tokens: 5
+env: {}
+compare: {ignore: []}

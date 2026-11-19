@@ -1,0 +1,5 @@
+kind: helper
+name: azure-message-attachments-seed-map-create-message-params
+call: {azure_message_attachments: {map_create_message_params: [{non_default: {role: user, content: hi}, optional: {}, drop_params: false}]}}
+env: {}
+compare: {ignore: []}
