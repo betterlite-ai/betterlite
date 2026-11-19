@@ -95,6 +95,24 @@ fn assert_embedding_logged(fixture: &Fixture) {
         panic!("the merged positions are logged");
     };
     assert_eq!(data.len(), 2);
+    let Some(Json::Object(first)) = data.first() else {
+        panic!("the cached position is logged as an embedding");
+    };
+    let Some(Json::List(values)) = first.get("embedding") else {
+        panic!("the cached vector is logged");
+    };
+    let Some(Json::Number(value)) = values.first() else {
+        panic!("the cached vector holds a number");
+    };
+    assert_eq!(value.as_f64(), Some(0.5_f64));
+    let Some(Json::Number(index)) = first.get("index") else {
+        panic!("the cached position keeps its index");
+    };
+    assert_eq!(index.as_u64(), Some(0));
+    assert_eq!(
+        first.get("object"),
+        Some(&Json::Text("embedding".to_owned()))
+    );
 }
 
 #[tokio::test]

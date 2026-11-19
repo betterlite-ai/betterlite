@@ -343,6 +343,48 @@ async fn the_async_lookup_writes_the_parent_span_into_the_request_kwargs() {
     );
 }
 
+// the environment update reads the request's fields as JSON, so the hit records the metadata it was sent
+#[tokio::test]
+async fn a_hit_records_the_request_metadata_in_the_logging_environment() {
+    let fixture = Fixture::new();
+    let mut request_kwargs = chat_kwargs();
+    request_kwargs.insert("metadata".to_owned(), object(&[("team", text("research"))]));
+    let key = computed_key(&fixture.cache, &request_kwargs);
+    fixture.backend.seed(&key, cached_chat());
+    let mut handler = handler_named(
+        "acompletion",
+        &["model", "messages"],
+        request_kwargs.clone(),
+    );
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    let tokens = Tokens::default();
+    let (outcome, worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
+        &tokens,
+        perf_clock(&[Duration::ZERO, Duration::ZERO]),
+    )
+    .await;
+    worker.flush().await;
+    assert!(
+        outcome
+            .response
+            .expect("a hit returns a response")
+            .cached_result
+            .is_some()
+    );
+    let snapshots = fixture.snapshots();
+    assert_eq!(snapshots.len(), 1);
+    let Some(Json::Object(recorded)) = snapshots[0].litellm_params.get("metadata") else {
+        panic!("the request metadata reaches the logging environment");
+    };
+    assert_eq!(
+        recorded.get("team"),
+        Some(&Json::Text("research".to_owned()))
+    );
+}
+
 #[tokio::test]
 async fn a_lookup_without_a_parent_span_writes_null_into_the_request_kwargs() {
     let fixture = Fixture::new();
