@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::jwt_claims::decode::unverified_claims;
 use chrono::{DateTime, Datelike as _, NaiveDateTime, ParseError, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -64,17 +64,15 @@ pub fn assertion_expired(assertion: &SsoIdentityAssertion, now: DateTime<Utc>) -
 
 #[must_use = "the stored payload text is the reason for the call"]
 pub fn encode_payload(assertion: &SsoIdentityAssertion) -> Result<String, AssertionError> {
-    let refresh_token = assertion
-        .refresh_token
-        .as_ref()
-        .map(|token| token.expose_secret())
-        .filter(|token| !token.is_empty())
-        .map(str::to_owned);
+    let id_token = assertion.id_token.expose_secret().to_owned();
+    let refresh_token = optional_token(assertion.refresh_token.as_ref());
+    let issuer = optional_text(assertion.issuer.as_deref());
+    let expires_at = assertion.expires_at.map(|moment| moment.to_rfc3339());
     let payload = StoredPayload {
-        id_token: assertion.id_token.expose_secret().to_owned(),
+        id_token,
         refresh_token,
-        issuer: assertion.issuer.clone().filter(|issuer| !issuer.is_empty()),
-        expires_at: assertion.expires_at.map(|moment| moment.to_rfc3339()),
+        issuer,
+        expires_at,
     };
     serde_json::to_string(&payload).map_err(AssertionError::Encode)
 }
@@ -89,13 +87,18 @@ pub fn decode_payload(text: &str) -> Result<SsoIdentityAssertion, AssertionError
         .transpose()?;
     Ok(SsoIdentityAssertion {
         id_token: SecretString::from(payload.id_token),
-        refresh_token: payload
-            .refresh_token
-            .filter(|token| !token.is_empty())
-            .map(SecretString::from),
+        refresh_token: optional_text(payload.refresh_token.as_deref()).map(SecretString::from),
         issuer: payload.issuer,
         expires_at,
     })
+}
+
+fn optional_token(token: Option<&SecretString>) -> Option<String> {
+    optional_text(token.map(ExposeSecret::expose_secret))
+}
+
+fn optional_text(text: Option<&str>) -> Option<String> {
+    text.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 fn token_text(field: Option<&TypedValue>) -> Option<&str> {
@@ -147,7 +150,12 @@ fn expiration(seconds: f64) -> Option<DateTime<Utc>> {
 fn expires_at_text(text: &str) -> Result<DateTime<Utc>, AssertionError> {
     let moment = match DateTime::parse_from_rfc3339(text) {
         Ok(fixed) => fixed.with_timezone(&Utc),
-        Err(_rfc3339) => naive_expires_at(text)?,
+        Err(_rfc3339) => NaiveDateTime::parse_from_str(text, NAIVE_FORMAT)
+            .map(NaiveDateTime::and_utc)
+            .map_err(|source| AssertionError::Timestamp {
+                text: text.to_owned(),
+                source,
+            })?,
     };
     if !(MIN_YEAR..=MAX_YEAR).contains(&moment.year()) {
         return Err(AssertionError::TimestampRange {
@@ -155,15 +163,6 @@ fn expires_at_text(text: &str) -> Result<DateTime<Utc>, AssertionError> {
         });
     }
     Ok(moment)
-}
-
-fn naive_expires_at(text: &str) -> Result<DateTime<Utc>, AssertionError> {
-    NaiveDateTime::parse_from_str(text, NAIVE_FORMAT)
-        .map(NaiveDateTime::and_utc)
-        .map_err(|source| AssertionError::Timestamp {
-            text: text.to_owned(),
-            source,
-        })
 }
 
 #[derive(Deserialize, Serialize)]

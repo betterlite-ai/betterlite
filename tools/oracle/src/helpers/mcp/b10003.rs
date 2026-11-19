@@ -6,7 +6,7 @@ use betterlite_mcp::sso_assertions::assertion::{
     SsoIdentityAssertion, assertion_expired, assertion_from_sso_login, decode_payload,
 };
 use chrono::{DateTime, Utc};
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::json;
 use tracing::field::{Field, Visit};
@@ -72,7 +72,7 @@ fn assertion_value(assertion: Option<&SsoIdentityAssertion>) -> HelperResult {
         })),
         Some(found) => Ok(json!({
             "id_token": found.id_token.expose_secret(),
-            "refresh_token": found.refresh_token.as_ref().map(|token| token.expose_secret()),
+            "refresh_token": found.refresh_token.as_ref().map(ExposeSecret::expose_secret),
             "issuer": found.issuer.clone(),
             "expires_at": found.expires_at.map(|moment| moment.to_rfc3339()),
         })),
