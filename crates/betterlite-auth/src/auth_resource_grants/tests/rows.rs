@@ -11,12 +11,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
+use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::include::{Including, IncludingQuery};
 use crate::auth_read::table::ReadContext;
 use crate::auth_resource_grants::managed_rows::{
     ManagedRowsQuery, ManagedVectorStoreRows, vector_store_rows_by_uuids,
 };
-use crate::auth_resource_grants::postgres::{open_permissions, open_vector_stores};
+use crate::auth_resource_grants::postgres::open_grant_rows;
 use crate::auth_resource_grants::rows::{
     ManagedVectorStoreTable, ObjectPermissionTable, managed_store_list,
 };
@@ -224,8 +225,18 @@ async fn postgres_vector_rows() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
     let client = Arc::new(pool.get().await.expect("the database connection"));
-    let permissions = open_permissions(Arc::clone(&client), context());
-    let stores = open_vector_stores(Arc::clone(&client), context());
+    let permissions = open_grant_rows(
+        Arc::clone(&client),
+        ObjectPermissionTable,
+        AuthReadAdapter::ObjectPermission,
+        context(),
+    );
+    let stores = open_grant_rows(
+        Arc::clone(&client),
+        ManagedVectorStoreTable,
+        AuthReadAdapter::VectorStore,
+        context(),
+    );
 
     let permission = permissions
         .by_id("perm-db")

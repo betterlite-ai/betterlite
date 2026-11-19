@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
+use betterlite_db::database_failures::deadline::DbLookupError;
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::proxy_error_types::VectorStoreObject;
 
+use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::tests::support::{
     RecordingPermissions, RecordingSelection, body, permission, team, user_key,
 };
@@ -396,7 +399,7 @@ async fn key_denial_stops_before_team() {
 
 #[tokio::test]
 async fn lookup_failure_propagates() {
-    let permissions = RecordingPermissions::failing("the repository is down");
+    let permissions = RecordingPermissions::failing();
     let key = user_key(r#"{"token":"key-1","object_permission_id":"perm-key"}"#);
     let selection = RecordingSelection::new(&["vs-1"]);
     let request_body = body("{}");
@@ -408,7 +411,10 @@ async fn lookup_failure_propagates() {
     };
     match vector_store_access_check(request, Some(&selection), &permissions).await {
         Err(VectorStoreCheckError::Lookup(failure)) => {
-            assert_eq!(failure.message, "the repository is down");
+            assert!(matches!(
+                failure.source,
+                AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected))
+            ));
         }
         other => panic!("the lookup failure propagates, got {other:?}"),
     }

@@ -3,12 +3,15 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
+use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::payload::PayloadError;
+use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::managed_rows::{
     ManagedRowsQuery, ManagedVectorStoreCache, ManagedVectorStoreRows, VectorStoreRow,
     VectorStoreRowsFailure,
@@ -61,29 +64,38 @@ pub(super) fn payload_error() -> PayloadError {
     PayloadError::Json(serde_json::from_str::<i64>("not a number").expect_err("the invalid json"))
 }
 
+fn permission_rows(rows: &[(&str, &str)]) -> BTreeMap<String, LiteLLMObjectPermissionTable> {
+    rows.iter()
+        .map(|(id, row)| ((*id).to_owned(), permission(row)))
+        .collect()
+}
+
+fn lookup_failure() -> VectorStoreLookupFailure {
+    VectorStoreLookupFailure {
+        source: AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected)),
+    }
+}
+
 pub(super) struct RecordingPermissions {
     rows: BTreeMap<String, LiteLLMObjectPermissionTable>,
     calls: Mutex<Vec<String>>,
-    failure: Option<String>,
+    failing: bool,
 }
 
 impl RecordingPermissions {
     pub(super) fn new(rows: &[(&str, &str)]) -> Self {
         Self {
-            rows: rows
-                .iter()
-                .map(|(id, row)| ((*id).to_owned(), permission(row)))
-                .collect(),
+            rows: permission_rows(rows),
             calls: Mutex::new(Vec::new()),
-            failure: None,
+            failing: false,
         }
     }
 
-    pub(super) fn failing(message: &str) -> Self {
+    pub(super) fn failing() -> Self {
         Self {
             rows: BTreeMap::new(),
             calls: Mutex::new(Vec::new()),
-            failure: Some(message.to_owned()),
+            failing: true,
         }
     }
 
@@ -105,10 +117,8 @@ impl ObjectPermissionRows for RecordingPermissions {
             .lock()
             .expect("the permission calls lock")
             .push(object_permission_id.to_owned());
-        if let Some(message) = &self.failure {
-            return Err(VectorStoreLookupFailure {
-                message: message.clone(),
-            });
+        if self.failing {
+            return Err(lookup_failure());
         }
         Ok(self.rows.get(object_permission_id).cloned())
     }
@@ -221,10 +231,16 @@ impl ManagedVectorStoreCache for RecordingCache {
     }
 }
 
+fn rows_failure() -> VectorStoreRowsFailure {
+    VectorStoreRowsFailure {
+        source: AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected)),
+    }
+}
+
 pub(super) struct RecordingRows {
     rows: Vec<VectorStoreRow>,
     queries: Mutex<Vec<(Vec<String>, i64)>>,
-    failure: Option<String>,
+    failing: bool,
 }
 
 impl RecordingRows {
@@ -232,15 +248,15 @@ impl RecordingRows {
         Self {
             rows,
             queries: Mutex::new(Vec::new()),
-            failure: None,
+            failing: false,
         }
     }
 
-    pub(super) fn failing(message: &str) -> Self {
+    pub(super) fn failing() -> Self {
         Self {
             rows: Vec::new(),
             queries: Mutex::new(Vec::new()),
-            failure: Some(message.to_owned()),
+            failing: true,
         }
     }
 
@@ -259,10 +275,8 @@ impl ManagedVectorStoreRows for RecordingRows {
             .lock()
             .expect("the row queries lock")
             .push((query.uuids, query.take));
-        if let Some(message) = &self.failure {
-            return Err(VectorStoreRowsFailure {
-                message: message.clone(),
-            });
+        if self.failing {
+            return Err(rows_failure());
         }
         Ok(self.rows.clone())
     }

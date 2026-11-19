@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
+use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
+use betterlite_db::postgres_store::errors::DbError;
 
 use crate::auth_cache::gateway_cache;
+use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::managed_rows::{
     ManagedVectorStoreCache, ManagedVectorStoreLookupError, VectorStoreRow, project_row,
     vector_store_rows_by_uuids,
@@ -221,10 +224,13 @@ async fn auth_cache_round_trip_uses_management_ttl() {
 #[tokio::test]
 async fn lookup_failure_propagates() {
     let cache = RecordingCache::new(60.0);
-    let rows = RecordingRows::failing("the store table is down");
+    let rows = RecordingRows::failing();
     match vector_store_rows_by_uuids(&["a".to_owned()], true, &cache, &rows).await {
         Err(ManagedVectorStoreLookupError::Rows(failure)) => {
-            assert_eq!(failure.message, "the store table is down");
+            assert!(matches!(
+                failure.source,
+                AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected))
+            ));
         }
         other => panic!("the repository failure propagates, got {other:?}"),
     }
