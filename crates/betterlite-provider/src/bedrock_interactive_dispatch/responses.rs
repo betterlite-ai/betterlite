@@ -102,9 +102,7 @@ where
 {
     pub async fn run(mut self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
         let Some(model) = self.model else {
-            return Err(Error::UnsupportedModel {
-                model: String::new(),
-            });
+            return Err(unsupported(""));
         };
         let url = request_url(&self.aws)?;
         let mapped = map_openai_params(
@@ -118,9 +116,7 @@ where
         let Some(config) =
             BedrockResponsesConfig::for_model(Some(model), self.model_cost, self.fetcher)?
         else {
-            return Err(Error::UnsupportedModel {
-                model: model.to_owned(),
-            });
+            return Err(unsupported(model));
         };
         let request_data = transform_responses(
             &config.fetcher,
@@ -137,10 +133,17 @@ where
         let request = sign(
             self.aws,
             model,
+            &url,
             serde_json::from_value(decisions).map_err(ResponsesError::Encode)?,
         )
         .await?;
         deliver(transport, request).await
+    }
+}
+
+fn unsupported(model: &str) -> Error {
+    Error::UnsupportedModel {
+        model: model.to_owned(),
     }
 }
 
@@ -165,35 +168,26 @@ fn header_pairs(headers: &IndexMap<String, String>) -> Vec<(String, Option<Strin
 async fn sign(
     aws: AwsRequest<'_>,
     model: &str,
+    url: &str,
     signing_data: IndexMap<String, Json>,
 ) -> Result<LeafRequest, Error> {
-    let AwsRequest {
-        credentials,
-        mut headers,
-        signing_params,
-        api_base: url,
-        region_inputs,
-        api_key,
-        environment_token,
-        now,
-        ..
-    } = aws;
-    validate_environment(&mut headers, api_key, environment_token);
+    let mut headers = aws.headers;
+    validate_environment(&mut headers, aws.api_key, aws.environment_token);
     let pairs = header_pairs(&headers);
     let signed = sign_request(
         SignInputs {
             headers: &pairs,
-            optional_params: &signing_params,
+            optional_params: &aws.signing_params,
             request_data: &signing_data,
             api_base: url,
             model: Some(model),
-            api_key,
-            environment_token,
-            region_inputs,
-            now,
+            api_key: aws.api_key,
+            environment_token: aws.environment_token,
+            region_inputs: aws.region_inputs,
+            now: aws.now,
         },
         move |_settings: &AwsSettings, _region: &str| {
-            ready(Ok::<Credentials, CredentialError>(credentials))
+            ready(Ok::<Credentials, CredentialError>(aws.credentials))
         },
     )
     .await?;

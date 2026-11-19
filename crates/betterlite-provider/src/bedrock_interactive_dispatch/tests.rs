@@ -61,7 +61,7 @@ const CONVERSE_FRAMES: &str = "0000009300000057068b46fe0b3a6576656e742d747970650
 
 fn fixture_time() -> SystemTime {
     SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_767_225_600))
+        .checked_add(Duration::from_hours(490_896))
         .unwrap()
 }
 
@@ -561,6 +561,10 @@ fn passthrough_buffered() {
         chunks: Vec::new(),
     });
     let outcome = block_on(operation.run(&transport)).unwrap();
+    assert_buffered(&outcome);
+}
+
+fn assert_buffered(outcome: &passthrough::Outcome) {
     assert_eq!(outcome.endpoint_url, HOST);
     assert_eq!(outcome.request.url, invoke_url());
     assert!(!outcome.streaming);
@@ -604,13 +608,21 @@ fn passthrough_streaming() {
     };
     let mut logging = TestLogging::new();
     let operation = passthrough_operation(plan, url_request, signing, &mut logging);
-    let transport = RecordingTransport::new(LeafReply {
+    let transport = converse_transport();
+    let outcome = block_on(operation.run(&transport)).unwrap();
+    assert_streaming(&outcome, &assembler);
+}
+
+fn converse_transport() -> RecordingTransport {
+    RecordingTransport::new(LeafReply {
         status: 200,
         headers: Vec::new(),
         body: Vec::new(),
         chunks: vec![hex::decode(CONVERSE_FRAMES).unwrap()],
-    });
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    })
+}
+
+fn assert_streaming(outcome: &passthrough::Outcome, assembler: &TestAssembler) {
     assert!(outcome.streaming);
     assert_eq!(outcome.logged, Some(json(r#"{"id":"assembled"}"#)));
     assert!(assembler.count() > 0);
@@ -687,6 +699,19 @@ fn search_operation<'call>(
     }
 }
 
+fn assert_search_headers(headers: &[(String, Option<String>)]) {
+    assert_eq!(
+        header(headers, "Authorization"),
+        Some("Bearer gateway-token")
+    );
+    assert_eq!(header(headers, "Content-Type"), Some("application/json"));
+    assert_eq!(
+        header(headers, "Accept"),
+        Some("application/json, text/event-stream")
+    );
+    assert_eq!(header(headers, "MCP-Protocol-Version"), Some("2025-03-26"));
+}
+
 fn search_case() {
     let query = SearchInput::Single("bedrock agents".to_owned());
     let optional: IndexMap<String, Json> = serde_json::from_str(r#"{"max_results": 3}"#).unwrap();
@@ -704,22 +729,7 @@ fn search_case() {
     let request = transport.only_request();
     assert_eq!(request.url, GATEWAY);
     assert_eq!(request.method, "POST");
-    assert_eq!(
-        header(&request.headers, "Authorization"),
-        Some("Bearer gateway-token")
-    );
-    assert_eq!(
-        header(&request.headers, "Content-Type"),
-        Some("application/json")
-    );
-    assert_eq!(
-        header(&request.headers, "Accept"),
-        Some("application/json, text/event-stream")
-    );
-    assert_eq!(
-        header(&request.headers, "MCP-Protocol-Version"),
-        Some("2025-03-26")
-    );
+    assert_search_headers(&request.headers);
     let body = body_object(&request.body);
     let params = object_field(&body, "params").unwrap();
     assert_eq!(text_field(params, "name"), Some(DEFAULT_SEARCH_TOOL_NAME));
@@ -827,6 +837,11 @@ fn vector_case() {
     let transport = RecordingTransport::new(reply);
     let outcome = block_on(operation.run(&transport)).unwrap();
     let request = transport.only_request();
+    assert_vector_request(&request);
+    assert_vector_response(&from_serialized(&outcome.response));
+}
+
+fn assert_vector_request(request: &LeafRequest) {
     assert_eq!(
         request.url,
         "https://bedrock-agent-runtime.us-east-1.amazonaws.com/knowledgebases/KB123/retrieve"
@@ -845,10 +860,13 @@ fn vector_case() {
         Some(&pjson(r#"{"equals":{"key":"k","value":"v"}}"#))
     );
     assert_eq!(body.get("userContext"), Some(&pjson(r#"{"user":"u"}"#)));
-    let Json::Object(response) = from_serialized(&outcome.response) else {
+}
+
+fn assert_vector_response(response: &Json) {
+    let Json::Object(envelope) = response else {
         panic!("the vector response is an object");
     };
-    let Some(Json::List(data)) = response.get("data") else {
+    let Some(Json::List(data)) = envelope.get("data") else {
         panic!("the vector response carries a data list");
     };
     let Some(Json::Object(first)) = data.first() else {

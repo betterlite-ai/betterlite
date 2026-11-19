@@ -1,12 +1,12 @@
-use super::*;
-
+use std::future::{Future, ready};
 use std::io;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_bedrock::agentcore_stream::IdSource;
 use betterlite_bedrock::aws_settings::AuthParams;
+use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::realtime_events::client::{ClientError, RealtimeClientWebSocket};
 use betterlite_bedrock::realtime_events::scope::EventScope;
@@ -20,12 +20,18 @@ use betterlite_bedrock::realtime_transport::runtime::{
     RealtimeClient, RealtimeRuntime, RuntimeConfig,
 };
 use betterlite_bedrock::realtime_transport::session::RealtimeCall;
+use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_core::api::realtime_session_state::logging::{
     RealtimeLogging, SessionInput, SuccessWork,
 };
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
+
+use super::super::realtime_bridge;
+use super::{SESSION_UPDATE, block_on, credentials};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
