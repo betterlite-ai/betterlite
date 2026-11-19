@@ -13,6 +13,7 @@ use rstest::rstest;
 #[case::mantle_native_sse(cases::mantle_native_sse)]
 #[case::mantle_usage_fields(cases::mantle_usage_fields)]
 #[case::remote_url_inlined(cases::remote_url_inlined)]
+#[case::mantle_capability_params(cases::mantle_capability_params)]
 fn mantle_chat_cases(#[case] case: fn()) {
     case();
 }

@@ -82,7 +82,9 @@ pub(super) const MODEL_COST: &str = r#"{
   "bedrock/fixture-tool-search": {"litellm_provider": "bedrock", "supports_tool_search": true},
   "fixture-tool-search": {"litellm_provider": "bedrock", "supports_tool_search": true},
   "bedrock/fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
-  "fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"}
+  "fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
+  "bedrock/fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true},
+  "fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true}
 }"#;
 
 pub(super) fn js(text: &str) -> BodyJson {

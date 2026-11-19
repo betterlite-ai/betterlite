@@ -41,18 +41,29 @@ where
     };
     let mut body = transform_bedrock_request(&stripped, sources).await?;
     move_betas_into_header(&body, headers)?;
+    restore_messages_fields(
+        &mut body,
+        &model_id,
+        request.optional_params.get(STREAM_FIELD),
+    );
+    Ok(body)
+}
+
+// The body keeps neither the version nor the beta list, gets the model back only when it has one, and streams
+// only for a literal true.
+pub(super) fn restore_messages_fields(
+    body: &mut Object,
+    model_id: &str,
+    stream: Option<&BodyJson>,
+) {
     body.shift_remove(ANTHROPIC_VERSION_BODY_FIELD);
     body.shift_remove(ANTHROPIC_BETA_BODY_FIELD);
     if !model_id.is_empty() {
-        body.insert(MODEL_FIELD.to_owned(), BodyJson::Text(model_id));
+        body.insert(MODEL_FIELD.to_owned(), BodyJson::Text(model_id.to_owned()));
     }
-    if matches!(
-        request.optional_params.get(STREAM_FIELD),
-        Some(BodyJson::Bool(true))
-    ) {
+    if matches!(stream, Some(BodyJson::Bool(true))) {
         body.insert(STREAM_FIELD.to_owned(), BodyJson::Bool(true));
     }
-    Ok(body)
 }
 
 // _move_betas_into_header: a nonempty list joins into the exact lowercase key; an empty one removes only that key,
@@ -96,12 +107,10 @@ fn declared_betas(value: Option<&BodyJson>) -> Result<Vec<String>, MantleMessage
     }
 }
 
-// Python's `if value:` reads both signed zeros and every integer zero as falsey.
+// Python's `if value:` reads both signed zeros as falsey, and every JSON number that parses to ±0.0 is one.
 pub(super) fn is_zero_number(number: &Number) -> bool {
     const MAGNITUDE_MASK: u64 = 0x7fff_ffff_ffff_ffff;
-    number.as_i64() == Some(0)
-        || number.as_u64() == Some(0)
-        || number
-            .as_f64()
-            .is_some_and(|value| value.to_bits() & MAGNITUDE_MASK == 0)
+    number
+        .as_f64()
+        .is_some_and(|value| value.to_bits() & MAGNITUDE_MASK == 0)
 }

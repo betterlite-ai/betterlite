@@ -17,7 +17,7 @@ use crate::invoke_events::{DecoderClock, InvokeChunk};
 use crate::invoke_primitives::config::Params as InvokeParams;
 use crate::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use crate::mantle_chat::environment::{chat_headers, messages_headers};
-use crate::mantle_chat::messages::move_betas_into_header;
+use crate::mantle_chat::messages::{move_betas_into_header, restore_messages_fields};
 use crate::mantle_chat::request::restore_body_fields;
 use crate::mantle_chat::response::transform_response;
 use crate::mantle_chat::stream::{messages_iterator, model_response_iterator};
@@ -41,6 +41,7 @@ const USER_MESSAGES: &str = r#"[{"role": "user", "content": "hi"}]"#;
 const BETA_PARAMS: &str = r#"{"max_tokens":512,"tools":[{"type":"tool_search_tool_regex_20251119","name":"tool_search"},{"name":"geo","description":"geo","input_schema":{"type":"object","properties":{"q":{"type":"string"}}},"eager_input_streaming":true}],"safeguards":[]}"#;
 const BETA_HEADER: &str = "dangerous-tool-use-2026-09-03,fine-grained-tool-streaming-2025-05-14,tool-search-tool-2025-10-19";
 const IMAGE_BODY: &str = r#"{"data":"iVBORw0KGgo=","media_type":"image/png","type":"base64"}"#;
+const STRUCTURED_PARAMS: &str = r#"{"max_tokens":256,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"a":{"type":"string"}}}}}}"#;
 
 fn url(api_base: Option<&str>, model: &str, params: &str, globals: &MantleGlobals) -> String {
     complete_url(api_base, model, &invoke_params(params), globals).expect("the mantle url resolves")
@@ -357,6 +358,7 @@ fn message_environment_cases() {
 pub(super) fn beta_header_not_body() {
     moved_betas_through_transform();
     beta_shapes();
+    restored_message_copy_semantics();
 }
 
 fn moved_betas_through_transform() {
@@ -420,7 +422,7 @@ fn beta_shapes() {
         headers.get("Anthropic-Beta").map(String::as_str),
         Some("upper-beta")
     );
-    for falsey in [r#"[]"#, "null", "false", "0", r#""""#, "{}"] {
+    for falsey in [r#"[]"#, "null", "false", "0", "0.0", "-0.0", r#""""#, "{}"] {
         let mut body = obj(r#"{"anthropic_beta":[]}"#);
         body.insert("anthropic_beta".to_owned(), js(falsey));
         headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
@@ -440,6 +442,44 @@ fn beta_shapes() {
         move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta name");
     assert_eq!(error.status_code(), Some(400));
     assert_eq!(error.to_string(), "anthropic_beta[1] is not a string");
+    let mut body = obj(r#"{"anthropic_beta":5}"#);
+    let error =
+        move_betas_into_header(&body, &mut headers).expect_err("a number is not a beta list");
+    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(
+        error.to_string(),
+        "anthropic_beta must be a list of strings"
+    );
+    let mut body = obj(r#"{"anthropic_beta":{"a":"b"}}"#);
+    let error =
+        move_betas_into_header(&body, &mut headers).expect_err("an object is not a beta list");
+    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(
+        error.to_string(),
+        "anthropic_beta must be a list of strings"
+    );
+}
+
+fn restored_message_copy_semantics() {
+    let mut body = obj(
+        r#"{"stream":false,"max_tokens":8,"anthropic_version":"caller","anthropic_beta":["b1"]}"#,
+    );
+    restore_messages_fields(&mut body, "", None);
+    assert!(!body.contains_key("model"));
+    assert_eq!(body.get("stream"), Some(&BodyJson::Bool(false)));
+    assert!(!body.contains_key("anthropic_version"));
+    assert!(!body.contains_key("anthropic_beta"));
+    assert_eq!(
+        body.get("max_tokens"),
+        Some(&BodyJson::Number(Number::from(8_u8)))
+    );
+    let stream = BodyJson::Bool(true);
+    restore_messages_fields(&mut body, "claude", Some(&stream));
+    assert_eq!(
+        body.get("model"),
+        Some(&BodyJson::Text("claude".to_owned()))
+    );
+    assert_eq!(body.get("stream"), Some(&BodyJson::Bool(true)));
 }
 
 pub(super) fn model_body_restoration() {
@@ -461,6 +501,7 @@ fn restored_model_anywhere() {
         .transform(&request, &fetcher, Mode::Sync)
         .expect("the prefixed model transforms");
     assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+    assert_eq!(body.get("max_tokens"), Some(&js("64")));
     assert_eq!(
         body.get("anthropic_version"),
         Some(&js(r#""bedrock-2023-05-31""#))
@@ -475,6 +516,18 @@ fn restored_model_anywhere() {
         .transform(&request, &fetcher, Mode::Sync)
         .expect("the plain model transforms");
     assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+    let request = fixture.chat_request(
+        "fixture-plain",
+        prompt_messages(),
+        map_of(r#"{"max_tokens":64,"anthropic_version":"caller-version"}"#),
+    );
+    let body = session
+        .transform(&request, &fetcher, Mode::Sync)
+        .expect("a caller version transforms");
+    assert_eq!(
+        body.get("anthropic_version"),
+        Some(&js(r#""caller-version""#))
+    );
 }
 
 fn restored_stream_flag() {
@@ -526,6 +579,62 @@ fn restored_copy_semantics() {
         body.get("model"),
         Some(&BodyJson::Text("claude".to_owned()))
     );
+}
+
+pub(super) fn mantle_capability_params() {
+    effort_ceiling_clamped();
+    structured_output_kept_or_inlined();
+}
+
+fn effort_ceiling_clamped() {
+    let fixture = Fixture::new();
+    let mut session = ChatSession::new(&fixture);
+    let fetcher = MapFetcher::default();
+    let request = fixture.chat_request(
+        "mantle/fixture-effort-tier",
+        prompt_messages(),
+        map_of(r#"{"max_tokens":64,"output_config":{"effort":"xhigh"}}"#),
+    );
+    let body = session
+        .transform(&request, &fetcher, Mode::Sync)
+        .expect("the effort request transforms");
+    assert_eq!(at(&body, &["output_config", "effort"]), &js(r#""high""#));
+    let request = fixture.chat_request(
+        "mantle/fixture-plain",
+        prompt_messages(),
+        map_of(r#"{"max_tokens":64,"output_config":{"effort":"high"}}"#),
+    );
+    let body = session
+        .transform(&request, &fetcher, Mode::Sync)
+        .expect("the unsupported effort request transforms");
+    assert!(!body.contains_key("output_config"));
+}
+
+fn structured_output_kept_or_inlined() {
+    let fixture = Fixture::new();
+    let mut session = ChatSession::new(&fixture);
+    let fetcher = MapFetcher::default();
+    let request = fixture.chat_request(
+        "mantle/fixture-structured",
+        prompt_messages(),
+        map_of(STRUCTURED_PARAMS),
+    );
+    let body = session
+        .transform(&request, &fetcher, Mode::Sync)
+        .expect("the supported structured request transforms");
+    assert_eq!(
+        at(&body, &["output_config", "format", "type"]),
+        &js(r#""json_schema""#)
+    );
+    let request = fixture.chat_request(
+        "mantle/fixture-plain",
+        prompt_messages(),
+        map_of(STRUCTURED_PARAMS),
+    );
+    let body = session
+        .transform(&request, &fetcher, Mode::Sync)
+        .expect("the unsupported structured request transforms");
+    assert!(!body.contains_key("output_config"));
 }
 
 fn fixed_id() -> Uuid {
@@ -676,6 +785,9 @@ fn usage_failures() {
     );
     let error =
         transform_response(br#"{"usage":[1]}"#, 200, &LIMITS).expect_err("a list usage fails");
+    assert_eq!(error.status_code(), Some(500));
+    let error = transform_response(br#"{"usage":5}"#, 200, &LIMITS)
+        .expect_err("a truthy number usage fails");
     assert_eq!(error.status_code(), Some(500));
     let error = transform_response(b"bad gateway", 502, &LIMITS)
         .expect_err("a non-JSON body keeps the raw status");
