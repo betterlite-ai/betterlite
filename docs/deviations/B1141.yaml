@@ -13,7 +13,7 @@ deviations:
     why: >-
       api_version is not an OpenAI client option, so no working LiteLLM setup can pass one to this branch; betterlite
       resolves the value with the rest of the chain and lets the provider's own versioning decide.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L86-L97
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L75-L89
   - what: >-
       A provider lookup that reaches an entry which is not a map fails with a typed error carrying LiteLLM's own
       message, where LiteLLM raises AttributeError from dict.get.
@@ -27,4 +27,4 @@ kept_bugs:
       'create_batch', although the call is a fine-tuning cancellation.
     why: >-
       Callers match on this text, so betterlite keeps the wrong operation name byte for byte.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L439-L448
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L468-L478
