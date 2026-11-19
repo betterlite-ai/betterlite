@@ -282,6 +282,7 @@ impl RecordingTransport {
             };
             events.extend(items.iter().cloned());
         }
+        drop(bodies);
         events
     }
 }

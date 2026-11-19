@@ -59,7 +59,10 @@ async fn datadog_proxy_error_extraction_behavior() {
     let named_body = message(&named);
     assert_eq!(text(field(&named_body, "error_class")), "RateLimitError");
     assert_eq!(field(&named_body, "status_code"), &Json::Null);
+}
 
+#[tokio::test]
+async fn datadog_proxy_trimmed_code_and_missing_exception_behavior() {
     // the code is stripped before its digits are read, and the stored traceback lines follow the argument
     let padded = logged_proxy_failure(
         Some(r#"{"class_name": "AuthError", "code": " 401 ", "message": "no key", "traceback_lines": ["first\n", "second\n"]}"#),

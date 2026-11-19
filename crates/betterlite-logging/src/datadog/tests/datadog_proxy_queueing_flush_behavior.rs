@@ -54,37 +54,23 @@ async fn datadog_proxy_queueing_flush_behavior() {
     async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
     assert_eq!(logger.queue.pending().len(), 1);
     assert_eq!(transport.post_count(), 1);
+}
+
+#[tokio::test]
+async fn datadog_proxy_flush_retry_behavior() {
+    let (logger, transport) = build_logger(&[("DD_BATCH_SIZE", "2")], Intake::Unreachable);
+    let patterns = normalizer();
+    let facts =
+        exception(r#"{"class_name": "APIConnectionError", "status_code": 500, "message": "down"}"#);
+    let context = exception_logging(Some(&facts), &patterns);
 
     // an unreachable intake returns the batch to the queue, and a queue past the batch size flushes again
-    let (unreachable_logger, unreachable_transport) =
-        build_logger(&[("DD_BATCH_SIZE", "2")], Intake::Unreachable);
-    async_post_call_failure_hook(
-        &unreachable_logger,
-        &NullTracer,
-        &context,
-        None,
-        IndexMap::new(),
-    )
-    .await;
-    assert_eq!(unreachable_logger.queue.pending().len(), 1);
-    async_post_call_failure_hook(
-        &unreachable_logger,
-        &NullTracer,
-        &context,
-        None,
-        IndexMap::new(),
-    )
-    .await;
-    assert_eq!(unreachable_transport.post_count(), 1);
-    assert_eq!(unreachable_logger.queue.pending().len(), 2);
-    async_post_call_failure_hook(
-        &unreachable_logger,
-        &NullTracer,
-        &context,
-        None,
-        IndexMap::new(),
-    )
-    .await;
-    assert_eq!(unreachable_transport.post_count(), 2);
-    assert_eq!(unreachable_logger.queue.pending().len(), 3);
+    async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
+    assert_eq!(logger.queue.pending().len(), 1);
+    async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
+    assert_eq!(transport.post_count(), 1);
+    assert_eq!(logger.queue.pending().len(), 2);
+    async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
+    assert_eq!(transport.post_count(), 2);
+    assert_eq!(logger.queue.pending().len(), 3);
 }

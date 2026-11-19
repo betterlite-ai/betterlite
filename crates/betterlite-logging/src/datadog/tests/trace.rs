@@ -25,8 +25,8 @@ fn standard(tracer: &dyn Tracer) -> DatadogPayload {
     .unwrap()
 }
 
-#[tokio::test]
-async fn datadog_trace_context_attachment_behavior() {
+#[test]
+fn datadog_trace_context_attachment_behavior() {
     let span = TestSpan {
         trace_id: Some(12),
         span_id: Some(34),
@@ -64,12 +64,22 @@ async fn datadog_trace_context_attachment_behavior() {
     let untraced = standard(&NullTracer);
     assert_eq!(untraced.trace_id, None);
     assert_eq!(untraced.span_id, None);
+}
+
+#[tokio::test]
+async fn datadog_proxy_and_service_trace_context_behavior() {
+    let span = TestSpan {
+        trace_id: Some(12),
+        span_id: Some(34),
+    };
+    let current = TestTracer(Some(&span), None);
+    let root = TestTracer(None, Some(&span));
+    let (logger, _) = build_logger(&[], Intake::Accepted);
+    let patterns = normalizer();
+    let facts = exception(r#"{"class_name": "APIError", "message": "failed"}"#);
+    let context = exception_logging(Some(&facts), &patterns);
 
     // the proxy failure hook attaches the active span to the payload it queues
-    let (logger, _) = build_logger(&[], Intake::Accepted);
-    let normalizer = normalizer();
-    let facts = exception(r#"{"class_name": "APIError", "message": "failed"}"#);
-    let context = exception_logging(Some(&facts), &normalizer);
     async_post_call_failure_hook(&logger, &current, &context, None, IndexMap::new()).await;
     let failed = last_queued(&logger);
     assert_eq!(failed.trace_id.as_deref(), Some("12"));

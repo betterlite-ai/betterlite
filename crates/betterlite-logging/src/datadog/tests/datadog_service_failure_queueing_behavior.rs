@@ -16,8 +16,8 @@ fn datadog_service_failure_queueing_behavior() {
         ("HOSTNAME", "host-1"),
     ];
     let (logger, transport) = build_logger(&environment, Intake::Accepted);
-    let redis_payload = service_payload(ServiceType::Redis, true, Some("connection refused"), 0.25);
-    async_service_failure_hook(&logger, &redis_payload, None);
+    let payload = service_payload(ServiceType::Redis, true, Some("connection refused"), 0.25);
+    async_service_failure_hook(&logger, &payload, None);
 
     // the queue already holds the batch size, and a service failure never flushes it
     assert_eq!(logger.queue.pending().len(), 1);
@@ -30,22 +30,37 @@ fn datadog_service_failure_queueing_behavior() {
     );
     assert_eq!(queued.trace_id, None);
     assert_eq!(queued.span_id, None);
-    let redis_body = message(&queued);
-    assert_eq!(field(&redis_body, "is_error"), &Json::Bool(true));
-    assert_eq!(text(field(&redis_body, "error")), "connection refused");
-    assert_eq!(text(field(&redis_body, "service")), "redis");
-    assert_eq!(text(field(&redis_body, "call_type")), "acompletion");
-    assert_eq!(field(&redis_body, "duration"), &json("0.25"));
-    assert_eq!(field(&redis_body, "caller"), &Json::Null);
-    assert_eq!(field(&redis_body, "event_metadata"), &Json::Null);
+}
 
-    // a failure without a message logs a null error, and a second one still queues
-    let postgres_payload = service_payload(ServiceType::Postgres, true, None, 1.5);
-    async_service_failure_hook(&logger, &postgres_payload, None);
+#[test]
+fn datadog_service_failure_message_behavior() {
+    let (logger, _) = build_logger(&[], Intake::Accepted);
+    let payload = service_payload(ServiceType::Redis, true, Some("connection refused"), 0.25);
+    async_service_failure_hook(&logger, &payload, None);
+
+    // the queued message carries the fields the service payload dumps
+    let body = message(&last_queued(&logger));
+    assert_eq!(field(&body, "is_error"), &Json::Bool(true));
+    assert_eq!(text(field(&body, "error")), "connection refused");
+    assert_eq!(text(field(&body, "service")), "redis");
+    assert_eq!(text(field(&body, "call_type")), "acompletion");
+    assert_eq!(field(&body, "duration"), &json("0.25"));
+    assert_eq!(field(&body, "caller"), &Json::Null);
+    assert_eq!(field(&body, "event_metadata"), &Json::Null);
+}
+
+#[test]
+fn datadog_service_failure_without_error_message_behavior() {
+    let (logger, transport) = build_logger(&[("DD_BATCH_SIZE", "1")], Intake::Accepted);
+    let postgres = service_payload(ServiceType::Postgres, true, None, 1.5);
+    async_service_failure_hook(&logger, &postgres, None);
+    let body = message(&last_queued(&logger));
+    assert_eq!(text(field(&body, "service")), "postgres");
+    assert_eq!(field(&body, "error"), &Json::Null);
+    assert_eq!(field(&body, "duration"), &json("1.5"));
+
+    // a second failure still only queues, even at a batch size of one
+    async_service_failure_hook(&logger, &postgres, None);
     assert_eq!(logger.queue.pending().len(), 2);
     assert_eq!(transport.post_count(), 0);
-    let postgres_body = message(&last_queued(&logger));
-    assert_eq!(text(field(&postgres_body, "service")), "postgres");
-    assert_eq!(field(&postgres_body, "error"), &Json::Null);
-    assert_eq!(field(&postgres_body, "duration"), &json("1.5"));
 }

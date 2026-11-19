@@ -12,13 +12,13 @@ use super::support::{
 };
 
 // safe_dumps sorts object keys, so a test compares the key set, not the order
-fn fields_of(value: &Json) -> Vec<&str> {
+fn fields_of(value: &Json) -> String {
     let Json::Object(fields) = value else {
         panic!("the expected value is a JSON object");
     };
     let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
     names.sort_unstable();
-    names
+    names.join(",")
 }
 
 #[tokio::test]
@@ -35,18 +35,7 @@ async fn datadog_metadata_merging_behavior() {
     let merged = message(&last_queued(&logger));
     assert_eq!(
         fields_of(&merged),
-        [
-            "call_type",
-            "caller",
-            "duration",
-            "error",
-            "event_metadata",
-            "gauge_value",
-            "is_error",
-            "key",
-            "service",
-        ]
-        .as_slice(),
+        "call_type,caller,duration,error,event_metadata,gauge_value,is_error,key,service"
     );
     assert_eq!(text(field(&merged, "service")), "redis-override");
     assert_eq!(field(&merged, "duration"), &json("9.5"));
@@ -60,16 +49,7 @@ async fn datadog_metadata_merging_behavior() {
     let unmerged = message(&last_queued(&logger));
     assert_eq!(
         fields_of(&unmerged),
-        [
-            "call_type",
-            "caller",
-            "duration",
-            "error",
-            "event_metadata",
-            "is_error",
-            "service",
-        ]
-        .as_slice(),
+        "call_type,caller,duration,error,event_metadata,is_error,service"
     );
 
     // the success hook merges the metadata the same way
@@ -79,22 +59,20 @@ async fn datadog_metadata_merging_behavior() {
     async_service_success_hook(&logger, &reset, Some(&labels));
     let reset_body = message(&last_queued(&logger));
     assert_eq!(text(field(&reset_body, "gauge_labels")), "zone:west");
+}
 
-    // the proxy failure hook takes no event metadata, so its message holds only its own five fields
+#[tokio::test]
+async fn datadog_proxy_message_fields_behavior() {
+    let (logger, _) = build_logger(&[], Intake::Accepted);
     let patterns = normalizer();
     let facts = exception(r#"{"class_name": "APIError", "code": "500", "message": "failed"}"#);
     let context = exception_logging(Some(&facts), &patterns);
     async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
-    let proxy_body = message(&last_queued(&logger));
+    let body = message(&last_queued(&logger));
+
+    // the proxy failure hook takes no event metadata, so its message holds only its own five fields
     assert_eq!(
-        fields_of(&proxy_body),
-        [
-            "error_class",
-            "exception",
-            "status_code",
-            "traceback",
-            "user_api_key_dict",
-        ]
-        .as_slice(),
+        fields_of(&body),
+        "error_class,exception,status_code,traceback,user_api_key_dict"
     );
 }
