@@ -74,6 +74,11 @@ def entry(memory: CacheView, key: str) -> tuple[dict[str, JsonValue], float]:
     return payload, ttl
 
 
+def present(memory: CacheView, key: str) -> bool:
+    value = JSON_VALUES.validate_python(memory.cache_dict.get(key))
+    return value is not None
+
+
 async def management_write(
     cache: UserApiKeyCache,
     team: LiteLLM_TeamTableCachedObj,
@@ -130,8 +135,7 @@ async def team_refresh_report(call: Input) -> JsonValue:
     memory: CacheView = cache.in_memory_cache_for(key)
     stored, ttl = entry(memory, key)
     if alias_key is not None:
-        alias_memory: CacheView = cache.in_memory_cache_for(alias_key)
-        alias_present = alias_key in alias_memory.cache_dict
+        alias_present = present(cache.in_memory_cache_for(alias_key), alias_key)
     return {
         "team_id_and_alias_keys": {
             "team_key": key,
@@ -162,8 +166,7 @@ async def key_refresh_report(call: Input) -> JsonValue:
     memory: CacheView = cache.in_memory_cache_for(hashed)
     stored, ttl = entry(memory, hashed)
     wire = KEY_WIRES.validate_json(key.model_dump_json())
-    candidate = call["rehash_candidate"]
-    candidate_memory: CacheView = cache.in_memory_cache_for(candidate)
+    candidate_memory: CacheView = cache.in_memory_cache_for(call["rehash_candidate"])
     return {
         "key_timestamp_and_request_field_copy": {
             "stored_ttl": ttl,
@@ -171,8 +174,8 @@ async def key_refresh_report(call: Input) -> JsonValue:
             "stored_has_timestamp": stored.get("last_refreshed_at") is not None,
         },
         "key_hash_not_recomputed": {
-            "supplied_key_present": hashed in memory.cache_dict,
-            "rehash_key_present": candidate in candidate_memory.cache_dict,
+            "supplied_key_present": present(memory, hashed),
+            "rehash_key_present": present(candidate_memory, call["rehash_candidate"]),
         },
         "key_copy_retains_original_request_fields": {
             "original_request_route": wire.get("request_route"),
