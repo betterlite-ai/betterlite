@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -49,6 +50,10 @@ fn number(value: i64) -> JsonValue {
     JsonValue::from(value)
 }
 
+fn json(source: &str) -> JsonValue {
+    serde_json::from_str(source).unwrap()
+}
+
 fn query(value: &str) -> SearchQuery {
     SearchQuery::Single(value.to_owned())
 }
@@ -73,10 +78,10 @@ fn answer(
     params: &Object,
     body: &str,
 ) -> Result<SearchResponse, BraveSearchError> {
-    let _request = config
+    let request = config
         .transform_search_request(&query(value), params)
         .unwrap();
-    let _url = config.complete_url(None, params, Some(&_request)).unwrap();
+    let _url = config.complete_url(None, params, Some(&request)).unwrap();
     let headers = Headers::new();
     config.transform_search_response(&ProviderResponse {
         status_code: 200,
@@ -243,9 +248,7 @@ fn brave_search_request_joins_lists_and_defaults_the_metadata_flag() {
 
     assert_eq!(
         serde_json::to_value(joined).unwrap(),
-        serde_json::json!({
-            "_brave_params": {"q": "one two", "include_fetch_metadata": true}
-        })
+        json(r#"{"_brave_params": {"q": "one two", "include_fetch_metadata": true}}"#)
     );
 }
 
@@ -253,7 +256,7 @@ fn brave_search_request_joins_lists_and_defaults_the_metadata_flag() {
 #[case::explicit_null(JsonValue::Null, true)]
 #[case::explicit_true(JsonValue::Bool(true), true)]
 #[case::explicit_false(JsonValue::Bool(false), false)]
-#[case::zero(JsonValue::from(0), true)]
+#[case::zero(JsonValue::from(0_i64), true)]
 #[case::text_false(text("false"), true)]
 fn brave_search_request_keeps_metadata_unless_false_is_boolean(
     #[case] value: JsonValue,
@@ -281,15 +284,15 @@ fn brave_search_request_ignores_the_unified_country_and_copies_other_fields() {
 
     assert_eq!(
         body,
-        serde_json::json!({
-            "_brave_params": {
+        json(
+            r#"{"_brave_params": {
                 "q": "q",
                 "include_fetch_metadata": true,
                 "offset": 2,
                 "search_lang": "en",
                 "text_decorations": false
-            }
-        })
+            }}"#
+        )
     );
 }
 
@@ -320,10 +323,7 @@ fn brave_search_request_caps_max_results_only_above(#[case] given: i64, #[case] 
 #[test]
 fn brave_search_request_wraps_domains_into_the_query() {
     let config = config(&[]);
-    let params = options(&[(
-        "search_domain_filter",
-        serde_json::json!(["a.test", "b.test"]),
-    )]);
+    let params = options(&[("search_domain_filter", json(r#"["a.test", "b.test"]"#))]);
 
     let body = request_body(&config, "cats", &params);
 
@@ -336,7 +336,7 @@ fn brave_search_request_wraps_domains_into_the_query() {
 #[test]
 fn brave_search_request_keeps_an_empty_domain_list_out_of_the_query() {
     let config = config(&[]);
-    let params = options(&[("search_domain_filter", serde_json::json!([]))]);
+    let params = options(&[("search_domain_filter", json("[]"))]);
 
     let body = request_body(&config, "cats", &params);
 
@@ -361,7 +361,7 @@ fn brave_search_request_rejects_a_max_results_that_is_not_an_integer() {
 #[test]
 fn brave_search_request_rejects_a_domain_that_is_not_text() {
     let config = config(&[]);
-    let params = options(&[("search_domain_filter", serde_json::json!([5]))]);
+    let params = options(&[("search_domain_filter", json("[5]"))]);
 
     let error = config
         .transform_search_request(&query("q"), &params)
@@ -376,7 +376,7 @@ fn brave_search_request_rejects_a_domain_that_is_not_text() {
 #[test]
 fn brave_search_request_rejects_a_passthrough_object() {
     let config = config(&[]);
-    let params = options(&[("goggles", serde_json::json!({"a": 1}))]);
+    let params = options(&[("goggles", json(r#"{"a": 1}"#))]);
 
     let error = config
         .transform_search_request(&query("q"), &params)
@@ -747,10 +747,10 @@ fn brave_search_dates_fill_a_missing_year_from_the_injected_day() {
 
 #[rstest]
 fn replays_the_brave_search_corpus(#[files("fuzz/corpus/brave_search/*")] path: PathBuf) {
-    let bytes = fs::read(&path).unwrap();
+    let bytes = fs::read(path).unwrap();
 
     drop(super::reply::decode_brave_search(&bytes, None, today()));
-    if let Ok(text) = std::str::from_utf8(&bytes) {
+    if let Ok(text) = str::from_utf8(&bytes) {
         drop(date_of(text));
         drop(date_of(&format!("{text:?}")));
     }
