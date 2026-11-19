@@ -50,32 +50,31 @@ pub fn provider_info(input: &CredentialsInput<'_>) -> Result<ProviderInfo, Ragfl
     })
 }
 
+// the first explicit source that is present and not empty
+fn first_present<T: ?Sized>(candidates: [Option<&T>; 2], is_empty: fn(&T) -> bool) -> Option<&T> {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| !is_empty(candidate))
+}
+
 // LiteLLM's base chain, where an absent or empty value falls through to the next source
 pub(super) fn resolve_api_base(
     input: &CredentialsInput<'_>,
 ) -> Result<Option<String>, RagflowError> {
-    let explicit = [input.api_base, input.globals.api_base]
-        .into_iter()
-        .flatten()
-        .find(|base| !base.is_empty());
-    match explicit {
+    match first_present([input.api_base, input.globals.api_base], str::is_empty) {
         Some(base) => Ok(Some(base.to_owned())),
         None => Ok(secret_text(input, API_BASE_ENV)?.map(|text| text.expose_secret().to_owned())),
     }
 }
 
 // LiteLLM's key chain, where an absent or empty key falls through, and an empty variable counts as unset
-pub(super) fn resolve_api_key(
-    input: &CredentialsInput<'_>,
-) -> Result<Option<SecretString>, RagflowError> {
-    let explicit = [input.api_key, input.globals.api_key]
-        .into_iter()
-        .flatten()
-        .find(|key| !key.expose_secret().is_empty());
-    match explicit {
-        Some(key) => Ok(Some(key.clone())),
-        None => secret_text(input, API_KEY_ENV),
+fn resolve_api_key(input: &CredentialsInput<'_>) -> Result<Option<SecretString>, RagflowError> {
+    let candidates = [input.api_key, input.globals.api_key];
+    if let Some(key) = first_present(candidates, |key| key.expose_secret().is_empty()) {
+        return Ok(Some(key.clone()));
     }
+    secret_text(input, API_KEY_ENV)
 }
 
 fn secret_text(

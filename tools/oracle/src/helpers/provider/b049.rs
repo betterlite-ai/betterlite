@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
-use self::script::{HeadersCase, ProviderCase, RequestCase, Sdk, UrlCase};
+use self::script::{ProbeCase, RequestCase, Sdk};
 
 mod ops;
 mod script;
@@ -15,17 +15,17 @@ pub(crate) enum Input {
     Provider {
         environment: BTreeMap<String, String>,
         sdk: Sdk,
-        cases: Vec<ProviderCase>,
+        cases: Vec<ProbeCase>,
     },
     Url {
         environment: BTreeMap<String, String>,
         sdk: Sdk,
-        cases: Vec<UrlCase>,
+        cases: Vec<ProbeCase>,
     },
     Headers {
         environment: BTreeMap<String, String>,
         sdk: Sdk,
-        cases: Vec<HeadersCase>,
+        cases: Vec<ProbeCase>,
     },
     Request {
         environment: BTreeMap<String, String>,
@@ -45,17 +45,27 @@ impl Helper for Op {
                 environment,
                 sdk,
                 cases,
-            } => Ok(ops::provider(environment, sdk, cases)),
+            } => Ok(ops::probes(
+                ops::Operation::Provider,
+                environment,
+                sdk,
+                cases,
+            )),
             Input::Url {
                 environment,
                 sdk,
                 cases,
-            } => Ok(ops::url(environment, sdk, cases)),
+            } => Ok(ops::probes(ops::Operation::Url, environment, sdk, cases)),
             Input::Headers {
                 environment,
                 sdk,
                 cases,
-            } => Ok(ops::headers(environment, sdk, cases)),
+            } => Ok(ops::probes(
+                ops::Operation::Headers,
+                environment,
+                sdk,
+                cases,
+            )),
             Input::Request {
                 environment,
                 sdk,

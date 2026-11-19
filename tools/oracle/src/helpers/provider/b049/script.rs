@@ -12,22 +12,11 @@ pub(crate) struct Sdk {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ProviderCase {
+pub(crate) struct ProbeCase {
     pub(super) model: String,
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct UrlCase {
-    pub(super) model: String,
-    pub(super) api_base: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct HeadersCase {
-    pub(super) model: String,
-    pub(super) api_key: Option<SecretString>,
+    #[serde(default)]
     pub(super) headers: BTreeMap<String, String>,
 }
 
