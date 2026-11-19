@@ -672,6 +672,49 @@ async fn tuning_credentials_and_timeout() {
     invalid_timeout().await;
 }
 
+#[test]
+fn tuning_call_wire_form() {
+    let params = CreateParams {
+        api_key: Some(SecretString::from("sk-wire".to_owned())),
+        vertex_credentials: Some(SecretString::from("cred-wire".to_owned())),
+        training_type: Some(number(2)),
+        timeout: Some(CreateTimeout::Plain(TimeoutValue::Number(2.5_f64))),
+        ..CreateParams::default()
+    };
+    let wire: Json =
+        serde_json::from_str(&serde_json::to_string(&params).expect("the params encode"))
+            .expect("the wire form is JSON");
+    let Json::Object(fields) = wire else {
+        panic!("the wire form is an object");
+    };
+    assert_eq!(fields.get("api_key"), Some(&text("sk-wire")));
+    assert_eq!(fields.get("vertex_credentials"), Some(&text("cred-wire")));
+    assert_eq!(fields.get("trainingType"), Some(&number(2)));
+    assert_eq!(
+        fields.get("timeout"),
+        Some(&Json::Number(
+            Number::from_f64(2.5_f64).expect("a finite number")
+        ))
+    );
+    let structured_params = CreateParams {
+        timeout: Some(CreateTimeout::Structured(structured())),
+        ..CreateParams::default()
+    };
+    let structured_wire: Json = serde_json::from_str(
+        &serde_json::to_string(&structured_params).expect("the params encode"),
+    )
+    .expect("the wire form is JSON");
+    let Json::Object(structured_fields) = structured_wire else {
+        panic!("the wire form is an object");
+    };
+    assert_eq!(
+        structured_fields.get("timeout"),
+        Some(&Json::Number(
+            Number::from_f64(2.0_f64).expect("a finite number")
+        ))
+    );
+}
+
 #[derive(Clone, Default)]
 struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
