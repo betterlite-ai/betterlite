@@ -46,6 +46,8 @@ pub(super) struct Spec {
     pub(super) id: &'static str,
     pub(super) limits: &'static [(&'static str, Source, LimitValue)],
     pub(super) at: &'static str,
+    // whether the healthy pool carries it, which the map's entries do not decide
+    pub(super) pooled: bool,
     pub(super) stored: bool,
     pub(super) latency: &'static [f64],
     pub(super) ttft: &'static [f64],
@@ -59,6 +61,7 @@ impl Spec {
             id,
             limits: &[],
             at: MINUTE,
+            pooled: true,
             stored: false,
             latency: &[],
             ttft: &[],
@@ -78,6 +81,7 @@ impl Spec {
             id,
             limits: &[],
             at,
+            pooled: true,
             stored: true,
             latency,
             ttft,
@@ -195,7 +199,9 @@ fn build(specs: Vec<Spec>) -> (Vec<DeploymentSpec>, ModelGroupSamples) {
     let mut deployments = Vec::new();
     let mut stored = BTreeMap::new();
     for spec in specs {
-        deployments.push(spec.deployment());
+        if spec.pooled {
+            deployments.push(spec.deployment());
+        }
         if spec.stored {
             stored.insert(
                 spec.id.to_owned(),

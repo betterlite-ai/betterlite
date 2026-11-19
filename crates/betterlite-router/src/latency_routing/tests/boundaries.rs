@@ -123,6 +123,12 @@ use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
     stream: false, input_tokens: 0, buffer: 0.0_f64, percentile: None, draw: 0,
     outcome: Outcome::Ranked { scores: &[], candidates: &[], valid: &[], selected: None },
 })]
+// the map may hold an entry the healthy pool does not carry, and that entry is never scored or selected
+#[case::a_stored_deployment_outside_the_pool_is_ignored(Case {
+    specs: vec![Spec::stored(MINUTE,"a", &[10.0_f64], &[], (0, 0)), Spec { pooled: false, ..Spec::stored(MINUTE,"gone", &[1.0_f64], &[], (0, 0)) }],
+    stream: false, input_tokens: 0, buffer: 0.0_f64, percentile: None, draw: 0,
+    outcome: Outcome::Ranked { scores: &[10.0_f64], candidates: &["a"], valid: &["a"], selected: Some("a") },
+})]
 fn latency_routing_boundaries(#[case] case: Case) {
     check(case);
 }
