@@ -659,6 +659,35 @@ async fn data_after_padding_returns_none() {
 }
 
 #[tokio::test]
+async fn a_padding_shorter_than_the_quad_needs_returns_none() {
+    let fixture = fixture(setup());
+    assert_eq!(
+        fixture.uploader.upload("data:image/png;base64,QU=").await,
+        None
+    );
+    assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
+async fn padding_among_the_data_is_ignored() {
+    let fixture = fixture(setup());
+    fixture.script_upload(id_reply("file-16"));
+    fixture.uploader.upload("data:image/png;base64,Q=UJD").await;
+    let uploads = fixture.uploads();
+    assert_eq!(first(&uploads).parts[1].data, b"ABC");
+}
+
+#[tokio::test]
+async fn a_data_character_after_the_padding_is_refused() {
+    let fixture = fixture(setup());
+    assert_eq!(
+        fixture.uploader.upload("data:image/png;base64,QU==x").await,
+        None
+    );
+    assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
 async fn a_three_character_payload_is_decoded() {
     let fixture = fixture(setup());
     fixture.script_upload(id_reply("file-15"));

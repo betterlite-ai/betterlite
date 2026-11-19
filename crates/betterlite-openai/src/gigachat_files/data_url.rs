@@ -43,31 +43,30 @@ pub(super) fn parse_data_url(text: &str) -> Option<DataUrl<'_>> {
     })
 }
 
-// Python's b64decode discards characters outside the alphabet and accepts extra '=' padding
+// Python's b64decode ignores characters outside the alphabet, '=' among the data, and extra '=' at the end
 pub(super) fn decode_payload(payload: &str) -> Option<Vec<u8>> {
     if !payload.is_ascii() {
         return None;
     }
-    let filtered: String = payload
+    let kept: String = payload
         .bytes()
         .filter(|byte| BASE64_ALPHABET.contains(byte) || *byte == b'=')
         .map(char::from)
         .collect();
-    let (data, padded) = match filtered.split_once('=') {
-        Some((data, rest)) if rest.bytes().all(|byte| byte == b'=') => (data, true),
-        Some(_) => return None,
-        None => (filtered.as_str(), false),
-    };
+    let without_padding = kept.trim_end_matches('=');
+    let data = without_padding.replace('=', "");
+    let padding = kept.len().checked_sub(without_padding.len())?;
     let remainder = data.len().checked_rem(4)?;
-    if remainder != 0 && !padded {
-        return None;
-    }
-    let padding = if remainder == 0 {
+    let needed = if remainder == 0 {
         0_usize
     } else {
         4_usize.checked_sub(remainder)?
     };
-    let mut canonical = String::from(data);
-    canonical.push_str(&"=".repeat(padding));
+    // Python refuses one data character over a quad and a padding shorter than the quad needs
+    if remainder == 1 || padding < needed {
+        return None;
+    }
+    let mut canonical = data;
+    canonical.push_str(&"=".repeat(needed));
     DATA_URL_BASE64.decode(canonical).ok()
 }
