@@ -5,6 +5,7 @@ pub mod dependencies;
 pub mod error;
 pub mod predicates;
 mod tests;
+mod tier_pools;
 pub mod validation;
 mod values;
 

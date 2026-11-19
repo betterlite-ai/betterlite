@@ -11,10 +11,12 @@ use betterlite_router::complexity_config::checks::{
 use betterlite_router::complexity_config::error::ComplexityConfigError;
 use betterlite_router::complexity_config::resolve;
 use betterlite_router::tier_definitions::checks::{ClassifierFallback, ClassifierKind};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 
 use super::error::ComplexityConfigWriteError;
+use super::tier_pools::reject_swallowed_pools;
+use super::values::encode;
 
 // the key a write names in its own errors when the failing location has no field of its own
 const CONFIG_ROOT: &str = "complexity_router_config";
@@ -67,6 +69,7 @@ struct Inputs {
 }
 
 fn decode_declared(fields: &JsonObject) -> Result<Inputs, ComplexityConfigWriteError> {
+    reject_swallowed_pools(fields)?;
     let encoded = encode(fields)?;
     let raw: RawChecks = decode_text(&encoded, "", CONFIG_ROOT)?;
     let keyword_rule_tiers = raw
@@ -194,16 +197,6 @@ where
     };
     let decoded = decode_text(&encode(value)?, key, key)?;
     Ok(Some(decoded))
-}
-
-fn encode<Encoded>(value: &Encoded) -> Result<String, ComplexityConfigWriteError>
-where
-    Encoded: Serialize,
-{
-    match serde_json::to_string(value) {
-        Ok(encoded) => Ok(encoded),
-        Err(source) => Err(ComplexityConfigWriteError::Unreadable { source }),
-    }
 }
 
 // the prefix names the field a nested value was read from, and the fallback names the value itself

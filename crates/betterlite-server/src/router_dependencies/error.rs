@@ -66,6 +66,12 @@ pub enum ComplexityConfigWriteError {
         source: serde_path_to_error::Error<serde_json::Error>,
     },
     #[error(
+        "complexity_router_config is invalid at {location}: a tier pool entry must be a model name \
+         or a tier model entry. The router would drop this deployment at load time, so the write \
+         is rejected instead."
+    )]
+    InvalidTierEntry { location: String },
+    #[error(
         "complexity_router_config cannot be read: {source}. The router would drop this deployment \
          at load time, so the write is rejected instead."
     )]
