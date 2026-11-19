@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::finops::vantage::support::{self, Recorder};
 
@@ -36,7 +36,7 @@ fn the_environment_supplies_every_vantage_setting() {
             .settings
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("environment-key")
     );
     assert_eq!(
@@ -44,7 +44,7 @@ fn the_environment_supplies_every_vantage_setting() {
             .settings
             .integration_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("environment-token")
     );
     assert_eq!(logger.settings.base_url, "https://vantage.example");

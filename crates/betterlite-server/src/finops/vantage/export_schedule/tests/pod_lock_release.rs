@@ -8,7 +8,8 @@ use tokio::task::yield_now;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
-use crate::finops::focus::export_schedule::{FocusPodLock, ScheduleError};
+use crate::finops::focus::error::ScheduleError;
+use crate::finops::focus::export_schedule::FocusPodLock;
 use crate::finops::vantage::error::VantageExportError;
 use crate::finops::vantage::export_schedule::initialize_vantage_export_job;
 use crate::finops::vantage::support::{self, PodLockCall, Recorder};
@@ -36,7 +37,7 @@ async fn a_failed_export_still_releases_the_vantage_lock() {
 async fn an_unsupported_frequency_still_releases_the_vantage_lock() {
     let recorder = Recorder::new(false);
     let lock = Arc::new(support::FakePodLock::new(true, Some(true)));
-    let pod_lock: Arc<dyn FocusPodLock> = Arc::clone(&lock);
+    let pod_lock: Arc<dyn FocusPodLock> = Arc::<support::FakePodLock>::clone(&lock);
     let mut params = support::params();
     params.frequency = Some("weekly".to_owned());
     let logger = support::build(
@@ -96,7 +97,7 @@ async fn a_cancelled_export_still_releases_the_vantage_lock() {
     let started = Arc::new(Notify::new());
     let recorder = Recorder::paused(Arc::clone(&started));
     let lock = Arc::new(support::FakePodLock::new(true, Some(true)));
-    let pod_lock: Arc<dyn FocusPodLock> = Arc::clone(&lock);
+    let pod_lock: Arc<dyn FocusPodLock> = Arc::<support::FakePodLock>::clone(&lock);
     let logger = Arc::new(support::build(
         &support::environment(&[]),
         support::params(),

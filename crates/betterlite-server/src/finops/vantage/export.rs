@@ -8,11 +8,12 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 
+use crate::finops::focus::error::ScheduleError;
 use crate::finops::focus::export::{
     FocusEngineFactory, FocusLogger, FocusLoggerDeps, FocusLoggerParams,
 };
 use crate::finops::focus::export_schedule::{
-    FocusPodLock, ScheduleError, ScheduleTrigger, build_scheduler_trigger,
+    FocusPodLock, ScheduleTrigger, build_scheduler_trigger,
 };
 
 use super::error::VantageExportError;
@@ -41,9 +42,9 @@ mod constructor_parent_call;
 pub struct VantageLogger<F: FocusEngineFactory> {
     pub settings: VantageSettings,
     pub focus: FocusLogger<F>,
-    pub(super) pod_lock: Option<Arc<dyn FocusPodLock>>,
-    pub(super) clock: Arc<dyn UtcClock>,
-    pub(super) tasks: TaskTracker,
+    pub pod_lock: Option<Arc<dyn FocusPodLock>>,
+    pub clock: Arc<dyn UtcClock>,
+    pub tasks: TaskTracker,
 }
 
 // The live instances every Vantage consumer shares: the startup scheduler, settings deletion and the export routes.

@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::finops::focus::export_schedule::{FocusPodLock, ScheduleError, ScheduleTrigger};
+use crate::finops::focus::error::ScheduleError;
+use crate::finops::focus::export_schedule::{FocusPodLock, ScheduleTrigger};
 use crate::finops::vantage::error::VantageInitError;
 use crate::finops::vantage::export::VantageExportLogger;
 use crate::finops::vantage::export_schedule::init_vantage_background_job;

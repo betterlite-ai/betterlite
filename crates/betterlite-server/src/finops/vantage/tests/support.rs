@@ -20,8 +20,9 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
+use crate::finops::focus::error::ScheduleError;
 use crate::finops::focus::export::{FocusEngineFactory, FocusExporter, FocusLoggerDeps};
-use crate::finops::focus::export_schedule::{FocusPodLock, ScheduleError, ScheduleTrigger};
+use crate::finops::focus::export_schedule::{FocusPodLock, ScheduleTrigger};
 use crate::finops::vantage::error::VantageExportError;
 use crate::finops::vantage::export::{VantageExportLogger, VantageLogger};
 use crate::finops::vantage::export_schedule::VantageScheduler;
@@ -247,7 +248,7 @@ pub(super) fn locked(
     acquired: Option<bool>,
 ) -> (VantageLogger<RecordingFactory>, Arc<FakePodLock>) {
     let lock = Arc::new(FakePodLock::new(has_cache, acquired));
-    let pod_lock: Arc<dyn FocusPodLock> = Arc::clone(&lock);
+    let pod_lock: Arc<dyn FocusPodLock> = Arc::<FakePodLock>::clone(&lock);
     let logger = build(&BTreeMap::new(), params(), recorder, Some(pod_lock));
     (logger, lock)
 }

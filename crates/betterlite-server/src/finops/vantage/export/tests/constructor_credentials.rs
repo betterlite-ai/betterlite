@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::finops::vantage::support::{self, Recorder};
 
@@ -33,7 +33,7 @@ fn environment_credentials_reach_the_destination_config() {
             .destination_config
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("environment-key")
     );
     assert_eq!(
@@ -42,7 +42,7 @@ fn environment_credentials_reach_the_destination_config() {
             .destination_config
             .integration_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("environment-token")
     );
 }
@@ -62,7 +62,7 @@ fn parameters_override_the_environment_credentials() {
             .settings
             .integration_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("parameter-token")
     );
     assert_eq!(
@@ -71,7 +71,7 @@ fn parameters_override_the_environment_credentials() {
             .destination_config
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("parameter-key")
     );
     assert_eq!(
@@ -80,7 +80,7 @@ fn parameters_override_the_environment_credentials() {
             .destination_config
             .integration_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("parameter-token")
     );
 }
@@ -99,7 +99,7 @@ fn an_explicit_empty_parameter_is_used_as_given() {
             .settings
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("")
     );
     assert_eq!(
@@ -108,7 +108,7 @@ fn an_explicit_empty_parameter_is_used_as_given() {
             .destination_config
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("")
     );
 }
