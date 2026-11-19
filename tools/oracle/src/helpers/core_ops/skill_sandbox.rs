@@ -175,11 +175,8 @@ impl SandboxSession for ScriptedSession {
     }
 
     async fn run(&self, code: &str) -> Result<RunResult, SessionError> {
-        let chosen = {
-            let mut calls = self.script.calls();
-            calls.runs.push(code.to_owned());
-            self.script.reply_for(kind_of(code))
-        };
+        self.script.calls().runs.push(code.to_owned());
+        let chosen = self.script.reply_for(kind_of(code));
         Ok(RunResult {
             exit_code: chosen.exit_code,
             stdout: chosen.stdout,
@@ -191,7 +188,9 @@ impl SandboxSession for ScriptedSession {
         if self.closed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        self.script.calls().closes += 1;
+        let mut calls = self.script.calls();
+        calls.closes = calls.closes.saturating_add(1);
+        drop(calls);
         Ok(())
     }
 }
@@ -199,7 +198,8 @@ impl SandboxSession for ScriptedSession {
 impl Drop for ScriptedSession {
     fn drop(&mut self) {
         if !self.closed.swap(true, Ordering::SeqCst) {
-            self.script.calls().closes += 1;
+            let mut calls = self.script.calls();
+            calls.closes = calls.closes.saturating_add(1);
         }
     }
 }
@@ -273,6 +273,7 @@ impl Helper for Op {
             calls: Mutex::new(Calls::default()),
         });
         let runtime = Builder::new_current_thread()
+            .enable_time()
             .build()
             .map_err(|error| invalid_input(error.to_string()))?;
         let executor = SandboxExecutor {
