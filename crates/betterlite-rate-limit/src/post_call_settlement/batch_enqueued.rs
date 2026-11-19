@@ -1,18 +1,12 @@
 mod tests;
 
+use betterlite_core::api::batch_enqueued_refund::BatchEnqueuedRefundError;
 use betterlite_core::api::batch_enqueued_refund::record::ReservationRecord;
-use betterlite_core::api::batch_enqueued_refund::{
-    BATCH_ENQUEUED_REFUND_STATUSES, BatchEnqueuedRefundError,
-};
 use betterlite_core::api::batch_enqueued_reserve::BatchEnqueuedTokenReservation;
-use betterlite_core::api::batch_enqueued_reserve::provider::canonical_provider_batch_id;
 use betterlite_core::api::batch_enqueued_reserve::response::BatchResponseView;
 use betterlite_openai::batches::records::BatchStatus;
 
 use crate::request_stash::RequestStashSlot;
-
-use super::settlement::PostCallSettlement;
-use super::snapshot::{batch_enqueued_reservation, clear_batch_reservation};
 
 // the store methods LiteLLM's batch_enqueued_token_store exposes to the limiter; B1043's EnqueuedTokenRefund implements them
 #[async_trait::async_trait]
@@ -37,35 +31,8 @@ pub struct BatchEnqueuedCall<'request> {
     pub response: Option<&'request BatchResponseView>,
 }
 
-// LiteLLM's batch post-call: save under the canonical batch id, then refund on a terminal status
-pub(super) async fn handle_batch_post_call(
-    settlement: &PostCallSettlement<'_>,
-    call: &BatchEnqueuedCall<'_>,
-) -> Result<(), BatchEnqueuedRefundError> {
-    let Some(view) = call.response else {
-        return Ok(());
-    };
-    let batch_id = canonical_provider_batch_id(&view.id);
-    if let Some(stash) = call.stash.get()
-        && let Some(reservation) = batch_enqueued_reservation(&stash)
-    {
-        settlement
-            .batch_store
-            .save_reservation(&batch_id, &reservation)
-            .await?;
-        clear_batch_reservation(&stash);
-    }
-    if !BATCH_ENQUEUED_REFUND_STATUSES.contains(&status_text(view.status)) {
-        return Ok(());
-    }
-    let Some(popped) = settlement.batch_store.pop_reservation(&batch_id).await? else {
-        return Ok(());
-    };
-    settlement.batch_store.refund(&popped).await
-}
-
 // the declared status, spelled as the lowercase string BATCH_ENQUEUED_REFUND_STATUSES carries
-const fn status_text(status: BatchStatus) -> &'static str {
+pub(super) const fn status_text(status: BatchStatus) -> &'static str {
     match status {
         BatchStatus::Validating => "validating",
         BatchStatus::Failed => "failed",

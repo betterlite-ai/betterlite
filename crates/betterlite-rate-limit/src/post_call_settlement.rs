@@ -11,7 +11,6 @@ mod apply;
 mod batch_id;
 mod batch_refund;
 mod batch_save;
-mod disconnect;
 mod disconnect_slot;
 mod failure_event_application;
 mod failure_event_error;
