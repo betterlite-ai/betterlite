@@ -6,33 +6,48 @@ use crate::rate_limit_window_store::batch_get::batch_get_counter_values;
 use crate::rate_limit_window_store::in_memory_window::in_memory_cache_sliding_window;
 use crate::rate_limit_window_store::read_fallback::read_counter_snapshot;
 
+use super::AdmissionRequest;
+use super::OK_CODE;
+use super::OVER_LIMIT_CODE;
+use super::WindowedAdmission;
+use super::WindowedAdmissionError;
+use super::batch_script::BatchRateLimiterScript as _;
 use super::collect::CollectedWindowedKeys;
 use super::over_limit::is_cache_list_over_limit;
-use super::{
-    AdmissionRequest, OK_CODE, OVER_LIMIT_CODE, WindowedAdmission, WindowedAdmissionError,
-};
 
-impl WindowedAdmission {
-    pub async fn should_rate_limit(
+// the workspace denies multiple_inherent_impl, so the windowed steps live on this trait
+pub(super) trait WindowedResponseFlow {
+    async fn windowed_response(
         &self,
-        request: &AdmissionRequest,
-    ) -> Result<RateLimitResponse, WindowedAdmissionError> {
-        let now_int = self.now_int()?;
-        let collected =
-            self.collect_windowed_keys_and_gauges(&request.descriptors, request.skip_tpm_check);
-        let windowed = self
-            .windowed_response(&collected, request.read_only, now_int)
-            .await?;
-        if windowed.overall_code == OVER_LIMIT_CODE {
-            return Ok(windowed);
-        }
-        if collected.gauges.is_empty() {
-            return Ok(windowed);
-        }
-        self.gauge_response(&collected.gauges, request, &windowed)
-            .await
-    }
+        collected: &CollectedWindowedKeys,
+        read_only: bool,
+        now_int: i64,
+    ) -> Result<RateLimitResponse, WindowedAdmissionError>;
 
+    async fn windowed_values(
+        &self,
+        keys_to_fetch: &[String],
+        read_only: bool,
+        now_int: i64,
+    ) -> Result<CounterValues, WindowedAdmissionError>;
+
+    async fn write_back(
+        &self,
+        keys_to_fetch: &[String],
+        values: &[CacheCounterValue],
+    ) -> Result<(), WindowedAdmissionError>;
+
+    async fn gauge_response(
+        &self,
+        gauges: &[ParallelRequestGauge],
+        request: &AdmissionRequest,
+        windowed: &RateLimitResponse,
+    ) -> Result<RateLimitResponse, WindowedAdmissionError>;
+
+    fn now_int(&self) -> Result<i64, WindowedAdmissionError>;
+}
+
+impl WindowedResponseFlow for WindowedAdmission {
     async fn windowed_response(
         &self,
         collected: &CollectedWindowedKeys,
@@ -105,14 +120,14 @@ impl WindowedAdmission {
         if keys_to_fetch.len() != values.len() || !values.len().is_multiple_of(2) {
             return Err(pair_error(keys_to_fetch, values));
         }
-        let pairs = keys_to_fetch.chunks_exact(2).zip(values.chunks_exact(2));
+        let pairs = keys_to_fetch
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(values.as_chunks::<2>().0.iter());
         for (pair_keys, pair_values) in pairs {
-            let [window_key, counter_key] = pair_keys else {
-                return Err(pair_error(keys_to_fetch, values));
-            };
-            let [window_value, counter_value] = pair_values else {
-                return Err(pair_error(keys_to_fetch, values));
-            };
+            let [window_key, counter_key] = pair_keys;
+            let [window_value, counter_value] = pair_values;
             let cache = self.windows.cache.as_ref();
             cache
                 .set_cache(counter_key, counter_value.clone(), self.window_size, true)

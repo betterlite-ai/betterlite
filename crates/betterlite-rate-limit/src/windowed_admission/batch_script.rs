@@ -12,9 +12,43 @@ use crate::settlement_and_rollback::AtomicSettlement;
 // ast-grep-ignore: no-long-names
 use crate::settlement_and_rollback::refunds::counter_refunds_from_batch_values;
 
-use super::{WindowedAdmission, WindowedAdmissionError};
+use super::WindowedAdmission;
+use super::WindowedAdmissionError;
 
-impl WindowedAdmission {
+// the workspace denies multiple_inherent_impl, so the batch steps live on this trait
+pub(super) trait BatchRateLimiterScript {
+    // ast-grep-ignore: no-long-names
+    async fn execute_redis_batch_rate_limiter_script(
+        &self,
+        keys_to_fetch: &[String],
+        now_int: i64,
+    ) -> Result<Vec<CacheCounterValue>, WindowedAdmissionError>;
+
+    async fn refund_later_pipelined_groups(
+        &self,
+        groups: &[(String, Vec<String>)],
+        handles: &mut [Option<ScriptHandle>],
+    ) -> Result<(), WindowedAdmissionError>;
+
+    async fn refund_on_failure(
+        &self,
+        groups: &[(String, Vec<String>)],
+        index: usize,
+        values: &[CacheCounterValue],
+        handles: &mut [Option<ScriptHandle>],
+    ) -> Result<(), WindowedAdmissionError>;
+
+    async fn fallback_group_values(
+        &self,
+        failure: &WindowedAdmissionError,
+        group: &(String, Vec<String>),
+        now_int: i64,
+    ) -> Result<CounterValues, WindowedAdmissionError>;
+
+    fn settlement(&self) -> AtomicSettlement<'_>;
+}
+
+impl BatchRateLimiterScript for WindowedAdmission {
     fn settlement(&self) -> AtomicSettlement<'_> {
         AtomicSettlement {
             windows: &self.windows,
@@ -27,7 +61,7 @@ impl WindowedAdmission {
     }
 
     // ast-grep-ignore: no-long-names
-    pub async fn execute_redis_batch_rate_limiter_script(
+    async fn execute_redis_batch_rate_limiter_script(
         &self,
         keys_to_fetch: &[String],
         now_int: i64,
@@ -41,8 +75,8 @@ impl WindowedAdmission {
         let mut handles = pipeline_scripts(&self.windows, script, &calls);
         let mut values = Vec::new();
         for (index, group) in groups.iter().enumerate() {
-            let handle = handles.get_mut(index).and_then(Option::take);
-            let outcome = match handle {
+            let slot = handles.get_mut(index).and_then(Option::take);
+            let outcome = match slot {
                 Some(handle) => match handle.await {
                     Ok(reply) => {
                         counter_values_from_reply(&reply).map_err(WindowedAdmissionError::from)
@@ -66,7 +100,7 @@ impl WindowedAdmission {
         Ok(values)
     }
 
-    pub async fn refund_later_pipelined_groups(
+    async fn refund_later_pipelined_groups(
         &self,
         groups: &[(String, Vec<String>)],
         handles: &mut [Option<ScriptHandle>],

@@ -5,29 +5,11 @@ use crate::limiter_records::{
     create_rate_limit_keys,
 };
 
-use super::WindowedAdmission;
-
 #[derive(Default)]
 pub struct CollectedWindowedKeys {
     pub keys_to_fetch: Vec<String>,
     pub key_metadata: BTreeMap<String, WindowKeyMetadata>,
     pub gauges: Vec<ParallelRequestGauge>,
-}
-
-impl WindowedAdmission {
-    #[must_use]
-    // ast-grep-ignore: no-long-names
-    pub fn collect_windowed_keys_and_gauges(
-        &self,
-        descriptors: &[RateLimitDescriptor],
-        skip_tpm_check: bool,
-    ) -> CollectedWindowedKeys {
-        let mut collected = CollectedWindowedKeys::default();
-        for descriptor in descriptors {
-            collect_descriptor(&mut collected, descriptor, skip_tpm_check, self.window_size);
-        }
-        collected
-    }
 }
 
 struct DescriptorLimits {
@@ -42,26 +24,26 @@ fn descriptor_limits(
     skip_tpm_check: bool,
     handler_window_size: i64,
 ) -> DescriptorLimits {
-    let limit = descriptor.rate_limit.as_ref();
+    let rate_limit = descriptor.rate_limit.as_ref();
     let tokens = if skip_tpm_check {
         None
     } else {
-        limit.and_then(|limit| limit.tokens_per_unit)
+        rate_limit.and_then(|limit| limit.tokens_per_unit)
     };
     // LiteLLM reads the descriptor's window_size with `or`, so a 0 falls back to the handler's
-    let window_size = limit
+    let window_size = rate_limit
         .and_then(|limit| limit.window_size)
         .filter(|size| *size != 0)
         .unwrap_or(handler_window_size);
     DescriptorLimits {
-        requests: limit.and_then(|limit| limit.requests_per_unit),
+        requests: rate_limit.and_then(|limit| limit.requests_per_unit),
         tokens,
-        max_parallel: limit.and_then(|limit| limit.max_parallel_requests),
+        max_parallel: rate_limit.and_then(|limit| limit.max_parallel_requests),
         window_size,
     }
 }
 
-fn collect_descriptor(
+pub(super) fn collect_descriptor(
     collected: &mut CollectedWindowedKeys,
     descriptor: &RateLimitDescriptor,
     skip_tpm_check: bool,

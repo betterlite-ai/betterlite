@@ -13,10 +13,14 @@ use betterlite_auth::resolved_key::auth::ParentOtelSpan;
 use betterlite_redis::batch::error::BatchError;
 use uuid::Uuid;
 
+use self::admission::WindowedResponseFlow as _;
+use self::collect::{CollectedWindowedKeys, collect_descriptor};
 use crate::concurrency_gauges::ConcurrencyGauges;
 use crate::concurrency_gauges::GaugeError;
 use crate::fail_closed::{FailClosedPolicy, RateLimitUnverifiableError};
-use crate::limiter_records::{CounterReplyError, LimiterClock, RateLimitDescriptor};
+use crate::limiter_records::{
+    CounterReplyError, LimiterClock, RateLimitDescriptor, RateLimitResponse,
+};
 use crate::rate_limit_window_store::counter_value::CounterValueError;
 use crate::rate_limit_window_store::{CounterScript, WindowStore, WindowStoreError};
 use crate::settlement_and_rollback::SettlementError;
@@ -88,4 +92,40 @@ pub enum WindowedAdmissionError {
     WindowPairCount { keys: usize, values: usize },
     #[error("no window metadata was collected for the window key {window_key}")]
     MissingWindowMetadata { window_key: String },
+}
+
+impl WindowedAdmission {
+    pub async fn should_rate_limit(
+        &self,
+        request: &AdmissionRequest,
+    ) -> Result<RateLimitResponse, WindowedAdmissionError> {
+        let now_int = self.now_int()?;
+        let collected =
+            self.collect_windowed_keys_and_gauges(&request.descriptors, request.skip_tpm_check);
+        let windowed = self
+            .windowed_response(&collected, request.read_only, now_int)
+            .await?;
+        if windowed.overall_code == OVER_LIMIT_CODE {
+            return Ok(windowed);
+        }
+        if collected.gauges.is_empty() {
+            return Ok(windowed);
+        }
+        self.gauge_response(&collected.gauges, request, &windowed)
+            .await
+    }
+
+    #[must_use]
+    // ast-grep-ignore: no-long-names
+    pub fn collect_windowed_keys_and_gauges(
+        &self,
+        descriptors: &[RateLimitDescriptor],
+        skip_tpm_check: bool,
+    ) -> CollectedWindowedKeys {
+        let mut collected = CollectedWindowedKeys::default();
+        for descriptor in descriptors {
+            collect_descriptor(&mut collected, descriptor, skip_tpm_check, self.window_size);
+        }
+        collected
+    }
 }

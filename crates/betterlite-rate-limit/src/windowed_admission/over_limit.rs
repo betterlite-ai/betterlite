@@ -20,8 +20,10 @@ pub fn is_cache_list_over_limit(
     let mut statuses = Vec::new();
     let mut overall_code = OK_CODE;
     let pairs = keys_to_fetch
-        .chunks_exact(2)
-        .zip(cache_values.chunks_exact(2));
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(cache_values.as_chunks::<2>().0.iter());
     for (pair_keys, pair_values) in pairs {
         let Some(status) = pair_status(pair_keys, pair_values, key_metadata, read_only)? else {
             continue;

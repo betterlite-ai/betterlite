@@ -8,6 +8,7 @@ use crate::concurrency_gauges::PARALLEL_SLOT_TTL;
 use crate::concurrency_gauges::cache::GaugeCacheValue;
 use crate::limiter_records::{CacheCounterValue, RateLimitStatus, RateLimitType};
 use crate::rate_limit_window_store::batch_rate_limiter_script::window_script_args;
+use crate::windowed_admission::admission::WindowedResponseFlow as _;
 use crate::windowed_admission::tests::support::{
     FixedClock, GENERATED_SLOT, GaugeWrite, HANDLER_WINDOW_SIZE, NOW, PlannedScript, ScriptCall,
     descriptor, gauge_key, harness, key_list, limits, mixed_plan, request, text,

@@ -10,6 +10,7 @@ use crate::limiter_records::{CacheCounterValue, ScriptReply};
 use crate::rate_limit_window_store::ScriptHandle;
 use crate::rate_limit_window_store::batch_rate_limiter_script::window_script_args;
 use crate::windowed_admission::WindowedAdmissionError;
+use crate::windowed_admission::batch_script::BatchRateLimiterScript as _;
 use crate::windowed_admission::tests::support::{
     HANDLER_WINDOW_SIZE, LogCapture, NOW, PlannedBatch, PlannedScript, ReplyPlan, ScriptCall,
     harness, int_plan, key_list, mixed_plan, text,
@@ -219,7 +220,7 @@ async fn the_refund_of_later_groups_skips_missing_handles_and_broken_replies() {
 #[tokio::test]
 async fn a_direct_group_runs_the_plain_script_with_the_handler_window() {
     let mut harness = harness();
-    harness.script = PlannedScript::new(vec![int_plan(&[1700000000, 4])]);
+    harness.script = PlannedScript::new(vec![int_plan(&[1_700_000_000, 4])]);
     let keys = two_groups();
     let limiter = harness.limiter();
     let values = limiter
@@ -229,7 +230,7 @@ async fn a_direct_group_runs_the_plain_script_with_the_handler_window() {
     assert_eq!(
         values,
         vec![
-            CacheCounterValue::Int(1700000000),
+            CacheCounterValue::Int(1_700_000_000),
             CacheCounterValue::Int(4)
         ]
     );

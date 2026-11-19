@@ -374,7 +374,8 @@ pub(crate) struct BatchSource {
 
 impl RequestBatchSource for BatchSource {
     fn active_batch(&self) -> Option<Arc<dyn ScriptBatch>> {
-        Some(Arc::clone(&self.batch))
+        let batch: Arc<dyn ScriptBatch> = Arc::<PlannedBatch>::clone(&self.batch);
+        Some(batch)
     }
 }
 
@@ -521,16 +522,18 @@ pub(crate) fn harness() -> Harness {
 
 impl Harness {
     pub(crate) fn limiter(&self) -> WindowedAdmission {
-        let script: Arc<dyn CounterScript> = Arc::clone(&self.script);
-        let script = self.script_enabled.then_some(script);
+        let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&self.script);
+        let rate_limiter_script = self.script_enabled.then_some(script);
         let batch_source: Arc<dyn RequestBatchSource> = Arc::new(BatchSource {
             batch: Arc::clone(&self.batch),
         });
         let request_batch = self.batch_enabled.then_some(batch_source);
         let fail_closed = self.fail_closed;
+        let gauge_cache: Arc<dyn GaugeCache> = Arc::<RecordingGauges>::clone(&self.gauges);
+        let gauge_clock: Arc<dyn LimiterClock> = Arc::<FixedClock>::clone(&self.clock);
         let gauges = ConcurrencyGauges {
-            cache: Arc::clone(&self.gauges),
-            clock: Arc::clone(&self.clock),
+            cache: gauge_cache,
+            clock: gauge_clock,
             acquire_script: None,
             release_script: None,
             count_script: None,
@@ -538,20 +541,24 @@ impl Harness {
             fail_closed,
             check_and_increment_lock: AsyncMutex::new(()),
         };
+        let cache: Arc<dyn CounterCache> = Arc::<RecordingCache>::clone(&self.cache);
+        let clock: Arc<dyn LimiterClock> = Arc::<FixedClock>::clone(&self.clock);
+        let refund_script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&self.refunds);
+        let slot_ids: Arc<dyn SlotIdGenerator> = Arc::<SlotIds>::clone(&self.slots);
         WindowedAdmission {
             window_size: self.window_size,
-            clock: Arc::clone(&self.clock),
+            clock,
             fail_closed,
             windows: Arc::new(WindowStore {
-                cache: Arc::clone(&self.cache),
-                rate_limiter_script: script,
+                cache,
+                rate_limiter_script,
                 counter_read_script: None,
                 request_batch,
                 check_and_increment_lock: AsyncMutex::new(()),
             }),
-            refund_script: Some(Arc::clone(&self.refunds)),
+            refund_script: Some(refund_script),
             gauges: Arc::new(gauges),
-            slot_ids: Arc::clone(&self.slots),
+            slot_ids,
         }
     }
 }
