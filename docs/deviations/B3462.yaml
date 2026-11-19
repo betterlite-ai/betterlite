@@ -25,11 +25,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
   - what: >-
       A multipart `request` field that is not valid JSON, or holds a JSON value
-      that is not an object, or is a file part instead of text, is a 400
-      (RequestInvalidJson, RequestNotObject, RequestNotText). LiteLLM calls
-      orjson.loads and then .get without a guard, so these inputs leave the
-      handler as an uncaught JSONDecodeError, AttributeError or TypeError and
-      surface as a 500.
+      that is not an object, or is not text (a file part or a repeated field),
+      is a 400 (RequestInvalidJson, RequestNotObject, RequestNotText). LiteLLM
+      calls orjson.loads and then .get without a guard, so these inputs leave
+      the handler as an uncaught JSONDecodeError, AttributeError or TypeError
+      and surface as a 500.
     why: >-
       A malformed client field is the client's error; a 500 says the server
       broke and hides the cause. The status is the only observable difference,

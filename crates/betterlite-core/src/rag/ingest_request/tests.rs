@@ -118,6 +118,16 @@ fn multipart_text_file_field_is_no_file() {
 }
 
 #[test]
+fn multipart_file_list_is_no_file() {
+    let file = text_part("file[]", "hello");
+    let request = text_part("request", r#"{"ingest_options": {"vector_store": {}}}"#);
+    assert_eq!(
+        form(vec![file, request]),
+        Err(IngestRequestError::MissingSource)
+    );
+}
+
+#[test]
 fn multipart_request_upload_is_not_text() {
     let file = upload_part("file", "notes.txt", b"hello\n");
     let request = upload_part("request", "request.json", b"{}");
@@ -125,6 +135,31 @@ fn multipart_request_upload_is_not_text() {
         form(vec![file, request]),
         Err(IngestRequestError::RequestNotText)
     );
+}
+
+#[test]
+fn multipart_request_list_is_not_text() {
+    let file = upload_part("file", "notes.txt", b"hello\n");
+    let request = text_part("request[]", r#"{"ingest_options": {"vector_store": {}}}"#);
+    assert_eq!(
+        form(vec![file, request]),
+        Err(IngestRequestError::RequestNotText)
+    );
+}
+
+#[test]
+fn multipart_request_json_supplies_url_and_id() {
+    let request = text_part(
+        "request",
+        r#"{"ingest_options": {"vector_store": {}}, "file_url": "https://example.test/doc.pdf", "file_id": "file-abc"}"#,
+    );
+    let parsed = form(vec![request]).unwrap();
+    assert_eq!(parsed.file, None);
+    assert_eq!(
+        parsed.file_url.as_deref(),
+        Some("https://example.test/doc.pdf")
+    );
+    assert_eq!(parsed.file_id.as_deref(), Some("file-abc"));
 }
 
 #[test]
@@ -519,6 +554,22 @@ fn multipart_marker_in_any_header_selects_the_multipart_branch() {
     let request = IngestRequest {
         headers: &headers,
         body: IngestBody::Json(&data),
+    };
+    assert_eq!(
+        parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID),
+        Err(IngestRequestError::BodyKindMismatch)
+    );
+}
+
+#[test]
+fn multipart_body_under_a_json_content_type_is_a_mismatch() {
+    let parts = FormParts {
+        items: vec![upload_part("file", "notes.txt", b"hello\n")],
+    };
+    let headers = request_headers("application/json");
+    let request = IngestRequest {
+        headers: &headers,
+        body: IngestBody::Multipart(&parts),
     };
     assert_eq!(
         parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID),
