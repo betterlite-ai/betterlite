@@ -1,0 +1,23 @@
+kind: helper
+name: missing-live-model
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: reload_serving_verdict
+        obligation: must_serve
+        before: []
+        written:
+          - {id: kept, model_info: {db_model: true}}
+          - {id: lost, model_info: {db_model: true}}
+        still_desired: [kept]
+        live: {captured: [kept], router_ids: null}
+      - function: raise_if_reload_degraded_serving
+        action: update
+        before: []
+        written:
+          - {id: lost, model_info: {db_model: true}}
+        still_desired: [kept]
+        live: {captured: [kept], router_ids: null}
+env: {}
+compare: {ignore: []}
