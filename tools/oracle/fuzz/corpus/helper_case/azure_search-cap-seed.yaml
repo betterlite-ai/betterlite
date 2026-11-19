@@ -1,0 +1,15 @@
+kind: helper
+name: azure-search-cap-seed
+call:
+  azure_search:
+    cap:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: seed-connection}
+          query: seed
+          optional_params: {max_results: 1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"first","annotations":[{"type":"url_citation","url":"https://one.example"}]}]},{"type":"message","content":[{"type":"output_text","text":"second","annotations":[{"type":"url_citation","url":"https://two.example"}]}]}]}
+env: {}
+compare:
+  ignore: []

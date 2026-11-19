@@ -1,0 +1,18 @@
+task: B1655
+deviations:
+  - what: The release feed and its links come from https://api.github.com/repos/betterlite-ai/betterlite/releases/latest instead of https://api.github.com/repos/BerriAI/litellm/releases/latest.
+    why: The retained dashboard is rebranded for betterlite, so its upgrade notice has to describe the installed product.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L19
+  - what: A release payload that repeats a JSON key is unavailable, while pydantic keeps the last value for that key.
+    why: The record is decoded by a derived serde structure, which refuses a duplicate field instead of silently picking one value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L93
+  - what: A debug build reads the release source from the config environment variable BETTERLITE_LATEST_RELEASE_URL, and a release build ignores that variable.
+    why: The oracle points this fixed remote URL at its mock server; the same configuration in a release build keeps the real endpoint, so no deployment can redirect it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L19
+  - what: The release fetch follows no redirect, so a 3xx answer from the release source becomes a typed unavailable result and is cached as null, while LiteLLM's httpx handlers follow redirects and render the release the redirect lands on.
+    why: betterlite's shared outbound transport refuses redirects so a credential is not replayed to a redirect target, and B3492, B3493 and B3976 record the same limit for their calls; LiteLLM builds its httpx clients with follow_redirects=True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618-L697
+  - what: The five-second timeout is one request deadline that covers connect, send and the whole body read, while LiteLLM passes timeout=5 to httpx, which applies it to connect, read, write and pool separately.
+    why: reqwest has one total request timeout and httpx's Timeout applies per operation, so an answer that trickles in under five seconds per operation but past five seconds in total is unavailable here; B3152, B3493 and B8211 record the same difference for their calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py#L108
+kept_bugs: []

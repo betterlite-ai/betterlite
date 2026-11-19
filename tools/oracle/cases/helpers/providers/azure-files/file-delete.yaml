@@ -1,0 +1,15 @@
+kind: helper
+name: file-delete
+call:
+  azure_files:
+    steps:
+    - action: delete
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      file_id: file-1
+      reply: {status: 200, headers: {}, body: ""}
+    - action: delete
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      file_id: file-1
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "server-file", "object": "file", "deleted": false}'}
+env: {}
+compare: {ignore: []}

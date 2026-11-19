@@ -1,0 +1,37 @@
+kind: helper
+name: gigachat-embedding-request
+call:
+  b8178:
+    steps:
+      - kind: embedding_request
+        model: gigachat/Embeddings
+        input: hello
+        api_base: null
+        env_base: https://env.test/api
+        token: tok-embedding
+        headers: {X-Trace: abc}
+      - kind: embedding_request
+        model: Embeddings-2
+        input: [one, two]
+        api_base: https://api.test/v1
+        env_base: https://env.test/api
+        token: tok-embedding
+        headers: {}
+      - kind: embedding_request
+        model: gigachat/gigachat/Embeddings
+        input: [1, 2, 3]
+        api_base: null
+        env_base: https://env.test/api
+        token: tok-embedding
+        headers: {Authorization: Bearer caller, accept: text/html}
+      - kind: embedding_request
+        model: m
+        input: [[1, 2], [3]]
+        api_base: null
+        env_base: https://env.test/api
+        token: tok-embedding
+        headers: {}
+env:
+  GIGACHAT_ACCESS_TOKEN: tok-embedding
+  GIGACHAT_API_BASE: https://env.test/api
+compare: {ignore: []}
