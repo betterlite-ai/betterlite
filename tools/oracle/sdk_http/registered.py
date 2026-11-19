@@ -15,7 +15,6 @@ from file_http_metadata import FileHttpMetadataRequest
 from file_http_upload import FileHttpUploadRequest
 from file_provider_read import FileProviderReadRequest
 from file_provider_write import FileProviderWriteRequest
-from file_storage_service import FileStorageServiceRequest
 from file_stream_logging import FileStreamLoggingRequest
 from file_upload_routing import FileUploadRoutingRequest
 from fine_tuning_cancel import FineTuningCancelRequest
@@ -54,6 +53,7 @@ from speech_call import SpeechCallRequest
 from speech_call_plan import SpeechCallPlanRequest
 from speech_chat_bridge import SpeechChatBridgeRequest
 from speech_http import SpeechHttpRequest
+from storage_backend_service import FileStorageServiceRequest
 from summary_execution import SummaryExecutionRequest
 from transcription_call import TranscriptionCallRequest
 from transcription_http import TranscriptionHttpRequest
