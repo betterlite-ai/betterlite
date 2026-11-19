@@ -7,7 +7,7 @@ description: >-
   marker restoration and failure paths; they do not submit the UI's omitted-secret forms
   to a live database. No matching HTTP corpus exists on disk at planning time.
 
-  Create multi-step B1630 cases using B860/B5076 databases and B1653's typed redis_url fixture,
+  Create multi-step B1630 cases using B860/B9942 databases and B1653's typed redis_url fixture,
   isolated per gateway. Redis success must reach this disposable server, never a developer's
   REDIS_HOST. Enable general_settings.store_model_in_db for saves; ordinary tests use the
   existing master-key/fixture-role authentication. Keep config defaults with the route owners.

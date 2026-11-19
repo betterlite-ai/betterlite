@@ -60,7 +60,7 @@ description: >-
   ConnectFlowSurface reads GET /authorize/flow?flow=<handle> with cookies and no bearer (B7971,
   mounted by B8702); add the read after starting a flow, and with an unknown handle.
 
-  Use B860's Postgres fixture with B5076's bootstrap, an internal_user with two keys, and mock
+  Use B860's Postgres fixture with B9942's bootstrap, an internal_user with two keys, and mock
   upstreams for the model and MCP server. Compare status, content type, stream frames the page
   reads and the stable body fields above. About 90 patch, 110 component-test and 420 case
   lines.
