@@ -1,0 +1,230 @@
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::Number;
+
+use super::BLOCKED;
+use crate::bedrock_records::{
+    Assessment, ContentFilter, GroundingFilter, ManagedWord, PiiEntity, Regex, TopicPolicyItem,
+};
+
+// every entry starts with its category, then the policy's own fields in LiteLLM's order
+fn entry(category: &str, fields: &[(&str, Json)]) -> Json {
+    let mut object = IndexMap::from([("category".to_owned(), Json::Text(category.to_owned()))]);
+    for (key, value) in fields {
+        object.insert((*key).to_owned(), value.clone());
+    }
+    Json::Object(object)
+}
+
+fn blocked_entries<T, F>(items: Option<&[T]>, keep: F) -> Vec<Json>
+where
+    F: Fn(&T) -> Option<Json>,
+{
+    let mut kept = Vec::new();
+    for item in items.unwrap_or_default() {
+        kept.extend(keep(item));
+    }
+    kept
+}
+
+// a policy list plus the action getter that decides whether a match blocks, and the entry it builds
+fn blocked_policy<T, A, E>(items: Option<&[T]>, action: A, build: E) -> Vec<Json>
+where
+    A: Fn(&T) -> Option<&str>,
+    E: Fn(&T) -> Json,
+{
+    blocked_entries(items, |item| {
+        (action(item) == Some(BLOCKED)).then(|| build(item))
+    })
+}
+
+// LiteLLM's _extract_blocked_assessments reads the five policies in this order
+pub(super) fn assessment_blocks(assessment: &Assessment) -> Vec<(&'static str, Vec<Json>)> {
+    let topic = assessment
+        .topic_policy
+        .as_ref()
+        .and_then(|policy| policy.topics.as_deref());
+    let content = assessment
+        .content_policy
+        .as_ref()
+        .and_then(|policy| policy.filters.as_deref());
+    let grounding = assessment
+        .contextual_grounding_policy
+        .as_ref()
+        .and_then(|policy| policy.filters.as_deref());
+    let mut blocks = vec![
+        (
+            "topicPolicy",
+            blocked_policy(topic, |item| item.action.as_deref(), topic_entry),
+        ),
+        (
+            "contentPolicy",
+            blocked_policy(content, |item| item.action.as_deref(), content_entry),
+        ),
+        (
+            "contextualGroundingPolicy",
+            blocked_policy(grounding, |item| item.action.as_deref(), grounding_entry),
+        ),
+    ];
+    blocks.extend(word_and_sensitive_blocks(assessment));
+    blocks
+}
+
+fn word_and_sensitive_blocks(assessment: &Assessment) -> [(&'static str, Vec<Json>); 2] {
+    let word_policy = assessment.word_policy.as_ref();
+    let custom = word_policy.and_then(|policy| policy.custom_words.as_deref());
+    let managed = word_policy.and_then(|policy| policy.managed_word_lists.as_deref());
+    let sensitive = assessment.sensitive_information_policy.as_ref();
+    let entities = sensitive.and_then(|policy| policy.pii_entities.as_deref());
+    let patterns = sensitive.and_then(|policy| policy.regexes.as_deref());
+    let mut words = blocked_entries(custom, |word| {
+        (word.action.as_deref() == Some(BLOCKED)).then(|| {
+            entry(
+                "customWords",
+                &[
+                    ("match", optional_text(word.match_text.as_ref())),
+                    ("action", optional_text(word.action.as_ref())),
+                ],
+            )
+        })
+    });
+    words.extend(blocked_policy(
+        managed,
+        |word| word.action.as_deref(),
+        managed_entry,
+    ));
+    [
+        ("wordPolicy", words),
+        (
+            "sensitiveInformationPolicy",
+            [
+                blocked_policy(entities, |entity| entity.action.as_deref(), pii_entry),
+                blocked_policy(patterns, |pattern| pattern.action.as_deref(), regex_entry),
+            ]
+            .concat(),
+        ),
+    ]
+}
+
+fn topic_entry(topic: &TopicPolicyItem) -> Json {
+    entry(
+        "topics",
+        &[
+            ("name", optional_text(topic.name.as_ref())),
+            ("type", optional_text(topic.type_name.as_ref())),
+            ("action", optional_text(topic.action.as_ref())),
+        ],
+    )
+}
+
+// content filters and contextual grounding filters share the category and the outer fields
+fn filter_entry(
+    type_name: Option<&String>,
+    middle: [(&'static str, Json); 2],
+    action: Option<&String>,
+) -> Json {
+    let [first, second] = middle;
+    entry(
+        "filters",
+        &[
+            ("type", optional_text(type_name)),
+            first,
+            second,
+            ("action", optional_text(action)),
+        ],
+    )
+}
+
+fn content_middle(filter: &ContentFilter) -> [(&'static str, Json); 2] {
+    [
+        ("confidence", optional_text(filter.confidence.as_ref())),
+        (
+            "filterStrength",
+            optional_text(filter.filter_strength.as_ref()),
+        ),
+    ]
+}
+
+fn grounding_middle(filter: &GroundingFilter) -> [(&'static str, Json); 2] {
+    [
+        ("threshold", optional_number(filter.threshold.as_ref())),
+        ("score", optional_number(filter.score.as_ref())),
+    ]
+}
+
+fn content_entry(filter: &ContentFilter) -> Json {
+    filter_entry(
+        filter.type_name.as_ref(),
+        content_middle(filter),
+        filter.action.as_ref(),
+    )
+}
+
+fn grounding_entry(filter: &GroundingFilter) -> Json {
+    filter_entry(
+        filter.type_name.as_ref(),
+        grounding_middle(filter),
+        filter.action.as_ref(),
+    )
+}
+
+// managed word lists and PII entities carry the same type, match and action fields
+fn typed_match_entry(
+    category: &str,
+    type_name: Option<&String>,
+    match_text: Option<&String>,
+    action: Option<&String>,
+) -> Json {
+    entry(
+        category,
+        &[
+            ("type", optional_text(type_name)),
+            ("match", optional_text(match_text)),
+            ("action", optional_text(action)),
+        ],
+    )
+}
+
+fn managed_entry(word: &ManagedWord) -> Json {
+    typed_match_entry(
+        "managedWordLists",
+        word.type_name.as_ref(),
+        word.match_text.as_ref(),
+        word.action.as_ref(),
+    )
+}
+
+fn pii_entry(entity: &PiiEntity) -> Json {
+    typed_match_entry(
+        "piiEntities",
+        entity.type_name.as_ref(),
+        entity.match_text.as_ref(),
+        entity.action.as_ref(),
+    )
+}
+
+fn regex_entry(pattern: &Regex) -> Json {
+    entry(
+        "regexes",
+        &[
+            ("name", optional_text(pattern.name.as_ref())),
+            ("regex", optional_text(pattern.regex.as_ref())),
+            ("match", optional_text(pattern.match_text.as_ref())),
+            ("action", optional_text(pattern.action.as_ref())),
+        ],
+    )
+}
+
+fn optional_text(value: Option<&String>) -> Json {
+    match value {
+        Some(text) => Json::Text(text.clone()),
+        None => Json::Null,
+    }
+}
+
+fn optional_number(value: Option<&Number>) -> Json {
+    match value {
+        Some(number) => Json::Number(number.clone()),
+        None => Json::Null,
+    }
+}

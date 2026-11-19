@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::bedrock_decisions::assessments::{
     blocked_assessments, should_raise_blocked, violation_category_names,
 };
+use betterlite_guardrails::bedrock_decisions::error::BedrockDecisionError;
 use betterlite_guardrails::bedrock_decisions::exceptions::{
     BlockedGuardrail, blocked_guardrail_failure, body_has_exception, payload_has_exception,
     response_status,
@@ -14,7 +17,7 @@ use betterlite_guardrails::bedrock_decisions::logging::{
 use betterlite_guardrails::bedrock_decisions::tracing::{Pricing, tracing_detail};
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
+use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
 use betterlite_guardrails::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
@@ -106,66 +109,52 @@ fn http_exception_view(args: &HttpExceptionArgs) -> HelperResult {
     }
 }
 
-fn log_attempt_view(args: &LogAttemptArgs) -> HelperResult {
+fn log_view<F>(
+    guardrail: &GuardrailSetup,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    write: F,
+) -> HelperResult
+where
+    F: FnOnce(&CallLog<'_>, &mut GuardrailRecordContext<'_>) -> Result<(), BedrockDecisionError>,
+{
     let catalog = BundledCatalog::default().get();
     let call = call_log(&catalog);
-    let base = guardrail_base(&args.guardrail);
+    let base = guardrail_base(guardrail);
     let sink = NoSpanSink;
-    let mut request_data = args.request_data.clone();
+    let mut logged = request_data.clone();
     let mut context = GuardrailRecordContext {
         base: &base,
-        request_data: &mut request_data,
+        request_data: &mut logged,
         log_target: None,
         sink: &sink,
     };
+    write(&call, &mut context)
+        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
+    encode(logged)
+}
+
+fn log_attempt_view(args: &LogAttemptArgs) -> HelperResult {
     let attempt = AttemptLog {
         status_code: args.status_code,
         body: args.body.as_bytes(),
         json_response: &args.response,
         completed_chunk_usages: &args.completed_chunk_usages,
     };
-    log_attempt(&mut context, &call, &attempt)
-        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
-    encode(request_data)
+    log_view(&args.guardrail, &args.request_data, |call, context| {
+        log_attempt(context, call, &attempt)
+    })
 }
 
 fn log_success_view(args: &LogSuccessArgs) -> HelperResult {
-    let catalog = BundledCatalog::default().get();
-    let call = call_log(&catalog);
-    let base = guardrail_base(&args.guardrail);
-    let sink = NoSpanSink;
-    let mut request_data = args.request_data.clone();
-    let mut context = GuardrailRecordContext {
-        base: &base,
-        request_data: &mut request_data,
-        log_target: None,
-        sink: &sink,
-    };
-    log_success(&mut context, &call, &args.response)
-        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
-    encode(request_data)
+    log_view(&args.guardrail, &args.request_data, |call, context| {
+        log_success(context, call, &args.response)
+    })
 }
 
 fn log_failure_view(args: &LogFailureArgs) -> HelperResult {
-    let catalog = BundledCatalog::default().get();
-    let call = call_log(&catalog);
-    let base = guardrail_base(&args.guardrail);
-    let sink = NoSpanSink;
-    let mut request_data = args.request_data.clone();
-    let mut context = GuardrailRecordContext {
-        base: &base,
-        request_data: &mut request_data,
-        log_target: None,
-        sink: &sink,
-    };
-    log_failure(
-        &mut context,
-        &call,
-        &args.detail,
-        &args.completed_chunk_usages,
-    )
-    .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
-    encode(request_data)
+    log_view(&args.guardrail, &args.request_data, |call, context| {
+        log_failure(context, call, &args.detail, &args.completed_chunk_usages)
+    })
 }
 
 fn call_log(catalog: &ModelCatalog) -> CallLog<'_> {
@@ -182,12 +171,27 @@ fn call_log(catalog: &ModelCatalog) -> CallLog<'_> {
 }
 
 fn guardrail_base(guardrail: &GuardrailSetup) -> GuardrailBase {
-    let settings = GuardrailSettings {
-        guardrail_name: guardrail.name.clone(),
-        ..GuardrailSettings::default()
-    };
     GuardrailBase {
-        settings,
+        settings: GuardrailSettings {
+            guardrail_name: guardrail.name.clone(),
+            supported_event_hooks: None,
+            event_hook: None,
+            default_on: false,
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: None,
+            switches: GuardrailSwitches::default(),
+        },
         mode: None,
     }
 }

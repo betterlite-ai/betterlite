@@ -45,7 +45,11 @@ pub fn log_attempt(
         }
         let summed = Response {
             usage: Some(sum_usages(&usages)?),
-            ..Response::default()
+            action: None,
+            output: None,
+            outputs: None,
+            assessments: None,
+            extra: BTreeMap::new(),
         };
         // an explicit null usage stays in extra, so the summed one replaces it there too
         logged.absorb(&summed);
@@ -82,7 +86,11 @@ pub fn log_failure(
         fields.insert("usage".to_owned(), json_of(&billed)?);
         let response = Response {
             usage: Some(billed),
-            ..Response::default()
+            action: None,
+            output: None,
+            outputs: None,
+            assessments: None,
+            extra: BTreeMap::new(),
         };
         Some(tracing_detail(&response, &call.pricing)?)
     };

@@ -17,7 +17,7 @@ use crate::bedrock_decisions::logging::CallLog;
 use crate::bedrock_decisions::tracing::Pricing;
 use crate::bedrock_records::Response;
 use crate::guardrail_base::GuardrailBase;
-use crate::guardrail_base::settings::GuardrailSettings;
+use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
@@ -74,7 +74,23 @@ fn base(name: Option<&str>) -> GuardrailBase {
     GuardrailBase {
         settings: GuardrailSettings {
             guardrail_name: name.map(str::to_owned),
-            ..GuardrailSettings::default()
+            supported_event_hooks: None,
+            event_hook: None,
+            default_on: false,
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: None,
+            switches: GuardrailSwitches::default(),
         },
         mode: None,
     }
