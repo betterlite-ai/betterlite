@@ -1,0 +1,11 @@
+kind: helper
+name: assistant-message-options-openai-seed
+call:
+  assistant_message_options:
+    custom_llm_provider: openai
+    drop_params: false
+    role: user
+    content: hi
+    kwargs: {trace: x}
+env: {}
+compare: {ignore: []}

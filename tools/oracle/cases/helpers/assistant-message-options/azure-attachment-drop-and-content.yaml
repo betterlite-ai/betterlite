@@ -1,0 +1,39 @@
+kind: helper
+name: azure-attachment-drop-and-content
+call:
+  assistant_message_options:
+    custom_llm_provider: azure
+    drop_params: false
+    content: hi
+    attachments: [{file_id: file_a}]
+env: {}
+compare:
+  ignore: []
+calls:
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      attachments: [{file_id: file_a}]
+      metadata: {k: v}
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      attachments: [{tools: []}]
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: true
+      attachments: [{tools: []}]
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      content:
+        - type: text
+          text: {value: hi, annotations: []}
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      attachments: {file_id: file_a}
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      attachments: [{file_id: file_a}, {tools: []}]

@@ -1,0 +1,107 @@
+kind: sdk_http
+name: message-settings-and-failures
+env:
+  OPENAI_API_KEY: env-openai-key
+  AZURE_API_KEY: env-azure-key
+call:
+  assistant_messages:
+    runs:
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: request-key, organization: org-request}
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        settings: {api_key: global-key}
+      - mode: async
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: az-request, api_version: "2024-05-01-preview"}
+      - mode: async
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        settings: {api_key: az-global, api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: anthropic
+        thread_id: thread_a
+        role: user
+        content: hello
+      - mode: async
+        operation: list
+        provider: anthropic
+        thread_id: thread_a
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: request-key}
+      - mode: async
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        params: {api_key: request-key}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 400
+    headers: {content-type: application/json}
+    body:
+      error: {message: bad request, type: invalid_request_error, param: role, code: bad_code}
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error: {message: no such model, type: invalid_request_error, code: model_not_found}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [accept, api-key, authorization, content-type, openai-beta, openai-organization]
+  ignore:
+    - {pointer: /assistant_messages/value/runs/8/failure/message, why: LiteLLM writes the HTTP status and a Python repr of the parsed body, betterlite writes its own text}
+    - {pointer: /assistant_messages/value/runs/9/failure/message, why: LiteLLM prefixes the mapped class and a provider message, betterlite writes its own text}

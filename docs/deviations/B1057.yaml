@@ -1,0 +1,24 @@
+task: B1057
+deviations:
+  - what: "An empty thread id and the dot segments \".\" and \"..\" are refused with a value error before any request, where LiteLLM passes the string it is given to the OpenAI or Azure SDK, which quotes it into the message path."
+    why: "The message calls reuse B520's OpenAI thread client and B697's Azure assistant client, which quote a thread id as one path segment and refuse the values that cannot be one; B697 records the same guard."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L1011
+  - what: "A structured httpx.Timeout bounds the whole message call by its read phase, an absent or zero read phase becoming 600 seconds, where LiteLLM hands the structured timeout to the OpenAI and Azure SDK clients unchanged."
+    why: "betterlite has one deadline for a provider call rather than per-phase transport timeouts, and the read phase governs how long a response may take; the scalar and string timeout forms keep LiteLLM's resolution exactly."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L904-L916
+  - what: "Provider failures and a malformed attachment entry carry betterlite's own message text: LiteLLM writes \"Error code: {status} - {repr(parsed body)}\", \"litellm.{Class}: ...\", and Python's own TypeError wording for an entry that is not an attachment."
+    why: "The class, status and the body-derived type, param and code fields match LiteLLM; the message is Python's repr and runtime wording, which the typed error surface does not reproduce, and the oracle cases ignore only this pointer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2144-L2186
+  - what: "There is no caller-supplied SDK client: LiteLLM's add_message and get_messages accept client= and hand it to the provider call, where betterlite always builds its client from the resolved credentials."
+    why: "betterlite has no Python client objects to inject, and the credentials, base URL and timeout it resolves are the ones the call uses; the oracle case schema refuses a client field for the same reason."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L1011
+kept_bugs:
+  - what: "Only the literal True async flag dispatches the async provider call: a value such as 1, \"true\" or \"yes\" keeps the sync client, and null and false do too."
+    why: "LiteLLM's wrappers test \"is not None and is True\" around the popped flag, so a caller that sends a merely truthy value gets the sync call today; widening the check would silently move those calls to the async client."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2622-L2634
+  - what: "Azure validates the attachments list and then drops it: file ids are collected into a local list that never reaches optional_params, so a valid attachments value sends neither attachments nor file_ids."
+    why: "LiteLLM's mapper builds the list and never assigns it, and Azure callers depend on the v2 attachments field not being forwarded, so the mapper's output is copied as it stands."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L91-L104
+  - what: "The selector raises UnsupportedParamsError with status_code=500 at the raise site, yet the exception forces status_code 400; betterlite reports 400 and keeps the prefixed message."
+    why: "Every caller that sees the error today sees a 400, so the observable status is the one copied; reproducing the constructor's override is what makes the wire fields match."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945-L967

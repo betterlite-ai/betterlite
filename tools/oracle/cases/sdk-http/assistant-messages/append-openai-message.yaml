@@ -1,0 +1,66 @@
+kind: sdk_http
+name: append-openai-message
+env: {}
+call:
+  assistant_messages:
+    runs:
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: hello
+        attachments: [{file_id: file_a, tools: [{type: file_search}]}]
+        metadata: {tag: x}
+        params: {api_key: sk-case}
+      - mode: async
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: assistant
+        content: hi
+        params: {api_key: sk-case}
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: empty parts
+        attachments: []
+        metadata: {}
+        params: {api_key: sk-case}
+      - mode: async
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: assistant
+        content: ""
+        params: {api_key: sk-case}
+      - mode: sync
+        operation: append
+        provider: openai
+        thread_id: thread_a
+        role: user
+        content: [{type: text, text: {value: hi, annotations: []}}]
+        params: {api_key: sk-case}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [accept, authorization, content-type, openai-beta]
+  ignore: []

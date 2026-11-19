@@ -1,0 +1,70 @@
+kind: sdk_http
+name: message-list-ignores-pagination
+env: {}
+call:
+  assistant_messages:
+    runs:
+      - mode: sync
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params:
+          api_key: sk-case
+          after: msg_a
+          before: msg_z
+          limit: 2
+          order: asc
+      - mode: async
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params:
+          api_key: sk-case
+          after: msg_a
+          before: msg_z
+          limit: 2
+          order: desc
+      - mode: sync
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params: {api_key: sk-case, aget_messages: 1}
+      - mode: sync
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params: {api_key: sk-case, aget_messages: "true"}
+      - mode: sync
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params: {api_key: sk-case, aget_messages: false}
+      - mode: sync
+        operation: list
+        provider: openai
+        thread_id: thread_a
+        params: {api_key: sk-case, aget_messages: null}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [accept, authorization, content-type, openai-beta]
+  ignore: []

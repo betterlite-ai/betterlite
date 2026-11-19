@@ -1,0 +1,46 @@
+kind: helper
+name: message-option-omissions
+call:
+  assistant_message_options:
+    custom_llm_provider: openai
+    drop_params: false
+    role: null
+    content: null
+    attachments: null
+    metadata: null
+env: {}
+compare:
+  ignore: []
+calls:
+  - assistant_message_options:
+      custom_llm_provider: openai
+      drop_params: false
+      role: user
+      content: ""
+      attachments: []
+      metadata: {}
+  - assistant_message_options:
+      custom_llm_provider: openai
+      drop_params: false
+      role: user
+      content: hi
+      kwargs: {trace: x}
+  - assistant_message_options:
+      custom_llm_provider: anthropic
+      drop_params: false
+      role: user
+      content: hi
+  - assistant_message_options:
+      custom_llm_provider: anthropic
+      drop_params: false
+      kwargs: {trace: x}
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      role: user
+      content: hi
+      metadata: {}
+  - assistant_message_options:
+      custom_llm_provider: azure
+      drop_params: false
+      attachments: []

@@ -1,0 +1,96 @@
+kind: sdk_http
+name: azure-attachment-drop-and-content
+env: {}
+call:
+  assistant_messages:
+    runs:
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        attachments: [{file_id: file_a}]
+        metadata: {tag: x}
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: async
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: assistant
+        content: hi
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        attachments: [{tools: []}]
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: [{type: text, text: hello}]
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: [{type: text, text: hello}]
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+        drop_params: true
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        attachments: {}
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: async
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: empty
+        attachments: []
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: dropped
+        attachments: [{tools: []}]
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+        drop_params: true
+      - mode: sync
+        operation: append
+        provider: azure
+        thread_id: thread_a
+        role: user
+        content: hello
+        attachments: [{file_id: file_a}, {tools: []}]
+        params: {api_key: az-key, api_version: "2024-05-01-preview"}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [accept, api-key, content-type, openai-beta]
+  ignore: []
