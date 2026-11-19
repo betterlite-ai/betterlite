@@ -9,7 +9,6 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     ParallelSlotAcquisition,
     RateLimitDescriptor,
     RateLimitResponse,
-    RateLimitStatus,
     get_or_create_request_stash,
 )
 from pydantic import ConfigDict, JsonValue, TypeAdapter
@@ -132,7 +131,7 @@ class GaugeLimiter(Protocol):
         parallel_slot_id: str,
     ) -> RateLimitResponse: ...
 
-    async def async_release_max_parallel_requests_on_disconnect(
+    async def async_release_max_parallel_requests_on_disconnect(  # ast-grep-ignore: no-long-names
         self, user_api_key_dict: UserAPIKeyAuth
     ) -> None: ...
 
@@ -154,20 +153,19 @@ def make_limiter(
     return constructor(cache, clock, fail_closed_resolver=fail_closed)
 
 
-def status_value(status: RateLimitStatus) -> dict[str, JsonValue]:
-    return {
-        "code": status["code"],
-        "current_limit": status["current_limit"],
-        "limit_remaining": status["limit_remaining"],
-        "rate_limit_type": status["rate_limit_type"],
-        "descriptor_key": status["descriptor_key"],
-    }
-
-
 def response_value(response: RateLimitResponse) -> dict[str, JsonValue]:
+    statuses: list[JsonValue] = []
+    for status in response["statuses"]:
+        statuses.append({
+            "code": status["code"],
+            "current_limit": status["current_limit"],
+            "limit_remaining": status["limit_remaining"],
+            "rate_limit_type": status["rate_limit_type"],
+            "descriptor_key": status["descriptor_key"],
+        })
     return {
         "overall_code": response["overall_code"],
-        "statuses": [status_value(status) for status in response["statuses"]],
+        "statuses": statuses,
         "reservation_windows": [],
     }
 
