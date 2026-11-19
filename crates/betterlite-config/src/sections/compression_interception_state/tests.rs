@@ -147,6 +147,7 @@ fn loads_the_trigger_from_the_environment(#[case] value: &str, #[case] trigger: 
 #[case::from_the_environment("os.environ/EMBEDDING_MODEL", Some("bedrock-titan"))]
 #[case::empty_environment("os.environ/EMPTY_MODEL", None)]
 #[case::plain_text("text-embedding-3-small", Some("text-embedding-3-small"))]
+#[case::empty_text("\"\"", Some(""))]
 fn loads_the_embedding_model(#[case] value: &str, #[case] model: Option<&str>) {
     let source = format!(
         "litellm_settings:\n  compression_interception_params:\n    embedding_model: {value}\n"

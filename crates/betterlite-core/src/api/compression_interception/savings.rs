@@ -18,15 +18,13 @@ pub fn compression_savings_from_counts(
     original_tokens: &Json,
     compressed_tokens: &Json,
 ) -> Option<CompressionSavings> {
-    let before = token_count(original_tokens)?;
-    let after = token_count(compressed_tokens)?;
-    if after < 0 || before < after {
-        return None;
-    }
+    // A negative or a compressed count above the original has no unsigned form, so both fall out here
+    let before = u64::try_from(token_count(original_tokens)?).ok()?;
+    let after = u64::try_from(token_count(compressed_tokens)?).ok()?;
     Some(CompressionSavings {
-        tokens_before: u64::try_from(before).ok()?,
-        tokens_after: u64::try_from(after).ok()?,
-        tokens_saved: u64::try_from(before.checked_sub(after)?).ok()?,
+        tokens_before: before,
+        tokens_after: after,
+        tokens_saved: before.checked_sub(after)?,
     })
 }
 
