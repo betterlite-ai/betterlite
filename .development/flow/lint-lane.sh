@@ -4,6 +4,7 @@ set -u
 root=${GATE_LINT_ROOT:?next-slot.sh sets it}
 lanes=${GATE_LINT_LANES:-2}
 mkdir -p "${root}" target/lint-lane || exit 1
+[[ -e "${root}/runs.csv" ]] || echo "time,task,lane,wait_s,run_s,rc,packages,target_gb" > "${root}/runs.csv"
 branch=$(git branch --show-current) || exit 1
 id=${branch#task/}
 id=${id%%-*}
@@ -50,6 +51,11 @@ case "${code}" in
     code=0
     ;;
   *)
+    # an OOM kill or a cargo failure leaves no compiler error line, and the worker would get a fix turn with nothing to fix
+    if ! grep -q -E ': (error|warning)' target/lint-lane/clippy.txt; then
+      echo "the lint lane failed without a clippy error (exit ${code}), so CI lints this change"
+      exit 0
+    fi
     echo "clippy failed in the lint lane; every error is in target/lint-lane/clippy.txt in your worktree"
     grep -E ': (error|warning)' target/lint-lane/clippy.txt
     ;;
