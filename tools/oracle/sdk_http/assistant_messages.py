@@ -122,5 +122,5 @@ def run_outcome(run: Run, api_base: str) -> RunOutcome:
     except openai.APIError as error:
         failure = project_failure(error).failure
         if failure is None:
-            raise ValueError("the SDK error projection carries no failure")
+            raise ValueError("the SDK error projection carries no failure") from error
         return {"failure": failure}

@@ -30,7 +30,7 @@ SELECT: Selector = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315
 
 def run(input_value: Input) -> dict[str, Json]:
     litellm.drop_params = input_value["drop_params"]
-    extras: dict[str, Json] = input_value["kwargs"] if "kwargs" in input_value else {}
+    extras: dict[str, Json] = input_value.get("kwargs", {})
     selected = SELECT(
         role=input_value.get("role"),
         content=input_value.get("content"),
