@@ -722,6 +722,40 @@ async fn assistant_create_async_keeps_the_declared_provider() {
     );
 }
 
+#[tokio::test]
+async fn assistant_create_async_maps_with_the_resolved_provider() {
+    let redactor = redactor();
+    let mut settings = bare_settings();
+    settings.azure_api_base = Some(String::from("https://azure.test"));
+    settings.azure_api_version = Some(String::from("2024-02-15-preview"));
+    settings.azure_api_key = Some(SecretString::from("key-settings"));
+    let mut fixture = Fixture::new(settings).reply(
+        404,
+        r#"{"error":{"message":"no such assistant","type":"invalid_request_error","param":"assistant_id","code":"missing"}}"#,
+    );
+    fixture.catalog = ModelCatalog::parse(
+        br#"{"command-a-03-2025": {"litellm_provider": "cohere_chat"}}"#,
+        UnknownFields::Reject,
+    )
+    .expect("a catalog");
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // the create goes to azure, but exception_type names the resolved openai provider
+    let request = input(raw(
+        r#"{"provider": "azure", "model": "azure/command-a-03-2025"}"#,
+    ));
+    let failed = failure(service.acreate_assistants(&request).await);
+    assert_eq!(failed.class, "BadRequestError");
+    assert_eq!(failed.status, Some(404));
+    assert_eq!(
+        failed.kind,
+        WireField::Text(String::from("invalid_request_error"))
+    );
+    assert_eq!(failed.param, WireField::Text(String::from("assistant_id")));
+    assert_eq!(failed.code, WireField::Text(String::from("missing")));
+}
+
 #[rstest]
 #[case::sync_absent(Entry::Sync, None)]
 #[case::sync_false(Entry::Sync, Some(false))]
