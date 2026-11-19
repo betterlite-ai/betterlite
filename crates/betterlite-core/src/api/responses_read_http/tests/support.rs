@@ -89,13 +89,6 @@ impl Events {
             .unwrap_or_else(PoisonError::into_inner)
             .push(name.to_owned());
     }
-
-    pub(crate) fn recorded(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
 }
 
 pub(crate) struct Sink;

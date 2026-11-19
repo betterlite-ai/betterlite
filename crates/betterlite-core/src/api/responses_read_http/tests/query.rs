@@ -115,7 +115,7 @@ async fn read<'deps>(
 fn assert_requests(wire: &Wire) {
     let requests = wire.requests();
     assert_eq!(requests.len(), 3);
-    for sent in requests.iter() {
+    for sent in requests.as_slice() {
         assert_eq!(sent.method, Method::GET);
         assert_eq!(sent.url.path(), "/v1/responses/resp_a/input_items");
         assert!(matches!(sent.body, RequestBody::Empty));
