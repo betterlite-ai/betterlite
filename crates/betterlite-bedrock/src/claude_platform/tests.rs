@@ -25,3 +25,8 @@ fn bedrock_services_claude_platform_credential_identity_isolation() {
 fn bedrock_services_claude_platform_secret_safe_failure() {
     cases::secret_safe_failure();
 }
+
+#[test]
+fn bedrock_services_claude_platform_native_transform_status() {
+    cases::native_transform_status();
+}

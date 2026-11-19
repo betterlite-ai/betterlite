@@ -104,10 +104,8 @@ fn optional_params_view(params: &IndexMap<String, Json>) -> OptionalParams {
             .get("reasoning_effort")
             .filter(|value| !matches!(value, Json::Null))
             .cloned(),
-        thinking: params
-            .get("thinking")
-            .filter(|value| !matches!(value, Json::Null))
-            .cloned(),
+        // is_effort_used never reads thinking, so the effort view leaves it unset
+        thinking: None,
         output_config: params
             .get("output_config")
             .filter(|value| !matches!(value, Json::Null))

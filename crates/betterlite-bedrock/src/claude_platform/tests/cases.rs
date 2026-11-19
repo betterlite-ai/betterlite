@@ -15,7 +15,9 @@ use super::support::{
 };
 use crate::claude_platform::chat::{ChatHeadersRequest, ChatRequest};
 use crate::claude_platform::convert;
-use crate::claude_platform::error::{ChatValidationError, NativeHeaderError, WorkspaceError};
+use crate::claude_platform::error::{
+    ChatValidationError, NativeHeaderError, NativeTransformError, WorkspaceError,
+};
 use crate::claude_platform::native::{
     NativeHeaders, NativeHeadersRequest, NativeRequest, validate_environment as validate_native,
 };
@@ -222,10 +224,12 @@ pub(crate) fn workspace_id_required() {
         .expect_err("a missing workspace fails");
     assert_eq!(failure.status_code(), Some(401));
     assert_eq!(failure.to_string(), MISSING_WORKSPACE);
-    let ChatValidationError::Workspace(WorkspaceError::Missing { model }) = &failure else {
+    let ChatValidationError::Workspace(workspace @ WorkspaceError::Missing { model }) = &failure
+    else {
         panic!("the chat validation reports the missing workspace: {failure:?}");
     };
     assert_eq!(model, "claude-sonnet-4-5");
+    assert_eq!(workspace.model(), Some("claude-sonnet-4-5"));
     let failure = case
         .native_headers()
         .expect_err("a missing workspace fails for native too");
@@ -287,6 +291,34 @@ pub(crate) fn chat_platform_headers() {
         .chat_headers(&records)
         .expect("an empty environment key resolves to none");
     assert!(header(&chat.values, "x-api-key").is_none());
+
+    // A file block in the caller's messages turns on the file betas.
+    let mut case = request_case();
+    case.messages = json_list(json!([{
+        "role": "user",
+        "content": [{"type": "file", "file": {"file_id": "file-abc123"}}],
+    }]));
+    case.deployment.workspace_id = Some("workspace".to_owned());
+    let chat = case
+        .chat_headers(&records)
+        .expect("the file block headers build");
+    assert_eq!(
+        beta_set(&chat.values),
+        expected_betas(&["files-api-2025-04-14", "code-execution-2025-05-22"])
+    );
+
+    // The effort predicate also reads reasoning_effort, but only on an Opus 4.5 model.
+    let mut case = request_case();
+    case.model = "claude-opus-4-5";
+    case.optional_params = json_map(json!({"reasoning_effort": "high"}));
+    case.deployment.workspace_id = Some("workspace".to_owned());
+    let chat = case
+        .chat_headers(&records)
+        .expect("the effort headers build");
+    assert_eq!(
+        beta_set(&chat.values),
+        expected_betas(&["effort-2025-11-24"])
+    );
 }
 
 // The native defaults, the x-api-key rule and B960's betas.
@@ -636,5 +668,15 @@ pub(crate) fn secret_safe_failure() {
     let rendered = format!("{chat:?}");
     assert!(!rendered.contains("sk-secret-value"), "{rendered}");
     let native = case.native_headers().expect("the native headers build");
-    assert!(!format!("{native:?}").contains("sk-secret-value"));
+    let rendered = format!("{native:?}");
+    assert!(rendered.contains("x-api-key"), "{rendered}");
+    assert!(!rendered.contains("sk-secret-value"), "{rendered}");
+}
+
+// A native transform failure maps to a status; the failed JSON round trip is the 500.
+pub(crate) fn native_transform_status() {
+    let error =
+        serde_json::from_str::<serde_json::Value>("{").expect_err("the malformed JSON fails");
+    let failure = NativeTransformError::Json(error);
+    assert_eq!(failure.status_code(), Some(500));
 }
