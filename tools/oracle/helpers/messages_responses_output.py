@@ -4,7 +4,6 @@ from typing import Final, Protocol, TypedDict, runtime_checkable
 from litellm.llms.anthropic.pass_through.responses_adapters.transformation import (
     LiteLLMAnthropicToResponsesAPIAdapter as ResponsesAdapter,
 )
-from litellm.types.llms.anthropic import AnthropicMessagesRequest
 from litellm.types.llms.openai import ResponsesAPIResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
@@ -14,7 +13,7 @@ RESPONSE: Final = TypeAdapter(ResponsesAPIResponse)
 
 
 class Call(TypedDict):
-    request: AnthropicMessagesRequest | None
+    request: dict[str, JsonValue] | None
     response: JsonValue
     include_encrypted_reasoning: bool
 
@@ -23,7 +22,7 @@ class Call(TypedDict):
 class Adapter(Protocol):
     def translate_request(
         self,
-        anthropic_request: AnthropicMessagesRequest,
+        anthropic_request: dict[str, JsonValue],
         *,
         include_encrypted_reasoning: bool = True,
     ) -> JsonValue: ...
