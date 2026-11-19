@@ -371,25 +371,21 @@ impl FailurePort {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-
-    fn record(&self, delivery: &FailureDelivery, label: &str) {
-        self.calls.push(label);
-        self.deliveries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("{:?}", delivery.exception));
-    }
 }
 
 #[async_trait]
 impl ResponsesStreamFailureTarget for FailurePort {
     async fn async_failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure> {
-        self.record(delivery, "async");
+        self.calls.push("async");
+        self.deliveries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(format!("{:?}", delivery.exception));
         Ok(())
     }
 
-    fn failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure> {
-        self.record(delivery, "sync");
+    fn failure_handler(&self, _delivery: &FailureDelivery) -> Result<(), PortFailure> {
+        self.calls.push("sync");
         Ok(())
     }
 }
