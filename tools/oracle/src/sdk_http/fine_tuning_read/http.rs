@@ -145,11 +145,21 @@ fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireEr
         .filter(|value| !value.is_empty())
         .unwrap_or(AZURE_DEFAULT_API_VERSION);
     let suffix = suffix(call.values.operation);
+    // the v1 surface is a plain OpenAI client, and its bearer token replaces Azure's api-key header
+    let v1 = V1_API_VERSIONS.contains(&version);
     let mut headers = HeaderMap::new();
     if let Some(key) = call.api_key {
-        insert_header(&mut headers, "api-key", key.expose_secret())?;
+        if v1 {
+            insert_header(
+                &mut headers,
+                "authorization",
+                &format!("Bearer {}", key.expose_secret()),
+            )?;
+        } else {
+            insert_header(&mut headers, "api-key", key.expose_secret())?;
+        }
     }
-    let (url, mut query) = if V1_API_VERSIONS.contains(&version) {
+    let (url, mut query) = if v1 {
         // the v1 surface is a plain OpenAI client over /openai/v1/, with no api-version query
         let url = Url::parse(&format!("{api_base}/openai/v1/fine_tuning/jobs{suffix}"))
             .map_err(|source| ReadWireError::Url(Box::new(source)))?;

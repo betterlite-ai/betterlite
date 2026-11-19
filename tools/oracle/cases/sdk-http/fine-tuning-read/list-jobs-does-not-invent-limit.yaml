@@ -28,7 +28,10 @@ call:
       - list:
           call:
             provider: azure
-            api_version: "2024-08-01-preview"
+      - list:
+          call:
+            provider: azure
+            api_version: "v1"
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -114,6 +117,9 @@ upstream:
           metadata: null
           method: null
       has_more: false
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
 compare:
   headers: []
   headers_present: []
