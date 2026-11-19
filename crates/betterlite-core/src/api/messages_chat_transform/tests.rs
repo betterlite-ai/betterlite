@@ -13,7 +13,6 @@ use betterlite_models::model_capability_predicates::{
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::system_placement::text_parts::CONVERTED_SYSTEM_NOTE;
 use indexmap::IndexMap;
-use serde_json::json;
 
 use crate::api::messages_chat_output::records::ResponseRecord;
 use crate::api::messages_chat_tools_schema::tool_choice::ToolChoiceError;
@@ -28,6 +27,8 @@ use super::settings::AdapterSettings;
 
 const MODEL_REQUIRED: &str = "Bad Request: model is required for Anthropic Messages Request";
 const MESSAGES_REQUIRED: &str = "Bad Request: messages is required for Anthropic Messages Request";
+const TRAILING_SYSTEM: &str = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"},{"role":"system","content":"late"}]}"#;
+const STRUCTURED_FORMAT: &str = r#"{"type":"json_schema","json_schema":{"name":"structured_output","schema":{"type":"object"},"strict":true}}"#;
 
 // LiteLLM reads the capability from its pinned model map, so a test says which models it flags.
 struct Capabilities {
@@ -118,6 +119,38 @@ fn json(source: &str) -> Json {
 
 fn object(source: &str) -> Object {
     serde_json::from_str(source).expect("a valid object fixture")
+}
+
+fn record(source: &str) -> ResponseRecord {
+    serde_json::from_str(source).expect("a valid response record fixture")
+}
+
+fn full_options_request() -> Object {
+    object(
+        r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"system":"guide","max_tokens":12,"metadata":{"user_id":"alice"},"litellm_metadata":{"tag":"t"},"stop_sequences":["END"],"tool_choice":{"type":"any"}}"#,
+    )
+}
+
+fn polyfilled_result() -> PolyfillResult {
+    PolyfillResult {
+        messages: Vec::new(),
+        system: None,
+        applied_edits: vec![AppliedEdit {
+            edit_type: Some("clear_tool_uses_20250919".to_owned()),
+            cleared_tool_uses: Some(1),
+            ..AppliedEdit::default()
+        }],
+        compaction_block: Some(CompactionBlock {
+            kind: CompactionKind::Compaction,
+            content: Some("sum".to_owned()),
+            signature: Some("s".to_owned()),
+        }),
+        iterations_usage: Some(vec![UsageIteration {
+            kind: UsageKind::Compaction,
+            input_tokens: Some(4),
+            output_tokens: Some(1),
+        }]),
+    }
 }
 
 const fn adapter() -> AnthropicAdapter {
@@ -230,18 +263,7 @@ async fn non_text_required_keys_are_typed_errors() {
 
 #[tokio::test]
 async fn composed_chat_request_carries_every_translated_option() {
-    let mut kwargs = object(
-        r#"{
-            "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "hello"}],
-            "system": "guide",
-            "max_tokens": 12,
-            "metadata": {"user_id": "alice"},
-            "litellm_metadata": {"tag": "t"},
-            "stop_sequences": ["END"],
-            "tool_choice": {"type": "any"}
-        }"#,
-    );
+    let mut kwargs = full_options_request();
     let (request, mapping) = wrap(&mut kwargs, &mut Capabilities::new(&[]))
         .await
         .expect("the request composes");
@@ -249,31 +271,21 @@ async fn composed_chat_request_carries_every_translated_option() {
     assert_eq!(
         request,
         object(
-            r#"{
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": "guide"},
-                    {"role": "user", "content": "hello"}
-                ],
-                "max_tokens": 12,
-                "user": "alice",
-                "metadata": {"tag": "t"},
-                "tool_choice": "required",
-                "stop": ["END"]
-            }"#
+            r#"{"model":"gpt-4o","messages":[{"role":"system","content":"guide"},{"role":"user","content":"hello"}],"max_tokens":12,"user":"alice","metadata":{"tag":"t"},"tool_choice":"required","stop":["END"]}"#,
         )
     );
+}
+
+#[tokio::test]
+async fn the_wrapper_pops_only_the_required_keys_from_the_callers_kwargs() {
+    let mut kwargs = full_options_request();
+    let (_request, _mapping) = wrap(&mut kwargs, &mut Capabilities::new(&[]))
+        .await
+        .expect("the request composes");
     assert_eq!(
         kwargs,
         object(
-            r#"{
-                "system": "guide",
-                "max_tokens": 12,
-                "metadata": {"user_id": "alice"},
-                "litellm_metadata": {"tag": "t"},
-                "stop_sequences": ["END"],
-                "tool_choice": {"type": "any"}
-            }"#
+            r#"{"system":"guide","max_tokens":12,"metadata":{"user_id":"alice"},"litellm_metadata":{"tag":"t"},"stop_sequences":["END"],"tool_choice":{"type":"any"}}"#,
         ),
         "the wrapper pops only the two required keys from the caller's kwargs"
     );
@@ -360,34 +372,19 @@ async fn thinking_budget_and_adaptive_effort_reach_the_composed_request() {
 
 #[tokio::test]
 async fn output_format_and_output_config_format_reach_the_composed_request() {
-    let expected = json(
-        r#"{
-            "type": "json_schema",
-            "json_schema": {
-                "name": "structured_output",
-                "schema": {"type": "object"},
-                "strict": true
-            }
-        }"#,
-    );
     let mut legacy = object(
-        r#"{
-            "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "hi"}],
-            "output_format": {"type": "json_schema", "schema": {"type": "object"}}
-        }"#,
+        r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"output_format":{"type":"json_schema","schema":{"type":"object"}}}"#,
     );
     let (legacy_request, _legacy_mapping) = wrap(&mut legacy, &mut Capabilities::new(&[]))
         .await
         .expect("the output_format request composes");
-    assert_eq!(legacy_request.get("response_format"), Some(&expected));
+    assert_eq!(
+        legacy_request.get("response_format"),
+        Some(&json(STRUCTURED_FORMAT))
+    );
 
     let mut configured = object(
-        r#"{
-            "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "hi"}],
-            "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}
-        }"#,
+        r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"output_config":{"format":{"type":"json_schema","schema":{"type":"object"}}}}"#,
     );
     let (configured_request, _configured_mapping) =
         wrap(&mut configured, &mut Capabilities::new(&[]))
@@ -395,21 +392,19 @@ async fn output_format_and_output_config_format_reach_the_composed_request() {
             .expect("the output_config.format request composes");
     assert_eq!(
         configured_request.get("response_format"),
-        Some(&expected),
+        Some(&json(STRUCTURED_FORMAT)),
         "output_config.format translates the same way as the legacy field"
     );
     assert!(
         configured_request.get("output_config").is_none(),
         "the format is translated, so the config does not copy through"
     );
+}
 
+#[tokio::test]
+async fn the_legacy_output_format_wins_over_output_config_format() {
     let mut both = object(
-        r#"{
-            "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "hi"}],
-            "output_format": {"type": "json_schema", "schema": {"type": "object", "title": "legacy"}},
-            "output_config": {"format": {"type": "json_schema", "schema": {"type": "object", "title": "config"}}}
-        }"#,
+        r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"output_format":{"type":"json_schema","schema":{"type":"object","title":"legacy"}},"output_config":{"format":{"type":"json_schema","schema":{"type":"object","title":"config"}}}}"#,
     );
     let (both_request, _both_mapping) = wrap(&mut both, &mut Capabilities::new(&[]))
         .await
@@ -417,7 +412,7 @@ async fn output_format_and_output_config_format_reach_the_composed_request() {
     assert_eq!(
         both_request.get("response_format"),
         Some(&json(
-            r#"{"type": "json_schema", "json_schema": {"name": "structured_output", "schema": {"type": "object", "title": "legacy"}, "strict": true}}"#
+            r#"{"type":"json_schema","json_schema":{"name":"structured_output","schema":{"type":"object","title":"legacy"},"strict":true}}"#
         )),
         "the legacy output_format wins over output_config.format"
     );
@@ -428,15 +423,17 @@ async fn long_tool_names_roundtrip_through_the_returned_mapping() {
     let long = "a".repeat(65);
     let short = format!("{}_635361c4", "a".repeat(55));
     let tools = json(&format!(
-        r#"[{{"name": "{long}", "input_schema": {{"type": "object"}}}}]"#
+        r#"[{{"name":"{long}","input_schema":{{"type":"object"}}}}]"#
     ));
-    let choice = json(&format!(r#"{{"type": "tool", "name": "{long}"}}"#));
-    let messages = json(r#"[{"role": "user", "content": "hi"}]"#);
+    let choice = json(&format!(r#"{{"type":"tool","name":"{long}"}}"#));
     let mut kwargs = Object::new();
     kwargs.insert("model".to_owned(), Json::Text("gpt-4o".to_owned()));
-    kwargs.insert("messages".to_owned(), messages.clone());
-    kwargs.insert("tools".to_owned(), tools.clone());
-    kwargs.insert("tool_choice".to_owned(), choice.clone());
+    kwargs.insert(
+        "messages".to_owned(),
+        json(r#"[{"role":"user","content":"hi"}]"#),
+    );
+    kwargs.insert("tools".to_owned(), tools);
+    kwargs.insert("tool_choice".to_owned(), choice);
     let (request, mapping) = wrap(&mut kwargs, &mut Capabilities::new(&[]))
         .await
         .expect("the request composes");
@@ -445,69 +442,36 @@ async fn long_tool_names_roundtrip_through_the_returned_mapping() {
     assert_eq!(
         request.get("tools"),
         Some(&json(&format!(
-            r#"[{{"type": "function", "function": {{"name": "{short}"}}}}]"#
+            r#"[{{"type":"function","function":{{"name":"{short}","parameters":{{"type":"object"}}}}}}]"#
         )))
     );
     assert_eq!(
         request.get("tool_choice"),
         Some(&json(&format!(
-            r#"{{"type": "function", "function": {{"name": "{short}"}}}}"#
+            r#"{{"type":"function","function":{{"name":"{short}"}}}}"#
         )))
     );
+}
 
-    let record: ResponseRecord = serde_json::from_value(json!({
-        "id": "chat_a",
-        "model": "gpt-4o",
-        "choices": [{
-            "finish_reason": "tool_calls",
-            "message": {
-                "content": null,
-                "tool_calls": [{
-                    "id": "call_1",
-                    "function": {"name": short, "arguments": "{\"x\":1}"}
-                }]
-            }
-        }]
-    }))
-    .expect("the response record decodes");
+#[tokio::test]
+async fn the_tool_name_mapping_restores_the_response_tool_name() {
+    let long = "a".repeat(65);
+    let short = format!("{}_635361c4", "a".repeat(55));
+    let mapping = IndexMap::from([(short.clone(), long.clone())]);
+    let template = r#"{"id":"chat_a","model":"gpt-4o","choices":[{"finish_reason":"tool_calls","message":{"content":null,"tool_calls":[{"id":"call_1","function":{"name":"__TOOL__","arguments":"{\"x\":1}"}}]}}]}"#;
+    let response = record(&template.replace("__TOOL__", &short));
     let message = adapter()
-        .translate_completion_output_params(&record, Some(&mapping), None)
+        .translate_completion_output_params(&response, Some(&mapping), None)
         .expect("the response translates");
     let value = serde_json::to_value(&message).expect("the message encodes");
     assert_eq!(value["content"][0]["type"], "tool_use");
     assert_eq!(value["content"][0]["name"], long);
     assert_eq!(value["stop_reason"], "tool_use");
-
-    let mut again = Object::new();
-    again.insert("model".to_owned(), Json::Text("gpt-4o".to_owned()));
-    again.insert("messages".to_owned(), messages);
-    again.insert("tools".to_owned(), tools);
-    again.insert("tool_choice".to_owned(), choice);
-    let declared = Declared;
-    let convenience = adapter()
-        .translate_completion_input_params(
-            &mut again,
-            AdapterSettings::new(&declared),
-            &mut Capabilities::new(&[]),
-        )
-        .await
-        .expect("the convenience wrapper composes");
-    assert_eq!(
-        convenience, request,
-        "the convenience wrapper returns the same request without the map"
-    );
 }
 
 #[tokio::test]
 async fn preserve_midturn_system_reaches_the_conversation_translation() {
-    let request_json = r#"{
-        "model": "gpt-4o",
-        "messages": [
-            {"role": "user", "content": "hi"},
-            {"role": "system", "content": "late"}
-        ]
-    }"#;
-    let mut preserved = object(request_json);
+    let mut preserved = object(TRAILING_SYSTEM);
     let mut preserved_capabilities = Capabilities::new(&[]);
     let (kept, _preserved_mapping) = compose(&mut preserved, true, &mut preserved_capabilities)
         .await
@@ -523,7 +487,7 @@ async fn preserve_midturn_system_reaches_the_conversation_translation() {
         "the preserve flag decides before any capability lookup"
     );
 
-    let mut converted = object(request_json);
+    let mut converted = object(TRAILING_SYSTEM);
     let mut folded_capabilities = Capabilities::new(&[]);
     let (folded, _folded_mapping) = compose(&mut converted, false, &mut folded_capabilities)
         .await
@@ -547,25 +511,18 @@ async fn preserve_midturn_system_reaches_the_conversation_translation() {
 }
 
 #[tokio::test]
-async fn the_convenience_wrapper_composes_without_a_provider() {
-    let request_json = r#"{
-        "model": "gpt-4o",
-        "messages": [
-            {"role": "user", "content": "hi"},
-            {"role": "system", "content": "late"}
-        ]
-    }"#;
+async fn the_named_provider_decides_the_trailing_system_turn() {
     let declared = Declared;
     let mut settings = AdapterSettings::new(&declared);
     settings.custom_llm_provider = Some("openai");
-    let mut routed_capabilities = Capabilities::new(&[]);
-    routed_capabilities.providers.push("openai".to_owned());
-    let mut routed = object(request_json);
+    let mut capabilities = Capabilities::new(&[]);
+    capabilities.providers.push("openai".to_owned());
+    let mut routed = object(TRAILING_SYSTEM);
     let (kept, _mapping) = adapter()
         .translate_completion_input_params_with_tool_mapping(
             &mut routed,
             &settings,
-            &mut routed_capabilities,
+            &mut capabilities,
         )
         .await
         .expect("the routed request composes");
@@ -577,14 +534,20 @@ async fn the_convenience_wrapper_composes_without_a_provider() {
         "the named provider decides the trailing system turn"
     );
     assert_eq!(
-        routed_capabilities.provider_probes,
+        capabilities.provider_probes,
         [Some("openai".to_owned())],
         "the routed wrapper sends the provider it was given"
     );
+}
 
+#[tokio::test]
+async fn the_convenience_wrapper_composes_without_a_provider() {
+    let declared = Declared;
+    let mut settings = AdapterSettings::new(&declared);
+    settings.custom_llm_provider = Some("openai");
     let mut capabilities = Capabilities::new(&[]);
     capabilities.providers.push("openai".to_owned());
-    let mut unrouted = object(request_json);
+    let mut unrouted = object(TRAILING_SYSTEM);
     let folded = adapter()
         .translate_completion_input_params(&mut unrouted, settings, &mut capabilities)
         .await
@@ -627,85 +590,64 @@ async fn option_step_errors_surface_through_the_composition() {
 
 #[tokio::test]
 async fn composed_message_response_wraps_the_chat_completion() {
-    let record: ResponseRecord = serde_json::from_value(json!({
-        "id": "chat_a",
-        "model": "gpt-4o",
-        "choices": [{
-            "finish_reason": "stop",
-            "message": {"content": "hello"}
-        }],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 2}
-    }))
-    .expect("the response record decodes");
+    let response = record(
+        r#"{"id":"chat_a","model":"gpt-4o","choices":[{"finish_reason":"stop","message":{"content":"hello"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}"#,
+    );
     let message = adapter()
-        .translate_completion_output_params(&record, None, None)
+        .translate_completion_output_params(&response, None, None)
         .expect("the response translates");
     assert_eq!(
         serde_json::to_value(&message).expect("the message encodes"),
-        json!({
-            "id": "chat_a",
-            "type": "message",
-            "role": "assistant",
-            "model": "gpt-4o",
-            "stop_sequence": null,
-            "usage": {"input_tokens": 10, "output_tokens": 2},
-            "content": [{"type": "text", "text": "hello"}],
-            "stop_reason": "end_turn",
-            "stop_details": null
-        })
+        serde_json::to_value(json(
+            r#"{"id":"chat_a","type":"message","role":"assistant","model":"gpt-4o","stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":2},"content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","stop_details":null}"#
+        ))
+        .expect("the fixture serializes")
     );
 }
 
 #[tokio::test]
 async fn polyfill_output_reaches_the_message_response() {
-    let record: ResponseRecord = serde_json::from_value(json!({
-        "id": "chat_a",
-        "model": "gpt-4o",
-        "choices": [{
-            "finish_reason": "stop",
-            "message": {"content": "hello"}
-        }],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 2}
-    }))
-    .expect("the response record decodes");
-    let polyfill = PolyfillResult {
-        messages: Vec::new(),
-        system: None,
-        applied_edits: vec![AppliedEdit {
-            edit_type: Some("clear_tool_uses_20250919".to_owned()),
-            cleared_tool_uses: Some(1),
-            ..AppliedEdit::default()
-        }],
-        compaction_block: Some(CompactionBlock {
-            kind: CompactionKind::Compaction,
-            content: Some("sum".to_owned()),
-            signature: Some("s".to_owned()),
-        }),
-        iterations_usage: Some(vec![UsageIteration {
-            kind: UsageKind::Compaction,
-            input_tokens: Some(4),
-            output_tokens: Some(1),
-        }]),
-    };
+    let response = record(
+        r#"{"id":"chat_a","model":"gpt-4o","choices":[{"finish_reason":"stop","message":{"content":"hello"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}"#,
+    );
+    let polyfill = polyfilled_result();
     let message = adapter()
-        .translate_completion_output_params(&record, None, Some(&polyfill))
+        .translate_completion_output_params(&response, None, Some(&polyfill))
         .expect("the response translates");
     let value = serde_json::to_value(&message).expect("the message encodes");
     assert_eq!(
         value["content"][0],
-        json!({"type": "compaction", "content": "sum", "signature": "s"}),
+        serde_json::to_value(json(
+            r#"{"type":"compaction","content":"sum","signature":"s"}"#
+        ))
+        .expect("the fixture serializes"),
         "the compaction block leads the content"
     );
     assert_eq!(
         value["context_management"]["applied_edits"],
-        json!([{"type": "clear_tool_uses_20250919", "cleared_tool_uses": 1}])
+        serde_json::to_value(json(
+            r#"[{"type":"clear_tool_uses_20250919","cleared_tool_uses":1}]"#
+        ))
+        .expect("the fixture serializes")
     );
+}
+
+#[tokio::test]
+async fn the_polyfill_iterations_reach_the_response_usage() {
+    let response = record(
+        r#"{"id":"chat_a","model":"gpt-4o","choices":[{"finish_reason":"stop","message":{"content":"hello"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}"#,
+    );
+    let polyfill = polyfilled_result();
+    let message = adapter()
+        .translate_completion_output_params(&response, None, Some(&polyfill))
+        .expect("the response translates");
+    let value = serde_json::to_value(&message).expect("the message encodes");
     assert_eq!(
         value["usage"]["iterations"],
-        json!([
-            {"type": "compaction", "input_tokens": 4, "output_tokens": 1},
-            {"type": "message", "input_tokens": 10, "output_tokens": 2}
-        ]),
+        serde_json::to_value(json(
+            r#"[{"type":"compaction","input_tokens":4,"output_tokens":1},{"type":"message","input_tokens":10,"output_tokens":2}]"#
+        ))
+        .expect("the fixture serializes"),
         "the summary iteration comes before the message iteration"
     );
 }

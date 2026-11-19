@@ -15,19 +15,16 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use chrono::DateTime;
 use indexmap::IndexMap;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::api::messages_chat_stream::sse::SyncFrames;
 use crate::api::messages_chat_stream::view::AnthropicSseStream;
 use crate::api::messages_chat_transform::stream::{StreamOptions, StreamOutput};
-use crate::api::messages_context_clear::result::{
-    AppliedEdit, CompactionBlock, CompactionKind, PolyfillResult, UsageIteration, UsageKind,
-};
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::messages_stream_split::{AsyncChunkSource, ChunkSource};
 
 use super::adapter;
+use super::polyfilled_result;
 
 type AsyncView = AnthropicSseStream<Scripted, FixedIds>;
 type SyncIterator = SyncFrames<Scripted, FixedIds>;
@@ -98,21 +95,9 @@ fn usage_chunk(prompt: i64, completion: i64) -> StreamChunk {
 }
 
 fn tool_call(name: &str) -> StreamChunk {
-    let call = json!({
-        "choices": [{
-            "index": 0,
-            "delta": {
-                "tool_calls": [{
-                    "index": 0,
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {"name": name, "arguments": "{\"x\":1}"}
-                }]
-            },
-            "finish_reason": null
-        }]
-    });
-    serde_json::from_value(call).expect("a valid tool-call chunk")
+    chunk(&format!(
+        r#"{{"choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":0,"id":"call_1","type":"function","function":{{"name":"{name}","arguments":"{{\"x\":1}}"}}}}]}},"finish_reason":null}}]}}"#
+    ))
 }
 
 fn scripted(chunks: Vec<StreamChunk>) -> Scripted {
@@ -223,7 +208,19 @@ async fn stream_factory_defaults_to_the_async_view() {
     );
     assert_eq!(at(&events, 4, &["usage", "input_tokens"]), &json("10"));
     assert_eq!(at(&events, 4, &["usage", "output_tokens"]), &json("2"));
+}
 
+#[tokio::test]
+async fn the_async_view_reports_its_recorded_chunks_and_closes() {
+    let output = adapter().translate_completion_output_params_streaming(
+        text_stream(),
+        StreamOptions::new("gpt-4o"),
+        FixedIds,
+    );
+    let StreamOutput::Async(mut view) = output else {
+        panic!("is_async defaults to true");
+    };
+    let (_frames, _message_id) = drain_async(&mut view).await;
     assert_eq!(view.model(), "gpt-4o");
     assert_eq!(
         view.chunks().map(<[StreamChunk]>::len),
@@ -310,28 +307,6 @@ async fn stream_factory_restores_tool_names_through_the_mapping() {
     );
 }
 
-fn polyfill() -> PolyfillResult {
-    PolyfillResult {
-        messages: Vec::new(),
-        system: None,
-        applied_edits: vec![AppliedEdit {
-            edit_type: Some("clear_tool_uses_20250919".to_owned()),
-            cleared_tool_uses: Some(1),
-            ..AppliedEdit::default()
-        }],
-        compaction_block: Some(CompactionBlock {
-            kind: CompactionKind::Compaction,
-            content: Some("sum".to_owned()),
-            signature: Some("s".to_owned()),
-        }),
-        iterations_usage: Some(vec![UsageIteration {
-            kind: UsageKind::Compaction,
-            input_tokens: Some(4),
-            output_tokens: Some(1),
-        }]),
-    }
-}
-
 fn polyfilled_events(events: &[(String, Json)]) {
     assert_eq!(
         at(events, 1, &["content_block", "type"]),
@@ -353,15 +328,12 @@ fn polyfilled_events(events: &[(String, Json)]) {
 }
 
 #[tokio::test]
-async fn stream_factory_passes_the_polyfill_output_to_both_modes() {
-    let polyfill = polyfill();
-    let mut async_options = StreamOptions::new("gpt-4o");
-    async_options.polyfill_result = Some(&polyfill);
-    let output = adapter().translate_completion_output_params_streaming(
-        text_stream(),
-        async_options,
-        FixedIds,
-    );
+async fn stream_factory_passes_the_polyfill_output_to_the_async_view() {
+    let polyfill = polyfilled_result();
+    let mut options = StreamOptions::new("gpt-4o");
+    options.polyfill_result = Some(&polyfill);
+    let output =
+        adapter().translate_completion_output_params_streaming(text_stream(), options, FixedIds);
     let StreamOutput::Async(mut view) = output else {
         panic!("is_async defaults to true");
     };
@@ -382,20 +354,21 @@ async fn stream_factory_passes_the_polyfill_output_to_both_modes() {
         ]
     );
     polyfilled_events(&events);
+}
 
-    let mut sync_options = StreamOptions::new("gpt-4o");
-    sync_options.polyfill_result = Some(&polyfill);
-    sync_options.is_async = false;
-    let sync_output = adapter().translate_completion_output_params_streaming(
-        text_stream(),
-        sync_options,
-        FixedIds,
-    );
-    let StreamOutput::Sync(driver) = sync_output else {
+#[tokio::test]
+async fn stream_factory_passes_the_polyfill_output_to_the_sync_iterator() {
+    let polyfill = polyfilled_result();
+    let mut options = StreamOptions::new("gpt-4o");
+    options.polyfill_result = Some(&polyfill);
+    options.is_async = false;
+    let output =
+        adapter().translate_completion_output_params_streaming(text_stream(), options, FixedIds);
+    let StreamOutput::Sync(driver) = output else {
         panic!("is_async=false returns the sync iterator");
     };
-    let (sync_collected, sync_message_id) = drain_sync(*driver);
-    polyfilled_events(&frames(&sync_collected, &sync_message_id));
+    let (collected, message_id) = drain_sync(*driver);
+    polyfilled_events(&frames(&collected, &message_id));
 }
 
 #[tokio::test]
