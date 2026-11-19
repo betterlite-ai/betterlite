@@ -140,21 +140,17 @@ impl FineTuningCreateDispatch for Dispatch {
     ) -> impl Future<Output = Result<FineTuneJob, SendError>> + Send {
         let urls = Arc::clone(&self.urls);
         async move {
-            let mut tasks = JoinSet::new();
+            let mut set = JoinSet::new();
             match target {
                 FineTuningCreateTarget::OpenAi(call) => {
-                    tasks.spawn_blocking(move || openai(call));
+                    set.spawn_blocking(move || openai(call));
                 }
                 FineTuningCreateTarget::Azure(call) => {
-                    tasks.spawn_blocking(move || azure::create(call));
+                    set.spawn_blocking(move || azure::create(call));
                 }
                 FineTuningCreateTarget::Vertex(call) => return vertex::create(call, urls).await,
             }
-            match tasks.join_next().await {
-                Some(Ok(job)) => job,
-                Some(Err(source)) => Err(SendError::from(source)),
-                None => Err(SendError::Empty),
-            }
+            set.join_next().await.transpose()?.ok_or(SendError::Empty)?
         }
     }
 }
