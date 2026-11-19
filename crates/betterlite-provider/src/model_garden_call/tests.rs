@@ -183,7 +183,12 @@ async fn answer(
 #[tokio::test]
 async fn garden_call_appends_one_chat_path_to_a_publisher_target() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let fixture = Fixture::new("meta/llama-3.3-70b-instruct-maas");
+    let mut fixture = Fixture::new("meta/llama-3.3-70b-instruct-maas");
+    // the fixture server stands in for the OpenAPI base the leaf derives from the model and location
+    fixture.api_base = Some(format!(
+        "{}/v1/projects/proj/locations/us-central1/endpoints/openapi",
+        origin(&listener)
+    ));
     let (request, result) = answer(&fixture.call(), &listener, 200, REPLY.as_bytes()).await;
     let CompatibleChatOutcome::Reply(reply) = result.unwrap() else {
         panic!("a buffered reply");
@@ -205,7 +210,11 @@ async fn garden_call_appends_one_chat_path_to_a_publisher_target() {
 #[tokio::test]
 async fn garden_call_sends_an_endpoint_id_with_an_empty_body_model() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let fixture = Fixture::new("openai/5464397967697903616");
+    let mut fixture = Fixture::new("openai/5464397967697903616");
+    fixture.api_base = Some(format!(
+        "{}/v1beta1/projects/proj/locations/us-central1/endpoints/5464397967697903616",
+        origin(&listener)
+    ));
     let (request, result) = answer(&fixture.call(), &listener, 200, REPLY.as_bytes()).await;
     assert!(matches!(result.unwrap(), CompatibleChatOutcome::Reply(_)));
     assert!(request.starts_with(
@@ -231,7 +240,9 @@ async fn garden_call_keeps_an_explicit_base_without_a_colon_verb() {
 async fn garden_call_wraps_a_status_error_in_a_vertex_500() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let failure = br#"{"error":{"message":"denied"}}"#;
-    let (_, result) = answer(&Fixture::new("meta/llama-3"), &listener, 400, failure).await;
+    let mut fixture = Fixture::new("meta/llama-3");
+    fixture.api_base = Some(origin(&listener));
+    let (_, result) = answer(&fixture.call(), &listener, 400, failure).await;
     let Err(error) = result else {
         panic!("a vertex error");
     };
@@ -273,6 +284,7 @@ async fn garden_call_wraps_a_wrong_stream_type_in_a_vertex_500() {
 async fn garden_call_keeps_an_explicit_stream_true() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut fixture = Fixture::new("meta/llama-3");
+    fixture.api_base = Some(origin(&listener));
     fixture
         .options
         .insert("stream".to_owned(), Json::Bool(true));
@@ -285,6 +297,7 @@ async fn garden_call_keeps_an_explicit_stream_true() {
 async fn garden_call_normalizes_a_null_stream_to_false() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut fixture = Fixture::new("meta/llama-3");
+    fixture.api_base = Some(origin(&listener));
     fixture.options.insert("stream".to_owned(), Json::Null);
     let (request, result) = answer(&fixture.call(), &listener, 200, REPLY.as_bytes()).await;
     assert!(matches!(result.unwrap(), CompatibleChatOutcome::Reply(_)));
