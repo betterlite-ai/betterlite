@@ -39,13 +39,13 @@ pub(super) async fn read_report(
             }))
         }
         "live" => {
-            let report = load_parameter::<ROIReport, _>(
+            let stored_report = load_parameter::<ROIReport, _>(
                 repository,
                 REPORT_KEY,
                 RoiSettingsError::StoredReport,
             )
             .await?;
-            let Some(report) = report else {
+            let Some(report) = stored_report else {
                 return Ok(Json(ROIReportResponse { report: None }));
             };
             let settings = load_settings(repository, state.cipher.as_ref()).await?;
