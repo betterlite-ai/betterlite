@@ -94,10 +94,10 @@ where
     }
 }
 
-fn loop_field(
-    tools: &IndexMap<String, Json>,
+fn loop_field<'tools>(
+    tools: &'tools IndexMap<String, Json>,
     field: &'static str,
-) -> Result<&[Json], RetrievalLoopError> {
+) -> Result<&'tools [Json], RetrievalLoopError> {
     match tools.get(field) {
         None => Ok(&[]),
         Some(Json::List(items)) => Ok(items.as_slice()),
