@@ -248,9 +248,14 @@ pub fn managed_store_list<'query>(
     limit: Option<&'query i64>,
 ) -> Query<'query> {
     let take = limit.unwrap_or(&NO_TAKE);
-    let (sql, parameters): (&'query str, Vec<&'query (dyn ToSql + Sync)>) = filter.map_or_else(
-        || (MANAGED_STORE_LIST_SQL, vec![take]),
-        |ids| (MANAGED_STORE_IN_SQL, vec![ids, take]),
-    );
-    Query { sql, parameters }
+    let Some(ids) = filter else {
+        return Query {
+            sql: MANAGED_STORE_LIST_SQL,
+            parameters: vec![take],
+        };
+    };
+    Query {
+        sql: MANAGED_STORE_IN_SQL,
+        parameters: vec![ids, take],
+    }
 }
