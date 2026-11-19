@@ -4,6 +4,7 @@ use betterlite_core::budget_reset::compute_budget_reset_at;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::identity_rows::PydanticBool;
 use betterlite_db::identity_rows::key::Expiry;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_db::team_rows::member::BudgetLimitEntry;
 use betterlite_secrets::secret_codec::CALLBACK_VAR_ENCRYPTED_PREFIX;
 use rstest::rstest;
@@ -13,7 +14,7 @@ use super::{cipher, clock, database, generate_request, instant, object, settings
 use crate::key_fields::values::LiteLLMKeyType;
 use crate::key_policy_fields::generate::{effective_key_for_generate, generate_budget_windows};
 use crate::key_policy_fields::key_type::handle_key_type;
-use crate::key_policy_fields::{isoformat, microsecond_precision};
+use crate::key_policy_fields::microsecond_precision;
 
 fn reset_text(spec: &str) -> String {
     let reset = compute_budget_reset_at(spec, settings(), clock().now, database()).unwrap();

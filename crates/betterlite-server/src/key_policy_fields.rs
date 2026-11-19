@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_core::duration::error::DurationError;
 use betterlite_core::duration::seconds::duration_in_seconds;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use chrono::{DateTime, Duration, Utc};
@@ -38,15 +39,6 @@ pub enum ClockError {
     },
     #[error("the {spec} duration does not fit the request time")]
     Overflow { spec: String },
-}
-
-// Python's datetime.isoformat() ends a UTC value with +00:00 and never carries more than six fractional digits
-#[must_use]
-pub fn isoformat(instant: DateTime<Utc>) -> String {
-    if instant.timestamp_subsec_micros() == 0 {
-        return instant.format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
-    }
-    instant.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string()
 }
 
 // the same text pydantic writes in JSON, where a UTC offset is the letter Z

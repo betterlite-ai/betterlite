@@ -4,6 +4,7 @@ use betterlite_core::budget_reset::compute_budget_reset_at;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_db::team_rows::member::BudgetLimitEntry;
 use betterlite_secrets::callback_vars::{Transform, transform_callback_vars};
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
@@ -15,7 +16,7 @@ use crate::key_fields::values::LiteLLMKeyType;
 use crate::key_policy_fields::columns::{ColumnError, verification_token_from_row};
 use crate::key_policy_fields::key_type::handle_key_type;
 use crate::key_policy_fields::{
-    ClockError, KeyClock, isoformat, microsecond_precision, shifted_by, zulu_datetime,
+    ClockError, KeyClock, microsecond_precision, shifted_by, zulu_datetime,
 };
 use crate::management_guards::metadata::{METADATA_FIELDS, PREMIUM_METADATA_FIELDS};
 
