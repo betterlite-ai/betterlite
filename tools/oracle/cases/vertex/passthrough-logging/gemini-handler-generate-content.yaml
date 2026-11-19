@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-handler-generate-content
+call:
+  b3640:
+    operation: gemini_handler
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
+    body:
+      candidates:
+        - content:
+            parts:
+              - {text: hello}
+            role: model
+          finishReason: STOP
+          index: 0
+      usageMetadata:
+        promptTokenCount: 3
+        candidatesTokenCount: 2
+        totalTokenCount: 5
+      modelVersion: gemini-2.0-flash
+    request_body: {}
+    lines: []
+    model: null
+env: {}
+compare: {ignore: []}

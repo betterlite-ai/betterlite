@@ -478,3 +478,5 @@ fn nested_drop_paths_are_rejected() {
 fn provider_params_tests_behavior(#[case] scenario: fn()) {
     scenario();
 }
+
+mod listed;

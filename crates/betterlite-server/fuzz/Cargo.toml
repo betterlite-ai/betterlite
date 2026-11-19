@@ -322,6 +322,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "credential_request"
+path = "fuzz_targets/credential_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "team_request_contracts"
 path = "fuzz_targets/team_request_contracts.rs"
 test = false
