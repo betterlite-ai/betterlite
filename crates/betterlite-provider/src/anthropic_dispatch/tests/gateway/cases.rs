@@ -29,6 +29,7 @@ struct Sent {
     model: String,
     messages: Vec<SentMessage>,
     output_config: Option<SentOutputConfig>,
+    logprobs: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -366,6 +367,27 @@ async fn the_provider_field_reaches_the_body_with_its_beta() {
         .header("anthropic-beta")
         .expect("the effort beta header");
     assert!(beta.contains("effort-2025-11-24"));
+}
+
+// allowed_openai_params forwards a name the Anthropic mapper does not map, as sent.
+#[tokio::test]
+async fn the_allowed_openai_param_reaches_the_body() {
+    let harness = Harness::start(vec![buffered()]).await;
+    let result = support::complete(
+        &harness,
+        support::chat(chat_body(
+            r#","logprobs":true,"allowed_openai_params":["logprobs"]"#,
+        )),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Ok(OperationResult::Anthropic(AnthropicResult::Reply(_)))
+    ));
+    let requests = harness.requests().await;
+    assert_eq!(requests.len(), 1);
+    let sent = sent_body(&requests[0]);
+    assert_eq!(sent.logprobs, Some(true));
 }
 
 // A loopback that accepts and never answers ends the call as the operation timeout.

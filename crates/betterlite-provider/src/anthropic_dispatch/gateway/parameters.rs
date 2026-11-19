@@ -7,6 +7,8 @@ use betterlite_anthropic::anthropic_capability_catalog::{
 use betterlite_anthropic::capabilities::supported_params::get_supported_openai_params;
 use betterlite_anthropic::params::error::ParamsError;
 use betterlite_anthropic::params::{ParamsRequest, map_openai_params};
+use betterlite_context::non_default_params::Params;
+use betterlite_context::non_default_params::filters::apply_openai_param_overrides;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::json_value::JsonValue;
@@ -100,8 +102,22 @@ async fn optional_parameters(
     .await
     .map_err(params_error)?;
     copy_provider_fields(provider, &mut optional);
+    optional = openai_overrides(optional, standard, policy)?;
     copy_extra_body(extra_body, policy, &mut optional)?;
     Ok(optional)
+}
+
+// _apply_openai_param_overrides: a name the caller allowed reaches the body as sent, even when the provider mapper does not map it.
+fn openai_overrides(
+    optional: IndexMap<String, Json>,
+    standard: IndexMap<String, Json>,
+    policy: &ParameterPolicy,
+) -> Result<IndexMap<String, Json>, OperationError> {
+    let mapped: Params = convert(optional)?;
+    let mut non_default: Params = convert(standard)?;
+    let merged =
+        apply_openai_param_overrides(mapped, &mut non_default, &policy.allowed_openai_params);
+    convert(merged)
 }
 
 // _check_valid_arg: a name outside the supported list is UnsupportedParamsError unless drop_params takes it out.
