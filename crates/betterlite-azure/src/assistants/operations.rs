@@ -54,8 +54,7 @@ impl<T> AssistantsRunsApi<T>
 where
     T: AssistantsTransport + RunStreamTransport,
 {
-    // The SDK polls right after the create, so the create's own status never ends the wait; the loop
-    // adds no deadline of its own, and each create or retrieve carries the caller's timeout.
+    // The SDK polls right after the create, so the create's own status never ends the wait; each request carries the caller's timeout.
     pub async fn poll(
         &self,
         client: &AzureAssistantsClient<'_, T>,
