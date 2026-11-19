@@ -146,6 +146,10 @@ async fn query_base(bench: &mut Bench) {
         sent[0].url.as_str(),
         "https://mock.test/vector_stores?api-version=v1/vs_a"
     );
+    assert_eq!(
+        bench.fixture.logged("api_base"),
+        Some(&json(r#""https://mock.test/vector_stores?api-version=v1""#))
+    );
 }
 
 async fn logging_order(bench: &mut Bench) {
