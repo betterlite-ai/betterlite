@@ -113,12 +113,13 @@ impl AwsDuplexConnector {
         let status = StatusCode::try_from(response.status().as_u16())
             .map_err(|source| ConnectorError::other(Box::new(source), None))?;
         let mut headers = Headers::new();
-        for (name, value) in std::mem::take(response.headers_mut()).iter() {
+        let received = std::mem::take(response.headers_mut());
+        for (name, value) in &received {
             let text = value
                 .to_str()
                 .map_err(|source| ConnectorError::other(Box::new(source), None))?;
             headers
-                .try_insert(name.as_str(), text)
+                .try_insert(name.as_str().to_owned(), text.to_owned())
                 .map_err(|source| ConnectorError::other(Box::new(source), None))?;
         }
         let io = self.client.tracker.token();

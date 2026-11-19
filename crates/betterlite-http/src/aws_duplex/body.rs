@@ -5,7 +5,7 @@ use std::task::{Context, Poll};
 
 use aws_smithy_types::body::SdkBody;
 use bytes::Bytes;
-use futures_util::{Stream, StreamExt as _};
+use futures_util::Stream;
 use http_body::{Body as HttpBody, Frame, SizeHint};
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
