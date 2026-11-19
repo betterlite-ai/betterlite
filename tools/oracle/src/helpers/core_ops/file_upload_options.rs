@@ -16,7 +16,7 @@ use betterlite_core::api::file_upload_options::{
 use betterlite_core::api::request_body::JsonObject;
 use betterlite_core::api::request_form::values::{FormPart, FormParts, PartValue, UploadFile};
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
