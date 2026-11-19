@@ -3,7 +3,7 @@ deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting smaller inherited limits.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
-  - what: A team-list row whose enriched or deletion fields carry a value of the wrong declared type is rejected by that union member and classified as a live team, where pydantic coerces the value and keeps the enriched or deleted member.
+  - what: A team-list row whose enriched or deletion fields carry a value of the wrong declared type is rejected by that union member and classified as the other member that validates, or as live when none does, where pydantic coerces the value and keeps the enriched or deleted member.
     why: docs/compatibility.md makes a value of the wrong type an error rather than Python's lax coercion; rows of the declared types classify identically.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L87-L94
   - what: A member value that is not an object is rejected with a typed validation error, where MemberDeleteRequest.check_user_info calls .get on it and raises AttributeError.

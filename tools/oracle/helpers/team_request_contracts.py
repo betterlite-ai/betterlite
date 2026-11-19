@@ -42,14 +42,6 @@ class Input(TypedDict):
     document: dict[str, JsonValue]
 
 
-def dumped(model: BaseModel) -> JsonValue:
-    return _JSON.validate_json(model.model_dump_json())
-
-
-def dumped_supplied(model: BaseModel) -> JsonValue:
-    return _JSON.validate_json(model.model_dump_json(exclude_unset=True))
-
-
 def dump_member_ref(document: dict[str, JsonValue]) -> JsonValue:
     reference = teams.TeamMemberRef.model_validate(document)
     return {"user_id": reference.user_id, "user_email": reference.user_email}
@@ -59,7 +51,7 @@ def dump_budget_patch(document: dict[str, JsonValue]) -> JsonValue:
     patch = teams.TeamMemberBudgetPatch.model_validate(document)
     names: list[str] = sorted(document)
     supplied: JsonValue = _JSON.validate_python(names)
-    return {"supplied_fields": supplied, "dump": dumped(patch)}
+    return {"supplied_fields": supplied, "dump": _JSON.validate_json(patch.model_dump_json())}
 
 
 def entry_view(
@@ -122,14 +114,15 @@ def bulk_add_answer(document: dict[str, JsonValue]) -> JsonValue:
 
 def bulk_add_response_answer(document: dict[str, JsonValue]) -> JsonValue:
     response = _BULK_ADD_RESPONSE.model_validate(document)
-    return dumped(response)
+    return _JSON.validate_json(response.model_dump_json())
 
 
 def supplied_answer(operation: Operation, document: dict[str, JsonValue]) -> JsonValue:
     models: dict[str, type[BaseModel]] = {
         "create": _NEW_TEAM, "update": _UPDATE_TEAM, "patch": _PATCH_TEAM,
     }
-    return dumped_supplied(models[operation].model_validate(document))
+    model = models[operation].model_validate(document)
+    return _JSON.validate_json(model.model_dump_json(exclude_unset=True))
 
 
 _CUSTOM: Final[dict[str, Handler]] = {
@@ -142,11 +135,12 @@ _CUSTOM: Final[dict[str, Handler]] = {
 def answer(operation: Operation, document: dict[str, JsonValue]) -> JsonValue:
     listed = _MODELS.get(operation)
     if listed is not None:
-        return dumped(listed.model_validate(document))
+        return _JSON.validate_json(listed.model_validate(document).model_dump_json())
     if operation in ("create", "update", "patch"):
         return supplied_answer(operation, document)
     return _CUSTOM[operation](document)
 
 
 def run(input_value: Input) -> JsonValue:
-    return answer(input_value["operation"], input_value["document"])
+    operation = input_value["operation"]
+    return answer(operation, input_value["document"])
