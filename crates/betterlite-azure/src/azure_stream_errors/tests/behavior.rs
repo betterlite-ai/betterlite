@@ -117,6 +117,13 @@ fn repeated_response_headers_join_with_a_comma() {
 }
 
 #[test]
+fn streaming_error_display_names_the_azure_message() {
+    let failure = AzureStreamFailure::wrapped(Raised::plain("socket closed".to_owned()));
+    let error = StreamingError::Azure(failure);
+    assert_eq!(error.to_string(), "socket closed");
+}
+
+#[test]
 fn azure_chat_streams_secret_safe_failure() {
     let secret = "super-secret-client-key";
     let headers = secret_headers(&[("authentication", secret), ("api-key", secret)]);
