@@ -17,6 +17,7 @@ use betterlite_openai::assistants::records::{AssistantDeleted, AssistantPage};
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_prompts::arguments::json::Json;
 use http::HeaderMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::call::{AssistantCall, AssistantProviderCall, AzureAssistantCall};
@@ -291,17 +292,18 @@ async fn azure_list_keeps_api_version_and_drops_pagination() {
     assert_page(&result.step);
 }
 
+#[rstest]
+#[case::sync(AssistantWrapper::Sync)]
+#[case::async_entry(AssistantWrapper::Async)]
 #[tokio::test]
-async fn delete_sends_the_identifier_in_both_entries() {
-    for entry in [AssistantWrapper::Sync, AssistantWrapper::Async] {
-        let input = delete_azure(entry);
-        let (recorder, dispatch) = harness(200, DELETED);
-        let result = facade(dispatch, Settings::default())
-            .run(&input)
-            .await
-            .unwrap();
-        assert_azure_delete(&recorder.requests()[0], &result.step);
-    }
+async fn delete_sends_the_identifier_in_both_entries(#[case] entry: AssistantWrapper) {
+    let input = delete_azure(entry);
+    let (recorder, dispatch) = harness(200, DELETED);
+    let result = facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    assert_azure_delete(&recorder.requests()[0], &result.step);
 }
 
 async fn azure_delete_discards(kind: SuppliedClientKind) {
@@ -428,8 +430,7 @@ async fn check_supplied(
     );
 }
 
-// every field named, since a ..Settings::default() update and a field assignment after
-// Settings::default() are both denied
+// the struct update and the later field assignments are denied, so every field is named
 const fn empty_settings() -> Settings {
     Settings {
         api_base: None,
@@ -466,66 +467,62 @@ fn keyed_settings() -> Settings {
     settings
 }
 
-async fn settings_win_when_the_request_is_empty() {
+struct Credentials {
+    settings: Settings,
+    api_base: Option<&'static str>,
+    api_key: Option<SecretString>,
+    url: &'static str,
+    authorization: Option<&'static str>,
+    organization: Option<&'static str>,
+}
+
+fn env_settings() -> Settings {
+    let mut settings = keyed_settings();
+    settings.api_base = Some(String::new());
+    settings.api_key = Some(SecretString::from(""));
+    settings.organization = Some(String::new());
+    settings
+}
+
+#[rstest]
+#[case::settings_win(Credentials {
+    settings: keyed_settings(),
+    api_base: Some(""),
+    api_key: None,
+    url: "https://settings.test/v1/assistants?limit=20&order=desc",
+    authorization: Some("Bearer sk-settings"),
+    organization: Some("org-settings"),
+})]
+#[case::env_wins(Credentials {
+    settings: env_settings(),
+    api_base: None,
+    api_key: Some(SecretString::from("")),
+    url: "https://env.test/v1/assistants?limit=20&order=desc",
+    authorization: Some("Bearer sk-env"),
+    organization: Some("org-env"),
+})]
+#[case::default_base(Credentials {
+    settings: empty_settings(),
+    api_base: None,
+    api_key: None,
+    url: "https://api.openai.com/v1/assistants?limit=20&order=desc",
+    authorization: None,
+    organization: None,
+})]
+#[tokio::test]
+async fn openai_credentials_follow_the_litellm_chain(#[case] scenario: Credentials) {
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.params.api_base = Some(String::new());
-    input.params.api_key = None;
+    input.params.api_base = scenario.api_base.map(str::to_owned);
+    input.params.api_key = scenario.api_key;
     let (recorder, dispatch) = harness(200, PAGE);
-    facade(dispatch, keyed_settings())
+    facade(dispatch, scenario.settings)
         .run(&input)
         .await
         .unwrap();
     let requests = recorder.requests();
-    assert_eq!(
-        requests[0].url,
-        "https://settings.test/v1/assistants?limit=20&order=desc"
-    );
-    assert_eq!(
-        requests[0].authorization.as_deref(),
-        Some("Bearer sk-settings")
-    );
-    assert_eq!(requests[0].organization.as_deref(), Some("org-settings"));
-}
-
-async fn env_and_default_serve_an_unconfigured_call() {
-    let mut env = keyed_settings();
-    env.api_base = Some(String::new());
-    env.api_key = Some(SecretString::from(""));
-    env.organization = Some(String::new());
-    for (api_base, api_key, settings, url, authorization, organization) in [
-        (
-            None,
-            Some(SecretString::from("")),
-            env,
-            "https://env.test/v1/assistants?limit=20&order=desc",
-            Some("Bearer sk-env"),
-            Some("org-env"),
-        ),
-        (
-            None,
-            None,
-            empty_settings(),
-            "https://api.openai.com/v1/assistants?limit=20&order=desc",
-            None,
-            None,
-        ),
-    ] {
-        let mut input = list_openai(AssistantWrapper::Sync);
-        input.params.api_base = api_base;
-        input.params.api_key = api_key;
-        let (recorder, dispatch) = harness(200, PAGE);
-        facade(dispatch, settings).run(&input).await.unwrap();
-        let requests = recorder.requests();
-        assert_eq!(requests[0].url, url);
-        assert_eq!(requests[0].authorization.as_deref(), authorization);
-        assert_eq!(requests[0].organization.as_deref(), organization);
-    }
-}
-
-#[tokio::test]
-async fn openai_credentials_follow_the_litellm_chain() {
-    settings_win_when_the_request_is_empty().await;
-    env_and_default_serve_an_unconfigured_call().await;
+    assert_eq!(requests[0].url, scenario.url);
+    assert_eq!(requests[0].authorization.as_deref(), scenario.authorization);
+    assert_eq!(requests[0].organization.as_deref(), scenario.organization);
 }
 
 fn timeout_input(
