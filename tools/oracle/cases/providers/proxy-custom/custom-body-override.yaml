@@ -1,0 +1,40 @@
+name: proxy-custom-body-override
+config: |
+  model_list:
+    - model_name: custom-model
+      litellm_params:
+        model: custom/my-custom-model
+        api_base: "{{upstream}}/custom"
+        api_key: oracle-custom-key
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-custom-override}
+  body:
+    model: custom-model
+    messages: [{role: user, content: hi}]
+    max_tokens: 8
+    temperature: 0.2
+    top_p: 0.9
+    top_k: 5
+    extra_body:
+      model: override-model
+      params: {prompt: ["changed"], max_tokens: 3}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - prompt: hi
+          output: ["Paris."]
+          params: {temperature: 0.2}
+      message: ok
+compare:
+  headers: [content-type, x-litellm-call-id, x-litellm-model-group]
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore:
+    - {pointer: /id, why: both sides generate a new completion id, so the value never matches}
+    - {pointer: /created, why: the completion time is read from the clock on each side}

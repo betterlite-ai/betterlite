@@ -1,0 +1,26 @@
+task: B044
+deviations:
+  - what: A custom deployment posts to its own api_base even when litellm.api_base is set.
+    why: >-
+      Deployment carries one resolved base and no process settings, so litellm.api_base cannot come first. B10006
+      adds the seam that applies it and removes this row.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4919-L4926"
+  - what: >-
+      An aleph_alpha or litellm_proxy deployment whose own litellm_params carry no api_key or api_base, and a
+      custom deployment with no api_base, stop startup with ChatSetupError::UnbuiltChain instead of falling back
+      to LiteLLM's process globals and environment spellings.
+    why: >-
+      ChatDeployment::resolve_with fills the absent field from the OpenAI defaults, which would send a deployment's
+      key to the wrong host; the global chains are B10006's seam. This row and the refusal go away when B10006
+      builds them.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3004-L3017"
+  - what: A stream request to an aleph_alpha or custom deployment is answered with the unsupported-operation error instead of LiteLLM's streamed wrapper.
+    why: >-
+      The legacy adapters build and decode one buffered exchange, as B044's scope covers the chat dispatch only;
+      LiteLLM wraps the same response in CustomStreamWrapper once stream is true.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3038-L3044"
+  - what: Synthetic aleph_alpha and custom replies omit the completion id LiteLLM generates.
+    why: >-
+      Both adapters reuse the aiohttp chat response type, whose id is optional and left unset; LiteLLM's
+      ModelResponse generates a fresh chatcmpl uuid per call, a value no client can predict or rely on.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2213-L2220"
