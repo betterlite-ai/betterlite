@@ -42,6 +42,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_model_info::cache::DiscoveryCache;
 use crate::deployment_model_info::discovery::CatalogSnapshot;
 use crate::deployment_model_info::metadata::ModelMetadataSource;
+use crate::deployment_model_info::router_info::SuppliedDeployment;
 use crate::deployment_model_info::types::DiscoveredDeploymentModelInfo;
 use crate::model_catalog_lookup::alias::AliasMap;
 use crate::model_catalog_lookup::cache::CacheClear;
@@ -564,4 +565,13 @@ pub fn discovery_with(
     let cache = DiscoveryCache::for_deployments(catalog.models.len());
     cache.store(model_id, record(catalog, index, limits));
     cache
+}
+
+impl<'row> SuppliedDeployment<'row> {
+    pub const fn from_spec(spec: &'row DeploymentSpec) -> Self {
+        Self {
+            model_info: &spec.model_info,
+            litellm_params: Some(&spec.litellm_params),
+        }
+    }
 }
