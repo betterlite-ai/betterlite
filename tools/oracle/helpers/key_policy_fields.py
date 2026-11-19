@@ -171,16 +171,6 @@ def _budget_windows_answer(call: BudgetWindowsCall) -> JsonValue:
     return rows
 
 
-def _model_budget_answer(call: ModelBudgetCall) -> JsonValue:
-    validate_model_max_budget(call["budgets"])
-    return None
-
-
-def _verification_row_answer(call: VerificationRowCall) -> JsonValue:
-    token = _verification_token_from_row(call["row"])
-    return _JSON.validate_json(token.model_dump_json())
-
-
 def _key_type_answer(call: KeyTypeCall) -> JsonValue:
     data = GenerateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376
     handled: JsonValue = _JSON.validate_python(handle_key_type(data, call["columns"]))  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L852-L867
@@ -197,13 +187,14 @@ def answer(call: Call) -> JsonValue:
         case "effective_policy":
             result = _effective_policy_answer(call)
         case "model_budget":
-            result = _model_budget_answer(call)
+            validate_model_max_budget(call["budgets"])
         case "json_column":
             result = _JSON.validate_python(
                 _decode_json_string_column(call["column"], call["value"])
             )
         case "verification_row":
-            result = _verification_row_answer(call)
+            token = _verification_token_from_row(call["row"])
+            result = _JSON.validate_json(token.model_dump_json())
         case "key_type":
             result = _key_type_answer(call)
         case "regenerate":

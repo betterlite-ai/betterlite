@@ -3,7 +3,7 @@
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
-use deadpool_postgres::{Client, Manager, Pool};
+use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
@@ -25,7 +25,7 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Pool, Client) {
+async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["key-policy-fields-tests"])
         .url
         .map(SecretString::from);
@@ -36,8 +36,7 @@ async fn database() -> (PostgresFixture, Pool, Client) {
             .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
-    let client = pool.get().await.unwrap();
-    (fixture, pool, client)
+    (fixture, pool)
 }
 
 #[tokio::test]
@@ -52,8 +51,7 @@ async fn uniqueness_missing_db_noop() {
 
 #[tokio::test]
 async fn uniqueness_global_excludes_raw_token() {
-    let (fixture, pool, client) = database().await;
-    drop(client);
+    let (fixture, pool) = database().await;
     let store = PostgresStore {
         pool: Some(pool.clone()),
     };

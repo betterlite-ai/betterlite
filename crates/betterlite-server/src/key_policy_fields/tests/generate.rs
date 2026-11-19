@@ -176,20 +176,14 @@ fn assert_windows(fixture: &Fixture, built: &[JsonData]) {
 }
 
 #[rstest]
-#[case::absent(None, None)]
-#[case::explicit_null(Some(None), None)]
-fn key_type_absent_removes_the_column(
-    #[case] key_type: Option<Option<LiteLLMKeyType>>,
-    #[case] expected: Option<&str>,
-) {
+#[case::absent(None)]
+#[case::explicit_null(Some(None))]
+fn key_type_absent_removes_the_column(#[case] key_type: Option<Option<LiteLLMKeyType>>) {
     let columns = handle_key_type(
         key_type.flatten(),
         object(r#"{"key_type":"llm_api","other":1}"#),
     );
-    assert_eq!(
-        columns.get("key_type"),
-        expected.map(|text| JsonData::String(text.to_owned()))
-    );
+    assert!(columns.get("key_type").is_none());
     assert_eq!(columns.get("other"), Some(&super::json("1")));
 }
 

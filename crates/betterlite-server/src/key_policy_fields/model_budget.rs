@@ -51,19 +51,19 @@ fn validate_budget_fields(model: &str, fields: &Fields) -> Result<(), ModelBudge
     if limit.is_none()
         && fields
             .get("max_budget")
-            .is_some_and(|value| !is_number_or_null(value))
+            .is_some_and(|value| !matches!(value, JsonData::Number(_) | JsonData::Null))
     {
         return Err(invalid(model, "max_budget", "a number"));
     }
     // time_period replaces budget_duration the same way
     let period = fields.get("time_period");
-    if period.is_some_and(|value| !is_string_or_null(value)) {
+    if period.is_some_and(|value| !matches!(value, JsonData::String(_) | JsonData::Null)) {
         return Err(invalid(model, "time_period", "a string"));
     }
     if period.is_none()
         && fields
             .get("budget_duration")
-            .is_some_and(|value| !is_string_or_null(value))
+            .is_some_and(|value| !matches!(value, JsonData::String(_) | JsonData::Null))
     {
         return Err(invalid(model, "budget_duration", "a string"));
     }
@@ -84,31 +84,11 @@ fn validate_rate_limits(model: &str, fields: &Fields) -> Result<(), ModelBudgetE
 
 // float() accepts numbers and numeric text; nothing else reaches BudgetConfig
 fn is_numeric(value: &JsonData) -> bool {
-    match value {
-        JsonData::Number(_) => true,
-        JsonData::String(text) => text.trim().parse::<f64>().is_ok(),
-        JsonData::Null | JsonData::Bool(_) | JsonData::Array(_) | JsonData::Object(_) => false,
-    }
-}
-
-const fn is_number_or_null(value: &JsonData) -> bool {
-    match value {
-        JsonData::Number(_) | JsonData::Null => true,
-        JsonData::Bool(_) | JsonData::String(_) | JsonData::Array(_) | JsonData::Object(_) => false,
-    }
-}
-
-const fn is_string_or_null(value: &JsonData) -> bool {
-    match value {
-        JsonData::String(_) | JsonData::Null => true,
-        JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_) => false,
-    }
+    matches!(value, JsonData::Number(_))
+        || matches!(value, JsonData::String(text) if text.trim().parse::<f64>().is_ok())
 }
 
 fn is_integer_or_null(value: &JsonData) -> bool {
-    match value {
-        JsonData::Number(number) => number.as_i64().is_some() || number.as_u64().is_some(),
-        JsonData::Null => true,
-        JsonData::Bool(_) | JsonData::String(_) | JsonData::Array(_) | JsonData::Object(_) => false,
-    }
+    matches!(value, JsonData::Number(number) if number.is_i64() || number.is_u64())
+        || matches!(value, JsonData::Null)
 }

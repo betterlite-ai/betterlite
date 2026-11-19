@@ -10,18 +10,10 @@ pub const JSON_STRING_COLUMNS: [&str; 2] = ["router_settings", "budget_limits"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ColumnError {
-    #[error("{column} is not JSON text")]
-    Json {
-        column: String,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("{column} is not UTF-8 text")]
-    Utf8 {
-        column: String,
-        #[source]
-        source: std::str::Utf8Error,
-    },
+    #[error("{0} is not JSON text")]
+    Json(String, #[source] serde_json::Error),
+    #[error("{0} is not UTF-8 text")]
+    Utf8(String, #[source] std::str::Utf8Error),
     #[error(transparent)]
     Decode(#[from] DecodeError),
 }
@@ -34,18 +26,14 @@ pub fn decode_json_string_column(column: &str, value: &JsonData) -> Result<JsonD
     if !JSON_STRING_COLUMNS.contains(&column) {
         return Ok(value.clone());
     }
-    serde_json::from_str::<JsonData>(text).map_err(|source| ColumnError::Json {
-        column: column.to_owned(),
-        source,
-    })
+    serde_json::from_str::<JsonData>(text)
+        .map_err(|source| ColumnError::Json(column.to_owned(), source))
 }
 
 // the fuzz target and its corpus replay hand over the bytes a stored column holds, invalid UTF-8 included
 pub fn decode_json_column_bytes(column: &str, bytes: &[u8]) -> Result<JsonData, ColumnError> {
-    let text = std::str::from_utf8(bytes).map_err(|source| ColumnError::Utf8 {
-        column: column.to_owned(),
-        source,
-    })?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|source| ColumnError::Utf8(column.to_owned(), source))?;
     decode_json_string_column(column, &JsonData::String(text.to_owned()))
 }
 

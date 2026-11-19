@@ -71,10 +71,7 @@ impl AliasRule<'_> {
 // the built-in rule is a character set and two endpoint checks, so it needs no pattern compile
 fn accepts_builtin(alias: &str) -> bool {
     let mut characters = alias.chars();
-    let Some(first) = characters.next() else {
-        return false;
-    };
-    let Some(last) = characters.next_back() else {
+    let (Some(first), Some(last)) = (characters.next(), characters.next_back()) else {
         return false;
     };
     first.is_ascii_alphanumeric()
@@ -126,17 +123,11 @@ fn configured_pattern<L>(value: JsonValue, lookup: &L) -> Result<Option<AliasPat
 where
     L: EnvironmentLookup,
 {
-    match value {
-        JsonValue::String(text) => {
-            let resolved = resolve_string(text, ALIAS_PATTERN_PATH, lookup)?;
-            parse_key_alias_pattern(JsonValue::String(resolved))
-        }
-        other @ JsonValue::Null
-        | other @ JsonValue::Bool(_)
-        | other @ JsonValue::Number(_)
-        | other @ JsonValue::Array(_)
-        | other @ JsonValue::Object(_) => parse_key_alias_pattern(other),
+    if let JsonValue::String(text) = value {
+        let resolved = resolve_string(text, ALIAS_PATTERN_PATH, lookup)?;
+        return parse_key_alias_pattern(JsonValue::String(resolved));
     }
+    parse_key_alias_pattern(value)
 }
 
 fn format_validation<L>(value: Option<JsonValue>, lookup: &L) -> Result<bool, ConfigError>

@@ -116,10 +116,10 @@ fn request_payload(data: &UpdateKeyRequest) -> Result<JsonValue, HookPolicyError
 }
 
 fn policy_payload(request: &CustomKeyPolicyRequest) -> Result<JsonValue, HookPolicyError> {
-    let existing_key = match &request.existing_key {
-        Some(key) => to_json(key)?,
-        None => JsonData::Null,
-    };
+    let existing_key = request
+        .existing_key
+        .as_ref()
+        .map_or(Ok(JsonData::Null), to_json)?;
     let body = match &request.request {
         PolicyRequestBody::Generate(inner) => inner.project()?.resolved,
         PolicyRequestBody::Update(inner) => inner.project()?.resolved,

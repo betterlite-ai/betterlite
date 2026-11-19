@@ -72,19 +72,27 @@ fn insert_timing_fields(
     let duration = base.duration.as_ref().and_then(Option::as_ref);
     let budget_duration = base.budget_duration.as_ref().and_then(Option::as_ref);
     let windows = generate_budget_windows(base.budget_limits.clone().flatten().as_deref(), clock)?;
-    row.insert("expires".to_owned(), expires_field(duration, clock)?);
-    row.insert(
-        "budget_reset_at".to_owned(),
-        reset_field(budget_duration, clock)?,
-    );
-    row.insert(
-        "key_rotation_at".to_owned(),
-        rotation_field(request, clock)?,
-    );
-    row.insert(
-        "budget_limits".to_owned(),
-        windows.map_or(JsonData::Null, JsonData::Array),
-    );
+    let expires = match duration {
+        Some(spec) => JsonData::String(zulu_datetime(shifted_by(clock.now, spec, clock)?)),
+        None => JsonData::Null,
+    };
+    let reset = match budget_duration {
+        Some(spec) => {
+            let at = compute_budget_reset_at(spec, clock.reset, clock.now, clock.database)
+                .map_err(|source| ClockError::Duration {
+                    spec: spec.to_owned(),
+                    source,
+                })?;
+            JsonData::String(zulu_datetime(microsecond_precision(at.instant)))
+        }
+        None => JsonData::Null,
+    };
+    let rotation_at = rotation_field(request, clock)?;
+    row.insert("expires".to_owned(), expires);
+    row.insert("budget_reset_at".to_owned(), reset);
+    row.insert("key_rotation_at".to_owned(), rotation_at);
+    let limits = windows.map_or(JsonData::Null, JsonData::Array);
+    row.insert("budget_limits".to_owned(), limits);
     Ok(())
 }
 
@@ -92,7 +100,6 @@ fn insert_timing_fields(
 #[must_use]
 pub fn resolved_key_type(request: &GenerateKeyRequest) -> Option<LiteLLMKeyType> {
     request
-        .base
         .generate
         .key_type
         .unwrap_or(Some(LiteLLMKeyType::Default))
@@ -144,38 +151,15 @@ where
     serde_json::from_value(encrypted).map_err(DecodeError::Document)
 }
 
-fn expires_field(duration: Option<&str>, clock: KeyClock<'_>) -> Result<JsonData, GenerateError> {
-    let Some(spec) = duration else {
-        return Ok(JsonData::Null);
-    };
-    let instant = shifted_by(clock.now, spec, clock)?;
-    Ok(JsonData::String(zulu_datetime(instant)))
-}
-
-fn reset_field(duration: Option<&str>, clock: KeyClock<'_>) -> Result<JsonData, GenerateError> {
-    let Some(spec) = duration else {
-        return Ok(JsonData::Null);
-    };
-    let reset = compute_budget_reset_at(spec, clock.reset, clock.now, clock.database).map_err(
-        |source| ClockError::Duration {
-            spec: spec.to_owned(),
-            source,
-        },
-    )?;
-    let instant = microsecond_precision(reset.instant);
-    Ok(JsonData::String(zulu_datetime(instant)))
-}
-
 fn rotation_field(
     request: &GenerateKeyRequest,
     clock: KeyClock<'_>,
 ) -> Result<JsonData, GenerateError> {
-    let rotate = request.base.generate.auto_rotate.flatten().unwrap_or(false);
+    let rotate = request.generate.auto_rotate.flatten().unwrap_or(false);
     if !rotate {
         return Ok(JsonData::Null);
     }
     let interval = request
-        .base
         .generate
         .rotation_interval
         .as_ref()
