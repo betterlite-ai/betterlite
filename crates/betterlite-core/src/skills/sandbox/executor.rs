@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::time::Duration;
 
 use betterlite_pyhost::owned_temp::{OwnedTempDir, TempError};
@@ -70,49 +71,33 @@ impl<S: SessionOpener> SandboxExecutor<S> {
         };
         let session = match self.opener.open(&options).await {
             Ok(session) => session,
-            Err(SessionError::SdkMissing) => {
-                return SandboxOutcome {
-                    success: false,
-                    output: String::new(),
-                    error: SDK_MISSING.to_owned(),
-                    files: Vec::new(),
-                };
-            }
-            Err(error) => {
-                return SandboxOutcome {
-                    success: false,
-                    output: String::new(),
-                    error: error.to_string(),
-                    files: Vec::new(),
-                };
-            }
+            Err(SessionError::SdkMissing) => return failure(SDK_MISSING.to_owned()),
+            Err(error) => return failure(error.to_string()),
         };
         let outcome = match drive(session.as_ref(), request).await {
             Ok(outcome) => outcome,
-            Err(error) => {
-                tracing::error!("SkillsSandboxExecutor: Execution failed: {error}");
-                SandboxOutcome {
-                    success: false,
-                    output: String::new(),
-                    error: error.to_string(),
-                    files: Vec::new(),
-                }
-            }
+            Err(error) => return logged_failure(&error),
         };
         // the source returns inside `with`, so a failing exit replaces the result it had built
         match session.close().await {
             Ok(()) => outcome,
-            Err(error) => {
-                tracing::error!("SkillsSandboxExecutor: Execution failed: {error}");
-                SandboxOutcome {
-                    success: false,
-                    output: String::new(),
-                    error: error.to_string(),
-                    files: Vec::new(),
-                }
-            }
+            Err(error) => logged_failure(&error),
         }
     }
+}
+
+const fn failure(error: String) -> SandboxOutcome {
+    SandboxOutcome {
+        success: false,
+        output: String::new(),
+        error,
+        files: Vec::new(),
+    }
+}
+
+fn logged_failure(error: &dyn Display) -> SandboxOutcome {
+    tracing::error!("SkillsSandboxExecutor: Execution failed: {error}");
+    failure(error.to_string())
 }
 
 async fn drive(

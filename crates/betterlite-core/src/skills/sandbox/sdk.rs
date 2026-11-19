@@ -11,7 +11,7 @@ use betterlite_pyhost::callable_handle::CallableHandle;
 use betterlite_pyhost::host::PythonHost;
 use betterlite_pyhost::optional_library::{LibraryError, OptionalLibrary};
 use pyo3::types::{PyAnyMethods as _, PyString};
-use pyo3::{Bound, IntoPyObjectExt as _, Py, PyAny, PyErr};
+use pyo3::{Bound, IntoPyObjectExt as _, Py, PyAny, PyErr, Python};
 
 use super::session::{
     RunResult, SandboxSession, SdkFailure, SessionError, SessionOpener, SessionOptions,
@@ -41,7 +41,7 @@ impl SessionOpener for SdkSessions {
         let class = module
             .function(&self.host, SESSION_CLASS)
             .map_err(open_failure)?;
-        let keywords = keywords_of(&self.host, options)?;
+        let keywords = self.host.attach(|py| keywords_of(py, options))?;
         let created = class
             .call_raw(
                 &self.host,
@@ -54,21 +54,7 @@ impl SessionOpener for SdkSessions {
             .map_err(|source| call_failure(SESSION_CLASS, source))?;
         let manager = CallableHandle::new(&self.host, created)
             .map_err(|source| call_failure(SESSION_CLASS, source))?;
-        let entering = manager
-            .attr(&self.host, "__enter__")
-            .map_err(|source| call_failure("__enter__", source))?;
-        let entered = entering
-            .call_raw(
-                &self.host,
-                &self.tracker,
-                self.deadline,
-                Vec::new(),
-                BTreeMap::new(),
-            )
-            .await
-            .map_err(|source| call_failure("__enter__", source))?;
-        let session = CallableHandle::new(&self.host, entered)
-            .map_err(|source| call_failure("__enter__", source))?;
+        let session = enter(&self.host, &self.tracker, self.deadline, &manager).await?;
         Ok(Box::new(SdkSession {
             host: self.host.clone(),
             tracker: Arc::clone(&self.tracker),
@@ -78,6 +64,22 @@ impl SessionOpener for SdkSessions {
             closed: AtomicBool::new(false),
         }))
     }
+}
+
+async fn enter(
+    host: &PythonHost,
+    tracker: &Arc<WorkTracker>,
+    deadline: Duration,
+    manager: &CallableHandle,
+) -> Result<CallableHandle, SessionError> {
+    let entering = manager
+        .attr(host, "__enter__")
+        .map_err(|source| call_failure("__enter__", source))?;
+    let entered = entering
+        .call_raw(host, tracker, deadline, Vec::new(), BTreeMap::new())
+        .await
+        .map_err(|source| call_failure("__enter__", source))?;
+    CallableHandle::new(host, entered).map_err(|source| call_failure("__enter__", source))
 }
 
 struct SdkSession {
@@ -90,6 +92,20 @@ struct SdkSession {
 }
 
 impl SdkSession {
+    async fn copy_path(
+        &self,
+        operation: &'static str,
+        path: &Path,
+        other: &str,
+    ) -> Result<(), SessionError> {
+        let text = path.to_str().ok_or_else(|| SessionError::Call {
+            operation,
+            source: SdkFailure::from(format!("the {operation} path is not valid UTF-8")),
+        })?;
+        self.invoke(operation, &[text, other]).await?;
+        Ok(())
+    }
+
     async fn invoke(
         &self,
         operation: &'static str,
@@ -121,13 +137,7 @@ impl SdkSession {
 #[async_trait]
 impl SandboxSession for SdkSession {
     async fn copy_to_runtime(&self, local: &Path, sandbox_path: &str) -> Result<(), SessionError> {
-        let source = local.to_str().ok_or_else(|| SessionError::Call {
-            operation: "copy_to_runtime",
-            source: SdkFailure::from("the staged file path is not valid UTF-8".to_owned()),
-        })?;
-        self.invoke("copy_to_runtime", &[source, sandbox_path])
-            .await?;
-        Ok(())
+        self.copy_path("copy_to_runtime", local, sandbox_path).await
     }
 
     async fn copy_from_runtime(
@@ -135,17 +145,13 @@ impl SandboxSession for SdkSession {
         source: &str,
         destination: &Path,
     ) -> Result<(), SessionError> {
-        let target = destination.to_str().ok_or_else(|| SessionError::Call {
-            operation: "copy_from_runtime",
-            source: SdkFailure::from("the download path is not valid UTF-8".to_owned()),
-        })?;
-        self.invoke("copy_from_runtime", &[source, target]).await?;
-        Ok(())
+        self.copy_path("copy_from_runtime", destination, source)
+            .await
     }
 
     async fn run(&self, code: &str) -> Result<RunResult, SessionError> {
         let value = self.invoke("run", &[code]).await?;
-        read_result(&self.host, &value)
+        self.host.attach(|py| read_result(value.bind(py)))
     }
 
     async fn close(&self) -> Result<(), SessionError> {
@@ -190,40 +196,33 @@ impl Drop for SdkSession {
 }
 
 fn keywords_of(
-    host: &PythonHost,
+    py: Python<'_>,
     options: &SessionOptions,
 ) -> Result<BTreeMap<String, Py<PyAny>>, SessionError> {
-    host.attach(|py| {
-        let mut keywords = BTreeMap::new();
-        let language = PyString::new(py, options.lang).into_any().unbind();
-        keywords.insert("lang".to_owned(), language);
-        let verbose = options
-            .verbose
-            .into_py_any(py)
-            .map_err(|source| start_failure(source.to_string()))?;
-        keywords.insert("verbose".to_owned(), verbose);
-        if let Some(image) = &options.image {
-            let image = PyString::new(py, image).into_any().unbind();
-            keywords.insert("image".to_owned(), image);
-        }
-        Ok(keywords)
-    })
+    let mut keywords = BTreeMap::new();
+    let language = PyString::new(py, options.lang).into_any().unbind();
+    keywords.insert("lang".to_owned(), language);
+    let verbose = options
+        .verbose
+        .into_py_any(py)
+        .map_err(|source| start_failure(source.to_string()))?;
+    keywords.insert("verbose".to_owned(), verbose);
+    if let Some(image) = &options.image {
+        let image = PyString::new(py, image).into_any().unbind();
+        keywords.insert("image".to_owned(), image);
+    }
+    Ok(keywords)
 }
 
-fn read_result(host: &PythonHost, value: &Py<PyAny>) -> Result<RunResult, SessionError> {
-    host.attach(|py| {
-        let result = value.bind(py);
-        let exit_code = result
-            .getattr("exit_code")
-            .and_then(|value| value.extract::<i32>())
-            .map_err(|source| unreadable("exit_code", source))?;
-        let stdout = read_text(result, "stdout")?;
-        let stderr = read_text(result, "stderr")?;
-        Ok(RunResult {
-            exit_code,
-            stdout,
-            stderr,
-        })
+fn read_result(result: &Bound<'_, PyAny>) -> Result<RunResult, SessionError> {
+    let exit_code = result
+        .getattr("exit_code")
+        .and_then(|value| value.extract::<i32>())
+        .map_err(|source| unreadable("exit_code", source))?;
+    Ok(RunResult {
+        exit_code,
+        stdout: read_text(result, "stdout")?,
+        stderr: read_text(result, "stderr")?,
     })
 }
 

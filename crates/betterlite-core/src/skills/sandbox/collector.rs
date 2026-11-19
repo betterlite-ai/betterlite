@@ -27,18 +27,23 @@ pub async fn collect_generated_files(
     original: &SkillFiles,
     scratch: &Path,
 ) -> Vec<GeneratedFile> {
+    let Some(paths) = listing_paths(session).await else {
+        return Vec::new();
+    };
+    copy_generated_files(session, original, scratch, &paths).await
+}
+
+async fn listing_paths(session: &dyn SandboxSession) -> Option<Vec<String>> {
     let listing = match session.run(LISTING_CODE).await {
         Ok(listing) => listing,
         Err(error) => {
             tracing::warn!("SkillsSandboxExecutor: Error collecting generated files: {error}");
-            return Vec::new();
+            return None;
         }
     };
-    let Some(stdout) = listing.stdout else {
-        return Vec::new();
-    };
+    let stdout = listing.stdout?;
     if listing.exit_code != 0 || stdout.is_empty() {
-        return Vec::new();
+        return None;
     }
     let decoded = decode_generated_paths(&stdout);
     if let Some(refusal) = decoded.refusal {
@@ -54,7 +59,7 @@ pub async fn collect_generated_files(
             ),
         }
     }
-    copy_generated_files(session, original, scratch, &decoded.paths).await
+    Some(decoded.paths)
 }
 
 async fn copy_generated_files(

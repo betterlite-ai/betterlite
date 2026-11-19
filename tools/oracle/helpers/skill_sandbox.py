@@ -1,14 +1,12 @@
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, TracebackType
 from typing import ClassVar, Protocol, Required, Self, TypedDict
 
 from litellm.llms.litellm_proxy.skills.sandbox_executor import SkillsSandboxExecutor
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 MODULE = "llm_sandbox"
-
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
 class ReplyFields(TypedDict, total=False):
@@ -45,20 +43,29 @@ class Effects:
     def __init__(self) -> None:
         self.session: SessionEffect | None = None
         self.copies: list[CopyEffect] = []
-        self.runs: list[str] = []
-        self.downloads: list[str] = []
+        self.runs: list[JsonValue] = []
+        self.downloads: list[JsonValue] = []
         self.closes: int = 0
 
-    def value(self) -> JsonValue:
-        return JSON.validate_python(
-            {
-                "session": self.session,
-                "copies": list(self.copies),
-                "runs": list(self.runs),
-                "downloads": list(self.downloads),
-                "closes": self.closes,
+    def value(self) -> dict[str, JsonValue]:
+        session: JsonValue = None
+        if self.session is not None:
+            session = {
+                "lang": self.session["lang"],
+                "verbose": self.session["verbose"],
+                "image": self.session["image"],
             }
-        )
+        copies: list[JsonValue] = [
+            {"sandbox_path": copy["sandbox_path"], "content": copy["content"]}
+            for copy in self.copies
+        ]
+        return {
+            "session": session,
+            "copies": copies,
+            "runs": self.runs,
+            "downloads": self.downloads,
+            "closes": self.closes,
+        }
 
 
 class RunReply:
@@ -97,7 +104,12 @@ class FakeSandboxSession:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *_args: object) -> None:
+    def __exit__(
+        self,
+        _kind: type[BaseException] | None,
+        _value: BaseException | None,
+        _trace: TracebackType | None,
+    ) -> None:
         FakeSandboxSession.effects.closes += 1
 
     def run(self, code: str) -> RunReply:
@@ -167,4 +179,4 @@ def run(input_value: Input) -> JsonValue:
         skill_files_of(input_value),
         input_value.get("requirements"),
     )
-    return JSON.validate_python({"result": result, "effects": effects.value()})
+    return {"result": result, "effects": effects.value()}
