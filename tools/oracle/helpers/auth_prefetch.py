@@ -80,7 +80,7 @@ class TtlInput(TypedDict):
 Input: TypeAlias = ReferencesInput | CacheKeysInput | ValidationInput | TtlInput
 
 
-def references_of(fields: TokenFields, management_ttl: float) -> JsonValue:
+def entries_of(fields: TokenFields, management_ttl: float) -> JsonValue:
     token = UserAPIKeyAuth(
         user_id=fields["user_id"],
         team_id=fields["team_id"],
@@ -107,25 +107,6 @@ def references_of(fields: TokenFields, management_ttl: float) -> JsonValue:
     return {"refs": refs_value, "entries": entries}
 
 
-def entries_answer(input_value: ReferencesInput) -> JsonValue:
-    return [
-        references_of(token, input_value["management_ttl"])
-        for token in input_value["tokens"]
-    ]
-
-
-def keys_of(call: CacheKeyCall) -> JsonValue:
-    keys: list[JsonValue] = []
-    keys.extend(
-        _identity_cache_keys(
-            call["api_key"],
-            end_user_id=call["end_user_id"],
-            key_is_resolved=call["key_is_resolved"],
-        )
-    )
-    return keys
-
-
 def row_answer(call: RowCall, refreshed_at: float) -> JsonValue:
     model_type = next(
         entry.model_type
@@ -139,24 +120,29 @@ def row_answer(call: RowCall, refreshed_at: float) -> JsonValue:
     return {"validated": True, "stamp": stamp.get("last_refreshed_at")}
 
 
-def row_answers(input_value: ValidationInput) -> JsonValue:
-    return [
-        row_answer(call, input_value["refreshed_at"]) for call in input_value["rows"]
-    ]
-
-
-def ttl_answers(input_value: TtlInput) -> JsonValue:
+def run(input_value: Input) -> JsonValue:
+    if input_value["op"] == "references_and_entries":
+        return [
+            entries_of(token, input_value["management_ttl"])
+            for token in input_value["tokens"]
+        ]
+    if input_value["op"] == "identity_cache_keys":
+        return [
+            list(
+                _identity_cache_keys(
+                    call["api_key"],
+                    end_user_id=call["end_user_id"],
+                    key_is_resolved=call["key_is_resolved"],
+                )
+            )
+            for call in input_value["calls"]
+        ]
+    if input_value["op"] == "row_validation":
+        return [
+            row_answer(call, input_value["refreshed_at"])
+            for call in input_value["rows"]
+        ]
     return [
         float(_identity_memory_ttl(call["value"], call["management_ttl"]))
         for call in input_value["ttls"]
     ]
-
-
-def run(input_value: Input) -> JsonValue:
-    if input_value["op"] == "references_and_entries":
-        return entries_answer(input_value)
-    if input_value["op"] == "identity_cache_keys":
-        return [keys_of(call) for call in input_value["calls"]]
-    if input_value["op"] == "row_validation":
-        return row_answers(input_value)
-    return ttl_answers(input_value)
