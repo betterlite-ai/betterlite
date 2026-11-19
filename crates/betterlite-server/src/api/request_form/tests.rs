@@ -91,7 +91,15 @@ fn repeated_plain_last_wins() {
 #[test]
 fn urlencoded_raw_bytes_keep_starlette_latin1() {
     let fields = urlencoded_fields(
-        b"raw=\xe9&plus=+x&latin\xe9=%E9&latin\xc3\xa9=%C3%A9&mix=latin\xe9%20au+lait&plain=a%41b%6ac%4C&edge=x\x80\x7fy&short=x%4&tail=x%",
+        b"raw=\xe9&plus=+x&latin\xe9=%E9&latin\xc3\xa9=%C3%A9&mix=latin\xe9%20au+lait&plain=a%41b%6ac%4C&edge=x\x80\x7fy&short=x%4&tail=x%&bad_hex=%z1&low_hex=%1Z",
+    );
+    assert_eq!(
+        fields.get("bad_hex"),
+        Some(&FormValue::Text("%z1".to_owned()))
+    );
+    assert_eq!(
+        fields.get("low_hex"),
+        Some(&FormValue::Text("%1Z".to_owned()))
     );
     assert_eq!(
         fields.get("latin\u{e9}"),

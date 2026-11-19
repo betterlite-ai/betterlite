@@ -248,7 +248,7 @@ async def numeric_call(call: Operation) -> JsonValue:
     return result
 
 
-async def upload_size_call(call: Operation) -> JsonValue:
+def upload_size_call(call: Operation) -> JsonValue:
     size = call.get("file_size")
     content = b"A" * size if size is not None else b""
     upload = FastApiUploadFile(file=BytesIO(content), size=size, filename="audio.wav")
@@ -283,6 +283,6 @@ def run(input_value: Operation) -> JsonValue:
         case "nested_form_metadata":
             return asyncio.run(metadata_call(input_value))
         case "upload_size_unset":
-            return asyncio.run(upload_size_call(input_value))
+            return upload_size_call(input_value)
         case "request_body_dispatch":
             return asyncio.run(dispatch_call(input_value))
