@@ -45,7 +45,6 @@ class Input(Strict):
     operation: Literal["list", "delete"]
     provider: str
     assistant_id: str | None = None
-    entry: Literal["sync", "async"] = "sync"
     aget_assistants: JsonValue = None
     async_delete_assistants: JsonValue = None
     extra_body: dict[str, JsonValue] | None = None
@@ -151,8 +150,11 @@ class AssistantReadDeleteRequest(Strict):
 
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
-    set_globals(run.module_globals, api_base)
-    # the async wrappers declare AsyncOpenAI | None, and the sync wrapper takes the same instance
+    litellm.api_base = base_of(run.module_globals.api_base, api_base)
+    litellm.api_version = run.module_globals.api_version
+    litellm.api_key = run.module_globals.api_key
+    litellm.openai_key = run.module_globals.openai_key
+    litellm.azure_key = run.module_globals.azure_key
     supplied = supplied_client(run.invocation.client, api_base)
     client: AsyncOpenAI | None = cast("AsyncOpenAI | None", supplied)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L45
     sync = run_mode(run.invocation, client, api_base, "sync") if run.entries != "async" else None
@@ -160,14 +162,6 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
         run_mode(run.invocation, client, api_base, "async") if run.entries != "sync" else None
     )
     return RunOutcome(sync=sync, asynchronous=asynchronous)
-
-
-def set_globals(module_globals: Globals, api_base: str) -> None:
-    litellm.api_base = base_of(module_globals.api_base, api_base)
-    litellm.api_version = module_globals.api_version
-    litellm.api_key = module_globals.api_key
-    litellm.openai_key = module_globals.openai_key
-    litellm.azure_key = module_globals.azure_key
 
 
 def base_of(value: str | None, api_base: str) -> str | None:
@@ -184,7 +178,6 @@ def supplied_client(spec: SuppliedClient | None, api_base: str) -> Supplied | No
         return OpenAI(api_key=spec.api_key, base_url=endpoint)
     if spec.kind == "async_openai":
         return AsyncOpenAI(api_key=spec.api_key, base_url=endpoint)
-    # a null endpoint falls back to AZURE_OPENAI_ENDPOINT, as the implementation overload declares
     azure_endpoint = cast("str", endpoint)  # https://github.com/openai/openai-python/blob/03b3ec474241fe3a73c4818dc6b886da28faaf91/src/openai/lib/azure.py#L169-L173
     if spec.kind == "azure_openai":
         return AzureOpenAI(

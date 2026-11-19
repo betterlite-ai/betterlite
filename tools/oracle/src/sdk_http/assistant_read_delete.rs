@@ -26,7 +26,6 @@ use super::native::failure as mapped_failure;
 use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 
-// the case names the harness mock in place of any configured base
 const API_BASE_SENTINEL: &str = "$API_BASE";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -101,7 +100,11 @@ impl CallKind for Call {
                 azure: &azure,
                 settings: &settings,
             };
-            let input = with_harness_base(&run.input, api_base);
+            let mut input = run.input.clone();
+            harness_base(&mut input.params.api_base, api_base);
+            if let Some(client) = input.client.as_mut() {
+                harness_base(&mut client.api_base, api_base);
+            }
             let sync = if run.entries == EntrySet::Async {
                 None
             } else {
@@ -284,13 +287,4 @@ fn harness_base(value: &mut Option<String>, api_base: &str) {
     if value.as_deref() == Some(API_BASE_SENTINEL) {
         *value = Some(api_base.to_owned());
     }
-}
-
-fn with_harness_base(input: &AssistantReadDeleteInput, api_base: &str) -> AssistantReadDeleteInput {
-    let mut input = input.clone();
-    harness_base(&mut input.params.api_base, api_base);
-    if let Some(client) = input.client.as_mut() {
-        harness_base(&mut client.api_base, api_base);
-    }
-    input
 }
