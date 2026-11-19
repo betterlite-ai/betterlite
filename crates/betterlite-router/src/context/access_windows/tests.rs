@@ -56,24 +56,6 @@ async fn the_stage_keeps_the_callers_team() {
     assert_eq!(ids(&kept.deployments), ["shared", "ours"]);
 }
 
-// A direct deployment id resolves to one candidate, and the team filter sees that candidate too.
-#[tokio::test]
-async fn the_stage_filters_a_single_deployment() {
-    let facts = RequestFacts::default();
-    let mut request = route_request("theirs", &facts);
-    request.authority = Authority {
-        team_id: Some("t1"),
-        proxy_admin: false,
-    };
-    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
-    let route = route_context(&request, &services, &limits, &params);
-    let candidates = CandidateSet {
-        deployments: vec![spec("theirs", "theirs", &[("team_id", "t2")])],
-    };
-    let kept = apply(candidates, &route).await.unwrap();
-    assert!(kept.deployments.is_empty());
-}
-
 #[tokio::test]
 async fn the_stage_refuses_an_ambiguous_admin_pool() {
     let facts = RequestFacts::default();

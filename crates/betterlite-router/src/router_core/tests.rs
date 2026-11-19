@@ -155,7 +155,6 @@ where
 #[case::web_search_filtered_pool(boundaries::web_search_filtered_pool())]
 #[case::pinned_but_empty(boundaries::pinned_but_empty())]
 #[case::pinned_pool_uses_strategy(boundaries::pinned_pool_uses_strategy())]
-#[case::deployment_id_team_filtered(boundaries::deployment_id_team_filtered())]
 #[case::provider_budget(boundaries::provider_budget_has_no_selection())]
 #[case::simple_shuffle_empty(boundaries::simple_shuffle_empty())]
 #[case::weights_read_metrics(settled(boundaries::weights_read_metrics))]

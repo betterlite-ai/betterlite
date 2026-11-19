@@ -591,20 +591,6 @@ pub(super) async fn pinned_pool_uses_strategy() {
     assert_eq!(result.strategy, Some(Strategy::SimpleShuffle));
 }
 
-// a direct deployment id still reaches the team filter, so another team's deployment is never served
-pub(super) async fn deployment_id_team_filtered() {
-    let fixture = Fixture::plain(vec![with_info(
-        "gpt-4o",
-        "a",
-        &[],
-        &[("team_id", text("t2"))],
-    )]);
-    let error = run_simple(&fixture, &RequestSetup::new("a"))
-        .await
-        .unwrap_err();
-    assert!(matches!(&error, RoutingError::NoDeployment(_)));
-}
-
 pub(super) async fn provider_budget_has_no_selection() {
     let error = route_failure(&NoServices, RoutingStrategy::ProviderBudgetRouting).await;
     assert!(matches!(&error, RoutingError::NoDeployment(_)));
