@@ -36,11 +36,26 @@ impl RowKind {
 pub type RowValues = BTreeMap<RowKind, JsonData>;
 // LiteLLM's LiteLLM_ProjectTableCachedObj, which the shared row model does not carry
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "JsonData")]
 pub struct CachedProject {
     #[serde(flatten)]
     pub project: ProjectTable,
-    #[serde(default)]
     pub last_refreshed_at: Option<f64>,
+}
+#[derive(Deserialize)]
+struct ProjectCacheFields {
+    last_refreshed_at: Option<f64>,
+}
+impl TryFrom<JsonData> for CachedProject {
+    type Error = serde_json::Error;
+    // the row decodes as its plain model first, as every stored row does
+    fn try_from(value: JsonData) -> Result<Self, Self::Error> {
+        let text = serde_json::to_string(&value)?;
+        Ok(Self {
+            project: serde_json::from_str(&text)?,
+            last_refreshed_at: serde_json::from_str::<ProjectCacheFields>(&text)?.last_refreshed_at,
+        })
+    }
 }
 // each variant dumps as its model, the way CacheCodec.serialize(model_type) does
 #[derive(Clone, Debug, Serialize)]

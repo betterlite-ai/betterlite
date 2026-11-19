@@ -315,6 +315,34 @@ fn team_project_timestamp_override() {
     );
 }
 
+// the stored row carries every JSONB column the SELECT emits, not just the fixture's few keys
+#[test]
+fn stored_project_row_validates() {
+    let stored = fixtures::stored_project_row("project-1");
+    let validated = validate_row(RowKind::Project, Some(&stored), 9.5)
+        .expect("the stored project row validates");
+    let RowObject::Project(project) = &validated else {
+        panic!("the stored project row validates as a project");
+    };
+    assert_eq!(project.project.project_id, "project-1");
+    assert_eq!(project.project.models, ["model-a"]);
+    assert_eq!(
+        project
+            .project
+            .metadata
+            .as_ref()
+            .map(|payload| payload.0.len()),
+        Some(0)
+    );
+    assert!(
+        project.project.created_at.is_some(),
+        "the row is timestamped"
+    );
+    assert_eq!(project.last_refreshed_at, Some(9.5_f64));
+    let payload = payload::encode(&validated).expect("the project payload");
+    assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(9.5_f64));
+}
+
 #[rstest]
 #[case::user(RowKind::User, fixtures::user_row("user-1"))]
 #[case::membership(RowKind::Membership, fixtures::membership_row("user-1", "team-1"))]
@@ -352,6 +380,9 @@ fn invalid_row_warning_and_drop() {
         text.contains("auth prefetch: the row did not validate as its model"),
         "{text}"
     );
-    assert!(text.contains("row=team_row"), "{text}");
-    assert!(text.contains("model=LiteLLM_TeamTableCachedObj"), "{text}");
+    assert!(text.contains(r#"row="team_row""#), "{text}");
+    assert!(
+        text.contains(r#"model="LiteLLM_TeamTableCachedObj""#),
+        "{text}"
+    );
 }

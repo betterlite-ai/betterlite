@@ -14,6 +14,9 @@ const ORGANIZATION: &str = r#"{"organization_id": "$id", "organization_alias": "
 
 const PROJECT: &str = r#"{"project_id": "$id", "project_alias": "project alias", "team_id": "team-1", "budget_id": "budget-project", "models": ["model-a"], "spend": 0.0, "blocked": false, "litellm_budget_table": {"budget_id": "budget-project", "max_budget": 10.0, "allowed_models": ["model-a", "model-a"]}, "object_permission_id": "perm-project", "object_permission": {"object_permission_id": "perm-project", "mcp_servers": ["mcp-1"], "mcp_access_groups": [], "mcp_tool_permissions": {"mcp-1": ["tool-1"]}, "vector_stores": [], "agents": [], "agent_access_groups": [], "models": ["model-a", "model-a"], "mcp_toolsets": [], "blocked_tools": [], "search_tools": [], "skills": []}}"#;
 
+// the row the pinned SELECT returns for a project: every JSONB column defaults to {}, nulls stay null
+const STORED_PROJECT: &str = r#"{"project_id": "$id", "project_alias": null, "description": null, "team_id": "team-1", "budget_id": "budget-project", "metadata": {}, "models": ["model-a"], "spend": 0, "model_spend": {}, "model_rpm_limit": {}, "model_tpm_limit": {}, "blocked": false, "object_permission_id": "perm-project", "created_by": "tester", "updated_by": "tester", "created_at": "2026-11-19T12:00:00+00:00", "updated_at": "2026-11-19T12:00:00+00:00", "litellm_budget_table": {"budget_id": "budget-project", "soft_budget": null, "max_budget": null, "allowed_models": [], "created_at": "2026-11-19T12:00:00+00:00", "updated_at": "2026-11-19T12:00:00+00:00"}, "object_permission": {"object_permission_id": "perm-project", "mcp_servers": [], "mcp_access_groups": [], "mcp_tool_permissions": null, "vector_stores": [], "agents": [], "agent_access_groups": [], "models": [], "mcp_toolsets": [], "blocked_tools": [], "search_tools": [], "skills": []}}"#;
+
 fn decode(text: &str) -> JsonData {
     serde_json::from_str(text).expect("the fixture is valid json")
 }
@@ -47,4 +50,8 @@ pub(crate) fn organization_row(organization_id: &str) -> JsonData {
 
 pub(crate) fn project_row(project_id: &str) -> JsonData {
     filled(PROJECT, project_id)
+}
+
+pub(crate) fn stored_project_row(project_id: &str) -> JsonData {
+    filled(STORED_PROJECT, project_id)
 }
