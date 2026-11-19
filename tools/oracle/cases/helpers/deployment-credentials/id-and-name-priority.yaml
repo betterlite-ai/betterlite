@@ -1,0 +1,75 @@
+kind: helper
+name: deployment-credentials-id-and-name-priority
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: shared-id
+        litellm_params:
+          model: openai/by-name
+          api_key: sk-name
+        model_info:
+          id: name-row
+      - model_name: other-model
+        litellm_params:
+          model: openai/by-id
+          api_key: sk-id
+        model_info:
+          id: shared-id
+    arguments:
+      model_id: shared-id
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: other-team-model
+          litellm_params:
+            model: openai/other
+            api_key: sk-other
+          model_info:
+            id: d1
+            team_id: team-a
+      arguments:
+        model_id: d1
+        team_id: team-b
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: shared
+          litellm_params:
+            model: openai/a
+            api_key: sk-a
+          model_info:
+            id: a1
+            team_id: team-a
+        - model_name: shared
+          litellm_params:
+            model: openai/shared
+            api_key: sk-shared
+          model_info:
+            id: s1
+        - model_name: shared
+          litellm_params:
+            model: openai/b
+            api_key: sk-b
+          model_info:
+            id: b1
+            team_id: team-b
+      arguments:
+        model_id: shared
+        team_id: team-b
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: shared
+          litellm_params:
+            model: openai/a
+            api_key: sk-a
+          model_info:
+            id: a1
+            team_id: team-a
+      arguments:
+        model_id: shared
+        team_id: team-c
+env: {}
+compare: {ignore: []}

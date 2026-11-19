@@ -1,0 +1,18 @@
+task: B659
+deviations:
+  - what: An api_base that cannot be parsed as a URL is refused with the plaintext-transport error, while LiteLLM lets httpx.URL raise InvalidURL before the transport check completes.
+    why: The transport check runs on the parsed URL, and an unparsable URL cannot be https or loopback; betterlite reports the same refusal for every non-safe base instead of surfacing httpx's parser error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L92-L94
+  - what: An AGENTCORE_GATEWAY_URL value that cannot be parsed as a URL never matches a custom host, while LiteLLM's _is_configured_gateway raises httpx.InvalidURL.
+    why: An operator-supplied value that is not a URL cannot authorize a gateway hostname, and a truthful "not configured" keeps a broken setting from crashing the request with a parser error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L324-L328
+  - what: A non-string tool_name in optional_params is refused with "tool_name must be a string", while LiteLLM raises AttributeError from calling endswith on it.
+    why: The tool name reaches an MCP request, so a wrong type is a caller error that names the field instead of an internal Python exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L231-L248
+  - what: A non-http(s) loopback URL whose port is the scheme's default, for example ftp://localhost:21/mcp, is signed with the port left out of the host header, where botocore keeps it and signs host:localhost:21.
+    why: The signing host comes from the url crate's serialized host and port, which strips a scheme's default port; http and https match botocore exactly, and those are the schemes an AgentCore gateway serves.
+    link: https://github.com/boto/botocore/blob/1.43.118/botocore/auth.py#L84-L100
+kept_bugs:
+  - what: max_results is documented as 1-25, but any explicit value, including 0, a negative number and values above 25, is sent to the gateway unchanged.
+    why: A working setup can rely on the sent value reaching the gateway, and clamping it would silently change the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L213-L247

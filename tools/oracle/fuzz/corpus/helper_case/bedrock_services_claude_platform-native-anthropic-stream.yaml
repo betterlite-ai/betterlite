@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock_services_claude_platform_native_anthropic_stream
+call:
+  bedrock_services_claude_platform:
+    native_anthropic_stream:
+      id: 00000000-0000-4000-8000-000000000002
+      json_mode: true
+      lines:
+        - 'event: message_start'
+        - 'data: {"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-5","usage":{"input_tokens":1,"output_tokens":0}}}'
+        - ''
+        - 'event: content_block_delta'
+        - 'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}'
+        - ''
+        - 'event: message_stop'
+        - 'data: {"type":"message_stop"}'
+        - ''
+env: {}
+compare: {ignore: []}
