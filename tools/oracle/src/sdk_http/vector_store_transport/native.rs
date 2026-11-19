@@ -5,7 +5,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::vector_store_http_write::config::{OpenAiWriteConfig, WriteParams};
 use betterlite_core::api::vector_store_http_write::error::WriteError;
 use betterlite_core::api::vector_store_http_write::service::{
-    DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget, prepare, send,
+    DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget, send,
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
@@ -90,8 +90,8 @@ fn outcome(result: Result<Json, WriteError>) -> Result<Outcome, SdkHttpError> {
             failure: Some(Failure {
                 status: error.status_code,
                 synthesized: error.status_code_is_synthesized,
-                message: error.message.clone(),
-                headers: error.headers.clone(),
+                message: error.message,
+                headers: error.headers,
             }),
         }),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
