@@ -17,7 +17,7 @@ pub type ProjectedLabels = BTreeMap<String, Option<String>>;
 const END_USER_LABEL: &str = UserApiKeyLabelName::EndUser.as_str();
 
 // LiteLLM takes the settings it needs from module state; betterlite passes them with the source that reads them
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum LabelSource<'labels> {
     Context(&'labels PrometheusLabelFactoryContext),
     Values {
