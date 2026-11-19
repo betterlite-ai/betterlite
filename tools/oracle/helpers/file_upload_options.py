@@ -3,14 +3,14 @@ import json
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
-from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.openai_files_endpoints.common_utils import (
-    extract_file_creation_params,
+    extract_file_creation_params,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L918-L928
     validate_managed_files_requirement,
     validate_managed_id_requirement,
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.types import Message, Scope
 
@@ -160,9 +160,10 @@ def extract_answer(call: ExtractCall) -> dict[str, JsonValue]:
             target_storage_form=call.get("target_storage_form"),
         )
     )
+    names: list[JsonValue] = [*params.target_model_names]
     return {
         "target_storage": params.target_storage,
-        "target_model_names": params.target_model_names,
+        "target_model_names": names,
         "model": params.model,
     }
 
