@@ -1,0 +1,17 @@
+kind: helper
+name: collect-requests-and-tokens
+call:
+  b3036:
+    function: collect
+    descriptors:
+      - key: api-key
+        value: k1
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: 20
+          max_parallel_requests: null
+          window_size: null
+    skip_tpm_check: false
+    window_size: 45
+env: {}
+compare: {ignore: []}
