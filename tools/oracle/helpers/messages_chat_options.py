@@ -38,10 +38,11 @@ VIEW: Final[Translate] = TypeAdapter[Translate](Translate, config=ARBITRARY).val
 class Probe:
     def __init__(self, declared: list[str] | None) -> None:
         self.declared = declared
-        self.calls: list[dict[str, JsonValue]] = []
+        self.calls: list[JsonValue] = []
 
     def __call__(self, model: str, custom_llm_provider: str | None = None) -> list[str] | None:
-        self.calls.append({"model": model, "provider": custom_llm_provider})
+        entry: JsonValue = {"model": model, "provider": custom_llm_provider}
+        self.calls.append(entry)
         return self.declared
 
 
