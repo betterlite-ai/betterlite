@@ -16,7 +16,6 @@ pub(crate) mod gemini;
 pub(crate) mod google_pse;
 pub(crate) mod host_identity;
 pub(crate) mod hosted_chat;
-pub(crate) mod json_providers;
 pub(crate) mod linkup;
 pub(crate) mod mistral;
 pub(crate) mod nimble;
