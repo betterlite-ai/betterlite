@@ -1,0 +1,27 @@
+kind: helper
+name: failed_task_empty
+call:
+  dataforseo_search:
+    calls:
+      - kind: reply
+        body: '{"tasks": [{"status_code": 40100, "result": [{"items": [{"type": "organic", "title": "failed"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 40100, "result": []}, {"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "second"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": null, "result": [{"items": [{"type": "organic", "title": "null status"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"result": [{"items": [{"type": "organic", "title": "no status"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": []}'
+      - kind: reply
+        body: '{"other": 1}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": []}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": null}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": [{"items": [{"type": "organic", "title": null}]}]}]}'
+env: {}
+compare: {ignore: []}

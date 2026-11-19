@@ -1,0 +1,135 @@
+id: B9945
+title: The gateway request Redis drain keeps the entries it already popped
+description: >-
+  Fix a LiteLLM bug that B3102 (https://github.com/betterlite-ai/betterlite/pull/2475) copied into
+  GatewayRequestRedisBuffer::pop in crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis.rs. The
+  review found it and the architect decided to fix it, but the PR was already in the merge queue.
+
+
+  The bug: pop() LPOPs batches of dequeue_count entries into one Vec until a batch comes back short, then decodes
+  every entry. When a later take fails, the ? returns the error and the entries already popped are gone: they left
+  Redis and never reach the database. One entry that is not a row list loses every entry of the drain the same way,
+  through the ? on serde_json::from_str. flush_gateway_requests then logs "buffered rows stay in Redis for the next
+  flush", which is false for those entries. In the adapter, RedisGatewayRequestsList::take converts byte entries
+  with collect() over String::from_utf8, so one entry that is not UTF-8 loses its whole popped batch. LiteLLM loses
+  them the same way: its _pop_all generator raises out of pop() and the flush logs the same message
+  (gateway_request_tracking.py L186-L203 and L275-L281).
+
+
+  Rust change. In pop(), a take that fails after at least one entry was popped stops the drain: log a warning with
+  tracing::warn! whose text starts "Gateway request tracking - Redis drain stopped after {n} entries, the rest stay in
+  Redis for the next flush: " followed by the error, and fold the entries popped so far, so commit_if_leader commits
+  them (and re-queues them as today when the commit fails). A take that fails before any entry was popped still
+  returns the error, so the flush warning stays true for that case. Decode each entry on its own: an entry that
+  serde_json cannot read as a row list is dropped alone with a warning whose text starts "Gateway request tracking -
+  dropped a buffered entry that is not a row list: " followed by the serde error, and the other entries fold. The
+  entry is not re-queued, since it can never decode and would fail every later drain. pop() then has only the take
+  error left, so the Decode variant of GatewayRequestRedisError goes. In adapters.rs, take drops a byte entry that is
+  not UTF-8 with a warning whose text starts "Gateway request tracking - dropped a buffered entry that is not UTF-8: "
+  and returns the others, for both LpopResult::ItemBytes and ItemsBytes; nothing returns the Entry variant after
+  that, so it goes too. Keep pop() and commit_if_leader under the 40-line clippy limit with a private fn for the
+  per-entry decode if needed.
+
+
+  Tests in crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis/tests.rs, with the existing
+  FakeList, FakeLease, FakeDatabase, buffer_with and captured_logs helpers. Add fail_take_after(successes) to FakeList
+  in crates/betterlite-db/src/gateway_request_tracking/tests/support.rs, the take twin of fail_push_after: a take
+  budget that lets that many takes succeed and fails every later one with async_lpop. fail_take becomes
+  fail_take_after(0). a_later_take_failure_keeps_the_entries_already_popped queues three one-row entries for
+  different routes, uses a dequeue count of 1 and fail_take_after(2); pop returns the two first rows, the third entry
+  is still in queued(), and the log holds "Redis drain stopped after 2 entries". the_leader_commits_what_it_popped_before_a_take_failure
+  runs commit_if_leader on the same setup and asserts the database got one call with the two rows. Replace
+  pop_reports_an_entry_that_is_not_json, which pins the bug, with an_entry_that_is_not_a_row_list_is_dropped_alone:
+  entries "not a row list" and one valid row list; pop returns the valid row and the log holds "dropped a buffered
+  entry that is not a row list". pop_reports_a_list_failure and a_pop_failure_is_reported_to_the_leader stay: a first
+  take that fails is still an error. Update the match arms that list the removed variants. The three new tests fail
+  on the unfixed code.
+
+
+  Deviations. Add two rows to docs/deviations/B3102.yaml, under its deviations list, each with its pinned LiteLLM
+  link (the rows in the deviations block below). B3102's other rows stay as they are.
+scope:
+  paths:
+  - crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis.rs
+  - crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis/adapters.rs
+  - crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis/tests.rs
+  - crates/betterlite-db/src/gateway_request_tracking/tests/support.rs
+  - docs/deviations/B3102.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L186-L203
+  why: _pop_all yields every LPOP batch into one tuple and pop() decodes them all at the end, so a later LPOP error or one bad entry raises and loses every entry already popped.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L275-L281
+  why: The flush logs that the buffered rows stay in Redis when the leader drain raises, which is false for the entries already popped.
+dod:
+- text: >-
+    A take that fails after earlier takes succeeded ends the drain with the entries popped so far folded and
+    committed, the entries not yet popped stay in the list, and a warning names how many were popped.
+  proof: [later-take-failure]
+- text: >-
+    An entry that is not a row list is dropped alone with a warning, and the other entries of the drain fold; a
+    byte entry that is not UTF-8 is dropped alone in the adapter.
+  proof: [bad-entry]
+- text: >-
+    A take that fails before anything was popped is still an error, and the other gateway request tracking tests
+    still pass.
+  proof: [tracking-tests]
+- text: >-
+    docs/deviations/B3102.yaml records both fixes with their pinned LiteLLM links, and the Decode and Entry variants
+    are gone.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: later-take-failure
+    why: A take that fails after earlier batches still loses the entries already popped.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail
+      -E 'test(/^gateway_request_tracking::gateway_request_redis::tests::(a_later_take_failure_keeps_the_entries_already_popped|the_leader_commits_what_it_popped_before_a_take_failure)$/)'
+  - id: bad-entry
+    why: One entry that does not decode still loses the other entries, or the test that pins the bug is still there.
+    run: >-
+      ! grep -q 'pop_reports_an_entry_that_is_not_json' crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis/tests.rs
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail
+      -E 'test(/^gateway_request_tracking::gateway_request_redis::tests::an_entry_that_is_not_a_row_list_is_dropped_alone$/)'
+  - id: tracking-tests
+    why: The fix broke another buffer, flush or commit case.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_tracking::/)'
+  - id: deviation-rows
+    why: A deviation row or its pinned link is missing, or a removed error variant is still there.
+    run: >-
+      grep -q -F 'gateway_request_tracking.py#L186-L203' docs/deviations/B3102.yaml
+      && grep -q -F 'gateway_request_tracking.py#L275-L281' docs/deviations/B3102.yaml
+      && ! grep -q -E '^ +(Decode|Entry)\(' crates/betterlite-db/src/gateway_request_tracking/gateway_request_redis.rs
+oracle_cases: []
+deviations:
+- what: >-
+    When a Redis LPOP of the gateway request drain fails after earlier batches were popped, the drain stops, the
+    entries popped so far are committed (or re-queued when the commit fails) and the rest stay in Redis, with the
+    warning "Gateway request tracking - Redis drain stopped after N entries, the rest stay in Redis for the next
+    flush". A first LPOP that fails is still the leader drain error.
+  why: >-
+    LiteLLM collects every batch before it decodes, so the raised error loses every entry already popped from Redis,
+    while the flush warning says they stay there.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L275-L281
+- what: >-
+    A buffered entry that is not UTF-8 or not a row list is dropped alone with a warning, and the other entries of
+    the drain are committed. The bad entry is not re-queued.
+  why: >-
+    LiteLLM's validate_json raises for one bad entry and loses every entry of the drain; a re-queued bad entry could
+    never decode and would fail every later drain.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L186-L203
+out_of_scope:
+- flush_gateway_requests and its warning text; once pop keeps what it popped, "buffered rows stay in Redis" is true for the error that still reaches it.
+- push, requeue and the commit; they already keep rows on failure.
+- The scheduler wiring and the management endpoints from B3102.
+pitfalls:
+- 'Only a take that fails after something was popped stops quietly. A first take that fails returns the error, and pop_reports_a_list_failure keeps passing.'
+- 'Do not re-queue an entry that fails to decode: it would come back on every drain.'
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

@@ -25,6 +25,13 @@ description: >-
   resulting memberships. The 139 owned function lines need about 200 route/default code,
   230 tests and 150 request/corpus fixtures, with a 650-line ceiling. All body parsing and
   config defaults already have owners; contribute group-lifecycle resource seeds only.
+
+  Fill only scim_group_lifecycle.rs and scim_group_lifecycle/**: B9941 already merges its stub routes function into
+  scim_router, so scim.rs and routes.rs stay as they are. POST /scim/v2/Groups and PUT and DELETE
+  /scim/v2/Groups/{group_id} use LiteLLM's {group_id} name, the one B1641's GET and B064's PATCH use on the same
+  path. Seed members_with_roles, team metadata and user teams with B9941's `scim:` block; LiteLLM boots on that
+  database with B9942's Prisma client, the handlers reach it through B8610's shared.db, and the auth sub-case of
+  auth-and-duplicate-id depends on B052 answering a missing or unknown key the way LiteLLM does.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
