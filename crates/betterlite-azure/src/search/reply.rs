@@ -54,7 +54,7 @@ pub struct Annotation {
     pub end_index: Option<JsonIndex>,
 }
 
-// LiteLLM holds any Python int here; an index outside 0..=len(text) means the end of the text to _snippet
+// LiteLLM holds any Python int here; an index outside 0..=len(text) ends the text to _snippet, and -0 is zero
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(try_from = "Number")]
 pub struct JsonIndex(Option<u64>);
@@ -66,7 +66,11 @@ impl TryFrom<Number> for JsonIndex {
         if number.is_f64() {
             return Err("a citation index must be an integer");
         }
-        Ok(Self(number.as_u64()))
+        Ok(Self(
+            number
+                .as_u64()
+                .or_else(|| u64::try_from(number.as_i64()?).ok()),
+        ))
     }
 }
 

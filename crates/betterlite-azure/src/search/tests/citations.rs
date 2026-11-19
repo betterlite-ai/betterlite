@@ -89,6 +89,12 @@ fn start_index_boundaries() {
         results(&above_i64),
         vec![expect_result("", "https://x.example", text)]
     );
+    let long = format!("{}([l](https://l.example))", "y".repeat(350));
+    let negative_zero = indexed(&long, &json_value("-0"));
+    assert_eq!(
+        results(&negative_zero),
+        vec![expect_result("", "https://x.example", &"y".repeat(300))]
+    );
 }
 
 fn empty_claim_falls_back() {
