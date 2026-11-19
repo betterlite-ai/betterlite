@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-mantle-remote-url-inlined
+call:
+  bedrock_mantle_chat:
+    function: remote_url_inlined
+    model_cost:
+      bedrock/fixture-plain: {litellm_provider: bedrock}
+      fixture-plain: {litellm_provider: bedrock}
+    model: fixture-plain
+    messages:
+      - role: user
+        content:
+          - {type: image_url, image_url: {url: 'http://example.test/pic.png'}}
+          - {type: document, source: {type: url, url: 'http://example.test/doc.pdf'}}
+    optional_params: {max_tokens: 64}
+    fetch:
+      'http://example.test/pic.png': 'data:image/png;base64,iVBORw0KGgo='
+      'http://example.test/doc.pdf': 'data:application/pdf;base64,JVBERi0xLjQK'
+env: {}
+compare: {ignore: []}

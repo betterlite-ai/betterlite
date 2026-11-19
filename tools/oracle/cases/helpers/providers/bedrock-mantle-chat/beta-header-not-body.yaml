@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-mantle-beta-header-not-body
+call:
+  bedrock_mantle_chat:
+    function: messages_request
+    model_cost:
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+      fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    model: mantle/fixture-tool-search
+    messages: [{role: user, content: hi}]
+    optional_params:
+      max_tokens: 512
+      tools:
+        - {type: tool_search_tool_regex_20251119, name: tool_search}
+        - name: geo
+          description: geo
+          input_schema: {type: object, properties: {q: {type: string}}}
+          eager_input_streaming: true
+      safeguards: []
+    request_headers: {anthropic-beta: caller-value, Anthropic-Beta: keep-me, x-caller: kept}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

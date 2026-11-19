@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-mantle-message-url
+call:
+  bedrock_mantle_chat:
+    function: message_url
+    calls:
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        environment: {AWS_REGION: us-west-2}
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        headers: {Anthropic-Version: ''}
+        project_id: proj-2
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: https://mantle.example.test/base
+        headers: {Anthropic-Workspace: caller}
+        environment: {AWS_REGION_NAME: eu-central-1}
+env: {}
+compare: {ignore: []}
