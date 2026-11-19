@@ -1,0 +1,47 @@
+kind: helper
+name: azure-assistant-definitions-delete-assistant
+call:
+  azure_assistant_definitions:
+    delete_assistant:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: asst_1
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: "a/b c?é"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: "x:y@z"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: "a%2F"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: "x[]^|"
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: asst_1
+        flag: true
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: ""
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: ".."
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        assistant_id: asst_1
+        reply:
+          status: 404
+          body: '{"error":{"message":"gone","type":"invalid_request_error"}}'
+env: {}
+compare: {ignore: []}

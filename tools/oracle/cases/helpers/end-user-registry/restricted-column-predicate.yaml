@@ -1,0 +1,7 @@
+kind: helper
+name: end-user-registry-restricted-column-predicate
+call:
+  end_user_registry:
+    kind: restricted_end_user_where
+env: {}
+compare: {ignore: []}
