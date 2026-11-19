@@ -1,7 +1,7 @@
 id: B8142
 milestone: M11 distribution
 title: "AWS Terraform module: ECS service, load balancer, autoscaling and outputs"
-status: todo
+status: done
 depends_on: [B8141]
 file: tasks/B8142-aws-service-alb.yaml
 covers:
@@ -16,7 +16,7 @@ covers:
   - "terraform/litellm/aws/tests/connection_pool.tftest.hcl"
 parent: B154
 split_from: B154
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2543
