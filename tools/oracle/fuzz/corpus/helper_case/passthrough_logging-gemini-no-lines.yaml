@@ -1,0 +1,9 @@
+kind: helper
+name: passthrough-logging-gemini-no-lines
+call:
+  b3640:
+    operation: gemini_chunks
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent
+    lines: []
+env: {}
+compare: {ignore: []}

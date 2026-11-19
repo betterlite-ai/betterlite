@@ -1,7 +1,7 @@
 id: B8135
 milestone: M11 distribution
 title: Component Helm chart ingress and scaling
-status: todo
+status: done
 depends_on: [B8133, B8134]
 file: tasks/B8135-helm-component-ingress.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "helm/litellm/templates/gateway/hpa.yaml"
 parent: B151
 split_from: B152
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2537
