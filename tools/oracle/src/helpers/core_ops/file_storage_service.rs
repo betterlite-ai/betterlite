@@ -27,7 +27,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
@@ -121,7 +121,7 @@ fn stored_answer(stored: &StoredFile) -> Value {
     })
 }
 
-fn refusal_answer(error: ProxyException) -> Value {
+fn refusal_answer(error: &ProxyException) -> Value {
     json!({
         "error": {
             "message": error.message,
@@ -141,23 +141,7 @@ fn upload_answer(input: &Input) -> HelperResult {
 }
 
 async fn upload(input: &Input) -> HelperResult {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &input.environment).or_config_error()?,
-    );
-    let client = ProxiedClient::outbound(&policy).or_config_error()?;
-    let backend: StorageBackendDeps<ManagedFileContentRepository<'static>> = StorageBackendDeps {
-        azure: AzureFileStorageDeps {
-            transport: Arc::new(PooledTransport { client }),
-            clock: Arc::new(FixedClock { now: input.now }),
-            environment: Arc::new(input.environment.clone()),
-            ids: Arc::new(FixedIds {
-                uuid: input.uuid.clone(),
-            }),
-            chain_factory: Arc::new(UnusedChain),
-        },
-        azure_settings: None,
-        database: None,
-    };
+    let backend = configured_backend(input)?;
     let clock = FixedClock { now: input.now };
     let ids = FixedIds {
         uuid: input.uuid.clone(),
@@ -177,7 +161,29 @@ async fn upload(input: &Input) -> HelperResult {
     };
     match upload_file_to_storage_backend(request, deps).await {
         Ok(stored) => Ok(stored_answer(&stored)),
-        Err(StorageServiceError::Proxy(error)) => Ok(refusal_answer(*error)),
+        Err(StorageServiceError::Proxy(error)) => Ok(refusal_answer(&error)),
         Err(StorageServiceError::Upload(error)) => Err::<Value, _>(error).or_value_error(),
     }
+}
+
+fn configured_backend(
+    input: &Input,
+) -> Result<StorageBackendDeps<ManagedFileContentRepository<'static>>, Box<HelperError>> {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &input.environment).or_config_error()?,
+    );
+    let client = ProxiedClient::outbound(&policy).or_config_error()?;
+    Ok(StorageBackendDeps {
+        azure: AzureFileStorageDeps {
+            transport: Arc::new(PooledTransport { client }),
+            clock: Arc::new(FixedClock { now: input.now }),
+            environment: Arc::new(input.environment.clone()),
+            ids: Arc::new(FixedIds {
+                uuid: input.uuid.clone(),
+            }),
+            chain_factory: Arc::new(UnusedChain),
+        },
+        azure_settings: None,
+        database: None,
+    })
 }

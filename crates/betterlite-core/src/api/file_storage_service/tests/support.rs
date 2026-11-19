@@ -200,7 +200,7 @@ pub(crate) fn backend_deps<R>(
     database: Option<R>,
     environment: BTreeMap<String, String>,
 ) -> StorageBackendDeps<R> {
-    let transport: Arc<dyn StorageTransport> = Arc::clone(recorder);
+    let transport = Arc::clone(recorder);
     StorageBackendDeps {
         azure: AzureFileStorageDeps {
             transport,

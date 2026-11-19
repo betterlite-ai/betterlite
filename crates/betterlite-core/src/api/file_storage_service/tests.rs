@@ -297,8 +297,8 @@ fn assert_factory_logs(logs: &Captured) {
     let text = logs.text();
     for backend in ["azure_storage", "litellm_db", "other"] {
         assert!(
-            text.contains(&format!("Creating storage backend: type={backend}")),
-            "the factory logs {backend}"
+            text.contains(&format!("DEBUG Creating storage backend: type={backend}")),
+            "the factory logs {backend} at debug"
         );
     }
 }
@@ -394,7 +394,7 @@ async fn storage_only_upload() {
         "",
     );
     let completed = format!(
-        "Storage backend upload complete: backend=azure_storage, url={AZURE_BLOB_PREFIX}{FIXED_UUID}"
+        "DEBUG Storage backend upload complete: backend=azure_storage, url={AZURE_BLOB_PREFIX}{FIXED_UUID}"
     );
     assert!(logs.text().contains(&completed), "the upload debug line");
     assert_uploaded_file(
