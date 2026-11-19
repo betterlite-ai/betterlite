@@ -54,13 +54,13 @@ pub struct RetrieveStep {
     pub supplied_client: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub steps: Vec<StepOutcome>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepOutcome {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,7 +186,7 @@ fn outcome(
 
 fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
     match error {
-        FineTuningReadError::Dispatch(ReadWireError::Sdk { source }) => Failure {
+        FineTuningReadError::Dispatch(ReadWireError::Sdk(source)) => Failure {
             class: class_for_status(source.status).to_owned(),
             status: source.status,
             kind: Some(source.error_type.clone()),

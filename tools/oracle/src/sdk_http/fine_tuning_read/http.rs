@@ -31,10 +31,7 @@ const READ_DEADLINE: Duration = Duration::from_secs(600);
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ReadWireError {
     #[error(transparent)]
-    Sdk {
-        #[source]
-        source: SdkError,
-    },
+    Sdk(#[from] SdkError),
     #[error("the provider request failed: {0}")]
     Transport(#[source] Box<TransportError>),
     #[error("the provider request URL is not valid: {0}")]
@@ -79,9 +76,10 @@ impl FineTuningReadDispatch for HttpDispatch {
             .await
             .map_err(|source| ReadWireError::Transport(Box::new(source)))?;
         if response.status >= 400 {
-            return Err(ReadWireError::Sdk {
-                source: sdk_error(&response.body, response.status)?,
-            });
+            return Err(ReadWireError::Sdk(sdk_error(
+                &response.body,
+                response.status,
+            )?));
         }
         Ok(response.body)
     }
