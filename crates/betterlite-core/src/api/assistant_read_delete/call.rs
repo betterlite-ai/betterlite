@@ -23,7 +23,6 @@ pub struct AzureAssistantCall {
     pub extra_body: IndexMap<String, Json>,
 }
 
-// the provider client one call runs through, with everything that client is built from
 #[derive(Debug, Clone)]
 pub enum AssistantProviderCall {
     OpenAi(ClientOptions),

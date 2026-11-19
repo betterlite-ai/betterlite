@@ -344,6 +344,41 @@ async fn azure_list_and_openai_delete_keep_openai_class_clients() {
     );
     assert_eq!(requests[0].api_key, None);
 
+    let (recorder, dispatch) = harness(200, PAGE);
+    let mut input = delete_azure(AssistantWrapper::Sync);
+    input.operation = AssistantOperation::List;
+    input.assistant_id = None;
+    input.client = Some(supplied(SuppliedClientKind::AzureOpenAi, AZURE_BASE));
+    facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    let requests = recorder.requests();
+    assert_eq!(
+        requests[0].url, "https://azure.test/v1/openai/assistants?api-version=2024-02-01",
+        "an Azure client keeps the Azure request path"
+    );
+    assert_eq!(requests[0].api_key.as_deref(), Some("sk-supplied"));
+    assert_eq!(requests[0].authorization, None);
+
+    let (recorder, dispatch) = harness(200, DELETED);
+    let mut input = delete_azure(AssistantWrapper::Async);
+    input.client = Some(supplied(SuppliedClientKind::AsyncOpenAi, OPENAI_BASE));
+    facade(dispatch, Settings::default())
+        .run(&input)
+        .await
+        .unwrap();
+    let requests = recorder.requests();
+    assert_eq!(
+        requests[0].url,
+        format!("{OPENAI_BASE}/assistants/asst_a"),
+        "an async OpenAI client survives the Azure delete and sends the OpenAI request"
+    );
+    assert_eq!(
+        requests[0].authorization.as_deref(),
+        Some("Bearer sk-supplied")
+    );
+
     let (recorder, dispatch) = harness(200, DELETED);
     let mut input = list_openai(AssistantWrapper::Sync);
     input.operation = AssistantOperation::Delete;

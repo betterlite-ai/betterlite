@@ -26,7 +26,7 @@ use secrecy::SecretString;
 use thiserror::Error;
 
 use super::call::{AssistantCall, AssistantProviderCall, AzureAssistantCall};
-use super::request::{AssistantOperation, SuppliedClient};
+use super::request::{AssistantOperation, SuppliedClient, SuppliedClientKind};
 use super::{AssistantReadDeleteDispatch, AssistantReply};
 
 #[derive(Debug, Error)]
@@ -162,6 +162,16 @@ where
         call: &AssistantCall,
         values: &AzureAssistantCall,
     ) -> Result<AssistantReply, AssistantSdkError> {
+        // Azure keeps an OpenAI SDK client, and that client sends the OpenAI request, not an Azure one
+        let openai_client_supplied = call.supplied.as_ref().is_some_and(|client| {
+            matches!(
+                client.kind,
+                SuppliedClientKind::OpenAi | SuppliedClientKind::AsyncOpenAi
+            )
+        });
+        if openai_client_supplied {
+            return self.openai(call, &ClientOptions::default()).await;
+        }
         let api = AzureAssistantsApi {
             transport: Arc::clone(&self.transport),
         };

@@ -126,11 +126,8 @@ impl SuppliedClientKind {
 pub struct SuppliedClient {
     pub kind: SuppliedClientKind,
     // the SDK the caller built: its own base, key and api_version, never the facade's options
-    #[serde(default)]
     pub api_base: Option<String>,
-    #[serde(default)]
     pub api_key: Option<SecretString>,
-    #[serde(default)]
     pub api_version: Option<String>,
 }
 
@@ -175,13 +172,10 @@ pub struct AssistantReadDeleteInput {
     pub operation: AssistantOperation,
     // LiteLLM declares no default: the provider argument is required and any other value answers 400
     pub provider: String,
-    #[serde(default)]
     pub assistant_id: Option<String>,
     #[serde(default)]
     pub entry: AssistantWrapper,
-    #[serde(default)]
     pub aget_assistants: Option<AssistantFlag>,
-    #[serde(default)]
     pub async_delete_assistants: Option<AssistantFlag>,
     // optional_params.get("extra_body", {}): omitted reads as {}, while an explicit null stays None
     #[serde(
@@ -190,16 +184,11 @@ pub struct AssistantReadDeleteInput {
         with = "double_option"
     )]
     pub extra_body: Option<Option<IndexMap<String, Json>>>,
-    #[serde(default)]
     pub client: Option<SuppliedClient>,
     // get_assistants accepts the pagination kwargs and never forwards them to the provider method
-    #[serde(default)]
     pub after: Option<String>,
-    #[serde(default)]
     pub before: Option<String>,
-    #[serde(default)]
     pub limit: Option<i64>,
-    #[serde(default)]
     pub order: Option<String>,
     #[serde(default)]
     pub params: AssistantParams,
