@@ -440,6 +440,20 @@ fn encrypted_reasoning_response(#[case] source: &str, #[case] expected: &str) {
 }
 
 #[test]
+fn arguments_over_the_json_limit_are_refused() {
+    let limits = ApiLimits {
+        max_json_bytes: 4,
+        ..ApiLimits::default()
+    };
+    let error = decode_messages_responses_out(b"{\"a\":1}", &limits)
+        .expect_err("the arguments exceed the JSON boundary");
+    assert!(matches!(
+        error,
+        crate::api::messages_responses_output::error::MessagesResponsesOutputError::Limit(_)
+    ));
+}
+
+#[test]
 fn replays_corpus() {
     let directory = concat!(
         env!("CARGO_MANIFEST_DIR"),
