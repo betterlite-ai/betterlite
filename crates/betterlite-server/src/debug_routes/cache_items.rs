@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::{Extension, State};
 use axum::response::{IntoResponse as _, Response};
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::Json as CacheJson;
 use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
@@ -15,13 +15,13 @@ mod tests;
 
 #[derive(Serialize)]
 struct CacheItemsBody {
-    user_api_key_cache: BTreeMap<String, Json>,
+    user_api_key_cache: BTreeMap<String, CacheJson>,
     user_api_key_ttl: BTreeMap<String, f64>,
-    user_key_object_cache: BTreeMap<String, Json>,
+    user_key_object_cache: BTreeMap<String, CacheJson>,
     user_key_object_ttl: BTreeMap<String, f64>,
-    llm_router_cache: BTreeMap<String, Json>,
+    llm_router_cache: BTreeMap<String, CacheJson>,
     llm_router_ttl: BTreeMap<String, f64>,
-    proxy_logging_obj_cache: BTreeMap<String, Json>,
+    proxy_logging_obj_cache: BTreeMap<String, CacheJson>,
     proxy_logging_obj_ttl: BTreeMap<String, f64>,
 }
 

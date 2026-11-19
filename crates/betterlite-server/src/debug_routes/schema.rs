@@ -2,5 +2,5 @@ use betterlite_openapi::document_builder::RouteDoc;
 
 mod tests;
 
-// LiteLLM marks every route in this router include_in_schema=False, so it documents none of them
+// LiteLLM hides all but /debug/asyncio-tasks; betterlite hides it too (docs/deviations/B4174.yaml)
 pub const DOCUMENTED_ROUTES: &[RouteDoc] = &[];

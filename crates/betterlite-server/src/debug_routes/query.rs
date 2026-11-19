@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use axum::Json;
 use axum::http::{StatusCode, Uri};
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
 
