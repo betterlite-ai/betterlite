@@ -7,7 +7,7 @@ use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
-use serde_json::{from_value, json, to_value};
+use serde_json::{Number, from_value, to_value};
 use std::error::Error;
 pub struct FineTuningCreate<Dispatch> {
     pub dispatch: Dispatch,
@@ -29,14 +29,16 @@ where
                 call.params
             );
         }
-        let timeout = connection::resolve_timeout(call)?;
-        let hyperparameters = call.hyperparameters.clone().unwrap_or_default();
-        let target = self.target(call, timeout, hyperparameters)?;
-        let outcome = self
-            .dispatch
-            .create(target)
-            .await
-            .map_err(FineTuningCreateError::Dispatch);
+        let outcome = async {
+            let timeout = connection::resolve_timeout(call)?;
+            let hyperparameters = call.hyperparameters.clone().unwrap_or_default();
+            let target = self.target(call, timeout, hyperparameters)?;
+            self.dispatch
+                .create(target)
+                .await
+                .map_err(FineTuningCreateError::Dispatch)
+        }
+        .await;
         if let Err(error) = &outcome {
             tracing::error!("got exception in create_fine_tuning_job={error}");
         }
@@ -149,19 +151,36 @@ fn job_data<DispatchError>(
 where
     DispatchError: Error + 'static,
 {
-    let mut data: FineTuneCreate = from_value(json!({
-        "model": call.model,
-        "training_file": call.training_file,
-        "hyperparameters": hyperparameters,
-        "seed": call.seed,
-        "suffix": call.suffix,
-        "validation_file": call.validation_file,
-        "integrations": call.integrations,
-    }))
-    .map_err(FineTuningCreateError::Data)?;
+    let mut fields = Extra::new();
+    fields.insert("model".to_owned(), Json::Text(call.model.clone()));
+    fields.insert(
+        "training_file".to_owned(),
+        Json::Text(call.training_file.clone()),
+    );
+    fields.insert(
+        "hyperparameters".to_owned(),
+        Json::Object(hyperparameters.clone()),
+    );
+    if let Some(seed) = call.seed {
+        fields.insert("seed".to_owned(), Json::Number(Number::from(seed)));
+    }
+    if let Some(suffix) = &call.suffix {
+        fields.insert("suffix".to_owned(), Json::Text(suffix.clone()));
+    }
+    if let Some(validation_file) = &call.validation_file {
+        fields.insert(
+            "validation_file".to_owned(),
+            Json::Text(validation_file.clone()),
+        );
+    }
+    if let Some(integrations) = &call.integrations {
+        fields.insert("integrations".to_owned(), Json::List(integrations.clone()));
+    }
+    let encoded = to_value(fields).map_err(FineTuningCreateError::Data)?;
+    let mut data: FineTuneCreate = from_value(encoded).map_err(FineTuningCreateError::Data)?;
     if let Some(body) = extra_body {
-        let encoded = to_value(body).map_err(FineTuningCreateError::Data)?;
-        data.extra.insert("extra_body".to_owned(), encoded);
+        data.extra
+            .insert("extra_body".to_owned(), Json::Object(body.clone()));
     }
     Ok(data)
 }

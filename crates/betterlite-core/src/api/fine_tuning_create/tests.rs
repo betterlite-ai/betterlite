@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use std::fmt::Write as _;
 use std::future::Future;
+use std::io;
+use std::iter;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::{Extra, Json};
@@ -11,11 +12,10 @@ use betterlite_openai::fine_tuning::job::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 use thiserror::Error;
-use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
-use tracing_subscriber::registry;
+use tokio::task::{Id, LocalSet, try_id};
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::connection::{CreateParams, CreateTimeout};
 use super::service::{FineTuningCreate, prepare_azure_extra_body};
@@ -43,7 +43,6 @@ fn job() -> FineTuneJob {
 
 struct Scripted {
     calls: Arc<Mutex<Vec<FineTuningCreateTarget>>>,
-    checks_context: bool,
 }
 
 impl FineTuningCreateDispatch for Scripted {
@@ -57,17 +56,7 @@ impl FineTuningCreateDispatch for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(target);
-        let checks_context = self.checks_context;
-        async move {
-            if checks_context {
-                CONTEXT
-                    .try_with(|value| *value)
-                    .map_err(|_error| ScriptFailure {
-                        message: "the caller's context was lost".to_owned(),
-                    })?;
-            }
-            Ok(job())
-        }
+        async move { Ok(job()) }
     }
 }
 
@@ -80,7 +69,6 @@ async fn ran(settings: ResourceSdkSettings, call: &CreateFineTuningJobCall) -> R
     let calls = Arc::new(Mutex::new(Vec::new()));
     let dispatch = Scripted {
         calls: Arc::clone(&calls),
-        checks_context: false,
     };
     let outcome = FineTuningCreate { dispatch, settings }.create(call).await;
     let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -157,21 +145,27 @@ fn only_target(mut calls: Vec<FineTuningCreateTarget>) -> FineTuningCreateTarget
 fn openai_target(provider: &str, calls: Vec<FineTuningCreateTarget>) -> OpenAiCreateCall {
     match only_target(calls) {
         FineTuningCreateTarget::OpenAi(call) => call,
-        other => panic!("{provider} built {other:?}"),
+        other @ (FineTuningCreateTarget::Azure(_) | FineTuningCreateTarget::Vertex(_)) => {
+            panic!("{provider} built {other:?}")
+        }
     }
 }
 
 fn azure_target(calls: Vec<FineTuningCreateTarget>) -> AzureCreateCall {
     match only_target(calls) {
         FineTuningCreateTarget::Azure(call) => call,
-        other => panic!("azure built {other:?}"),
+        other @ (FineTuningCreateTarget::OpenAi(_) | FineTuningCreateTarget::Vertex(_)) => {
+            panic!("azure built {other:?}")
+        }
     }
 }
 
 fn vertex_target(calls: Vec<FineTuningCreateTarget>) -> VertexCreateCall {
     match only_target(calls) {
         FineTuningCreateTarget::Vertex(call) => call,
-        other => panic!("vertex built {other:?}"),
+        other @ (FineTuningCreateTarget::OpenAi(_) | FineTuningCreateTarget::Azure(_)) => {
+            panic!("vertex built {other:?}")
+        }
     }
 }
 
@@ -198,9 +192,9 @@ async fn openai_defaults() {
     assert_eq!(fields.len(), 3);
     let mut asynchronous = base_call("openai");
     asynchronous.is_async = true;
-    let (outcome, calls) = ran(settings(), &asynchronous).await;
-    outcome.expect("the provider answered");
-    assert!(openai_target("openai", calls).is_async);
+    let (asynchronous_outcome, asynchronous_calls) = ran(settings(), &asynchronous).await;
+    asynchronous_outcome.expect("the provider answered");
+    assert!(openai_target("openai", asynchronous_calls).is_async);
 }
 
 async fn openai_supplied() {
@@ -237,11 +231,7 @@ async fn openai_supplied() {
 
 async fn openai_ignored_inputs() {
     let mut call = base_call("openai");
-    call.extra_headers = Some(
-        [("X-Ignored".to_owned(), "x".to_owned())]
-            .into_iter()
-            .collect(),
-    );
+    call.extra_headers = Some(iter::once(("X-Ignored".to_owned(), "x".to_owned())).collect());
     call.extra_body = Some(object(&[("ignored", Json::Bool(true))]));
     let (outcome, calls) = ran(settings(), &call).await;
     outcome.expect("the provider answered");
@@ -252,10 +242,10 @@ async fn openai_ignored_inputs() {
         r#"{"model":"gpt-4o-mini","training_file":"file_train","hyperparameters":null}"#,
     )
     .expect("the call decodes");
-    let (outcome, calls) = ran(settings(), &nulled).await;
-    outcome.expect("the provider answered");
+    let (nulled_outcome, nulled_calls) = ran(settings(), &nulled).await;
+    nulled_outcome.expect("the provider answered");
     assert_eq!(
-        body(&openai_target("openai", calls).data).get("hyperparameters"),
+        body(&openai_target("openai", nulled_calls).data).get("hyperparameters"),
         Some(&Json::Object(Extra::new()))
     );
 }
@@ -311,10 +301,10 @@ async fn azure_training_type() {
     );
     let mut zero = base_call("azure");
     zero.params.training_type = Some(number(0));
-    let (outcome, calls) = ran(settings(), &zero).await;
-    outcome.expect("the provider answered");
+    let (zero_outcome, zero_calls) = ran(settings(), &zero).await;
+    zero_outcome.expect("the provider answered");
     assert_eq!(
-        body(&azure_target(calls).data).get("extra_body"),
+        body(&azure_target(zero_calls).data).get("extra_body"),
         Some(&Json::Object(object(&[("trainingType", number(0))])))
     );
 }
@@ -408,6 +398,7 @@ async fn vertex_tuning_dispatch() {
     vertex_response();
 }
 
+#[derive(Clone, Copy)]
 enum Selected {
     OpenAi,
     Azure,
@@ -464,17 +455,17 @@ async fn openai_base_fallthrough() {
     assert_eq!(target.api_key.as_ref().map(secret), Some("sk-settings"));
     assert_eq!(target.organization.as_deref(), Some("org-settings"));
     settings.openai_base_url = None;
-    let (outcome, calls) = ran(settings.clone(), &base_call("openai")).await;
-    outcome.expect("the provider answered");
+    let (url_outcome, url_calls) = ran(settings.clone(), &base_call("openai")).await;
+    url_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).api_base,
+        openai_target("openai", url_calls).api_base,
         "https://api-base.test"
     );
     settings.openai_api_base = None;
-    let (outcome, calls) = ran(settings, &base_call("openai")).await;
-    outcome.expect("the provider answered");
+    let (default_outcome, default_calls) = ran(settings, &base_call("openai")).await;
+    default_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).api_base,
+        openai_target("openai", default_calls).api_base,
         "https://api.openai.com/v1"
     );
 }
@@ -489,25 +480,28 @@ async fn openai_key_fallthrough() {
         Some("sk-openai-key")
     );
     settings.openai_key = None;
-    let (outcome, calls) = ran(settings.clone(), &base_call("openai")).await;
-    outcome.expect("the provider answered");
+    let (env_key_outcome, env_key_calls) = ran(settings.clone(), &base_call("openai")).await;
+    env_key_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).api_key.as_ref().map(secret),
+        openai_target("openai", env_key_calls)
+            .api_key
+            .as_ref()
+            .map(secret),
         Some("sk-openai-api-key")
     );
     settings.organization = None;
-    let (outcome, calls) = ran(settings, &base_call("openai")).await;
-    outcome.expect("the provider answered");
+    let (org_outcome, org_calls) = ran(settings, &base_call("openai")).await;
+    org_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).organization.as_deref(),
+        openai_target("openai", org_calls).organization.as_deref(),
         Some("org-env")
     );
 }
 
 async fn azure_selection() {
     let mut settings = selection(Selected::Azure);
-    settings.organization = Some("org-azure".to_owned());
-    let (outcome, calls) = ran(settings, &base_call("azure")).await;
+    settings.organization = Some("org-settings".to_owned());
+    let (outcome, calls) = ran(settings.clone(), &base_call("azure")).await;
     outcome.expect("the provider answered");
     let target = azure_target(calls);
     assert_eq!(
@@ -516,7 +510,16 @@ async fn azure_selection() {
     );
     assert_eq!(target.api_version.as_deref(), Some("2023-05-01"));
     assert_eq!(target.api_key.as_ref().map(secret), Some("azure-settings"));
-    assert_eq!(target.organization.as_deref(), Some("org-azure"));
+    // LiteLLM hands Azure the request organization alone, so no settings value reaches it
+    assert_eq!(target.organization, None);
+    let mut request = base_call("azure");
+    request.params.organization = Some("org-request".to_owned());
+    let (request_outcome, request_calls) = ran(settings, &request).await;
+    request_outcome.expect("the provider answered");
+    assert_eq!(
+        azure_target(request_calls).organization.as_deref(),
+        Some("org-request")
+    );
 }
 
 async fn azure_fallthrough() {
@@ -534,17 +537,17 @@ async fn azure_fallthrough() {
     assert_eq!(target.api_version.as_deref(), Some("2024-02-01"));
     assert_eq!(target.api_key.as_ref().map(secret), Some("azure-key"));
     settings.azure_key = Some(SecretString::from(String::new()));
-    let (outcome, calls) = ran(settings.clone(), &base_call("azure")).await;
-    outcome.expect("the provider answered");
+    let (env_key_outcome, env_key_calls) = ran(settings.clone(), &base_call("azure")).await;
+    env_key_outcome.expect("the provider answered");
     assert_eq!(
-        azure_target(calls).api_key.as_ref().map(secret),
+        azure_target(env_key_calls).api_key.as_ref().map(secret),
         Some("azure-openai")
     );
     settings.azure_openai_api_key = None;
-    let (outcome, calls) = ran(settings, &base_call("azure")).await;
-    outcome.expect("the provider answered");
+    let (api_key_outcome, api_key_calls) = ran(settings, &base_call("azure")).await;
+    api_key_outcome.expect("the provider answered");
     assert_eq!(
-        azure_target(calls).api_key.as_ref().map(secret),
+        azure_target(api_key_calls).api_key.as_ref().map(secret),
         Some("azure-api")
     );
 }
@@ -568,10 +571,10 @@ async fn vertex_selection() {
         Some("env-credentials")
     );
     call.params.vertex_project = None;
-    let (outcome, calls) = ran(settings, &call).await;
-    outcome.expect("the provider answered");
+    let (global_outcome, global_calls) = ran(settings, &call).await;
+    global_outcome.expect("the provider answered");
     assert_eq!(
-        vertex_target(calls).vertex_project.as_deref(),
+        vertex_target(global_calls).vertex_project.as_deref(),
         Some("global-project")
     );
 }
@@ -599,19 +602,19 @@ async fn timeout_defaults() {
     assert_eq!(target.max_retries, Some(4));
     let mut zero = timeout_call("openai");
     zero.params.timeout = Some(CreateTimeout::Plain(TimeoutValue::Number(0.0)));
-    zero.params.request_timeout = Some(7.0);
-    let (outcome, calls) = ran(settings(), &zero).await;
-    outcome.expect("the provider answered");
+    zero.params.request_timeout = Some(7.0_f64);
+    let (request_outcome, request_calls) = ran(settings(), &zero).await;
+    request_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).timeout,
+        openai_target("openai", request_calls).timeout,
         FineTuningTimeout::Seconds(7.0)
     );
     let mut text = timeout_call("openai");
     text.params.timeout = Some(CreateTimeout::Plain(TimeoutValue::String("7.5".to_owned())));
-    let (outcome, calls) = ran(settings(), &text).await;
-    outcome.expect("the provider answered");
+    let (text_outcome, text_calls) = ran(settings(), &text).await;
+    text_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).timeout,
+        openai_target("openai", text_calls).timeout,
         FineTuningTimeout::Seconds(7.5)
     );
 }
@@ -619,26 +622,26 @@ async fn timeout_defaults() {
 async fn structured_timeouts() {
     let mut openai = timeout_call("openai");
     openai.params.timeout = Some(CreateTimeout::Structured(structured()));
-    let (outcome, calls) = ran(settings(), &openai).await;
-    outcome.expect("the provider answered");
+    let (openai_outcome, openai_calls) = ran(settings(), &openai).await;
+    openai_outcome.expect("the provider answered");
     assert_eq!(
-        openai_target("openai", calls).timeout,
+        openai_target("openai", openai_calls).timeout,
         FineTuningTimeout::Structured(structured())
     );
     let mut azure = timeout_call("azure");
     azure.params.timeout = Some(CreateTimeout::Structured(structured()));
-    let (outcome, calls) = ran(settings(), &azure).await;
-    outcome.expect("the provider answered");
+    let (azure_outcome, azure_calls) = ran(settings(), &azure).await;
+    azure_outcome.expect("the provider answered");
     assert_eq!(
-        azure_target(calls).timeout,
+        azure_target(azure_calls).timeout,
         FineTuningTimeout::Structured(structured())
     );
     let mut vertex = timeout_call("vertex_ai");
     vertex.params.timeout = Some(CreateTimeout::Structured(structured()));
-    let (outcome, calls) = ran(settings(), &vertex).await;
-    outcome.expect("the provider answered");
+    let (vertex_outcome, vertex_calls) = ran(settings(), &vertex).await;
+    vertex_outcome.expect("the provider answered");
     assert_eq!(
-        vertex_target(calls).timeout,
+        vertex_target(vertex_calls).timeout,
         FineTuningTimeout::Seconds(2.0)
     );
 }
@@ -670,35 +673,52 @@ async fn tuning_credentials_and_timeout() {
 }
 
 #[derive(Clone, Default)]
-struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
+struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
-impl<Inner: Subscriber> Layer<Inner> for Capture {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let mut recorder = Recorder(String::new());
-        event.record(&mut recorder);
+impl LogBuffer {
+    fn text(&self) -> String {
+        String::from_utf8(
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
+        .expect("utf-8 log output")
+    }
+}
+
+impl io::Write for LogBuffer {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((*event.metadata().level(), recorder.0));
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
-struct Recorder(String);
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
 
-impl Visit for Recorder {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            write!(self.0, "{value:?}").expect("the message records");
-        }
+    fn make_writer(&self) -> Self {
+        self.clone()
     }
 }
 
-type Captured = (Capture, DefaultGuard);
-
-fn capture() -> Captured {
-    let captured = Capture::default();
-    let guard = tracing::subscriber::set_default(registry().with(captured.clone()));
-    (captured, guard)
+fn capture() -> (LogBuffer, DefaultGuard) {
+    let buffer = LogBuffer::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    (buffer, set_default(subscriber))
 }
 
 fn unsupported_call() -> CreateFineTuningJobCall {
@@ -732,32 +752,24 @@ async fn unsupported_error() {
 }
 
 async fn unsupported_log() {
-    let (captured, _guard) = capture();
+    let (buffer, _guard) = capture();
     let (outcome, _calls) = ran(settings(), &unsupported_call()).await;
     outcome.expect_err("the provider is unsupported");
-    let events = captured
-        .0
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let errors: Vec<&str> = events
+    let text = buffer.text();
+    let lines: Vec<&str> = text.lines().collect();
+    let errors: Vec<&str> = lines
         .iter()
-        .filter(|(level, _)| *level == Level::ERROR)
-        .map(|(_, message)| message.as_str())
+        .copied()
+        .filter(|line| line.starts_with("ERROR "))
         .collect();
     assert_eq!(errors.len(), 1);
-    assert!(
-        errors[0].starts_with(
-            "got exception in create_fine_tuning_job=LiteLLM doesn't support anthropic"
-        )
-    );
-    assert!(events.iter().any(|(level, message)| *level == Level::DEBUG
-        && message.starts_with("inside acreate_fine_tuning_job model=gpt-4o-mini and kwargs=")));
-    assert!(
-        events
-            .iter()
-            .all(|(_, message)| !message.contains("sk-secret-value"))
-    );
+    assert!(errors[0].starts_with(
+        "ERROR got exception in create_fine_tuning_job=LiteLLM doesn't support anthropic"
+    ));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("DEBUG inside acreate_fine_tuning_job model=gpt-4o-mini and kwargs=")
+    }));
+    assert!(lines.iter().all(|line| !line.contains("sk-secret-value")));
 }
 
 async fn unrepresentable_integration() {
@@ -775,23 +787,83 @@ async fn unsupported_tuning_create() {
     unrepresentable_integration().await;
 }
 
-tokio::task_local! {
-    static CONTEXT: u64;
+struct Refusing;
+
+impl FineTuningCreateDispatch for Refusing {
+    type Error = ScriptFailure;
+
+    fn create(
+        &self,
+        _target: FineTuningCreateTarget,
+    ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
+        async {
+            Err(ScriptFailure {
+                message: "the provider refused".to_owned(),
+            })
+        }
+    }
 }
 
 #[tokio::test]
-async fn async_context_is_preserved() {
+async fn tuning_dispatch_failure() {
+    let (buffer, _guard) = capture();
     let service = FineTuningCreate {
-        dispatch: Scripted {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            checks_context: true,
+        dispatch: Refusing,
+        settings: settings(),
+    };
+    let outcome = service.create(&base_call("openai")).await;
+    assert!(matches!(
+        outcome,
+        Err(FineTuningCreateError::Dispatch(ScriptFailure { .. }))
+    ));
+    assert!(
+        buffer
+            .text()
+            .contains("ERROR got exception in create_fine_tuning_job=the provider refused")
+    );
+}
+
+struct Tasked {
+    seen: Arc<Mutex<Vec<Option<Id>>>>,
+}
+
+impl FineTuningCreateDispatch for Tasked {
+    type Error = ScriptFailure;
+
+    fn create(
+        &self,
+        _target: FineTuningCreateTarget,
+    ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
+        let seen = Arc::clone(&self.seen);
+        async move {
+            seen.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(try_id());
+            Ok(job())
+        }
+    }
+}
+
+#[tokio::test]
+async fn tuning_dispatch_runs_in_caller_task() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let service = FineTuningCreate {
+        dispatch: Tasked {
+            seen: Arc::clone(&seen),
         },
         settings: settings(),
     };
-    assert!(
-        CONTEXT
-            .scope(7, service.create(&base_call("openai")))
-            .await
-            .is_ok()
-    );
+    let local = LocalSet::new();
+    let caller = local
+        .run_until(async {
+            let caller = try_id().expect("the caller runs inside the local task");
+            service
+                .create(&base_call("openai"))
+                .await
+                .expect("the provider answered");
+            caller
+        })
+        .await;
+    let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    assert_eq!(recorded, [Some(caller)]);
 }
