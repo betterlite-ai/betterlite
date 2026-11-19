@@ -32,22 +32,22 @@ pub struct ScriptedResult {
     pub original_tokens: Json,
     pub compressed_tokens: Json,
     pub cache: IndexMap<String, String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skipped_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Step {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<SettingsSource>,
     pub request: IndexMap<String, Json>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_type: Option<CallType>,
     pub now: f64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lookup: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compress: Option<ScriptedResult>,
 }
 
