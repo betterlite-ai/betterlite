@@ -56,28 +56,39 @@ where
             disable_add_prefix_to_prompt: runtime.disable_add_prefix_to_prompt,
             model_response: call.model_response.clone(),
         };
+        let deps = runtime.deps(call, config, log);
+        chat_call(native, deps)
+            .await
+            .map_err(|source| Failure::Chat(Box::new(source)))
+    })
+}
+
+impl<Client> Runtime<'_, Client> {
+    fn deps<'call, 'matrix>(
+        &'call self,
+        call: &'call CompletionCall<ClientHandle<Client>, Engine>,
+        config: &'call Config<'matrix>,
+        log: &'call mut CallLogging<'_, '_>,
+    ) -> ChatDeps<'call, Config<'matrix>, Client, Counter> {
         let clients = ChatClients {
-            pooled: runtime.pooled,
+            pooled: self.pooled,
             supplied: call.client.as_ref().map(|client| SuppliedChatClient {
                 kind: client.kind,
                 transport: &client.transport,
             }),
         };
-        let deps = ChatDeps {
+        ChatDeps {
             config,
             clients,
             state: log.state,
             env: log.env,
-            stream_logger: runtime.stream_logger,
+            stream_logger: self.stream_logger,
             counter: Counter(call.encoding.clone()),
-            ids: runtime.ids,
-            max_event_bytes: runtime.max_event_bytes,
-            max_error_body_bytes: runtime.max_error_body_bytes,
-        };
-        chat_call(native, deps)
-            .await
-            .map_err(|source| Failure::Chat(Box::new(source)))
-    })
+            ids: self.ids,
+            max_event_bytes: self.max_event_bytes,
+            max_error_body_bytes: self.max_error_body_bytes,
+        }
+    }
 }
 
 type Completion<'call, ClientFailure, FileFailure> =
