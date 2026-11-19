@@ -1,8 +1,8 @@
 use betterlite_openai::threads::records::MessageStatus;
 
-use super::connection::MessageParams;
-use super::error::{MessageError, SetupError};
-use super::service::Operation;
+use super::super::connection::MessageParams;
+use super::super::error::{MessageError, SetupError};
+use super::super::service::Operation;
 use super::{Fixture, MESSAGE_REPLY, call, data, json, message_of, page_of, params, request};
 
 const PAGE_REPLY: &str = r#"{"object":"list","data":[],"has_more":false}"#;

@@ -8,10 +8,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 
-use super::connection::{MessageParams, PrepareInput, Route, prepare};
-use super::error::{MessageError, SetupError};
-use super::options::{MessageData, OptionError};
-use super::service::{MessageRequest, Operation};
+use super::super::connection::{MessageParams, PrepareInput, Route, prepare};
+use super::super::error::{MessageError, SetupError};
+use super::super::options::{MessageData, OptionError};
+use super::super::service::{MessageRequest, Operation};
 use super::{Fixture, MESSAGE_REPLY, call, data, empty_settings, json, params, request};
 
 const NOT_FOUND_BODY: &str = r#"{"error":{"message":"no thread","type":"invalid_request_error","param":"thread_id","code":"model_not_found"}}"#;
