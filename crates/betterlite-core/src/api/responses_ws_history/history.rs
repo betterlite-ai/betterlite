@@ -47,9 +47,9 @@ pub fn apply_history(
         );
         return;
     }
+    let count = prior_history.len();
     tracing::debug!(
-        "ManagedResponsesWS: prepended {count} history messages for previous_response_id={previous_response_id}",
-        count = prior_history.len()
+        "ManagedResponsesWS: prepended {count} history messages for previous_response_id={previous_response_id}"
     );
     let mut input = Vec::with_capacity(prior_history.len().saturating_add(current_messages.len()));
     input.extend(
