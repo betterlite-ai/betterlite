@@ -1,5 +1,4 @@
 use std::convert::Infallible;
-use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::audit::Settings as AuditSettings;
@@ -152,25 +151,23 @@ impl Callback for AuditWriteJob {
         "audit_log_write"
     }
 
-    fn call(self) -> impl Future<Output = Result<(), Infallible>> + Send + 'static {
-        async move {
-            let entries = self
-                .callbacks
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            write_audit_log(
-                AuditWriteTarget {
-                    settings: &self.settings,
-                    entries: &entries,
-                    delivery: &self.delivery,
-                    repository: self.repository.as_ref(),
-                },
-                self.record,
-            )
-            .await;
-            Ok(())
-        }
+    async fn call(self) -> Result<(), Infallible> {
+        let entries = self
+            .callbacks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        write_audit_log(
+            AuditWriteTarget {
+                settings: &self.settings,
+                entries: &entries,
+                delivery: &self.delivery,
+                repository: self.repository.as_ref(),
+            },
+            self.record,
+        )
+        .await;
+        Ok(())
     }
 }
 

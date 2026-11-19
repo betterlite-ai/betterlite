@@ -44,16 +44,12 @@ impl AuditLogRepository for PostgresAuditLogRepository {
 fn audit_document(record: &AuditLogRecord) -> BTreeMap<String, JsonValue> {
     let mut document = BTreeMap::new();
     document.insert("id".to_owned(), JsonValue::String(record.id.clone()));
-    document.insert(
-        "updated_at".to_owned(),
-        JsonValue::String(
-            record
-                .updated_at
-                .with_timezone(&Utc)
-                .format("%Y-%m-%dT%H:%M:%S%.3f")
-                .to_string(),
-        ),
-    );
+    let updated_at = record
+        .updated_at
+        .with_timezone(&Utc)
+        .format("%Y-%m-%dT%H:%M:%S%.3f")
+        .to_string();
+    document.insert("updated_at".to_owned(), JsonValue::String(updated_at));
     if let Some(changed_by) = &record.changed_by {
         document.insert(
             "changed_by".to_owned(),
@@ -66,18 +62,12 @@ fn audit_document(record: &AuditLogRecord) -> BTreeMap<String, JsonValue> {
             JsonValue::String(api_key.expose_secret().to_owned()),
         );
     }
-    document.insert(
-        "action".to_owned(),
-        JsonValue::String(record.action.as_str().to_owned()),
-    );
-    document.insert(
-        "table_name".to_owned(),
-        JsonValue::String(record.table_name.as_str().to_owned()),
-    );
-    document.insert(
-        "object_id".to_owned(),
-        JsonValue::String(record.object_id.clone()),
-    );
+    let action = record.action.as_str().to_owned();
+    document.insert("action".to_owned(), JsonValue::String(action));
+    let table_name = record.table_name.as_str().to_owned();
+    document.insert("table_name".to_owned(), JsonValue::String(table_name));
+    let object_id = record.object_id.clone();
+    document.insert("object_id".to_owned(), JsonValue::String(object_id));
     if let Some(before) = &record.before_value {
         document.insert("before_value".to_owned(), before.clone());
     }
