@@ -29,6 +29,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 use serde_json::Number;
 use thiserror::Error;
+use url::Url;
 
 use super::client::{
     ClientKind, ClientSource, RerankHttpRequest, RerankSendError, RerankTransport, SuppliedClient,
@@ -210,6 +211,7 @@ struct RecordingConfig {
     base: String,
     events: Events,
     refusal: Refusal,
+    bad_header: bool,
     recorded: Mutex<Recorded>,
 }
 
@@ -219,6 +221,7 @@ impl RecordingConfig {
             base: base.to_owned(),
             events: events.clone(),
             refusal: Refusal::None,
+            bad_header: false,
             recorded: Mutex::default(),
         }
     }
@@ -250,6 +253,9 @@ impl BaseRerankConfig for RecordingConfig {
             |key| key.expose_secret().to_owned(),
         );
         headers.insert("x-api-key".to_owned(), key);
+        if self.bad_header {
+            headers.insert("x-bad".to_owned(), String::from("bad\nvalue"));
+        }
         Ok(headers)
     }
 
@@ -685,6 +691,35 @@ fn assert_payload_callback(fixture: &Fixture, logging: &RerankLogging) {
         logging.model_call_details.get("transformer_saw"),
         Some(&Json::Bool(true))
     );
+    // LiteLLM stores the raw key for every callback; the shared pre-call stores the masked header instead
+    assert!(fixture.state.model_call_details.get("api_key").is_none());
+    let details = Json::Object(fixture.state.model_call_details.clone());
+    let text = serde_json::to_string(&details).expect("the callback details serialize");
+    assert!(!text.contains("sk-caller"));
+}
+
+// httpx follows a redirect with the caller's headers attached; the pooled client returns the 3xx as the provider's answer
+#[tokio::test]
+async fn rerank_http_never_follows_a_redirect() {
+    let serving = serve(
+        http_reply("302 Found", &[("location", "http://127.0.0.1:1/moved")], ""),
+        Duration::ZERO,
+    )
+    .expect("the fixture server starts");
+    let client = proxied();
+    let request = RerankHttpRequest {
+        url: Url::parse(&format!("http://{}/v1/rerank", serving.address)).expect("the mock URL"),
+        headers: HttpHeaders::new(),
+        body: b"{}".to_vec(),
+        timeout: None,
+    };
+    let answer = client
+        .send(request, None)
+        .await
+        .expect("the redirect is the answer itself");
+    assert_eq!(answer.status, 302);
+    let seen = serving.finish().expect("the server saw the request");
+    assert_eq!(seen.line, "POST /v1/rerank HTTP/1.1");
 }
 
 #[tokio::test]
@@ -787,6 +822,29 @@ async fn failures_before_the_send() {
     validate_failure().await;
     transform_failure().await;
     pre_call_failure().await;
+    invalid_base_before_the_send().await;
+    invalid_header_before_the_send().await;
+}
+
+// LiteLLM lets httpx reject a bad URL or header and turns the exception into a synthesized 500 provider error
+async fn invalid_base_before_the_send() {
+    let mut bench = Bench::new();
+    bench.config.base = String::from("not a url");
+    let mut logging = RerankLogging::default();
+    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
+    assert!(matches!(outcome, Err(RerankHttpError::RequestUrl { .. })));
+    assert_eq!(supplied_sent(&bench).len(), 0);
+    assert!(bench.config.errors().is_empty());
+}
+
+async fn invalid_header_before_the_send() {
+    let mut bench = Bench::new();
+    bench.config.bad_header = true;
+    let mut logging = RerankLogging::default();
+    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
+    assert!(matches!(outcome, Err(RerankHttpError::HeaderValue { .. })));
+    assert_eq!(supplied_sent(&bench).len(), 0);
+    assert!(bench.config.errors().is_empty());
 }
 
 async fn validate_failure() {
