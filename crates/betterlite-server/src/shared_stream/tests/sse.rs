@@ -302,3 +302,55 @@ async fn messages_stream_pings_the_gap() {
     let first = body.next().await.expect("ping").expect("ok");
     assert_eq!(text_of(first), ANTHROPIC_PING_CHUNK);
 }
+
+#[test]
+fn messages_stream_restamps_the_client_model() {
+    let rig = Rig::new(HookConfig::plain());
+    let item = event_chunk(&[
+        ("type", Json::Text(String::from("message_start"))),
+        (
+            "message",
+            Json::Object(object(&[("model", Json::Text(String::from("provider")))])),
+        ),
+    ]);
+    let frames = texts(
+        rig.generator
+            .messages_stream(call(vec![Ok(item)]), Some("client-model")),
+    );
+    assert_eq!(
+        frames,
+        vec![String::from(
+            "data: {\"type\": \"message_start\", \"message\": {\"model\": \"client-model\"}}\n\n"
+        )]
+    );
+}
+
+#[test]
+fn messages_stream_keeps_the_raw_model() {
+    let rig = Rig::new(HookConfig::plain());
+    let item = event_chunk(&[
+        ("type", Json::Text(String::from("message_start"))),
+        (
+            "message",
+            Json::Object(object(&[("model", Json::Text(String::from("provider")))])),
+        ),
+    ]);
+    let mut shared_call = call(vec![Ok(item)]);
+    shared_call.request_data = object(&[(
+        "metadata",
+        Json::Object(object(&[(
+            "_complexity_router_return_raw_model_name",
+            Json::Bool(true),
+        )])),
+    )]);
+    let frames = texts(
+        rig.generator
+            .messages_stream(shared_call, Some("client-model")),
+    );
+    assert_eq!(
+        frames,
+        vec![String::from(
+            "data: {\"type\": \"message_start\", \"message\": {\"model\": \"provider\"}}\n\n"
+        )]
+    );
+}
