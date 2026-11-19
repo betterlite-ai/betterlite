@@ -164,7 +164,9 @@ pub(super) fn failing_harness() -> (ThreadMessagesApi<Recorder>, Arc<Recorder>) 
 pub(super) fn status_of(error: ThreadMessagesError) -> (u16, Vec<u8>) {
     match error {
         ThreadMessagesError::Threads(ThreadsError::Status { status, body }) => (status, body),
-        other => panic!("expected a status failure, got {other:?}"),
+        other @ (ThreadMessagesError::Client(_) | ThreadMessagesError::Threads(_)) => {
+            panic!("expected a status failure, got {other:?}")
+        }
     }
 }
 

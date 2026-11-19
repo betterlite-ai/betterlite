@@ -82,7 +82,7 @@ fn target_url(base_url: &str, api_version: &str, tail: &str) -> Result<Url, Thre
     let at = base_url.find('#').unwrap_or(base_url.len());
     let (head, fragment) = base_url.split_at(at);
     let separator = if head.ends_with('/') { "" } else { "/" };
-    let mut joined = format!("{head}{separator}{tail}{fragment}");
+    let joined = format!("{head}{separator}{tail}{fragment}");
     let mut url = Url::parse(&joined).map_err(|source| ThreadsError::BaseUrl { source })?;
     let query = versioned_query(url.query(), api_version);
     url.set_query(query.as_deref());
