@@ -22,7 +22,7 @@ pub fn cache_cost_scenario(
     };
     let input_cost = price_cache_tokens(environment, moment, &priced)?;
     Some(CacheCostScenario {
-        tokens: request.tokens.clone(),
+        tokens: *request.tokens,
         input_cost,
     })
 }

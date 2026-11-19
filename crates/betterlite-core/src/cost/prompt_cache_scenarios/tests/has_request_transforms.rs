@@ -22,10 +22,10 @@ fn builtin(hooks: &[RequestHook]) -> LoggerTransforms<'_> {
 }
 
 #[rstest]
-#[case::pre_call(&[RequestHook::PreCall])]
-#[case::pre_request(&[RequestHook::PreRequest])]
-#[case::pre_call_deployment(&[RequestHook::PreCallDeployment])]
-#[case::several(&[RequestHook::PreCall, RequestHook::PreCallDeployment])]
+#[case::pre_call(&[RequestHook::Call])]
+#[case::pre_request(&[RequestHook::Request])]
+#[case::pre_call_deployment(&[RequestHook::DeploymentCall])]
+#[case::several(&[RequestHook::Call, RequestHook::DeploymentCall])]
 fn has_request_transforms_is_true_for_an_overriding_custom_logger(#[case] hooks: &[RequestHook]) {
     assert!(has_request_transforms(&[custom(hooks)]));
 }
@@ -36,8 +36,8 @@ fn has_request_transforms_is_false_for_a_custom_logger_without_overrides() {
 }
 
 #[rstest]
-#[case::pre_call(&[RequestHook::PreCall])]
-#[case::all_three(&[RequestHook::PreCall, RequestHook::PreRequest, RequestHook::PreCallDeployment])]
+#[case::pre_call(&[RequestHook::Call])]
+#[case::all_three(&[RequestHook::Call, RequestHook::Request, RequestHook::DeploymentCall])]
 fn has_request_transforms_is_false_for_a_built_in_logger(#[case] hooks: &[RequestHook]) {
     assert!(!has_request_transforms(&[builtin(hooks)]));
 }
@@ -50,14 +50,14 @@ fn has_request_transforms_is_false_without_loggers() {
 #[test]
 fn has_request_transforms_is_true_when_any_logger_transforms() {
     let loggers = [
-        builtin(&[RequestHook::PreCall]),
-        custom(&[RequestHook::PreRequest]),
+        builtin(&[RequestHook::Call]),
+        custom(&[RequestHook::Request]),
     ];
     assert!(has_request_transforms(&loggers));
 }
 
 #[test]
 fn has_request_transforms_is_false_when_no_logger_transforms() {
-    let loggers = [builtin(&[RequestHook::PreCall]), custom(&[]), builtin(&[])];
+    let loggers = [builtin(&[RequestHook::Call]), custom(&[]), builtin(&[])];
     assert!(!has_request_transforms(&loggers));
 }

@@ -9,9 +9,9 @@ pub enum CallbackKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestHook {
-    PreCall,
-    PreRequest,
-    PreCallDeployment,
+    Call,
+    Request,
+    DeploymentCall,
 }
 
 // A logger as the callback manager knows it: built-in or custom, and which request hooks it replaces.

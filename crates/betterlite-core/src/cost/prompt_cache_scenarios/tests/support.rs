@@ -78,10 +78,7 @@ pub(crate) fn flat_tariff() -> PriceRecord {
     ])
 }
 
-pub(crate) fn request<'request>(
-    tokens: &'request CacheTokenBuckets,
-    completion_tokens: i64,
-) -> PriceRequest<'request> {
+pub(crate) fn request(tokens: &CacheTokenBuckets, completion_tokens: i64) -> PriceRequest<'_> {
     PriceRequest {
         model: MODEL,
         deployment_id: DEPLOYMENT_ID,

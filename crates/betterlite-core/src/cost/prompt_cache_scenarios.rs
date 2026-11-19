@@ -17,6 +17,6 @@ mod test_support;
 
 // The two price sources a cache scenario reads, so no pricing step reaches for a global catalog.
 pub struct PriceEnvironment<'environment> {
-    pub lookup: &'environment dyn PriceLookup,
+    pub lookup: &'environment (dyn PriceLookup + Send + Sync),
     pub database: &'environment TimeZoneDatabase,
 }
