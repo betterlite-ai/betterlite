@@ -129,6 +129,12 @@ use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
     stream: false, input_tokens: 0, buffer: 0.0_f64, percentile: None, draw: 0,
     outcome: Outcome::Ranked { scores: &[10.0_f64], candidates: &["a"], valid: &["a"], selected: Some("a") },
 })]
+// both limits are read for every deployment, so a bad rpm is refused even when the tpm alone would exclude it
+#[case::a_bad_rpm_is_refused_even_when_the_tpm_excludes(Case {
+    specs: vec![Spec { limits: &[("tpm", Source::Top, LimitValue::Value(1)), ("rpm", Source::Top, LimitValue::Text("5"))], ..Spec::stored(MINUTE,"a", &[1.0_f64], &[], (100, 0)) }],
+    stream: false, input_tokens: 100, buffer: 0.0_f64, percentile: None, draw: 0,
+    outcome: Outcome::Rejected { field: "rpm" },
+})]
 fn latency_routing_boundaries(#[case] case: Case) {
     check(case);
 }
