@@ -1,5 +1,5 @@
 use betterlite_logging::spend_metadata::{
-    SpendLogStatus, looks_like_model_name, optional_object_field, optional_text_field,
+    SpendLogStatus, as_object, looks_like_model_name, optional_field, optional_text_field,
     spend_logs_id, status_for_spend_log,
 };
 use betterlite_logging::spend_sanitize::UNKNOWN_MODEL;
@@ -104,13 +104,13 @@ fn base_id(context: &Context<'_>) -> Option<String> {
 
 // metadata.model_info.id or the standard payload's model_id, and an empty id counts as absent.
 fn model_id(context: &Context<'_>) -> Result<String, SpendPayloadError> {
-    let info = optional_object_field(context.metadata.get("model_info"), "model_info")?;
+    let info = optional_field(context.metadata.get("model_info"), "model_info", as_object)?;
     let stored = match info {
         Some(fields) => optional_text_field(fields.get("id"), "model_info.id")?,
         None => None,
     };
     Ok(stored.filter(|id| !id.is_empty()).map_or_else(
-        || standard_text(context, AttributionField::ModelId),
+        || sl_attribution_fallback(context.standard.as_ref(), AttributionField::ModelId),
         ToOwned::to_owned,
     ))
 }
@@ -118,7 +118,7 @@ fn model_id(context: &Context<'_>) -> Result<String, SpendPayloadError> {
 fn model_group(context: &Context<'_>) -> Result<String, SpendPayloadError> {
     let stored = optional_text_field(context.metadata.get("model_group"), "model_group")?;
     Ok(stored.filter(|group| !group.is_empty()).map_or_else(
-        || standard_text(context, AttributionField::ModelGroup),
+        || sl_attribution_fallback(context.standard.as_ref(), AttributionField::ModelGroup),
         ToOwned::to_owned,
     ))
 }
@@ -126,13 +126,9 @@ fn model_group(context: &Context<'_>) -> Result<String, SpendPayloadError> {
 fn api_base(context: &Context<'_>) -> Result<String, SpendPayloadError> {
     let stored = optional_text_field(context.litellm_params.get("api_base"), "api_base")?;
     Ok(stored.filter(|base| !base.is_empty()).map_or_else(
-        || standard_text(context, AttributionField::ApiBase),
+        || sl_attribution_fallback(context.standard.as_ref(), AttributionField::ApiBase),
         ToOwned::to_owned,
     ))
-}
-
-fn standard_text(context: &Context<'_>, field: AttributionField) -> String {
-    sl_attribution_fallback(context.standard.as_ref(), field)
 }
 
 // kwargs.custom_llm_provider, then the standard payload's provider, with an empty string reading as absent.
@@ -144,7 +140,10 @@ fn logged_provider(context: &Context<'_>) -> Result<Option<String>, SpendPayload
     if let Some(name) = explicit.filter(|name| !name.is_empty()) {
         return Ok(Some(name.to_owned()));
     }
-    let fallback = standard_text(context, AttributionField::CustomLlmProvider);
+    let fallback = sl_attribution_fallback(
+        context.standard.as_ref(),
+        AttributionField::CustomLlmProvider,
+    );
     Ok((!fallback.is_empty()).then_some(fallback))
 }
 
@@ -207,16 +206,13 @@ fn persisted_group(placeholdered: bool, group: &str, raw: &str) -> String {
     }
 }
 
+const CALL_ID_FIELD: &str = "litellm_call_id";
+
 fn call_id(context: &Context<'_>) -> Result<Option<String>, SpendPayloadError> {
-    let kwarg = optional_text_field(context.kwargs.get("litellm_call_id"), "litellm_call_id")?;
-    match kwarg.filter(|id| !id.is_empty()) {
-        Some(id) => Ok(Some(id.to_owned())),
-        None => Ok(optional_text_field(
-            context.litellm_params.get("litellm_call_id"),
-            "litellm_call_id",
-        )?
-        .map(ToOwned::to_owned)),
-    }
+    let kwarg = optional_text_field(context.kwargs.get(CALL_ID_FIELD), CALL_ID_FIELD)?;
+    let params = optional_text_field(context.litellm_params.get(CALL_ID_FIELD), CALL_ID_FIELD)?;
+    let chosen = kwarg.filter(|id| !id.is_empty()).or(params);
+    Ok(chosen.map(ToOwned::to_owned))
 }
 
 // The placeholdered record still carries error_information, with every raw model spelling replaced.

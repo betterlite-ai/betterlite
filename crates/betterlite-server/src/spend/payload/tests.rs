@@ -698,10 +698,7 @@ fn completion_start_times_default_to_the_end(
     let mut request = harness.request(SpendResponse::Absent, &clock, &tracebacks);
     request.completion_start_time = given.unwrap_or(CompletionStart::Absent);
     let payload = get_logging_payload(&request, &settings(), &Utc).expect("payload");
-    let rendered = payload
-        .completion_start_time
-        .map(|instant| instant.0.to_rfc3339());
-    assert_eq!(rendered.as_deref(), expected);
+    assert_eq!(payload.completion_start_time.as_deref(), expected);
 }
 
 #[rstest]

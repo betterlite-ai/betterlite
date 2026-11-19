@@ -5,16 +5,14 @@ pub mod records;
 pub mod redaction;
 pub mod router_metadata;
 
-use betterlite_db::search_tools::convert::isoformat;
 use betterlite_models::call_helpers::metadata::{
     CallParams, MetadataMap, litellm_metadata_from_params,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::serde::arbitrary_precision_option;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use crate::logging_metadata::decode::{DecodeError, decode};
 
@@ -49,7 +47,7 @@ impl SpendLogStatus {
     }
 }
 
-pub(crate) const fn as_object(value: &Json) -> Option<&JsonObject> {
+pub const fn as_object(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(entries) => Some(entries),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
@@ -63,31 +61,32 @@ pub(crate) fn as_text(value: &Json) -> Option<&str> {
     }
 }
 
+// A declared field: absent and null both fall to the caller's default, and any other type is named.
+pub fn optional_field<'value, T, F>(
+    value: Option<&'value Json>,
+    field: &'static str,
+    convert: F,
+) -> Result<Option<T>, SpendMetadataError>
+where
+    F: FnOnce(&'value Json) -> Option<T>,
+{
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => convert(value)
+            .map(Some)
+            .ok_or(SpendMetadataError::FieldType { field }),
+    }
+}
+
 // A declared string field: absent and null both fall to the caller's default, and any other type is named.
 pub fn optional_text_field<'value>(
     value: Option<&'value Json>,
     field: &'static str,
 ) -> Result<Option<&'value str>, SpendMetadataError> {
     match value {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(SpendMetadataError::FieldType { field })
-        }
-    }
-}
-
-// A declared mapping field: absent and null both fall to the caller's default, and any other type is named.
-pub fn optional_object_field<'value>(
-    value: Option<&'value Json>,
-    field: &'static str,
-) -> Result<Option<&'value JsonObject>, SpendMetadataError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(SpendMetadataError::FieldType { field })
-        }
+        Some(Json::Null) | None => Ok(None),
+        Some(_) => Err(SpendMetadataError::FieldType { field }),
     }
 }
 
@@ -145,7 +144,7 @@ pub fn looks_like_model_name(model: &str) -> bool {
 }
 
 // SpendLogsPayload: one field per _types.py annotation, in declaration order.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct SpendLogsPayload {
     pub request_id: String,
     pub call_type: String,
@@ -156,11 +155,11 @@ pub struct SpendLogsPayload {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     #[serde(rename = "startTime")]
-    pub start_time: PythonInstant,
+    pub start_time: String,
     #[serde(rename = "endTime")]
-    pub end_time: PythonInstant,
+    pub end_time: String,
     #[serde(rename = "completionStartTime")]
-    pub completion_start_time: Option<PythonInstant>,
+    pub completion_start_time: Option<String>,
     pub model: String,
     pub model_id: String,
     pub model_group: String,
@@ -185,19 +184,6 @@ pub struct SpendLogsPayload {
     pub request_duration_ms: Option<i64>,
     pub status: SpendLogStatus,
     pub litellm_call_id: Option<String>,
-}
-
-// SpendLogsPayload declares datetime | str for its times, and the row keeps Python's isoformat() text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PythonInstant(pub DateTime<Utc>);
-
-impl Serialize for PythonInstant {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&isoformat(self.0))
-    }
 }
 
 // get_litellm_metadata_from_kwargs: the merged metadata bucket of a litellm_params record.

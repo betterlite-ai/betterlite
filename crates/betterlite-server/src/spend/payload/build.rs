@@ -37,7 +37,7 @@ where
     let start = instant(context.request.start_time, zone, "startTime")?;
     let end = instant(context.request.end_time, zone, "endTime")?;
     let completion_start = match context.request.completion_start_time {
-        CompletionStart::Absent => Some(end),
+        CompletionStart::Absent => Some(end.clone()),
         CompletionStart::Null => None,
         CompletionStart::At(moment) => Some(instant(moment, zone, "completionStartTime")?),
     };
@@ -144,11 +144,13 @@ fn metadata_text(clean: &SpendLogsMetadata) -> Result<String, SpendPayloadError>
 
 // kwargs.get("response_cost", 0): absent reads as zero, null stays null, and a wrong type is named.
 fn spend(context: &Context<'_>) -> Result<Option<Decimal>, SpendPayloadError> {
-    match context.kwargs.get("response_cost") {
-        None => Ok(Some(Decimal::ZERO)),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => Ok(Some(parse_decimal_lexeme(&number.to_string())?)),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(value) = context.kwargs.get("response_cost") else {
+        return Ok(Some(Decimal::ZERO));
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Number(number) => Ok(Some(parse_decimal_lexeme(&number.to_string())?)),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             Err(SpendPayloadError::FieldType {
                 field: "response_cost",
             })
@@ -209,11 +211,10 @@ fn namespaced_tool(clean: &SpendLogsMetadata) -> Result<Option<String>, SpendPay
 // kwargs.get("agent_id") or metadata.get("agent_id"): an empty kwarg falls through to the metadata's value.
 fn agent_id(context: &Context<'_>) -> Result<Option<String>, SpendPayloadError> {
     let kwarg = optional_text_field(context.kwargs.get("agent_id"), "agent_id")?;
-    match kwarg.filter(|id| !id.is_empty()) {
-        Some(id) => Ok(Some(id.to_owned())),
-        None => Ok(
-            optional_text_field(context.metadata.get("agent_id"), "agent_id")?
-                .map(ToOwned::to_owned),
-        ),
-    }
+    let stored = optional_text_field(context.metadata.get("agent_id"), "agent_id")?;
+    let chosen = match kwarg {
+        Some(id) if !id.is_empty() => Some(id),
+        Some(_) | None => stored,
+    };
+    Ok(chosen.map(ToOwned::to_owned))
 }

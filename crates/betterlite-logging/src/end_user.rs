@@ -25,8 +25,6 @@ pub enum EndUserIdError {
 }
 
 // ast-grep-ignore: no-long-names
-// get_end_user_id_for_cost_tracking: the top-level id wins when truthy, else the merged bucket's value, and the two
-// settings gate the result.
 pub fn get_end_user_id_for_cost_tracking(
     litellm_params: &JsonObject,
     service: CostTrackingService,

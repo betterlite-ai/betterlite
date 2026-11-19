@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_config::collector::TracebackPolicy;
 use betterlite_config::spend_attribution::Settings as SpendAttributionSettings;
 use betterlite_config::spend_storage::MissingSessionId;
-use betterlite_logging::end_user::{
-    CostTrackingService, EndUserCostTrackingSettings, get_end_user_id_for_cost_tracking,
-};
+use betterlite_logging::end_user::{CostTrackingService, EndUserCostTrackingSettings};
+// ast-grep-ignore: no-long-names
+use betterlite_logging::end_user::get_end_user_id_for_cost_tracking;
 use betterlite_logging::payload::deps::PayloadClock;
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
@@ -213,6 +213,7 @@ fn end_user(params: &JsonObject, service: &str, settings: &SettingsInput) -> Hel
         disable_end_user_cost_tracking: settings.disable_end_user_cost_tracking,
         enable_prometheus_only: settings.enable_prometheus_only,
     };
+    // ast-grep-ignore: no-long-names
     let resolved = get_end_user_id_for_cost_tracking(params, service, &policy)
         .map_err(|error| invalid(&error.to_string()))?;
     serde_json::to_value(resolved).map_err(|error| invalid(&error.to_string()))

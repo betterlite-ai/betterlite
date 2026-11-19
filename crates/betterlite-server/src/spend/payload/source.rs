@@ -34,7 +34,8 @@ pub struct StandardSource {
     #[serde(deserialize_with = "Option::deserialize")]
     pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<JsonObject>,
-    pub autorouter_baseline_observation: Option<String>,
+    #[serde(rename = "autorouter_baseline_observation")]
+    pub autorouter_baseline: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

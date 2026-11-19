@@ -1,4 +1,6 @@
-use betterlite_logging::end_user::{CostTrackingService, get_end_user_id_for_cost_tracking};
+use betterlite_logging::end_user::CostTrackingService;
+// ast-grep-ignore: no-long-names
+use betterlite_logging::end_user::get_end_user_id_for_cost_tracking;
 use betterlite_logging::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 use betterlite_logging::spend_metadata::optional_text_field;
 use betterlite_logging::spend_metadata::redaction::{
@@ -68,6 +70,7 @@ fn end_user(
     context: &Context<'_>,
     settings: &SpendPayloadSettings,
 ) -> Result<String, SpendPayloadError> {
+    // ast-grep-ignore: no-long-names
     let resolved = get_end_user_id_for_cost_tracking(
         &context.litellm_params,
         CostTrackingService::LitellmLogging,

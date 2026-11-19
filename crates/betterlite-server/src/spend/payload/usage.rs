@@ -12,8 +12,7 @@ const CACHE_READ_FIELD: &str = "cache_read_input_tokens";
 const CACHE_WRITE_FIELD: &str = "cache_creation_input_tokens";
 const BACKGROUND_ORIGIN: &str = "background_response_cost_poll";
 
-// The response's usage: OCR reads usage_info, an unbilled read reports none, and an empty answer lets the combined
-// usage recovered from a partial stream fill in.
+// The response's usage: OCR reads usage_info, an unbilled read reports none, and an empty answer lets the combined fill in.
 pub(crate) fn project(context: &Context<'_>) -> Result<JsonObject, SpendPayloadError> {
     let response = match context.request.response {
         SpendResponse::Mapping(fields) => Some(fields),
@@ -59,10 +58,13 @@ fn response_usage(response: Option<&JsonObject>) -> Result<JsonObject, SpendPayl
 
 // kwargs.combined_usage_object is a Usage model: only a mapping is one, and null means the stream recovered nothing.
 fn combined_usage(value: Option<&Json>) -> Result<JsonObject, SpendPayloadError> {
+    let Some(value) = value else {
+        return Ok(JsonObject::new());
+    };
     match value {
-        None | Some(Json::Null) => Ok(JsonObject::new()),
-        Some(Json::Object(fields)) => Ok(fields.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+        Json::Null => Ok(JsonObject::new()),
+        Json::Object(fields) => Ok(fields.clone()),
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             Err(SpendPayloadError::FieldType {
                 field: "combined_usage_object",
             })
@@ -117,7 +119,7 @@ fn details_source<'source>(
 fn preferred_write(details: &JsonObject) -> Option<&Json> {
     details
         .get("cache_write_tokens")
-        .filter(|value| truthy(value))
+        .filter(|value| carries_write(value))
         .or_else(|| details.get("cache_creation_tokens"))
 }
 
@@ -130,7 +132,7 @@ fn positive_integer(value: Option<&Json>) -> Option<i64> {
     }
 }
 
-fn truthy(value: &Json) -> bool {
+fn carries_write(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

@@ -35,8 +35,7 @@ use source::StandardSource;
 pub const DEFAULT_CALL_TYPE: &str = "acompletion";
 const CREATION_FAILURE: &str = "Error creating spendlogs object - ";
 
-// completion_start_time = kwargs.get("completion_start_time", end_time): absent defaults to the end, and a present
-// null stays null instead of raising the way the source's astimezone() call does.
+// completion_start_time defaults to the end; a present null stays null instead of raising like the source's astimezone().
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompletionStart {
     Absent,
@@ -44,8 +43,7 @@ pub enum CompletionStart {
     At(SpendTimestamp),
 }
 
-// get_logging_payload's response_obj: the unknown-model error keeps its identity, and a non-mapping response is only
-// ever read for keys its result string does not carry.
+// get_logging_payload's response_obj: the unknown-model error keeps its identity, and a non-mapping response only fills result.
 #[derive(Clone, Copy, Debug)]
 pub enum SpendResponse<'request> {
     Absent,
@@ -191,8 +189,6 @@ impl Pieces {
     }
 }
 
-// ast-grep-ignore: no-long-names
-// get_logging_payload: the persisted spend record, assembled from the request kwargs and the response.
 pub fn get_logging_payload<T>(
     request: &PayloadRequest<'_>,
     settings: &SpendPayloadSettings,
@@ -271,16 +267,16 @@ pub(crate) fn counter(
     }
 }
 
-// _ensure_datetime_utc over the injected zone, where a local time with no single instant is a typed error.
+// _ensure_datetime_utc over the injected zone, rendered as the isoformat() text the row stores.
 pub(crate) fn instant<T>(
     moment: SpendTimestamp,
     zone: &T,
     field: &'static str,
-) -> Result<betterlite_logging::spend_metadata::PythonInstant, SpendPayloadError>
+) -> Result<String, SpendPayloadError>
 where
     T: TimeZone,
 {
     ensure_datetime_utc(moment, zone)
-        .map(betterlite_logging::spend_metadata::PythonInstant)
+        .map(betterlite_db::search_tools::convert::isoformat)
         .ok_or(SpendPayloadError::Time { field })
 }

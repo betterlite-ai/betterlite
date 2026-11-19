@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::private_json::error::PrivateJsonError;
-use betterlite_logging::spend_metadata::optional_object_field;
 use betterlite_logging::spend_metadata::projection::{
     SpendMetadataArguments, project_spend_logs_metadata,
 };
 use betterlite_logging::spend_metadata::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
+use betterlite_logging::spend_metadata::{as_object, optional_field};
 use betterlite_models::call_helpers::metadata::{
     CallParams, InternalMetadata, MetadataMap, stamped_oauth_token,
 };
@@ -68,8 +68,7 @@ fn arguments(
         autorouter_savings: standard.and_then(|source| source.autorouter_savings),
         autorouter_savings_estimate: standard
             .and_then(|source| source.autorouter_savings_estimate.clone()),
-        baseline_observation: standard
-            .and_then(|source| source.autorouter_baseline_observation.clone()),
+        baseline_observation: standard.and_then(|source| source.autorouter_baseline.clone()),
         router_metadata,
         azure_spillover: spillover,
         used_client_oauth_token: oauth,
@@ -81,7 +80,7 @@ fn router_metadata(
     context: &Context<'_>,
     attribution: &Attribution,
 ) -> Result<Option<SpendLogsRouterMetadata>, SpendPayloadError> {
-    let model_info = optional_object_field(context.metadata.get("model_info"), "model_info")?;
+    let model_info = optional_field(context.metadata.get("model_info"), "model_info", as_object)?;
     let Some(fields) = model_info else {
         return Ok(None);
     };
@@ -89,15 +88,13 @@ fn router_metadata(
         return Ok(None);
     }
     Ok(Some(SpendLogsRouterMetadata {
-        requested_model: nonempty(&attribution.model_group),
-        selected_model: nonempty(&attribution.model_name),
+        requested_model: (!attribution.model_group.is_empty())
+            .then(|| attribution.model_group.clone()),
+        selected_model: (!attribution.model_name.is_empty())
+            .then(|| attribution.model_name.clone()),
         selected_provider: attribution.provider.clone().filter(|name| !name.is_empty()),
         router_correlation_id: attribution.call_id.clone(),
     }))
-}
-
-fn nonempty(text: &str) -> Option<String> {
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 // resolve_used_client_oauth_token: only a stamped boolean counts, and it is forwarded for anthropic alone.
@@ -141,7 +138,11 @@ fn bucket(
 
 // azure_spillover over the response headers, then the llm_provider-prefixed ones the standard payload kept.
 fn spillover(context: &Context<'_>) -> Result<Option<JsonObject>, SpendPayloadError> {
-    let response_headers = headers_of(context.kwargs.get("response_headers"));
+    let response_headers = context
+        .kwargs
+        .get("response_headers")
+        .and_then(as_object)
+        .map(text_headers);
     let additional_headers = context
         .standard
         .as_ref()
@@ -153,12 +154,6 @@ fn spillover(context: &Context<'_>) -> Result<Option<JsonObject>, SpendPayloadEr
         return Ok(None);
     };
     Ok(Some(record(&found)?))
-}
-
-// Only a mapping carries headers; any other value at the kwarg reads as no headers at all.
-fn headers_of(value: Option<&Json>) -> Option<BTreeMap<String, String>> {
-    let fields = value.and_then(as_object)?;
-    Some(text_headers(fields))
 }
 
 // A header value is text; another type is not the header map's declared shape and cannot name a spillover header.
