@@ -155,7 +155,10 @@ fn typed_body(body: &Value) -> Result<TypedValue, CallFailed> {
         .map_err(CallFailed::from)
 }
 
-fn value_answer<T: Serialize>(value: T) -> Result<Option<Value>, CallFailed> {
+fn value_answer<T>(value: T) -> Result<Option<Value>, CallFailed>
+where
+    T: Serialize,
+{
     serde_json::to_value(value)
         .map(Some)
         .map_err(CallFailed::from)
