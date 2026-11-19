@@ -19,7 +19,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use http::HeaderMap;
+use reqwest::header::HeaderMap;
 use secrecy::SecretString;
 use serde_json::Number;
 
