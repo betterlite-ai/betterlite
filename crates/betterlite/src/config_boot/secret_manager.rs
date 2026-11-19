@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -83,49 +84,80 @@ fn build_client(
     env: &BTreeMap<String, String>,
 ) -> Result<Option<SecretManagerClient>, ConfigBootError> {
     match system {
-        KeyManagementSystem::HashicorpVault => vault_client(env),
-        KeyManagementSystem::Cyberark => cyberark_client(env),
+        KeyManagementSystem::HashicorpVault => reader_client(ReaderManager::Vault, env),
+        KeyManagementSystem::Cyberark => reader_client(ReaderManager::Cyberark, env),
         KeyManagementSystem::AzureKeyVault => Ok(azure_client(env)),
-        KeyManagementSystem::GoogleKms => google_kms_client(env),
-        KeyManagementSystem::AwsKms => aws_kms_client(env),
+        KeyManagementSystem::GoogleKms => validated_client(
+            validate_google_kms(env),
+            "initializing the Google KMS client",
+        ),
+        KeyManagementSystem::AwsKms => {
+            validated_client(validate_aws_kms(env), "initializing the AWS KMS client")
+        }
         KeyManagementSystem::AwsSecretManager => Ok(Some(aws_secret_client(env))),
-        KeyManagementSystem::GoogleSecretManager => google_secret_client(env),
+        KeyManagementSystem::GoogleSecretManager => validated_client(
+            GoogleSecretSettings::resolve(env, GoogleOptions::default()),
+            "initializing the Google Secret Manager client",
+        ),
         KeyManagementSystem::Custom => custom_client(settings, config_file_path),
         KeyManagementSystem::Local => Err(ConfigBootError::InvalidKeyManagementSystem),
     }
 }
 
-fn vault_client(
-    env: &BTreeMap<String, String>,
-) -> Result<Option<SecretManagerClient>, ConfigBootError> {
-    let transport = VaultHttpTransport {
-        exchange: Arc::new(ReqwestExchange::default()),
-        tls: vault_tls(env),
-    };
-    let clock: Clock = Arc::new(TokioInstant::now);
-    let manager = HashicorpSecretManager::new(env, transport, clock).map_err(|source| {
-        ConfigBootError::Step {
-            step: "initializing the Vault secret manager",
-            source: Box::new(source),
-        }
+// The systems without a betterlite client yet validate their inputs and install NoneType
+fn validated_client<T, E>(
+    validated: Result<T, E>,
+    step: &'static str,
+) -> Result<Option<SecretManagerClient>, ConfigBootError>
+where
+    E: Error + Send + Sync + 'static,
+{
+    validated.map_err(|source| ConfigBootError::Step {
+        step,
+        source: Box::new(source),
     })?;
-    Ok(Some(SecretManagerClient::Vault(Arc::new(manager))))
+    Ok(Some(SecretManagerClient::Uninitialized))
 }
 
-fn cyberark_client(
+enum ReaderManager {
+    Vault,
+    Cyberark,
+}
+
+// Both readers take the same clock and error step, so one function builds either
+fn reader_client(
+    reader: ReaderManager,
     env: &BTreeMap<String, String>,
 ) -> Result<Option<SecretManagerClient>, ConfigBootError> {
-    let transport = ConjurHttpTransport {
-        exchange: Arc::new(ReqwestExchange::default()),
-    };
     let clock: Clock = Arc::new(TokioInstant::now);
-    let manager = CyberArkSecretManager::new(env, transport, clock).map_err(|source| {
-        ConfigBootError::Step {
-            step: "initializing the CyberArk secret manager",
-            source: Box::new(source),
+    let exchange = Arc::new(ReqwestExchange::default());
+    match reader {
+        ReaderManager::Vault => {
+            let transport = VaultHttpTransport {
+                exchange,
+                tls: vault_tls(env),
+            };
+            let manager = HashicorpSecretManager::new(env, transport, clock)
+                .map_err(|source| step_error("initializing the Vault secret manager", source))?;
+            Ok(Some(SecretManagerClient::Vault(Arc::new(manager))))
         }
-    })?;
-    Ok(Some(SecretManagerClient::CyberArk(Arc::new(manager))))
+        ReaderManager::Cyberark => {
+            let transport = ConjurHttpTransport { exchange };
+            let manager = CyberArkSecretManager::new(env, transport, clock)
+                .map_err(|source| step_error("initializing the CyberArk secret manager", source))?;
+            Ok(Some(SecretManagerClient::CyberArk(Arc::new(manager))))
+        }
+    }
+}
+
+fn step_error<E>(step: &'static str, source: E) -> ConfigBootError
+where
+    E: Error + Send + Sync + 'static,
+{
+    ConfigBootError::Step {
+        step,
+        source: Box::new(source),
+    }
 }
 
 // LiteLLM gives Vault the httpx client built from get_ssl_verify, which reads SSL_VERIFY
@@ -160,41 +192,9 @@ fn azure_client(env: &BTreeMap<String, String>) -> Option<SecretManagerClient> {
     None
 }
 
-fn google_kms_client(
-    env: &BTreeMap<String, String>,
-) -> Result<Option<SecretManagerClient>, ConfigBootError> {
-    let _validated = validate_google_kms(env).map_err(|source| ConfigBootError::Step {
-        step: "initializing the Google KMS client",
-        source: Box::new(source),
-    })?;
-    Ok(Some(SecretManagerClient::Uninitialized))
-}
-
-fn aws_kms_client(
-    env: &BTreeMap<String, String>,
-) -> Result<Option<SecretManagerClient>, ConfigBootError> {
-    let _validated = validate_aws_kms(env).map_err(|source| ConfigBootError::Step {
-        step: "initializing the AWS KMS client",
-        source: Box::new(source),
-    })?;
-    Ok(Some(SecretManagerClient::Uninitialized))
-}
-
 fn aws_secret_client(env: &BTreeMap<String, String>) -> SecretManagerClient {
     validate_aws_secret_manager(env);
     SecretManagerClient::Uninitialized
-}
-
-fn google_secret_client(
-    env: &BTreeMap<String, String>,
-) -> Result<Option<SecretManagerClient>, ConfigBootError> {
-    GoogleSecretSettings::resolve(env, GoogleOptions::default()).map_err(|source| {
-        ConfigBootError::Step {
-            step: "initializing the Google Secret Manager client",
-            source: Box::new(source),
-        }
-    })?;
-    Ok(Some(SecretManagerClient::Uninitialized))
 }
 
 fn custom_client(
@@ -218,11 +218,60 @@ fn dispatch_settings(settings: &Settings) -> SecretManagerSettings {
 }
 
 fn custom_optional_params(settings: &Settings) -> CustomParams {
-    let mut params = CustomParams::new();
+    let mut params = custom_text_params(settings);
     custom_store_params(&mut params, settings);
-    custom_text_params(&mut params, settings);
-    custom_aws_params(&mut params, settings);
+    let tags = settings.tags.as_ref().map_or(CustomValue::Null, |tags| {
+        CustomValue::Object(
+            tags.iter()
+                .map(|(name, value)| (name.clone(), CustomValue::String(value.clone())))
+                .collect(),
+        )
+    });
+    params.insert("tags".to_owned(), tags);
+    let token = settings
+        .aws_web_identity_token
+        .as_ref()
+        .map_or(CustomValue::Null, |token| {
+            CustomValue::String(token.expose_secret().to_owned())
+        });
+    params.insert("aws_web_identity_token".to_owned(), token);
+    let regions = settings
+        .replica_regions
+        .iter()
+        .cloned()
+        .map(CustomValue::String)
+        .collect();
+    params.insert("replica_regions".to_owned(), CustomValue::Array(regions));
     params
+}
+
+fn custom_text_params(settings: &Settings) -> CustomParams {
+    [
+        (
+            "primary_secret_name",
+            settings.primary_secret_name.as_deref(),
+        ),
+        ("description", settings.description.as_deref()),
+        ("kms_key_id", settings.kms_key_id.as_deref()),
+        (
+            "custom_secret_manager",
+            settings.custom_secret_manager.as_deref(),
+        ),
+        ("aws_region_name", settings.aws_region_name.as_deref()),
+        ("aws_role_name", settings.aws_role_name.as_deref()),
+        ("aws_session_name", settings.aws_session_name.as_deref()),
+        ("aws_external_id", settings.aws_external_id.as_deref()),
+        ("aws_profile_name", settings.aws_profile_name.as_deref()),
+        ("aws_sts_endpoint", settings.aws_sts_endpoint.as_deref()),
+    ]
+    .into_iter()
+    .map(|(name, text)| {
+        let value = text.map_or(CustomValue::Null, |resolved| {
+            CustomValue::String(resolved.to_owned())
+        });
+        (name.to_owned(), value)
+    })
+    .collect()
 }
 
 fn custom_store_params(params: &mut CustomParams, settings: &Settings) {
@@ -244,114 +293,6 @@ fn custom_store_params(params: &mut CustomParams, settings: &Settings) {
     params.insert(
         "access_mode".to_owned(),
         CustomValue::String(access_mode_name(settings.access_mode).to_owned()),
-    );
-}
-
-fn custom_text_params(params: &mut CustomParams, settings: &Settings) {
-    params.insert(
-        "primary_secret_name".to_owned(),
-        settings
-            .primary_secret_name
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "description".to_owned(),
-        settings
-            .description
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    let tags = settings.tags.as_ref().map_or(CustomValue::Null, |tags| {
-        CustomValue::Object(
-            tags.iter()
-                .map(|(name, value)| (name.clone(), CustomValue::String(value.clone())))
-                .collect(),
-        )
-    });
-    params.insert("tags".to_owned(), tags);
-    params.insert(
-        "kms_key_id".to_owned(),
-        settings
-            .kms_key_id
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "custom_secret_manager".to_owned(),
-        settings
-            .custom_secret_manager
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-}
-
-fn custom_aws_params(params: &mut CustomParams, settings: &Settings) {
-    params.insert(
-        "aws_region_name".to_owned(),
-        settings
-            .aws_region_name
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "aws_role_name".to_owned(),
-        settings
-            .aws_role_name
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "aws_session_name".to_owned(),
-        settings
-            .aws_session_name
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "aws_external_id".to_owned(),
-        settings
-            .aws_external_id
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    custom_aws_identity_params(params, settings);
-}
-
-fn custom_aws_identity_params(params: &mut CustomParams, settings: &Settings) {
-    params.insert(
-        "aws_profile_name".to_owned(),
-        settings
-            .aws_profile_name
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "aws_web_identity_token".to_owned(),
-        settings
-            .aws_web_identity_token
-            .as_ref()
-            .map_or(CustomValue::Null, |token| {
-                CustomValue::String(token.expose_secret().to_owned())
-            }),
-    );
-    params.insert(
-        "aws_sts_endpoint".to_owned(),
-        settings
-            .aws_sts_endpoint
-            .clone()
-            .map_or(CustomValue::Null, CustomValue::String),
-    );
-    params.insert(
-        "replica_regions".to_owned(),
-        CustomValue::Array(
-            settings
-                .replica_regions
-                .iter()
-                .cloned()
-                .map(CustomValue::String)
-                .collect(),
-        ),
     );
 }
 

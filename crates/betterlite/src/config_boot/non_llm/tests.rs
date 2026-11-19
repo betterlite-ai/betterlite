@@ -42,18 +42,28 @@ impl RecordingRegistries {
     }
 }
 
+fn tool_record(tools: &JsonValue, config_file_path: Option<&Path>) -> String {
+    let count = tools.as_array().map_or(0, Vec::len);
+    let path =
+        config_file_path.map_or_else(|| "unset".to_owned(), |path| path.display().to_string());
+    format!("mcp_tools:{count}:{path}")
+}
+
+fn servers_record(servers: &JsonValue, mcp_aliases: Option<&JsonValue>) -> String {
+    format!(
+        "mcp_servers:{}:{}",
+        servers.as_array().map_or(0, Vec::len),
+        mcp_aliases.is_some()
+    )
+}
+
 impl NonLlmRegistries for RecordingRegistries {
     fn mcp_tools<'config>(
         &'config self,
         tools: &'config JsonValue,
         config_file_path: Option<&'config Path>,
     ) -> BoxFuture<'config, Result<(), ConfigBootError>> {
-        let call = format!(
-            "mcp_tools:{}:{}",
-            tools.as_array().map_or(0, Vec::len),
-            config_file_path.is_some()
-        );
-        Box::pin(async move { self.record(call) })
+        Box::pin(async move { self.record(tool_record(tools, config_file_path)) })
     }
 
     fn agents<'config>(
@@ -69,12 +79,7 @@ impl NonLlmRegistries for RecordingRegistries {
         servers: &'config JsonValue,
         mcp_aliases: Option<&'config JsonValue>,
     ) -> BoxFuture<'config, Result<(), ConfigBootError>> {
-        let call = format!(
-            "mcp_servers:{}:{}",
-            servers.as_array().map_or(0, Vec::len),
-            mcp_aliases.is_some()
-        );
-        Box::pin(async move { self.record(call) })
+        Box::pin(async move { self.record(servers_record(servers, mcp_aliases)) })
     }
 
     fn vector_stores<'config>(
@@ -100,7 +105,7 @@ async fn the_registries_load_in_litellm_order() {
     assert_eq!(
         ports.calls(),
         vec![
-            "mcp_tools:1:true".to_owned(),
+            "mcp_tools:1:/config.yaml".to_owned(),
             "agents:2".to_owned(),
             "mcp_servers:1:false".to_owned(),
             "vector_stores:1".to_owned(),
@@ -207,7 +212,7 @@ async fn a_failing_port_stops_the_remaining_steps() {
     assert_eq!(
         ports.calls(),
         vec![
-            "mcp_tools:1:false".to_owned(),
+            "mcp_tools:1:unset".to_owned(),
             "agents:2".to_owned(),
             "mcp_servers:1:false".to_owned(),
         ]
@@ -221,5 +226,8 @@ async fn the_config_file_path_reaches_mcp_tools() {
     load_non_llm_configs(&config, Some(Path::new("/etc/litellm.yaml")), &ports)
         .await
         .unwrap();
-    assert_eq!(ports.calls(), vec!["mcp_tools:1:true".to_owned()]);
+    assert_eq!(
+        ports.calls(),
+        vec!["mcp_tools:1:/etc/litellm.yaml".to_owned()]
+    );
 }

@@ -20,13 +20,15 @@ pub(crate) fn is_configured(value: &JsonValue) -> bool {
 // environment_variables values reach str(); numbers and bools render as Python's str does
 #[must_use]
 pub(crate) fn scalar_text(value: &JsonValue) -> String {
-    match value {
-        JsonValue::Null => "None".to_owned(),
-        JsonValue::Bool(true) => "True".to_owned(),
-        JsonValue::Bool(false) => "False".to_owned(),
-        JsonValue::Number(number) => number.to_string(),
-        JsonValue::String(text) => text.clone(),
-        // lists and mappings have no Python text worth reproducing; betterlite emits standard JSON
-        JsonValue::Array(_) | JsonValue::Object(_) => value.to_string(),
+    if value.is_null() {
+        return "None".to_owned();
     }
+    if let Some(flag) = value.as_bool() {
+        return if flag { "True" } else { "False" }.to_owned();
+    }
+    if let Some(text) = value.as_str() {
+        return text.to_owned();
+    }
+    // numbers, lists and mappings take JSON text, since Python's repr is not reproduced
+    value.to_string()
 }
