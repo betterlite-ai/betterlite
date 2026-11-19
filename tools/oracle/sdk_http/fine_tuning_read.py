@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Coroutine
+from enum import Enum
 from typing import TypeAlias
 
 import httpx
@@ -10,20 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-MISSING = object()
-
 # list answers a page and retrieve a job, and an async flag makes either one return a coroutine
 ModelResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
-
-
-class ExceptionFieldTypeError(TypeError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"exception field {name} is neither text nor null")
-
-
-class MissingStatusError(TypeError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"exception {name} carries no integer status code")
 
 
 class StructuredTimeout(BaseModel):
@@ -52,14 +41,14 @@ class ListCall(ReadParams):
     limit: int | None = None
     provider: str | None = "openai"
     extra_headers: dict[str, str] | None = None
-    extra_body: dict[str, str] | None = None
+    extra_body: dict[str, JsonValue] | None = None
 
 
 class RetrieveCall(ReadParams):
     fine_tuning_job_id: str
     provider: str | None = "openai"
     extra_headers: dict[str, str] | None = None
-    extra_body: dict[str, str] | None = None
+    extra_body: dict[str, JsonValue] | None = None
 
 
 class ListStep(BaseModel):
@@ -77,26 +66,18 @@ class RetrieveStep(BaseModel):
 
 
 class ListKind(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     list: ListStep
 
 
 class AListKind(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     alist: ListStep
 
 
 class RetrieveKind(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     retrieve: RetrieveStep
 
 
 class ARetrieveKind(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     aretrieve: RetrieveStep
 
 
@@ -158,8 +139,13 @@ class FineTuningReadRequest(BaseModel):
 
 
 # the SDK reads a null base as its own default, so the harness base stands in for an absent one
-def call_base(call: ReadParams, harness: str) -> str:
-    return call.api_base if call.api_base is not None else harness
+def read_client(step: ListStep | RetrieveStep, harness: str) -> OpenAI | None:
+    if not step.supplied_client:
+        return None
+    base = step.call.api_base if step.call.api_base is not None else harness
+    return OpenAI(
+        base_url=f"{base}/supplied", api_key="sk-supplied", organization="org-supplied"
+    )
 
 
 def timeout_value(
@@ -177,21 +163,11 @@ def timeout_value(
             return timeout
 
 
-# a supplied client carries its own base, key and organization
-def read_client(step: ListStep | RetrieveStep, harness: str) -> OpenAI | None:
-    if not step.supplied_client:
-        return None
-    base = call_base(step.call, harness)
-    return OpenAI(
-        base_url=f"{base}/supplied", api_key="sk-supplied", organization="org-supplied"
-    )
-
-
 def arguments(
     call: ReadParams, harness: str, client: OpenAI | None
 ) -> dict[str, object]:
     return {
-        "api_base": call_base(call, harness),
+        "api_base": call.api_base if call.api_base is not None else harness,
         "api_key": call.api_key,
         "api_version": call.api_version,
         "organization": call.organization,
@@ -202,67 +178,50 @@ def arguments(
     }
 
 
-def list_arguments(
-    call: ListCall, harness: str, client: OpenAI | None
+class ReadOperation(Enum):
+    LIST = "list"
+    ALIST = "alist"
+    RETRIEVE = "retrieve"
+    ARETRIEVE = "aretrieve"
+
+
+def read_arguments(
+    step: ListStep | RetrieveStep, harness: str, client: OpenAI | None
 ) -> dict[str, object]:
-    values = arguments(call, harness, client)
-    values.update(
-        {
-            "after": call.after,
-            "limit": call.limit,
-            "custom_llm_provider": call.provider,
-            "extra_headers": call.extra_headers,
-            "extra_body": call.extra_body,
-        }
-    )
+    values = arguments(step.call, harness, client)
+    match step:
+        case ListStep(call=call):
+            values.update(
+                {
+                    "after": call.after,
+                    "limit": call.limit,
+                    "custom_llm_provider": call.provider,
+                    "extra_headers": call.extra_headers,
+                    "extra_body": call.extra_body,
+                }
+            )
+        case RetrieveStep(call=call):
+            values.update(
+                {
+                    "fine_tuning_job_id": call.fine_tuning_job_id,
+                    "custom_llm_provider": call.provider,
+                    "extra_headers": call.extra_headers,
+                    "extra_body": call.extra_body,
+                }
+            )
     return values
 
 
-def retrieve_arguments(
-    call: RetrieveCall, harness: str, client: OpenAI | None
-) -> dict[str, object]:
-    values = arguments(call, harness, client)
-    values.update(
-        {
-            "fine_tuning_job_id": call.fine_tuning_job_id,
-            "custom_llm_provider": call.provider,
-            "extra_headers": call.extra_headers,
-            "extra_body": call.extra_body,
-        }
+# the openai client raises APIStatusError carrying the status and the body's error fields
+def api_failure(error: openai.APIStatusError) -> Failure:
+    return Failure(
+        cls=type(error).__name__,
+        status=error.status_code,
+        message=error.message,
+        type=error.type,
+        param=error.param,
+        code=error.code,
     )
-    return values
-
-
-# the openai client reads type, param and code off the body's error object
-def status_code(error: openai.APIError) -> int:
-    value: object = getattr(error, "status_code", MISSING)
-    if isinstance(value, int):
-        return value
-    raise MissingStatusError(type(error).__name__)
-
-
-def optional_text(error: openai.APIError, name: str) -> dict[str, str | None]:
-    value: object = getattr(error, name, MISSING)
-    if value is MISSING:
-        return {}
-    if value is None or isinstance(value, str):
-        return {name: value}
-    raise ExceptionFieldTypeError(name)
-
-
-def api_failure(error: openai.APIError) -> Failure:
-    fields: dict[str, str | int | None] = {
-        "cls": type(error).__name__,
-        "status": status_code(error),
-        "message": error.message,
-    }
-    for name in ("type", "param", "code"):
-        fields.update(optional_text(error, name))
-    return Failure.model_validate(fields)
-
-
-def plain_failure(error: ValueError) -> Failure:
-    return Failure(cls=type(error).__name__, status=0, message=str(error))
 
 
 def settle(result: ModelResult) -> JsonValue:
@@ -275,61 +234,46 @@ def settle(result: ModelResult) -> JsonValue:
             return JSON.validate_json(result.model_dump_json())
 
 
-def list_outcome(step: ListStep, harness: str) -> StepOutcome:
-    values = list_arguments(step.call, harness, read_client(step, harness))
+def request(operation: ReadOperation, values: dict[str, object]) -> ModelResult:
+    result: ModelResult
+    match operation:
+        case ReadOperation.LIST:
+            result = litellm.list_fine_tuning_jobs(**values)
+        case ReadOperation.ALIST:
+            result = litellm.alist_fine_tuning_jobs(**values)
+        case ReadOperation.RETRIEVE:
+            result = litellm.retrieve_fine_tuning_job(**values)
+        case ReadOperation.ARETRIEVE:
+            result = litellm.aretrieve_fine_tuning_job(**values)
+    return result
+
+
+def read_outcome(
+    step: ListStep | RetrieveStep, harness: str, operation: ReadOperation
+) -> StepOutcome:
+    values = read_arguments(step, harness, read_client(step, harness))
     try:
-        page: ModelResult = litellm.list_fine_tuning_jobs(**values)
-        settled = settle(page)
-    except openai.APIError as error:
+        settled = settle(request(operation, values))
+    except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
     except ValueError as error:
-        return StepOutcome(failure=plain_failure(error))
-    return StepOutcome(page=settled)
-
-
-def alist_outcome(step: ListStep, harness: str) -> StepOutcome:
-    values = list_arguments(step.call, harness, read_client(step, harness))
-    try:
-        page: ModelResult = litellm.alist_fine_tuning_jobs(**values)
-        settled = settle(page)
-    except openai.APIError as error:
-        return StepOutcome(failure=api_failure(error))
-    except ValueError as error:
-        return StepOutcome(failure=plain_failure(error))
-    return StepOutcome(page=settled)
-
-
-def retrieve_outcome(step: RetrieveStep, harness: str) -> StepOutcome:
-    values = retrieve_arguments(step.call, harness, read_client(step, harness))
-    try:
-        job: ModelResult = litellm.retrieve_fine_tuning_job(**values)
-        settled = settle(job)
-    except openai.APIError as error:
-        return StepOutcome(failure=api_failure(error))
-    except ValueError as error:
-        return StepOutcome(failure=plain_failure(error))
-    return StepOutcome(job=settled)
-
-
-def aretrieve_outcome(step: RetrieveStep, harness: str) -> StepOutcome:
-    values = retrieve_arguments(step.call, harness, read_client(step, harness))
-    try:
-        job: ModelResult = litellm.aretrieve_fine_tuning_job(**values)
-        settled = settle(job)
-    except openai.APIError as error:
-        return StepOutcome(failure=api_failure(error))
-    except ValueError as error:
-        return StepOutcome(failure=plain_failure(error))
-    return StepOutcome(job=settled)
+        return StepOutcome(
+            failure=Failure(cls=type(error).__name__, status=0, message=str(error))
+        )
+    match operation:
+        case ReadOperation.LIST | ReadOperation.ALIST:
+            return StepOutcome(page=settled)
+        case ReadOperation.RETRIEVE | ReadOperation.ARETRIEVE:
+            return StepOutcome(job=settled)
 
 
 def run_step(step: Step, harness: str) -> StepOutcome:
     match step:
         case ListKind(list=inner):
-            return list_outcome(inner, harness)
+            return read_outcome(inner, harness, ReadOperation.LIST)
         case AListKind(alist=inner):
-            return alist_outcome(inner, harness)
+            return read_outcome(inner, harness, ReadOperation.ALIST)
         case RetrieveKind(retrieve=inner):
-            return retrieve_outcome(inner, harness)
+            return read_outcome(inner, harness, ReadOperation.RETRIEVE)
         case ARetrieveKind(aretrieve=inner):
-            return aretrieve_outcome(inner, harness)
+            return read_outcome(inner, harness, ReadOperation.ARETRIEVE)

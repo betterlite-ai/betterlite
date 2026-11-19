@@ -13,7 +13,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::fine_tuning::client::SdkError;
 use http::Method;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use http::header::{HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use url::Url;
@@ -93,15 +93,23 @@ impl HttpDispatch {
         let mut headers = HeaderMap::new();
         let base = if self.supplied {
             let key = SecretString::from(SUPPLIED_KEY);
-            insert_bearer(&mut headers, &key)?;
-            insert_organization(&mut headers, SUPPLIED_ORGANIZATION)?;
+            insert_header(
+                &mut headers,
+                "authorization",
+                &format!("Bearer {}", key.expose_secret()),
+            )?;
+            insert_header(&mut headers, "openai-organization", SUPPLIED_ORGANIZATION)?;
             format!("{}/supplied", call.api_base)
         } else {
             if let Some(key) = call.api_key {
-                insert_bearer(&mut headers, key)?;
+                insert_header(
+                    &mut headers,
+                    "authorization",
+                    &format!("Bearer {}", key.expose_secret()),
+                )?;
             }
             if let Some(organization) = call.organization {
-                insert_organization(&mut headers, organization)?;
+                insert_header(&mut headers, "openai-organization", organization)?;
             }
             call.api_base.clone()
         };
@@ -141,10 +149,7 @@ fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireEr
     let suffix = suffix(call.values.operation);
     let mut headers = HeaderMap::new();
     if let Some(key) = call.api_key {
-        headers.insert(
-            http::header::HeaderName::from_static("api-key"),
-            header_value("api-key", key.expose_secret())?,
-        );
+        insert_header(&mut headers, "api-key", key.expose_secret())?;
     }
     let (url, mut query) = if V1_API_VERSIONS.contains(&version) {
         // the v1 surface is a plain OpenAI client over /openai/v1/, with no api-version query
@@ -192,24 +197,15 @@ fn paging(operation: ReadOperation<'_>) -> Vec<(String, String)> {
     query
 }
 
-fn insert_bearer(headers: &mut HeaderMap, key: &SecretString) -> Result<(), ReadWireError> {
-    headers.insert(
-        AUTHORIZATION,
-        header_value("authorization", &format!("Bearer {}", key.expose_secret()))?,
-    );
+fn insert_header(
+    headers: &mut HeaderMap,
+    name: &'static str,
+    value: &str,
+) -> Result<(), ReadWireError> {
+    let parsed =
+        HeaderValue::from_str(value).map_err(|source| ReadWireError::Header { name, source })?;
+    headers.insert(http::header::HeaderName::from_static(name), parsed);
     Ok(())
-}
-
-fn insert_organization(headers: &mut HeaderMap, organization: &str) -> Result<(), ReadWireError> {
-    headers.insert(
-        http::header::HeaderName::from_static("openai-organization"),
-        header_value("openai-organization", organization)?,
-    );
-    Ok(())
-}
-
-fn header_value(name: &'static str, value: &str) -> Result<HeaderValue, ReadWireError> {
-    HeaderValue::from_str(value).map_err(|source| ReadWireError::Header { name, source })
 }
 
 fn deadline(values: &ReadValues<'_>) -> Duration {

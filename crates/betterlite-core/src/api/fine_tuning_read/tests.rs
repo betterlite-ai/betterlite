@@ -1,8 +1,9 @@
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -84,12 +85,17 @@ impl Fake {
 impl FineTuningReadDispatch for Fake {
     type Error = FakeError;
 
-    async fn read(&self, target: ReadTarget<'_>) -> Result<Vec<u8>, Self::Error> {
-        let mut state = self.state.lock().expect("the fake state");
-        state.calls.push(record(&target));
-        match &state.error {
-            Some(error) => Err(error.clone()),
-            None => Ok(state.reply.clone()),
+    fn read(
+        &self,
+        target: ReadTarget<'_>,
+    ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
+        async move {
+            let mut state = self.state.lock().expect("the fake state");
+            state.calls.push(record(&target));
+            match &state.error {
+                Some(error) => Err(error.clone()),
+                None => Ok(state.reply.clone()),
+            }
         }
     }
 }
@@ -158,16 +164,16 @@ fn input(value: Value) -> FineTuningReadInput {
     serde_json::from_value(value).expect("a read call")
 }
 
-fn openai(calls: &[RecordedTarget]) -> &RecordedCall {
+fn openai(calls: &[RecordedTarget]) -> RecordedCall {
     match calls.first().expect("one dispatch") {
-        RecordedTarget::OpenAi(call) => call,
+        RecordedTarget::OpenAi(call) => call.clone(),
         RecordedTarget::Azure(_) => panic!("the fake was sent to azure"),
     }
 }
 
-fn azure(calls: &[RecordedTarget]) -> &RecordedCall {
+fn azure(calls: &[RecordedTarget]) -> RecordedCall {
     match calls.first().expect("one dispatch") {
-        RecordedTarget::Azure(call) => call,
+        RecordedTarget::Azure(call) => call.clone(),
         RecordedTarget::OpenAi(_) => panic!("the fake was sent to openai"),
     }
 }
@@ -293,7 +299,10 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(job["training_file"], json!("file_1"));
     assert_eq!(job["unknown_top"], json!(1));
     assert_eq!(job["error"], Value::Null);
-    assert_eq!(job["hyperparameters"]["n_epochs"], json!(3));
+    assert_eq!(
+        job["hyperparameters"],
+        json!({"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 3})
+    );
     assert_eq!(job["method"]["hyperparameters"]["n_epochs"], json!("auto"));
     assert_eq!(job.as_object().expect("a job object").len(), 20);
 }
@@ -399,12 +408,25 @@ async fn azure_retrieve_normalizes_job() {
 async fn read_settings_and_client_mode() {
     let mut settings = ConfiguredSettings {
         api_base: Some("http://settings/v1".to_owned()),
-        api_key: Some("sk-settings".into()),
+        api_version: None,
+        api_key: Some(SecretString::from("sk-settings".to_owned())),
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
         organization: Some("org-settings".to_owned()),
+        vertex_project: None,
+        vertex_location: None,
         openai_base_url: Some("http://env-base/v1".to_owned()),
-        openai_api_key: Some("sk-env".into()),
+        openai_api_base: None,
+        openai_api_key: Some(SecretString::from("sk-env".to_owned())),
         openai_organization: Some("org-env".to_owned()),
-        ..ConfiguredSettings::default()
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
     };
     let fake = Fake::answering(&page());
     run(
@@ -451,12 +473,24 @@ async fn azure_settings_chain_and_request_organization() {
     let settings = ConfiguredSettings {
         api_base: Some("http://settings/v1".to_owned()),
         api_version: Some("2024-01-01".to_owned()),
-        api_key: Some("sk-settings".into()),
+        api_key: Some(SecretString::from("sk-settings".to_owned())),
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
         organization: Some("org-settings".to_owned()),
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
         azure_api_base: Some("http://azure-env/v1".to_owned()),
         azure_api_version: Some("2024-06-01".to_owned()),
-        azure_openai_api_key: Some("sk-azure-env".into()),
-        ..ConfiguredSettings::default()
+        azure_openai_api_key: Some(SecretString::from("sk-azure-env".to_owned())),
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
     };
     let fake = Fake::answering(&page());
     run(
@@ -474,11 +508,26 @@ async fn azure_settings_chain_and_request_organization() {
 
     let environment = Fake::answering(&page());
     let settings = ConfiguredSettings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
         organization: Some("org-settings".to_owned()),
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
         azure_api_base: Some("http://azure-env/v1".to_owned()),
         azure_api_version: Some("2024-06-01".to_owned()),
-        azure_openai_api_key: Some("sk-azure-env".into()),
-        ..ConfiguredSettings::default()
+        azure_openai_api_key: Some(SecretString::from("sk-azure-env".to_owned())),
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
     };
     run(
         &environment,

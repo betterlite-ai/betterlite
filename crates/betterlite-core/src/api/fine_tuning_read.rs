@@ -7,6 +7,7 @@ use betterlite_openai::fine_tuning::job::FineTuneJob;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
@@ -18,8 +19,7 @@ pub mod page;
 mod service;
 mod tests;
 
-// the provider literal both read calls declare; a missing name is openai and any other string is
-// rejected after the shared timeout check
+// the provider literal both calls declare; absent is openai, and any other name is rejected later
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ReadProvider(pub String);
@@ -109,8 +109,9 @@ pub struct FineTuningListCall {
     pub provider: Option<ReadProvider>,
     #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
+    // LiteLLM forwards extra_body as the caller's own JSON, so a non-string value still parses
     #[serde(default)]
-    pub extra_body: Option<IndexMap<String, String>>,
+    pub extra_body: Option<IndexMap<String, Value>>,
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
@@ -123,7 +124,7 @@ pub struct FineTuningRetrieveCall {
     #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
     #[serde(default)]
-    pub extra_body: Option<IndexMap<String, String>>,
+    pub extra_body: Option<IndexMap<String, Value>>,
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
@@ -147,8 +148,7 @@ pub enum FineTuningReadOutcome {
     Job(Box<FineTuneJob>),
 }
 
-// list returns the SDK page untouched, so only retrieve decodes a single job; both carry the
-// settings and operation their SDK call reads
+// list hands back the SDK page untouched, so only retrieve decodes and normalizes a job
 #[derive(Debug, Clone, Copy)]
 pub enum ReadOperation<'call> {
     List {
@@ -204,8 +204,7 @@ pub trait FineTuningReadDispatch: Send + Sync {
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
-// LiteLLM's unsupported provider answers BadRequestError, whose type, param and code are null;
-// an invalid timeout is a plain ValueError that carries none of them at all
+// an unsupported provider answers a 400 with null type, param and code; a bad timeout is a ValueError
 #[derive(Debug, Error)]
 pub enum FineTuningReadError<DispatchError = Infallible>
 where

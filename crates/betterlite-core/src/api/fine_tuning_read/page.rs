@@ -1,19 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-// the SDK page the list call hands back without decoding: a cursor page with data and has_more,
-// its other keys kept as extras, and each job built with every declared field present
+// the SDK page is handed back undecoded: data and has_more stay, other keys are kept as extras
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct FineTuningPage(pub Value);
 
 pub fn decode_page(bytes: &[u8]) -> Result<FineTuningPage, serde_json::Error> {
-    let value = serde_json::from_slice(bytes)?;
-    Ok(FineTuningPage(normalize(&value, &PAGE)))
+    let value: Value = serde_json::from_slice(bytes)?;
+    let normalized = normalize(&value, &PAGE);
+    Ok(FineTuningPage(normalized))
 }
 
-// the keys a declared object always writes, with a shape per key; anything else stays as the
-// provider wrote it, and a declared key whose value has another type also stays as written
+// a declared key is always written with its shape, and an undeclared one stays as the provider wrote it
 enum Shape {
     Any,
     Object(&'static [(&'static str, Shape)]),

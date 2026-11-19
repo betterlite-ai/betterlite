@@ -2,7 +2,7 @@ use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSe
 use betterlite_openai::fine_tuning::job::decode_fine_tune_job;
 
 use crate::api::resource_sdk_settings::timeout::{
-    FineTuningTimeout, TimeoutError, TimeoutValue, resolve_fine_tuning_timeout,
+    FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, resolve_fine_tuning_timeout,
 };
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
@@ -76,8 +76,7 @@ where
         }
     }
 
-    // all four calls share the provider chain, the timeout chain and the dispatch; the operation
-    // decides the unsupported message, and only retrieve decodes and normalizes a single job
+    // all four calls share the provider, timeout and dispatch chains; only the decode differs
     async fn read(
         &self,
         provider: Option<&ReadProvider>,
@@ -85,7 +84,11 @@ where
         operation: ReadOperation<'_>,
         is_async: bool,
     ) -> Result<FineTuningReadOutcome, FineTuningReadError<Dispatch::Error>> {
-        let provider = provider_name(provider);
+        // a missing provider stays absent into the unsupported branch, where Python writes None
+        let provider = match provider {
+            Some(provider) => provider.0.as_str(),
+            None => "None",
+        };
         let timeout = resolve_timeout(params, provider)?;
         let settings = ResourceSdkSettings::from(&self.settings);
         let options = ResourceSdkRequestOptions::from(params);
@@ -124,8 +127,7 @@ where
     }
 }
 
-// both calls read the same two provider chains; only their operation and their unsupported
-// message differ
+// both read calls build the same two provider chains, and only their unsupported message differs
 fn read_target<'call>(
     provider: &str,
     values: ReadValues<'call>,
@@ -151,11 +153,6 @@ fn read_target<'call>(
     }
 }
 
-// a missing provider stays absent into the unsupported branch, where Python writes None
-fn provider_name(provider: Option<&ReadProvider>) -> &str {
-    provider.map_or("None", |provider| provider.0.as_str())
-}
-
 // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
 fn resolve_timeout(
     params: &FineTuningReadParams,
@@ -163,7 +160,7 @@ fn resolve_timeout(
 ) -> Result<FineTuningTimeout, TimeoutError> {
     match params.timeout.as_ref() {
         Some(ReadTimeout::Structured(structured)) => {
-            resolve_fine_tuning_timeout(None, provider, Some((*structured).into()))
+            resolve_fine_tuning_timeout(None, provider, Some(StructuredTimeout::from(*structured)))
         }
         Some(ReadTimeout::Plain(value)) if configured(value) => {
             let raw = TimeoutValue::from(value);
