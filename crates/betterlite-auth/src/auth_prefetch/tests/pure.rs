@@ -296,14 +296,17 @@ fn team_project_timestamp_override() {
     assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(42.0));
 
     let project = with_timestamp(fixtures::project_row("project-1"), 1.5);
-    let validated =
+    let project_validated =
         validate_row(RowKind::Project, Some(&project), 9.5).expect("the project row validates");
-    let RowObject::Project(row) = &validated else {
+    let RowObject::Project(project_row) = &project_validated else {
         panic!("the project row validates as a project");
     };
-    assert_eq!(row.last_refreshed_at, Some(9.5));
-    let payload = payload::encode(&validated).expect("the project payload");
-    assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(9.5));
+    assert_eq!(project_row.last_refreshed_at, Some(9.5));
+    let project_payload = payload::encode(&project_validated).expect("the project payload");
+    assert_eq!(
+        payload_number(&project_payload, "last_refreshed_at"),
+        Some(9.5)
+    );
 }
 
 #[rstest]

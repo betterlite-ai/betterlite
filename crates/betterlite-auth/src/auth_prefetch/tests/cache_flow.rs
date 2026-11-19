@@ -94,16 +94,18 @@ async fn ordinary_partition_even_hex_user_id() {
     );
     assert!(cache.key_object.writes().is_empty());
 
-    let cache = FakeCache::new(MANAGEMENT_TTL);
-    cache
+    let key_only_cache = FakeCache::new(MANAGEMENT_TTL);
+    key_only_cache
         .key_object
         .seed(&hex, CacheValue::Text("elsewhere".to_owned()));
-    let database = FakeDatabase::with(&[(RowKind::User, fixtures::user_row(&hex))]);
-    owner(&cache, Some(&database), &clock).prefetch(&refs).await;
-    assert_eq!(database.calls(), vec![vec![RowKind::User]]);
-    assert_eq!(cache.ordinary.write_keys(), vec![hex.clone()]);
+    let key_only_database = FakeDatabase::with(&[(RowKind::User, fixtures::user_row(&hex))]);
+    owner(&key_only_cache, Some(&key_only_database), &clock)
+        .prefetch(&refs)
+        .await;
+    assert_eq!(key_only_database.calls(), vec![vec![RowKind::User]]);
+    assert_eq!(key_only_cache.ordinary.write_keys(), vec![hex.clone()]);
     assert_eq!(
-        cache.key_object.get_value(&hex),
+        key_only_cache.key_object.get_value(&hex),
         Some(CacheValue::Text("elsewhere".to_owned()))
     );
 }
@@ -316,11 +318,11 @@ async fn no_db_after_redis_fill() {
     assert!(database.calls().is_empty());
     assert_eq!(cache.ordinary.write_keys(), vec!["user-1".to_owned()]);
 
-    let cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::new(FakeRedis::batch()));
-    owner(&cache, None, &clock)
+    let cold_cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::new(FakeRedis::batch()));
+    owner(&cold_cache, None, &clock)
         .prefetch(&refs_user("user-1"))
         .await;
-    assert!(cache.ordinary.writes().is_empty());
+    assert!(cold_cache.ordinary.writes().is_empty());
 }
 
 #[tokio::test]
@@ -343,15 +345,17 @@ async fn row_kind_validated_once() {
         "{text}"
     );
 
-    let cache = FakeCache::new(MANAGEMENT_TTL);
-    let database =
+    let valid_cache = FakeCache::new(MANAGEMENT_TTL);
+    let valid_database =
         FakeDatabase::with(&[(RowKind::Organization, fixtures::organization_row("org-1"))]);
-    owner(&cache, Some(&database), &clock).prefetch(&refs).await;
-    let writes = cache.ordinary.writes();
+    owner(&valid_cache, Some(&valid_database), &clock)
+        .prefetch(&refs)
+        .await;
+    let writes = valid_cache.ordinary.writes();
     assert_eq!(writes.len(), 2);
     assert_eq!(writes[0].value, writes[1].value);
     assert_eq!(
-        cache.ordinary.write_keys(),
+        valid_cache.ordinary.write_keys(),
         vec![
             "org_id:org-1".to_owned(),
             "org_id:org-1:with_budget".to_owned()
@@ -489,13 +493,13 @@ async fn redis_retains_original_none_ttl() {
         ]
     );
 
-    let redis = Arc::new(FakeRedis::default());
-    let cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::clone(&redis));
-    let database = member_rows();
-    owner(&cache, Some(&database), &clock)
+    let pipeline_redis = Arc::new(FakeRedis::default());
+    let pipeline_cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::clone(&pipeline_redis));
+    let pipeline_database = member_rows();
+    owner(&pipeline_cache, Some(&pipeline_database), &clock)
         .prefetch(&refs_user_team())
         .await;
-    let pipelines = redis.pipelines();
+    let pipelines = pipeline_redis.pipelines();
     assert_eq!(pipelines.len(), 1);
     assert_eq!(pipelines[0].len(), 4);
     assert_eq!(pipelines[0][2].ttl, Some(5.0));

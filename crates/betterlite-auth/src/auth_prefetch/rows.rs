@@ -59,8 +59,8 @@ pub fn validate_row(
     value: Option<&JsonData>,
     refreshed_at: f64,
 ) -> Option<RowObject> {
-    let value = value?;
-    match decode(kind, value, refreshed_at) {
+    let stored = value?;
+    match decode(kind, stored, refreshed_at) {
         Ok(object) => Some(object),
         Err(error) => {
             let (row, model) = kind.names();

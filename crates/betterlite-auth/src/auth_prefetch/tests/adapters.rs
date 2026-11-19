@@ -139,9 +139,9 @@ fn real_cache_management_and_default_ttls() {
         PrefetchCache::default_memory_ttl(&cache),
         Some(MANAGEMENT_TTL)
     );
-    let cache = real_cache(None);
-    assert_eq!(PrefetchCache::management_ttl(&cache), FALLBACK_TTL);
-    assert_eq!(PrefetchCache::default_memory_ttl(&cache), None);
+    let fallback_cache = real_cache(None);
+    assert_eq!(PrefetchCache::management_ttl(&fallback_cache), FALLBACK_TTL);
+    assert_eq!(PrefetchCache::default_memory_ttl(&fallback_cache), None);
 }
 
 #[test]

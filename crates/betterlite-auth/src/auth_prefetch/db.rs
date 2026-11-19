@@ -67,12 +67,12 @@ impl PrefetchDatabase for WriterRows {
             .query_opt(ROWS_SQL, &[&user, &team, &membership, &org, &project])
             .await
             .map_err(|source| PrefetchDatabaseError::Database(backend(source)))?;
-        let Some(row) = row else {
+        let Some(answer) = row else {
             return Ok(RowValues::default());
         };
         let mut values = RowValues::default();
         for (index, kind) in ROW_KINDS.into_iter().enumerate() {
-            if let Some(value) = decode_column(&row, index, kind)? {
+            if let Some(value) = decode_column(&answer, index, kind)? {
                 values.insert(kind, value);
             }
         }

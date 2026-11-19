@@ -431,14 +431,14 @@ async fn permission_lookup_label_and_filter() {
         dropped: Arc::new(AtomicBool::new(false)),
     });
     let store = bounded(Arc::clone(&table), 60.0);
-    let source = ObjectPermissionSource {
+    let table_source = ObjectPermissionSource {
         cache: &cache,
         stores: Some(PermissionStores {
             normal: &store,
             writer: &store,
         }),
     };
-    let outcome = get_object_permission(&source, "perm-1", true).await;
+    let outcome = get_object_permission(&table_source, "perm-1", true).await;
     assert!(matches!(
         outcome,
         Err(PermissionError::MissingInDatabaseOnly)
@@ -452,9 +452,9 @@ async fn permission_lookup_label_and_filter() {
 
     // the shared deadline names the lookup after its table
     let hanging = Arc::new(FakeTable::hanging(Arc::new(AtomicBool::new(false))));
-    let store = bounded(hanging, 0.0);
-    let outcome = store.find_permission("perm-1").await;
-    let Err(PermissionError::Lookup(DbLookupError::Deadline(error))) = outcome else {
+    let deadline_store = bounded(hanging, 0.0);
+    let deadline_outcome = deadline_store.find_permission("perm-1").await;
+    let Err(PermissionError::Lookup(DbLookupError::Deadline(error))) = deadline_outcome else {
         panic!("the deadline crosses the boundary");
     };
     assert_eq!(error.lookup, LOOKUP_LABEL);
@@ -546,21 +546,21 @@ async fn normal_db_validation_write_error_none() {
     assert!(outcome.is_none());
     assert!(cache.sets().is_empty());
 
-    let cache = FakePermissionCache::empty();
-    cache.fail_write.store(true, Ordering::SeqCst);
+    let failing_cache = FakePermissionCache::empty();
+    failing_cache.fail_write.store(true, Ordering::SeqCst);
     let normal = FakePermissionStore::returning(fixtures::permission_row("perm-1"));
-    let source = ObjectPermissionSource {
-        cache: &cache,
+    let failing_source = ObjectPermissionSource {
+        cache: &failing_cache,
         stores: Some(PermissionStores {
             normal: &normal,
             writer: &writer,
         }),
     };
-    let outcome = get_object_permission(&source, "perm-1", false)
+    let write_failure_outcome = get_object_permission(&failing_source, "perm-1", false)
         .await
         .expect("the cache write failure is swallowed");
-    assert!(outcome.is_none());
-    assert_eq!(cache.sets().len(), 1);
+    assert!(write_failure_outcome.is_none());
+    assert_eq!(failing_cache.sets().len(), 1);
 }
 
 #[tokio::test]
@@ -578,28 +578,34 @@ async fn db_only_error_propagates() {
     assert!(matches!(outcome, Err(PermissionError::Repository(_))));
 
     let invalid = FakePermissionStore::returning(JsonData::String("not a row".to_owned()));
-    let source = ObjectPermissionSource {
+    let invalid_source = ObjectPermissionSource {
         cache: &cache,
         stores: Some(PermissionStores {
             normal: &invalid,
             writer: &invalid,
         }),
     };
-    let outcome = get_object_permission(&source, "perm-1", true).await;
-    assert!(matches!(outcome, Err(PermissionError::Validation(_))));
+    let invalid_outcome = get_object_permission(&invalid_source, "perm-1", true).await;
+    assert!(matches!(
+        invalid_outcome,
+        Err(PermissionError::Validation(_))
+    ));
 
-    let cache = FakePermissionCache::empty();
-    cache.fail_write.store(true, Ordering::SeqCst);
+    let failing_cache = FakePermissionCache::empty();
+    failing_cache.fail_write.store(true, Ordering::SeqCst);
     let stored = FakePermissionStore::returning(fixtures::permission_row("perm-1"));
-    let source = ObjectPermissionSource {
-        cache: &cache,
+    let cache_failure_source = ObjectPermissionSource {
+        cache: &failing_cache,
         stores: Some(PermissionStores {
             normal: &stored,
             writer: &stored,
         }),
     };
-    let outcome = get_object_permission(&source, "perm-1", true).await;
-    assert!(matches!(outcome, Err(PermissionError::Cache(_))));
+    let cache_failure_outcome = get_object_permission(&cache_failure_source, "perm-1", true).await;
+    assert!(matches!(
+        cache_failure_outcome,
+        Err(PermissionError::Cache(_))
+    ));
 }
 
 #[tokio::test]
@@ -696,10 +702,10 @@ async fn permission_metrics_record_actual_outcome() {
     let repository = PermissionError::Repository(DbError::InvalidRecord {
         source: TableError::MissingRow,
     });
-    let fault = repository
+    let repository_fault = repository
         .database_fault()
         .expect("the repository fault is a db fault");
-    assert_eq!(fault.error_type, ErrorType::Prisma);
+    assert_eq!(repository_fault.error_type, ErrorType::Prisma);
     assert_eq!(
         PermissionError::Repository(DbError::NoDbConnected)
             .database_fault()

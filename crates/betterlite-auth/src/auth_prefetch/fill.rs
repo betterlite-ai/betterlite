@@ -108,16 +108,16 @@ pub async fn write_back(
     for (key, payload, ttl) in &payloads {
         set_in_memory(memory, key, payload, ttl.or(memory_default))?;
     }
-    let Some(redis) = redis else {
+    let Some(connection) = redis else {
         return Ok(());
     };
-    if redis.has_batch() {
+    if connection.has_batch() {
         for (key, payload, ttl) in &payloads {
-            redis.queue_set(key, payload, *ttl)?;
+            connection.queue_set(key, payload, *ttl)?;
         }
         return Ok(());
     }
-    redis
+    connection
         .set_pipeline(&payloads)
         .await
         .map_err(PrefetchError::Redis)
@@ -195,8 +195,8 @@ pub fn identity_cache_keys(
     if !key_is_resolved {
         keys.push(hash_token(api_key));
     }
-    if let Some(end_user_id) = end_user_id.filter(|id| !id.is_empty()) {
-        keys.push(CacheKey::EndUserId(end_user_id).render());
+    if let Some(end_user) = end_user_id.filter(|id| !id.is_empty()) {
+        keys.push(CacheKey::EndUserId(end_user).render());
         keys.push(CacheKey::EndUserRestrictedRegistry.render());
     }
     keys.push(CacheKey::ModelAccessGroupRegistry.render());

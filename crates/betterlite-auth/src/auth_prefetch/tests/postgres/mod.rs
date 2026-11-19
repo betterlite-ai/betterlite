@@ -124,13 +124,13 @@ async fn absent_kinds_bind_sql_null() {
         team_id: None,
         ..all_refs()
     };
-    let rows = WriterRows {
+    let team_absent_rows = WriterRows {
         store: database.store.clone(),
     }
     .fetch_rows(&without_team, &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    assert!(rows.get(RowKind::Team).is_none());
+    assert!(team_absent_rows.get(RowKind::Team).is_none());
     close(database).await;
 }
 
@@ -150,13 +150,13 @@ async fn membership_requires_team_parameter() {
     .expect("the prefetch query");
     assert!(rows.get(RowKind::Membership).is_none());
 
-    let rows = WriterRows {
+    let membership_rows = WriterRows {
         store: database.store.clone(),
     }
     .fetch_rows(&all_refs(), &[RowKind::Membership])
     .await
     .expect("the prefetch query");
-    assert!(rows.get(RowKind::Membership).is_some());
+    assert!(membership_rows.get(RowKind::Membership).is_some());
     close(database).await;
 }
 
@@ -290,17 +290,17 @@ INSERT INTO "LiteLLM_TeamTable" (team_id, model_id) VALUES ('team-1', 7);
     let team = rows.get(RowKind::Team).expect("the team row");
     let table = object(team, "litellm_model_table");
     let aliases = object(&table, "model_aliases");
-    let JsonData::Object(aliases) = aliases else {
+    let JsonData::Object(alias_map) = aliases else {
         panic!("the aliases are an object");
     };
     assert_eq!(
-        aliases.get("gpt"),
+        alias_map.get("gpt"),
         Some(&JsonData::String("gpt-4".to_owned()))
     );
-    let JsonData::Object(table) = object(team, "litellm_model_table") else {
+    let JsonData::Object(model_table) = object(team, "litellm_model_table") else {
         panic!("the model table is an object");
     };
-    assert!(!table.contains_key("aliases"));
+    assert!(!model_table.contains_key("aliases"));
     close(database).await;
 }
 
@@ -615,11 +615,11 @@ async fn one_timestamp_after_query() {
         .iter()
         .find(|write| write.0 == "project_id:project-1")
         .expect("the project write");
-    let CacheValue::Object(fields) = &project.1 else {
+    let CacheValue::Object(project_fields) = &project.1 else {
         panic!("the project write holds an object");
     };
     assert_eq!(
-        fields.get("last_refreshed_at"),
+        project_fields.get("last_refreshed_at"),
         Some(&CacheValue::Float(1234.5)),
         "the project write carries the query time"
     );

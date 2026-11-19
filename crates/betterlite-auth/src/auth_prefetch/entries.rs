@@ -53,16 +53,16 @@ pub fn iter_entries(
         ));
     }
     if let (Some(team_id), Some(user_id)) = (&refs.team_id, &refs.membership_user_id) {
-        let key = CacheKey::TeamMembershipAuth { team_id, user_id }.render();
-        plan.push((key, RowKind::Membership, Some(MEMBERSHIP_AUTH_TTL)));
-        let key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();
-        plan.push((key, RowKind::Membership, None));
+        let auth_key = CacheKey::TeamMembershipAuth { team_id, user_id }.render();
+        plan.push((auth_key, RowKind::Membership, Some(MEMBERSHIP_AUTH_TTL)));
+        let reservation_key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();
+        plan.push((reservation_key, RowKind::Membership, None));
     }
     if let Some(organization_id) = &refs.organization_id {
         let key = format!("org_id:{organization_id}");
         plan.push((key, RowKind::Organization, Some(organization_ttl)));
-        let key = format!("org_id:{organization_id}:with_budget");
-        plan.push((key, RowKind::Organization, Some(organization_ttl)));
+        let budget_key = format!("org_id:{organization_id}:with_budget");
+        plan.push((budget_key, RowKind::Organization, Some(organization_ttl)));
     }
     if let Some(project_id) = &refs.project_id {
         plan.push((

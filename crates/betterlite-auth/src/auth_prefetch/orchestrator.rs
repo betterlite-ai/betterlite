@@ -35,8 +35,8 @@ impl OwnerPrefetch<'_> {
         let memory = self.cache.ordinary_memory();
         let missing = missing_in_memory(&all, memory);
         let redis = self.cache.redis();
-        if let Some(redis) = redis.as_deref() {
-            fill_from_redis(&missing, redis, memory).await?;
+        if let Some(redis_rows) = redis.as_deref() {
+            fill_from_redis(&missing, redis_rows, memory).await?;
         }
         let Some(database) = self.database else {
             return Ok(());
@@ -52,9 +52,8 @@ pub struct ReferencedPrefetch<'context> {
 }
 impl ReferencedPrefetch<'_> {
     pub async fn prefetch(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
-        let end_user_id = end_user_id.filter(|id| !id.is_empty());
-        self.admission
-            .bind_admission_counter_keys(auth, end_user_id);
+        let end_user = end_user_id.filter(|id| !id.is_empty());
+        self.admission.bind_admission_counter_keys(auth, end_user);
         self.owner
             .prefetch(&AuthObjectRefs::from_token(&auth.view.token))
             .await;

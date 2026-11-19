@@ -323,8 +323,8 @@ impl PrefetchRedis for FakeRedis {
             .read_failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if let Some(failure) = failure {
-            return Err(match failure {
+        if let Some(refusal) = failure {
+            return Err(match refusal {
                 ReadFailure::Batch(message) => RedisRowsError::Batch {
                     message: message.to_owned(),
                 },
@@ -373,9 +373,9 @@ impl PrefetchRedis for FakeRedis {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
             .filter(|failure| failure == key);
-        if let Some(failure) = failure {
+        if let Some(refusal) = failure {
             return Err(RedisRowsError::Write {
-                message: format!("the test queue refused {failure}"),
+                message: format!("the test queue refused {refusal}"),
             });
         }
         self.queued.push(QueueWrite::new(key, value, ttl));
