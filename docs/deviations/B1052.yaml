@@ -5,10 +5,10 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L94-L94
   - what: A numeric adapter_size in hyperparameters reaches Vertex as a decimal string, while LiteLLM copies the caller's number unchanged.
     why: B1384 types adapter_size as the declared literal string; the declared type is the parity boundary.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/fine_tuning/handler.py#L137-L140
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/fine_tuning/handler.py#L102-L104
   - what: An integrations entry that is not a JSON object fails with a data error; LiteLLM declares list[str] and forwards plain strings.
     why: B518's job record types integrations as a list of records; a string entry is outside that declared shape.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1152-L1152
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1153-L1153
   - what: An Azure call's organization reaches the Azure SDK client in LiteLLM as the openai-organization header; betterlite stops at the Azure call record because B542's client projection has no organization input.
     why: The Azure client contract belongs to B542; the value stays on AzureCreateCall for that owner to forward.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L286-L286
