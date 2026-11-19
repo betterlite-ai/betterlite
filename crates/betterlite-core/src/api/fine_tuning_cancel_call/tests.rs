@@ -426,6 +426,17 @@ async fn cancel_parses_a_timeout_written_as_text(
 }
 
 #[tokio::test]
+async fn cancel_falls_back_when_the_timeout_text_is_empty() {
+    let mut params = base_params();
+    params.timeout = Some(OptionalTimeout::Text(String::new()));
+    params.request_timeout = Some(5.0_f64);
+    assert_eq!(
+        resolved_timeout(params).await,
+        FineTuningTimeout::Seconds(5.0_f64)
+    );
+}
+
+#[tokio::test]
 async fn cancel_rejects_a_timeout_that_is_not_a_number() {
     let mut params = base_params();
     params.timeout = Some(OptionalTimeout::Text("bad".to_owned()));
