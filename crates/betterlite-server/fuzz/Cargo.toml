@@ -378,6 +378,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "roi_identity_body"
+path = "fuzz_targets/roi_identity_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "team_admin_object"
 path = "fuzz_targets/team_admin_object.rs"
 test = false
