@@ -112,9 +112,10 @@ impl ProxiedPluginUpstream {
     pub fn connect(environment: &BTreeMap<String, String>) -> Self {
         let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
             .map(Arc::new)
-            .map_err(PluginClientError::Policy);
+            .map_err(|source| PluginClientError::Policy { source });
         let client = policy.and_then(|resolved| {
-            ProxiedClient::outbound(&resolved).map_err(PluginClientError::Client)
+            ProxiedClient::outbound(&resolved)
+                .map_err(|source| PluginClientError::Client { source })
         });
         Self {
             client: client.map_err(Arc::new),
