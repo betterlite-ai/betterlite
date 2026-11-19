@@ -177,8 +177,7 @@ def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
         return asyncio.run(held)
     answer: CreateAnswer = create_fine_tuning_job(**options)
     if asyncio.iscoroutine(answer):
-        pending: Coroutine[object, object, LiteLLMFineTuningJob] = answer
-        return asyncio.run(pending)
+        return asyncio.run(answer)
     return TypeAdapter(LiteLLMFineTuningJob).validate_python(answer)
 
 
