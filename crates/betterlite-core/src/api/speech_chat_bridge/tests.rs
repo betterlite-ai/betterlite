@@ -690,6 +690,19 @@ fn response_audio_is_tolerantly_decoded() {
 }
 
 #[test]
+fn response_audio_part_fails() {
+    let response: ChatResponse = serde_json::from_str(
+        r#"{"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "audio": {"data": 5}},
+            "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}"#,
+    )
+    .expect("the provider response");
+    let error = transform_failure(answered(response), Call::valid().arguments());
+    assert!(matches!(error, SpeechTransformError::AudioPart { .. }));
+}
+
+#[test]
 fn invalid_base64_fails() {
     let error = transform_failure(
         answered(responded("m", Some("QQ"))),
