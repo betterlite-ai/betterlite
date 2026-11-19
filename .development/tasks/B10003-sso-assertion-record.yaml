@@ -1,0 +1,126 @@
+id: B10003
+title: SSO identity assertion record and its login decode
+description: >-
+  An SSO login can keep the user's IdP id_token so an MCP server with auth_type oauth2_id_jag can later spend it as an RFC 8693 subject_token. This task builds only the record and the two pure functions around it, from sso_assertion_store.py L70-L79, L122-L175: SsoIdentityAssertion, assertion_from_sso_login and assertion_expired, plus the JSON payload the store writes. B1623 (the generic SSO callback in betterlite-server) needs the record and assertion_from_sso_login, and B4663 (cache, store, rotation) and B4664 (renewal) build on them, so they sit apart from the store and B1623 does not wait on it.
+
+
+  Layout. Code goes in crates/betterlite-mcp/src/sso_assertions/assertion.rs, with tests in sso_assertions/assertion/tests.rs. The parent module sso_assertions and its siblings cache, store and rotation are B4663's and exist as empty files. Add betterlite-auth as a path dependency in crates/betterlite-mcp/Cargo.toml; betterlite-auth depends on no MCP, server or core crate, so there is no cycle, and betterlite-server already depends on betterlite-mcp.
+
+
+  The record. SsoIdentityAssertion holds id_token: SecretString, refresh_token: Option<SecretString>, issuer: Option<String> and expires_at: Option<DateTime<Utc>>, with public fields so B4663 and B1623 build and read it directly. Its Debug output must not show either token.
+
+
+  assertion_from_sso_login(id_token: Option<&serde_json::Value>, refresh_token: Option<&serde_json::Value>) -> Option<SsoIdentityAssertion> takes the fields straight from the provider's untyped token response, since this is the one place they get validated. A missing, non-string or empty id_token returns None with no log line. A missing, non-string or empty refresh_token is dropped and the assertion still stands. Claims are read with no signature check, as LiteLLM does, through B760's betterlite_auth::jwt_claims::decode_unverified_claims. PyJWT's unverified decode also refuses a token whose header segment is not base64url text of a JSON object, whose third segment is not base64url, or whose payload is not a JSON object, so check here whatever B760's decoder leaves out. exp is a JSON number and iss a string; absent and null both mean no value. Any failure logs the warning "SSO id_token could not be decoded or its claims were unusable; not retaining it for EMA egress." and returns None, because a bad token must never fail a login.
+
+
+  assertion_expired(assertion: &SsoIdentityAssertion, now: DateTime<Utc>) -> bool matches on expires_at: no expiry is false, otherwise expires_at <= now. B4664 passes a future now to ask whether the assertion is about to expire.
+
+
+  The stored payload. encode_payload and decode_payload in the same file own the JSON that B4663's store encrypts into "LiteLLM_SSOIdentityAssertion" (LiteLLM's _StoredAssertionPayload, written at L208-L213 and read at L239-L250). It holds id_token always, and refresh_token, issuer and expires_at only when present. expires_at is ISO 8601 text with an offset. Text with no offset reads as UTC. That replaces the naive branch in LiteLLM's assertion_expired, since a Rust DateTime<Utc> can't be naive. decode_payload returns this module's error enum for text that is not that JSON shape, and B4663 decides what a caller sees. A row LiteLLM wrote opens here and a row written here opens in LiteLLM.
+
+
+  Fuzz. The id_token comes from the IdP and the payload text from a database row. Add the cargo-fuzz target sso_assertion_decode in crates/betterlite-mcp/fuzz; it reads arbitrary bytes as lossy UTF-8 and feeds them to assertion_from_sso_login as the id_token and to decode_payload. sso_assertions::assertion::tests::replays_the_sso_assertion_corpus replays crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode through the same two functions.
+
+
+  Oracle. These are helper cases on the b10003 operation; no route reaches this code yet, and B1615 adds the HTTP cases with the callback route. A case is either a login step with any JSON values for id_token and refresh_token, answered with the assertion's fields in plain text (expires_at as RFC 3339 UTC) or null, plus the warning lines logged; or an expiry step with expires_at (null or text with an offset) and now, answered with the bool. The Python adapter calls the pinned assertion_from_sso_login and assertion_expired from litellm.proxy._experimental.mcp_server.outbound_credentials.sso_assertion_store and reads the warnings from verbose_proxy_logger. Use whole-second exp values, since the two sides may round a fraction of a second differently and the cases compare text.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sso_assertions/assertion.rs
+    - crates/betterlite-mcp/src/sso_assertions/assertion/**
+    - tools/oracle/src/helpers/mcp/b10003.rs
+    - tools/oracle/src/helpers/mcp/b10003/**
+    - tools/oracle/helpers/b10003.py
+    - tools/oracle/helpers/b10003/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/sso_assertion_decode.rs
+    - crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/sso-assertion-record/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-assertion-record-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L70-L79
+    why: Owned. SSOIdentityAssertion, a frozen model with SecretStr tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L122-L131
+    why: Owned. The claims shape and the stored payload shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L134-L175
+    why: Owned. assertion_from_sso_login and assertion_expired.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L203-L250
+    why: Where the store builds and reads the payload, the keys encode_payload and decode_payload keep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1633-L1647
+    why: Call sites. Both pass untyped token response fields, so the arguments can be absent or any type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L313-L317
+    why: Call site. B4664 rebuilds a renewed assertion from the refresh reply with assertion_from_sso_login.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L416-L417
+    why: Call site. B4664 asks assertion_expired with a future now, the clock plus a skew.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/resolver.py#L256
+    why: Call site. B4667 refuses an expired assertion before the exchange.
+dod:
+  - text: assertion_from_sso_login returns the id_token, refresh token, issuer and expiry of a decodable token, with issuer and expiry None when the claims are absent or null.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A missing, empty or non-string id_token returns None with no log line, and a missing, empty or non-string refresh_token is dropped while the assertion stands.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A token that fails decoding, a wrong-typed exp or iss, and an exp outside the years 1 to 9999 each log the fixed warning and return None.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: assertion_expired is false with no expiry, false before it, true at the exact expiry and after it, and true for a future now past the expiry.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A stored payload keeps every field through encode and decode, leaves unset fields out of the JSON, and reads expires_at text with no offset as UTC.
+    proof: [assertion-tests]
+  - text: The token and refresh token text appear in no Debug output, log line or error text.
+    proof: [assertion-tests]
+  - text: The two decoders never panic on arbitrary bytes, and the added corpus replays through them.
+    proof: [assertion-corpus]
+  - text: The b10003 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: assertion-tests
+      why: The login decode, expiry or stored payload tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::assertion::tests::/) - test(/replays_the_/)'
+    - id: assertion-corpus
+      why: The sso_assertion_decode fuzz target, its added corpus or its replay test is missing or fails.
+      run: >-
+        test -f crates/betterlite-mcp/fuzz/fuzz_targets/sso_assertion_decode.rs &&
+        grep -q sso_assertion_decode crates/betterlite-mcp/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode)" &&
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_sso_assertion_corpus)'
+    - id: helper-python
+      why: The b10003 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10003.py tools/oracle/helpers/b10003)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10003 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sso-assertion-record-*")" &&
+        grep -lE 'b10003"?:' tools/oracle/fuzz/corpus/helper_case/sso-assertion-record-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-assertion-record/login-full-claims.yaml
+  - tools/oracle/cases/helpers/sso-assertion-record/login-no-claims.yaml
+  - tools/oracle/cases/helpers/sso-assertion-record/login-absent-and-non-string.yaml
+  - tools/oracle/cases/helpers/sso-assertion-record/login-undecodable.yaml
+  - tools/oracle/cases/helpers/sso-assertion-record/login-exp-out-of-range.yaml
+  - tools/oracle/cases/helpers/sso-assertion-record/expired-boundaries.yaml
+deviations:
+  - what: An id_token over 1048576 bytes or with JSON nested deeper than 64 is treated as undecodable, so it is not retained and the fixed warning is logged. LiteLLM has no such limit.
+    why: Every decoder of outside bytes is bounded, and B760's decoder sets these two limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L146-L152
+out_of_scope:
+  - "SSOAssertionCache, _ASSERTION_CACHE, ema_assertion_retention_enabled, persist_sso_identity_assertion, the row read and fetch_sso_identity_assertion, AssertionStoreUnavailable, the SSOAssertionStore protocol, DbSSOAssertionStore, rotate_sso_identity_assertions_master_key and retain_sso_identity_assertion_for_ema: B4663 builds them on this record."
+  - "_assertion_table, _mcp_server_table and the Prisma typing shims: B4663 replaces them with AssertionRows."
+  - "Encrypting and decrypting the payload: B4663 with B1600's StoredCipher."
+  - "Capturing the token in the SSO callbacks: B1615, B1617, B1623 and B1624. Renewing a stale assertion: B4664."
+  - "The unverified claims decoder and its two limits: B760."
+pitfalls:
+  - "datetime.fromtimestamp raises for a year outside 1 to 9999, so exp 253402300800 returns None here too, even though chrono could hold that date."
+  - "exp may be fractional (1700000000.5 is a valid NumericDate); std::time::Duration::try_from_secs_f64 turns it into a Duration with no as cast."
+  - "expires_at equal to now counts as expired because the test is <=; a < here hands the IdP a token that dies in the same second."
+  - "An empty refresh_token string is dropped like a missing one, but an empty id_token drops the whole assertion, and neither case logs."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
