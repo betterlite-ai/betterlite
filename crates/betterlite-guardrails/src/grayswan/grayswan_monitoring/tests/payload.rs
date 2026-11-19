@@ -42,6 +42,13 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
             "monitor".to_owned()
         )]))
     );
+}
+
+#[test]
+fn prepare_payload_treats_empty_dynamic_categories_as_unset() {
+    let mut configured = settings();
+    configured.categories = BTreeMap::from([("configured".to_owned(), "monitor".to_owned())]);
+    let empty = Object::new();
     let dynamic_empty = GraySwanDynamicParams {
         categories: Some(BTreeMap::new()),
         policy_id: None,
@@ -59,10 +66,18 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
             "monitor".to_owned()
         )]))
     );
+}
+
+#[test]
+fn prepare_payload_omits_categories_when_no_side_sets_them() {
+    let dynamic = GraySwanDynamicParams::default();
     assert!(
-        prepare_payload(&settings(), request_with(Vec::new(), &dynamic, &empty))
-            .categories
-            .is_none()
+        prepare_payload(
+            &settings(),
+            request_with(Vec::new(), &dynamic, &Object::new())
+        )
+        .categories
+        .is_none()
     );
 }
 
@@ -93,6 +108,13 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
             .as_deref(),
         Some("configured")
     );
+}
+
+#[test]
+fn prepare_payload_treats_an_empty_dynamic_policy_as_unset() {
+    let mut configured = settings();
+    configured.policy_id = "configured".to_owned();
+    let empty = Object::new();
     let dynamic_empty = GraySwanDynamicParams {
         categories: None,
         policy_id: Some(String::new()),
@@ -108,10 +130,18 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
         .as_deref(),
         Some("configured")
     );
+}
+
+#[test]
+fn prepare_payload_omits_a_policy_when_no_side_sets_one() {
+    let dynamic = GraySwanDynamicParams::default();
     assert!(
-        prepare_payload(&settings(), request_with(Vec::new(), &dynamic, &empty))
-            .policy_id
-            .is_none()
+        prepare_payload(
+            &settings(),
+            request_with(Vec::new(), &dynamic, &Object::new())
+        )
+        .policy_id
+        .is_none()
     );
 }
 
@@ -172,9 +202,9 @@ fn prepare_payload_keeps_non_empty_tools_and_drops_an_empty_list() {
         prepare_payload(&settings(), request).tools,
         Some(vec![text("tool")])
     );
-    let mut request = request_with(Vec::new(), &dynamic, &empty);
-    request.tools = Some(Vec::new());
-    assert!(prepare_payload(&settings(), request).tools.is_none());
+    let mut dropped = request_with(Vec::new(), &dynamic, &empty);
+    dropped.tools = Some(Vec::new());
+    assert!(prepare_payload(&settings(), dropped).tools.is_none());
 }
 
 #[test]

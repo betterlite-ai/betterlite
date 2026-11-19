@@ -83,10 +83,7 @@ async fn call_grayswan_api_logs_the_monitor_response_at_debug() {
         capture_server(answer(AxumStatus::OK, r#"{"violation": 0.2}"#)).await;
     let settings = configured(&base, OnFlaggedAction::Monitor, true);
     let captured = super::Captured::default();
-    let guard = tracing::subscriber::set_default(super::subscriber(
-        captured.clone(),
-        tracing::Level::DEBUG,
-    ));
+    let guard = set_default(super::subscriber(captured.clone(), tracing::Level::DEBUG));
     call_grayswan_api(&reqwest::Client::default(), &settings, &payload())
         .await
         .expect("response");
@@ -177,7 +174,7 @@ async fn call_grayswan_api_times_out() {
 
 #[tokio::test]
 async fn call_grayswan_api_reports_a_connection_failure() {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let listener = StdTcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let settings = configured(&format!("http://{addr}"), OnFlaggedAction::Monitor, true);

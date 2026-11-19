@@ -6,6 +6,7 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use super::super::error::{GRAYSWAN_BLOCK_ERROR_MSG, GraySwanFailure, GraySwanGuardrailAPIError};
 
 // LiteLLM's _as_plain_dict input: a plain wire row, or a typed model row that needs dumping
+#[derive(Clone, Copy)]
 pub enum MessageRow<'row> {
     Plain(&'row GuardrailValue),
     Typed(&'row GuardrailMessage),
@@ -28,6 +29,7 @@ pub fn as_plain_dict(row: MessageRow<'_>) -> GuardrailValue {
 }
 
 // The two exception kinds LiteLLM's _is_grayswan_exception looks at
+#[derive(Clone, Copy)]
 pub enum GuardrailException<'error> {
     Api(&'error GraySwanGuardrailAPIError),
     Failure(&'error GuardrailFailure),

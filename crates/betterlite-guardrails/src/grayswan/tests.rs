@@ -3,12 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
+use std::net::TcpListener as StdTcpListener;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction, ReasoningMode};
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -16,6 +17,7 @@ use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 use tracing::subscriber::with_default;
 
 use super::GraySwanGuardrail;
@@ -90,7 +92,13 @@ fn plain_message(role: &str, content: &str) -> GuardrailValue {
 fn field<'row>(row: &'row GuardrailValue, key: &str) -> Option<&'row GuardrailValue> {
     match row {
         GuardrailValue::Object(fields) => fields.get(key),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => None,
     }
 }
 
@@ -242,13 +250,10 @@ fn grayswan_block_error_status_code_is_bad_request() {
 }
 
 fn connection_refused() -> reqwest::Error {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let listener = StdTcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
         .block_on(
             reqwest::Client::default()

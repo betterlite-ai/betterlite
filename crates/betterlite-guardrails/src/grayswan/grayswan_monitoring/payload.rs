@@ -33,7 +33,7 @@ pub fn prepare_payload(
     } = request;
     GraySwanPayload {
         messages,
-        tools: tools.filter(|tools| !tools.is_empty()),
+        tools: tools.filter(|rows| !rows.is_empty()),
         categories: dynamic
             .categories
             .clone()

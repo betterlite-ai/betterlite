@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::time::SystemTime;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -10,7 +11,7 @@ use reqwest::Client;
 use crate::generic_guardrail_contracts::{GuardrailExtraValue, GuardrailInputType};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_selection::error::GuardrailSelectionError;
-use crate::guardrail_selection::gate::GuardrailSelection;
+use crate::guardrail_selection::gate::GuardrailSelection as _;
 use crate::third_party_init_a::grayswan::GraySwanArgs;
 
 use super::GraySwanGuardrail;
@@ -111,13 +112,13 @@ impl GraySwanGuardrail {
             });
         };
         let started_at = SystemTime::now();
-        let result = match call_grayswan_api(&self.client, &self.settings, &payload).await {
+        let outcome = match call_grayswan_api(&self.client, &self.settings, &payload).await {
             Ok(response) => {
                 self.process_response(&response, input_type, &input.texts, &input.tool_calls)
             }
             Err(error) => Err(error),
         };
-        match result {
+        match outcome {
             Ok(result) => Ok(result),
             Err(error) => {
                 self.recover_failure(error, request, started_at)?;
@@ -144,12 +145,12 @@ impl GraySwanGuardrail {
             return None;
         }
         let context = if is_response {
-            std::mem::take(&mut input.request_history)
+            mem::take(&mut input.request_history)
         } else {
             Vec::new()
         };
         let tools = if is_response {
-            std::mem::take(&mut input.tools)
+            mem::take(&mut input.tools)
         } else {
             Vec::new()
         };

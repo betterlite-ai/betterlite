@@ -74,11 +74,11 @@ fn grayswan_constructor_prefers_arguments_over_the_environment() {
     let mut guardrail_args = args();
     guardrail_args.api_key = Some(SecretString::from("arg-key"));
     guardrail_args.api_base = Some("https://arg.example/".to_owned());
-    guardrail_args.violation_threshold = Some(0.9);
+    guardrail_args.violation_threshold = Some(0.9_f64);
     guardrail_args.reasoning_mode = Some("off".to_owned());
     guardrail_args.on_flagged_action = Some("BLOCK".to_owned());
     guardrail_args.fail_open = Some(false);
-    guardrail_args.guardrail_timeout = Some(2.5);
+    guardrail_args.guardrail_timeout = Some(2.5_f64);
     guardrail_args.categories = Some(BTreeMap::from([("hate".to_owned(), "block".to_owned())]));
     guardrail_args.policy_id = Some("policy".to_owned());
     guardrail_args.streaming_end_of_stream_only = true;
@@ -211,7 +211,7 @@ fn grayswan_constructor_warns_for_an_unsupported_flagged_action() {
 #[test]
 fn grayswan_constructor_rejects_a_negative_timeout() {
     let mut guardrail_args = args();
-    guardrail_args.guardrail_timeout = Some(-1.0);
+    guardrail_args.guardrail_timeout = Some(-1.0_f64);
     let error = GraySwanGuardrail::new(
         guardrail_args,
         base(),
@@ -353,11 +353,9 @@ fn grayswan_should_run_rejects_a_non_list_requested_guardrails() {
         "guardrails".to_owned(),
         GuardrailValue::Text("safety".to_owned()),
     )]);
-    assert!(
-        instance
-            .should_run_guardrail(&data, GuardrailEventHooks::PreCall, &BTreeSet::new())
-            .is_err()
-    );
+    instance
+        .should_run_guardrail(&data, GuardrailEventHooks::PreCall, &BTreeSet::new())
+        .unwrap_err();
 }
 
 #[test]
@@ -398,9 +396,9 @@ fn grayswan_config_model_defaults_match_litellm() {
     let model = parse_model(r#"{"optional_params": {}}"#);
     let params = optional_params(&model);
     assert_eq!(params.on_flagged_action.as_deref(), Some("passthrough"));
-    assert_eq!(params.violation_threshold, Some(0.5));
+    assert_eq!(params.violation_threshold, Some(0.5_f64));
     assert_eq!(params.fail_open, Some(true));
-    assert_eq!(params.guardrail_timeout, Some(30.0));
+    assert_eq!(params.guardrail_timeout, Some(30.0_f64));
     assert_eq!(params.reasoning_mode, None);
     assert_eq!(params.policy_id, None);
     assert_eq!(params.categories, None);
@@ -426,11 +424,11 @@ fn grayswan_config_model_keeps_explicit_values() {
     );
     assert_eq!(model.api_base.as_deref(), Some("https://model.example"));
     assert_eq!(params.on_flagged_action.as_deref(), Some("block"));
-    assert_eq!(params.violation_threshold, Some(0.8));
+    assert_eq!(params.violation_threshold, Some(0.8_f64));
     assert_eq!(params.reasoning_mode.as_deref(), Some("hybrid"));
     assert_eq!(params.policy_id.as_deref(), Some("policy"));
     assert_eq!(params.fail_open, Some(false));
-    assert_eq!(params.guardrail_timeout, Some(5.0));
+    assert_eq!(params.guardrail_timeout, Some(5.0_f64));
 }
 
 #[test]

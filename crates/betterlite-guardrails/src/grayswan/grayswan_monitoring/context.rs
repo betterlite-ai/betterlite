@@ -31,6 +31,7 @@ impl<T: BaseTranslation> StructuredMessageSource for T {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct PostCallContextRequest<'call> {
     pub request_data: &'call Object,
     pub logging_call_type: Option<&'call str>,

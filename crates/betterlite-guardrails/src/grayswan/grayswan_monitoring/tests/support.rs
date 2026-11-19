@@ -71,7 +71,7 @@ fn descend(mut value: &GuardrailValue, mut steps: usize) -> &GuardrailValue {
             panic!("not an object");
         };
         value = fields.get("child").expect("child");
-        steps -= 1;
+        steps = steps.saturating_sub(1);
     }
     value
 }
@@ -133,10 +133,10 @@ impl BaseTranslation for FakeTranslation {
     }
 }
 
-fn registry_for<'source>(
-    translation: &'source FakeTranslation,
+fn registry_for(
+    translation: &FakeTranslation,
     call_type: CallType,
-) -> TranslationRegistry<&'source dyn StructuredMessageSource> {
+) -> TranslationRegistry<&dyn StructuredMessageSource> {
     let source: &dyn StructuredMessageSource = translation;
     TranslationRegistry {
         entries: vec![TranslationEntry {
@@ -218,7 +218,7 @@ async fn answering(
     body: Bytes,
 ) -> (AxumStatus, String) {
     if let Some(delay) = reply.delay {
-        tokio::time::sleep(delay).await;
+        sleep(delay).await;
     }
     capture.record(&method, &uri, &headers, &body);
     (reply.status, reply.body.clone())
@@ -268,7 +268,7 @@ fn payload() -> GraySwanPayload {
 }
 
 #[derive(Clone)]
-struct StreamPlan(Arc<Vec<Result<Bytes, String>>>);
+struct StreamPlan(Arc<[Result<Bytes, String>]>);
 
 async fn streaming(State(StreamPlan(items)): State<StreamPlan>) -> (AxumStatus, Body) {
     let chunks: Vec<Result<Bytes, io::Error>> = items
@@ -278,10 +278,7 @@ async fn streaming(State(StreamPlan(items)): State<StreamPlan>) -> (AxumStatus, 
             Err(error) => Err(io::Error::other(error.clone())),
         })
         .collect();
-    (
-        AxumStatus::OK,
-        Body::from_stream(futures_util::stream::iter(chunks)),
-    )
+    (AxumStatus::OK, Body::from_stream(iter(chunks)))
 }
 
 async fn call_streaming(
@@ -289,7 +286,7 @@ async fn call_streaming(
 ) -> Result<GraySwanResponse, GraySwanGuardrailAPIError> {
     let router = Router::new()
         .route("/cygnal/monitor", post(streaming))
-        .with_state(StreamPlan(Arc::new(chunks)));
+        .with_state(StreamPlan(Arc::from(chunks)));
     let (base, _server) = serve(router).await;
     let settings = configured(&base, OnFlaggedAction::Monitor, true);
     call_grayswan_api(&reqwest::Client::default(), &settings, &payload()).await

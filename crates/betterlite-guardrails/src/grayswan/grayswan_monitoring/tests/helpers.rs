@@ -28,7 +28,7 @@ fn as_plain_dict_lets_the_typed_role_win_over_an_extra_role() {
 #[test]
 fn resolve_threshold_prefers_the_argument() {
     let env = lookup(&[("GRAYSWAN_VIOLATION_THRESHOLD", "0.7")]);
-    assert!((resolve_threshold(Some(0.9), &env) - 0.9).abs() < f64::EPSILON);
+    assert!((resolve_threshold(Some(0.9_f64), &env) - 0.9).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn resolve_threshold_defaults_when_the_environment_value_is_missing_or_invalid()
 #[test]
 fn resolve_threshold_keeps_an_explicit_zero() {
     let env = lookup(&[("GRAYSWAN_VIOLATION_THRESHOLD", "0.7")]);
-    assert!(resolve_threshold(Some(0.0), &env).abs() < f64::EPSILON);
+    assert!(resolve_threshold(Some(0.0_f64), &env).abs() < f64::EPSILON);
     let zero = lookup(&[("GRAYSWAN_VIOLATION_THRESHOLD", "0.0")]);
     assert!(resolve_threshold(None, &zero).abs() < f64::EPSILON);
 }

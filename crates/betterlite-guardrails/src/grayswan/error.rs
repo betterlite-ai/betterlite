@@ -76,7 +76,7 @@ impl GraySwanGuardrailAPIError {
     }
 
     #[must_use]
-    pub fn http_status(&self) -> StatusCode {
+    pub const fn http_status(&self) -> StatusCode {
         let Some(failure) = &self.cause else {
             return StatusCode::INTERNAL_SERVER_ERROR;
         };

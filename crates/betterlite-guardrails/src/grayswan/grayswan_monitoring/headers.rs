@@ -75,7 +75,14 @@ fn nested_object<'data>(
 fn non_empty_object(value: &GuardrailValue) -> Option<&BTreeMap<String, GuardrailValue>> {
     match value {
         GuardrailValue::Object(fields) if !fields.is_empty() => Some(fields),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 

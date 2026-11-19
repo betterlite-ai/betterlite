@@ -31,11 +31,11 @@ pub async fn call_grayswan_api(
         ));
     }
     let body = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
-    let response: GraySwanResponse = serde_json::from_slice(&body).map_err(|source| {
+    let parsed: GraySwanResponse = serde_json::from_slice(&body).map_err(|source| {
         GraySwanGuardrailAPIError::from_failure(GraySwanFailure::ResponseJson { source })
     })?;
-    tracing::debug!(response = ?response, "Gray Swan Guardrail: monitor response");
-    Ok(response)
+    tracing::debug!(response = ?parsed, "Gray Swan Guardrail: monitor response");
+    Ok(parsed)
 }
 
 fn request_failure(source: reqwest::Error) -> GraySwanGuardrailAPIError {

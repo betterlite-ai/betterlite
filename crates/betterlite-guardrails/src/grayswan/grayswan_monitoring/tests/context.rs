@@ -160,18 +160,18 @@ fn post_call_context_returns_nothing_without_structured_messages() {
     );
     assert!(messages.is_empty());
     assert!(tools.is_none());
-    let translation = FakeTranslation {
+    let empty_translation = FakeTranslation {
         messages: Some(Vec::new()),
     };
-    let registry = registry_for(&translation, CallType::Completion);
-    let (messages, _tools) = run_context(
+    let empty_registry = registry_for(&empty_translation, CallType::Completion);
+    let (empty_messages, _tools) = run_context(
         &routed_data("/v1/chat/completions"),
         None,
         ScopeFlags::default(),
-        &registry,
+        &empty_registry,
         &routes,
     );
-    assert!(messages.is_empty());
+    assert!(empty_messages.is_empty());
 }
 
 #[test]
@@ -291,6 +291,7 @@ fn post_call_context_omits_empty_or_non_array_tools() {
     assert!(tools.is_none());
     let mut scalar = routed_data("/v1/chat/completions");
     scalar.insert("tools".to_owned(), text("tool"));
-    let (_messages, tools) = run_context(&scalar, None, ScopeFlags::default(), &registry, &routes);
-    assert!(tools.is_none());
+    let (_scalar_messages, scalar_tools) =
+        run_context(&scalar, None, ScopeFlags::default(), &registry, &routes);
+    assert!(scalar_tools.is_none());
 }
