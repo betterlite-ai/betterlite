@@ -1,0 +1,95 @@
+kind: helper
+name: messages-chat-options-metadata-user-and-session
+call:
+  messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: alice
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: [prompt_cache_key]
+calls:
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: '{"session_id":"session_a"}'
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: [prompt_cache_key]
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: '{"session_id":"session_a"}'
+    custom_llm_provider: litellm_proxy
+    auto_summary: false
+    declared: [prompt_cache_key]
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: '{"session_id":"session_a"}'
+    custom_llm_provider: null
+    auto_summary: false
+    declared: [prompt_cache_key]
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: '{"session_id":"session_a"}'
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: null
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: [prompt_cache_key]
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        user_id: alice
+      litellm_metadata:
+        x: 1
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: [prompt_cache_key]
+- messages_chat_options:
+    request:
+      model: claude-3-5-sonnet
+      messages:
+      - role: user
+        content: hi
+      litellm_metadata: null
+    custom_llm_provider: anthropic
+    auto_summary: false
+    declared: null
+env: {}
+compare: {ignore: []}

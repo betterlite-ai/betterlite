@@ -1,0 +1,15 @@
+kind: helper
+name: log-predicates-status-span-seed
+call:
+  log_predicates:
+    function: status
+    status_filter: success
+calls:
+  - log_predicates:
+      function: status
+      status_filter: ""
+  - log_predicates:
+      function: span
+      span_type: llm
+env: {}
+compare: {ignore: []}
