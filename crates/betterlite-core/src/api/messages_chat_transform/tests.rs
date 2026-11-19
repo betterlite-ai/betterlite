@@ -402,6 +402,25 @@ async fn output_format_and_output_config_format_reach_the_composed_request() {
         configured_request.get("output_config").is_none(),
         "the format is translated, so the config does not copy through"
     );
+
+    let mut both = object(
+        r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "output_format": {"type": "json_schema", "schema": {"type": "object", "title": "legacy"}},
+            "output_config": {"format": {"type": "json_schema", "schema": {"type": "object", "title": "config"}}}
+        }"#,
+    );
+    let (both_request, _both_mapping) = wrap(&mut both, &mut Capabilities::new(&[]))
+        .await
+        .expect("the mixed request composes");
+    assert_eq!(
+        both_request.get("response_format"),
+        Some(&json(
+            r#"{"type": "json_schema", "json_schema": {"name": "structured_output", "schema": {"type": "object", "title": "legacy"}, "strict": true}}"#
+        )),
+        "the legacy output_format wins over output_config.format"
+    );
 }
 
 #[tokio::test]

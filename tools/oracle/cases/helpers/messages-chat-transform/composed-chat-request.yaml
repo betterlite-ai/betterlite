@@ -91,5 +91,24 @@ calls:
           schema:
             type: object
     custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      output_format:
+        type: json_schema
+        schema:
+          type: object
+          title: legacy
+      output_config:
+        format:
+          type: json_schema
+          schema:
+            type: object
+            title: config
+    custom_llm_provider: null
 env: {}
 compare: {ignore: []}
