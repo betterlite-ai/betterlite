@@ -1,0 +1,36 @@
+task: B3068
+deviations:
+  - what: The Mavvrik settings are read through betterlite-config's EnvironmentLookup instead of os.getenv in __init__, and an empty environment value counts as unset, so MAVVRIK_FOCUS_FREQUENCY="" falls back to daily and an empty credential becomes None.
+    why: All external configuration in betterlite comes through the config crate; docs/compatibility.md treats an empty env string as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L86-L108
+  - what: MavvrikFocusLogger is a standalone logger over an injected MavvrikEngineFactory and a MavvrikExporter port (metrics_marker, usage_rows, payload, filename, deliver) instead of a FocusLogger subclass that reaches into engine._destination, engine._database, engine._transformer and engine._serializer.
+    why: B3066 leaves FocusLogger's engine field private and its FocusExporter cannot express the row-cap warning or the empty delivery, and betterlite injects the engine instead of constructing it inside _ensure_engine.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L110-L144
+  - what: The `isinstance(destination, FocusMavvrikDestination)` check and its fallback to super()._run_scheduled_export() are not ported; the scheduled run always uses the Mavvrik engine's marker.
+    why: The injected factory only builds the Mavvrik engine, so the other branch has no reachable input in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L160-L171
+  - what: The row cap is an i64: a MAVVRIK_FOCUS_MAX_ROWS above i64::MAX is a load error, where Python's unbounded int would accept it.
+    why: Every numeric config value in betterlite reads through one shared parser into a Rust integer type; a cap that large never meets a real row count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L107-L108
+  - what: A metricsMarker that arrives as a JSON float (1749340800.0) is refused by the register response instead of being parsed to UTC midnight; MetricsMarker holds Epoch(i64) or Text only.
+    why: The marker type is B3063's untagged enum, and a Python float marker read into an i64 field does not fit the declared JSON shape betterlite accepts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L38-L70
+  - what: _build_scheduler_trigger's hourly, interval and unsupported branches are not ported; daily_trigger always builds the daily cron trigger from the cron offset.
+    why: The constructor rejects every frequency but daily, so the other branches can never be reached by a Mavvrik logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L158-L174
+  - what: The pod lock, the clock and the registered loggers arrive as constructor and function parameters instead of being read from litellm.proxy.proxy_server.proxy_logging_obj and litellm.logging_callback_manager; the scheduler takes the job id, the trigger and replace_existing as typed arguments instead of + kwargs.
+    why: betterlite has no module-level state, and the composition root supplies the pod lock manager and the registered callbacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L225-L242
+  - what: The scheduled run releases the pod lock from a task on a TaskTracker the server drains at shutdown, and awaits it before returning; a cancelled or dropped export still releases the lease.
+    why: Rust drops a future at its await point without running the code after it, so LiteLLM's try/finally release would never run on cancellation; the tracked task keeps the release alive and shutdown waits for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L231-L242
+  - what: Each registry entry carries a MavvrikLoggerType tag and the job picks the first entry tagged Mavvrik, instead of filtering the callback list with type(cb) is MavvrikFocusLogger, and _init_custom_logger_compatible_class is an injected MavvrikLazyInit port whose isinstance(instance, MavvrikFocusLogger) check is the Option's type.
+    why: Rust has no subclass identity; the tag records the same distinction, and the lazy builder returns the Mavvrik logger or nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L244-L281
+  - what: Failures are typed thiserror enums (ConfigError::UnsupportedFrequency, ConfigError::Environment, MavvrikError::Export, MavvrikError::TimeWindowOutOfRange, InitError::Scheduler) instead of ValueError, with LiteLLM's message wording.
+    why: betterlite reports failures as typed errors callers can match; docs/compatibility.md leaves error message text to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L88-L96
+  - what: All methods are async on tokio instead of asyncio.
+    why: The gateway is built on tokio and the scheduler calls an async job.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L150
+kept_bugs: []
