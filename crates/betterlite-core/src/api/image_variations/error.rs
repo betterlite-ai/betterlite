@@ -51,8 +51,7 @@ impl VariationException {
                 (Some(400), source.to_string(), source.to_string())
             }
             ImageVariationError::OpenAi(source) => {
-                // the handler raises its OpenAIError with the SDK exception's text, which starts
-                // "Error code: {status} - " and is what exception_type's phrase checks read
+                // exception_type reads the OpenAIError text "Error code: {status} - {body}"
                 let text = match source.source.as_ref() {
                     ImageVariationSource::Status { .. } => {
                         format!("Error code: {} - {}", source.status_code, source.message)
