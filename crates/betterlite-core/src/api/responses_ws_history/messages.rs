@@ -33,10 +33,12 @@ pub fn input_to_messages(input: &Json) -> Vec<IndexMap<String, Json>> {
             .iter()
             .filter_map(|item| match item {
                 Json::Object(fields) => Some(fields.clone()),
-                _ => None,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    None
+                }
             })
             .collect(),
-        _ => Vec::new(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Vec::new(),
     }
 }
 
@@ -55,12 +57,7 @@ fn join_output_text(parts: &[Json]) -> Result<String, ResponsesWsHistoryError> {
         match fields.get("text") {
             None => {}
             Some(Json::Text(piece)) => text.push_str(piece),
-            Some(_) => {
-                return Err(ResponsesWsHistoryError::Shape {
-                    field: "text",
-                    expected: "a string",
-                });
-            }
+            Some(_) => return Err(ResponsesWsHistoryError::shape("text", "a string")),
         }
     }
     Ok(text)
@@ -76,12 +73,7 @@ fn message_item(
     let parts = match fields.get("content") {
         None | Some(Json::Null) => return Ok(None),
         Some(Json::List(parts)) => parts,
-        Some(_) => {
-            return Err(ResponsesWsHistoryError::Shape {
-                field: "content",
-                expected: "a list",
-            });
-        }
+        Some(_) => return Err(ResponsesWsHistoryError::shape("content", "a list")),
     };
     let text = join_output_text(parts)?;
     if text.is_empty() {
@@ -99,12 +91,7 @@ pub fn extract_output_messages(
     let output = match response.get("output") {
         None | Some(Json::Null) => return Ok(Vec::new()),
         Some(Json::List(items)) => items,
-        Some(_) => {
-            return Err(ResponsesWsHistoryError::Shape {
-                field: "output",
-                expected: "a list",
-            });
-        }
+        Some(_) => return Err(ResponsesWsHistoryError::shape("output", "a list")),
     };
     let mut messages = Vec::new();
     for item in output {

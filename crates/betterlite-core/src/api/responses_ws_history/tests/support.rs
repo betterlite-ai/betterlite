@@ -84,8 +84,8 @@ pub(super) fn recording_sink() -> Handles {
 }
 
 pub(super) fn sent(frames: &Frames) -> Vec<String> {
-    let frames = frames.lock().unwrap_or_else(PoisonError::into_inner);
-    frames.clone()
+    let recorded = frames.lock().unwrap_or_else(PoisonError::into_inner);
+    recorded.clone()
 }
 
 pub(super) fn json(text: &str) -> Json {
@@ -96,24 +96,10 @@ pub(super) fn json(text: &str) -> Json {
     value
 }
 
-#[derive(Default)]
-pub(super) struct RecordingResolver {
-    calls: Mutex<Vec<String>>,
-}
+pub(super) struct ScriptedResolver;
 
-impl RecordingResolver {
-    pub(super) fn calls(&self) -> Vec<String> {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.clone()
-    }
-}
-
-impl ProviderResolution for RecordingResolver {
+impl ProviderResolution for ScriptedResolver {
     fn resolve(&self, model: &str) -> Result<String, ProviderResolutionFailure> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
         match model.split_once('/').map(|(provider, _rest)| provider) {
             Some("openai") => Ok("openai".to_owned()),
             Some("anthropic") => Ok("anthropic".to_owned()),
@@ -129,8 +115,8 @@ pub(super) fn fixed_clock(seconds: i64) -> Arc<dyn Fn() -> i64 + Send + Sync> {
 }
 
 pub(super) fn fixed_ids(id: &str) -> Arc<dyn Fn() -> String + Send + Sync> {
-    let id = id.to_owned();
-    Arc::new(move || id.clone())
+    let fixed = id.to_owned();
+    Arc::new(move || fixed.clone())
 }
 
 pub(super) fn serializer() -> Arc<ChunkWriter> {
@@ -139,7 +125,7 @@ pub(super) fn serializer() -> Arc<ChunkWriter> {
 
 pub(super) fn handler(
     connection: Connection<RecordingSink>,
-    resolver: Arc<RecordingResolver>,
+    resolver: Arc<ScriptedResolver>,
     serializer: Arc<ChunkWriter>,
 ) -> ManagedResponsesWebSocket<RecordingSink> {
     ManagedResponsesWebSocket::new(
@@ -156,7 +142,7 @@ pub(super) fn handler(
 pub(super) fn plain(
     connection: Connection<RecordingSink>,
 ) -> ManagedResponsesWebSocket<RecordingSink> {
-    let resolver = Arc::new(RecordingResolver::default());
+    let resolver = Arc::new(ScriptedResolver);
     handler(connection, resolver, serializer())
 }
 

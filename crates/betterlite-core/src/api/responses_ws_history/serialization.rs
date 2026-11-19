@@ -40,22 +40,28 @@ pub fn serialize_chunk(chunk: Chunk<'_>) -> Option<String> {
         },
         Chunk::Json(value) => match value {
             Json::Object(_) => Some(dumps(value)),
-            other => Some(dumps(&Json::Text(string_value(other)))),
+            other @ (Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)) => Some(dumps(&Json::Text(string_value(other)))),
         },
     }
 }
 
-impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    pub async fn send_error(&self, message: &str, error_type: Option<&str>) {
-        let mut error = IndexMap::new();
-        let class = Json::Text(error_type.unwrap_or(SERVER_ERROR).to_owned());
-        error.insert("type".to_owned(), class);
-        error.insert("message".to_owned(), Json::Text(message.to_owned()));
-        let mut frame = IndexMap::new();
-        frame.insert("type".to_owned(), Json::Text(ERROR_EVENT.to_owned()));
-        frame.insert("error".to_owned(), Json::Object(error));
-        let text = dumps(&Json::Object(frame));
-        // LiteLLM drops a failed error frame; recovery for real sends belongs to B945
-        let _failure = self.websocket.send_text(&text).await;
-    }
+pub async fn send_error<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    message: &str,
+    error_type: Option<&str>,
+) {
+    let mut error = IndexMap::new();
+    let class = Json::Text(error_type.unwrap_or(SERVER_ERROR).to_owned());
+    error.insert("type".to_owned(), class);
+    error.insert("message".to_owned(), Json::Text(message.to_owned()));
+    let mut frame = IndexMap::new();
+    frame.insert("type".to_owned(), Json::Text(ERROR_EVENT.to_owned()));
+    frame.insert("error".to_owned(), Json::Object(error));
+    let text = dumps(&Json::Object(frame));
+    // LiteLLM drops a failed error frame; recovery for real sends belongs to B945
+    let _failure = handler.websocket.send_text(&text).await;
 }

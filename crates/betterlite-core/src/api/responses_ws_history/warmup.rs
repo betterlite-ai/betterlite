@@ -36,67 +36,72 @@ pub fn warmup_source_params(message: &IndexMap<String, Json>) -> IndexMap<String
 // _is_warmup_response_id: only a synthetic id this connection invented skips the history lookup
 #[must_use]
 pub fn is_warmup_response_id(response_id: Option<&str>) -> bool {
-    let Some(response_id) = response_id.filter(|value| !value.is_empty()) else {
+    let Some(identifier) = response_id.filter(|value| !value.is_empty()) else {
         return false;
     };
-    decode_previous_response_id(response_id).starts_with(WARMUP_RESPONSE_ID_PREFIX)
+    decode_previous_response_id(identifier).starts_with(WARMUP_RESPONSE_ID_PREFIX)
 }
 
-impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    #[must_use]
-    pub fn build_warmup_response(
-        &self,
-        message: &IndexMap<String, Json>,
-    ) -> IndexMap<String, Json> {
-        let source = warmup_source_params(message);
-        let wire_model = match source.get("model").filter(|value| has_content(value)) {
-            Some(model) => model.clone(),
-            None => match self.model_group.as_ref().filter(|group| !group.is_empty()) {
-                Some(group) => Json::Text(group.clone()),
-                None => Json::Text(self.model.clone()),
-            },
-        };
-        let mut usage = IndexMap::new();
-        usage.insert("input_tokens".to_owned(), Json::Number(Number::from(0_u8)));
-        usage.insert("output_tokens".to_owned(), Json::Number(Number::from(0_u8)));
-        usage.insert("total_tokens".to_owned(), Json::Number(Number::from(0_u8)));
-        let mut response = IndexMap::new();
-        response.insert(
-            "id".to_owned(),
-            Json::Text(format!("{WARMUP_RESPONSE_ID_PREFIX}{}", (self.ids)())),
-        );
-        response.insert("object".to_owned(), Json::Text("response".to_owned()));
-        response.insert(
-            "created_at".to_owned(),
-            Json::Number(Number::from((self.clock)())),
-        );
-        response.insert("status".to_owned(), Json::Text("completed".to_owned()));
-        response.insert("model".to_owned(), wire_model);
-        response.insert("output".to_owned(), Json::List(Vec::new()));
-        response.insert("usage".to_owned(), Json::Object(usage));
-        response
-    }
+#[must_use]
+pub fn build_warmup_response<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    message: &IndexMap<String, Json>,
+) -> IndexMap<String, Json> {
+    let source = warmup_source_params(message);
+    let wire_model = source
+        .get("model")
+        .filter(|value| has_content(value))
+        .cloned()
+        .unwrap_or_else(|| warmup_model(handler));
+    let mut usage = IndexMap::new();
+    usage.insert("input_tokens".to_owned(), Json::Number(Number::from(0_u8)));
+    usage.insert("output_tokens".to_owned(), Json::Number(Number::from(0_u8)));
+    usage.insert("total_tokens".to_owned(), Json::Number(Number::from(0_u8)));
+    let mut response = IndexMap::new();
+    response.insert(
+        "id".to_owned(),
+        Json::Text(format!("{WARMUP_RESPONSE_ID_PREFIX}{}", (handler.ids)())),
+    );
+    response.insert("object".to_owned(), Json::Text("response".to_owned()));
+    response.insert(
+        "created_at".to_owned(),
+        Json::Number(Number::from((handler.clock)())),
+    );
+    response.insert("status".to_owned(), Json::Text("completed".to_owned()));
+    response.insert("model".to_owned(), wire_model);
+    response.insert("output".to_owned(), Json::List(Vec::new()));
+    response.insert("usage".to_owned(), Json::Object(usage));
+    response
+}
 
-    pub async fn send_warmup_ack(
-        &self,
-        message: &IndexMap<String, Json>,
-    ) -> Result<(), ResponsesWsHistoryError> {
-        let response = self.build_warmup_response(message);
-        for (event_type, status) in [
-            ("response.created", "in_progress"),
-            ("response.completed", "completed"),
-        ] {
-            let mut seen = response.clone();
-            seen.insert("status".to_owned(), Json::Text(status.to_owned()));
-            let data = Json::Object(IndexMap::from([
-                ("type".to_owned(), Json::Text(event_type.to_owned())),
-                ("response".to_owned(), Json::Object(seen)),
-            ]));
-            let Some(serialized) = (self.serializer)(Chunk::Json(&data)) else {
-                continue;
-            };
-            self.websocket.send_text(&serialized).await?;
-        }
-        Ok(())
+fn warmup_model<Sink: FrameSink>(handler: &ManagedResponsesWebSocket<Sink>) -> Json {
+    let groups = handler.model_group.as_ref();
+    let kept = groups.filter(|group| !group.is_empty());
+    kept.map_or_else(
+        || Json::Text(handler.model.clone()),
+        |group| Json::Text(group.clone()),
+    )
+}
+
+pub async fn send_warmup_ack<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    message: &IndexMap<String, Json>,
+) -> Result<(), ResponsesWsHistoryError> {
+    let response = build_warmup_response(handler, message);
+    for (event_type, status) in [
+        ("response.created", "in_progress"),
+        ("response.completed", "completed"),
+    ] {
+        let mut seen = response.clone();
+        seen.insert("status".to_owned(), Json::Text(status.to_owned()));
+        let data = Json::Object(IndexMap::from([
+            ("type".to_owned(), Json::Text(event_type.to_owned())),
+            ("response".to_owned(), Json::Object(seen)),
+        ]));
+        let Some(serialized) = (handler.serializer)(Chunk::Json(&data)) else {
+            continue;
+        };
+        handler.websocket.send_text(&serialized).await?;
     }
+    Ok(())
 }

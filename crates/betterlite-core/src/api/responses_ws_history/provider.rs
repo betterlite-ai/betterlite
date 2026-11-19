@@ -13,25 +13,28 @@ pub trait ProviderResolution: Send + Sync {
     fn resolve(&self, model: &str) -> Result<String, ProviderResolutionFailure>;
 }
 
-impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    #[must_use]
-    pub fn resolve_provider(&self, model: Option<&str>) -> Option<String> {
-        self.resolver
-            .resolve(model.filter(|value| !value.is_empty())?)
-            .ok()
-    }
+#[must_use]
+pub fn resolve_provider<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    model: Option<&str>,
+) -> Option<String> {
+    let candidate = model.filter(|value| !value.is_empty())?;
+    handler.resolver.resolve(candidate).ok()
+}
 
-    #[must_use]
-    pub fn same_provider(&self, model: Option<&str>) -> bool {
-        match model {
-            None => true,
-            Some(model) if model == self.model.as_str() => true,
-            Some(model) => {
-                let Some(provider) = self.resolve_provider(Some(model)) else {
-                    return false;
-                };
-                self.connection_provider.as_deref() == Some(provider.as_str())
-            }
-        }
+#[must_use]
+pub fn same_provider<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    model: Option<&str>,
+) -> bool {
+    let Some(candidate) = model else {
+        return true;
+    };
+    if candidate == handler.model.as_str() {
+        return true;
     }
+    let Some(provider) = resolve_provider(handler, Some(candidate)) else {
+        return false;
+    };
+    handler.connection_provider.as_deref() == Some(provider.as_str())
 }

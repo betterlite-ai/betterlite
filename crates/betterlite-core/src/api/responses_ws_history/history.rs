@@ -27,51 +27,51 @@ pub fn apply_history(
     current_messages: &[IndexMap<String, Json>],
     prior_history: &[IndexMap<String, Json>],
 ) {
-    let Some(previous_response_id) = previous_response_id.filter(|value| !value.is_empty()) else {
+    let Some(raw_id) = previous_response_id.filter(|value| !value.is_empty()) else {
         return;
     };
-    if is_warmup_response_id(Some(previous_response_id)) {
+    if is_warmup_response_id(Some(raw_id)) {
         tracing::debug!(
-            "ManagedResponsesWS: ignoring synthetic warmup previous_response_id={previous_response_id}"
+            "ManagedResponsesWS: ignoring synthetic warmup previous_response_id={raw_id}"
         );
         return;
     }
     if prior_history.is_empty() {
         tracing::debug!(
-            "ManagedResponsesWS: no in-memory history for previous_response_id={previous_response_id}; falling back to DB-based session reconstruction"
+            "ManagedResponsesWS: no in-memory history for previous_response_id={raw_id}; falling back to DB-based session reconstruction"
         );
         call_kwargs.insert(
             "previous_response_id".to_owned(),
-            Json::Text(previous_response_id.to_owned()),
+            Json::Text(raw_id.to_owned()),
         );
         return;
     }
     let count = prior_history.len();
     tracing::debug!(
-        "ManagedResponsesWS: prepended {count} history messages for previous_response_id={previous_response_id}"
+        "ManagedResponsesWS: prepended {count} history messages for previous_response_id={raw_id}"
     );
-    let mut input = Vec::with_capacity(prior_history.len().saturating_add(current_messages.len()));
-    input.extend(
-        prior_history
-            .iter()
-            .chain(current_messages)
-            .map(|message| Json::Object(message.clone())),
-    );
+    let combined = prior_history.iter().chain(current_messages);
+    let input = combined
+        .map(|message| Json::Object(message.clone()))
+        .collect();
     call_kwargs.insert("input".to_owned(), Json::List(input));
 }
 
-impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
-    pub fn store_history(&mut self, response_id: &str, messages: Vec<IndexMap<String, Json>>) {
-        self.session_history
-            .insert(response_id.to_owned(), messages);
-    }
+pub fn store_history<Sink: FrameSink>(
+    handler: &mut ManagedResponsesWebSocket<Sink>,
+    response_id: &str,
+    messages: Vec<IndexMap<String, Json>>,
+) {
+    let history = &mut handler.session_history;
+    history.insert(response_id.to_owned(), messages);
+}
 
-    #[must_use]
-    pub fn get_history_messages(&self, previous_response_id: &str) -> Vec<IndexMap<String, Json>> {
-        let raw_id = decode_previous_response_id(previous_response_id);
-        self.session_history
-            .get(&raw_id)
-            .cloned()
-            .unwrap_or_else(Vec::new)
-    }
+#[must_use]
+pub fn get_history_messages<Sink: FrameSink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    previous_response_id: &str,
+) -> Vec<IndexMap<String, Json>> {
+    let raw_id = decode_previous_response_id(previous_response_id);
+    let stored = handler.session_history.get(&raw_id);
+    stored.cloned().unwrap_or_default()
 }

@@ -1,12 +1,15 @@
 #![cfg(test)]
 #![expect(
+    clippy::cognitive_complexity,
+    clippy::shadow_unrelated,
     clippy::too_many_lines,
-    reason = "each named case asserts a whole frame or projection sequence"
+    reason = "each named case asserts a whole frame or projection sequence, and a case rebinds its handler as it moves to the next scenario"
 )]
 
 mod support;
 
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -17,14 +20,20 @@ use serde_json::Number;
 use crate::api::response_synthetic_events::error::SyntheticEventsError;
 use crate::api::response_synthetic_events::model_dump::{HasModelDump, HasModelDumpJson};
 use crate::api::responses_ws_history::call_kwargs::{
-    build_base_call_kwargs, response_create_params, update_proxy_request,
+    build_base_call_kwargs, inject_credentials, response_create_params, update_proxy_request,
 };
 use crate::api::responses_ws_history::error::ResponsesWsHistoryError;
-use crate::api::responses_ws_history::history::{apply_history, extract_response_id};
+use crate::api::responses_ws_history::history::{
+    apply_history, extract_response_id, get_history_messages, store_history,
+};
 use crate::api::responses_ws_history::messages::{extract_output_messages, input_to_messages};
-use crate::api::responses_ws_history::serialization::{Chunk, ChunkWriter, serialize_chunk};
+use crate::api::responses_ws_history::provider::{resolve_provider, same_provider};
+use crate::api::responses_ws_history::serialization::{
+    Chunk, ChunkWriter, send_error, serialize_chunk,
+};
 use crate::api::responses_ws_history::warmup::{
-    is_warmup_frame, is_warmup_response_id, warmup_source_params,
+    build_warmup_response, is_warmup_frame, is_warmup_response_id, send_warmup_ack,
+    warmup_source_params,
 };
 use crate::api::responses_ws_history::{MANAGED_WS_SKIP_KWARGS, ManagedResponsesWebSocket};
 
@@ -33,7 +42,9 @@ use support::{ENCODED_RAW_ONE, MODEL, NOW, OTHER_MODEL, UNKNOWN_MODEL, WARMUP_ID
 fn object_map(value: &Json) -> IndexMap<String, Json> {
     match value {
         Json::Object(fields) => fields.clone(),
-        other => panic!("the fixture is not an object: {other:?}"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the fixture is not an object: {value:?}")
+        }
     }
 }
 
@@ -44,16 +55,16 @@ fn as_json(messages: Vec<IndexMap<String, Json>>) -> Json {
 
 fn warmup_event(event_type: &str, status: &str, model: &str) -> String {
     format!(
-        r#"{{"type": "{event_type}", "response": {{"id": "resp_warmup_{hex}", "object": "response", "created_at": {now}, "status": "{status}", "model": "{model}", "output": [], "usage": {{"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}}}}}"#,
-        hex = WARMUP_ID_HEX,
-        now = NOW
+        r#"{{"type": "{event_type}", "response": {{"id": "resp_warmup_{WARMUP_ID_HEX}", "object": "response", "created_at": {NOW}, "status": "{status}", "model": "{model}", "output": [], "usage": {{"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}}}}}"#
     )
 }
 
 fn warmup_response(status: &str, model: &str) -> Json {
     match support::json(&warmup_event("response.created", status, model)) {
         Json::Object(mut fields) => fields.shift_remove("response").unwrap_or(Json::Null),
-        other => panic!("the warmup event is not an object: {other:?}"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the warmup event is not an object")
+        }
     }
 }
 
@@ -119,8 +130,8 @@ fn fail_created(chunk: Chunk<'_>) -> Option<String> {
 }
 
 fn model_group_view(metadata: &str) -> Option<String> {
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.litellm_metadata = Some(object_map(&support::json(metadata)));
     let handler = support::plain(connection);
     assert_eq!(
@@ -159,7 +170,7 @@ fn proxy_fresh(text: &str) -> (Option<Json>, Option<Json>) {
     let stored = fresh.get("proxy_server_request").cloned();
     let nested = fresh.get("litellm_metadata").and_then(|value| match value {
         Json::Object(fields) => fields.get("proxy_server_request").cloned(),
-        _ => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     });
     (stored, nested)
 }
@@ -183,8 +194,8 @@ fn constructor_defaults_and_passthrough() {
             "user_api_key_dict",
         ]
     );
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.kwargs.extend(
         MANAGED_WS_SKIP_KWARGS
             .into_iter()
@@ -206,9 +217,9 @@ fn constructor_defaults_and_passthrough() {
     assert_eq!(handler.custom_llm_provider, None);
     assert!(handler.user_api_key_dict.is_none());
     assert!(handler.quota_callbacks.is_empty());
-    assert!(handler.get_history_messages("raw-0").is_empty());
+    assert!(get_history_messages(&handler, "raw-0").is_empty());
     assert_eq!(
-        Json::Object(handler.extra_kwargs.clone()),
+        Json::Object(handler.extra_kwargs),
         support::json(r#"{"extra_headers": {"X-Test": "yes"}}"#)
     );
 
@@ -244,22 +255,22 @@ fn constructor_defaults_and_passthrough() {
     );
     assert_eq!(model_group_view("{}").as_deref(), None);
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(UNKNOWN_MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(UNKNOWN_MODEL, recording.sink);
     connection.custom_llm_provider = Some("proxy".to_owned());
     let handler = support::plain(connection);
     assert_eq!(handler.connection_provider.as_deref(), Some("proxy"));
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.first_message = Some("hello".to_owned());
     connection.quota_callbacks = Some(Vec::new());
     let handler = support::plain(connection);
     assert_eq!(handler.first_message.as_deref(), Some("hello"));
     assert!(handler.quota_callbacks.is_empty());
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.quota_callbacks = Some(vec![
         Arc::new(support::TestQuota),
         Arc::new(support::TestQuota),
@@ -336,13 +347,11 @@ async fn serialization_and_error_drop() {
         ]
     );
 
-    let handles = support::recording_sink();
-    let frames = Arc::clone(&handles.frames);
-    let handler = support::plain(support::connection(MODEL, handles.sink));
-    handler.send_error("quota exceeded", None).await;
-    handler
-        .send_error("bad", Some("invalid_request_error"))
-        .await;
+    let recording = support::recording_sink();
+    let frames = Arc::clone(&recording.frames);
+    let handler = support::plain(support::connection(MODEL, recording.sink));
+    send_error(&handler, "quota exceeded", None).await;
+    send_error(&handler, "bad", Some("invalid_request_error")).await;
     assert_eq!(
         support::sent(&frames),
         vec![
@@ -351,17 +360,17 @@ async fn serialization_and_error_drop() {
         ]
     );
 
-    handles.fail_next.store(true, Ordering::SeqCst);
+    recording.fail_next.store(true, Ordering::SeqCst);
     let before = support::sent(&frames).len();
-    handler.send_error("lost", None).await;
+    send_error(&handler, "lost", None).await;
     assert_eq!(support::sent(&frames).len(), before);
 }
 
 #[tokio::test]
 async fn parse_message_cases() {
-    let handles = support::recording_sink();
-    let frames = Arc::clone(&handles.frames);
-    let handler = support::plain(support::connection(MODEL, handles.sink));
+    let recording = support::recording_sink();
+    let frames = Arc::clone(&recording.frames);
+    let handler = support::plain(support::connection(MODEL, recording.sink));
 
     let dropped = handler.parse_message("not-json").await;
     assert!(matches!(dropped, Ok(None)));
@@ -397,7 +406,7 @@ async fn parse_message_cases() {
     };
     assert!(nothing.is_none());
 
-    handles.fail_next.store(true, Ordering::SeqCst);
+    recording.fail_next.store(true, Ordering::SeqCst);
     let swallowed = handler.parse_message("not-json").await;
     assert!(matches!(swallowed, Ok(None)));
     assert_eq!(support::sent(&frames).len(), 1);
@@ -440,28 +449,34 @@ async fn warmup_ack_without_provider() {
         support::json(r#"{"a": 1}"#)
     );
 
-    let handles = support::recording_sink();
-    let frames = Arc::clone(&handles.frames);
-    let resolver = Arc::new(support::RecordingResolver::default());
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let frames = Arc::clone(&recording.frames);
+    let resolver = Arc::new(support::ScriptedResolver);
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.litellm_metadata = Some(object_map(&support::json(r#"{"model_group": "group-1"}"#)));
     let handler = support::handler(connection, Arc::clone(&resolver), support::serializer());
 
-    let built = handler.build_warmup_response(&object_map(&support::json(
-        r#"{"type": "response.create"}"#,
-    )));
+    let built = build_warmup_response(
+        &handler,
+        &object_map(&support::json(r#"{"type": "response.create"}"#)),
+    );
     assert_eq!(Json::Object(built), warmup_response("completed", "group-1"));
-    let sourced = handler.build_warmup_response(&object_map(&support::json(
-        r#"{"type": "response.create", "model": "m2"}"#,
-    )));
+    let sourced = build_warmup_response(
+        &handler,
+        &object_map(&support::json(
+            r#"{"type": "response.create", "model": "m2"}"#,
+        )),
+    );
     assert_eq!(sourced.get("model"), Some(&Json::Text("m2".to_owned())));
 
-    handler
-        .send_warmup_ack(&object_map(&support::json(
+    send_warmup_ack(
+        &handler,
+        &object_map(&support::json(
             r#"{"type": "response.create", "model": "m3"}"#,
-        )))
-        .await
-        .unwrap();
+        )),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         support::sent(&frames),
         vec![
@@ -470,20 +485,20 @@ async fn warmup_ack_without_provider() {
         ]
     );
 
-    let handles = support::recording_sink();
-    let frames = Arc::clone(&handles.frames);
+    let recording = support::recording_sink();
+    let frames = Arc::clone(&recording.frames);
     let serializer: Arc<ChunkWriter> = Arc::new(fail_created);
     let handler = support::handler(
-        support::connection(MODEL, handles.sink),
-        Arc::new(support::RecordingResolver::default()),
+        support::connection(MODEL, recording.sink),
+        Arc::new(support::ScriptedResolver),
         serializer,
     );
-    handler
-        .send_warmup_ack(&object_map(&support::json(
-            r#"{"type": "response.create"}"#,
-        )))
-        .await
-        .unwrap();
+    send_warmup_ack(
+        &handler,
+        &object_map(&support::json(r#"{"type": "response.create"}"#)),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         support::sent(&frames),
         vec![warmup_event("response.completed", "completed", MODEL)]
@@ -578,31 +593,31 @@ fn response_id_history() {
     assert_eq!(response_id(r#"{"response": {"id": 7}}"#), None);
     assert_eq!(response_id(r#"{"response": {"id": ""}}"#), None);
 
-    let handles = support::recording_sink();
-    let mut handler = support::plain(support::connection(MODEL, handles.sink));
-    assert!(handler.get_history_messages(ENCODED_RAW_ONE).is_empty());
+    let recording = support::recording_sink();
+    let mut handler = support::plain(support::connection(MODEL, recording.sink));
+    assert!(get_history_messages(&handler, ENCODED_RAW_ONE).is_empty());
     let message_a = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": []}"#,
     ));
-    handler.store_history("raw-1", vec![message_a.clone()]);
-    let mut got = handler.get_history_messages(ENCODED_RAW_ONE);
+    store_history(&mut handler, "raw-1", vec![message_a.clone()]);
+    let mut got = get_history_messages(&handler, ENCODED_RAW_ONE);
     assert_eq!(got, vec![message_a.clone()]);
     let marker = object_map(&support::json(r#"{"probe": true}"#));
     got.push(marker);
     assert_eq!(
-        handler.get_history_messages(ENCODED_RAW_ONE),
+        get_history_messages(&handler, ENCODED_RAW_ONE),
         vec![message_a]
     );
 
     let message_b = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "B"}]}"#,
     ));
-    handler.store_history("raw-1", vec![message_b.clone()]);
+    store_history(&mut handler, "raw-1", vec![message_b.clone()]);
     assert_eq!(
-        handler.get_history_messages(ENCODED_RAW_ONE),
+        get_history_messages(&handler, ENCODED_RAW_ONE),
         vec![message_b]
     );
-    assert!(handler.get_history_messages("raw-9").is_empty());
+    assert!(get_history_messages(&handler, "raw-9").is_empty());
 }
 
 #[test]
@@ -699,12 +714,7 @@ fn apply_history_paths() {
     let mut untouched = IndexMap::new();
     untouched.insert("keep".to_owned(), Json::Number(Number::from(1_u8)));
     let original = untouched.clone();
-    apply_history(
-        &mut untouched,
-        None,
-        std::slice::from_ref(&current),
-        std::slice::from_ref(&prior),
-    );
+    apply_history(&mut untouched, None, from_ref(&current), from_ref(&prior));
     apply_history(&mut untouched, Some(""), &[], &[]);
     assert_eq!(untouched, original);
 
@@ -713,8 +723,8 @@ fn apply_history_paths() {
         apply_history(
             &mut kwargs,
             Some("raw-1"),
-            std::slice::from_ref(&current),
-            std::slice::from_ref(&prior),
+            from_ref(&current),
+            from_ref(&prior),
         );
         assert_eq!(
             Json::Object(kwargs),
@@ -754,8 +764,8 @@ fn apply_history_paths() {
         apply_history(
             &mut kwargs,
             Some(&warmup_id),
-            std::slice::from_ref(&current),
-            std::slice::from_ref(&prior),
+            from_ref(&current),
+            from_ref(&prior),
         );
         assert_eq!(Json::Object(kwargs), support::json(r#"{"keep": 1}"#));
     });
@@ -769,38 +779,36 @@ fn apply_history_paths() {
 
 #[test]
 fn same_provider_credentials() {
-    let resolver = Arc::new(support::RecordingResolver::default());
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let resolver = Arc::new(support::ScriptedResolver);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.api_key = Some(support::key("key-1"));
     connection.api_base = Some("https://api.example.test".to_owned());
-    connection.timeout = Some(7.5);
+    connection.timeout = Some(7.5_f64);
     connection.custom_llm_provider = Some("proxy".to_owned());
     connection.litellm_metadata = Some(object_map(&support::json(r#"{"trace_id": "t1"}"#)));
     let handler = support::handler(connection, Arc::clone(&resolver), support::serializer());
 
     assert_eq!(
-        handler.resolve_provider(Some(MODEL)).as_deref(),
+        resolve_provider(&handler, Some(MODEL)).as_deref(),
         Some("openai")
     );
     assert_eq!(
-        handler.resolve_provider(Some(OTHER_MODEL)).as_deref(),
+        resolve_provider(&handler, Some(OTHER_MODEL)).as_deref(),
         Some("anthropic")
     );
-    assert_eq!(handler.resolve_provider(Some("")), None);
-    assert_eq!(handler.resolve_provider(Some(UNKNOWN_MODEL)), None);
-    assert_eq!(handler.resolve_provider(None), None);
+    assert_eq!(resolve_provider(&handler, Some("")), None);
+    assert_eq!(resolve_provider(&handler, Some(UNKNOWN_MODEL)), None);
+    assert_eq!(resolve_provider(&handler, None), None);
 
-    assert!(handler.same_provider(None));
-    assert!(handler.same_provider(Some(MODEL)));
-    assert!(handler.same_provider(Some("openai/gpt-4o")));
-    assert!(!handler.same_provider(Some(OTHER_MODEL)));
-    assert!(!handler.same_provider(Some(UNKNOWN_MODEL)));
+    assert!(same_provider(&handler, None));
+    assert!(same_provider(&handler, Some(MODEL)));
+    assert!(same_provider(&handler, Some("openai/gpt-4o")));
+    assert!(!same_provider(&handler, Some(OTHER_MODEL)));
+    assert!(!same_provider(&handler, Some(UNKNOWN_MODEL)));
 
     let mut kwargs = IndexMap::new();
-    handler
-        .inject_credentials(&mut kwargs, Some("openai/gpt-4o"))
-        .unwrap();
+    inject_credentials(&handler, &mut kwargs, Some("openai/gpt-4o")).unwrap();
     assert_eq!(
         Json::Object(kwargs),
         support::json(
@@ -808,29 +816,29 @@ fn same_provider_credentials() {
         )
     );
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.api_base = Some("https://api.example.test".to_owned());
     let handler = support::plain(connection);
     let mut independent = IndexMap::new();
-    handler.inject_credentials(&mut independent, None).unwrap();
+    inject_credentials(&handler, &mut independent, None).unwrap();
     assert_eq!(
         Json::Object(independent),
         support::json(r#"{"api_base": "https://api.example.test"}"#)
     );
 
-    let handles = support::recording_sink();
-    let handler = support::plain(support::connection(MODEL, handles.sink));
+    let recording = support::recording_sink();
+    let handler = support::plain(support::connection(MODEL, recording.sink));
     let mut empty = IndexMap::new();
-    handler.inject_credentials(&mut empty, None).unwrap();
+    inject_credentials(&handler, &mut empty, None).unwrap();
     assert!(empty.is_empty());
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.timeout = Some(f64::NAN);
     let handler = support::plain(connection);
     let mut infinite = IndexMap::new();
-    match handler.inject_credentials(&mut infinite, None) {
+    match inject_credentials(&handler, &mut infinite, None) {
         Err(ResponsesWsHistoryError::Shape { field, expected }) => {
             assert_eq!(field, "timeout");
             assert_eq!(expected, "a finite number");
@@ -841,19 +849,17 @@ fn same_provider_credentials() {
 
 #[test]
 fn different_provider_does_not_copy_credentials() {
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.api_key = Some(support::key("key-1"));
     connection.api_base = Some("https://api.example.test".to_owned());
-    connection.timeout = Some(7.5);
+    connection.timeout = Some(7.5_f64);
     connection.custom_llm_provider = Some("proxy".to_owned());
     connection.litellm_metadata = Some(object_map(&support::json(r#"{"trace_id": "t1"}"#)));
     let handler = support::plain(connection);
-    assert!(!handler.same_provider(Some(OTHER_MODEL)));
+    assert!(!same_provider(&handler, Some(OTHER_MODEL)));
     let mut kwargs = IndexMap::new();
-    handler
-        .inject_credentials(&mut kwargs, Some(OTHER_MODEL))
-        .unwrap();
+    inject_credentials(&handler, &mut kwargs, Some(OTHER_MODEL)).unwrap();
     assert_eq!(
         Json::Object(kwargs.clone()),
         support::json(
@@ -862,32 +868,30 @@ fn different_provider_does_not_copy_credentials() {
     );
     assert!(!kwargs.contains_key("custom_llm_provider"));
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(UNKNOWN_MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(UNKNOWN_MODEL, recording.sink);
     connection.api_key = Some(support::key("key-2"));
     connection.custom_llm_provider = Some("proxy".to_owned());
     let handler = support::plain(connection);
     assert_eq!(handler.connection_provider.as_deref(), Some("proxy"));
     let mut kwargs = IndexMap::new();
-    handler
-        .inject_credentials(&mut kwargs, Some(OTHER_MODEL))
-        .unwrap();
+    inject_credentials(&handler, &mut kwargs, Some(OTHER_MODEL)).unwrap();
     assert_eq!(
         kwargs.get("api_key").cloned(),
         Some(Json::Text("key-2".to_owned()))
     );
     assert!(!kwargs.contains_key("custom_llm_provider"));
     assert!(
-        handler.same_provider(Some(UNKNOWN_MODEL)),
+        same_provider(&handler, Some(UNKNOWN_MODEL)),
         "the connection's own model is the same provider even when its provider is the custom fallback"
     );
 
-    let handles = support::recording_sink();
-    let mut connection = support::connection(MODEL, handles.sink);
+    let recording = support::recording_sink();
+    let mut connection = support::connection(MODEL, recording.sink);
     connection.custom_llm_provider = Some("proxy".to_owned());
     let handler = support::plain(connection);
     let mut kwargs = IndexMap::new();
-    handler.inject_credentials(&mut kwargs, Some("")).unwrap();
+    inject_credentials(&handler, &mut kwargs, Some("")).unwrap();
     assert!(!kwargs.contains_key("custom_llm_provider"));
     assert!(!kwargs.contains_key("api_key"));
 }
@@ -954,7 +958,7 @@ fn proxy_request_projection() {
         proxy_fresh(
             r#"{"input": "i", "litellm_metadata": {"proxy_server_request": {"body": null}}}"#
         ),
-        (Some(body.clone()), Some(body.clone()))
+        (Some(body.clone()), Some(body))
     );
     assert!(proxy_unchanged(
         r#"{"input": "i", "litellm_metadata": {"proxy_server_request": "not-a-dict"}}"#

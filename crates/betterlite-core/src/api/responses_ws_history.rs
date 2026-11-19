@@ -22,7 +22,7 @@ use secrecy::SecretString;
 
 use self::error::{FrameSinkError, ResponsesWsHistoryError};
 use self::provider::ProviderResolution;
-use self::serialization::{ChunkWriter, INVALID_JSON_MESSAGE, INVALID_REQUEST_ERROR};
+use self::serialization::{ChunkWriter, INVALID_JSON_MESSAGE, INVALID_REQUEST_ERROR, send_error};
 use self::values::has_content;
 use crate::api::responses_stream_events::ProjectQuotaCallback;
 
@@ -76,40 +76,23 @@ pub struct ManagedResponsesWebSocket<Sink: FrameSink> {
     pub first_message: Option<String>,
     pub quota_callbacks: Vec<Arc<dyn ProjectQuotaCallback>>,
     pub extra_kwargs: IndexMap<String, Json>,
-    session_history: HashMap<String, Vec<IndexMap<String, Json>>>,
-    resolver: Arc<dyn ProviderResolution>,
-    clock: Arc<dyn Fn() -> i64 + Send + Sync>,
-    ids: Arc<dyn Fn() -> String + Send + Sync>,
-    serializer: Arc<ChunkWriter>,
+    pub session_history: HashMap<String, Vec<IndexMap<String, Json>>>,
+    pub resolver: Arc<dyn ProviderResolution>,
+    pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    pub ids: Arc<dyn Fn() -> String + Send + Sync>,
+    pub serializer: Arc<ChunkWriter>,
 }
 
 impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
     #[must_use]
     pub fn new(connection: Connection<Sink>, dependencies: WsDeps) -> Self {
-        let litellm_metadata = connection.litellm_metadata.unwrap_or_else(IndexMap::new);
-        let raw_model_group = litellm_metadata
-            .get("model_group")
-            .filter(|value| has_content(value))
-            .or_else(|| litellm_metadata.get("deployment_model_name"));
-        let model_group = match raw_model_group {
-            Some(Json::Text(text)) => Some(text.clone()),
-            _ => None,
-        };
-        let resolved = if connection.model.is_empty() {
-            None
-        } else {
-            dependencies
-                .resolver
-                .resolve(&connection.model)
-                .ok()
-                .filter(|provider| !provider.is_empty())
-        };
-        let connection_provider = resolved.or_else(|| connection.custom_llm_provider.clone());
-        let extra_kwargs = connection
-            .kwargs
-            .into_iter()
-            .filter(|(key, _value)| !MANAGED_WS_SKIP_KWARGS.contains(&key.as_str()))
-            .collect();
+        let litellm_metadata = connection.litellm_metadata.unwrap_or_default();
+        let model_group = model_group_of(&litellm_metadata);
+        let connection_provider = resolve_connection_provider(
+            dependencies.resolver.as_ref(),
+            &connection.model,
+            connection.custom_llm_provider.as_deref(),
+        );
         Self {
             websocket: connection.websocket,
             model: connection.model,
@@ -123,8 +106,8 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
             custom_llm_provider: connection.custom_llm_provider,
             connection_provider,
             first_message: connection.first_message,
-            quota_callbacks: connection.quota_callbacks.unwrap_or_else(Vec::new),
-            extra_kwargs,
+            quota_callbacks: connection.quota_callbacks.unwrap_or_default(),
+            extra_kwargs: filtered_kwargs(connection.kwargs),
             session_history: HashMap::new(),
             resolver: dependencies.resolver,
             clock: dependencies.clock,
@@ -138,19 +121,46 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
         raw_message: &str,
     ) -> Result<Option<IndexMap<String, Json>>, ResponsesWsHistoryError> {
         let Ok(message) = serde_json::from_str::<Json>(raw_message) else {
-            self.send_error(INVALID_JSON_MESSAGE, Some(INVALID_REQUEST_ERROR))
-                .await;
+            send_error(self, INVALID_JSON_MESSAGE, Some(INVALID_REQUEST_ERROR)).await;
             return Ok(None);
         };
         let Json::Object(fields) = message else {
-            return Err(ResponsesWsHistoryError::Shape {
-                field: "message",
-                expected: "a JSON object",
-            });
+            return Err(ResponsesWsHistoryError::shape("message", "a JSON object"));
         };
         match fields.get("type") {
             Some(Json::Text(message_type)) if message_type == "response.create" => Ok(Some(fields)),
             _ => Ok(None),
         }
     }
+}
+
+fn model_group_of(litellm_metadata: &IndexMap<String, Json>) -> Option<String> {
+    let raw = litellm_metadata
+        .get("model_group")
+        .filter(|value| has_content(value))
+        .or_else(|| litellm_metadata.get("deployment_model_name"))?;
+    match raw {
+        Json::Text(text) => Some(text.clone()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+fn resolve_connection_provider(
+    resolver: &dyn ProviderResolution,
+    model: &str,
+    custom_llm_provider: Option<&str>,
+) -> Option<String> {
+    if model.is_empty() {
+        return custom_llm_provider.map(str::to_owned);
+    }
+    resolver
+        .resolve(model)
+        .ok()
+        .filter(|provider| !provider.is_empty())
+        .or_else(|| custom_llm_provider.map(str::to_owned))
+}
+
+fn filtered_kwargs(mut kwargs: IndexMap<String, Json>) -> IndexMap<String, Json> {
+    kwargs.retain(|key, _value| !MANAGED_WS_SKIP_KWARGS.contains(&key.as_str()));
+    kwargs
 }
