@@ -750,7 +750,7 @@ struct RouterFields {
 
 fn litellm_text(model: &str) -> String {
     format!(
-        "/completions: Invalid model name passed in model={model}. Call `/v1/models` to view available models for your key."
+        "400: {{'error': '/completions: Invalid model name passed in model={model}. Call `/v1/models` to view available models for your key.'}}"
     )
 }
 
@@ -790,15 +790,15 @@ async fn unknown_model_answers_litellm_text_on_the_v1_path() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let text = litellm_text("nope");
     assert_eq!(reply.error.message, text);
-    assert_eq!(reply.error.error_type, "invalid_request_error");
-    assert_eq!(reply.error.param, None);
+    assert_eq!(reply.error.error_type, "None");
+    assert_eq!(reply.error.param.as_deref(), Some("None"));
     assert_eq!(reply.error.code, "400");
     assert_eq!(
         reply
             .error
             .provider_specific_fields
             .map(|fields| fields.error),
-        Some(text)
+        None
     );
 }
 
@@ -817,7 +817,7 @@ async fn unknown_model_answers_litellm_text_on_an_engines_path() {
 #[tokio::test]
 async fn unknown_model_retries_once_when_the_read_through_answers() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/completions",
         r#"{"model":"nope","prompt":"hi"}"#,
@@ -832,7 +832,7 @@ async fn unknown_model_retries_once_when_the_read_through_answers() {
 #[tokio::test]
 async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
     let recorder = RecordingReadThrough::new(false);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/completions",
         r#"{"model":"nope","prompt":"hi"}"#,
@@ -847,7 +847,7 @@ async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
 #[tokio::test]
 async fn unknown_model_without_a_model_never_asks_the_read_through() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask("/v1/completions", r#"{"prompt":"hi"}"#, Some(port)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(reply.error.message, litellm_text("None"));
@@ -867,6 +867,6 @@ async fn unknown_model_redacts_a_key_like_model() {
         .error
         .provider_specific_fields
         .map(|fields| fields.error);
-    assert_eq!(repeated.as_deref(), Some(reply.error.message.as_str()));
+    assert_eq!(repeated, None);
     assert!(!reply.error.message.contains("sk-secretsecretsecretsecret"));
 }

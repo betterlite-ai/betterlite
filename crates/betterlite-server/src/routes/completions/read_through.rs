@@ -31,16 +31,17 @@ pub(super) async fn deployment_or_answer(
     match route_with_read_through(model, read_through, attempt).await {
         Ok(deployment) => Ok(deployment),
         Err(error) => {
-            let message = state
+            let detail = state
                 .executor
                 .redactor
                 .redact_internal_details(&error.detail.error);
+            // proxy_server.py's completion except answers the HTTPException as str(e), so the dict detail keeps its repr
+            let status = ProxyModelNotFoundError::STATUS.as_u16();
             Err(FailureAnswer {
-                status: ProxyModelNotFoundError::STATUS.as_u16(),
-                error_type: Some(String::from("invalid_request_error")),
-                param: None,
-                message: message.clone(),
-                provider_specific_fields: Some(message),
+                status,
+                error_type: Some(String::from("None")),
+                param: Some(String::from("None")),
+                message: format!("{status}: {{'error': '{detail}'}}"),
             })
         }
     }

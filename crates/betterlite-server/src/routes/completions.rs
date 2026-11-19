@@ -172,7 +172,12 @@ async fn completions(
             if let CompletionRequestError::Body { source } = &error {
                 include &= body.is_empty() || !(source.is_syntax() || source.is_eof());
             }
-            let answer = FailureAnswer::plain(400, "invalid_request_error", error.to_string());
+            let answer = FailureAnswer {
+                status: 400,
+                error_type: Some(String::from("invalid_request_error")),
+                param: None,
+                message: error.to_string(),
+            };
             return render(&answer, &call_id, include);
         }
     };

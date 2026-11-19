@@ -5,26 +5,13 @@ use betterlite_core::dispatch::error::DispatchError;
 use betterlite_error::envelope::error_body_call_id;
 
 use crate::routes::chat::headers::failure_headers;
-use crate::server::{ErrorBody, ErrorObject, RouterErrorFields};
+use crate::server::{ErrorBody, ErrorObject};
 
 pub(super) struct FailureAnswer {
     pub(super) status: u16,
     pub(super) error_type: Option<String>,
     pub(super) param: Option<String>,
     pub(super) message: String,
-    pub(super) provider_specific_fields: Option<String>,
-}
-
-impl FailureAnswer {
-    pub(super) fn plain(status: u16, error_type: &str, message: String) -> Self {
-        Self {
-            status,
-            error_type: Some(error_type.to_owned()),
-            param: None,
-            message,
-            provider_specific_fields: None,
-        }
-    }
 }
 
 pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
@@ -41,18 +28,19 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
             error_type: (!error_type.is_empty()).then_some(error_type),
             param,
             message,
-            provider_specific_fields: None,
         },
-        DispatchError::MissingDeployment { model_id } => FailureAnswer::plain(
-            400,
-            "invalid_request_error",
-            format!("no model_list entry serves the model {model_id}"),
-        ),
-        DispatchError::DeadlineExpired { .. } => FailureAnswer::plain(
-            408,
-            "invalid_request_error",
-            String::from("the completion call passed its deadline"),
-        ),
+        DispatchError::MissingDeployment { model_id } => FailureAnswer {
+            status: 400,
+            error_type: Some(String::from("invalid_request_error")),
+            param: None,
+            message: format!("no model_list entry serves the model {model_id}"),
+        },
+        DispatchError::DeadlineExpired { .. } => FailureAnswer {
+            status: 408,
+            error_type: Some(String::from("invalid_request_error")),
+            param: None,
+            message: String::from("the completion call passed its deadline"),
+        },
         DispatchError::NotBuilt { .. }
         | DispatchError::UnknownOperation { .. }
         | DispatchError::MismatchedOperation { .. }
@@ -63,7 +51,6 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
             error_type: Some(String::from("internal_server_error")),
             param: None,
             message: String::from("the completion call could not be dispatched"),
-            provider_specific_fields: None,
         },
     }
 }
@@ -77,10 +64,7 @@ pub(super) fn render(answer: &FailureAnswer, call_id: &str, include_call_id: boo
             error_type: answer.error_type.clone(),
             param: answer.param.clone(),
             code: answer.status.to_string(),
-            provider_specific_fields: answer
-                .provider_specific_fields
-                .clone()
-                .map(|error| RouterErrorFields { error }),
+            provider_specific_fields: None,
             litellm_call_id: error_body_call_id(include_call_id, Some(call_id)).map(str::to_owned),
         },
     };
