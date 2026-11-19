@@ -8,7 +8,6 @@ from litellm.types.utils import CredentialItem
 from litellm.types.vector_stores import (
     LiteLLM_ManagedVectorStore,
     LiteLLM_ManagedVectorStoreIndex as ManagedIndex,
-    VectorStoreToolParams,
 )
 from litellm.vector_stores.vector_store_registry import (
     VectorStoreIndexRegistry,
