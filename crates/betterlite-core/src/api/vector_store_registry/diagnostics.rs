@@ -5,8 +5,8 @@ const REDACTED: &str = "[REDACTED]";
 
 // the config-load diagnostic, minus every value whose name says it carries credential material
 pub(crate) fn redacted_stores(stores: &[LiteLlmManagedVectorStore]) -> String {
-    let redacted: Vec<Json> = stores.iter().map(redacted_store).collect();
-    serde_json::to_string(&redacted).unwrap_or_else(|_| "[]".to_owned())
+    serde_json::to_string(&stores.iter().map(redacted_store).collect::<Vec<Json>>())
+        .unwrap_or_else(|_| "[]".to_owned())
 }
 
 fn redacted_store(store: &LiteLlmManagedVectorStore) -> Json {

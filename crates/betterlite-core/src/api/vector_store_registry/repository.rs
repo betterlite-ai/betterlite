@@ -46,16 +46,13 @@ where
 }
 
 // _get_vector_store_indexes_from_db: the same missing-client answer for the index table
-pub async fn indexes_from_database<D>(
+pub async fn indexes_from_database<D: VectorStoreDatabase>(
     database: Option<&D>,
-) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>
-where
-    D: VectorStoreDatabase,
-{
-    match database {
-        Some(database) => database.indexes().await,
-        None => Ok(Vec::new()),
-    }
+) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
+    let Some(database) = database else {
+        return Ok(Vec::new());
+    };
+    database.indexes().await
 }
 
 fn decode_row<T>(row: &Row) -> Result<T, TableError>

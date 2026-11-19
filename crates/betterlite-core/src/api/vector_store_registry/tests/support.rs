@@ -11,7 +11,6 @@ use betterlite_openai::api::vector_store_records::records::pydantic::{
 };
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -33,9 +32,8 @@ pub(crate) fn fixed_clock() -> RegistryClock {
     Arc::new(move || fixed)
 }
 
-fn decoded<Record: DeserializeOwned>(document: impl Serialize) -> Record {
-    let value = serde_json::to_value(document).expect("the store document encodes");
-    serde_json::from_value(value).expect("the store document decodes")
+fn decoded<Record: DeserializeOwned>(document: serde_json::Value) -> Record {
+    serde_json::from_value(document).expect("the store document decodes")
 }
 
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
@@ -78,12 +76,10 @@ pub(crate) fn database_store(id: &str) -> LiteLlmManagedVectorStore {
 }
 
 pub(crate) fn labelled_store(id: &str, description: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "openai",
-        "vector_store_description": description,
-        "litellm_credential_name": "stored-credential",
-    }))
+    let mut store = store(id);
+    store.vector_store_description = Some(description.to_owned());
+    store.litellm_credential_name = Some("stored-credential".to_owned());
+    store
 }
 
 pub(crate) fn named_store(id: &str, credential_name: &str) -> LiteLlmManagedVectorStore {
@@ -137,37 +133,27 @@ type DatabaseRows = (
 );
 
 impl ScriptedDatabase {
+    fn setting<Change>(change: Change) -> Self
+    where
+        Change: FnOnce(&mut DatabaseState),
+    {
+        let mut state = DatabaseState::default();
+        change(&mut state);
+        Self {
+            state: Arc::new(Mutex::new(state)),
+        }
+    }
+
     pub(crate) fn with_stores(stores: Vec<LiteLlmManagedVectorStore>) -> Self {
-        let database = Self::default();
-        let mut state = database
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        state.stores = stores;
-        drop(state);
-        database
+        Self::setting(|state| state.stores = stores)
     }
 
     pub(crate) fn with_indexes(indexes: Vec<LiteLlmManagedVectorStoreIndex>) -> Self {
-        let database = Self::default();
-        let mut state = database
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        state.indexes = indexes;
-        drop(state);
-        database
+        Self::setting(|state| state.indexes = indexes)
     }
 
     pub(crate) fn failing() -> Self {
-        let database = Self::default();
-        let mut state = database
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        state.failing = true;
-        drop(state);
-        database
+        Self::setting(|state| state.failing = true)
     }
 
     pub(crate) fn calls(&self) -> Vec<&'static str> {

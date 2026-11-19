@@ -5,6 +5,8 @@ use betterlite_models::model_registration::JsonObject;
 
 use super::error::VectorStoreRegistryError;
 
+type ParamResult<T> = Result<T, VectorStoreRegistryError>;
+
 // VectorStoreToolParams: the file_search parameters LiteLLM forwards into a vector store call
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VectorStoreToolParams {
@@ -29,30 +31,25 @@ pub fn extract_tool_params(
     })
 }
 
-fn object_param(
-    tool: &JsonObject,
-    field: &'static str,
-) -> Result<Option<JsonObject>, VectorStoreRegistryError> {
+fn object_param(tool: &JsonObject, field: &'static str) -> ParamResult<Option<JsonObject>> {
     match tool.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(VectorStoreRegistryError::ToolParamType { field })
-        }
+        Some(_) => Err(VectorStoreRegistryError::ToolParamType { field }),
     }
 }
 
-fn integer_param(
-    tool: &JsonObject,
-    field: &'static str,
-) -> Result<Option<i64>, VectorStoreRegistryError> {
-    match tool.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
+fn integer_param(tool: &JsonObject, field: &'static str) -> ParamResult<Option<i64>> {
+    let Some(value) = tool.get(field) else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Number(number) => number
             .as_i64()
             .map(Some)
             .ok_or(VectorStoreRegistryError::ToolParamType { field }),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             Err(VectorStoreRegistryError::ToolParamType { field })
         }
     }

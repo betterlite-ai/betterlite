@@ -44,7 +44,6 @@ impl Default for VectorStoreRegistry {
 
 impl VectorStoreRegistry {
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions
     pub const fn new(
         stores: Vec<LiteLlmManagedVectorStore>,
         clock: RegistryClock,
@@ -76,12 +75,9 @@ impl VectorStoreRegistry {
     // get_litellm_managed_vector_store_from_registry: the first record carrying the id answers
     #[must_use]
     pub fn store_by_id(&self, vector_store_id: &str) -> Option<&LiteLlmManagedVectorStore> {
-        for store in &self.stores {
-            if store.vector_store_id.as_deref() == Some(vector_store_id) {
-                return Some(store);
-            }
-        }
-        None
+        self.stores
+            .iter()
+            .find(|store| store.vector_store_id.as_deref() == Some(vector_store_id))
     }
 
     // get_litellm_managed_vector_store_from_registry_or_db: memory first, then a database hit that joins the registry, and a failure logs at debug and answers None
@@ -115,12 +111,8 @@ impl VectorStoreRegistry {
 
     #[must_use]
     pub fn is_config(&self, vector_store_id: &str) -> bool {
-        for store in &self.stores {
-            if store.vector_store_id.as_deref() == Some(vector_store_id) {
-                return store.is_config == Some(true);
-            }
-        }
-        false
+        self.store_by_id(vector_store_id)
+            .is_some_and(|store| store.is_config == Some(true))
     }
 
     // add_vector_store_to_registry: an id already present, including the absent one, is not added
@@ -164,20 +156,14 @@ impl VectorStoreRegistry {
     // get_credentials_for_vector_store: the first nonempty litellm_credential_name reaches the accessor, and inline litellm_params.api_key is never returned
     #[must_use]
     pub fn credentials_for_vector_store(&self, vector_store_id: &str) -> JsonObject {
-        for store in &self.stores {
-            if store.vector_store_id.as_deref() != Some(vector_store_id) {
-                continue;
-            }
-            let Some(name) = store
-                .litellm_credential_name
-                .as_deref()
-                .filter(|name| !name.is_empty())
-            else {
-                continue;
-            };
-            return self.credentials.credential_values(name);
-        }
-        JsonObject::new()
+        self.stores
+            .iter()
+            .filter(|store| store.vector_store_id.as_deref() == Some(vector_store_id))
+            .filter_map(|store| store.litellm_credential_name.as_deref())
+            .find(|name| !name.is_empty())
+            .map_or_else(JsonObject::new, |name| {
+                self.credentials.credential_values(name)
+            })
     }
 }
 
