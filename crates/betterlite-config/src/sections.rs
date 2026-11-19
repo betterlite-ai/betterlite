@@ -472,6 +472,7 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
+use crate::api::fine_tuning_provider_config;
 use crate::api::realtime_session_state;
 use crate::api::response_chat_request;
 use crate::api::responses_hook_policy;
@@ -606,7 +607,7 @@ sections! {
     dynamic_rate_limit_policy, dynamoai_moderation, embedding_host_settings,
     embedding_provider_settings, end_user_identity, end_user_registry, enkryptai_detection,
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
-    file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
+    file_upload_options, file_upload_routing, file_upload_validation, fine_tuning_provider_config, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gcs_response_cache, gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, gigachat_auth, gigachat_route, grayswan,
     guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
