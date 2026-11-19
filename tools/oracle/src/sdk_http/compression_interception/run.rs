@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -70,13 +71,23 @@ struct Fields {
     reason: Option<String>,
 }
 
-impl Visit for Fields {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        match field.name() {
-            "kind" => self.kind = Some(value.to_owned()),
-            "reason" => self.reason = Some(value.to_owned()),
+impl Fields {
+    fn record(&mut self, name: &str, value: String) {
+        match name {
+            "kind" => self.kind = Some(value),
+            "reason" => self.reason = Some(value),
             _ => {}
         }
+    }
+}
+
+impl Visit for Fields {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.record(field.name(), value.to_owned());
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        self.record(field.name(), format!("{value:?}"));
     }
 }
 
