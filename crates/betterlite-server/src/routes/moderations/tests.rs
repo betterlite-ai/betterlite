@@ -319,6 +319,7 @@ enum Scenario {
     Provider401,
     Provider429,
     Provider500,
+    NoCooldown,
     ProviderRetryThenSuccess,
     DecimalScore,
     SmallestScore,
@@ -346,6 +347,7 @@ enum Scenario {
 #[case::provider_401(Scenario::Provider401)]
 #[case::provider_429(Scenario::Provider429)]
 #[case::provider_500(Scenario::Provider500)]
+#[case::no_cooldown(Scenario::NoCooldown)]
 #[case::provider_retry_then_success(Scenario::ProviderRetryThenSuccess)]
 #[case::decimal_score(Scenario::DecimalScore)]
 #[case::smallest_score(Scenario::SmallestScore)]
@@ -375,6 +377,7 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
         Scenario::Provider401 => provider_error(401, PROVIDER_401).await,
         Scenario::Provider429 => provider_error(429, PROVIDER_429).await,
         Scenario::Provider500 => provider_error(500, PROVIDER_500).await,
+        Scenario::NoCooldown => no_cooldown().await,
         Scenario::ProviderRetryThenSuccess => provider_retry_then_success().await,
         Scenario::DecimalScore => decimal_score().await,
         Scenario::SmallestScore => smallest_score().await,
@@ -647,6 +650,37 @@ async fn provider_error(status: u16, body: &str) {
     .await;
     assert_eq!(reply.sent.len(), attempts, "the SDK's retry count");
     assert_provider_error(status, &reply);
+}
+
+// LiteLLM's router puts a deployment in cooldown for a provider error it does not retry; betterlite keeps it in service
+async fn no_cooldown() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let guard = format!("http://{address}/v1");
+    let other = format!("http://{address}/other/v1");
+    let state = state_with(&guard, &other, "");
+    let provider = tokio::spawn(record_requests(
+        listener,
+        vec![(401, String::from(PROVIDER_401)), (200, answer("0.5"))],
+    ));
+    let first = routes(&state)
+        .oneshot(request(
+            "/v1/moderations",
+            r#"{"model":"guard","input":"hello"}"#,
+        ))
+        .await
+        .expect("first answer");
+    let second = routes(&state)
+        .oneshot(request(
+            "/v1/moderations",
+            r#"{"model":"guard","input":"hello"}"#,
+        ))
+        .await
+        .expect("second answer");
+    let sent = provider.await.expect("provider task");
+    assert_eq!(first.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(sent.len(), 2, "the second request reached the provider");
 }
 
 // the moderation except answers litellm_call_id_headers alone
