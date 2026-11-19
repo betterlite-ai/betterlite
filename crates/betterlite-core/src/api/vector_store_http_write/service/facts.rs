@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -27,10 +28,10 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
 
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less the two content headers
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    let text = std::str::from_utf8(&reply.body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        std::string::ToString::to_string,
-    );
+    let text = match from_utf8(&reply.body) {
+        Ok(text) => text.to_owned(),
+        Err(_) => format!("{} bytes that are not UTF-8", reply.body.len()),
+    };
     let headers = error_headers(&reply.headers);
     FailureFacts {
         response_status: Some(i64::from(reply.status)),

@@ -30,7 +30,7 @@ pub struct UrlFailure {
     pub source: Box<dyn Error + Send + Sync>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseFacts {
     pub status_code: i64,
     pub text: Option<String>,
@@ -38,7 +38,7 @@ pub struct ResponseFacts {
 }
 
 // Everything llm_http_handler.py reads off the caught exception before it picks a status, a text and a header map
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailureFacts {
     pub response_status: Option<i64>,
     pub status: Option<Json>,
@@ -94,10 +94,10 @@ pub enum WriteError {
 
 #[must_use]
 pub fn header_text(value: &http::HeaderValue) -> String {
-    value.to_str().map_or_else(
-        |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
-        std::string::ToString::to_string,
-    )
+    match value.to_str() {
+        Ok(text) => text.to_owned(),
+        Err(_) => format!("{} bytes that are not UTF-8", value.as_bytes().len()),
+    }
 }
 
 #[must_use]
@@ -129,20 +129,20 @@ pub fn handle_error(facts: &FailureFacts, config: Option<&dyn WriteConfig>) -> B
     if error_headers.is_none()
         && let Some(response) = &facts.response
     {
-        error_headers = response.headers.clone();
+        error_headers.clone_from(&response.headers);
     }
     if let Some(response) = &facts.response
         && let Some(text) = &response.text
     {
-        error_text = text.clone();
+        error_text.clone_from(text);
     }
-    let error_headers = error_headers.unwrap_or_default();
+    let headers = error_headers.unwrap_or_default();
     let mut error = match config {
-        Some(config) => config.error_class(&error_text, code, error_headers),
+        Some(policy) => policy.error_class(&error_text, code, headers),
         None => BaseLlmException {
             status_code: code,
             message: error_text,
-            headers: error_headers,
+            headers,
             status_code_is_synthesized: false,
         },
     };

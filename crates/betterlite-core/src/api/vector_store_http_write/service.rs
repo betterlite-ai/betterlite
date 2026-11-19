@@ -38,6 +38,15 @@ pub enum Operation {
     Delete,
 }
 
+impl Operation {
+    const fn http_method(self) -> Method {
+        match self {
+            Self::Update => Method::POST,
+            Self::Delete => Method::DELETE,
+        }
+    }
+}
+
 pub struct SuppliedClient<'client, Client> {
     pub kind: ClientKind,
     pub transport: &'client Client,
@@ -125,26 +134,74 @@ pub struct PreparedWrite<'deps, C: WriteConfig, S: ClientSource> {
 }
 
 // The four handlers' shared front half: client selection, environment validation, the base plus encoded id, the body, the pre-call and the wire headers
-pub fn prepare<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
+pub fn prepare<'borrow, 'deps: 'borrow, C, S>(
     deps: &'borrow WriteDeps<'deps, C, S>,
     mode: ClientKind,
     call: &WriteCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<PreparedWrite<'borrow, C, S>, WriteError> {
+) -> Result<PreparedWrite<'borrow, C, S>, WriteError>
+where
+    C: WriteConfig,
+    S: ClientSource,
+{
     let (target, operation) = match call {
         WriteCall::Update(update) => (&update.target, Operation::Update),
         WriteCall::Delete(delete) => (&delete.target, Operation::Delete),
     };
     let client = select_client(deps, mode, target.params.ssl_verify)?;
+    let headers = validated_headers(deps.config, target);
+    let (api_base, url) = write_endpoint(deps.config, target)?;
+    let payload = update_body(call)?;
+    log_pre_call(&api_base, &headers, payload.as_ref(), log)?;
+    Ok(PreparedWrite {
+        config: deps.config,
+        client,
+        request: WriteRequest {
+            method: operation.http_method(),
+            url,
+            headers: wire_headers(&headers)?,
+            body: wire_body(payload.as_ref())?,
+            timeout: call_timeout(mode, target.timeout),
+        },
+        operation,
+        mode,
+    })
+}
+
+fn select_client<'borrow, 'deps: 'borrow, C, S>(
+    deps: &'borrow WriteDeps<'deps, C, S>,
+    mode: ClientKind,
+    ssl_verify: Option<bool>,
+) -> Result<Selected<'borrow, S::Client>, WriteError>
+where
+    C: WriteConfig,
+    S: ClientSource,
+{
+    if let Some(supplied) = &deps.supplied
+        && supplied.kind == mode
+    {
+        return Ok(Selected::Supplied(supplied.transport));
+    }
+    Ok(Selected::Created(deps.source.client(ssl_verify)?))
+}
+
+// B527's validate_environment rewrites Authorization and Content-Type in the map it is handed, so the caller's entries go in first
+fn validated_headers<C>(config: &C, target: &WriteTarget<'_>) -> OpenAiHeaders
+where
+    C: WriteConfig,
+{
     let mut caller_headers = OpenAiHeaders::new();
     for (name, value) in target.extra_headers.into_iter().flatten() {
         caller_headers.insert(name.clone(), SecretString::from(value.clone()));
     }
-    let headers = deps
-        .config
-        .validate_environment(caller_headers, target.params);
-    let api_base = deps
-        .config
+    config.validate_environment(caller_headers, target.params)
+}
+
+fn write_endpoint<C>(config: &C, target: &WriteTarget<'_>) -> Result<(String, Url), WriteError>
+where
+    C: WriteConfig,
+{
+    let api_base = config
         .complete_url(target.params)
         .map_err(WriteError::Url)?;
     let encoded =
@@ -152,50 +209,26 @@ pub fn prepare<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
     // The literal slash plus one encoded id lands after any query string, exactly as LiteLLM's f-string does
     let text = format!("{api_base}/{encoded}");
     let url = Url::parse(&text).map_err(|source| WriteError::RequestUrl { url: text, source })?;
-    let body = match call {
-        WriteCall::Update(update) => Some(update.optional_params.request_body(update.extra_body)?),
-        WriteCall::Delete(_) => None,
-    };
-    log_pre_call(&api_base, &headers, body.as_ref(), log)?;
-    let method = match operation {
-        Operation::Update => Method::POST,
-        Operation::Delete => Method::DELETE,
-    };
-    // LiteLLM's sync calls pass no timeout, leaving the selected client's own deadline in effect
-    let timeout = match mode {
-        ClientKind::Asynchronous => target.timeout,
-        ClientKind::Sync => None,
-    };
-    let body = match &body {
-        Some(body) => RequestBody::Json(serde_json::to_vec(body).map_err(WriteError::Encode)?),
-        None => RequestBody::Empty,
-    };
-    Ok(PreparedWrite {
-        config: deps.config,
-        client,
-        request: WriteRequest {
-            method,
-            url,
-            headers: wire_headers(&headers)?,
-            body,
-            timeout,
-        },
-        operation,
-        mode,
-    })
+    Ok((api_base, url))
 }
 
-fn select_client<'borrow, 'deps: 'borrow, C: WriteConfig, S: ClientSource>(
-    deps: &'borrow WriteDeps<'deps, C, S>,
-    mode: ClientKind,
-    ssl_verify: Option<bool>,
-) -> Result<Selected<'borrow, S::Client>, WriteError> {
-    if let Some(supplied) = &deps.supplied
-        && supplied.kind == mode
-    {
-        return Ok(Selected::Supplied(supplied.transport));
+// The delete handlers take extra_body and never read it, so only an update builds one
+fn update_body(call: &WriteCall<'_>) -> Result<Option<IndexMap<String, Json>>, WriteError> {
+    match call {
+        WriteCall::Update(update) => update
+            .optional_params
+            .request_body(update.extra_body)
+            .map(Some),
+        WriteCall::Delete(_) => Ok(None),
     }
-    Ok(Selected::Created(deps.source.client(ssl_verify)?))
+}
+
+// LiteLLM's sync handlers pass no timeout, leaving the selected client's own deadline in effect
+const fn call_timeout(mode: ClientKind, timeout: Option<Duration>) -> Option<Duration> {
+    match mode {
+        ClientKind::Asynchronous => timeout,
+        ClientKind::Sync => None,
+    }
 }
 
 fn log_pre_call(
@@ -244,10 +277,21 @@ fn wire_headers(headers: &OpenAiHeaders) -> Result<HttpHeaders, WriteError> {
     Ok(map)
 }
 
+fn wire_body(body: Option<&IndexMap<String, Json>>) -> Result<RequestBody, WriteError> {
+    match body {
+        Some(body) => serde_json::to_vec(body)
+            .map(RequestBody::Json)
+            .map_err(WriteError::Encode),
+        None => Ok(RequestBody::Empty),
+    }
+}
+
 // One send, no retry: a transport failure becomes a provider error, and a status of 400 or more becomes one too
-pub async fn send<C: WriteConfig, S: ClientSource>(
-    prepared: PreparedWrite<'_, C, S>,
-) -> Result<Json, WriteError> {
+pub async fn send<C, S>(prepared: PreparedWrite<'_, C, S>) -> Result<Json, WriteError>
+where
+    C: WriteConfig,
+    S: ClientSource,
+{
     let PreparedWrite {
         config,
         client,
@@ -255,7 +299,9 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
         operation,
         mode,
     } = prepared;
-    let timeout = request.timeout.unwrap_or(client.get().default_timeout());
+    let timeout = request
+        .timeout
+        .unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
     let sent = Sent {
@@ -264,22 +310,22 @@ pub async fn send<C: WriteConfig, S: ClientSource>(
         timeout,
         elapsed: started.elapsed(),
     };
-    let reply = reply.map_err(|error| {
+    let answer = reply.map_err(|error| {
         WriteError::Provider(handle_error(
             &facts::transport_facts(&error, &sent),
             Some(config),
         ))
     })?;
-    if reply.status < 400 {
+    if answer.status < 400 {
         return match operation {
             Operation::Update => config
-                .transform_create_response(&facts::http_response(&reply))
+                .transform_create_response(&facts::http_response(&answer))
                 .map_err(WriteError::Provider),
-            Operation::Delete => serde_json::from_slice(&reply.body).map_err(WriteError::Reply),
+            Operation::Delete => serde_json::from_slice(&answer.body).map_err(WriteError::Reply),
         };
     }
     Err(WriteError::Provider(handle_error(
-        &facts::status_facts(&reply),
+        &facts::status_facts(&answer),
         Some(config),
     )))
 }
