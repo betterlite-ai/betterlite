@@ -13,6 +13,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_http::error::HttpError;
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 use tower::ServiceExt as _;
 
@@ -154,7 +155,7 @@ pub(crate) fn reply(status: StatusCode, body: &str) -> PluginReply {
 
 enum FakeReply {
     Answer(PluginReply),
-    Failure(String),
+    Failure,
 }
 
 #[derive(Default)]
@@ -171,10 +172,10 @@ impl FakeUpstream {
         })
     }
 
-    pub(crate) fn failing(message: &str) -> Arc<Self> {
+    pub(crate) fn failing() -> Arc<Self> {
         Arc::new(Self {
             requests: Mutex::new(Vec::new()),
-            reply: Mutex::new(Some(FakeReply::Failure(message.to_owned()))),
+            reply: Mutex::new(Some(FakeReply::Failure)),
         })
     }
 
@@ -196,11 +197,8 @@ impl PluginUpstream for FakeUpstream {
         let configured = self.reply.lock().unwrap_or_else(PoisonError::into_inner);
         match configured.as_ref() {
             Some(FakeReply::Answer(reply)) => Ok(reply.clone()),
-            Some(FakeReply::Failure(message)) => Err(PluginSendError::Unavailable {
-                message: message.clone(),
-            }),
-            None => Err(PluginSendError::Unavailable {
-                message: "no reply configured".to_owned(),
+            Some(FakeReply::Failure) | None => Err(PluginSendError::Transport {
+                source: HttpError::Timeout,
             }),
         }
     }

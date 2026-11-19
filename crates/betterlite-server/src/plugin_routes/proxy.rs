@@ -66,10 +66,16 @@ pub struct PluginReply {
 
 #[derive(Debug, Error)]
 pub enum PluginSendError {
-    #[error("the plugin outbound client could not be built: {message}")]
-    Unavailable { message: String },
-    #[error("the plugin request could not be built: {message}")]
-    Build { message: String },
+    #[error("the plugin outbound client could not be built: {source}")]
+    Unavailable {
+        #[source]
+        source: Arc<PluginClientError>,
+    },
+    #[error("the plugin request could not be built: {source}")]
+    Build {
+        #[source]
+        source: http::Error,
+    },
     #[error("the plugin request failed: {source}")]
     Transport {
         #[source]
@@ -83,7 +89,7 @@ pub trait PluginUpstream: Send + Sync {
 }
 
 #[derive(Debug, Error)]
-enum PluginClientError {
+pub enum PluginClientError {
     #[error("the proxy environment is invalid: {source}")]
     Policy {
         #[source]
@@ -97,7 +103,7 @@ enum PluginClientError {
 }
 
 pub struct ProxiedPluginUpstream {
-    client: Result<ProxiedClient, PluginClientError>,
+    client: Result<ProxiedClient, Arc<PluginClientError>>,
 }
 
 impl ProxiedPluginUpstream {
@@ -110,7 +116,9 @@ impl ProxiedPluginUpstream {
         let client = policy.and_then(|resolved| {
             ProxiedClient::outbound(&resolved).map_err(PluginClientError::Client)
         });
-        Self { client }
+        Self {
+            client: client.map_err(Arc::new),
+        }
     }
 }
 
@@ -120,8 +128,8 @@ impl PluginUpstream for ProxiedPluginUpstream {
         let client = self
             .client
             .as_ref()
-            .map_err(|error| PluginSendError::Unavailable {
-                message: error.to_string(),
+            .map_err(|source| PluginSendError::Unavailable {
+                source: Arc::clone(source),
             })?;
         let built = client
             .client
@@ -129,9 +137,7 @@ impl PluginUpstream for ProxiedPluginUpstream {
             .headers(request.headers)
             .body(request.body)
             .build()
-            .map_err(|error| PluginSendError::Build {
-                message: error.to_string(),
-            })?;
+            .map_err(|source| PluginSendError::Build { source })?;
         // the client is built with redirect(Policy::none()), so a plugin's 3xx is answered and never followed
         let response = client
             .execute_buffered(built, client.limits.body_bytes)

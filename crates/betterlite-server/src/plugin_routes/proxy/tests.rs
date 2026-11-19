@@ -222,7 +222,7 @@ async fn answers_404_for_an_unregistered_plugin() {
 
 #[tokio::test]
 async fn answers_502_when_the_upstream_fails() {
-    let upstream = FakeUpstream::failing("connection refused");
+    let upstream = FakeUpstream::failing();
     let app = router(plugin_state(Arc::clone(&upstream)));
     let request = authorized(
         get_request("/plugin-proxy/litellm-platform-plugin/path"),
