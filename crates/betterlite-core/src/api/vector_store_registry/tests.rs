@@ -334,8 +334,9 @@ fn config_ownership_and_deletion() {
 
 #[test]
 fn index_registry_order_and_lookup() {
-    let mut registry =
-        VectorStoreIndexRegistry::new(vec![index("i1", "notes"), index("i2", "notes")]);
+    let mut registry = VectorStoreIndexRegistry {
+        indexes: vec![index("i1", "notes"), index("i2", "notes")],
+    };
     assert_eq!(registry.find_by_name("notes").unwrap().id, "i1");
     assert!(registry.contains_name("notes"));
     assert!(!registry.contains_name("absent"));

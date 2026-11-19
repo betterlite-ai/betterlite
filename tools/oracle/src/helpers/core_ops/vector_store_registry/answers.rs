@@ -49,7 +49,9 @@ fn config_records(input: &Input) -> HelperResult {
 
 fn mutations(input: &Input) -> HelperResult {
     let mut registry = registry_with(decode_all(&input.stores)?);
-    let mut index_registry = VectorStoreIndexRegistry::new(decode_all(&input.indexes)?);
+    let mut index_registry = VectorStoreIndexRegistry {
+        indexes: decode_all(&input.indexes)?,
+    };
     let mut results = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
         results.push(step_value(step, &mut registry, &mut index_registry)?);

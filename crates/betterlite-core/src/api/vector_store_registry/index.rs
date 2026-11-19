@@ -7,12 +7,6 @@ pub struct VectorStoreIndexRegistry {
 
 impl VectorStoreIndexRegistry {
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions
-    pub const fn new(indexes: Vec<LiteLlmManagedVectorStoreIndex>) -> Self {
-        Self { indexes }
-    }
-
-    #[must_use]
     pub fn find_by_name(&self, index_name: &str) -> Option<&LiteLlmManagedVectorStoreIndex> {
         self.indexes
             .iter()
