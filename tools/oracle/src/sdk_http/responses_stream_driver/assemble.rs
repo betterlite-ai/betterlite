@@ -164,12 +164,12 @@ impl Environment {
         })
     }
     pub(super) fn hooks(&self) -> ResponsesStreamHooks<'_> {
-        let chunk: Arc<dyn ChunkDeploymentHook> = Arc::clone(&self.recorder);
+        let chunk: Arc<dyn ChunkDeploymentHook> = Arc::<Recorder>::clone(&self.recorder);
         ResponsesStreamHooks {
             cache: None,
             cache_handler: None,
-            success: Some(Arc::clone(&self.recorder)),
-            failure: Some(Arc::clone(&self.recorder)),
+            success: Some(Arc::<Recorder>::clone(&self.recorder)),
+            failure: Some(Arc::<Recorder>::clone(&self.recorder)),
             metadata: None,
             success_hook: None,
             chunk_hooks: vec![chunk],

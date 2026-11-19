@@ -22,7 +22,10 @@ fn failure(spec: &ScriptedFailure) -> TransportFailure {
         FailureKind::Protocol => TransportKind::RemoteProtocolError,
         FailureKind::Timeout => TransportKind::HttpError,
     };
-    TransportFailure::new(kind, &spec.message)
+    TransportFailure {
+        kind,
+        message: spec.message.clone(),
+    }
 }
 // A scripted run never touches the provider: the payloads and the read failure are case data
 pub(super) fn scripted(spec: &RunSpec) -> Opened {

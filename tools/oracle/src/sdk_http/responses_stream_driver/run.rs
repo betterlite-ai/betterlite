@@ -70,7 +70,7 @@ fn live_stream<'stream>(
             details: IndexMap::new(),
             limits: &environment.limits,
         },
-        state,
+        &state,
         Box::new(PrefetchedSource::new(items)),
     )))
 }
@@ -110,7 +110,7 @@ fn synthesize<'stream>(
         cache_hit: cached.then_some(true),
         persist_before_logging: !cached,
     };
-    let synthesized = SyntheticStream::build(response, setup, None::<&NoCost>)
+    let synthesized = SyntheticStream::build(response, &setup, None::<&NoCost>)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     Ok(Stream::Synthetic(Box::new(synthesized)))
 }
