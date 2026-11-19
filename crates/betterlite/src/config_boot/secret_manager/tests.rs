@@ -12,7 +12,8 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
 
-use super::{access_mode_name, dispatch_settings, parse_system, select_secret_manager, vault_tls};
+use super::dispatch_params::{access_mode_name, dispatch_settings};
+use super::{parse_system, select_secret_manager, vault_tls};
 use crate::config_boot::error::ConfigBootError;
 use crate::config_boot::test_support::capture_logs;
 
