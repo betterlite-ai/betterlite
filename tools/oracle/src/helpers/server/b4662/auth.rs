@@ -41,7 +41,8 @@ pub(super) async fn resolve(input: &ResolveInput) -> Result<Value, Box<HelperErr
         .map_err(|error| support::value_error(error.to_string()))?;
     let scripted = Arc::new(ScriptedPost::new(&input.outcomes)?);
     let poster: Arc<dyn M2mTokenEndpointPost> = Arc::<ScriptedPost>::clone(&scripted);
-    let cache = MCPOAuth2TokenCache::new(poster, Arc::new(FixedClock));
+    let cache = MCPOAuth2TokenCache::new(poster, Arc::new(FixedClock))
+        .map_err(|error| support::value_error(error.to_string()))?;
     let header = override_of(input.mcp_auth_header.as_ref());
     let value = resolve_mcp_auth(&server, header.as_ref(), &cache)
         .await

@@ -10,6 +10,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_server::mcp::oauth_caches::{MCPOAuth2TokenCache, MCPPerUserTokenCache};
 use betterlite_server::mcp::outbound_credentials::PER_USER_TOKEN_KEY_PREFIX;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::M2mTokenEndpointPost;
+use betterlite_server::mcp::outbound_credentials::dual_cache::DualCacheTokenCacheBackend;
 
 use super::support::{
     self, Failure, FakeBackend, FixedClock, OutcomeSpec, RecordedCall, ScriptedPost, ServerSpec,
@@ -63,7 +64,7 @@ pub(super) struct PerUserTtlInput {
     pub(super) expires_in: Option<i64>,
 }
 
-type PerUserCache = MCPPerUserTokenCache<FakeBackend>;
+type PerUserCache = MCPPerUserTokenCache<DualCacheTokenCacheBackend<FakeBackend>>;
 
 struct OAuth2Call {
     server: MCPServer,
@@ -80,7 +81,8 @@ impl OAuth2Call {
         Ok(Self {
             server,
             scripted,
-            cache: MCPOAuth2TokenCache::new(poster, Arc::new(FixedClock)),
+            cache: MCPOAuth2TokenCache::new(poster, Arc::new(FixedClock))
+                .map_err(|error| support::value_error(error.to_string()))?,
         })
     }
 
@@ -136,8 +138,11 @@ impl PerUserCall {
 fn per_user_cache(input: &PerUserInput) -> PerUserCache {
     let failures: BTreeSet<Failure> = input.fail.into_iter().collect();
     PerUserCache {
-        backend: FakeBackend::new(failures),
-        codec: support::codec(),
+        backend: DualCacheTokenCacheBackend {
+            cache: FakeBackend::new(failures),
+            codec: support::codec(),
+            key_prefix: PER_USER_TOKEN_KEY_PREFIX,
+        },
     }
 }
 
@@ -223,7 +228,7 @@ pub(super) async fn per_user_get(input: &PerUserInput) -> Result<Value, Box<Help
         call.seed(seed, 300).await;
     }
     if input.garbage {
-        call.cache.backend.seed(&call.key(), "garbage");
+        call.cache.backend.cache.seed(&call.key(), "garbage");
     }
     Ok(json!({"token": call.stored().await}))
 }
@@ -231,16 +236,16 @@ pub(super) async fn per_user_get(input: &PerUserInput) -> Result<Value, Box<Help
 pub(super) async fn per_user_set(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
     call.seed(&input.access_token, input.ttl).await;
-    let stored = call.cache.backend.entry(&call.key());
+    let stored = call.cache.backend.cache.entry(&call.key());
     let differs = stored.is_some_and(|raw| raw != input.access_token);
-    let ttl = call.cache.backend.recorded_ttl(&call.key());
+    let ttl = call.cache.backend.cache.recorded_ttl(&call.key());
     Ok(set_view(call.stored().await, differs, ttl))
 }
 
 pub(super) async fn per_user_delete(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
     let seed = (support::codec().encrypt)("token-value");
-    call.cache.backend.seed(&call.key(), &seed);
+    call.cache.backend.cache.seed(&call.key(), &seed);
     call.cache.delete(&call.user_id, &call.server_id).await;
     Ok(json!({"token_after": call.stored().await}))
 }

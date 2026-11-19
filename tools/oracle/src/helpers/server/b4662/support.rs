@@ -1,18 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use betterlite_server::mcp::backfills::log::{BackfillEvent, BackfillLog};
-use betterlite_server::mcp::oauth_caches::per_user::PerUserTokenBackend;
 use betterlite_server::mcp::outbound_credentials::WallClock;
 use betterlite_server::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome, TokenResponseBody,
 };
+use betterlite_server::mcp::outbound_credentials::dual_cache::AsyncCache;
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -250,25 +252,30 @@ impl FakeBackend {
 }
 
 #[async_trait]
-impl PerUserTokenBackend for FakeBackend {
+impl AsyncCache for FakeBackend {
     type Error = FakeError;
 
-    async fn get(&self, key: &str) -> Result<Option<String>, Self::Error> {
+    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, Self::Error> {
         self.refuse(Failure::Get, "the fake cache get failed")?;
-        Ok(self.entry(key))
+        Ok(self.entry(key).map(CacheValue::Text))
     }
 
-    async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), Self::Error> {
+    async fn async_set_cache(
+        &self,
+        key: &str,
+        value: &str,
+        ttl: Option<Duration>,
+    ) -> Result<(), Self::Error> {
         self.refuse(Failure::Set, "the fake cache set failed")?;
         self.seed(key, value);
         self.sets
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), value.to_owned(), ttl));
+            .push((key.to_owned(), value.to_owned(), ttl_seconds(ttl)));
         Ok(())
     }
 
-    async fn delete(&self, key: &str) -> Result<(), Self::Error> {
+    async fn async_delete_cache(&self, key: &str) -> Result<(), Self::Error> {
         self.refuse(Failure::Delete, "the fake cache delete failed")?;
         self.entries
             .lock()
@@ -276,6 +283,12 @@ impl PerUserTokenBackend for FakeBackend {
             .remove(key);
         Ok(())
     }
+}
+
+fn ttl_seconds(ttl: Option<Duration>) -> i64 {
+    ttl.map_or(0, |lifetime| {
+        i64::try_from(lifetime.as_secs()).unwrap_or(i64::MAX)
+    })
 }
 
 pub(super) fn authorization(headers: &[(String, String)]) -> Option<String> {
