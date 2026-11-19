@@ -109,9 +109,12 @@ impl StoredPin {
         }
     }
 
-    // claim_affinity_pin_in_memory's legacy check: extra stored fields are allowed
+    // claim_affinity_pin_in_memory's legacy check: extra stored fields are allowed, and one pin value may be a bare string
     #[must_use]
     pub fn matches_legacy(&self, pin: &AffinityPin) -> bool {
+        if let Self::Text(text) = self {
+            return pin.0.len() == 1 && pin.0.values().any(|value| value == text);
+        }
         let Some(fields) = self.fields() else {
             return false;
         };
