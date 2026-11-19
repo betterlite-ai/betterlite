@@ -99,21 +99,19 @@ impl AuthPubSub for Endpoint {
 
     fn subscribe(&self) -> impl Future<Output = Result<Self::Subscription, TransportError>> + Send {
         lock(&self.journal).events.push("subscribe".to_owned());
-        ready(match lock(&self.sessions).pop_front() {
-            Some(steps) => Ok(Subscription {
-                journal: Arc::clone(&self.journal),
-                steps: VecDeque::from(steps),
-                blocker: Arc::clone(&self.blocker),
-            }),
-            None => {
-                lock(&self.journal)
-                    .events
-                    .push("subscribe-failed".to_owned());
-                Err(TransportError::Connection(scripted_failure(
-                    "scripted subscribe failed",
-                )))
-            }
-        })
+        let Some(steps) = lock(&self.sessions).pop_front() else {
+            lock(&self.journal)
+                .events
+                .push("subscribe-failed".to_owned());
+            return ready(Err(TransportError::Connection(scripted_failure(
+                "scripted subscribe failed",
+            ))));
+        };
+        ready(Ok(Subscription {
+            journal: Arc::clone(&self.journal),
+            steps: VecDeque::from(steps),
+            blocker: Arc::clone(&self.blocker),
+        }))
     }
 }
 

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_auth::auth_cache::gateway_cache;
 use betterlite_auth::auth_pubsub::subscriber::{CacheInvalidationSubscriber, Session};
 use betterlite_cache::backend::BackendError;
-use betterlite_cache::backend::memory::MemoryCacheOps;
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_context::local_ttl_cache::CacheValue;
