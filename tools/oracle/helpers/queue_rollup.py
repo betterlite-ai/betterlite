@@ -19,7 +19,7 @@ class WireStep(TypedDict):
     transaction: WindowSpendTransaction
 
 
-# the fields build_model_usage_transaction reads, typed as SpendLogsPayload declares them, so nothing here carries Any
+# the fields the rollup reads, typed as SpendLogsPayload declares them, so no Any here
 class Payload(TypedDict):
     startTime: datetime | str
     metadata: str
