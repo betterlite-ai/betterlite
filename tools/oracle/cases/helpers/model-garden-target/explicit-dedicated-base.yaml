@@ -1,0 +1,17 @@
+kind: helper
+name: explicit-dedicated-base
+call:
+  model_garden_target:
+    targets:
+      - model: openai/1234567890
+        api_base: https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/1234567890
+        vertex_location: us-central1
+        vertex_project: proj
+        resolved_project: auth-proj
+      - model: meta/llama-3.3-70b-instruct-maas
+        api_base: https://dedicated.example/v1
+        vertex_location: null
+        vertex_project: null
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: duckduckgo-search-answer-ignored
+call:
+  duckduckgo_search:
+    environment: {}
+    calls:
+      - kind: reply
+        query: answer
+        optional_params: {}
+        body: '{"Answer":"42","AnswerType":"number","Definition":"a definition","RelatedTopics":[]}'
+      - kind: reply
+        query: answer and abstract
+        optional_params: {}
+        body: '{"Answer":"ignored","AnswerType":"text","AbstractURL":"https://abstract.test","AbstractText":"kept","Heading":"H"}'
+env: {}
+compare: {ignore: []}

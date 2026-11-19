@@ -1,0 +1,22 @@
+kind: helper
+name: beta-endpoint-path
+call:
+  model_garden_target:
+    targets:
+      - model: '5464397967697903616'
+        api_base: null
+        vertex_location: europe-west1
+        vertex_project: proj
+        resolved_project: auth-proj
+      - model: gemma/378943383978115072
+        api_base: null
+        vertex_location: us
+        vertex_project: proj
+        resolved_project: auth-proj
+      - model: openai/1234567890
+        api_base: null
+        vertex_location: global
+        vertex_project: proj
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

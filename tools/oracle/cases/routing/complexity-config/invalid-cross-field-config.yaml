@@ -1,0 +1,151 @@
+kind: probe
+name: complexity-config-invalid-cross-field-config
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          escalation_keywords: ["  LITELLM ESCALATE  ", "   ", "hard ask"]
+          plan_mode_min_tier: "  COMPLEX "
+          plan_mode_patterns: [" Plan mode is active ", "  "]
+          housekeeping_patterns: ["Write the title", ""]
+        knobs: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          escalation_keywords: []
+          heuristic_first_max_tier: "  MEDIUM "
+        knobs: {classifier_type: heuristic_first}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          hybrid_boundary_margin: 1
+        knobs: {classifier_type: hybrid}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          plan_mode_min_tier: PREMIUM
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          plan_mode_min_tier: MEDIUM
+        tiers:
+          tier_models: {SIMPLE: mini}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          heuristic_first_max_tier: COMPLEX
+        knobs: {classifier_type: heuristic}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          heuristic_first_max_tier: REASONING
+        knobs: {classifier_type: heuristic_first}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          hybrid_boundary_margin: 0.5
+        knobs: {classifier_type: heuristic}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs: {classifier_type: hybrid}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        settings:
+          hybrid_boundary_margin: 1.5
+        knobs: {classifier_type: hybrid}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs:
+          keyword_rule_tiers: [PREMIUM]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        tiers:
+          tier_models: {SIMPLE: []}
+        knobs: {features: [adaptive]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        tiers:
+          tier_models: {SIMPLE: mini, MEDIUM: [medium-a, medium-b]}
+        knobs: {features: [adaptive]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs: {features: [semantic_keyword_matching]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs:
+          features: [semantic_keyword_matching]
+          embedding_model: text-embedding-3-small
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs: {features: [stall_escalation, session_affinity]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs:
+          features: [stall_escalation]
+          stall_escalation: {window: 3, repeat_threshold: 4}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        tiers:
+          tier_models:
+            SIMPLE:
+              model_name: mini
+              litellm_params:
+                fallback_tier: COMPLEX
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs:
+          classifier_type: llm
+          classification_prompt: "  pick a tier  "
+          classification_examples: " one example "
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs: {classifier_type: llm, fallback_tier: "   "}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_config:
+        knobs: {classifier_type: llm, classification_prompt: "  "}
+compare:
+  ignore:
+    - pointer: /message
+      why: each side words the validation failure differently

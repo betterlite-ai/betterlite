@@ -1,0 +1,121 @@
+kind: helper
+name: messages-chat-options-claude-thinking-carriers
+call:
+  messages_chat_options:
+    request:
+      model: bedrock/anthropic.claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+        format: {}
+        other: 7
+    custom_llm_provider: bedrock
+    auto_summary: false
+    declared: [reasoning_effort]
+calls:
+- messages_chat_options:
+    request:
+      model: arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+        format: {}
+        other: 7
+    custom_llm_provider: bedrock
+    auto_summary: false
+    declared: [reasoning_effort]
+- messages_chat_options:
+    request:
+      model: vertex_ai/claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+    custom_llm_provider: vertex_ai
+    auto_summary: false
+    declared: [reasoning_effort]
+- messages_chat_options:
+    request:
+      model: vertex_ai/claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+    custom_llm_provider: vertex_ai
+    auto_summary: false
+    declared: [thinking]
+- messages_chat_options:
+    request:
+      model: claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+    custom_llm_provider: litellm_proxy
+    auto_summary: false
+    declared: [reasoning_effort]
+- messages_chat_options:
+    request:
+      model: claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+        display: updates
+      output_config:
+        effort: high
+    custom_llm_provider: null
+    auto_summary: false
+    declared: [reasoning_effort]
+- messages_chat_options:
+    request:
+      model: vertex_ai/claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: enabled
+        budget_tokens: 9000
+      output_config:
+        effort: high
+    custom_llm_provider: vertex_ai
+    auto_summary: false
+    declared: [reasoning_effort]
+- messages_chat_options:
+    request:
+      model: bedrock/anthropic.claude-sonnet-4-5
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: adaptive
+      output_config:
+        format: {}
+    custom_llm_provider: bedrock
+    auto_summary: false
+    declared: null
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,7 @@ use crate::dashboard_governance::{self, DashboardGovernanceSeed};
 use crate::discovery_skills::DiscoverySeed;
 use crate::error::FixtureError;
 use crate::finops::FinOpsSeed;
+use crate::scim::ScimSeed;
 use crate::search_tools::SearchSeed;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -40,6 +41,8 @@ pub struct FixtureSeed {
     pub daily_usage: Option<Vec<DailyUsageRow>>,
     #[serde(default)]
     pub finops: Option<FinOpsSeed>,
+    #[serde(default)]
+    pub scim: Option<ScimSeed>,
     #[serde(default)]
     pub discovery_skills: Option<DiscoverySeed>,
     #[serde(default)]
@@ -196,6 +199,9 @@ impl FixtureSeed {
         }
         if let Some(governance) = &self.dashboard_governance {
             dashboard_governance::validate(governance, self)?;
+        }
+        if let Some(scim) = &self.scim {
+            scim.validate(self)?;
         }
         Ok(())
     }

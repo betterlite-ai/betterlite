@@ -5,9 +5,7 @@ use betterlite_config::sections::grayswan::ReasoningMode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::generic_guardrail_contracts::{
-    GuardrailExtraValue, GuardrailMessage, GuardrailToolParam,
-};
+use crate::generic_guardrail_contracts::GuardrailExtraValue;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -24,19 +22,17 @@ pub struct GraySwanInput {
     #[serde(default)]
     pub tool_calls: Vec<GuardrailExtraValue>,
     #[serde(default)]
-    pub tools: Vec<GuardrailToolParam>,
+    pub tools: Vec<GuardrailExtraValue>,
     #[serde(default)]
     pub metadata: GraySwanDynamicParams,
     #[serde(default)]
-    pub request_history: Vec<GuardrailMessage>,
-    #[serde(default)]
-    pub litellm_metadata: BTreeMap<String, GuardrailExtraValue>,
+    pub request_history: Vec<GuardrailExtraValue>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct GraySwanPayload {
-    pub messages: Vec<GuardrailMessage>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<GuardrailToolParam>,
+    pub messages: Vec<GuardrailExtraValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<GuardrailExtraValue>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub categories: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
