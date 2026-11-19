@@ -31,6 +31,7 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use tokio::runtime::Builder;
 
+use betterlite_anthropic::stream_decode::error::ReceiveError;
 use betterlite_anthropic::stream_decode::{DecodedChunk, TransportChunk};
 use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_anthropic::stream_state::state::IdSource;
@@ -38,13 +39,13 @@ use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use uuid::Uuid;
 
-use crate::claude_platform::stream::get_model_response_iterator;
 use crate::claude_platform::chat::{
     ChatHeadersRequest, ChatPrepared, ChatRequest, ChatSources, HeaderSources, validate_environment,
 };
 use crate::claude_platform::error::{ChatValidationError, NativeTransformError};
 use crate::claude_platform::native::transform_request as native_transform;
 use crate::claude_platform::native::{NativePrepared, NativeRequest, NativeSources};
+use crate::claude_platform::stream::get_model_response_iterator;
 use crate::mantle_inputs::region::split_region_prefix;
 
 const ID: &str = "generated-id";
@@ -260,9 +261,7 @@ impl Records {
 
 pub(crate) fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
     let runtime = Builder::new_current_thread().build();
-    runtime
-        .expect("the test runtime builds")
-        .block_on(future)
+    runtime.expect("the test runtime builds").block_on(future)
 }
 
 pub(crate) fn defaults() -> OptionDefaults {
@@ -308,7 +307,7 @@ pub(crate) fn stream_chunks(
     ids: &FixedIds,
 ) -> Vec<serde_json::Value> {
     let stream = get_model_response_iterator(
-        steps.into_iter(),
+        steps.into_iter().map(Ok::<_, ReceiveError<CounterError>>),
         false,
         json_mode,
         Counting,
