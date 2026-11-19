@@ -32,9 +32,9 @@ description: >-
   and tool_choice="required". It does not send server_label. The parsed response JSON is
   not displayed: it reads x-litellm-semantic-filter as total->selected and
   x-litellm-semantic-filter-tools as a comma-separated list. Configure a fixed local MCP
-  catalog and embedding/model responses; reuse B136's /__mcp_fixture/ protocol handling
+  catalog and embedding/model responses; reuse B9943's /__mcp_fixture/ id correlation
   and $mcp_request_id response marker for initialize/notifications/tools responses. This is
-  a direct fixture dependency on B136, not a request to rebuild its gateway. Use B001's
+  a direct fixture dependency on B9943, not a request to change the mock. Use B001's
   strict ordered upstream scripts for the embedding and final model calls as well.
   Exercise the enabled filter with at least two tools and one retained result, then the
   same exact UI body with filtering disabled so the header is absent, the condition behind
@@ -89,7 +89,7 @@ deviations: []
 out_of_scope:
   - B9090 retains the three editors, form converters and test-result parser; B1663 keeps every settings handler and schema.
   - B080/B955/B8201/B8383 own Responses composition, dispatch, filtering and initialization; B4685 owns the semantic index underneath them.
-  - B060/B3275/B8673 implement the catalogs, B9735 supplies their exact selector acceptance, and B136 supplies the MCP protocol fixture.
+  - B060/B3275/B8673 implement the catalogs, B9735 supplies their exact selector acceptance, and B9943 supplies the MCP mock's id correlation.
 pitfalls:
   - Adding server_label or replacing input by a plain string would stop testing the request emitted by this panel.
   - active_on_this_pod reports callback registration rather than the desired enabled setting alone.
