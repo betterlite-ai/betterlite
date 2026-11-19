@@ -19,6 +19,10 @@ use crate::budget_reset_policy::entity_reset::ResetSchedule;
 use crate::budget_reset_policy::phase_draining::ResetLimits;
 use crate::budget_reset_policy::phase_failure::{PhaseFailureEvent, PhaseFailureSink};
 use crate::budget_reset_policy::rollover::RolloverPolicy;
+use crate::budget_tier_sweep::enduser_invalidation::{
+    EndUserWalkRequest, invalidate_enduser_caches,
+};
+use crate::budget_tier_sweep::enduser_page_truncation::EndUserWalk;
 use crate::budget_tier_sweep::service::BudgetTierSweep;
 use crate::database_faults::DbError;
 use crate::database_faults::reconnect::DbReconnect;
@@ -112,6 +116,31 @@ pub(crate) async fn insert_tier(
         )
         .await
         .unwrap();
+}
+
+pub(crate) struct CustomerWalk {
+    pub(crate) cache: RecordingCache,
+    pub(crate) walk: EndUserWalk,
+}
+
+// Five customers on tier-a walked two per page: the paging fixture both walk tests share.
+pub(crate) async fn walk_five_customers(store: &PostgresStore, client: &Client) -> CustomerWalk {
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('u1', 'tier-a', 10), ('u2', 'tier-a', 10), ('u3', 'tier-a', 10), ('u4', 'tier-a', 10), ('u5', 'tier-a', 10)",
+        )
+        .await
+        .unwrap();
+    let cache = RecordingCache::default();
+    let budget_ids = vec![String::from("tier-a")];
+    let request = EndUserWalkRequest {
+        budget_ids: &budget_ids,
+        default_enduser_budget_id: None,
+        batch_size: 2,
+    };
+    let mut reconnect = CountingReconnect::new(false);
+    let walk = invalidate_enduser_caches(store, &cache, request, Some(&mut reconnect)).await;
+    CustomerWalk { cache, walk }
 }
 
 pub(crate) async fn spend_of(client: &Client, table: &str, column: &str, id: &str) -> Decimal {

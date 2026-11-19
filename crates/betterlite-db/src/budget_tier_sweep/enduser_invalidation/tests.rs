@@ -9,37 +9,31 @@ use crate::budget_tier_sweep::enduser_invalidation::{
 use crate::budget_tier_sweep::enduser_page_truncation::EndUserWalk;
 use crate::budget_tier_sweep::tests::support::{
     CountingReconnect, Harness, RecordingCache, TestSchedule, close_store, finish, insert_tier,
-    moment, past, schema, serial_pool, spend_of,
+    moment, past, schema, serial_pool, spend_of, walk_five_customers,
 };
 use crate::postgres_store::session::PostgresStore;
 
 #[tokio::test]
 async fn a_complete_walk_counts_every_customer_and_reaches_the_end() {
     let (fixture, store, client) = schema().await;
-    client
-        .batch_execute(
-            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('u1', 'tier-a', 10), ('u2', 'tier-a', 10), ('u3', 'tier-a', 10), ('u4', 'tier-a', 10), ('u5', 'tier-a', 10)",
-        )
-        .await
-        .unwrap();
-    let cache = RecordingCache::default();
-    let budget_ids = vec![String::from("tier-a")];
-    let request = EndUserWalkRequest {
-        budget_ids: &budget_ids,
-        default_enduser_budget_id: None,
-        batch_size: 2,
-    };
-    let mut reconnect = CountingReconnect::new(false);
-    let walk = invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
+    let walked = walk_five_customers(&store, &client).await;
     assert_eq!(
-        walk,
+        walked.walk,
         EndUserWalk {
             cursor: None,
             invalidated: 5,
             truncated: false,
         }
     );
-    let sinks: Vec<InvalidatedCache> = cache.calls().iter().map(|call| call.sink).collect();
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn walk_drops_each_full_page_before_reading_the_next() {
+    let (fixture, store, client) = schema().await;
+    let walked = walk_five_customers(&store, &client).await;
+    let calls = walked.cache.calls();
+    let sinks: Vec<InvalidatedCache> = calls.iter().map(|call| call.sink).collect();
     assert_eq!(
         sinks,
         vec![
@@ -51,45 +45,17 @@ async fn a_complete_walk_counts_every_customer_and_reaches_the_end() {
             InvalidatedCache::UserApiKeyCache,
         ]
     );
-    finish(fixture, store, client).await;
-}
-
-#[tokio::test]
-async fn walk_drops_each_full_page_before_reading_the_next() {
-    let (fixture, store, client) = schema().await;
-    client
-        .batch_execute(
-            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('u1', 'tier-a', 10), ('u2', 'tier-a', 10), ('u3', 'tier-a', 10), ('u4', 'tier-a', 10), ('u5', 'tier-a', 10)",
-        )
-        .await
-        .unwrap();
-    let cache = RecordingCache::default();
-    let budget_ids = vec![String::from("tier-a")];
-    let request = EndUserWalkRequest {
-        budget_ids: &budget_ids,
-        default_enduser_budget_id: None,
-        batch_size: 2,
-    };
-    let mut reconnect = CountingReconnect::new(false);
-    invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
-    let counters: Vec<Vec<String>> = cache
-        .calls()
-        .into_iter()
+    let counters: Vec<Vec<String>> = calls
+        .iter()
         .filter(|call| call.sink == InvalidatedCache::SpendCounter)
-        .map(|call| call.keys)
+        .map(|call| call.keys.clone())
         .collect();
     assert_eq!(
         counters,
         vec![
-            vec![
-                "spend:end_user:u1".to_owned(),
-                "spend:end_user:u2".to_owned()
-            ],
-            vec![
-                "spend:end_user:u3".to_owned(),
-                "spend:end_user:u4".to_owned()
-            ],
-            vec!["spend:end_user:u5".to_owned()],
+            vec!["spend:end_user:u1", "spend:end_user:u2"],
+            vec!["spend:end_user:u3", "spend:end_user:u4"],
+            vec!["spend:end_user:u5"],
         ]
     );
     finish(fixture, store, client).await;
