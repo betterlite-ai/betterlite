@@ -77,6 +77,19 @@ async fn rejects_a_non_integer_top_n() {
 }
 
 #[tokio::test]
+async fn rejects_an_integer_beyond_the_i64_range() {
+    let (status, text) = test_support::call(
+        protected_router(),
+        "GET",
+        "/debug/memory/details?top_n=99999999999999999999",
+        Some(test_support::MASTER_KEY),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(text.contains("\"type\":\"int_parsing\""));
+}
+
+#[tokio::test]
 async fn rejects_a_non_boolean_process_flag() {
     let (status, text) = test_support::call(
         protected_router(),
