@@ -28,49 +28,46 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use futures_util::future::LocalBoxFuture;
 use tokio::time::timeout;
 
 type Handler<'deps> =
     Native<'deps, ProxiedClient, NoDynamicMetadata, NoHfConfig, Media, Media, fn() -> String>;
 type Capabilities<'deps> = CapabilityEnvironment<'deps, NoDynamicMetadata, NoHfConfig>;
 
-pub(super) fn invoke<'call>(
+pub(super) async fn invoke<'call>(
     fixture: &'call Fixture,
     invocation: Invocation<'call>,
-) -> LocalBoxFuture<'call, Observed> {
-    Box::pin(async move {
-        let resolution = ResolutionContext {
-            catalog: &fixture.catalog,
-            known_model_names: &fixture.names,
-            custom_providers: &fixture.names,
-            environment: &fixture.environment,
-            registry: JSONProviderRegistry::load(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        };
-        let mut keys = ModelCostKeys::default();
-        let capabilities = CapabilityEnvironment {
-            metadata: MetadataEnvironment {
-                model_cost: &fixture.map.entries,
-                vertex: &fixture.map.vertex,
-                generalizations: &fixture.generalizations,
-                resolution: &resolution,
-                normalizers: NameNormalizers {
-                    bedrock_base_model: get_bedrock_base_model,
-                    bedrock_routing_prefix: strip_bedrock_routing_prefix,
-                    mantle_region_split: split_region_prefix,
-                },
+) -> Observed {
+    let resolution = ResolutionContext {
+        catalog: &fixture.catalog,
+        known_model_names: &fixture.names,
+        custom_providers: &fixture.names,
+        environment: &fixture.environment,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let mut keys = ModelCostKeys::default();
+    let capabilities = CapabilityEnvironment {
+        metadata: MetadataEnvironment {
+            model_cost: &fixture.map.entries,
+            vertex: &fixture.map.vertex,
+            generalizations: &fixture.generalizations,
+            resolution: &resolution,
+            normalizers: NameNormalizers {
+                bedrock_base_model: get_bedrock_base_model,
+                bedrock_routing_prefix: strip_bedrock_routing_prefix,
+                mantle_region_split: split_region_prefix,
             },
-            keys: &mut keys,
-            dynamic: &NoDynamicMetadata,
-            hf: &fixture.hf,
-            provider_catalog: &fixture.provider_catalog,
-            provider_generation: 0,
-        };
-        let mut handler = Handler::from((fixture, capabilities));
-        invocation.dispatch(&mut handler, &fixture.services).await
-    })
+        },
+        keys: &mut keys,
+        dynamic: &NoDynamicMetadata,
+        hf: &fixture.hf,
+        provider_catalog: &fixture.provider_catalog,
+        provider_generation: 0,
+    };
+    let mut handler = Handler::from((fixture, capabilities));
+    invocation.dispatch(&mut handler, &fixture.services).await
 }
 
 impl<'deps> From<(&'deps Fixture, Capabilities<'deps>)> for Handler<'deps> {
@@ -122,45 +119,43 @@ impl StreamLogger for Log {
 }
 
 impl<'deps> Invocation<'deps> {
-    fn dispatch<'call>(
+    async fn dispatch<'call>(
         self,
         handler: &'call mut Handler<'_>,
         services: &'call Services,
-    ) -> LocalBoxFuture<'call, Observed>
+    ) -> Observed
     where
         'deps: 'call,
     {
-        Box::pin(async move {
-            let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-            let (mut state, env) = logging(&redactor).unwrap();
-            let mut log = CallLogging {
-                state: &mut state,
-                env: &env,
-            };
-            let mut deps = DispatchDeps {
-                completion: &self.completion,
-                handler,
-                count: &services.count,
-                batches: &services.batches,
-                files: &services.files,
-                file_client: &services.file_client,
-            };
-            let outcome = timeout(
-                TIMEOUT,
-                dispatch(
-                    Operation::Completion(self.surface, Box::new(self.call)),
-                    &mut deps,
-                    &mut log,
-                ),
-            )
-            .await
-            .unwrap();
-            let mut observed = observe(outcome).await;
-            observed.logged = match state.model_call_details.get("original_response") {
-                Some(Json::Text(text)) => text.clone(),
-                _ => String::new(),
-            };
-            observed
-        })
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+        let (mut state, env) = logging(&redactor).unwrap();
+        let mut log = CallLogging {
+            state: &mut state,
+            env: &env,
+        };
+        let mut deps = DispatchDeps {
+            completion: &self.completion,
+            handler,
+            count: &services.count,
+            batches: &services.batches,
+            files: &services.files,
+            file_client: &services.file_client,
+        };
+        let outcome = timeout(
+            TIMEOUT,
+            dispatch(
+                Operation::Completion(self.surface, Box::new(self.call)),
+                &mut deps,
+                &mut log,
+            ),
+        )
+        .await
+        .unwrap();
+        let mut observed = observe(outcome).await;
+        observed.logged = match state.model_call_details.get("original_response") {
+            Some(Json::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+        observed
     }
 }

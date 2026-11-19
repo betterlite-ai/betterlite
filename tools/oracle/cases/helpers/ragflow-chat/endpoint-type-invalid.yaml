@@ -1,0 +1,13 @@
+kind: helper
+name: ragflow-chat-endpoint-type-invalid
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/completion/abc/m', api_base: 'http://host:9380'}
+      - {model: 'ragflow/Chat/abc/m', api_base: 'http://host:9380'}
+      - {model: 'ragflow//abc/m', api_base: 'http://host:9380'}
