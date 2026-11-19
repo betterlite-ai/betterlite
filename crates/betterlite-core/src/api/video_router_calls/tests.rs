@@ -380,6 +380,47 @@ fn plan_known_model_team_mapping_needs_a_team_id() {
 }
 
 #[test]
+fn plan_known_model_team_mapping_with_another_team_falls_through() {
+    let view = FakeView {
+        team_models: vec![("internal-video", "team-1", "team/sora")],
+        ..empty_view()
+    };
+    let route = plan_video_route(
+        &VideoRouteInput {
+            team_id: Some("team-2"),
+            ..input(VideoCallKind::Generation, Some("internal-video"))
+        },
+        Some(&view),
+    );
+    assert_eq!(
+        route,
+        VideoRoute::NotFound {
+            model: "internal-video".to_owned()
+        }
+    );
+}
+
+#[test]
+fn plan_known_model_recognized_and_listed_is_router() {
+    let view = FakeView {
+        recognized: vec!["sora-2"],
+        model_names: vec!["sora-2"],
+        ..empty_view()
+    };
+    let route = plan_video_route(
+        &input(VideoCallKind::Generation, Some("sora-2")),
+        Some(&view),
+    );
+    assert_eq!(
+        route,
+        VideoRoute::Router {
+            model: "sora-2".to_owned(),
+            specific_deployment: false
+        }
+    );
+}
+
+#[test]
 fn plan_known_model_admin_public_name_is_router() {
     let view = FakeView {
         team_public: vec!["shared-video"],
