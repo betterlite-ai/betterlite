@@ -127,13 +127,13 @@ fn long_claims_keep_the_tail() {
 }
 
 fn unicode_indices_count_characters() {
-    let text = "Caf\u{e9}([u](https://u.example))";
+    let text = "\u{e9}([u](https://u.example))";
     let marker_bytes = text.find("([u]").unwrap();
     let marker_chars = text.get(..marker_bytes).unwrap().chars().count();
     let body = indexed(text, &json!(marker_chars));
     assert_eq!(
         results(&body),
-        vec![expect_result("", "https://x.example", "Caf\u{e9}")]
+        vec![expect_result("", "https://x.example", "\u{e9}")]
     );
     let claim = "\u{e9}".repeat(350);
     let long = format!("{claim}([e](https://e.example))");
