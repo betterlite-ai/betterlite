@@ -1,0 +1,21 @@
+kind: helper
+name: watsonx-chat
+call:
+  b8331:
+    op: watsonx_chat
+    model: ibm/granite-3-8b-instruct
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}"
+    api_key: oracle-wx-key
+    temperature: 0.2
+    env:
+      WATSONX_IAM_URL: "{{upstream}}/identity/token"
+      WATSONX_PROJECT_ID: project
+    upstream:
+      - status: 200
+        body: '{"access_token":"iam-token","expires_in":3600}'
+      - status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"ibm/granite-3-8b-instruct","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+env: {}
+compare:
+  ignore: []
