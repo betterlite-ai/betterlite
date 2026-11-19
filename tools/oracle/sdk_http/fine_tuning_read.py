@@ -7,16 +7,12 @@ import httpx
 import litellm
 import openai
 from openai import OpenAI
-from openai._base_client import AsyncPaginator
-from openai.pagination import AsyncCursorPage
-from openai.types.fine_tuning import FineTuningJob
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# an async list awaits into a page, and the openai client can hand back a paginator instead
-Paginator: TypeAlias = AsyncPaginator[FineTuningJob, AsyncCursorPage[FineTuningJob]]
-ReadResult: TypeAlias = BaseModel | Paginator | Coroutine[object, object, BaseModel | Paginator]
+# the sync calls answer a page and the async ones a coroutine of one
+ReadResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
 
 # the provider names list and alist declare; any other name only reaches the unsupported branch
 Provider: TypeAlias = Literal["openai", "azure", "vertex_ai"]
@@ -258,7 +254,6 @@ def settle(result: ReadResult) -> JsonValue:
                 return settle(runner.run(result))
         case HasDump():
             return JSON.validate_json(result.model_dump_json())
-    raise TypeError("an async paginator is not a settled page")
 
 
 def read_outcome(
