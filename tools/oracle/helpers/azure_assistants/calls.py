@@ -4,7 +4,7 @@ from typing import Literal, TypeAlias, TypedDict, cast
 
 from litellm.llms.azure.assistants import AzureAssistantsAPI
 from openai import AssistantEventHandler, AsyncAssistantEventHandler
-from openai.lib.streaming import AsyncAssistantStreamManager, AssistantStreamManager
+from openai.lib.streaming import AssistantStreamManager, AsyncAssistantStreamManager
 from openai.types.beta import AssistantStreamEvent
 from openai.types.beta.threads.run import Run
 from pydantic import JsonValue

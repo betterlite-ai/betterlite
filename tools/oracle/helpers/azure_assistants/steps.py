@@ -23,7 +23,7 @@ from azure_assistants.calls import (
 )
 
 
-# The SDK client in place of the network: the case env, the queued replies and the requests that reached them.
+# The SDK client in place of the network: the case env, queued replies and recorded requests.
 class Session:
     def __init__(self, step: Step) -> None:
         self.replies: list[Reply] = []

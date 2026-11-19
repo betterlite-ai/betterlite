@@ -9,7 +9,6 @@ use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_openai::assistants::client::ClientKind;
-use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
 use secrecy::SecretString;
 use serde_json::{Value, json};
