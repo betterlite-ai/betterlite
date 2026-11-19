@@ -12,7 +12,7 @@ use crate::facts::Facts;
 use crate::git::git;
 use crate::review_check::review_problems;
 use crate::spec::agents::{Agents, Rung, Runner};
-use crate::spec::review::{FindingOrigin, Review, ReviewVerdict};
+use crate::spec::review::{Finding, FindingOrigin, Review, ReviewVerdict};
 use crate::spec::rules::Rules;
 use crate::spec::task::ReviewLevel;
 use crate::yaml::read_yaml;
@@ -113,20 +113,24 @@ fn review_text(
     })
 }
 
+fn finding_line(finding: &Finding) -> String {
+    format!(
+        "{} at {}: {} Fix: {}",
+        finding.rule, finding.location, finding.problem, finding.fix
+    )
+}
+
 fn round(
     task_id: &str,
     answers: &[&Review],
-    verdict: ReviewVerdict,
+    parity: Option<&Review>,
     reviewer: ReviewerPin,
     commit: String,
 ) -> Step {
     let mut ours = Vec::new();
     let mut litellm = Vec::new();
     for finding in answers.iter().flat_map(|answer| &answer.findings) {
-        let line = format!(
-            "{} at {}: {} Fix: {}",
-            finding.rule, finding.location, finding.problem, finding.fix
-        );
+        let line = finding_line(finding);
         match finding.origin {
             FindingOrigin::Ours => ours.push(line),
             FindingOrigin::Litellm => litellm.push(format!(
@@ -134,8 +138,25 @@ fn round(
             )),
         }
     }
+    let verdict = if answers
+        .iter()
+        .any(|answer| answer.verdict == ReviewVerdict::Changes)
+    {
+        ReviewVerdict::Changes
+    } else {
+        ReviewVerdict::Approve
+    };
     Step::Reviewed(Round {
         verdict,
+        parity: parity.map(|answer| EarlierReview {
+            commit: commit.clone(),
+            findings: answer
+                .findings
+                .iter()
+                .filter(|finding| finding.origin == FindingOrigin::Ours)
+                .map(finding_line)
+                .collect(),
+        }),
         review: EarlierReview {
             commit,
             findings: ours,
@@ -178,16 +199,20 @@ fn panel_review(
     worker_runner: &Runner,
     reading: &Reading<'_>,
     bench: Bench<'_>,
-    earlier: Option<&EarlierReview>,
 ) -> Result<(Review, ReviewerPin), GateError> {
     let brief = attempt.brief;
     let task_id = &brief.task.id;
     let role = reviewer_role(attempt.agents, brief.task.review_level, bench.panel);
-    let prompt = prompt::reviewer(brief, &role.instructions, earlier);
-    let (seat, seat_again) = match bench.panel {
-        Panel::Standard => (Seat::Reviewer, Seat::ReviewerAgain),
-        Panel::Parity => (Seat::ParityReviewer, Seat::ParityReviewerAgain),
+    // the parity pass keeps its own earlier review, since the shared one holds findings outside its rules
+    let (seat, seat_again, earlier) = match bench.panel {
+        Panel::Standard => (Seat::Reviewer, Seat::ReviewerAgain, attempt.earlier),
+        Panel::Parity => (
+            Seat::ParityReviewer,
+            Seat::ParityReviewerAgain,
+            attempt.parity_earlier,
+        ),
     };
+    let prompt = prompt::reviewer(brief, &role.instructions, earlier);
     let (first, reviewer) = review_text(attempt, worker_runner, bench, seat, &prompt)?;
     let problems = match checked(&first, task_id, reading, bench.panel) {
         Ok(answer) => return Ok((answer, reviewer)),
@@ -223,8 +248,8 @@ fn first_round(
     let task_id = &attempt.brief.task.id;
     let (general, ported) = thread::scope(|scope| {
         let parity_run =
-            scope.spawn(|| panel_review(attempt, worker_runner, reading, PARITY_BENCH, None));
-        let answer = panel_review(attempt, worker_runner, reading, bench, attempt.earlier);
+            scope.spawn(|| panel_review(attempt, worker_runner, reading, PARITY_BENCH));
+        let answer = panel_review(attempt, worker_runner, reading, bench);
         (answer, parity_run.join())
     });
     let Ok(parity) = ported else {
@@ -236,11 +261,17 @@ fn first_round(
     let (answer, reviewer) = general?;
     let (second, pin) = parity?;
     // the general reviewer checks the fixes first, and its approval still brings the parity pass back
-    let (verdict, next) = match answer.verdict {
-        ReviewVerdict::Changes => (ReviewVerdict::Changes, reviewer),
-        ReviewVerdict::Approve => (second.verdict, pin),
+    let next = match answer.verdict {
+        ReviewVerdict::Changes => reviewer,
+        ReviewVerdict::Approve => pin,
     };
-    Ok(round(task_id, &[&answer, &second], verdict, next, commit))
+    Ok(round(
+        task_id,
+        &[&answer, &second],
+        Some(&second),
+        next,
+        commit,
+    ))
 }
 
 pub(crate) fn review(
@@ -267,22 +298,21 @@ pub(crate) fn review(
     if parity_applies && attempt.reviewer.is_none() {
         return first_round(attempt, worker_runner, &reading, bench, commit);
     }
-    let (answer, reviewer) =
-        panel_review(attempt, worker_runner, &reading, bench, attempt.earlier)?;
+    let (answer, reviewer) = panel_review(attempt, worker_runner, &reading, bench)?;
     if !parity_applies || answer.verdict == ReviewVerdict::Changes {
         return Ok(round(
             &task.id,
             &[&answer],
-            answer.verdict,
+            (bench.panel == Panel::Parity).then_some(&answer),
             reviewer,
             commit,
         ));
     }
-    let (second, pin) = panel_review(attempt, worker_runner, &reading, PARITY_BENCH, None)?;
+    let (second, pin) = panel_review(attempt, worker_runner, &reading, PARITY_BENCH)?;
     Ok(round(
         &task.id,
         &[&answer, &second],
-        second.verdict,
+        Some(&second),
         pin,
         commit,
     ))

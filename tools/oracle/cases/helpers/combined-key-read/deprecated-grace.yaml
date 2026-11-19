@@ -1,0 +1,39 @@
+kind: helper
+name: combined-key-read-deprecated-grace
+call:
+  combined_key_read:
+    now: "2023-11-14T22:13:20+00:00"
+    step_millis: 0
+    token: sk-old
+    query_type: find_unique
+    check_deprecated: true
+    use_writer: false
+    rows:
+      - null
+      - kind: data
+        data:
+          token: sk-active
+          user_id: u1
+          models: []
+          spend: 0
+          team_models: []
+          team_blocked: false
+          team_members_with_roles: null
+    deprecated:
+      - kind: data
+        data: {active_token_id: sk-active, revoke_at_seconds: 2000000000}
+    reconnects: []
+calls:
+  - combined_key_read:
+      now: "2023-11-14T22:13:20+00:00"
+      step_millis: 0
+      token: sk-old
+      query_type: find_unique
+      check_deprecated: false
+      use_writer: false
+      rows:
+        - null
+      deprecated: []
+      reconnects: []
+env: {}
+compare: {ignore: []}

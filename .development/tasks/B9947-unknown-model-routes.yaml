@@ -1,0 +1,137 @@
+id: B9947
+title: The chat, completions and embeddings routes answer an unknown model with LiteLLM's not-found error
+description: >-
+  Three routes on main answer a model with no deployment in their own words, with no read-through:
+  /chat/completions (crates/betterlite-server/src/routes/chat.rs L163-L169, ChatError::UnknownModel, "no model_list
+  entry is named <model>"), /completions (routes/completions.rs L188-L191 and completions/error.rs L32-L37, "no
+  model_list entry serves the model <model>") and /embeddings (routes/embeddings.rs L143-L146 and L197-L201,
+  EmbeddingError::UnknownModel). They are every route on main that picks a deployment by model name: `git grep -n
+  'pick_deployment(' -- crates/betterlite-server/src/routes` finds these three calls and no other, and the other model
+  routes (responses, images, audio, rerank, moderations, messages) are still stub files. LiteLLM's route_request raises
+  ProxyModelNotFoundError when no deployment matches (route_llm_request.py L720-L725), retries once after the model
+  registry read-through when the error allows it (L449-L466), and the handler answers 400 with "<route>: Invalid
+  model name passed in model=<model>. Call `/v1/models` to view available models for your key.". This task makes all
+  three routes raise B9964's ProxyModelNotFoundError through B9949's retry.
+
+
+  The read-through slot. ServerState gets a `model_read_through` slot (crates/betterlite-server/src/state/model_read_through.rs).
+  The plan commit already declares it in state.rs and builds it with Slot::new(config, &shared) over a unit Slot.
+  Slot holds `pub read_through: Option<Arc<dyn ModelReadThrough>>` (B9949's trait), and Slot::new sets None, since
+  Shared on main carries no read-through. B8610 later fills it from Shared with the instance B9948 builds.
+
+
+  Each route. Where the route now calls pick_deployment, call B9949's `route_with_read_through(model,
+  state.model_read_through.read_through.as_deref(), attempt)`. The attempt runs pick_deployment on the executor and
+  turns a miss into `ProxyModelNotFoundError::new(route, model_text, true)`. The route is B9964's route_endpoint for the
+  route type: "acompletion" gives "/chat/completions", "atext_completion" gives "/completions" and "aembedding" gives
+  "/embeddings", whatever path the request came in on (/v1/..., /..., /engines/{model}/..., /openai/deployments/{model}/...).
+  model_text is the model the route already resolves (the path model, else the body model), or "None" when there is
+  neither, as main writes it today and as LiteLLM's f-string writes its None. The model given to
+  route_with_read_through is that same model as an Option, so a request without one never reaches the read-through
+  (LiteLLM requires a non-empty str, L450-L452).
+
+
+  The answer. A ProxyModelNotFoundError that comes back renders the way LiteLLM's
+  proxy_exception_from_http_exception renders an HTTPException with a dict detail: status 400, error.message the
+  detail's error text, error.type "invalid_request_error", error.param null, error.code "400" and
+  error.provider_specific_fields {"error": <the same text>}, with the call id header and body field each route already
+  adds to its errors. The chat route renders through server.rs (plain_failure sets no provider_specific_fields today,
+  so give it the field or add a sibling next to it), completions adds the field to its FailureAnswer render, and
+  embeddings renders through its own route_error path. The message still goes through each route's redactor, as the
+  old one did. Log the failure where the route logs a pick failure today.
+
+
+  DispatchError::MissingDeployment stays: betterlite-core raises it when its own lookup by deployment id fails after
+  the pick (crates/betterlite-core/src/dispatch.rs L147-L154), and no client model reaches it. Completions and
+  embeddings stop building it for a pick miss.
+
+
+  Tests. Each route's tests.rs gets tests named `unknown_model_`: the 400 body with LiteLLM's text on the /v1 path
+  and on an engines path; a recording ModelReadThrough set in the slot that answers true is asked once with the
+  request's model, the pick runs a second time and the second not-found comes back; one that answers false gets the
+  first error back after one call; a request without a model never calls it and names "None"; a model that looks like
+  an API key is still redacted in the message. HTTP oracle cases: chat/unknown-model.yaml and
+  auth/auth-model-patterns/generic-model-denial.yaml ignore /error/message and /error/provider_specific_fields/error
+  today because betterlite wrote its own text; drop both ignores. Add completions/unknown-model.yaml (POST
+  /v1/completions) and embeddings/unknown-model.yaml (POST /v1/embeddings), each with one model_list entry, a request
+  for another model, the master key, no upstream reply, and content-type compared with no ignores.
+scope:
+  paths:
+  - crates/betterlite-server/src/state/model_read_through.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/completions.rs
+  - crates/betterlite-server/src/routes/completions/error.rs
+  - crates/betterlite-server/src/routes/completions/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
+  - crates/betterlite-server/src/server.rs
+  - tools/oracle/cases/chat/unknown-model.yaml
+  - tools/oracle/cases/auth/auth-model-patterns/generic-model-denial.yaml
+  - tools/oracle/cases/completions/unknown-model.yaml
+  - tools/oracle/cases/embeddings/unknown-model.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L431-L466
+  why: route_request and its one retry after a ProxyModelNotFoundError, ported by B9949.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L719-L725
+  why: The not-found raise at the end of _route_request_single_attempt, with the route name from ROUTE_ENDPOINT_MAPPING.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L76-L79
+  why: The three route types these routes use and their endpoint paths.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L570-L614
+  why: serialize_http_exception_detail and proxy_exception_from_http_exception, the message and provider_specific_fields taken from a dict detail.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L58
+  why: openai_error_type and openai_error_param, the invalid_request_error type and null param of a 400.
+dod:
+- text: POST /chat/completions with an unknown model answers LiteLLM's 400 body with the "/chat/completions" text.
+  proof: [chat-unknown-model, oracle]
+- text: POST /completions with an unknown model answers LiteLLM's 400 body with the "/completions" text.
+  proof: [completions-unknown-model, oracle]
+- text: POST /embeddings with an unknown model answers LiteLLM's 400 body with the "/embeddings" text.
+  proof: [embeddings-unknown-model, oracle]
+- text: >-
+    Each route asks the slot's read-through once with the request's model, picks again only when it answers true, and
+    never asks it for a request without a model.
+  proof: [chat-unknown-model, completions-unknown-model, embeddings-unknown-model]
+- text: The other chat, completions, embeddings and server tests still pass.
+  proof: [regressions]
+checks:
+  optional: []
+  commands:
+  - id: chat-unknown-model
+    why: The chat route keeps its own text, skips the read-through or retries a request without a model.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::unknown_model_/)'
+  - id: completions-unknown-model
+    why: The completions route keeps its own text, drops provider_specific_fields or skips the read-through.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::tests::unknown_model_/)'
+  - id: embeddings-unknown-model
+    why: The embeddings route keeps its own text, drops provider_specific_fields or skips the read-through.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::embeddings::tests::unknown_model_/)'
+  - id: regressions
+    why: The slot, the retry call or the new render broke another chat, completions, embeddings or server test.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::unknown_model_/)'
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/) | test(/^routes::completions::/) | test(/^routes::embeddings::/) | test(/^server::/)'
+oracle_cases:
+- tools/oracle/cases/chat/unknown-model.yaml
+- tools/oracle/cases/auth/auth-model-patterns/generic-model-denial.yaml
+- tools/oracle/cases/completions/unknown-model.yaml
+- tools/oracle/cases/embeddings/unknown-model.yaml
+deviations: []
+out_of_scope:
+- "ProxyModelNotFoundError and route_endpoint: B9964. route_with_read_through and ModelReadThrough: B9949."
+- "The production models read-through: B9948. Filling this slot from Shared: B8610."
+- "Moving the pick from the executor's deployment list onto the live router: B9946. The rest of _route_request_single_attempt on these routes (team model names, pass_through_all_models, default_deployment, deployment_names): no task owns it."
+- "/v1/messages: B9800 raises the error through the same retry. The other model routes raise it in their own tasks."
+pitfalls:
+- 'The retry cannot find a model yet: these routes pick from the executor''s config list (ChatExecutor.deployments), and B9948''s read-through adds rows to B8611''s router. B9946 moves the pick onto the live router; until then the second pick misses again, so return its not-found as it is and add no special case.'
+- 'Give route_with_read_through the model as an Option from the request, never the "None" text the message uses, or a request without a model reaches the read-through.'
+- 'routes/chat/tests.rs answers_failures_in_litellm_shape already expects provider_specific_fields for the unknown_model case, and error_normalization_tests_behavior sends a model that looks like a key; both must keep passing with the new text.'
+- 'Write no message text in the routes: the detail and the hint come from B9964''s ProxyModelNotFoundError.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
