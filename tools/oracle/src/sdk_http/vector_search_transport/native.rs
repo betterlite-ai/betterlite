@@ -75,10 +75,14 @@ fn outcome(
     result: Result<VectorStoreSearchResponse, SearchError>,
 ) -> Result<Outcome, SdkHttpError> {
     match result {
-        Ok(value) => Ok(Outcome {
-            result: Some(typed_json(&value)?),
-            failure: None,
-        }),
+        // The record serializes to the provider's own keys, so the observed value is the document the handler returned
+        Ok(value) => {
+            let encoded = serde_json::to_value(&value).map_err(SdkHttpError::Serialize)?;
+            Ok(Outcome {
+                result: Some(serde_json::from_value(encoded).map_err(SdkHttpError::Serialize)?),
+                failure: None,
+            })
+        }
         Err(SearchError::Provider(error)) => Ok(Outcome {
             result: None,
             failure: Some(Failure {
@@ -90,10 +94,4 @@ fn outcome(
         }),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
     }
-}
-
-// The record serializes to the provider's own keys, so the observed value is the document the handler returned
-fn typed_json(value: &VectorStoreSearchResponse) -> Result<Json, SdkHttpError> {
-    let encoded = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(encoded).map_err(SdkHttpError::Serialize)
 }

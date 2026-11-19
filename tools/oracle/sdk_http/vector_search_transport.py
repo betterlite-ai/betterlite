@@ -1,18 +1,17 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.llms.base_llm.vector_store.transformation import BaseVectorStoreConfig
+from litellm.llms.base_llm.vector_store.transformation import (
+    BaseVectorStoreConfig,
+    VectorStoreEmbeddingExecutor,
+)
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.vector_stores.transformation import OpenAIVectorStoreConfig
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.vector_stores import VectorStoreSearchResponse
-from litellm.types.vector_stores import (
-    VectorStoreSearchOptionalRequestParams as SearchParams,
-)
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Mode = Literal["sync", "async"]
@@ -23,9 +22,61 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-SearchWork = VectorStoreSearchResponse | Coroutine[object, object, VectorStoreSearchResponse]
 
-HANDLER: Final = BaseLLMHTTPHandler()
+# LiteLLM's search params spell filters and ranking_options as bare dict, which mypy reads as Any
+class SearchBody(TypedDict, total=False):
+    filters: dict[str, JsonValue] | None
+    max_num_results: int | None
+    ranking_options: dict[str, JsonValue] | None
+    rewrite_query: bool | None
+
+
+SearchCall = Callable[
+    [
+        str,
+        Query,
+        SearchBody,
+        BaseVectorStoreConfig,
+        str,
+        GenericLiteLLMParams,
+        Logging,
+        VectorStoreEmbeddingExecutor | None,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+    ],
+    object,
+]
+
+AsyncSearchCall = Callable[
+    [
+        str,
+        Query,
+        SearchBody,
+        BaseVectorStoreConfig,
+        str,
+        GenericLiteLLMParams,
+        Logging,
+        VectorStoreEmbeddingExecutor | None,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+    ],
+    Coroutine[object, object, object],
+]
+
+
+class Handlers(Protocol):
+    @property
+    def vector_store_search_handler(self) -> SearchCall: ...
+
+    @property
+    def async_vector_store_search_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncSearchCall: ...
+
+
+HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
 class OptionalParams(BaseModel):
@@ -83,9 +134,9 @@ def logging_fixture() -> Logging:
     )
 
 
-# VectorStoreSearchRequest reads each declared key with .get(key, None), so a null and an absent key are the same body
-def requested_params(optional: OptionalParams) -> SearchParams:
-    params: SearchParams = {
+# VectorStoreSearchRequest reads each key with .get(key, None), so null and absent are one body
+def requested_params(optional: OptionalParams) -> SearchBody:
+    params: SearchBody = {
         "filters": optional.filters,
         "max_num_results": optional.max_num_results,
         "ranking_options": optional.ranking_options,
@@ -101,7 +152,7 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
         result = execute(call, config, timeout, api_base)
     except PROVIDER_ERROR as error:
         return Outcome(failure=Failure.model_validate(error))
-    return Outcome(result=JSON.validate_python(result))
+    return Outcome(result=result)
 
 
 def execute(
@@ -109,39 +160,43 @@ def execute(
     config: BaseVectorStoreConfig,
     timeout: float | None,
     api_base: str,
-) -> SearchWork:
+) -> JsonValue:
     logging_obj = logging_fixture()
     litellm_params = GenericLiteLLMParams(api_base=api_base)
     extra_headers = OBJECTS.validate_python(call.extra_headers)
     extra_body = OBJECTS.validate_python(call.extra_body)
     optional = requested_params(call.optional_params)
     if call.mode == "sync":
-        return HANDLER.vector_store_search_handler(
-            call.vector_store_id,
-            call.query,
-            optional,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            None,
-            extra_headers,
-            extra_body,
-            timeout,
+        return JSON.validate_python(
+            HANDLER.vector_store_search_handler(
+                call.vector_store_id,
+                call.query,
+                optional,
+                config,
+                "openai",
+                litellm_params,
+                logging_obj,
+                None,
+                extra_headers,
+                extra_body,
+                timeout,
+            )
         )
-    return asyncio.run(
-        HANDLER.async_vector_store_search_handler(
-            call.vector_store_id,
-            call.query,
-            optional,
-            config,
-            "openai",
-            litellm_params,
-            logging_obj,
-            None,
-            extra_headers,
-            extra_body,
-            timeout,
+    return JSON.validate_python(
+        asyncio.run(
+            HANDLER.async_vector_store_search_handler(
+                call.vector_store_id,
+                call.query,
+                optional,
+                config,
+                "openai",
+                litellm_params,
+                logging_obj,
+                None,
+                extra_headers,
+                extra_body,
+                timeout,
+            )
         )
     )
 
