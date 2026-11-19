@@ -80,10 +80,10 @@ pub fn ids_from_tool_calls(
     tools: Option<&[JsonObject]>,
     ids: &mut Vec<String>,
 ) -> Result<(), VectorStoreRegistryError> {
-    let Some(tools) = tools else {
+    let Some(calls) = tools else {
         return Ok(());
     };
-    for tool in tools {
+    for tool in calls {
         let Some(value) = tool.get("vector_store_ids") else {
             continue;
         };

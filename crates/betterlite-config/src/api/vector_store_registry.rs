@@ -100,7 +100,7 @@ where
             for (index, item) in items.into_iter().enumerate() {
                 let item_path = format!("{path}.{index}");
                 // _resolved_config_value resolves an object inside a list but never a bare string
-                let value = match item {
+                let resolved_item = match item {
                     Json::Object(fields) => {
                         resolve_object(fields, &item_path, lookup).map(Json::Object)?
                     }
@@ -110,7 +110,7 @@ where
                     | Json::Text(_)
                     | Json::List(_)) => other,
                 };
-                resolved.push(value);
+                resolved.push(resolved_item);
             }
             Ok(Json::List(resolved))
         }

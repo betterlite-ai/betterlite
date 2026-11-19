@@ -163,8 +163,8 @@ fn ids_and_tool_params(input: &Input) -> HelperResult {
 
 fn tool_params_fields(tool: Option<&JsonObject>) -> (Value, Value) {
     let empty = JsonObject::new();
-    let tool = tool.unwrap_or(&empty);
-    match extract_tool_params(tool) {
+    let carried = tool.unwrap_or(&empty);
+    match extract_tool_params(carried) {
         Ok(params) => (tool_params_record(&params), Value::Null),
         Err(error) => (Value::Null, Value::String(error.to_string())),
     }

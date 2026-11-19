@@ -40,7 +40,7 @@ where
     D: VectorStoreDatabase,
 {
     match database {
-        Some(database) => database.stores().await,
+        Some(source) => source.stores().await,
         None => Ok(Vec::new()),
     }
 }
@@ -49,10 +49,10 @@ where
 pub async fn indexes_from_database<D: VectorStoreDatabase>(
     database: Option<&D>,
 ) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
-    let Some(database) = database else {
+    let Some(client) = database else {
         return Ok(Vec::new());
     };
-    database.indexes().await
+    client.indexes().await
 }
 
 fn decode_row<T>(row: &Row) -> Result<T, TableError>

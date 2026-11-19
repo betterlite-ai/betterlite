@@ -61,6 +61,15 @@ fn required(params: &mut JsonObject) {
 
 #[test]
 fn registry_config_records() {
+    config_records_keep_every_field();
+    config_records_accept_missing_names_and_empty_values();
+    config_records_reject_missing_ids();
+    config_records_reject_missing_providers();
+    config_records_append_duplicates();
+    config_records_keep_the_prefix_before_a_failure();
+}
+
+fn config_records_keep_every_field() {
     let full = params(&[
         ("vector_store_id", text("vs_a")),
         ("custom_llm_provider", text("openai")),
@@ -95,7 +104,9 @@ fn registry_config_records() {
     assert_eq!(store.created_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.updated_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.is_config, Some(true));
+}
 
+fn config_records_accept_missing_names_and_empty_values() {
     let mut nameless = registry(Vec::new());
     let mut only_required = JsonObject::new();
     required(&mut only_required);
@@ -115,28 +126,30 @@ fn registry_config_records() {
     let accepted = empty.stores.first().unwrap();
     assert_eq!(accepted.vector_store_id.as_deref(), Some(""));
     assert_eq!(accepted.custom_llm_provider.as_deref(), Some(""));
+}
 
+fn config_records_reject_missing_ids() {
     let mut null_params = registry(Vec::new());
-    let error = null_params
+    let null_params_error = null_params
         .load_vector_stores_from_config(&[entry(Some("notes"), None)])
         .unwrap_err();
     assert_eq!(
-        error.to_string(),
+        null_params_error.to_string(),
         "vector_store_id is required for initializing vector store, got vector_store_id=None"
     );
     assert!(matches!(
-        error,
+        null_params_error,
         VectorStoreRegistryError::MissingVectorStoreId
     ));
 
     let mut missing_id = JsonObject::new();
     missing_id.insert("custom_llm_provider".to_owned(), text("openai"));
     let mut registry_missing_id = registry(Vec::new());
-    let error = registry_missing_id
+    let missing_id_error = registry_missing_id
         .load_vector_stores_from_config(&[entry(None, Some(missing_id))])
         .unwrap_err();
     assert!(matches!(
-        error,
+        missing_id_error,
         VectorStoreRegistryError::MissingVectorStoreId
     ));
 
@@ -144,40 +157,44 @@ fn registry_config_records() {
     null_id.insert("vector_store_id".to_owned(), Json::Null);
     null_id.insert("custom_llm_provider".to_owned(), text("openai"));
     let mut registry_null_id = registry(Vec::new());
-    let error = registry_null_id
+    let null_id_error = registry_null_id
         .load_vector_stores_from_config(&[entry(None, Some(null_id))])
         .unwrap_err();
     assert!(matches!(
-        error,
+        null_id_error,
         VectorStoreRegistryError::MissingVectorStoreId
     ));
+}
 
+fn config_records_reject_missing_providers() {
     let mut missing_provider = JsonObject::new();
     missing_provider.insert("vector_store_id".to_owned(), text("vs_a"));
     let mut registry_missing_provider = registry(Vec::new());
-    let error = registry_missing_provider
+    let missing_provider_error = registry_missing_provider
         .load_vector_stores_from_config(&[entry(None, Some(missing_provider.clone()))])
         .unwrap_err();
     assert_eq!(
-        error.to_string(),
+        missing_provider_error.to_string(),
         "custom_llm_provider is required for initializing vector store, got custom_llm_provider=None"
     );
     assert!(matches!(
-        error,
+        missing_provider_error,
         VectorStoreRegistryError::MissingCustomLlmProvider
     ));
 
     let mut null_provider = missing_provider;
     null_provider.insert("custom_llm_provider".to_owned(), Json::Null);
     let mut registry_null_provider = registry(Vec::new());
-    let error = registry_null_provider
+    let null_provider_error = registry_null_provider
         .load_vector_stores_from_config(&[entry(None, Some(null_provider))])
         .unwrap_err();
     assert!(matches!(
-        error,
+        null_provider_error,
         VectorStoreRegistryError::MissingCustomLlmProvider
     ));
+}
 
+fn config_records_append_duplicates() {
     let mut duplicates = registry(Vec::new());
     let mut duplicate_params = JsonObject::new();
     required(&mut duplicate_params);
@@ -192,19 +209,21 @@ fn registry_config_records() {
         vec![Some("vs_a"), Some("vs_a")],
         "duplicate config ids append twice"
     );
+}
 
+fn config_records_keep_the_prefix_before_a_failure() {
     let mut partial = registry(Vec::new());
     let mut valid = JsonObject::new();
     required(&mut valid);
     let (logs, _guard) = capture_logs();
-    let error = partial
+    let partial_error = partial
         .load_vector_stores_from_config(&[
             entry(Some("first"), Some(valid)),
             entry(Some("broken"), None),
         ])
         .unwrap_err();
     assert!(matches!(
-        error,
+        partial_error,
         VectorStoreRegistryError::MissingVectorStoreId
     ));
     assert_eq!(
@@ -220,6 +239,13 @@ fn registry_config_records() {
 
 #[test]
 fn ordered_registry_mutations() {
+    mutation_order_is_kept();
+    config_owned_mutations_are_refused();
+    missing_id_updates_append();
+    config_ownership_and_deletion();
+}
+
+fn mutation_order_is_kept() {
     let mut registry = registry(vec![store("vs_a"), store("vs_b")]);
     registry.add_store(labelled_store("vs_a", "ignored"));
     assert_eq!(ids(&registry), vec![Some("vs_a"), Some("vs_b")]);
@@ -255,7 +281,10 @@ fn ordered_registry_mutations() {
         vec![Some("vs_a"), Some("vs_b"), Some("vs_c")],
         "an update keeps the record where it is"
     );
+}
 
+fn config_owned_mutations_are_refused() {
+    let mut registry = registry(Vec::new());
     registry.add_store(config_store("vs_cfg"));
     registry.update_store("vs_cfg", labelled_store("vs_cfg", "refused"));
     let config = registry.store_by_id("vs_cfg").unwrap();
@@ -264,16 +293,22 @@ fn ordered_registry_mutations() {
         config.vector_store_description, None,
         "a config-owned record is left untouched"
     );
+}
 
+fn missing_id_updates_append() {
+    let mut registry = registry(Vec::new());
     registry.update_store("vs_missing", store("vs_other"));
     assert_eq!(
         registry.stores.last().unwrap().vector_store_id.as_deref(),
         Some("vs_other"),
         "an update for a missing id appends the update it carries"
     );
+}
 
-    assert!(registry.is_config("vs_a"));
-    assert!(!registry.is_config("vs_c"));
+fn config_ownership_and_deletion() {
+    let mut registry = registry(vec![store("vs_a"), config_store("vs_b")]);
+    assert!(!registry.is_config("vs_a"));
+    assert!(registry.is_config("vs_b"));
     assert!(!registry.is_config("vs_missing"));
 
     let mut owned = support::registry(vec![store("vs_a"), config_store("vs_a"), store("vs_b")]);
@@ -301,7 +336,7 @@ fn index_registry_order_and_lookup() {
         "i3",
         "upsert replaces the first matching record in place"
     );
-    assert_eq!(registry.indexes.get(1).unwrap().id, "i2");
+    assert_eq!(registry.indexes.get(1).expect("the second index").id, "i2");
     registry.upsert(index("i4", "archive"));
     assert_eq!(registry.indexes.len(), 3);
     assert_eq!(registry.find_by_name("archive").unwrap().id, "i4");
@@ -311,6 +346,16 @@ fn index_registry_order_and_lookup() {
 
 #[tokio::test]
 async fn registry_database_fallback() {
+    memory_hit_never_reaches_the_database().await;
+    database_hit_joins_and_caches_the_registry().await;
+    database_failure_is_logged_and_loads_nothing().await;
+    missing_database_reads_no_rows().await;
+    store_rows_keep_the_database_order().await;
+    index_rows_keep_the_database_order().await;
+    row_read_errors_keep_their_table_error().await;
+}
+
+async fn memory_hit_never_reaches_the_database() {
     let database = ScriptedDatabase::with_stores(vec![database_store("vs_db")]);
     let mut registry = registry(vec![store("vs_a")]);
     let remembered = registry
@@ -330,7 +375,11 @@ async fn registry_database_fallback() {
             .is_none()
     );
     assert_eq!(ids(&registry), vec![Some("vs_a")]);
+}
 
+async fn database_hit_joins_and_caches_the_registry() {
+    let database = ScriptedDatabase::with_stores(vec![database_store("vs_db")]);
+    let mut registry = registry(vec![store("vs_a")]);
     let found = registry
         .lookup_or_database("vs_db", Some(&database))
         .await
@@ -359,8 +408,11 @@ async fn registry_database_fallback() {
             .is_none()
     );
     assert_eq!(database.calls(), vec!["stores", "stores"]);
+}
 
+async fn database_failure_is_logged_and_loads_nothing() {
     let failing = ScriptedDatabase::failing();
+    let mut registry = registry(vec![store("vs_a")]);
     let (logs, _guard) = capture_logs();
     assert!(
         registry
@@ -375,7 +427,9 @@ async fn registry_database_fallback() {
             .any(|message| message.contains("Error fetching vector store from database:")),
         "a database failure is logged at debug level"
     );
+}
 
+async fn missing_database_reads_no_rows() {
     assert!(
         stores_from_database(None::<&ScriptedDatabase>)
             .await
@@ -388,36 +442,59 @@ async fn registry_database_fallback() {
             .unwrap()
             .is_empty()
     );
+}
 
+async fn store_rows_keep_the_database_order() {
     let rows =
         ScriptedDatabase::with_stores(vec![database_store("vs_new"), database_store("vs_old")]);
-    let loaded = stores_from_database(Some(&rows)).await.unwrap();
-    assert_eq!(loaded.len(), 2);
+    let loaded_stores = stores_from_database(Some(&rows)).await.unwrap();
+    assert_eq!(loaded_stores.len(), 2);
     assert_eq!(
-        loaded.first().unwrap().vector_store_id.as_deref(),
+        loaded_stores.first().unwrap().vector_store_id.as_deref(),
         Some("vs_new")
     );
     assert_eq!(
-        loaded.get(1).unwrap().vector_store_id.as_deref(),
+        loaded_stores
+            .get(1)
+            .expect("the second store row")
+            .vector_store_id
+            .as_deref(),
         Some("vs_old")
     );
+}
 
+async fn index_rows_keep_the_database_order() {
     let scripted_indexes =
         ScriptedDatabase::with_indexes(vec![index("i1", "notes"), index("i2", "archive")]);
-    let loaded = indexes_from_database(Some(&scripted_indexes))
+    let loaded_indexes = indexes_from_database(Some(&scripted_indexes))
         .await
         .unwrap();
-    assert_eq!(loaded.first().unwrap().index_name, "notes");
-    assert_eq!(loaded.get(1).unwrap().index_name, "archive");
+    assert_eq!(loaded_indexes.first().unwrap().index_name, "notes");
+    assert_eq!(
+        loaded_indexes
+            .get(1)
+            .expect("the second index row")
+            .index_name,
+        "archive"
+    );
+}
 
-    let error = stores_from_database(Some(&failing)).await.unwrap_err();
-    assert!(matches!(error, TableError::Publish { .. }));
-    let error = indexes_from_database(Some(&failing)).await.unwrap_err();
-    assert!(matches!(error, TableError::Publish { .. }));
+async fn row_read_errors_keep_their_table_error() {
+    let failing = ScriptedDatabase::failing();
+    let stores_error = stores_from_database(Some(&failing)).await.unwrap_err();
+    assert!(matches!(stores_error, TableError::Publish { .. }));
+    let indexes_error = indexes_from_database(Some(&failing)).await.unwrap_err();
+    assert!(matches!(indexes_error, TableError::Publish { .. }));
 }
 
 #[test]
 fn registry_id_and_tool_params() {
+    vector_store_ids_collect_in_order();
+    tool_params_extract_declared_fields();
+    rewrite_query_is_rejected();
+}
+
+fn vector_store_ids_collect_in_order() {
     let non_default = params(&[(
         "vector_store_ids",
         Json::List(vec![text("vs_b"), text("vs_a"), text("vs_b")]),
@@ -449,7 +526,9 @@ fn registry_id_and_tool_params() {
         vec!["vs_x"],
         "the tool type is never consulted"
     );
+}
 
+fn tool_params_extract_declared_fields() {
     let tool = params(&[
         ("filters", Json::Object(params(&[("kind", text("doc"))]))),
         (
@@ -481,7 +560,9 @@ fn registry_id_and_tool_params() {
     ]))
     .unwrap();
     assert_eq!(nulls, VectorStoreToolParams::default());
+}
 
+fn rewrite_query_is_rejected() {
     let rewrite = params(&[("rewrite_query", Json::Bool(false))]);
     let error = extract_tool_params(&rewrite).unwrap_err();
     assert_eq!(
@@ -498,6 +579,12 @@ fn registry_id_and_tool_params() {
 
 #[test]
 fn registry_named_credentials() {
+    named_credentials_read_the_accessor();
+    named_credentials_skip_empty_and_inline_names();
+    named_credentials_answer_the_first_record_with_a_name();
+}
+
+fn named_credentials_read_the_accessor() {
     let accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::from([(
         "cred".to_owned(),
         params(&[("api_key", text("secret-value"))]),
@@ -520,46 +607,58 @@ fn registry_named_credentials() {
         vec!["cred"],
         "an unknown id never reaches the accessor"
     );
+}
 
-    let accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::new()));
-    let credentials: Arc<dyn VectorStoreCredentials> = accessor.clone();
-    let registry = registry_with_credentials(
+fn named_credentials_skip_empty_and_inline_names() {
+    let empty_accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::new()));
+    let empty_credentials: Arc<dyn VectorStoreCredentials> = empty_accessor.clone();
+    let empty_registry = registry_with_credentials(
         vec![
             named_store("vs_empty", ""),
             inline_key_store("vs_inline"),
             named_store("vs_dup", "absent"),
         ],
-        credentials,
+        empty_credentials,
     );
-    assert!(registry.credentials_for_vector_store("vs_empty").is_empty());
     assert!(
-        registry
+        empty_registry
+            .credentials_for_vector_store("vs_empty")
+            .is_empty()
+    );
+    assert!(
+        empty_registry
             .credentials_for_vector_store("vs_inline")
             .is_empty()
     );
     assert_eq!(
-        accessor.names(),
+        empty_accessor.names(),
         Vec::<String>::new(),
         "an empty name and an inline key skip the accessor"
     );
-    assert!(registry.credentials_for_vector_store("vs_dup").is_empty());
+    assert!(
+        empty_registry
+            .credentials_for_vector_store("vs_dup")
+            .is_empty()
+    );
     assert_eq!(
-        accessor.names(),
+        empty_accessor.names(),
         vec!["absent"],
         "a missing named credential reads the accessor and answers empty"
     );
+}
 
-    let accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::from([(
+fn named_credentials_answer_the_first_record_with_a_name() {
+    let second_accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::from([(
         "second".to_owned(),
         params(&[("api_key", text("second-value"))]),
     )])));
-    let credentials: Arc<dyn VectorStoreCredentials> = accessor.clone();
-    let registry = registry_with_credentials(
+    let second_credentials: Arc<dyn VectorStoreCredentials> = second_accessor.clone();
+    let duplicate_registry = registry_with_credentials(
         vec![named_store("vs_dup", ""), named_store("vs_dup", "second")],
-        credentials,
+        second_credentials,
     );
     assert_eq!(
-        registry.credentials_for_vector_store("vs_dup"),
+        duplicate_registry.credentials_for_vector_store("vs_dup"),
         params(&[("api_key", text("second-value"))]),
         "the first record carrying a credential name answers, so a nameless duplicate does not"
     );

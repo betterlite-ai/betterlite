@@ -14,12 +14,9 @@ impl VectorStoreIndexRegistry {
 
     #[must_use]
     pub fn find_by_name(&self, index_name: &str) -> Option<&LiteLlmManagedVectorStoreIndex> {
-        for index in &self.indexes {
-            if index.index_name == index_name {
-                return Some(index);
-            }
-        }
-        None
+        self.indexes
+            .iter()
+            .find(|index| index.index_name == index_name)
     }
 
     pub fn upsert(&mut self, index: LiteLlmManagedVectorStoreIndex) {
@@ -34,11 +31,8 @@ impl VectorStoreIndexRegistry {
 
     #[must_use]
     pub fn contains_name(&self, index_name: &str) -> bool {
-        for index in &self.indexes {
-            if index.index_name == index_name {
-                return true;
-            }
-        }
-        false
+        self.indexes
+            .iter()
+            .any(|index| index.index_name == index_name)
     }
 }

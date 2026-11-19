@@ -93,8 +93,10 @@ impl VectorStoreRegistry {
         if let Some(store) = self.store_by_id(vector_store_id) {
             return Some(store.clone());
         }
-        let database = database?;
-        let stores = match stores_from_database(Some(database)).await {
+        let Some(source) = database else {
+            return None;
+        };
+        let stores = match stores_from_database(Some(source)).await {
             Ok(stores) => stores,
             Err(error) => {
                 tracing::debug!("Error fetching vector store from database: {error}");

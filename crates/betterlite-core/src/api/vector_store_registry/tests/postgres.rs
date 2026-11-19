@@ -135,51 +135,64 @@ async fn prisma_vector_store_database_reads_rows() {
     };
     let database = PrismaVectorStoreDatabase::new(Some(client), no_publish());
 
+    store_rows_keep_the_database_order(&database).await;
+    index_rows_keep_the_database_order(&database).await;
+    drop(database);
+    an_absent_client_reports_a_database_error().await;
+
+    writer.pool.unwrap().close();
+    fixture.close_async().await.unwrap();
+}
+
+async fn store_rows_keep_the_database_order(database: &PrismaVectorStoreDatabase<'_>) {
     let stores = database.stores().await.unwrap();
     assert_eq!(stores.len(), 2);
-    let newest = stores.first().unwrap();
-    assert_eq!(newest.vector_store_id.as_deref(), Some("vs_new"));
-    assert_eq!(newest.custom_llm_provider.as_deref(), Some("bedrock"));
-    assert_eq!(newest.vector_store_name.as_deref(), Some("new"));
-    assert_eq!(newest.vector_store_metadata, None);
+    let newest_store = stores.first().unwrap();
+    assert_eq!(newest_store.vector_store_id.as_deref(), Some("vs_new"));
+    assert_eq!(newest_store.custom_llm_provider.as_deref(), Some("bedrock"));
+    assert_eq!(newest_store.vector_store_name.as_deref(), Some("new"));
+    assert_eq!(newest_store.vector_store_metadata, None);
     assert_eq!(
-        newest.litellm_params,
+        newest_store.litellm_params,
         Some(serde_json::json!({"vector_store_id": "vs_new"}))
     );
-    let oldest = stores.get(1).unwrap();
-    assert_eq!(oldest.vector_store_id.as_deref(), Some("vs_old"));
+    let oldest_store = stores.get(1).expect("the older store row");
+    assert_eq!(oldest_store.vector_store_id.as_deref(), Some("vs_old"));
     assert_eq!(
-        oldest.vector_store_metadata,
+        oldest_store.vector_store_metadata,
         Some(serde_json::json!({"tag": "x"}))
     );
-    assert_eq!(oldest.litellm_credential_name.as_deref(), Some("cred"));
-    assert!(oldest.created_at.is_some());
+    assert_eq!(
+        oldest_store.litellm_credential_name.as_deref(),
+        Some("cred")
+    );
+    assert!(oldest_store.created_at.is_some());
+}
 
+async fn index_rows_keep_the_database_order(database: &PrismaVectorStoreDatabase<'_>) {
     let indexes = database.indexes().await.unwrap();
     assert_eq!(indexes.len(), 2);
-    let newest = indexes.first().unwrap();
-    assert_eq!(newest.id, "i-new");
-    assert_eq!(newest.index_name, "notes");
-    assert_eq!(newest.litellm_params.vector_store_index, "idx-new");
+    let newest_index = indexes.first().unwrap();
+    assert_eq!(newest_index.id, "i-new");
+    assert_eq!(newest_index.index_name, "notes");
+    assert_eq!(newest_index.litellm_params.vector_store_index, "idx-new");
     assert_eq!(
-        newest.index_info,
+        newest_index.index_info,
         Some(BTreeMap::from([(
             "dimensions".to_owned(),
             serde_json::json!(3)
         )]))
     );
-    let oldest = indexes.get(1).unwrap();
-    assert_eq!(oldest.id, "i-old");
-    assert_eq!(oldest.index_name, "archive");
-    assert!(oldest.index_info.is_none());
-    drop(database);
+    let oldest_index = indexes.get(1).expect("the older index row");
+    assert_eq!(oldest_index.id, "i-old");
+    assert_eq!(oldest_index.index_name, "archive");
+    assert!(oldest_index.index_info.is_none());
+}
 
+async fn an_absent_client_reports_a_database_error() {
     let absent = PrismaVectorStoreDatabase::new(None, no_publish());
-    let error = absent.stores().await.unwrap_err();
-    assert!(matches!(error, TableError::Database(_)));
-    let error = absent.indexes().await.unwrap_err();
-    assert!(matches!(error, TableError::Database(_)));
-
-    writer.pool.unwrap().close();
-    fixture.close_async().await.unwrap();
+    let stores_error = absent.stores().await.unwrap_err();
+    assert!(matches!(stores_error, TableError::Database(_)));
+    let indexes_error = absent.indexes().await.unwrap_err();
+    assert!(matches!(indexes_error, TableError::Database(_)));
 }
