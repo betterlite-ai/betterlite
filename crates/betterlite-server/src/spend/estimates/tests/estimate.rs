@@ -132,6 +132,37 @@ async fn a_deployment_with_one_token_override_fails() {
 }
 
 #[tokio::test]
+async fn an_empty_deployment_model_fails_the_price() {
+    let router = configured_router(
+        vec![deployment("mini", r#"{"model":""}"#)],
+        AliasMap::new(),
+        None,
+        None,
+    );
+    let error = priced(
+        &state(Some(router)),
+        &format!(r#"{{"model":"mini","messages":{MESSAGES}}}"#),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::Failure { .. }));
+}
+
+#[tokio::test]
+async fn a_response_token_count_beyond_a_signed_counter_fails() {
+    let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
+        "model":"gpt-4o-mini","choices":[],
+        "usage":{"prompt_tokens":18446744073709551615,"completion_tokens":5,"total_tokens":20}}"#;
+    let error = priced(
+        &state(None),
+        &format!(r#"{{"completion_response":{response}}}"#),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::Failure { .. }));
+}
+
+#[tokio::test]
 async fn a_deployment_with_a_non_numeric_override_fails() {
     let router = configured_router(
         vec![deployment(

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod corpus;
+mod counter;
 mod decode;
 mod estimate;
 mod report;

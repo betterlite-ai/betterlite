@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use chrono::Utc;
 use rust_decimal::Decimal;
+
+use crate::spend::estimates::ports::{Clock as _, SystemClock};
+use crate::spend::estimates::router::MAX_REQUEST_BYTES;
 
 use super::support::{
     body_json, configured_router, cost_of, decimal, deployment, fake_reads, get_budgets, post_json,
@@ -222,6 +226,29 @@ async fn a_budget_read_failure_answers_its_500() {
     assert_eq!(error_field(&body, "type"), "internal_server_error");
     assert!(error_field(&body, "param").is_null());
     assert_eq!(error_field(&body, "code"), "500");
+}
+
+#[test]
+fn the_system_clock_answers_the_current_time() {
+    let difference = (SystemClock.now() - Utc::now()).num_seconds().abs();
+    assert!(difference < 60);
+}
+
+#[tokio::test]
+async fn the_calculate_route_accepts_a_body_near_the_two_mebibyte_limit() {
+    let padding = "x".repeat(1_100_000);
+    let body =
+        format!(r#"{{"model":"mini","messages":[{{"role":"user","content":"{padding}"}}]}}"#);
+    let (status, body) = post_json(mini_state(), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cost_of(&body), decimal("0.0000015"));
+}
+
+#[tokio::test]
+async fn the_calculate_route_rejects_a_body_over_the_limit() {
+    let body = "x".repeat(MAX_REQUEST_BYTES + 1);
+    let (status, _body) = post_json(mini_state(), &body).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 // The per-provider amount is a JSON number, never a quoted string, matching the response model's float.
