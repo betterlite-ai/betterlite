@@ -1,21 +1,40 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from enum import Enum
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
 import openai
 from openai import OpenAI
+from openai._base_client import AsyncPaginator
+from openai.pagination import AsyncCursorPage
+from openai.types.fine_tuning import FineTuningJob
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# list answers a page and retrieve a job, and an async flag makes either one return a coroutine
-ModelResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
+# an async list awaits into a page, and the openai client can hand back a paginator instead
+Paginator: TypeAlias = AsyncPaginator[FineTuningJob, AsyncCursorPage[FineTuningJob]]
+ReadResult: TypeAlias = BaseModel | Paginator | Coroutine[object, object, BaseModel | Paginator]
 
 # the provider names list and alist declare; any other name only reaches the unsupported branch
 Provider: TypeAlias = Literal["openai", "azure", "vertex_ai"]
+
+
+# litellm types the four reads' **kwargs as Unknown, so this boundary says what they answer
+class FineTuningApi(Protocol):
+    @property
+    def list_fine_tuning_jobs(self) -> Callable[..., ReadResult]: ...
+    @property
+    def alist_fine_tuning_jobs(self) -> Callable[..., ReadResult]: ...
+    @property
+    def retrieve_fine_tuning_job(self) -> Callable[..., ReadResult]: ...
+    @property
+    def aretrieve_fine_tuning_job(self) -> Callable[..., ReadResult]: ...
+
+
+API: FineTuningApi = litellm
 
 
 # every keyword argument the four calls take, and the per-call ones list and retrieve add
@@ -30,7 +49,7 @@ class ReadValues(TypedDict, total=False):
     client: OpenAI | None
     after: str | None
     limit: int | None
-    custom_llm_provider: Provider
+    custom_llm_provider: str | None
     fine_tuning_job_id: str
 
 
@@ -178,40 +197,33 @@ def timeout_value(
                 write=timeout.write,
                 pool=timeout.pool,
             )
-        case float() | str() | None:
+        case float() | int():
+            return float(timeout)
+        case str() | None:
             return timeout
 
 
 def read_values(
     step: ListStep | RetrieveStep, harness: str, client: OpenAI | None
 ) -> ReadValues:
+    values = ReadValues(
+        api_base=step.call.api_base if step.call.api_base is not None else harness,
+        api_key=step.call.api_key,
+        api_version=step.call.api_version,
+        organization=step.call.organization,
+        timeout=timeout_value(step.call.timeout),
+        request_timeout=step.call.request_timeout,
+        max_retries=step.call.max_retries,
+        client=client,
+        custom_llm_provider=step.call.provider,
+    )
     match step:
         case ListStep(call=call):
-            return ReadValues(
-                api_base=call.api_base if call.api_base is not None else harness,
-                api_key=call.api_key,
-                api_version=call.api_version,
-                organization=call.organization,
-                timeout=timeout_value(call.timeout),
-                request_timeout=call.request_timeout,
-                max_retries=call.max_retries,
-                client=client,
-                after=call.after,
-                limit=call.limit,
-                custom_llm_provider=call.provider,
-            )
+            values["after"] = call.after
+            values["limit"] = call.limit
         case RetrieveStep(call=call):
-            return ReadValues(
-                api_base=call.api_base if call.api_base is not None else harness,
-                api_key=call.api_key,
-                api_version=call.api_version,
-                organization=call.organization,
-                timeout=timeout_value(call.timeout),
-                request_timeout=call.request_timeout,
-                max_retries=call.max_retries,
-                client=client,
-                fine_tuning_job_id=call.fine_tuning_job_id,
-            )
+            values["fine_tuning_job_id"] = call.fine_tuning_job_id
+    return values
 
 
 class ReadOperation(Enum):
@@ -237,36 +249,32 @@ def api_failure(error: openai.APIStatusError) -> Failure:
     )
 
 
-def settle(result: ModelResult) -> JsonValue:
+def settle(result: ReadResult) -> JsonValue:
     match result:
         case Coroutine():
             with asyncio.Runner() as runner:
-                settled = runner.run(result)
-            return JSON.validate_json(settled.model_dump_json())
-        case object():
+                return settle(runner.run(result))
+        case BaseModel():
             return JSON.validate_json(result.model_dump_json())
+        case AsyncPaginator():
+            raise TypeError("an async paginator is not a settled page")
 
 
 def read_outcome(
     step: ListStep | RetrieveStep, harness: str, operation: ReadOperation
 ) -> StepOutcome:
     values = read_values(step, harness, read_client(step, harness))
-    result: ModelResult
+    result: ReadResult
     try:
-        # list and alist declare the provider, and retrieve takes it as a keyword
         match operation:
             case ReadOperation.LIST:
-                result = litellm.list_fine_tuning_jobs(**values)
+                result = API.list_fine_tuning_jobs(**values)
             case ReadOperation.ALIST:
-                result = litellm.alist_fine_tuning_jobs(**values)
+                result = API.alist_fine_tuning_jobs(**values)
             case ReadOperation.RETRIEVE:
-                result = litellm.retrieve_fine_tuning_job(
-                    **values, custom_llm_provider=step.call.provider
-                )
+                result = API.retrieve_fine_tuning_job(**values)
             case ReadOperation.ARETRIEVE:
-                result = litellm.aretrieve_fine_tuning_job(
-                    **values, custom_llm_provider=step.call.provider
-                )
+                result = API.aretrieve_fine_tuning_job(**values)
         settled = settle(result)
     except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
