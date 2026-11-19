@@ -1,0 +1,20 @@
+kind: probe
+name: usage-routing-lowest-absolute-tpm
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        # routing_strategy_args.ttl shortens both window writes from the 60 RoutingArgs declares
+        ttl: 45
+        # get_available_deployments picks the lowest absolute count, not the lowest share of the limit: dep-a has
+        # spent a tenth of its 1000 tpm while dep-b has spent a quarter of its 200, so dep-b wins at 50 over 100.
+        deployments:
+          - {id: dep-a, tpm: 1000}
+          - {id: dep-b, info_tpm: 200}
+        steps:
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: async_success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 50}
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: observe, now_millis: 1700000000000}
