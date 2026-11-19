@@ -6,9 +6,10 @@ use super::support::{
     FixedJitter, RecordingPause, ScriptedWriter, WriteFailure, key, rollup, transaction,
 };
 use crate::model_usage::{
-    DEFAULT_RETRY_TIMES, ModelUsageError, ModelUsageFlushError, ModelUsageRollup,
-    ModelUsageTransaction, flush_model_usage_transactions,
+    ModelUsageError, ModelUsageFlushError, ModelUsageRollup, ModelUsageTransaction,
+    flush_model_usage_transactions,
 };
+use crate::tool_spend::DEFAULT_RETRIES;
 
 fn one_transaction() -> ModelUsageTransaction {
     transaction(
@@ -37,7 +38,7 @@ async fn one_flush_writes_one_additive_batch() {
             false,
         ),
     ];
-    flush_model_usage_transactions(&writer, &transactions, DEFAULT_RETRY_TIMES, &jitter, &pause)
+    flush_model_usage_transactions(&writer, &transactions, DEFAULT_RETRIES, &jitter, &pause)
         .await
         .expect("the flush writes");
     assert_eq!(
@@ -60,7 +61,7 @@ async fn an_empty_flush_writes_nothing() {
     let writer = ScriptedWriter::new(Vec::<WriteFailure>::new());
     let pause = RecordingPause::default();
     let jitter = FixedJitter { nanos: 0 };
-    flush_model_usage_transactions(&writer, &[], DEFAULT_RETRY_TIMES, &jitter, &pause)
+    flush_model_usage_transactions(&writer, &[], DEFAULT_RETRIES, &jitter, &pause)
         .await
         .expect("nothing to write");
     assert!(writer.batches().is_empty());
@@ -79,7 +80,7 @@ async fn a_pre_send_failure_is_retried_with_doubling_delays() {
     flush_model_usage_transactions(
         &writer,
         &[one_transaction()],
-        DEFAULT_RETRY_TIMES,
+        DEFAULT_RETRIES,
         &jitter,
         &pause,
     )
@@ -104,7 +105,7 @@ async fn a_pre_send_failure_returns_once_the_retries_run_out() {
     let outcome = flush_model_usage_transactions(
         &writer,
         &[one_transaction()],
-        DEFAULT_RETRY_TIMES,
+        DEFAULT_RETRIES,
         &jitter,
         &pause,
     )
@@ -182,7 +183,7 @@ async fn a_rollup_that_cannot_aggregate_never_reaches_the_writer() {
     let outcome = flush_model_usage_transactions(
         &writer,
         &[largest.clone(), largest],
-        DEFAULT_RETRY_TIMES,
+        DEFAULT_RETRIES,
         &jitter,
         &pause,
     )
@@ -199,5 +200,5 @@ async fn a_rollup_that_cannot_aggregate_never_reaches_the_writer() {
 
 #[test]
 fn the_default_retry_count_matches_the_source() {
-    assert_eq!(DEFAULT_RETRY_TIMES, 3);
+    assert_eq!(DEFAULT_RETRIES, 3);
 }

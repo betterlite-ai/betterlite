@@ -18,9 +18,6 @@ use crate::migration_ledger::lock::JitterSource;
 use crate::spend_queues::entity::SpendAmount;
 use crate::tool_spend::RetryPause;
 
-// LiteLLM's n_retry_times default: one flush tries four times before it raises
-pub const DEFAULT_RETRY_TIMES: u32 = 3;
-
 const RETRY_JITTER_NANOS: u64 = 1_000_000_000;
 
 #[derive(Debug, thiserror::Error)]
@@ -148,14 +145,10 @@ where
         if !failure.is_pre_send() || attempt >= retries {
             return Err(ModelUsageFlushError::Write(failure));
         }
-        pause.pause(retry_delay(jitter, attempt)).await;
+        let delay = Duration::from_secs(2_u64.saturating_pow(attempt)).saturating_add(
+            Duration::from_nanos(jitter.uniform_nanos(RETRY_JITTER_NANOS)),
+        );
+        pause.pause(delay).await;
         attempt = attempt.saturating_add(1);
     }
-}
-
-// Python sleeps 2**attempt plus random.uniform(0, 1) seconds between attempts
-fn retry_delay(jitter: &dyn JitterSource, attempt: u32) -> Duration {
-    Duration::from_secs(2_u64.saturating_pow(attempt)).saturating_add(Duration::from_nanos(
-        jitter.uniform_nanos(RETRY_JITTER_NANOS),
-    ))
 }

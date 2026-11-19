@@ -12,10 +12,10 @@ use super::support::{FixedJitter, RecordingPause, key, transaction};
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::model_usage::writer::{ModelUsageWriteError, PostgresModelUsageWriter};
 use crate::model_usage::{
-    DEFAULT_RETRY_TIMES, ModelUsageFlushError, ModelUsageTransaction,
-    flush_model_usage_transactions,
+    ModelUsageFlushError, ModelUsageTransaction, flush_model_usage_transactions,
 };
 use crate::postgres_store::session::PostgresStore;
+use crate::tool_spend::DEFAULT_RETRIES;
 
 const ROLLUPS_SQL: &str = r#"SELECT date, model_group, model, custom_llm_provider, task_type, spend::numeric AS spend, prompt_tokens, completion_tokens, request_count, successful_requests, failed_requests FROM "LiteLLM_DailyModelUsage" ORDER BY date, model_group, model, custom_llm_provider, task_type"#;
 
@@ -64,7 +64,7 @@ impl ModelUsageCase {
         .resolve()
         .await
         .expect("a test database");
-        let store = store(fixture.options.config.clone());
+        let store = pool_store(fixture.options.config.clone());
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
@@ -128,7 +128,7 @@ impl ModelUsageCase {
     }
 }
 
-fn store(configuration: Config) -> PostgresStore {
+fn pool_store(configuration: Config) -> PostgresStore {
     let manager = Manager::new(configuration, NoTls);
     let pool = Pool::builder(manager)
         .max_size(1)
@@ -138,7 +138,7 @@ fn store(configuration: Config) -> PostgresStore {
 }
 
 fn unreachable_store() -> PostgresStore {
-    store(
+    pool_store(
         "postgres://spend@127.0.0.1:1/spend"
             .parse()
             .expect("a URL no server listens on"),
@@ -169,7 +169,7 @@ async fn flush(
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
     let outcome =
-        flush_model_usage_transactions(&writer, transactions, DEFAULT_RETRY_TIMES, &jitter, &pause)
+        flush_model_usage_transactions(&writer, transactions, DEFAULT_RETRIES, &jitter, &pause)
             .await;
     assert!(pause.delays().is_empty());
     outcome
@@ -300,7 +300,7 @@ async fn an_empty_flush_never_reaches_the_database() {
     };
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
-    flush_model_usage_transactions(&writer, &[], DEFAULT_RETRY_TIMES, &jitter, &pause)
+    flush_model_usage_transactions(&writer, &[], DEFAULT_RETRIES, &jitter, &pause)
         .await
         .expect("nothing to write");
     assert!(pause.delays().is_empty());
