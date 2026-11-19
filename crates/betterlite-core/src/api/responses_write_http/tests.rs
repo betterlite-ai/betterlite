@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::RequestBody;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_resources::error::ResponseResourceError;
 use http::Method;
@@ -23,6 +24,7 @@ use crate::api::responses_write_http::service::{
     CancelCall, ClientKind, ClientSource, DeleteCall, SharedSession, SuppliedClient, WriteCall,
     WriteDeps, WriteOutcome, WriteRequest, WriteTarget, send,
 };
+use crate::api::vector_store_http_write::error::HeaderMap;
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the expected JSON parses")
@@ -371,6 +373,36 @@ async fn write_transport_failures(#[case] operation: Operation) {
         assert!(invalid.errors().is_empty());
         assert_eq!(missing_wire.requests().len(), 1);
     }
+    let failing = RecordingConfig::new("http://mock.test/v1/responses");
+    let failed_wire = Wire::failing(TransportError::Closed, &events);
+    let failed_source = Source::new(failed_wire.clone());
+    let failed_deps = WriteDeps {
+        config: &failing,
+        source: &failed_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut failed_fixture = Fixture::new("responses");
+    let failed_call = operation_call(operation, "resp_a", &write_params, None, None);
+    let Err(WriteError::Provider(error)) = run(
+        &mut failed_fixture,
+        &failed_deps,
+        ClientKind::Sync,
+        &failed_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a closed client is a provider error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert!(error.status_code_is_synthesized);
+    assert_eq!(error.message, TransportError::Closed.to_string());
+    assert!(error.headers.is_empty());
+    assert_eq!(
+        failing.errors(),
+        vec![(TransportError::Closed.to_string(), 500, HeaderMap::new())]
+    );
 }
 
 #[tokio::test]
