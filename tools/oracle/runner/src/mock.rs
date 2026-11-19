@@ -243,7 +243,7 @@ async fn play(
                 status: answer.status,
             };
             mcp_reply::correlate(&mut answer, correlation)
-                .map_err(|source| fail(&guard.state, Error::other(source.to_string())))?;
+                .map_err(|source| fail(&guard.state, Error::other(source)))?;
             Some(answer)
         }
     };
