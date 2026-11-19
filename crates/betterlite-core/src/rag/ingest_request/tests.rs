@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::api::request_body::{ParsedJson, parse_json_text};
+use crate::api::request_body::{JsonObject, ParsedJson, parse_json_text};
 use crate::api::request_form::values::{FormPart, FormParts, PartValue, UploadFile};
 use crate::rag::upload_security::{EICAR_TEST_SIGNATURE, EicarTestMalwareScanner, RejectionReason};
 
@@ -22,10 +22,17 @@ fn request_headers(content_type: &str) -> BTreeMap<String, String> {
     BTreeMap::from([("content-type".to_owned(), content_type.to_owned())])
 }
 
+fn json_object(body: &str) -> JsonObject {
+    match parse_json_text(body) {
+        ParsedJson::Object(data) => data,
+        ParsedJson::NotObject | ParsedJson::Invalid => {
+            panic!("the test body must be a JSON object")
+        }
+    }
+}
+
 fn document(body: &str) -> Result<ParsedIngestRequest, IngestRequestError> {
-    let ParsedJson::Object(data) = parse_json_text(body) else {
-        panic!("the test body must be a JSON object");
-    };
+    let data = json_object(body);
     let headers = request_headers("application/json");
     let request = IngestRequest {
         headers: &headers,
@@ -34,8 +41,8 @@ fn document(body: &str) -> Result<ParsedIngestRequest, IngestRequestError> {
     parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID)
 }
 
-fn form(parts: Vec<FormPart>) -> Result<ParsedIngestRequest, IngestRequestError> {
-    let parts = FormParts { items: parts };
+fn form(items: Vec<FormPart>) -> Result<ParsedIngestRequest, IngestRequestError> {
+    let parts = FormParts { items };
     let headers = request_headers("multipart/form-data; boundary=betterlite");
     let request = IngestRequest {
         headers: &headers,
@@ -363,14 +370,16 @@ fn blocked_credential_order() {
 #[test]
 fn blocked_credential_skips_non_object_vector_store() {
     let body = r#"{"ingest_options": {"vector_store": "vertex_credentials"}, "file_url": "https://example.test/doc.pdf"}"#;
-    assert!(document(body).is_ok());
+    let parsed = document(body).unwrap();
+    assert!(parsed.ingest_options.contains_key("vector_store"));
 }
 
 #[test]
 fn vector_store_null_is_present() {
     let body =
         r#"{"ingest_options": {"vector_store": null}, "file_url": "https://example.test/doc.pdf"}"#;
-    assert!(document(body).is_ok());
+    let parsed = document(body).unwrap();
+    assert!(parsed.ingest_options.contains_key("vector_store"));
 }
 
 #[test]
@@ -429,11 +438,9 @@ fn missing_source_is_reported_before_vector_store() {
 
 #[test]
 fn base64_error_is_reported_before_source_check() {
-    let body = format!(
-        r#"{{"file": {{"filename": "doc.txt", "content": "a"}}, "file_url": "https://example.test/doc.pdf"}}"#
-    );
+    let body = r#"{"file": {"filename": "doc.txt", "content": "a"}, "file_url": "https://example.test/doc.pdf"}"#;
     assert_eq!(
-        document(&body),
+        document(body),
         Err(IngestRequestError::InvalidBase64 {
             source: Base64DecodeError::OneModuloFour { characters: 1 },
         })
@@ -507,10 +514,7 @@ fn empty_file_is_rejected() {
 
 #[test]
 fn multipart_marker_in_any_header_selects_the_multipart_branch() {
-    let body = parse_json_text(r#"{"ingest_options": {"vector_store": {}}}"#);
-    let ParsedJson::Object(data) = body else {
-        panic!("the test body must be a JSON object");
-    };
+    let data = json_object(r#"{"ingest_options": {"vector_store": {}}}"#);
     let headers = request_headers("application/json; note=multipart/form-data");
     let request = IngestRequest {
         headers: &headers,
@@ -540,17 +544,15 @@ fn content_type_match_is_case_sensitive() {
 
 #[test]
 fn missing_content_type_takes_the_json_branch() {
-    let ParsedJson::Object(data) =
-        parse_json_text(r#"{"ingest_options": {"vector_store": {}}, "file_id": "file-abc"}"#)
-    else {
-        panic!("the test body must be a JSON object");
-    };
+    let data = json_object(r#"{"ingest_options": {"vector_store": {}}, "file_id": "file-abc"}"#);
     let headers = BTreeMap::new();
     let request = IngestRequest {
         headers: &headers,
         body: IngestBody::Json(&data),
     };
-    assert!(parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID).is_ok());
+    let parsed =
+        parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID).unwrap();
+    assert_eq!(parsed.file_id.as_deref(), Some("file-abc"));
 }
 
 #[rstest::rstest]

@@ -21,16 +21,14 @@ pub(super) fn decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
     }
     let (sextets, trailing_pads) = collect(text.as_bytes());
     let mut decoded = Vec::with_capacity(sextets.len());
-    let mut quads = sextets.chunks_exact(4);
-    for quad in &mut quads {
-        let &[first, second, third, fourth] = quad else {
-            continue;
-        };
+    let (quads, remainder) = sextets.as_chunks::<4>();
+    for quad in quads {
+        let [first, second, third, fourth] = *quad;
         decoded.push((first << 2).saturating_add(second >> 4));
         decoded.push(((second & 0x0f) << 4).saturating_add(third >> 2));
         decoded.push(((third & 0x03) << 6).saturating_add(fourth));
     }
-    match quads.remainder() {
+    match remainder {
         [] => Ok(decoded),
         [_] => Err(Base64DecodeError::OneModuloFour {
             characters: sextets.len(),

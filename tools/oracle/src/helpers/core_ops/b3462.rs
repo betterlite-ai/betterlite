@@ -128,7 +128,7 @@ fn form_part(part: &Part) -> Result<FormPart, Box<HelperError>> {
 }
 
 fn answer(result: Result<ParsedIngestRequest, IngestRequestError>) -> HelperResult {
-    let parsed = result.map_err(http_error)?;
+    let parsed = result.map_err(|error| http_error(&error))?;
     serde_json::to_value(Output {
         ingest_options: parsed.ingest_options,
         file: parsed.file.map(file_output),
@@ -146,7 +146,7 @@ fn file_output(file: SecuredDocument) -> FileOutput {
     }
 }
 
-fn http_error(error: IngestRequestError) -> Box<HelperError> {
+fn http_error(error: &IngestRequestError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "HTTPException".to_owned(),
         status: Some(IngestRequestError::STATUS),

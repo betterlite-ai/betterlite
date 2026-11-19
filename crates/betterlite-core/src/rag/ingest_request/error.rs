@@ -23,8 +23,6 @@ pub enum IngestRequestError {
     NotAnObject { field: &'static str },
     #[error("'{field}' must be a string")]
     NotText { field: &'static str },
-    #[error("'{field}' is required")]
-    MissingField { field: &'static str },
     #[error("the multipart 'request' field is not valid JSON")]
     RequestInvalidJson,
     #[error("the multipart 'request' field must be a JSON object")]

@@ -103,7 +103,7 @@ fn object_field(
             Ok(Some(
                 object
                     .iter()
-                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .map(|(key, entry)| (key.clone(), entry.clone()))
                     .collect(),
             ))
         }
