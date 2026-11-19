@@ -127,7 +127,11 @@ pub(super) fn failed(
         "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed ({status_code}): {message}",
         state.model
     );
-    tracing::error!("{text}");
+    let logged = state
+        .redactor
+        .as_deref()
+        .map_or_else(|| text.clone(), |redactor| redactor.redact_string(&text));
+    tracing::error!("{logged}");
     state.logs.push(StreamLog {
         level: "error",
         message: text,

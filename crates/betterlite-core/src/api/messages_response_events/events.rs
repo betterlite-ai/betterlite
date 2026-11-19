@@ -95,6 +95,7 @@ pub(super) fn refusal_delta(state: &mut MessageStreamState, event: ParsedEvent<'
 }
 
 // The delta branches of _process_event differ only in the block they pick and the payload they carry.
+#[derive(Clone, Copy)]
 pub(super) enum DeltaKind {
     Text,
     SummaryPart,

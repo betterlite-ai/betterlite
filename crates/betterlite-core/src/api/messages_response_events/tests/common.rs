@@ -519,7 +519,7 @@ pub(super) fn attributed_truthy_delta() {
     assert_eq!(
         drained(&mut state),
         json(
-            r#"[{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"attr"}}]"#
+            r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"attr"}}]"#
         )
     );
 }

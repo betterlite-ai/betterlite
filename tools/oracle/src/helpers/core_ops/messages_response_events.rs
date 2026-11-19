@@ -56,6 +56,7 @@ struct AttributesSpec {
 #[serde(tag = "shape", rename_all = "snake_case", deny_unknown_fields)]
 enum ResponseSpec {
     Object {
+        #[serde(default)]
         output: Vec<Json>,
         status: Option<String>,
         usage: Option<ResponseApiUsage>,
