@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::{Future, ready};
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -90,7 +91,11 @@ pub fn record(
     index: usize,
     limits: TokenLimits,
 ) -> DiscoveredDeploymentModelInfo {
-    DiscoveredDeploymentModelInfo::new(Arc::clone(catalog), index, limits)
+    DiscoveredDeploymentModelInfo {
+        catalog: Arc::clone(catalog),
+        index,
+        limits,
+    }
 }
 
 pub fn dispatcher(seconds: f64) -> Arc<Mutex<f64>> {
@@ -116,8 +121,7 @@ pub fn handle(catalog: &Arc<DeploymentCatalog>) -> CatalogHandle {
     CatalogHandle::new(Arc::clone(catalog))
 }
 
-// ast-grep-ignore: no-one-line-functions
-pub fn no_inferred(_model: &str) -> Option<String> {
+pub const fn no_inferred(_model: &str) -> Option<String> {
     None
 }
 
@@ -192,17 +196,33 @@ impl Environment {
     pub fn harness(&self) -> Harness<'_> {
         Harness {
             map: &self.map,
-            resolution: ResolutionContext {
-                catalog: &self.catalog,
-                known_model_names: &self.known,
-                custom_providers: &self.custom,
-                environment: &self.environment,
-                registry: self.registry.clone(),
-                policies: ProviderPolicies::default(),
-                globals: GlobalCredentials::default(),
-            },
+            resolution: resolution(
+                &self.catalog,
+                &self.known,
+                &self.custom,
+                &self.environment,
+                &self.registry,
+            ),
             generalizations: &self.generalizations,
         }
+    }
+}
+
+fn resolution<'inputs>(
+    catalog: &'inputs ModelCatalog,
+    known: &'inputs BTreeSet<String>,
+    custom: &'inputs BTreeSet<String>,
+    environment: &'inputs BTreeMap<String, String>,
+    registry: &JSONProviderRegistry,
+) -> ResolutionContext<'inputs> {
+    ResolutionContext {
+        catalog,
+        known_model_names: known,
+        custom_providers: custom,
+        environment,
+        registry: registry.clone(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
     }
 }
 
@@ -364,7 +384,6 @@ impl Recorder {
 pub struct Counting(AtomicUsize);
 
 impl CacheClear for Counting {
-    // ast-grep-ignore: no-one-line-functions
     fn clear(&self) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
@@ -381,16 +400,16 @@ pub struct FakeHf {
 }
 
 impl ModelInfoClient for FakeHf {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
-    async fn get(&self, _request: &ModelInfoRequest) -> Result<FetchResponse, std::io::Error> {
+    async fn get(&self, _request: &ModelInfoRequest) -> Result<FetchResponse, io::Error> {
         match self.body {
             Some(body) => Ok(FetchResponse::new(
                 200,
                 Vec::new(),
                 body.as_bytes().to_vec(),
             )),
-            None => Err(std::io::Error::other("no config")),
+            None => Err(io::Error::other("no config")),
         }
     }
 }
@@ -492,15 +511,13 @@ impl Resolver {
     }
 
     pub fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.known,
-            custom_providers: &self.custom,
-            environment: &self.environment,
-            registry: self.registry.clone(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
+        resolution(
+            &self.catalog,
+            &self.known,
+            &self.custom,
+            &self.environment,
+            &self.registry,
+        )
     }
 }
 
@@ -531,8 +548,9 @@ pub fn discovery_with(
     index: usize,
     limits: TokenLimits,
 ) -> DiscoveryCache {
+    let spec = &catalog.models[index];
+    let model_id = spec.id().unwrap();
     let cache = DiscoveryCache::for_deployments(catalog.models.len());
-    let model_id = catalog.models[index].id().unwrap().to_owned();
-    cache.store(&model_id, record(catalog, index, limits));
+    cache.store(model_id, record(catalog, index, limits));
     cache
 }

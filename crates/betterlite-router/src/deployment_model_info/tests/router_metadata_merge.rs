@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::{JsonObject, ModelRegistry};
+use rstest::rstest;
 use serde_json::Number;
 
 use super::fixtures::{
@@ -264,58 +265,60 @@ fn azure_supplied<'row>(
     }
 }
 
+#[rstest]
+#[case::input_tokens_only(r#"{"azure/deploy":{"max_input_tokens":4096}}"#)]
+#[case::zero_cost_with_a_token_limit(
+    r#"{"azure/deploy":{"max_tokens":1,"input_cost_per_token":0}}"#
+)]
 #[tokio::test]
-async fn azure_positive_input_or_context_fallback_debug() {
+async fn azure_positive_input_or_context_fallback_debug(#[case] entry: &str) {
     let info = object(r#"{"id":"one"}"#);
     let params = object(
         r#"{"model":"azure/deploy","custom_llm_provider":"azure","api_base":"https://example.openai.azure.com","api_version":"2024-02-01"}"#,
     );
-    for entry in [
-        r#"{"azure/deploy":{"max_input_tokens":4096}}"#,
-        r#"{"azure/deploy":{"max_tokens":1,"input_cost_per_token":0}}"#,
-    ] {
-        let case = azure_case(entry);
-        let events = Events::default();
-        let _guard = tracing::subscriber::set_default(events.clone());
-        let outcome = case
-            .merged(Some(azure_supplied(&info, &params)), "g", None)
-            .await;
-        assert!(outcome.unwrap().is_some());
-        let debug = events.at("DEBUG");
-        assert!(
-            debug
-                .iter()
-                .any(|message| message.contains("has no base_model set; using 'azure/deploy'"))
-        );
-        assert!(events.at("ERROR").is_empty());
-    }
+    let case = azure_case(entry);
+    let events = Events::default();
+    let _guard = tracing::subscriber::set_default(events.clone());
+    let outcome = case
+        .merged(Some(azure_supplied(&info, &params)), "g", None)
+        .await;
+    assert!(outcome.unwrap().is_some());
+    let debug = events.at("DEBUG");
+    assert!(
+        debug
+            .iter()
+            .any(|message| message.contains("has no base_model set; using 'azure/deploy'"))
+    );
+    assert!(events.at("ERROR").is_empty());
 }
 
+#[rstest]
+#[case::zero_stub(
+    r#"{"azure/deploy":{"max_input_tokens":0,"max_tokens":0,"input_cost_per_token":0}}"#
+)]
+#[case::output_only_with_a_bool(
+    r#"{"azure/deploy":{"output_cost_per_token":0.5,"max_tokens":false}}"#
+)]
 #[tokio::test]
-async fn azure_zero_stub_or_output_only_error_continues() {
+async fn azure_zero_stub_or_output_only_error_continues(#[case] entry: &str) {
     let info = object(r#"{"id":"one"}"#);
     let params = object(
         r#"{"model":"azure/deploy","custom_llm_provider":"azure","api_base":"https://example.openai.azure.com","api_version":"2024-02-01"}"#,
     );
-    for entry in [
-        r#"{"azure/deploy":{"max_input_tokens":0,"max_tokens":0,"input_cost_per_token":0}}"#,
-        r#"{"azure/deploy":{"output_cost_per_token":0.5,"max_tokens":false}}"#,
-    ] {
-        let case = azure_case(entry);
-        let events = Events::default();
-        let _guard = tracing::subscriber::set_default(events.clone());
-        let outcome = case
-            .merged(Some(azure_supplied(&info, &params)), "g", None)
-            .await;
-        assert!(outcome.unwrap().is_some());
-        let errors = events.at("ERROR");
-        assert!(
-            errors
-                .iter()
-                .any(|message| message.contains("Could not identify azure model 'deploy'"))
-        );
-        assert!(events.at("DEBUG").is_empty());
-    }
+    let case = azure_case(entry);
+    let events = Events::default();
+    let _guard = tracing::subscriber::set_default(events.clone());
+    let outcome = case
+        .merged(Some(azure_supplied(&info, &params)), "g", None)
+        .await;
+    assert!(outcome.unwrap().is_some());
+    let errors = events.at("ERROR");
+    assert!(
+        errors
+            .iter()
+            .any(|message| message.contains("Could not identify azure model 'deploy'"))
+    );
+    assert!(events.at("DEBUG").is_empty());
 }
 
 #[tokio::test]

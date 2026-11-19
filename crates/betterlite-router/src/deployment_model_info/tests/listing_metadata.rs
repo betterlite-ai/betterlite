@@ -7,7 +7,7 @@ use super::fixtures::{Lookups, catalog, discovery_with, limits, object, record, 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_model_info::cache::DiscoveryCache;
 use crate::deployment_model_info::configured::{
-    get_configured_display_name, get_configured_mode, get_configured_token_limits,
+    get_configured_strings, get_configured_token_limits,
 };
 use crate::deployment_model_info::discovery::{
     discovered_fields, get_discovered_model_info, merged_model_info,
@@ -291,11 +291,12 @@ fn blank_or_nonstring_mode_and_display() {
     )]);
     let lookups = Lookups::default();
     let lookup = lookups.lookup(&catalog);
-    assert_eq!(get_configured_mode(&lookup, "group").unwrap(), None);
-    assert_eq!(get_configured_display_name(&lookup, "group").unwrap(), None);
+    let strings = get_configured_strings(&lookup, "group").unwrap();
+    assert_eq!((strings.mode, strings.display_name), (None, None));
     let absent = Lookups::default();
     let none = absent.lookup(&catalog);
-    assert_eq!(get_configured_mode(&none, "nope").unwrap(), None);
+    let unanswered = get_configured_strings(&none, "nope").unwrap();
+    assert_eq!((unanswered.mode, unanswered.display_name), (None, None));
 }
 
 #[test]
@@ -306,12 +307,7 @@ fn original_whitespace_preserved() {
     )]);
     let lookups = Lookups::default();
     let lookup = lookups.lookup(&catalog);
-    assert_eq!(
-        get_configured_mode(&lookup, "group").unwrap(),
-        Some(" chat ".to_owned())
-    );
-    assert_eq!(
-        get_configured_display_name(&lookup, "group").unwrap(),
-        Some(" My Name ".to_owned())
-    );
+    let strings = get_configured_strings(&lookup, "group").unwrap();
+    assert_eq!(strings.mode, Some(" chat ".to_owned()));
+    assert_eq!(strings.display_name, Some(" My Name ".to_owned()));
 }
