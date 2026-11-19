@@ -60,7 +60,7 @@ impl SupportedParameterSource for Declared {
         {
             let mut probes = self.probes.lock().unwrap_or_else(PoisonError::into_inner);
             probes.push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
-        }
+        };
         Ok(self.names.clone())
     }
 }

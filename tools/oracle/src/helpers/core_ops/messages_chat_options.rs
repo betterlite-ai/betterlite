@@ -81,7 +81,7 @@ impl SupportedParameterSource for Parameters {
                 model: model.to_owned(),
                 provider: custom_llm_provider.map(str::to_owned),
             });
-        }
+        };
         Ok(self.declared.clone())
     }
 }
