@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 
-// B192's bounded reader limits, carried here because betterlite-logging depends on this crate: a request_tags payload stays under 1 MiB and 64 containers of nesting.
+// B192's bounded reader limits, copied until B192 moves them into betterlite-redact's structured parse: a request_tags payload stays under 1 MiB and 64 containers of nesting.
 pub const MAX_ENQUEUE_TAGS_BYTES: usize = 0x0010_0000;
 pub const MAX_ENQUEUE_TAGS_DEPTH: usize = 64;
 

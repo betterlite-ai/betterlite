@@ -1,7 +1,7 @@
 task: B1742
 deviations:
   - what: request_tags is read through a bounded reader that refuses a payload over 1 MiB or nested deeper than 64 containers; LiteLLM loads it unbounded.
-    why: A spent log column is caller-influenced and the proxy must not allocate or recurse without a limit; the bounds are the ones B192's reader already uses, and that reader sits in betterlite-logging, which depends on betterlite-db, so decode_enqueue_tags carries the same bounds here rather than calling it across a dependency cycle.
+    why: A spent log column is caller-influenced and the proxy must not allocate or recurse without a limit. The chosen reuse path is to relocate safe_json_loads's 1 MiB size bound and its container_depth walk out of betterlite-logging's private_json into betterlite-redact's structured parse, whose parse_payload already parses a byte-bounded JSON payload and which both betterlite-db and betterlite-logging already depend on, and to have safe_json_loads and decode_enqueue_tags both call the moved reader with its size and depth errors mapped to PrivateJsonError and EnqueueTagsError. That relocation lies outside B1742's crates and its owner is B192, the private JSON task that owns safe_json_loads; until the move lands, decode_enqueue_tags carries the same bounds locally.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1400
   - what: A startTime parses as RFC 3339, a space-separated timestamp, minute precision or a date alone; the compact ISO form datetime.fromisoformat also accepts ("20240102T030405") does not parse.
     why: Spend logs write startTime from datetime.isoformat(), so the compact form is not a value a working proxy produces.
