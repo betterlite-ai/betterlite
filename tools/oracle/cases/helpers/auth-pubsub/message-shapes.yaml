@@ -1,0 +1,15 @@
+kind: helper
+name: auth-pubsub-message-shapes
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: message, message: '{"cache_key": "key:a", "new_value": 12.5}'}
+          - {kind: message, message: '{"cache_key": "key:b", "cache_key": "key:a", "new_value": true}'}
+          - {kind: message, message: '{"cache_key": "key:b", "new_value": "3"}'}
+          - {kind: message, message: '{"cache_key": "key:b", "new_value": null}'}
+          - {kind: message, message: '{"cache_key": "key:a", "new_value": 7.5, "ttl": 40.0, "extra": {"nested": [1, 2]}}'}
+          - {kind: block}
+      probe_keys: [key:a, key:b]
+env: {}
+compare: {ignore: []}
