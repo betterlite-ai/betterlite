@@ -1,7 +1,7 @@
 id: B1601
 milestone: M4 keys, spend and management
 title: Credential registry, config loading and credential handlers over store ports
-status: todo
+status: done
 depends_on: [B002, B003, B721, B725, B732, B844, B860, B1600, B1100]
 file: tasks/B1601-credential-routes.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/credential_accessor.py"
 parent: B061
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2399

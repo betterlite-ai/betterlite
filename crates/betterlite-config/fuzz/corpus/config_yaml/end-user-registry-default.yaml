@@ -1,0 +1,8 @@
+model_list:
+  - model_name: end-user-registry-default
+    litellm_params:
+      model: openai/gpt-4o-mini
+
+litellm_settings:
+  validate_end_user_id_in_db: false
+  max_end_user_budget_id: null
