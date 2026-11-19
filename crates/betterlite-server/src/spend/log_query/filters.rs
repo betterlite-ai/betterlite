@@ -49,7 +49,7 @@ impl EqualityColumn {
         match self {
             Self::TeamId => filters.team_id.as_deref(),
             Self::User => filters.user_id.as_deref(),
-            Self::ApiKey => filters.api_key.as_deref(),
+            Self::ApiKey => filters.api_key_filter.as_deref(),
             Self::Model => filters.model.as_deref(),
             Self::ModelId => filters.model_id.as_deref(),
             Self::ModelGroup => filters.model_group.as_deref(),

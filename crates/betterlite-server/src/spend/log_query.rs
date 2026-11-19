@@ -71,7 +71,7 @@ pub struct SpendLogQuery {
 
 #[derive(Debug, Clone)]
 pub struct ScalarFilters {
-    pub api_key: Option<String>,
+    pub api_key_filter: Option<String>,
     pub user_id: Option<String>,
     pub request_id: Option<String>,
     pub session_id: Option<String>,
@@ -138,7 +138,7 @@ pub fn decode_spend_log_query(raw_query: Option<&str>) -> SpendLogQuery {
 
 fn decode_scalar_filters(values: &BTreeMap<String, String>) -> ScalarFilters {
     ScalarFilters {
-        api_key: values.get(API_KEY_PARAM).cloned(),
+        api_key_filter: values.get(API_KEY_PARAM).cloned(),
         user_id: values.get(USER_ID_PARAM).cloned(),
         request_id: values.get(REQUEST_ID_PARAM).cloned(),
         session_id: values.get(SESSION_ID_PARAM).cloned(),

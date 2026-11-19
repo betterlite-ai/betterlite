@@ -40,7 +40,7 @@ fn decoding_defaults_page_page_size_and_content_filters() {
     assert_eq!(query.page.page, 1);
     assert_eq!(query.page.page_size, 50);
     assert_eq!(query.page.session_cursor, None);
-    assert_eq!(query.filters.api_key, None);
+    assert_eq!(query.filters.api_key_filter, None);
     assert_eq!(query.filters.user_id, None);
     assert_eq!(query.filters.request_id, None);
     assert_eq!(query.filters.session_id, None);
@@ -73,7 +73,7 @@ fn decoding_reads_every_scalar_filter() {
     let query = decode(
         "api_key=k&user_id=u&request_id=r&session_id=s&team_id=t&status_filter=failure&model=m&model_id=mi&model_group=mg&key_alias=ka&end_user=eu&error_code=500&error_message=boom&search=a%26b%3Dc&session_cursor=c",
     );
-    assert_eq!(query.filters.api_key.as_deref(), Some("k"));
+    assert_eq!(query.filters.api_key_filter.as_deref(), Some("k"));
     assert_eq!(query.filters.user_id.as_deref(), Some("u"));
     assert_eq!(query.filters.request_id.as_deref(), Some("r"));
     assert_eq!(query.filters.session_id.as_deref(), Some("s"));
@@ -94,7 +94,7 @@ fn decoding_reads_every_scalar_filter() {
 fn decoding_keeps_the_last_value_of_a_repeated_scalar() {
     let query = decode("model=a&model=b&api_key=k1&api_key=k2");
     assert_eq!(query.filters.model.as_deref(), Some("b"));
-    assert_eq!(query.filters.api_key.as_deref(), Some("k2"));
+    assert_eq!(query.filters.api_key_filter.as_deref(), Some("k2"));
 }
 
 #[rstest]
