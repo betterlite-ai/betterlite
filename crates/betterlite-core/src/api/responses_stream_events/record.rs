@@ -3,7 +3,7 @@ use betterlite_openai::api::responses_event_records::event_types::{
     ContentPartDonePart, Extra, RequiredNullable,
 };
 use betterlite_openai::api::responses_event_records::records::{
-    KnownResponseEvent, ResponsesAPIStreamingResponse,
+    GenericEvent, KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 
@@ -27,14 +27,11 @@ pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Resp
     if let Some(response) = nested_response_mut(event) {
         return Some(ResponseTarget::Typed(response));
     }
-    match event {
-        ResponsesAPIStreamingResponse::Known(known) => known_extra(known.as_mut())
-            .and_then(|extra| extra.get_mut("response"))
-            .map(ResponseTarget::Value),
-        ResponsesAPIStreamingResponse::Generic(record) => {
-            record.extra.get_mut("response").map(ResponseTarget::Value)
-        }
-    }
+    let extra = match event {
+        ResponsesAPIStreamingResponse::Known(known) => known_extra(known.as_mut()),
+        ResponsesAPIStreamingResponse::Generic(record) => Some(&mut record.extra),
+    }?;
+    extra.get_mut("response").map(ResponseTarget::Value)
 }
 
 // the event's own kind names the one slot whose container ids are encoded
@@ -42,9 +39,7 @@ pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Resp
 pub fn slot_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Target<'_>> {
     match event {
         ResponsesAPIStreamingResponse::Known(known) => known_target(known.as_mut()),
-        ResponsesAPIStreamingResponse::Generic(record) => {
-            generic_target(&mut record.extra, &record.r#type)
-        }
+        ResponsesAPIStreamingResponse::Generic(record) => generic_target(record),
     }
 }
 
@@ -68,8 +63,9 @@ fn known_target(event: &mut KnownResponseEvent) -> Option<Target<'_>> {
     }
 }
 
-fn generic_target<'event>(extra: &'event mut Extra, event_type: &str) -> Option<Target<'event>> {
-    match event_type {
+fn generic_target(record: &mut GenericEvent) -> Option<Target<'_>> {
+    let GenericEvent { r#type, extra } = record;
+    match r#type.as_str() {
         "response.output_item.added" | "response.output_item.done" => {
             Some(Target::Value(extra.get_mut("item")?))
         }

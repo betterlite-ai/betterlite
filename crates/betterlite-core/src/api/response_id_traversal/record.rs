@@ -45,12 +45,7 @@ impl Record {
     #[must_use]
     pub fn from_json(value: Json) -> Self {
         match value {
-            Json::Object(fields) => Self::Dict(DictRecord {
-                values: fields
-                    .into_iter()
-                    .map(|(name, child)| (name, Self::from_json(child)))
-                    .collect(),
-            }),
+            Json::Object(fields) => Self::Dict(json_dict(fields)),
             Json::List(items) => Self::List(items.into_iter().map(Self::from_json).collect()),
             scalar => Self::Scalar(scalar),
         }
@@ -121,6 +116,15 @@ impl Record {
             Self::List(items) => !items.is_empty(),
             Self::Scalar(value) => json_has_value(value),
         }
+    }
+}
+
+fn json_dict(fields: IndexMap<String, Json>) -> DictRecord {
+    DictRecord {
+        values: fields
+            .into_iter()
+            .map(|(name, child)| (name, Record::from_json(child)))
+            .collect(),
     }
 }
 
