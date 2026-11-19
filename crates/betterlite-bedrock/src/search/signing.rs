@@ -14,6 +14,7 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::search::credentials::ServerCredential;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::{RawValue, to_raw_value};
+use url::{Position, Url};
 
 use super::error::SearchError;
 use super::request::Params;
@@ -124,14 +125,15 @@ where
     F: FnOnce(&AwsSettings, &str) -> Fut,
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
-    let headers: Vec<(String, Option<String>)> = request
+    let mut headers: Vec<(String, Option<String>)> = request
         .headers
         .iter()
         .map(|(name, value)| (name.clone(), Some(value.clone())))
         .collect();
+    let injected_host = inject_signing_host(request, &mut headers);
     // api_key="" keeps BaseAWSLLM off the AWS_BEARER_TOKEN_BEDROCK fallback, a Bedrock Runtime token
     let empty = SecretString::from(String::new());
-    sign_service_request(
+    let mut signed = sign_service_request(
         ServiceRequest {
             service: ServiceName::BedrockAgentcore,
             headers: &headers,
@@ -147,7 +149,31 @@ where
         resolve_credentials,
     )
     .await
-    .map_err(SearchError::from)
+    .map_err(SearchError::from)?;
+    if injected_host.is_some() {
+        // botocore derives the host to sign with but sends no host header of its own
+        signed
+            .headers
+            .retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
+    }
+    Ok(signed)
+}
+
+// botocore signs the host it derives from the URL, urlsplit's lowercase hostname
+fn inject_signing_host(
+    request: &SignRequest<'_>,
+    headers: &mut Vec<(String, Option<String>)>,
+) -> Option<String> {
+    if headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+    {
+        return None;
+    }
+    let parsed = Url::parse(request.api_base).ok()?;
+    let host = parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase();
+    headers.push(("host".to_owned(), Some(host.clone())));
+    Some(host)
 }
 
 fn bearer_signed(

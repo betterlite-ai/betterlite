@@ -8,6 +8,7 @@ use crate::search::tests::support::{
 
 pub(super) fn assert_gateway_host_signing() {
     assert_gateway_host_is_sigv4_signed();
+    assert_signing_host_is_lowercased();
     assert_configured_hostname_allows_a_custom_host();
     assert_untrusted_signing_host_is_refused();
     assert_spoofed_signing_hosts_need_configuration();
@@ -31,6 +32,25 @@ fn assert_gateway_host_is_sigv4_signed() {
         Some("2025-03-26")
     );
     assert_eq!(body_text(&signed), MCP_BODY_TEXT);
+}
+
+fn assert_signing_host_is_lowercased() {
+    // botocore signs urlsplit's lowercase hostname, so the caller's casing never reaches the signature
+    let api_base = "http://LOCALHOST:8080/mcp";
+    let environment = lookup(&[(GATEWAY_URL_VARIABLE, "http://localhost:8080/mcp")]);
+    let mut case = baseline(api_base);
+    case.session_region = Some("us-east-1");
+    let signed = sign(&case, &environment, resolver()).unwrap();
+    assert_eq!(signed.url, api_base);
+    assert_eq!(header(&signed.headers, "host"), None);
+    assert_eq!(
+        authorization(&signed),
+        concat!(
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request, ",
+            "SignedHeaders=content-type;host;x-amz-date, ",
+            "Signature=76ed7ae683e800ebd9657f72b3636540ba8d73dd884c021358b124c839c80041"
+        )
+    );
 }
 
 fn assert_configured_hostname_allows_a_custom_host() {
