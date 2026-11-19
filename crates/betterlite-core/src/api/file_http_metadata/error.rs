@@ -1,4 +1,3 @@
-use betterlite_http::error::HttpError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
@@ -17,8 +16,6 @@ pub enum MetadataError {
     Client(#[from] ClientError),
     #[error(transparent)]
     Logging(#[from] PrePostError),
-    #[error(transparent)]
-    Segment(#[from] HttpError),
     #[error("the request URL {url} is not a URL")]
     RequestUrl {
         url: String,

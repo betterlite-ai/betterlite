@@ -7,18 +7,8 @@ use super::super::config::{
     EnvironmentRequest, FileParams, FileRequest, Headers, ListRequest, MetadataConfig,
 };
 use super::super::error::MetadataError;
-use super::{MetadataCall, MetadataDeps, MetadataTarget, NO_MESSAGES, Operation, Selected};
+use super::{MetadataCall, MetadataDeps, Selected};
 use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, LogContext};
-
-pub(super) const fn split_call<'call, 'inner>(
-    call: &'call MetadataCall<'inner>,
-) -> (Operation, &'call MetadataTarget<'inner>) {
-    match call {
-        MetadataCall::Retrieve(retrieve) => (Operation::Retrieve, &retrieve.target),
-        MetadataCall::Delete(delete) => (Operation::Delete, &delete.target),
-        MetadataCall::List(list) => (Operation::List, &list.target),
-    }
-}
 
 pub(super) fn select_client<'borrow, 'deps, C, S>(
     deps: &'borrow MetadataDeps<'deps, C, S>,
@@ -66,20 +56,17 @@ where
     prepared.map_err(MetadataError::Provider)
 }
 
+// The same validation runs before the first send and before every continuation, over the headers it is handed
 pub(super) fn validate_environment<C>(
     config: &C,
-    target: &MetadataTarget<'_>,
+    headers: Headers,
     optional_params: &FileParams,
+    litellm_params: &FileParams,
 ) -> Result<Headers, MetadataError>
 where
     C: MetadataConfig,
 {
-    let mut headers = Headers::new();
-    for (name, value) in target.extra_headers.into_iter().flatten() {
-        headers.insert(name.clone(), value.clone());
-    }
-    let api_key = target
-        .litellm_params
+    let api_key = litellm_params
         .get("api_key")
         .and_then(|value| value.as_str());
     config
@@ -87,15 +74,20 @@ where
             api_key,
             headers,
             model: "",
-            messages: &NO_MESSAGES,
+            messages: &[],
             optional_params,
-            litellm_params: target.litellm_params,
+            litellm_params,
         })
         .map_err(MetadataError::Provider)
 }
 
-pub(super) fn pre_call_marker(call: &MetadataCall<'_>) -> (&'static str, Json) {
-    match call {
+pub(super) fn log_pre_call(
+    api_base: &str,
+    headers: &Headers,
+    call: &MetadataCall<'_>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(), MetadataError> {
+    let (field, marker) = match call {
         MetadataCall::Retrieve(retrieve) => ("file_id", Json::Text(retrieve.file_id.to_owned())),
         MetadataCall::Delete(delete) => ("file_id", Json::Text(delete.file_id.to_owned())),
         MetadataCall::List(list) => (
@@ -103,21 +95,13 @@ pub(super) fn pre_call_marker(call: &MetadataCall<'_>) -> (&'static str, Json) {
             list.purpose
                 .map_or(Json::Null, |purpose| Json::Text(purpose.to_owned())),
         ),
-    }
-}
-
-pub(super) fn log_pre_call(
-    api_base: &str,
-    headers: &Headers,
-    marker: (&'static str, Json),
-    log: &mut LogContext<'_, '_>,
-) -> Result<(), MetadataError> {
+    };
     let mut logged = IndexMap::new();
     for (name, value) in headers {
         logged.insert(name.clone(), Json::Text(value.clone()));
     }
     let mut passthrough = IndexMap::new();
-    passthrough.insert(marker.0.to_owned(), marker.1);
+    passthrough.insert(field.to_owned(), marker);
     let record = PreCall {
         input: Json::Text(String::new()),
         model: None,

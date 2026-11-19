@@ -1,31 +1,24 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::{FileDeleted, FileObject};
 use http::Method;
+use serde::Serialize;
 
-use self::endpoints::{
-    log_pre_call, pre_call_marker, request_endpoint, select_client, split_call,
-    validate_environment,
-};
+use self::endpoints::{log_pre_call, request_endpoint, select_client, validate_environment};
 use self::listing::{Listing, list_pages};
-use self::wire::{
-    delete_response, file_response, query_pairs, request_url, send_once, timeout_for, wire_headers,
-};
+use self::wire::{file_response, query_pairs, request_url, send_once, status_facts, wire_headers};
 use super::config::{FileLogging, FileParams, Headers, MetadataConfig};
-use super::error::MetadataError;
+use super::error::{MetadataError, provider_error};
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest,
 };
 
 mod endpoints;
-mod facts;
 mod listing;
 mod wire;
-
-const NO_MESSAGES: [Json; 0] = [];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
@@ -44,14 +37,11 @@ impl Operation {
 
     // LiteLLM hands the per-call timeout to the async delete and to both listing sends, and to no other send
     const fn sends_timeout(self, mode: ClientKind) -> bool {
-        match (self, mode) {
+        matches!(
+            (self, mode),
             (Self::Delete, ClientKind::Asynchronous)
-            | (Self::List, ClientKind::Sync)
-            | (Self::List, ClientKind::Asynchronous) => true,
-            (Self::Retrieve, ClientKind::Sync)
-            | (Self::Retrieve, ClientKind::Asynchronous)
-            | (Self::Delete, ClientKind::Sync) => false,
-        }
+                | (Self::List, ClientKind::Sync | ClientKind::Asynchronous)
+        )
     }
 }
 
@@ -89,7 +79,7 @@ pub enum MetadataCall<'call> {
     List(ListCall<'call>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum MetadataValue {
     File(FileObject),
     Deleted(FileDeleted),
@@ -119,8 +109,7 @@ impl<Client> Selected<'_, Client> {
 pub struct PreparedMetadata<'deps, C: MetadataConfig, S: ClientSource> {
     config: &'deps C,
     client: Selected<'deps, S::Client>,
-    mode: ClientKind,
-    operation: Operation,
+    attempt: Attempt,
     litellm_params: FileParams,
     headers: Headers,
     request: WriteRequest,
@@ -138,24 +127,33 @@ where
     C: MetadataConfig,
     S: ClientSource,
 {
-    let (operation, target) = split_call(call);
+    let (operation, target) = match call {
+        MetadataCall::Retrieve(retrieve) => (Operation::Retrieve, &retrieve.target),
+        MetadataCall::Delete(delete) => (Operation::Delete, &delete.target),
+        MetadataCall::List(list) => (Operation::List, &list.target),
+    };
+    let litellm_params = target.litellm_params;
     let client = select_client(deps, mode, target.ssl_verify)?;
     let optional_params = FileParams::new();
     let (base, query) = request_endpoint(deps.config, call, &optional_params)?;
-    let headers = validate_environment(deps.config, target, &optional_params)?;
-    log_pre_call(&base, &headers, pre_call_marker(call), log)?;
+    let mut headers = Headers::new();
+    for (name, value) in target.extra_headers.into_iter().flatten() {
+        headers.insert(name.clone(), value.clone());
+    }
+    let headers = validate_environment(deps.config, headers, &optional_params, litellm_params)?;
+    log_pre_call(&base, &headers, call, log)?;
+    let timeout = target.timeout.filter(|_| operation.sends_timeout(mode));
     Ok(PreparedMetadata {
         config: deps.config,
         client,
-        mode,
-        operation,
-        litellm_params: target.litellm_params.clone(),
+        attempt: Attempt { mode, operation },
+        litellm_params: litellm_params.clone(),
         request: WriteRequest {
             method: operation.method(),
             url: request_url(&base, &query_pairs(&query)?)?,
             headers: wire_headers(&headers)?,
             body: RequestBody::Empty,
-            timeout: timeout_for(operation, mode, target.timeout),
+            timeout,
         },
         headers,
     })
@@ -173,19 +171,17 @@ where
     let PreparedMetadata {
         config,
         client,
-        mode,
-        operation,
+        attempt,
         litellm_params,
         headers,
         request,
     } = prepared;
     let timeout = request.timeout;
-    let first_url = request.url.to_string();
-    let attempt = Attempt { mode, operation };
+    let url = request.url.to_string();
     let reply = send_once(config, client.get(), request, attempt).await?;
-    match operation {
+    match attempt.operation {
         Operation::Retrieve => {
-            let response = file_response(&reply, &first_url);
+            let response = file_response(&reply, &url);
             let file = config.transform_retrieve_file_response(
                 &response,
                 &mut FileLogging {
@@ -195,29 +191,42 @@ where
             )?;
             Ok(MetadataValue::File(file))
         }
-        Operation::Delete => {
-            let response = delete_response(config, &reply, &first_url)?;
-            let deleted = config.transform_delete_file_response(
-                &response,
-                &mut FileLogging {
-                    model_call_details: &mut log.state.model_call_details,
-                },
-                &litellm_params,
-            )?;
-            Ok(MetadataValue::Deleted(deleted))
-        }
+        Operation::Delete => deleted(config, &reply, &url, log, &litellm_params),
         Operation::List => {
             let mut listing = Listing {
                 config,
                 client: client.get(),
-                mode,
+                attempt,
                 litellm_params,
                 headers,
                 timeout,
             };
-            list_pages(&mut listing, log, reply, first_url)
+            list_pages(&mut listing, log, reply, url)
                 .await
                 .map(MetadataValue::Listed)
         }
     }
+}
+
+// The delete client raises on a status of 400 or more before its transform sees the reply
+fn deleted<C: MetadataConfig>(
+    config: &C,
+    reply: &UpstreamResponse,
+    url: &str,
+    log: &mut LogContext<'_, '_>,
+    litellm_params: &FileParams,
+) -> Result<MetadataValue, MetadataError> {
+    if reply.status >= 400 {
+        let facts = status_facts(reply);
+        return Err(MetadataError::Provider(provider_error(&facts, config)));
+    }
+    let response = file_response(reply, url);
+    let deleted = config.transform_delete_file_response(
+        &response,
+        &mut FileLogging {
+            model_call_details: &mut log.state.model_call_details,
+        },
+        litellm_params,
+    )?;
+    Ok(MetadataValue::Deleted(deleted))
 }

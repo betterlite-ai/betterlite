@@ -1,16 +1,21 @@
-use std::time::Duration;
+use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::merge_query;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
 use http::HeaderMap as HttpHeaders;
 use http::header::{HeaderName, HeaderValue};
+use serde_json::Number;
 use url::Url;
 
 use super::super::config::{FileParams, FileResponse, Headers, MetadataConfig};
 use super::super::error::{MetadataError, provider_error};
-use super::{Attempt, Operation, facts};
-use crate::api::vector_store_http_write::error::header_text;
-use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest, WriteTransport};
+use super::{Attempt, ClientKind, Operation};
+use crate::api::vector_store_http_write::error::{
+    FailureFacts, HeaderMap, ResponseFacts, header_text,
+};
+use crate::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
 
 pub(super) fn query_pairs(query: &FileParams) -> Result<Vec<(String, String)>, MetadataError> {
     let mut pairs = Vec::with_capacity(query.len());
@@ -51,19 +56,6 @@ pub(super) fn wire_headers(headers: &Headers) -> Result<HttpHeaders, MetadataErr
     Ok(map)
 }
 
-// Only the async delete and both listing sends pass the caller's timeout; the selected client's own default covers the rest
-pub(super) const fn timeout_for(
-    operation: Operation,
-    mode: ClientKind,
-    timeout: Option<Duration>,
-) -> Option<Duration> {
-    if operation.sends_timeout(mode) {
-        timeout
-    } else {
-        None
-    }
-}
-
 pub(super) async fn send_once<C, Client>(
     config: &C,
     client: &Client,
@@ -75,27 +67,8 @@ where
     Client: WriteTransport,
 {
     client.send(request).await.map_err(|error| {
-        MetadataError::Provider(provider_error(
-            &facts::transport_facts(&error, attempt),
-            config,
-        ))
+        MetadataError::Provider(provider_error(&transport_facts(&error, attempt), config))
     })
-}
-
-// The delete client raises for a 4xx or 5xx with httpx's masked response, the way B2402's converter receives one
-pub(super) fn delete_response<C>(
-    config: &C,
-    reply: &UpstreamResponse,
-    url: &str,
-) -> Result<FileResponse, MetadataError>
-where
-    C: MetadataConfig,
-{
-    if reply.status >= 400 {
-        let facts = facts::status_facts(reply);
-        return Err(MetadataError::Provider(provider_error(&facts, config)));
-    }
-    Ok(file_response(reply, url))
 }
 
 pub(super) fn file_response(reply: &UpstreamResponse, url: &str) -> FileResponse {
@@ -108,5 +81,65 @@ pub(super) fn file_response(reply: &UpstreamResponse, url: &str) -> FileResponse
             .collect(),
         body: reply.body.clone(),
         url: Some(url.to_owned()),
+    }
+}
+
+// httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
+pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    let text = from_utf8(&reply.body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+        ToOwned::to_owned,
+    );
+    let mut headers: HeaderMap = reply
+        .headers
+        .iter()
+        .filter(|(name, _)| !matches!(name.as_str(), "content-encoding" | "content-length"))
+        .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
+        .collect();
+    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
+    if !reply.body.is_empty() {
+        let length = reply.body.len().to_string();
+        headers.insert("content-length".to_owned(), Json::Text(length));
+    }
+    FailureFacts {
+        response_status: Some(i64::from(reply.status)),
+        status: Some(Json::Number(Number::from(reply.status))),
+        text: Some(text.clone()),
+        headers: None,
+        response: Some(ResponseFacts {
+            status_code: i64::from(reply.status),
+            text: Some(text),
+            headers: Some(headers),
+        }),
+        display: String::new(),
+    }
+}
+
+// The sync delete client catches httpx.TimeoutException and raises litellm.Timeout(408); every other send lets the raw error out
+pub(super) fn transport_facts(error: &TransportError, attempt: Attempt) -> FailureFacts {
+    let timed_out = matches!(
+        error,
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+    ) && matches!(
+        (attempt.operation, attempt.mode),
+        (Operation::Delete, ClientKind::Sync)
+    );
+    if timed_out {
+        return FailureFacts {
+            response_status: None,
+            status: Some(Json::Number(Number::from(408_u16))),
+            text: Some("litellm.Timeout: Connection timed out after None seconds.".to_owned()),
+            headers: Some(HeaderMap::new()),
+            response: None,
+            display: String::new(),
+        };
+    }
+    FailureFacts {
+        response_status: None,
+        status: None,
+        text: None,
+        headers: None,
+        response: None,
+        display: error.to_string(),
     }
 }
