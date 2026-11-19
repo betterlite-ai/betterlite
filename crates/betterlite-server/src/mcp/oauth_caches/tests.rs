@@ -13,6 +13,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::auth::{McpAuthOverride, McpAuthValue};
 use super::error::OAuthCacheError;
 use super::per_user::PerUserTokenBackend;
+use super::request::auth_method_name;
 use super::{
     MCPOAuth2TokenCache, MCPPerUserTokenCache, compute_per_user_token_ttl, resolve_mcp_auth,
     resolved_token_header,
@@ -187,6 +188,18 @@ fn token_identity_changes_with_any_request_material(#[case] mutate: ServerMutati
     let mut server = client_server();
     mutate(&mut server);
     assert_ne!(MCPOAuth2TokenCache::token_identity(&server), base);
+}
+
+#[test]
+fn auth_method_names_match_litellm() {
+    assert_eq!(
+        auth_method_name(MCPTokenEndpointAuthMethod::ClientSecretBasic),
+        "client_secret_basic"
+    );
+    assert_eq!(
+        auth_method_name(MCPTokenEndpointAuthMethod::ClientSecretPost),
+        "client_secret_post"
+    );
 }
 
 #[tokio::test]
@@ -574,6 +587,20 @@ fn the_cache_evicts_the_oldest_entry_at_the_max_size() {
     assert_eq!(cache.cached("srv-1:0"), None);
     assert_eq!(cache.cached("srv-1:new"), Some("fresh".to_owned()));
     assert_eq!(cache.cached("srv-1:1"), Some("token".to_owned()));
+}
+
+#[test]
+fn the_cache_keeps_an_existing_identity_at_the_max_size() {
+    let post = Arc::new(ScriptedPost::new(Vec::new()));
+    let clock = Arc::new(ManualClock::new());
+    let cache = cache_with(&post, &clock);
+    (0..super::OAUTH2_TOKEN_CACHE_MAX_SIZE).for_each(|index| {
+        cache.insert(format!("srv-1:{index}"), "token".to_owned(), 600);
+    });
+    let last = format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_SIZE - 1);
+    cache.insert(last.clone(), "fresh".to_owned(), 600);
+    assert_eq!(cache.cached("srv-1:0"), Some("token".to_owned()));
+    assert_eq!(cache.cached(&last), Some("fresh".to_owned()));
 }
 
 #[test]

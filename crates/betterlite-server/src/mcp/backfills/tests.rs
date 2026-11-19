@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use base64::Engine as _;
@@ -14,14 +15,15 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::flow::backfill_null_oauth2_flows;
 use super::issuer::heal_stamped_issuers;
-use super::log::{BackfillEvent, BackfillLog};
+use super::log::{BackfillEvent, BackfillLog, TracingBackfillLog};
 use super::{
     BackfillRule, DISCOVERY_ACTOR, FlowBackfillTable, FlowCandidateRow, FlowSignals,
     IssuerBackfillTable, IssuerCandidateRow, UserCredentialRow, classify_null_flow_row,
-    decrypted_credentials, flow_name, is_stamped_issuer_row,
+    decrypted_credentials, flow_name, is_stamped_issuer_row, origin,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -255,6 +257,38 @@ impl BackfillLog for CapturedLog {
     }
 }
 
+#[derive(Clone, Default)]
+struct CapturedBytes(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedBytes {
+    fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8(bytes.clone()).expect("the captured log lines are UTF-8")
+    }
+}
+
+impl io::Write for CapturedBytes {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for CapturedBytes {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
 fn issuer_row(server_id: &str) -> IssuerCandidateRow {
     IssuerCandidateRow {
         server_id: server_id.to_owned(),
@@ -341,6 +375,8 @@ fn flow_classification_ignores_empty_endpoints_and_partial_credentials() {
         Some(&partial),
     ));
     assert_eq!(partial_credentials.rule, BackfillRule::InteractiveDefault);
+    let empty_token_url = classify_null_flow_row(&signals(None, None, Some(""), Some(&blob)));
+    assert_eq!(empty_token_url.rule, BackfillRule::InteractiveDefault);
 }
 
 #[test]
@@ -350,6 +386,29 @@ fn flow_classification_ignores_empty_credential_strings() {
         classify_null_flow_row(&signals(None, None, Some("https://idp/token"), Some(&blob)));
     assert_eq!(classification.flow, Some(OAuth2Flow::AuthorizationCode));
     assert_eq!(classification.rule, BackfillRule::InteractiveDefault);
+}
+
+#[test]
+fn flow_and_rule_names_match_litellm() {
+    assert_eq!(BackfillRule::PerUserTokens.as_str(), "per_user_tokens");
+    assert_eq!(BackfillRule::AuthorizationUrl.as_str(), "authorization_url");
+    assert_eq!(BackfillRule::RegistrationUrl.as_str(), "registration_url");
+    assert_eq!(
+        BackfillRule::AmbiguousM2mShape.as_str(),
+        "ambiguous_m2m_shape"
+    );
+    assert_eq!(
+        BackfillRule::InteractiveDefault.as_str(),
+        "interactive_default"
+    );
+    assert_eq!(
+        flow_name(OAuth2Flow::ClientCredentials),
+        "client_credentials"
+    );
+    assert_eq!(
+        flow_name(OAuth2Flow::AuthorizationCode),
+        "authorization_code"
+    );
 }
 
 #[test]
@@ -515,6 +574,54 @@ async fn flow_backfill_returns_nothing_for_an_empty_table() {
 }
 
 #[test]
+fn tracing_log_names_every_backfill_event() {
+    let captured = CapturedBytes::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(captured.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let log = TracingBackfillLog;
+    let counts: BTreeMap<BackfillRule, usize> = BTreeMap::from([(BackfillRule::PerUserTokens, 1)]);
+    log.event(BackfillEvent::FlowAmbiguous { server_id: "srv-1" });
+    log.event(BackfillEvent::FlowStamped {
+        server_id: "srv-1",
+        flow: OAuth2Flow::AuthorizationCode,
+        rule: BackfillRule::PerUserTokens,
+    });
+    log.event(BackfillEvent::FlowProcessed {
+        rows: 3,
+        counts: &counts,
+    });
+    log.event(BackfillEvent::IssuerHealFailed {
+        server_id: "srv-1",
+        error: "boom",
+    });
+    log.event(BackfillEvent::IssuerHealed {
+        server_id: "srv-1",
+        issuer: "https://idp.example.com",
+        alias: Some("idp-alias"),
+    });
+    log.event(BackfillEvent::IssuerHealedCount { healed: 2 });
+    let text = captured.contents();
+    for needle in [
+        "server is ambiguous",
+        "stamped row",
+        "authorization_code",
+        "per_user_tokens",
+        "processed oauth2 server rows",
+        "could not heal server",
+        "idp-alias",
+        "the configured endpoints apply again",
+        "healed servers",
+    ] {
+        assert!(text.contains(needle), "missing {needle} in {text}");
+    }
+}
+
+#[test]
 fn issuer_predicate_matches_a_discovery_stamped_row() {
     assert!(is_stamped_issuer_row(&issuer_row("srv-1")));
     let mut trailing = issuer_row("srv-1");
@@ -595,6 +702,16 @@ fn issuer_predicate_requires_matching_origins() {
     assert!(!is_stamped_issuer_row(&malformed_issuer));
 }
 
+#[test]
+fn origin_needs_both_a_scheme_and_a_host() {
+    assert_eq!(
+        origin("https://idp.example.com:443/token"),
+        Some("https://idp.example.com".to_owned())
+    );
+    assert_eq!(origin("//idp.example.com/token"), None);
+    assert_eq!(origin("https:/token"), None);
+}
+
 #[tokio::test]
 async fn issuer_backfill_heals_only_matching_rows() {
     let mut mismatch = issuer_row("srv-2");
@@ -611,6 +728,30 @@ async fn issuer_backfill_heals_only_matching_rows() {
         !log.issuer_events()
             .iter()
             .any(|line| line.starts_with("heal_failed:"))
+    );
+}
+
+#[tokio::test]
+async fn issuer_backfill_reports_the_alias_or_the_server_name() {
+    let mut aliased = issuer_row("srv-1");
+    aliased.alias = Some("idp-alias".to_owned());
+    let table = FakeIssuerTable::new(vec![aliased, issuer_row("srv-2")], None);
+    let log = CapturedLog::default();
+    let healed = heal_stamped_issuers(&table, &log)
+        .await
+        .expect("the backfill runs");
+    assert_eq!(healed, 2);
+    let healed_lines: Vec<String> = log
+        .issuer_events()
+        .into_iter()
+        .filter(|line| line.starts_with("healed:"))
+        .collect();
+    assert_eq!(
+        healed_lines,
+        vec![
+            "healed:srv-1:https://idp.example.com:idp-alias".to_owned(),
+            "healed:srv-2:https://idp.example.com:Name srv-2".to_owned(),
+        ]
     );
 }
 
