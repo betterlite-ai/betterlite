@@ -140,9 +140,7 @@ where
     T: RequestProjection,
 {
     let request = built.map_err(invalid)?;
-    let projection = request.supplied().map_err(invalid)?;
-    let output = serde_json::to_value(&projection)?;
-    Ok(output)
+    answered(request.supplied())
 }
 
 const fn clocks() -> ResetClocks<'static> {
