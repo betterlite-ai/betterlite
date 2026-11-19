@@ -127,7 +127,7 @@ async fn quota_protocol_is_exposed_without_a_per_event_call() {
     let counter = Arc::new(QuotaCounter {
         calls: Mutex::new(0),
     });
-    let port: Arc<dyn ProjectQuotaCallback> = Arc::clone(&counter);
+    let port: Arc<dyn ProjectQuotaCallback> = Arc::<QuotaCounter>::clone(&counter);
     port.enforce_frame_quota(None, Some("gpt-4o"), 1, 2).await;
     assert_eq!(counter.calls(), 1);
     let mut rig = Rig::new(Some(TransformMode::Direct));

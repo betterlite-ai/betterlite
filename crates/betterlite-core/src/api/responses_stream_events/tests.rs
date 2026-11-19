@@ -470,8 +470,10 @@ impl Ports {
         redactor: &'run Redactor,
         clock: Arc<dyn SuccessClock>,
     ) -> ResponsesStreamHooks<'run> {
-        let success: Arc<dyn ResponsesStreamSuccessTarget> = Arc::clone(&self.success);
-        let failure: Arc<dyn ResponsesStreamFailureTarget> = Arc::clone(&self.failure);
+        let success: Arc<dyn ResponsesStreamSuccessTarget> =
+            Arc::<SuccessPort>::clone(&self.success);
+        let failure: Arc<dyn ResponsesStreamFailureTarget> =
+            Arc::<FailurePort>::clone(&self.failure);
         ResponsesStreamHooks {
             cache: self.cache.clone(),
             cache_handler: self.cache_handler.clone(),

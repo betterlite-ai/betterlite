@@ -7,7 +7,7 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 
-use crate::api::responses_stream_hooks::events::nested_response_mut;
+use crate::api::responses_stream_hooks::events::{nested_response, nested_response_mut};
 
 pub enum Target<'event> {
     Extra(&'event mut Extra),
@@ -24,8 +24,8 @@ pub enum ResponseTarget<'event> {
 // a JSON null stays a value here; the rewrite itself ignores anything that is not an object
 #[must_use]
 pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<ResponseTarget<'_>> {
-    if let Some(response) = nested_response_mut(event) {
-        return Some(ResponseTarget::Typed(response));
+    if nested_response(event).is_some() {
+        return nested_response_mut(event).map(ResponseTarget::Typed);
     }
     let extra = match event {
         ResponsesAPIStreamingResponse::Known(known) => known_extra(known.as_mut()),

@@ -128,7 +128,8 @@ async fn output_item_events_encode_item_containers(#[case] payload: &str) {
         .await
         .expect("the item event is processed")
         .expect("the item event is handed on");
-    let Json::Text(container) = at(&event_json(&event), &["item", "container_id"]) else {
+    let json = event_json(&event);
+    let Json::Text(container) = at(&json, &["item", "container_id"]) else {
         panic!("the item keeps a container id");
     };
     let decoded = decode_container_id(container);
@@ -149,7 +150,8 @@ async fn annotation_events_encode_annotation_containers(#[case] payload: &str) {
         .await
         .expect("the annotation is processed")
         .expect("the annotation is handed on");
-    let Json::Text(container) = at(&event_json(&event), &["annotation", "container_id"]) else {
+    let json = event_json(&event);
+    let Json::Text(container) = at(&json, &["annotation", "container_id"]) else {
         panic!("the annotation keeps a container id");
     };
     let decoded = decode_container_id(container);
@@ -170,10 +172,8 @@ async fn part_events_encode_annotation_containers(#[case] payload: &str) {
         .await
         .expect("the part is processed")
         .expect("the part is handed on");
-    let Json::Text(container) = at(
-        &event_json(&event),
-        &["part", "annotations", "0", "container_id"],
-    ) else {
+    let json = event_json(&event);
+    let Json::Text(container) = at(&json, &["part", "annotations", "0", "container_id"]) else {
         panic!("the part keeps a container id");
     };
     let decoded = decode_container_id(container);
@@ -254,7 +254,8 @@ async fn affinity_wraps_added_and_done_cipher_items(#[case] payload: &str) {
         .await
         .expect("the cipher item is processed")
         .expect("the cipher item is handed on");
-    let Json::Text(wrapped) = at(&event_json(&event), &["item", "encrypted_content"]) else {
+    let json = event_json(&event);
+    let Json::Text(wrapped) = at(&json, &["item", "encrypted_content"]) else {
         panic!("the item keeps its cipher");
     };
     assert_eq!(wrapped, &wrap_encrypted_content("cipher", "deployment_a"));
@@ -319,7 +320,8 @@ async fn affinity_keeps_an_existing_wrapper() {
         .await
         .expect("the wrapped item is processed")
         .expect("the wrapped item is handed on");
-    let Json::Text(wrapped) = at(&event_json(&event), &["item", "encrypted_content"]) else {
+    let json = event_json(&event);
+    let Json::Text(wrapped) = at(&json, &["item", "encrypted_content"]) else {
         panic!("the item keeps its cipher");
     };
     let existing = "litellm_enc:bW9kZWxfaWQ6ZGVwbG95bWVudF9i;cipher";

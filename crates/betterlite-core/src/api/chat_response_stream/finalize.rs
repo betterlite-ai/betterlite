@@ -74,7 +74,6 @@ fn completed_event<Context>(
     // A null metadata value reads as the field's default, as docs/compatibility.md says for a typed field
     let mut metadata = state.litellm_metadata.clone();
     metadata.retain(|_name, value| !matches!(value, Json::Null));
-    // The completed event takes the managed-id rewrite a non-streaming response gets: id, encrypted items, containers
     rewrite_typed_response(
         &mut response,
         state.custom_llm_provider.as_deref(),

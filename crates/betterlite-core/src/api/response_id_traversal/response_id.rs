@@ -14,9 +14,9 @@ use super::record::{Record, TraversalError};
 
 #[derive(Debug, Error)]
 pub enum ResponseRewriteError {
-    #[error("the response could not be encoded: {source}")]
+    #[error("the response could not be encoded: {0}")]
     Encode(#[from] serde_json::Error),
-    #[error("the response fields are invalid: {source}")]
+    #[error("the response fields are invalid: {0}")]
     Decode(#[from] serde_path_to_error::Error<serde_json::Error>),
     #[error(transparent)]
     Traversal(#[from] TraversalError),

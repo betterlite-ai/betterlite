@@ -12,9 +12,11 @@ pub fn accumulate(event: &ResponsesAPIStreamingResponse, state: &mut ResponsesSt
             KnownResponseEvent::OutputTextDelta(record) => {
                 state.generated_content.push_str(&record.delta);
             }
-            KnownResponseEvent::FunctionCallArgumentsDelta(record)
-            | KnownResponseEvent::McpCallArgumentsDelta(record) => {
-                state.generated_tool_arguments.push_str(&record.delta);
+            KnownResponseEvent::FunctionCallArgumentsDelta(function) => {
+                state.generated_tool_arguments.push_str(&function.delta);
+            }
+            KnownResponseEvent::McpCallArgumentsDelta(mcp) => {
+                state.generated_tool_arguments.push_str(&mcp.delta);
             }
             _ => {}
         },

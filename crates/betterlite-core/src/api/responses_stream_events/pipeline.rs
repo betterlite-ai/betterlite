@@ -6,7 +6,7 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use super::record::{ResponseTarget, response_target};
 use super::terminal::{self, EstimatedUsage, Terminal};
 use super::{
-    ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
+    JsonShape, ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
     decode_responses_stream_value, deltas, identity,
 };
 use crate::api::response_id_traversal::response_id;
