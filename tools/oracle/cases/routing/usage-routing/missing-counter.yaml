@@ -1,0 +1,57 @@
+kind: probe
+name: usage-routing-missing-counter
+compare:
+  expected_difference:
+    - pointer: /output/usage_routing/steps/5/tpm
+      reference: [[dep-a, 200], [dep-b, 50]]
+      rust: [[dep-a, 100], [dep-b, 50]]
+      why: >-
+        LiteLLM's in-memory cache hands back the stored map itself, so the increment stays visible even
+        though the cache refused the write, while betterlite's write takes the new map by value and a
+        refused write leaves the stored window at its previous counts.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L64-L73
+    - pointer: /output/usage_routing/steps/5/rpm
+      reference: [[dep-a, 2], [dep-b, 1]]
+      rust: [[dep-a, 1], [dep-b, 1]]
+      why: >-
+        The requests map is the same read-modify-write against the same cache, so a refused write leaves
+        LiteLLM's request count incremented in the cached map and betterlite's window unchanged.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L70-L73
+    - pointer: /output/usage_routing/steps/11/tpm
+      reference: [[dep-a, 100]]
+      rust: [[dep-a, 100], [dep-b, 50]]
+      why: >-
+        DualCache swallows a failed read, so LiteLLM's update starts from an empty map and writes it back
+        over the stored window, while betterlite drops the update a read it could not serve and keeps the
+        counts that are already stored.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L64-L73
+    - pointer: /output/usage_routing/steps/11/rpm
+      reference: [[dep-a, 1]]
+      rust: [[dep-a, 1], [dep-b, 1]]
+      why: >-
+        The requests map takes the same path, so LiteLLM replaces the requests window with just the new
+        request while betterlite keeps the requests it had already recorded.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L70-L73
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        deployments:
+          - {id: dep-a}
+          - {id: dep-b}
+        steps:
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 50}
+          - {kind: observe, now_millis: 1700000000000}
+          - {kind: gate, now_millis: 1700000000000, fail_writes: true}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: gate, now_millis: 1700000000000, fail_writes: false}
+          - {kind: gate, now_millis: 1700000000000, fail_reads: true}
+          # a select over the failing store reads the cold window on both sides and picks the pool's first
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: gate, now_millis: 1700000000000, fail_reads: false}
+          - {kind: observe, now_millis: 1700000000000}
