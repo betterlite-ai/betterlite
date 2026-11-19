@@ -14,33 +14,19 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::candidates::{CandidateSet, deployment_ids, without_blocked};
 use crate::router_core::error::RoutingError;
-use crate::router_core::no_deployment::NoDeployment;
-use crate::router_core::route::{RouteContext, RouteRequest};
+use crate::router_core::route::{ResolvedRoute, RouteContext, RouteRequest, no_deployment_error};
 use crate::static_eligibility::filter::{EligibilityInput, EligibilityServices, eligible};
 use crate::strategy::{self, Strategy, StrategyContext};
 use crate::strategy_dispatch::groups::RoutingScope;
 use crate::strategy_dispatch::override_resolution::{override_pre_call_target, resolve};
-use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
-use crate::strategy_dispatch::types::{
-    RequestBindings, Resolution, RoutingRequest, StrategyOverride,
-};
+use crate::strategy_dispatch::types::{RequestBindings, RoutingRequest, StrategyOverride};
 
 // The strategy state one route resolves against: B395's dispatch, the request's override and the groups in scope.
 pub struct StrategyRoute<'route> {
     pub dispatch: &'route mut StrategyDispatch,
     pub override_strategy: StrategyOverride<'route>,
     pub scope: RoutingScope<'route>,
-}
-
-// What one request resolved to, before any filter touched it: the catalog's match and B395's routing decision.
-struct ResolvedRoute {
-    group: String,
-    aliases: Vec<AliasStep>,
-    model_ids: Vec<String>,
-    resolution: Resolution,
-    override_pre_call: Option<SelectorId>,
-    bindings: RequestBindings,
 }
 
 // Router._async_get_healthy_deployments for the group, or the one deployment a specific request names
@@ -126,7 +112,10 @@ where
 {
     let Resolved { route, candidates } = resolved;
     match candidates {
-        Candidates::Single(deployment) => single_route(context, route, *deployment).await,
+        Candidates::Single(deployment) => {
+            let selected = named_deployment(context, &route, *deployment).await?;
+            attempt(context, route, selected, None).await
+        }
         Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
@@ -144,18 +133,18 @@ pub fn resolve_catalog(
     Ok(resolver.resolve(&lookup)?)
 }
 
-// A named deployment comes back once the generalization rules and the static gate accepted it, with no strategy.
-async fn single_route(
+// get_model_info fills every registered deployment from the rules, a named one included, and the static gate then judges it
+async fn named_deployment(
     context: &RouteContext<'_>,
-    resolved: ResolvedRoute,
+    resolved: &ResolvedRoute,
     deployment: DeploymentSpec,
-) -> Result<AttemptResult, RoutingError> {
-    // get_model_info fills every registered deployment from the rules, a named one included
-    let deployments = vec![deployment];
-    let candidates = CandidateSet { deployments };
+) -> Result<DeploymentSpec, RoutingError> {
+    let candidates = CandidateSet {
+        deployments: vec![deployment],
+    };
     let filled = context::run(RouteStage::GeneralizationIntegration, candidates, context).await?;
     let Some(chosen) = filled.deployments.into_iter().next() else {
-        return Err(no_deployment_error(context, &resolved));
+        return Err(no_deployment_error(context, resolved));
     };
     let filtered = eligible(
         EligibilityInput {
@@ -171,10 +160,11 @@ async fn single_route(
             params: context.params,
         },
     )?;
-    let Some(selected) = filtered.deployments.into_iter().next() else {
-        return Err(no_deployment_error(context, &resolved));
-    };
-    Ok(attempt(context, resolved, selected, None).await)
+    filtered
+        .deployments
+        .into_iter()
+        .next()
+        .ok_or_else(|| no_deployment_error(context, resolved))
 }
 
 async fn pool_route<R>(
@@ -196,7 +186,7 @@ where
         let Some(deployment) = set.deployments.into_iter().next() else {
             return Err(no_deployment_error(context, &resolved));
         };
-        return Ok(attempt(context, resolved, deployment, None).await);
+        return attempt(context, resolved, deployment, None).await;
     }
     let pick = select_index(context, dispatch, &resolved, &set, random).await?;
     let Some((strategy, index)) = pick else {
@@ -206,7 +196,7 @@ where
     let Some(deployment) = set.deployments.into_iter().nth(index) else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, deployment, Some(strategy)).await)
+    attempt(context, resolved, deployment, Some(strategy)).await
 }
 
 // The pool after every filter async_get_healthy_deployments applies before it selects.
@@ -272,15 +262,4 @@ where
     };
     let index = strategy::select(strategy, strategy_context, random).await?;
     Ok(Some((strategy, index)))
-}
-
-// async_raise_no_deployment_exception, in the fields the proxy and the caller read back
-fn no_deployment_error(context: &RouteContext<'_>, resolved: &ResolvedRoute) -> RoutingError {
-    RoutingError::NoDeployment(NoDeployment::new(
-        resolved.group.clone(),
-        context.services.min_cooldown(&resolved.model_ids),
-        context.policy.enable_pre_call_checks,
-        context.services.cooldown_list(),
-        resolved.model_ids.clone(),
-    ))
 }

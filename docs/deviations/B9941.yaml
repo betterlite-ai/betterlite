@@ -1,0 +1,9 @@
+task: B9941
+deviations:
+  - what: Authenticated SCIM requests reach provisioning and discovery without a license; stock open-source LiteLLM answers them with HTTP 403 from its premium-user dependency.
+    why: The README makes every MIT feature available to every deployment and has no paid tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L266
+  - what: scim_router is merged into the application when the router is built rather than lazily on the first /scim request; both include it exactly once.
+    why: betterlite compiles its routes in, so there is no lazy import that could fail on the first SCIM request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L281-L286
+kept_bugs: []
