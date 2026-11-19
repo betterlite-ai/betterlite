@@ -4,6 +4,7 @@ use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use betterlite_openai::watsonx_chat::params::map_openai_params as map_chat_params;
 use betterlite_openai::watsonx_chat::plan::{WatsonxChatPlan, WatsonxChatRequest};
 use betterlite_prompts::arguments::json::Object;
+use betterlite_provider::data_cloud_dispatch::call::CompletionCall;
 use betterlite_provider::data_cloud_dispatch::context::{DispatchContext, DispatchGlobals};
 use betterlite_provider::enterprise_ml_dispatch::call::{SagemakerRequest, convert};
 use betterlite_provider::enterprise_ml_dispatch::context::ChatContext;
@@ -28,7 +29,7 @@ pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Re
         &chat_options(&case.non_default(), case.stream.unwrap_or(false)),
         &mut mapped,
     )
-    .map_err(chat_failure)?;
+    .map_err(|error| chat_failure(&error))?;
     let options: WatsonxParams = mapped.into_iter().collect();
     let api_base = case.api_base();
     let api_key = case.key();
@@ -44,14 +45,14 @@ pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Re
         },
     )
     .await
-    .map_err(chat_failure)?;
+    .map_err(|error| chat_failure(&error))?;
     let messages = serde_json::to_value(&case.messages).map_err(|error| failure(None, &error))?;
     let body = chat_body(plan.model, messages, plan.options);
     fixture.transport.keep_json(plan.url, plan.headers, &body)
 }
 
-// _complete_watsonx_text: the key, base and credentials chains, then B5972's generation body
-pub(in crate::b8331) async fn watsonx_text(case: &Case, fixture: &Fixture) -> Result<(), Failure> {
+// the key, base and credential chains the text arm resolves before the shared generation call
+fn text_call(case: &Case, fixture: &Fixture) -> Result<CompletionCall, Failure> {
     let params = case.credentials_params();
     let litellm_params = Object::new();
     let api_base = case.api_base();
@@ -76,7 +77,12 @@ pub(in crate::b8331) async fn watsonx_text(case: &Case, fixture: &Fixture) -> Re
         base,
         sagemaker: SagemakerRequest::default(),
     };
-    let call = watsonx::text_call(&chat).map_err(|error| failure(error.status(), &error))?;
+    watsonx::text_call(&chat).map_err(|error| failure(error.status(), &error))
+}
+
+// _complete_watsonx_text: the key, base and credentials chains, then B5972's generation body
+pub(in crate::b8331) async fn watsonx_text(case: &Case, fixture: &Fixture) -> Result<(), Failure> {
+    let call = text_call(case, fixture)?;
     let mut options: WatsonxParams =
         convert(&call.optional_params).map_err(|error| failure(error.status(), &error))?;
     let non_default = case.non_default();

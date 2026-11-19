@@ -239,7 +239,7 @@ impl Fixture {
         }
     }
 
-    pub(super) fn source(&self) -> EnvironmentSource<'_> {
+    pub(super) const fn source(&self) -> EnvironmentSource<'_> {
         EnvironmentSource {
             secrets: &self.secrets,
             environment: &self.environment,

@@ -24,6 +24,37 @@ fn headers_from(pairs: &[(String, String)]) -> Result<HeaderMap, Failure> {
     Ok(headers)
 }
 
+// the call the SageMaker chat config reads: the case's messages, the nova variant and a fixed clock
+fn chat_call<'case>(
+    case: &'case Case,
+    messages: &'case [ChatMessage],
+    optional_params: &'case Object,
+    signing: &'case ParamMap,
+) -> ChatCall<'case> {
+    ChatCall {
+        model: &case.model,
+        messages,
+        optional_params,
+        signing,
+        headers: Headers::new(),
+        hf_model_name: None,
+        variant: if case.op == Operation::SagemakerNova {
+            ChatVariant::Nova
+        } else {
+            ChatVariant::Chat
+        },
+        stream: false,
+        reply: ReplyOptions {
+            json_mode: false,
+            provider: None,
+            base_model: None,
+            identifier: NEW_ID,
+            clock: system_clock,
+        },
+        configured_bearer: None,
+    }
+}
+
 // _complete_sagemaker_chat: the context provider reaches B5960's own chat config, so its body and signature are built here
 pub(in crate::b8331) async fn sagemaker_chat(
     case: &Case,
@@ -34,29 +65,7 @@ pub(in crate::b8331) async fn sagemaker_chat(
     let optional_params = Object::new();
     let signing = ParamMap::new();
     let runtime = fixture.runtime();
-    let variant = if case.op == Operation::SagemakerNova {
-        ChatVariant::Nova
-    } else {
-        ChatVariant::Chat
-    };
-    let call = ChatCall {
-        model: &case.model,
-        messages: &messages,
-        optional_params: &optional_params,
-        signing: &signing,
-        headers: Headers::new(),
-        hf_model_name: None,
-        variant,
-        stream: false,
-        reply: ReplyOptions {
-            json_mode: false,
-            provider: None,
-            base_model: None,
-            identifier: NEW_ID,
-            clock: system_clock,
-        },
-        configured_bearer: None,
-    };
+    let call = chat_call(case, &messages, &optional_params, &signing);
     let prepared = prepare_chat(&runtime, &call).await.map_err(|error| {
         let raised = RuntimeFailure::from(error);
         failure(raised.status_code(), &raised)

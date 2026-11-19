@@ -18,12 +18,12 @@ pub(super) use sap::sap_chat;
 pub(super) use watsonx::{watsonx_chat, watsonx_text};
 
 // only the API failures among the chat handler's errors carry a status, the field and JSON errors carry none
-pub(super) fn chat_failure(error: WatsonxChatError) -> Failure {
-    let status = match &error {
+pub(super) fn chat_failure(error: &WatsonxChatError) -> Failure {
+    let status = match error {
         WatsonxChatError::Auth(inner) => api_status(inner),
         WatsonxChatError::InvalidField { .. } | WatsonxChatError::Json(_) => None,
     };
-    failure(status, &error)
+    failure(status, error)
 }
 
 // the IAM auth both watsonx arms build, over the case environment and the fixture transport

@@ -40,10 +40,10 @@ fn sap_headers(
     )
     .expect("the sap arm runs")
     .expect("the handler answers");
-    let Some(headers) = recorder.calls()[0].headers.clone() else {
+    let Some(sent_headers) = recorder.calls()[0].headers.clone() else {
         panic!("the sap arm sends headers");
     };
-    headers
+    sent_headers
 }
 
 #[test]
