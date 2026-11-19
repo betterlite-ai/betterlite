@@ -54,11 +54,14 @@ impl RegistryCache for RegistryView<'_> {
 struct RegistryRows(#[from] TagBudgetRowsFailure);
 
 // LiteLLM's _load_tag_registry and _load_model_access_group_registry: the names one row read can prove exist.
-pub async fn load_registry<Row: RowName>(
+pub async fn load_registry<Row>(
     kind: RegistryKind,
     cache: &dyn TagBudgetCache,
     rows: &dyn BudgetRows<Row>,
-) -> Result<Option<BTreeSet<String>>, RegistryError> {
+) -> Result<Option<BTreeSet<String>>, RegistryError>
+where
+    Row: RowName,
+{
     let (key, sentinel, take, lock) = match kind {
         RegistryKind::Tag => (
             CacheKey::TagRegistry,
