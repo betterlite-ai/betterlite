@@ -51,7 +51,7 @@ pub fn upstream_close_to_relay(upstream: Option<CloseFrame>) -> Option<CloseFram
 pub fn json_object_frame(frame: &[u8]) -> Option<Map<String, Value>> {
     match serde_json::from_slice::<Value>(frame) {
         Ok(Value::Object(object)) => Some(object),
-        Ok(_other) | Err(_error) => None,
+        Ok(_) | Err(_) => None,
     }
 }
 
