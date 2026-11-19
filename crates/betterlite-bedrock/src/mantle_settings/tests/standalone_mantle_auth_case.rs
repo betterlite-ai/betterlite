@@ -1,6 +1,7 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
     )
@@ -11,6 +12,7 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
@@ -35,7 +37,9 @@ fn data() -> IndexMap<String, Json> {
 }
 
 fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .expect("the fixture clock is in range")
 }
 
 fn header<'signed>(signed: &'signed AwsSignedRequest, name: &str) -> Option<&'signed str> {
@@ -102,8 +106,7 @@ pub(super) fn standalone_mantle_auth() {
     assert_eq!(header(&bearer, "X-Caller"), Some("fixture"));
     assert_eq!(bearer.url, API_BASE);
     assert_eq!(
-        serde_json::from_slice::<betterlite_openai::openai_base_config::Object>(&bearer.body)
-            .expect("the body is JSON"),
+        serde_json::from_slice::<Object>(&bearer.body).expect("the body is JSON"),
         support::object(r#"{"messages": [{}]}"#)
     );
     // An empty explicit key falls through to the env chain.

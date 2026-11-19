@@ -47,7 +47,7 @@ fn mantle_settings_cases(#[case] scenario: Scenario) {
         Scenario::MantlePassthroughPath => mantle_passthrough_path_case::mantle_passthrough_path(),
         Scenario::MantleAuthFailure => auth_failure_case::mantle_auth_failure(),
         Scenario::MantlePassthroughReplyShape => {
-            mantle_passthrough_reply_shape_case::mantle_passthrough_reply_shape()
+            mantle_passthrough_reply_shape_case::mantle_passthrough_reply_shape();
         }
     }
 }
@@ -143,6 +143,7 @@ fn bedrock_mantle_settings_credential_identity_isolation() {
 
 #[test]
 fn bedrock_mantle_settings_secret_safe_failure() {
+    use std::error::Error;
     use std::time::{Duration, SystemTime};
 
     use aws_credential_types::provider::error::CredentialsError;
@@ -182,7 +183,7 @@ fn bedrock_mantle_settings_secret_safe_failure() {
         .expect_err("a credential-source failure fails the request");
     assert!(matches!(error, MantleSettingsError::Auth { .. }));
     assert_eq!(error.to_string(), AUTH_FAILURE_MESSAGE);
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(Error::source(&error).is_some());
     assert!(!error.to_string().contains("fixture-leaked-secret"));
     assert!(!format!("{error:?}").contains("fixture-leaked-secret"));
     let bearer_params = support::object("{}");

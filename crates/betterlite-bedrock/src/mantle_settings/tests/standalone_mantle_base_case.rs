@@ -85,7 +85,7 @@ pub(super) fn standalone_mantle_base() {
         "BEDROCK_MANTLE_API_KEY",
         "mantle-fixture-key",
     )]));
-    let keyed = chat_endpoint_inputs(
+    let keyed_chat = chat_endpoint_inputs(
         ChatEndpointParams {
             model: Some("openai.gpt-oss-120b"),
             api_base: None,
@@ -97,7 +97,7 @@ pub(super) fn standalone_mantle_base() {
     )
     .expect("the key resolves");
     assert_eq!(
-        keyed
+        keyed_chat
             .api_key
             .as_ref()
             .map(|key| key.expose_secret().to_owned()),

@@ -1,11 +1,13 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
     )
 )]
 
+use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::{PassthroughTarget, RelayedResponse};
 
 use crate::mantle_settings::passthrough::{
@@ -21,7 +23,7 @@ struct Forwarded {
     endpoint: String,
     status_code: u16,
     body: Vec<u8>,
-    request_data: betterlite_openai::openai_base_config::Object,
+    request_data: Object,
 }
 
 pub(super) fn mantle_passthrough_reply_shape() {
@@ -78,13 +80,13 @@ pub(super) fn mantle_passthrough_reply_shape() {
         },
         &response,
         &request_data,
-        |target, response, data| {
+        |target, replied, data| {
             forwarded.push(Forwarded {
                 model: target.model.to_owned(),
                 provider: target.custom_llm_provider.to_owned(),
                 endpoint: target.endpoint.to_owned(),
-                status_code: response.status_code,
-                body: response.body.to_vec(),
+                status_code: replied.status_code,
+                body: replied.body.to_vec(),
                 request_data: data.clone(),
             });
             Ok(Some("logged-reply"))

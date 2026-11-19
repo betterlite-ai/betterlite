@@ -115,11 +115,13 @@ pub(super) enum Answer {
     Panic,
 }
 
+pub(super) type RecordedRequest = (String, Option<String>, String);
+
 #[derive(Clone, Default)]
-pub(super) struct Requests(Arc<Mutex<Vec<(String, Option<String>, String)>>>);
+pub(super) struct Requests(Arc<Mutex<Vec<RecordedRequest>>>);
 
 impl Requests {
-    pub(super) fn seen(&self) -> Vec<(String, Option<String>, String)> {
+    pub(super) fn seen(&self) -> Vec<RecordedRequest> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

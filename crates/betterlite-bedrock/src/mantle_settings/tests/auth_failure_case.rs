@@ -1,16 +1,19 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
     )
 )]
 
+use std::error::Error;
 use std::time::{Duration, SystemTime};
 
 use aws_credential_types::provider::error::CredentialsError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
 
 use crate::aws_settings::AuthError;
@@ -33,11 +36,13 @@ fn data() -> IndexMap<String, Json> {
 }
 
 fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .expect("the fixture clock is in range")
 }
 
 fn request<'text>(
-    params: &'text betterlite_openai::openai_base_config::Object,
+    params: &'text Object,
     globals: &'text MantleGlobals,
     api_base: &'text str,
     data: &'text IndexMap<String, Json>,
@@ -72,9 +77,7 @@ pub(super) fn mantle_auth_failure() {
         Err::<Credentials, CredentialError>(CredentialError::Auth(AuthError::SessionTags))
     };
     let unused = |_: &AwsSettings, _: &str| async {
-        Err::<Credentials, CredentialError>(panic!(
-            "the signer must not look up credentials for a request it rejects first"
-        ))
+        panic!("the signer must not look up credentials for a request it rejects first")
     };
     assert_eq!(AUTH_FAILURE_MESSAGE, LITELLM_MESSAGE);
     let globals = support::empty_globals();
@@ -89,7 +92,7 @@ pub(super) fn mantle_auth_failure() {
     .expect_err("a missing provider fails the request");
     assert!(matches!(missing, MantleSettingsError::Auth { .. }));
     assert_eq!(missing.to_string(), LITELLM_MESSAGE);
-    let cause = std::error::Error::source(&missing).expect("the cause is preserved");
+    let cause = Error::source(&missing).expect("the cause is preserved");
     assert_eq!(cause.to_string(), "the AWS credential lookup failed");
     assert_eq!(
         cause.source().map(ToString::to_string).as_deref(),
@@ -109,7 +112,7 @@ pub(super) fn mantle_auth_failure() {
     .expect_err("partial credentials fail the request");
     assert!(matches!(partial, MantleSettingsError::Auth { .. }));
     assert_eq!(partial.to_string(), LITELLM_MESSAGE);
-    assert!(std::error::Error::source(&partial).is_some());
+    assert!(Error::source(&partial).is_some());
     // The provider's text stays out of the surfaced error and its Debug.
     assert!(!format!("{partial:?}").contains("fixture-partial-credentials"));
     // A lookup failure outside the caught classes passes through unchanged.

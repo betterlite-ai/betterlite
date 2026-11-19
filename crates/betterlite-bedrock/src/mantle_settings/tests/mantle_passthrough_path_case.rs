@@ -1,6 +1,7 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
     )

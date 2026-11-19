@@ -1,6 +1,7 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
     )
@@ -9,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::arguments::json::{Json as PromptsJson, Object as PromptsObject};
 
 use crate::mantle_inputs::records::MantleGlobals;
@@ -32,7 +34,7 @@ fn globals(pairs: &[(&str, &str)]) -> MantleGlobals {
     )
 }
 
-fn params(source: &str) -> betterlite_openai::openai_base_config::Object {
+fn params(source: &str) -> Object {
     support::object(source)
 }
 
@@ -67,7 +69,7 @@ pub(super) fn messages_auth_and_url() {
     );
     assert!(format!("{injected:?}").contains("has_credential_cache: true"));
     assert_eq!(CUSTOM_LLM_PROVIDER.to_string(), "bedrock_mantle");
-    assert!(USES_GET_LLM_PROVIDER_API_BASE);
+    const { assert!(USES_GET_LLM_PROVIDER_API_BASE) };
     // With nothing configured the canonical host and the default region form the URL.
     let empty = globals(&[]);
     assert_eq!(
