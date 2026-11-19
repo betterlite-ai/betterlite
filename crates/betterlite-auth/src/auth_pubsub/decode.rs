@@ -6,7 +6,7 @@ use thiserror::Error;
 
 mod parser;
 
-pub const MAX_MESSAGE_BYTES: usize = 1_048_576;
+pub const MAX_MESSAGE_BYTES: usize = 0x0010_0000;
 pub const MAX_MESSAGE_DEPTH: usize = 64;
 
 pub type TypedValue = BTreeMap<String, JsonValue>;
@@ -47,9 +47,9 @@ pub fn decode_invalidation(bytes: &[u8]) -> Result<TypedValue, DecodeError> {
 fn repaired_text(bytes: &[u8]) -> Cow<'_, str> {
     match str::from_utf8(bytes) {
         Ok(text) => Cow::Borrowed(text),
-        Err(error) => {
+        Err(_) => {
             let mut repaired = String::with_capacity(bytes.len());
-            for chunk in error.utf8_chunks() {
+            for chunk in bytes.utf8_chunks() {
                 repaired.push_str(chunk.valid());
                 if !chunk.invalid().is_empty() {
                     repaired.push('\u{fffd}');

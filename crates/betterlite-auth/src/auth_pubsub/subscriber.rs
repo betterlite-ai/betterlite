@@ -45,10 +45,16 @@ enum Failure {
 impl Failure {
     fn message(&self) -> String {
         match self {
-            Self::Transport(error) => error.message().to_owned(),
+            Self::Transport(error) => error.message(),
             Self::Cache(error) => error.to_string(),
         }
     }
+}
+
+enum Attempt<S> {
+    Subscribed(S),
+    Retry,
+    Stop,
 }
 
 impl<E, C, T> CacheInvalidationSubscriber<E, C, T>
@@ -85,40 +91,49 @@ where
     async fn run(self: Arc<Self>, mut shutdown: watch::Receiver<bool>) {
         let mut backoff = BACKOFF_INITIAL;
         loop {
-            let subscribed = select! {
-                biased;
-                _ = shutdown.changed() => return,
-                outcome = self.endpoint.subscribe() => outcome,
-            };
-            let mut subscription = match subscribed {
-                Ok(subscription) => subscription,
-                Err(error) => {
-                    if self
-                        .pause(error.message(), &mut backoff, &mut shutdown)
-                        .await
-                    {
-                        return;
-                    }
-                    continue;
-                }
+            let mut subscription = match self.subscribe_once(&mut backoff, &mut shutdown).await {
+                Attempt::Subscribed(subscription) => subscription,
+                Attempt::Retry => continue,
+                Attempt::Stop => return,
             };
             backoff = BACKOFF_INITIAL;
             let failure = self.consume(&mut subscription, &mut shutdown).await;
             if let Err(error) = subscription.close().await {
+                let message = error.message();
                 debug!(
-                    subject = error.message(),
-                    "auth cache invalidation pubsub close failed: {}",
-                    error.message()
+                    subject = message.as_str(),
+                    "auth cache invalidation pubsub close failed: {message}"
                 );
             }
-            let Some(failure) = failure else {
+            let Some(reported) = failure else {
                 return;
             };
-            if self
-                .pause(&failure.message(), &mut backoff, &mut shutdown)
-                .await
-            {
+            let message = reported.message();
+            if self.pause(&message, &mut backoff, &mut shutdown).await {
                 return;
+            }
+        }
+    }
+
+    async fn subscribe_once(
+        &self,
+        backoff: &mut Duration,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Attempt<E::Subscription> {
+        let subscribed = select! {
+            biased;
+            _ = shutdown.changed() => return Attempt::Stop,
+            outcome = self.endpoint.subscribe() => outcome,
+        };
+        match subscribed {
+            Ok(subscription) => Attempt::Subscribed(subscription),
+            Err(error) => {
+                let message = error.message();
+                let stopping = self.pause(&message, backoff, shutdown).await;
+                if stopping {
+                    return Attempt::Stop;
+                }
+                Attempt::Retry
             }
         }
     }
@@ -155,14 +170,13 @@ where
                 _ = shutdown.changed() => return None,
                 outcome = subscription.next_message(POLL_TIMEOUT) => outcome,
             };
-            match outcome {
-                Ok(None) => {}
-                Ok(Some(received)) => {
-                    if let Err(error) = self.apply(&received) {
-                        return Some(Failure::Cache(error));
-                    }
-                }
+            let received = match outcome {
+                Ok(None) => continue,
+                Ok(Some(received)) => received,
                 Err(error) => return Some(Failure::Transport(error)),
+            };
+            if let Err(error) = self.apply(&received) {
+                return Some(Failure::Cache(error));
             }
         }
     }
@@ -207,11 +221,10 @@ where
     }
 }
 
-fn write<M: MemoryCacheOps>(
-    cache: &M,
-    invalidation: &Invalidation,
-    new_value: f64,
-) -> Result<(), CacheError> {
+fn write<M>(cache: &M, invalidation: &Invalidation, new_value: f64) -> Result<(), CacheError>
+where
+    M: MemoryCacheOps,
+{
     cache
         .set_cache(
             &invalidation.cache_key,
@@ -224,7 +237,10 @@ fn write<M: MemoryCacheOps>(
         })
 }
 
-fn drop_from<M: MemoryCacheOps>(cache: &M, cache_key: &str) -> Result<(), CacheError> {
+fn drop_from<M>(cache: &M, cache_key: &str) -> Result<(), CacheError>
+where
+    M: MemoryCacheOps,
+{
     cache
         .delete_cache(cache_key)
         .map_err(|source| CacheError::Failed {

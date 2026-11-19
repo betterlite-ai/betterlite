@@ -11,25 +11,17 @@ use super::channel::invalidation_channel;
 
 #[derive(Debug, Error)]
 pub enum TransportError {
-    #[error("the redis pub/sub connection failed: {message}")]
-    Connection { message: String },
-    #[error("the redis pub/sub publish failed: {message}")]
-    Publish { message: String },
+    #[error("the redis pub/sub connection failed: {0}")]
+    Connection(#[from] ClientReuseError),
+    #[error("the redis pub/sub publish failed: {0}")]
+    Publish(#[source] ClientReuseError),
 }
 
 impl TransportError {
     #[must_use]
-    pub fn message(&self) -> &str {
+    pub fn message(&self) -> String {
         match self {
-            Self::Connection { message } | Self::Publish { message } => message,
-        }
-    }
-}
-
-impl From<ClientReuseError> for TransportError {
-    fn from(error: ClientReuseError) -> Self {
-        Self::Connection {
-            message: error.to_string(),
+            Self::Connection(source) | Self::Publish(source) => source.to_string(),
         }
     }
 }
@@ -76,13 +68,10 @@ impl AuthPubSub for RedisAuthPubSub {
     async fn publish(&self, message: &str) -> Result<(), TransportError> {
         let channel = self.channel();
         let client = self.cache.transport.pubsub_client().await?;
-        let _published =
-            client
-                .publish(&channel, message)
-                .await
-                .map_err(|error| TransportError::Publish {
-                    message: error.to_string(),
-                })?;
+        let _published = client
+            .publish(&channel, message)
+            .await
+            .map_err(TransportError::Publish)?;
         Ok(())
     }
 

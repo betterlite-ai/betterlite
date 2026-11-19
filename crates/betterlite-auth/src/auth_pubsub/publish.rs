@@ -40,7 +40,7 @@ pub async fn publish_invalidation<E>(
 ) where
     E: AuthPubSub + 'static,
 {
-    let Some(endpoint) = endpoint else {
+    let Some(target) = endpoint else {
         return;
     };
     let cache_key = invalidation.cache_key.clone();
@@ -57,7 +57,7 @@ pub async fn publish_invalidation<E>(
             return;
         }
         let message = message::encode(invalidation);
-        let endpoint = Arc::clone(endpoint);
+        let owner = Arc::clone(target);
         let in_flight = Arc::clone(&tasks.in_flight);
         pending.spawn(async move {
             let permit = in_flight.acquire().await;
@@ -68,12 +68,12 @@ pub async fn publish_invalidation<E>(
                 );
                 return;
             };
-            if let Err(error) = endpoint.publish(&message).await {
+            if let Err(error) = owner.publish(&message).await {
+                let reason = error.message();
                 warn!(
                     subject = cache_key.as_str(),
-                    error = error.message(),
-                    "auth cache invalidation publish for {cache_key} failed: {}",
-                    error.message()
+                    error = reason.as_str(),
+                    "auth cache invalidation publish for {cache_key} failed: {reason}"
                 );
             }
         });

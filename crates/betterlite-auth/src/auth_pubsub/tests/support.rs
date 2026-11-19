@@ -11,6 +11,9 @@ use betterlite_cache::dual_cache::{
     DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, MemoryMaxSize,
 };
 use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_redis::redis_client_reuse::error::ClientReuseError;
+use betterlite_redis::redis_live_client::LiveClientError;
+use redis::RedisError;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Notify;
 use tracing::field::{Field, Visit};
@@ -32,6 +35,12 @@ pub(crate) const HEX_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcd
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn scripted_failure(text: &str) -> ClientReuseError {
+    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(
+        std::io::Error::other(text.to_owned()),
+    )))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -186,9 +195,9 @@ impl AuthPubSub for ScriptedEndpoint {
             PublishMode::Fail => {
                 self.probe.record(Entry::PublishFailed);
                 self.probe.leave_publish();
-                Err(TransportError::Publish {
-                    message: "the scripted publish failed".to_owned(),
-                })
+                Err(TransportError::Publish(scripted_failure(
+                    "the scripted publish failed",
+                )))
             }
             PublishMode::Block(release) => {
                 let guard = Dropped(Arc::clone(&self.probe));
@@ -205,14 +214,14 @@ impl AuthPubSub for ScriptedEndpoint {
         self.probe.record(Entry::Subscribe);
         let session = lock(&self.sessions).pop_front();
         match session {
-            None => Err(TransportError::Connection {
-                message: "the scripted sessions ran out".to_owned(),
-            }),
+            None => Err(TransportError::Connection(scripted_failure(
+                "the scripted sessions ran out",
+            ))),
             Some(Session::Failure) => {
                 self.probe.record(Entry::SubscribeFailed);
-                Err(TransportError::Connection {
-                    message: "the scripted subscribe failed".to_owned(),
-                })
+                Err(TransportError::Connection(scripted_failure(
+                    "the scripted subscribe failed",
+                )))
             }
             Some(Session::Serving(steps)) => Ok(ScriptedSubscription {
                 probe: Arc::clone(&self.probe),
@@ -250,9 +259,9 @@ impl AuthPubSubSubscription for ScriptedSubscription {
                 Ok(Some(PubSubMessage { data: Some(data) }))
             }
             Some(Step::Empty) => Ok(None),
-            Some(Step::Fail) => Err(TransportError::Connection {
-                message: "the scripted consume failed".to_owned(),
-            }),
+            Some(Step::Fail) => Err(TransportError::Connection(scripted_failure(
+                "the scripted consume failed",
+            ))),
             Some(Step::Block) | None => {
                 std::future::pending::<Result<Option<PubSubMessage>, TransportError>>().await
             }
@@ -265,9 +274,9 @@ impl AuthPubSubSubscription for ScriptedSubscription {
             CloseMode::Accept => Ok(()),
             CloseMode::Fail => {
                 self.probe.record(Entry::CloseFailed);
-                Err(TransportError::Connection {
-                    message: "the scripted close failed".to_owned(),
-                })
+                Err(TransportError::Connection(scripted_failure(
+                    "the scripted close failed",
+                )))
             }
         }
     }
@@ -409,13 +418,19 @@ impl MemoryMaxSize for FaultingMemory {
     }
 }
 
-pub(crate) fn store<M: MemoryCacheOps>(memory: &M, key: &str, value: f64) {
+pub(crate) fn store<M>(memory: &M, key: &str, value: f64)
+where
+    M: MemoryCacheOps,
+{
     memory
         .set_cache(key, CacheValue::Float(value), None)
         .expect("the local memory tier accepts the seeded value");
 }
 
-pub(crate) fn stored<M: MemoryCacheOps>(memory: &M, key: &str) -> Option<f64> {
+pub(crate) fn stored<M>(memory: &M, key: &str) -> Option<f64>
+where
+    M: MemoryCacheOps,
+{
     let value = memory
         .get_cache(key)
         .expect("the local memory tier answers")?;
@@ -425,7 +440,10 @@ pub(crate) fn stored<M: MemoryCacheOps>(memory: &M, key: &str) -> Option<f64> {
     Some(number)
 }
 
-pub(crate) fn expiry<M: MemoryCacheOps>(memory: &M, key: &str) -> Option<f64> {
+pub(crate) fn expiry<M>(memory: &M, key: &str) -> Option<f64>
+where
+    M: MemoryCacheOps,
+{
     memory
         .ttl_entries()
         .expect("the local memory tier lists expiries")

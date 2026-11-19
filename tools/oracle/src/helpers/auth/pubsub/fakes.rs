@@ -10,10 +10,19 @@ use betterlite_auth::auth_pubsub::endpoint::{
 };
 use betterlite_auth::auth_pubsub::eviction::{CacheError, LocalEviction};
 use betterlite_auth::auth_pubsub::message::{self, Invalidation};
+use betterlite_redis::redis_client_reuse::error::ClientReuseError;
+use betterlite_redis::redis_live_client::LiveClientError;
+use redis::RedisError;
 use serde_json::json;
 use tokio::sync::Notify;
 
 use super::{Shared, lock};
+
+fn scripted_failure(text: &str) -> ClientReuseError {
+    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(
+        std::io::Error::other(text.to_owned()),
+    )))
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum PublishMode {
@@ -75,9 +84,9 @@ impl AuthPubSub for Endpoint {
             }
             PublishMode::Fail => {
                 lock(&self.journal).events.push("publish-failed".to_owned());
-                Err(TransportError::Publish {
-                    message: "scripted publish failed".to_owned(),
-                })
+                Err(TransportError::Publish(scripted_failure(
+                    "scripted publish failed",
+                )))
             }
             PublishMode::Block => {
                 self.blocker.notified().await;
@@ -98,9 +107,9 @@ impl AuthPubSub for Endpoint {
                 lock(&self.journal)
                     .events
                     .push("subscribe-failed".to_owned());
-                Err(TransportError::Connection {
-                    message: "scripted subscribe failed".to_owned(),
-                })
+                Err(TransportError::Connection(scripted_failure(
+                    "scripted subscribe failed",
+                )))
             }
         }
     }
@@ -125,9 +134,9 @@ impl AuthPubSubSubscription for Subscription {
                 lock(&self.journal).events.push("message".to_owned());
                 Ok(Some(PubSubMessage { data: Some(data) }))
             }
-            Some(Step::Fail) => Err(TransportError::Connection {
-                message: "scripted consume failed".to_owned(),
-            }),
+            Some(Step::Fail) => Err(TransportError::Connection(scripted_failure(
+                "scripted consume failed",
+            ))),
             Some(Step::Block) | None => {
                 self.blocker.notified().await;
                 Ok(None)

@@ -85,7 +85,7 @@ fn redis_auth_pubsub_publish_reports_connection_failure() {
     let pubsub = redis_pubsub(runtime.block_on(dead_cache(None)));
     let outcome = runtime.block_on(pubsub.publish("{}"));
     assert!(
-        matches!(outcome, Err(TransportError::Connection { .. })),
+        matches!(outcome, Err(TransportError::Connection(_))),
         "an unreachable redis fails the publish as a connection error"
     );
 }
@@ -96,7 +96,7 @@ fn redis_auth_pubsub_subscribe_reports_connection_failure() {
     let pubsub = redis_pubsub(runtime.block_on(dead_cache(None)));
     let outcome = runtime.block_on(pubsub.subscribe());
     assert!(
-        matches!(outcome, Err(TransportError::Connection { .. })),
+        matches!(outcome, Err(TransportError::Connection(_))),
         "an unreachable redis fails the subscribe as a connection error"
     );
 }
