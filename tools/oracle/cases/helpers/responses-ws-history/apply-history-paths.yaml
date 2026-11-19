@@ -11,17 +11,14 @@ call:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -29,81 +26,81 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply:
-    - previous_response_id: null
-      current:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: next
-      prior:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior
-    - previous_response_id: ''
-      current:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: next
-      prior:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior
-    - previous_response_id: raw-1
-      current:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: next
-      prior:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior
-    - previous_response_id: raw-1
-      current: []
-      prior:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior2
-    - previous_response_id: raw-2
-      current:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: next
-      prior: []
-    - previous_response_id: resp_warmup_0123456789abcdef0123456789abcdef
-      current:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: next
-      prior:
-      - type: message
-        role: user
-        content:
-        - type: output_text
-          text: prior
+      applied:
+      - previous_response_id: null
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: ''
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: raw-1
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: raw-1
+        current: []
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior2
+      - previous_response_id: raw-2
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior: []
+      - previous_response_id: resp_warmup_0123456789abcdef0123456789abcdef
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

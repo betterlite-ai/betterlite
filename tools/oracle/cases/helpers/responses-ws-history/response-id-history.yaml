@@ -11,17 +11,14 @@ call:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store:
       - id: raw-1
         messages:
@@ -38,8 +35,8 @@ call:
         - type: output_text
           text: B
       missing: raw-2
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 calls:
 - responses_ws_history:
     setup:
@@ -51,17 +48,14 @@ calls:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store:
       - id: raw-1
         messages:
@@ -90,8 +84,8 @@ calls:
         role: assistant
         content: []
       missing: raw-x
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

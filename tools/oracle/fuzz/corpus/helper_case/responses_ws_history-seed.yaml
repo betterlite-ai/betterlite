@@ -11,21 +11,22 @@ call:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize:
-    - json
-    errors:
-    - message: seeded
+    frames:
+    - kind: serialize
+      payload: '{"kind": "json", "n": 7}'
       error_type: null
       fail: false
-    parse: []
+    - kind: error
+      payload: seeded
+      error_type: null
+      fail: false
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -33,8 +34,8 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

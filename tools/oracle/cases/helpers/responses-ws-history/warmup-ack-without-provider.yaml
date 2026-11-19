@@ -12,12 +12,9 @@ call:
       litellm_metadata:
         model_group: group-alias
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup:
     - type: response.create
       generate: false
@@ -43,9 +40,9 @@ call:
     - ''
     - resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==
     - resp_warmup_0123456789abcdef0123456789abcdef
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -53,8 +50,8 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

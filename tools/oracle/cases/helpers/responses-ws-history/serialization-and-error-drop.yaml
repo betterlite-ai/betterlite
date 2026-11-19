@@ -11,35 +11,54 @@ call:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize:
-    - json
-    - text
-    - number
-    - 'null'
-    - bool
-    - list
-    errors:
-    - message: quota exceeded
+    frames:
+    - kind: serialize
+      payload: '{"kind": "json", "n": 7}'
       error_type: null
       fail: false
-    - message: bad request
+    - kind: serialize
+      payload: '"text"'
+      error_type: null
+      fail: false
+    - kind: serialize
+      payload: '7'
+      error_type: null
+      fail: false
+    - kind: serialize
+      payload: 'null'
+      error_type: null
+      fail: false
+    - kind: serialize
+      payload: 'true'
+      error_type: null
+      fail: false
+    - kind: serialize
+      payload: '[1, 2]'
+      error_type: null
+      fail: false
+    - kind: error
+      payload: quota exceeded
+      error_type: null
+      fail: false
+    - kind: error
+      payload: bad request
       error_type: invalid_request_error
       fail: false
-    - message: refused
+    - kind: error
+      payload: refused
       error_type: null
       fail: true
-    - message: refused
+    - kind: error
+      payload: refused
       error_type: invalid_request_error
       fail: true
-    parse: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -47,8 +66,8 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

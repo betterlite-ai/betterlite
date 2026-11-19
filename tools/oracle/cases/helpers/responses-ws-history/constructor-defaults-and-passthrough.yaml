@@ -18,17 +18,14 @@ call:
         litellm_logging_obj: drop
         _aresponses_websocket: drop
         user_api_key_dict: drop
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -36,8 +33,8 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 calls:
 - responses_ws_history:
     setup:
@@ -51,17 +48,14 @@ calls:
         model_group: router-alias
         deployment_model_name: deployment-alias
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -69,8 +63,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: openai/gpt-4o-mini
@@ -83,17 +77,14 @@ calls:
         model_group: ''
         deployment_model_name: deployment-alias
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -101,8 +92,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: openai/gpt-4o-mini
@@ -115,17 +106,14 @@ calls:
         model_group: 7
         deployment_model_name: deployment-alias
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -133,8 +121,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: openai/gpt-4o-mini
@@ -147,17 +135,14 @@ calls:
         model_group: router-alias
         deployment_model_name: 7
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -165,8 +150,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: openai/gpt-4o-mini
@@ -180,17 +165,14 @@ calls:
         deployment_model_name: deployment-alias
         trace_id: t1
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -198,8 +180,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: not-a-real-provider/model
@@ -210,17 +192,14 @@ calls:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -228,8 +207,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: ''
@@ -240,17 +219,14 @@ calls:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -258,8 +234,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 - responses_ws_history:
     setup:
       model: openai/gpt-4o-mini
@@ -270,17 +246,14 @@ calls:
       first_message: null
       litellm_metadata: {}
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs: []
-    completions: []
-    history:
+    case:
+      inputs: []
+      completions: []
       store: []
       first: resp_missing
       append:
@@ -288,8 +261,8 @@ calls:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []

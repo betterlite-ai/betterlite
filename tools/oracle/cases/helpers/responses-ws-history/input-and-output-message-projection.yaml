@@ -11,92 +11,89 @@ call:
       first_message: null
       litellm_metadata: null
       kwargs: {}
-    resolve: []
-    inject: []
+    credentials: []
     proxy: []
-    serialize: []
-    errors: []
-    parse: []
+    frames: []
     warmup: []
     warmup_ids: []
-    inputs:
-    - hello
-    - - type: message
-        role: user
-      - 7
-      - drop
-    - []
-    - {}
-    - 7
-    - null
-    - a: 1
-    - - - nested
-      - type: message
-        role: system
-    completions:
-    - response:
-        id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==
-        output:
-        - type: message
-          content:
-          - type: output_text
-            text: A
-          - type: text
-            text: B
-          - type: input_text
-            text: C
-    - response:
-        id: ''
-        output:
-        - type: function_call
-          name: f
-          arguments: '{}'
-          call_id: c1
-    - response:
-        output:
-        - type: message
-          role: null
-          content:
-          - type: output_text
-            text: X
-          - type: text
-            text: Y
-    - response:
-        output:
-        - type: message
-          content: []
-    - response:
-        output:
-        - type: message
-          content:
-          - type: input_text
-            text: C
-    - response:
-        output:
-        - type: message
-        - type: unknown
+    case:
+      inputs:
+      - hello
+      - - type: message
+          role: user
         - 7
-        - x
-    - response:
-        output:
+        - drop
+      - []
+      - {}
+      - 7
+      - null
+      - a: 1
+      - - - nested
         - type: message
-          content:
-          - type: output_text
-    - response: null
-      other: 1
-    - other: 1
-    - response:
-        output: null
-    - response:
-        id: null
-        output: []
-    - response:
-        id: 7
-        output: []
-    - response:
-        id: raw-plain
-        output: []
-    history:
+          role: system
+      completions:
+      - response:
+          id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==
+          output:
+          - type: message
+            content:
+            - type: output_text
+              text: A
+            - type: text
+              text: B
+            - type: input_text
+              text: C
+      - response:
+          id: ''
+          output:
+          - type: function_call
+            name: f
+            arguments: '{}'
+            call_id: c1
+      - response:
+          output:
+          - type: message
+            role: null
+            content:
+            - type: output_text
+              text: X
+            - type: text
+              text: Y
+      - response:
+          output:
+          - type: message
+            content: []
+      - response:
+          output:
+          - type: message
+            content:
+            - type: input_text
+              text: C
+      - response:
+          output:
+          - type: message
+          - type: unknown
+          - 7
+          - x
+      - response:
+          output:
+          - type: message
+            content:
+            - type: output_text
+      - response: null
+        other: 1
+      - other: 1
+      - response:
+          output: null
+      - response:
+          id: null
+          output: []
+      - response:
+          id: 7
+          output: []
+      - response:
+          id: raw-plain
+          output: []
       store: []
       first: resp_missing
       append:
@@ -104,45 +101,8 @@ call:
         role: assistant
         content: []
       missing: resp_missing
-    base_kwargs: []
-    apply: []
-calls:
-- responses_ws_history:
-    setup:
-      model: openai/gpt-4o-mini
-      custom_llm_provider: null
-      api_key: null
-      api_base: null
-      timeout: null
-      first_message: null
-      litellm_metadata: null
-      kwargs: {}
-    resolve: []
-    inject: []
-    proxy: []
-    serialize: []
-    errors: []
-    parse: []
-    warmup: []
-    warmup_ids: []
-    inputs: []
-    completions:
-    - response:
-        output:
-        - type: message
-          content:
-          - type: output_text
-            text: 7
-    history:
-      store: []
-      first: resp_missing
-      append:
-        type: message
-        role: assistant
-        content: []
-      missing: resp_missing
-    base_kwargs: []
-    apply: []
+      applied: []
+      base_kwargs: []
 env: {}
 compare:
   ignore: []
