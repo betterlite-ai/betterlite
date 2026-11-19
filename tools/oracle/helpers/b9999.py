@@ -47,7 +47,7 @@ def run(input_value: Input) -> JsonValue:
             current = request_guardrail_fingerprint(input_value["metadata"])
             return {
                 "result": {
-                    "body": JSON.validate_python(dict(snapshot.body)),
+                    "body": JSON.validate_python(dict(snapshot.body)),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L347-L350
                     "fingerprint_matches": snapshot.fingerprint == current,
                 }
             }
