@@ -10,7 +10,7 @@ call:
     messages: [{role: user, content: hi}]
     optional_params: {max_tokens: 64, stream: true}
     litellm_params: {}
-    headers: {}
+    headers: {anthropic-beta: fine-grained-tool-streaming-2025-05-14}
     fetch: {}
 env: {}
 compare: {ignore: []}

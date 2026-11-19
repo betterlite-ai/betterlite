@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::fmt::Display;
 
-use betterlite_bedrock::invoke_events::{DecoderClock, InvokeChunk};
+use betterlite_anthropic::stream_decode::error::ReceiveError;
+use betterlite_anthropic::stream_decode::{DecodedChunk, TransportChunk};
+use betterlite_anthropic::stream_state::state::UuidV4;
+use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_bedrock::invoke_primitives::config::Params as InvokeParams;
 use betterlite_bedrock::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use betterlite_bedrock::mantle_chat::environment::{chat_headers, messages_headers};
@@ -13,12 +17,10 @@ use betterlite_bedrock::request_policy::{
     BedrockRequestPolicy, Params as MetadataParams, RequestValue,
 };
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_models::decisions::Json as ParamJson;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::json;
-use uuid::Uuid;
 
 use super::fixture::{Fixture, Session};
 use super::input::{ChatCall, Input, MessagesCall, NativeSseCall, UrlCall, UrlCases};
@@ -149,20 +151,39 @@ fn chat(call: &ChatCall, inline: bool) -> HelperResult {
     Ok(json!({"body": body, "fetches": fetcher.calls()}))
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("the case counts no reasoning tokens")]
+struct CounterFailure;
+
+struct Counting;
+
+impl ReasoningTokenCounter for Counting {
+    type Failure = CounterFailure;
+
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, CounterFailure> {
+        Ok(0)
+    }
+}
+
+// The mantle chat keeps LiteLLM's native SSE iterator, so the case feeds data: lines and reads the decoded choices.
 fn native_sse(call: &NativeSseCall) -> HelperResult {
-    let clock = DecoderClock {
-        next_id: || Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
-        now: || 1_700_000_000,
-    };
-    let mut decoder = model_response_iterator("claude", false, None, clock);
+    let source = call.events.iter().map(|event| {
+        Ok::<_, ReceiveError<Infallible>>(TransportChunk::Text(format!("data: {event}\n\n")))
+    });
+    let decoded = model_response_iterator(
+        source,
+        false,
+        None,
+        Counting,
+        &UuidV4,
+        LIMITS.max_event_bytes,
+    );
     let mut chunks = Vec::with_capacity(call.events.len());
-    for event in &call.events {
-        let parsed: ParamJson = serde_json::from_str(event).map_err(failure)?;
-        let decoded = decoder.chunk_parser(&parsed).map_err(failure)?;
-        let InvokeChunk::Anthropic(parsed_event) = decoded else {
+    for chunk in decoded {
+        let DecodedChunk::Event(event) = chunk.map_err(failure)? else {
             return Err(failure("the decoder left the Anthropic projection"));
         };
-        let choice = parsed_event
+        let choice = event
             .choices
             .first()
             .ok_or_else(|| failure("the chunk has no choice"))?;

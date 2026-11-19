@@ -10,6 +10,7 @@ call:
     messages: [{role: user, content: hi}]
     optional_params:
       max_tokens: 512
+      stream: true
       tools:
         - {type: tool_search_tool_regex_20251119, name: tool_search}
         - name: geo
