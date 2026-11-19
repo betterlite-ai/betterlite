@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::credentials::CredentialValues;
 use betterlite_config::rag::document::ingest::{RAGIngestEmbeddingOptions, RAGIngestOCROptions};
 use betterlite_core::rag::ingestion::config::IngestionOptions;
@@ -12,7 +14,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::value::{RawValue, to_raw_value};
 
-use super::fakes::FixedCredentials;
+use super::fakes::{FixedCredentials, RecordingFetch, RecordingOcr};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct OptionsInput {
@@ -90,6 +92,16 @@ pub(crate) struct ChunkInput {
     pub(super) ocr_was_used: bool,
 }
 
+impl ChunkInput {
+    pub(super) fn chunks(&self) -> Result<Vec<String>, Box<HelperError>> {
+        let built = state(&self.options, &[])?;
+        let content = decode_content(self.file_content_base64.as_deref())?;
+        built
+            .chunk(self.text.as_deref(), content.as_deref(), self.ocr_was_used)
+            .or_value_error()
+    }
+}
+
 fn raw_map(
     entries: Option<BTreeMap<String, Value>>,
 ) -> Result<Option<BTreeMap<String, Box<RawValue>>>, Box<HelperError>> {
@@ -142,4 +154,23 @@ pub(super) fn build(
         },
     )
     .or_value_error()
+}
+
+pub(super) fn state(
+    options: &OptionsInput,
+    credentials: &[CredentialInput],
+) -> Result<IngestionState, Box<HelperError>> {
+    build(
+        options,
+        credentials,
+        Arc::new(RecordingOcr::default()),
+        Arc::new(RecordingFetch::answer(None)?),
+    )
+}
+
+pub(super) fn decode_content(encoded: Option<&str>) -> Result<Option<Vec<u8>>, Box<HelperError>> {
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    Ok(Some(BASE64.decode(encoded).or_value_error()?))
 }

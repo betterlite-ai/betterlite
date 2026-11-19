@@ -12,15 +12,10 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
 use super::fakes::{RecordingFetch, RecordingOcr};
-use super::inputs::{ChunkInput, InitInput, OcrInput, UploadInput, build};
+use super::inputs::{InitInput, OcrInput, UploadInput, build, decode_content, state};
 
 pub(super) fn init(input: &InitInput) -> HelperResult {
-    let built = build(
-        &input.options,
-        &input.credentials,
-        Arc::new(RecordingOcr::default()),
-        Arc::new(RecordingFetch::answer(None)?),
-    )?;
+    let built = state(&input.options, &input.credentials)?;
     let suffix = built.ingest_id.strip_prefix("ingest_").unwrap_or_default();
     Ok(json!({
         "ingest_id": {
@@ -75,10 +70,7 @@ pub(super) fn ocr(input: &OcrInput) -> HelperResult {
         ocr_port,
         Arc::new(RecordingFetch::answer(None)?),
     )?;
-    let content = match &input.file_content_base64 {
-        Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
-        None => None,
-    };
+    let content = decode_content(input.file_content_base64.as_deref())?;
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let text = runtime
         .block_on(built.ocr(content.as_deref(), input.content_type.as_deref()))
@@ -96,27 +88,6 @@ pub(super) fn ocr(input: &OcrInput) -> HelperResult {
         })
         .collect();
     Ok(json!({ "text": text, "calls": calls }))
-}
-
-pub(super) fn chunk(input: &ChunkInput) -> HelperResult {
-    let built = build(
-        &input.options,
-        &[],
-        Arc::new(RecordingOcr::default()),
-        Arc::new(RecordingFetch::answer(None)?),
-    )?;
-    let content = match &input.file_content_base64 {
-        Some(encoded) => Some(BASE64.decode(encoded).or_value_error()?),
-        None => None,
-    };
-    let chunks = built
-        .chunk(
-            input.text.as_deref(),
-            content.as_deref(),
-            input.ocr_was_used,
-        )
-        .or_value_error()?;
-    Ok(json!({ "chunks": chunks }))
 }
 
 fn document_value(document: &OcrDocument) -> Value {

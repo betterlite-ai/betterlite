@@ -4,9 +4,10 @@ mod operations;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use serde_json::json;
 
 use inputs::{ChunkInput, InitInput, OcrInput, UploadInput};
-use operations::{chunk, init, ocr, upload};
+use operations::{init, ocr, upload};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
@@ -27,7 +28,7 @@ impl Helper for Op {
             Input::Init(fields) => init(fields),
             Input::Upload(fields) => upload(fields),
             Input::Ocr(fields) => ocr(fields),
-            Input::Chunk(fields) => chunk(fields),
+            Input::Chunk(fields) => Ok(json!({ "chunks": fields.chunks()? })),
         }
     }
 }
