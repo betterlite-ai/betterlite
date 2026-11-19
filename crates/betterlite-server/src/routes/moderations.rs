@@ -9,6 +9,7 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_config::sections::detailed_timing::DetailedTiming;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::call_context::{CallContext as DispatchContext, CallInputs};
 use betterlite_core::api::request_destination::model::{
     InferenceModelKind, ModelDefaults, resolve_inference_model,
@@ -191,7 +192,7 @@ async fn execute(
     }
 }
 
-// proxy_server.py's moderation handler gives get_custom_headers the served model id, api base and the response's _response_ms, but no cache key or logging object
+// proxy_server.py's moderation handler gives get_custom_headers the served model id, api base and the response's hidden params, but no cache key or logging object
 fn answered(
     state: &ModerationState,
     deployment: &ChatDeployment,
@@ -201,9 +202,11 @@ fn answered(
 ) -> Response {
     let mut hidden_params = JsonMap::new();
     let response_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
+    hidden_params.insert(String::from("_response_ms"), JsonValue::from(response_ms));
+    // update_response_metadata writes the logging object's callback_duration_ms, 0.0 because betterlite runs no callbacks
     hidden_params.insert(
-        String::from("_response_ms"),
-        serde_json::Value::from(response_ms),
+        String::from("callback_duration_ms"),
+        JsonValue::from(0.0_f64),
     );
     let input = CustomHeadersInput {
         key: KeyHeaderView::default(),

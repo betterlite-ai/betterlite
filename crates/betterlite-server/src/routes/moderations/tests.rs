@@ -303,10 +303,8 @@ fn error_details(reply: &Reply) -> ErrorFields {
 }
 
 fn header_text<'reply>(reply: &'reply Reply, name: &str) -> Option<&'reply str> {
-    reply
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    let value = reply.headers.get(name)?;
+    value.to_str().ok()
 }
 
 fn call_id(reply: &Reply) -> Option<&str> {
@@ -413,7 +411,7 @@ fn assert_success(reply: &Reply) {
     assert!(!body.results.first().expect("result").flagged);
 }
 
-// proxy_server.py's moderation handler hands get_custom_headers the served deployment's model id, its api base and the hidden params update_response_metadata wrote _response_ms into
+// proxy_server.py's moderation handler hands get_custom_headers the served deployment's model id, its api base and the hidden params update_response_metadata wrote _response_ms and callback_duration_ms into
 fn assert_success_headers(reply: &Reply) {
     let served = reply
         .served
@@ -430,6 +428,11 @@ fn assert_success_headers(reply: &Reply) {
         "x-litellm-model-api-base"
     );
     assert_eq!(header_text(reply, "x-litellm-key-spend"), Some("0.0"));
+    // betterlite runs no callbacks, so update_response_metadata records the logging object's 0.0 callback duration
+    assert_eq!(
+        header_text(reply, "x-litellm-callback-duration-ms"),
+        Some("0.0")
+    );
     assert!(reply.headers.contains_key("x-litellm-version"));
     // the elapsed milliseconds reach custom_headers as hidden_params["_response_ms"] and print as a float
     let millis: f64 = header_text(reply, "x-litellm-response-duration-ms")
