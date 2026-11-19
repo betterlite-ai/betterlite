@@ -199,12 +199,6 @@ fn metadata_value(value: Json) -> OtelModelValue {
         Json::Number(number) => OtelModelValue::Number(number),
         Json::Text(text) => OtelModelValue::String(text),
         Json::List(items) => OtelModelValue::Array(items.into_iter().map(metadata_value).collect()),
-        Json::Object(fields) => {
-            let mapped: std::collections::BTreeMap<String, OtelModelValue> = fields
-                .into_iter()
-                .map(|(key, value)| (key, metadata_value(value)))
-                .collect();
-            OtelModelValue::Object(mapped)
-        }
+        Json::Object(fields) => OtelModelValue::Object(metadata_map(fields)),
     }
 }

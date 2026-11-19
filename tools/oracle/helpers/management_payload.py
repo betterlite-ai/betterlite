@@ -5,10 +5,16 @@ from litellm.proxy.management_helpers.utils import (
     _redact_env_var_values,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650
     _redact_record_env_vars,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
 )
+from litellm.types.mcp import MCPTransport, MCPTransportType
 from litellm.types.mcp_server.mcp_server_manager import MCPServer
 from pydantic import JsonValue, TypeAdapter
 
 CASE_SERVER_NAME: Final = "case-server"
+TRANSPORTS: Final[dict[str, MCPTransportType]] = {
+    "sse": MCPTransport.sse,
+    "http": MCPTransport.http,
+    "stdio": MCPTransport.stdio,
+}
 
 
 class RedactEnvVarsCall(TypedDict):
@@ -60,7 +66,7 @@ def model_answer(call: RedactModelCall) -> JsonValue:
     server = MCPServer(
         server_id=call["server_id"],
         name=CASE_SERVER_NAME,
-        transport=call["transport"],
+        transport=TRANSPORTS[call["transport"]],
         env_vars=call.get("env_vars"),
     )
     redacted = cast(MCPServer, _redact_record_env_vars(server))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
