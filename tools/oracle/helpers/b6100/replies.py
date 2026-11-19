@@ -1,3 +1,5 @@
+from typing import Literal
+
 from litellm.types.utils import CallTypes, EmbeddingResponse, ModelResponse
 from pydantic import JsonValue
 
@@ -6,18 +8,31 @@ from .views import ChunkRecord, RecordedLogging, hidden_cost
 from .wire import MODEL, Object
 
 
-def chat_reply_value(body: str) -> JsonValue:
-    reply = CHAT.transform_response(
-        MODEL,
-        raw_reply(body),
-        ModelResponse(),
-        logging_object(CallTypes.completion),
-        {},
-        [],
-        {},
-        {},
-        None,
-    )
+def transformed_reply(body: str, family: Literal["chat", "embedding"]) -> JsonValue:
+    reply: ModelResponse | EmbeddingResponse
+    if family == "chat":
+        reply = CHAT.transform_response(
+            MODEL,
+            raw_reply(body),
+            ModelResponse(),
+            logging_object(CallTypes.completion),
+            {},
+            [],
+            {},
+            {},
+            None,
+        )
+    else:
+        reply = EMBEDDING.transform_embedding_response(
+            MODEL,
+            raw_reply(body),
+            EmbeddingResponse(),
+            logging_object(CallTypes.embedding),
+            None,
+            {},
+            {},
+            {},
+        )
     return {"cost": hidden_cost(reply)}
 
 
@@ -26,20 +41,6 @@ def chunk_value(chunk: Object) -> JsonValue:
     if record.usage is None:
         return {"cost": None}
     return {"cost": record.usage.cost}
-
-
-def embedding_reply_value(body: str) -> JsonValue:
-    reply = EMBEDDING.transform_embedding_response(
-        MODEL,
-        raw_reply(body),
-        EmbeddingResponse(),
-        logging_object(CallTypes.embedding),
-        None,
-        {},
-        {},
-        {},
-    )
-    return {"cost": hidden_cost(reply)}
 
 
 def responses_reply_value(body: str) -> JsonValue:

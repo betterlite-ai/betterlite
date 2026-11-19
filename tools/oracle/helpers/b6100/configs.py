@@ -67,6 +67,7 @@ class EmbeddingConfig(Protocol):
         non_default_params: Object,
         optional_params: Object,
         model: str,
+        *,
         drop_params: bool,
     ) -> Object: ...
 
@@ -89,7 +90,6 @@ class EmbeddingConfig(Protocol):
         _model: str,
         _optional_params: Object,
         _litellm_params: Object,
-        _stream: bool | None = None,
         /,
     ) -> str: ...
 
@@ -168,7 +168,6 @@ class MessagesConfig(Protocol):
         _model: str,
         _optional_params: Object,
         _litellm_params: Object,
-        _stream: bool | None = None,
         /,
     ) -> str: ...
 
@@ -183,10 +182,10 @@ class MessagesConfig(Protocol):
 
 CHAT: ChatConfig = TypeAdapter(ChatConfig, config=ARBITRARY).validate_python(EdenAIChatConfig())
 EMBEDDING: EmbeddingConfig = TypeAdapter(EmbeddingConfig, config=ARBITRARY).validate_python(
-    EdenAIEmbeddingConfig()
+    EdenAIEmbeddingConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L69
 )
 RESPONSES: ResponsesConfig = TypeAdapter(ResponsesConfig, config=ARBITRARY).validate_python(
-    EdenAIResponsesAPIConfig()
+    EdenAIResponsesAPIConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L31
 )
 MESSAGES: MessagesConfig = TypeAdapter(MessagesConfig, config=ARBITRARY).validate_python(
     EdenAIAnthropicMessagesConfig()

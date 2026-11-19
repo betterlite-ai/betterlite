@@ -10,6 +10,7 @@ from litellm.llms.edenai.common_utils import (
 )
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
+from typing_extensions import override
 
 from .configs import CHAT, EMBEDDING, MESSAGES, RESPONSES
 from .wire import MODEL, Call, CatalogCase, ChatParams, EmbeddingPlan, apply_environment
@@ -21,6 +22,7 @@ class CatalogTransport(httpx.BaseTransport):
         self.text = text
         self.headers = headers
 
+    @override
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status_code=self.status,
@@ -36,7 +38,7 @@ def credentials_value(case: Call) -> JsonValue:
     required: JsonValue
     try:
         found = require_api_key(explicit, MODEL)
-    except AuthenticationError as error:
+    except AuthenticationError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132
         required = {"key": None, "status": error.status_code}
     else:
         required = {"key": found, "status": None}
@@ -48,8 +50,8 @@ def credentials_value(case: Call) -> JsonValue:
 
 
 def chat_params_value(case: ChatParams) -> JsonValue:
-    litellm.model_cost = {case["model"]: {"supports_reasoning": case["reasoning"]}}
-    return CHAT.get_supported_openai_params(case["model"])
+    litellm.model_cost = {case["model"]: {"supports_reasoning": case["reasoning"]}}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
+    return list[JsonValue](CHAT.get_supported_openai_params(case["model"]))
 
 
 def catalog_value(case: CatalogCase) -> JsonValue:
@@ -61,11 +63,11 @@ def catalog_value(case: CatalogCase) -> JsonValue:
     litellm.module_level_client = HTTPHandler(client=httpx.Client(transport=transport))
     try:
         models = CHAT.get_models(api_base=case["api_base"])
-    except EdenAIException as error:
+    except EdenAIException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L22
         return {"url": url, "status": error.status_code}
     except ValueError:
         return {"url": url, "status": 500}
-    return {"url": url, "models": models}
+    return {"url": url, "models": list[JsonValue](models)}
 
 
 def embedding_plan_value(case: EmbeddingPlan) -> JsonValue:
@@ -92,7 +94,7 @@ def prepare_value(case: Call) -> JsonValue:
     params = GenericLiteLLMParams(api_key=case["api_key"])
     try:
         headers = RESPONSES.validate_environment(case["headers"], MODEL, params)
-    except AuthenticationError as error:
+    except AuthenticationError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132
         return {"status": error.status_code}
     return {
         "url": RESPONSES.get_complete_url(case["api_base"], {}),
@@ -108,7 +110,7 @@ def messages_environment_value(case: Call) -> JsonValue:
         headers, _api_base = MESSAGES.validate_anthropic_messages_environment(
             case["headers"], MODEL, [], {}, {}, case["api_key"], case["api_base"]
         )
-    except AuthenticationError as error:
+    except AuthenticationError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132
         return {"status": error.status_code}
     url = MESSAGES.get_complete_url(case["api_base"], None, MODEL, {}, {})
     return {"headers": headers, "url": url}
