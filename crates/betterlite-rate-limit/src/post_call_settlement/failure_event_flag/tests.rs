@@ -4,10 +4,9 @@ use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
 
 use crate::post_call_settlement::failure_event::FailureEvent;
 use crate::post_call_settlement::tests::support::{
-    SettlementFixture, WINDOW, install, scopes, stash_state,
+    SettlementFixture, WINDOW, install, scopes, stash_state, token_usage,
 };
 use crate::request_stash::RequestStashSlot;
-use crate::usage_resolution::Usage;
 
 #[tokio::test]
 async fn flags_the_reservation_even_when_the_delta_is_zero() {
@@ -17,12 +16,7 @@ async fn flags_the_reservation_even_when_the_delta_is_zero() {
         state.reserved_tokens = 1000;
         state.reserved_scopes = scopes(&[("user", "alice")]);
     });
-    let usage = Usage {
-        prompt_tokens: 600,
-        completion_tokens: 400,
-        total_tokens: 1000,
-        ..Usage::default()
-    };
+    let usage = token_usage(600, 400, 1000);
     let event = FailureEvent {
         stash: &slot,
         call_id: None,

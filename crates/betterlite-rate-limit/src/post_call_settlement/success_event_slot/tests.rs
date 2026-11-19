@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use crate::limiter_records::ParallelSlotAcquisition;
-use crate::post_call_settlement::success_event::SuccessCallback;
 use crate::post_call_settlement::tests::support::{
     RerankIo, SettlementFixture, SuccessFixture, install, stash_state,
 };
@@ -18,10 +17,7 @@ async fn releases_the_stashed_slot_on_success() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo::default().reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo::default()))
         .await;
     assert!(stash_state(&success.slot).parallel_slot.is_none());
 }
@@ -29,10 +25,7 @@ async fn releases_the_stashed_slot_on_success() {
 #[tokio::test]
 async fn releases_only_for_the_owning_call() {
     let fixture = SettlementFixture::default();
-    let mut success = SuccessFixture {
-        call_id: Some("call-b".to_owned()),
-        ..SuccessFixture::default()
-    };
+    let mut success = SuccessFixture::with_call_id("call-b");
     install(&success.slot, |state| {
         state.owner_litellm_call_id = Some("call-a".to_owned());
         state.parallel_slot = Some(ParallelSlotAcquisition {
@@ -42,19 +35,13 @@ async fn releases_only_for_the_owning_call() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo::default().reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo::default()))
         .await;
     assert!(stash_state(&success.slot).parallel_slot.is_some());
     success.call_id = Some("call-a".to_owned());
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo::default().reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo::default()))
         .await;
     assert!(stash_state(&success.slot).parallel_slot.is_none());
 }

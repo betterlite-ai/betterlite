@@ -29,6 +29,7 @@ use crate::limiter_records::{
 };
 use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::post_call_settlement::settlement::PostCallSettlement;
+use crate::post_call_settlement::success_event::SuccessCallback;
 use crate::rate_limit_window_store::{CounterCache, CounterValues, RedisCacheKind, WindowStore};
 use crate::reconciliation_operations::io_token::{IoTokenReconciliation, IoTokenResponse};
 use crate::reconciliation_operations::scope_targets::ScopeMetadata;
@@ -102,10 +103,10 @@ pub(crate) fn window_identity(
     }
 }
 
-pub(crate) fn guarded_operation(
+fn reservation_increment(
     key: &str,
     increment_value: f64,
-    backend: ReservationBackend,
+    backend: Option<ReservationBackend>,
 ) -> ReservationAwareIncrement {
     ReservationAwareIncrement {
         operation: IncrementOperation {
@@ -113,23 +114,22 @@ pub(crate) fn guarded_operation(
             increment_value,
             ttl: Some(WINDOW),
         },
-        window_key: Some("{scope:value}:window".to_owned()),
-        expected_window_start: Some("100".to_owned()),
-        reservation_backend: Some(backend),
+        window_key: backend.map(|_| "{scope:value}:window".to_owned()),
+        expected_window_start: backend.map(|_| "100".to_owned()),
+        reservation_backend: backend,
     }
 }
 
+pub(crate) fn guarded_operation(
+    key: &str,
+    increment_value: f64,
+    backend: ReservationBackend,
+) -> ReservationAwareIncrement {
+    reservation_increment(key, increment_value, Some(backend))
+}
+
 pub(crate) fn unguarded_operation(key: &str, increment_value: f64) -> ReservationAwareIncrement {
-    ReservationAwareIncrement {
-        operation: IncrementOperation {
-            key: key.to_owned(),
-            increment_value,
-            ttl: Some(WINDOW),
-        },
-        window_key: None,
-        expected_window_start: None,
-        reservation_backend: None,
-    }
+    reservation_increment(key, increment_value, None)
 }
 
 pub(crate) struct NoModels;
@@ -147,10 +147,10 @@ pub(crate) fn model_builder() -> ModelDescriptorBuilder {
     }
 }
 
-pub(crate) fn install(
-    slot: &RequestStashSlot,
-    configure: impl FnOnce(&mut StashState),
-) -> Arc<RequestStash> {
+pub(crate) fn install<F>(slot: &RequestStashSlot, configure: F) -> Arc<RequestStash>
+where
+    F: FnOnce(&mut StashState),
+{
     let stash = slot.get_or_create();
     {
         let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -230,6 +230,23 @@ impl FakeBatchStore {
         self.calls.lock().expect("the batch lock").clone()
     }
 
+    fn record_reservation(
+        &self,
+        kind: &'static str,
+        batch_id: Option<&str>,
+        tokens: i64,
+    ) -> Result<(), BatchEnqueuedRefundError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(BatchCall {
+                kind,
+                batch_id: batch_id.map(str::to_owned),
+                tokens: Some(tokens),
+            });
+        self.recorded(kind)
+    }
+
     fn recorded(&self, kind: &'static str) -> Result<(), BatchEnqueuedRefundError> {
         let failing = *self.failure.lock().unwrap_or_else(PoisonError::into_inner);
         let error =
@@ -253,15 +270,7 @@ impl BatchEnqueuedTokenStore for FakeBatchStore {
         batch_id: &str,
         reservation: &BatchEnqueuedTokenReservation,
     ) -> Result<(), BatchEnqueuedRefundError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(BatchCall {
-                kind: "save",
-                batch_id: Some(batch_id.to_owned()),
-                tokens: Some(reservation.tokens),
-            });
-        self.recorded("save")
+        self.record_reservation("save", Some(batch_id), reservation.tokens)
     }
 
     async fn pop_reservation(
@@ -288,15 +297,7 @@ impl BatchEnqueuedTokenStore for FakeBatchStore {
         &self,
         reservation: &ReservationRecord,
     ) -> Result<(), BatchEnqueuedRefundError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(BatchCall {
-                kind: "refund",
-                batch_id: None,
-                tokens: Some(reservation.tokens),
-            });
-        self.recorded("refund")
+        self.record_reservation("refund", None, reservation.tokens)
     }
 }
 
@@ -354,14 +355,17 @@ pub(crate) struct FakeCounterCache {
     values: Mutex<BTreeMap<String, CacheCounterValue>>,
 }
 
+fn seed_map<T: Clone>(entries: &[(&str, T)]) -> BTreeMap<String, T> {
+    entries
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .collect()
+}
+
 impl FakeCounterCache {
     pub(crate) fn seeded(entries: &[(&str, CacheCounterValue)]) -> Arc<Self> {
-        let mut values = BTreeMap::new();
-        for (key, value) in entries {
-            values.insert((*key).to_owned(), value.clone());
-        }
         Arc::new(Self {
-            values: Mutex::new(values),
+            values: Mutex::new(seed_map(entries)),
         })
     }
 }
@@ -441,12 +445,8 @@ pub(crate) struct RecordingGaugeCache {
 
 impl RecordingGaugeCache {
     pub(crate) fn new(entries: &[(&str, GaugeCacheValue)]) -> Arc<Self> {
-        let mut values = BTreeMap::new();
-        for (key, value) in entries {
-            values.insert((*key).to_owned(), value.clone());
-        }
         Arc::new(Self {
-            values: Mutex::new(values),
+            values: Mutex::new(seed_map(entries)),
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
         })
@@ -509,19 +509,18 @@ pub(crate) fn gauges_with(cache: Arc<RecordingGaugeCache>) -> ConcurrencyGauges 
     }
 }
 
+fn operation_tuple(operation: &IncrementOperation) -> (String, u64, Option<i64>) {
+    (
+        operation.key.clone(),
+        operation.increment_value.to_bits(),
+        operation.ttl,
+    )
+}
+
 pub(crate) fn operation_tuples(
     operations: &[IncrementOperation],
 ) -> Vec<(String, u64, Option<i64>)> {
-    operations
-        .iter()
-        .map(|operation| {
-            (
-                operation.key.clone(),
-                operation.increment_value.to_bits(),
-                operation.ttl,
-            )
-        })
-        .collect()
+    operations.iter().map(operation_tuple).collect()
 }
 
 pub(crate) fn pipeline_tuples(
@@ -529,7 +528,7 @@ pub(crate) fn pipeline_tuples(
 ) -> Vec<Vec<(String, u64, Option<i64>)>> {
     pipelines
         .iter()
-        .map(|operations| operation_tuples(operations))
+        .map(|operations| operations.iter().map(operation_tuple).collect())
         .collect()
 }
 
@@ -571,13 +570,8 @@ impl LogCapture {
     }
 
     pub(crate) fn text(&self) -> String {
-        String::from_utf8(
-            self.buffer
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        )
-        .expect("the capture is UTF-8")
+        let buffer = self.buffer.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8(buffer.clone()).expect("the capture is UTF-8")
     }
 }
 
@@ -627,19 +621,55 @@ pub(crate) struct SuccessFixture {
 
 impl Default for SuccessFixture {
     fn default() -> Self {
+        Self::bare(None, None)
+    }
+}
+
+pub(crate) fn token_usage(prompt_tokens: u64, completion_tokens: u64, total_tokens: u64) -> Usage {
+    Usage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        input_tokens: 0,
+        output_tokens: 0,
+        prompt_tokens_details: None,
+        input_tokens_details: None,
+        cached_tokens: None,
+        cache_read_input_tokens: None,
+    }
+}
+
+impl SuccessFixture {
+    fn bare(usage: Option<Usage>, call_id: Option<String>) -> Self {
         Self {
             slot: RequestStashSlot::default(),
             logging: ScopeMetadata::default(),
             metadata: MetadataMap::new(),
             models: model_builder(),
-            usage: None,
+            usage,
             rate_limit_type: TokenRateLimitType::Total,
-            call_id: None,
+            call_id,
         }
     }
-}
 
-impl SuccessFixture {
+    pub(crate) fn with_usage(usage: Usage) -> Self {
+        Self::bare(Some(usage), None)
+    }
+
+    pub(crate) fn callback(&self, io: &RerankIo) -> SuccessCallback<'_> {
+        SuccessCallback {
+            event: self.event(),
+            io: IoTokenReconciliation {
+                response: IoTokenResponse::Rerank {
+                    tokens: io.tokens,
+                    billed_total: io.billed_total,
+                },
+                combined_usage: None,
+                window_size: WINDOW,
+            },
+        }
+    }
+
     pub(crate) fn event(&self) -> SuccessEvent<'_> {
         SuccessEvent {
             response: SuccessResponse::Unmodelled,
@@ -661,17 +691,4 @@ impl SuccessFixture {
 pub(crate) struct RerankIo {
     pub(crate) tokens: Option<(u64, u64)>,
     pub(crate) billed_total: Option<u64>,
-}
-
-impl RerankIo {
-    pub(crate) fn reconciliation(&self) -> IoTokenReconciliation<'_> {
-        IoTokenReconciliation {
-            response: IoTokenResponse::Rerank {
-                tokens: self.tokens,
-                billed_total: self.billed_total,
-            },
-            combined_usage: None,
-            window_size: WINDOW,
-        }
-    }
 }

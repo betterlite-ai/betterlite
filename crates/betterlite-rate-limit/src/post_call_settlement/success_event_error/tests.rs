@@ -3,7 +3,6 @@
 use betterlite_models::decisions::Json;
 
 use crate::limiter_records::ParallelSlotAcquisition;
-use crate::post_call_settlement::success_event::SuccessCallback;
 use crate::post_call_settlement::tests::support::{
     LogCapture, RerankIo, SettlementFixture, SuccessFixture, install, stash_state,
 };
@@ -24,10 +23,7 @@ async fn logs_a_reconciliation_error_without_failing_the_response() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo::default().reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo::default()))
         .await;
     assert!(capture.text().contains("Error in rate limit success event"));
     assert!(stash_state(&success.slot).parallel_slot.is_none());
@@ -41,10 +37,7 @@ async fn succeeds_without_a_stash() {
     let success = SuccessFixture::default();
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo::default().reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo::default()))
         .await;
     assert!(!capture.text().contains("Error in rate limit success event"));
 }

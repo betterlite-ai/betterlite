@@ -16,10 +16,7 @@ async fn releases_the_stashed_slot_on_disconnect() {
             counter_keys: Vec::new(),
         });
     });
-    fixture
-        .settlement()
-        .release_max_parallel_requests_on_disconnect(&slot)
-        .await;
+    fixture.settlement().release_slot_on_disconnect(&slot).await;
     assert!(stash_state(&slot).parallel_slot.is_none());
 }
 
@@ -36,10 +33,7 @@ async fn releases_the_slot_of_a_call_the_key_no_longer_limits() {
         state.reserved_tokens = 1000;
         state.reserved_scopes = scopes(&[("user", "alice")]);
     });
-    fixture
-        .settlement()
-        .release_max_parallel_requests_on_disconnect(&slot)
-        .await;
+    fixture.settlement().release_slot_on_disconnect(&slot).await;
     let state = stash_state(&slot);
     assert!(state.parallel_slot.is_none());
     assert_eq!(state.reserved_tokens, 1000);
@@ -50,9 +44,6 @@ async fn releases_the_slot_of_a_call_the_key_no_longer_limits() {
 async fn does_nothing_without_a_stash_or_slot() {
     let fixture = SettlementFixture::default();
     let slot = RequestStashSlot::default();
-    fixture
-        .settlement()
-        .release_max_parallel_requests_on_disconnect(&slot)
-        .await;
+    fixture.settlement().release_slot_on_disconnect(&slot).await;
     assert!(slot.get().is_none());
 }

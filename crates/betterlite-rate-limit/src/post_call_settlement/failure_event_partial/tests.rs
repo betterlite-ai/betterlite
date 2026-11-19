@@ -4,10 +4,9 @@ use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
 
 use crate::post_call_settlement::failure_event::FailureEvent;
 use crate::post_call_settlement::tests::support::{
-    SettlementFixture, WINDOW, install, pipeline_tuples, scopes, stash_state,
+    SettlementFixture, WINDOW, install, pipeline_tuples, scopes, stash_state, token_usage,
 };
 use crate::request_stash::RequestStashSlot;
-use crate::usage_resolution::Usage;
 
 #[tokio::test]
 async fn settles_a_partial_stream_at_the_recovered_usage() {
@@ -17,12 +16,7 @@ async fn settles_a_partial_stream_at_the_recovered_usage() {
         state.reserved_tokens = 1000;
         state.reserved_scopes = scopes(&[("user", "alice")]);
     });
-    let usage = Usage {
-        prompt_tokens: 120,
-        completion_tokens: 30,
-        total_tokens: 150,
-        ..Usage::default()
-    };
+    let usage = token_usage(120, 30, 150);
     let event = FailureEvent {
         stash: &slot,
         call_id: None,
@@ -50,11 +44,7 @@ async fn refunds_fully_when_no_completion_was_recovered() {
         state.reserved_tokens = 1000;
         state.reserved_scopes = scopes(&[("user", "alice")]);
     });
-    let usage = Usage {
-        prompt_tokens: 120,
-        total_tokens: 120,
-        ..Usage::default()
-    };
+    let usage = token_usage(120, 0, 120);
     let event = FailureEvent {
         stash: &slot,
         call_id: None,

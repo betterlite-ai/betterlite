@@ -35,7 +35,7 @@ async fn saves_under_the_canonical_batch_id(#[case] response_id: &str, #[case] e
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert_eq!(
@@ -65,7 +65,7 @@ async fn pops_under_the_same_canonical_batch_id() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert_eq!(fixture.store.calls()[0].batch_id.as_deref(), Some("b-1"));

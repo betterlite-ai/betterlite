@@ -6,10 +6,9 @@ use crate::limiter_records::ReservationBackend;
 use crate::post_call_settlement::failure_hook::FailureHook;
 use crate::post_call_settlement::tests::support::{
     SettlementFixture, WINDOW, install, operation_tuples, pipeline_tuples, scopes, stash_state,
-    window_identity,
+    token_usage, window_identity,
 };
 use crate::request_stash::RequestStashSlot;
-use crate::usage_resolution::Usage;
 
 #[tokio::test]
 async fn refunds_both_project_reservations_through_the_pipeline() {
@@ -21,12 +20,7 @@ async fn refunds_both_project_reservations_through_the_pipeline() {
         state.otpm_reserved_tokens = 300;
         state.otpm_reserved_scopes = scopes(&[("project", "p2")]);
     });
-    let usage = Usage {
-        prompt_tokens: 80,
-        completion_tokens: 20,
-        total_tokens: 100,
-        ..Usage::default()
-    };
+    let usage = token_usage(80, 20, 100);
     let event = FailureHook {
         stash: &slot,
         combined_usage: Some(&usage),
@@ -65,12 +59,7 @@ async fn applies_a_windowed_project_refund_reservation_aware() {
             ReservationBackend::Redis,
         ));
     });
-    let usage = Usage {
-        prompt_tokens: 150,
-        completion_tokens: 10,
-        total_tokens: 160,
-        ..Usage::default()
-    };
+    let usage = token_usage(150, 10, 160);
     let event = FailureHook {
         stash: &slot,
         combined_usage: Some(&usage),

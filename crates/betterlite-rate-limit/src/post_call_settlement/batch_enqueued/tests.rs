@@ -23,7 +23,7 @@ async fn ignores_a_response_that_is_not_a_batch() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert!(fixture.store.calls().is_empty());
@@ -47,7 +47,7 @@ async fn saves_without_popping_on_a_non_terminal_status() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert_eq!(
@@ -77,10 +77,7 @@ async fn propagates_a_failed_save_and_keeps_the_reservation() {
         stash: &slot,
         response: Some(&view),
     };
-    let result = fixture
-        .settlement()
-        .handle_batch_enqueued_post_call(&call)
-        .await;
+    let result = fixture.settlement().handle_batch_post_call(&call).await;
     assert!(matches!(
         result,
         Err(BatchEnqueuedRefundError::Encode { .. })

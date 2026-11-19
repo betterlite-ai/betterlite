@@ -26,7 +26,7 @@ async fn saves_the_stashed_reservation_under_the_response_batch_id() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert_eq!(
@@ -55,7 +55,7 @@ async fn saves_nothing_without_a_stashed_reservation() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert!(fixture.store.calls().is_empty());

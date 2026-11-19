@@ -41,7 +41,7 @@ async fn refunds_a_popped_reservation_only_for_terminal_statuses(
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     let kinds: Vec<&str> = fixture.store.calls().iter().map(|call| call.kind).collect();
@@ -68,7 +68,7 @@ async fn refunds_the_reservation_the_store_returns() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     assert_eq!(
@@ -98,7 +98,7 @@ async fn refunds_nothing_when_the_store_has_already_popped_the_record() {
     };
     fixture
         .settlement()
-        .handle_batch_enqueued_post_call(&call)
+        .handle_batch_post_call(&call)
         .await
         .expect("the batch hook succeeds");
     let kinds: Vec<&str> = fixture.store.calls().iter().map(|call| call.kind).collect();

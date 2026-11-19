@@ -4,12 +4,12 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
 
 use crate::limiter_records::RateLimitType;
-use crate::post_call_settlement::header_merge::merge_ratelimit_statuses_into_additional_headers;
+use crate::post_call_settlement::header_merge::merge_rate_limit_headers;
 use crate::post_call_settlement::tests::support::{headers, number, status};
 
 #[test]
 fn writes_a_remaining_and_limit_pair_for_one_status() {
-    let merged = merge_ratelimit_statuses_into_additional_headers(
+    let merged = merge_rate_limit_headers(
         &AdditionalHeaders::new(),
         &[status("user", RateLimitType::Tokens, 1000, 750)],
     );
@@ -29,10 +29,8 @@ fn keeps_the_headers_the_caller_already_held() {
         ("x-request-id", Json::Text("abc".to_owned())),
         ("x-litellm-model", Json::Text("gpt-4".to_owned())),
     ]);
-    let merged = merge_ratelimit_statuses_into_additional_headers(
-        &existing,
-        &[status("user", RateLimitType::Requests, 10, 9)],
-    );
+    let merged =
+        merge_rate_limit_headers(&existing, &[status("user", RateLimitType::Requests, 10, 9)]);
     assert_eq!(
         merged.get("x-request-id"),
         Some(&Json::Text("abc".to_owned()))
@@ -47,10 +45,8 @@ fn keeps_the_headers_the_caller_already_held() {
 #[test]
 fn leaves_the_input_map_untouched() {
     let existing = headers(&[("x-request-id", Json::Text("abc".to_owned()))]);
-    let merged = merge_ratelimit_statuses_into_additional_headers(
-        &existing,
-        &[status("user", RateLimitType::Requests, 10, 9)],
-    );
+    let merged =
+        merge_rate_limit_headers(&existing, &[status("user", RateLimitType::Requests, 10, 9)]);
     assert_eq!(existing.len(), 1);
     assert_eq!(existing.get("x-ratelimit-user-remaining-requests"), None);
     assert_eq!(merged.len(), 3);
@@ -58,7 +54,7 @@ fn leaves_the_input_map_untouched() {
 
 #[test]
 fn uses_each_status_own_descriptor_and_rate_limit_type() {
-    let merged = merge_ratelimit_statuses_into_additional_headers(
+    let merged = merge_rate_limit_headers(
         &AdditionalHeaders::new(),
         &[
             status("api_key", RateLimitType::Requests, 60, 59),
@@ -95,7 +91,7 @@ fn overwrites_a_stale_generated_header() {
         "x-ratelimit-user-remaining-tokens",
         Json::Text("stale".to_owned()),
     )]);
-    let merged = merge_ratelimit_statuses_into_additional_headers(
+    let merged = merge_rate_limit_headers(
         &existing,
         &[status("user", RateLimitType::Tokens, 1000, 750)],
     );
@@ -109,6 +105,6 @@ fn overwrites_a_stale_generated_header() {
 #[test]
 fn writes_nothing_for_an_empty_status_list() {
     let existing = headers(&[("x-request-id", Json::Text("abc".to_owned()))]);
-    let merged = merge_ratelimit_statuses_into_additional_headers(&existing, &[]);
+    let merged = merge_rate_limit_headers(&existing, &[]);
     assert_eq!(merged, existing);
 }

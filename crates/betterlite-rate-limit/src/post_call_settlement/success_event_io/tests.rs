@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use crate::limiter_records::ReservationBackend;
-use crate::post_call_settlement::success_event::SuccessCallback;
 use crate::post_call_settlement::tests::support::{
     RerankIo, SettlementFixture, SuccessFixture, WINDOW, install, operation_tuples,
     pipeline_tuples, scopes, window_identity,
@@ -17,14 +16,10 @@ async fn applies_an_unguarded_project_reconciliation_through_a_pipeline() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo {
-                tokens: Some((100, 0)),
-                ..RerankIo::default()
-            }
-            .reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo {
+            tokens: Some((100, 0)),
+            billed_total: None,
+        }))
         .await;
     assert_eq!(
         pipeline_tuples(&fixture.usage.pipelines()),
@@ -51,14 +46,10 @@ async fn applies_a_windowed_project_reconciliation_reservation_aware() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo {
-                tokens: Some((250, 0)),
-                ..RerankIo::default()
-            }
-            .reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo {
+            tokens: Some((250, 0)),
+            billed_total: None,
+        }))
         .await;
     assert_eq!(
         operation_tuples(&fixture.usage.increments()),
@@ -82,14 +73,10 @@ async fn settles_a_released_project_reservation_at_the_actual_usage() {
     });
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo {
-                tokens: Some((100, 0)),
-                ..RerankIo::default()
-            }
-            .reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo {
+            tokens: Some((100, 0)),
+            billed_total: None,
+        }))
         .await;
     assert_eq!(
         pipeline_tuples(&fixture.usage.pipelines()),
@@ -108,14 +95,10 @@ async fn writes_nothing_without_project_reservations() {
     install(&success.slot, |_state| {});
     fixture
         .settlement()
-        .log_success_event(&SuccessCallback {
-            event: success.event(),
-            io: RerankIo {
-                tokens: Some((250, 0)),
-                ..RerankIo::default()
-            }
-            .reconciliation(),
-        })
+        .log_success_event(&success.callback(&RerankIo {
+            tokens: Some((250, 0)),
+            billed_total: None,
+        }))
         .await;
     assert!(fixture.usage.increments().is_empty());
     assert!(fixture.usage.pipelines().is_empty());

@@ -6,10 +6,9 @@ use crate::limiter_records::ReservationBackend;
 use crate::post_call_settlement::failure_hook::FailureHook;
 use crate::post_call_settlement::tests::support::{
     SettlementFixture, WINDOW, install, operation_tuples, pipeline_tuples, scopes, stash_state,
-    window_identity,
+    token_usage, window_identity,
 };
 use crate::request_stash::RequestStashSlot;
-use crate::usage_resolution::Usage;
 
 #[tokio::test]
 async fn applies_the_combined_refund_and_each_project_side_on_its_own_path() {
@@ -27,12 +26,7 @@ async fn applies_the_combined_refund_and_each_project_side_on_its_own_path() {
         state.otpm_reserved_tokens = 300;
         state.otpm_reserved_scopes = scopes(&[("project", "p2")]);
     });
-    let usage = Usage {
-        prompt_tokens: 250,
-        completion_tokens: 10,
-        total_tokens: 260,
-        ..Usage::default()
-    };
+    let usage = token_usage(250, 10, 260);
     let event = FailureHook {
         stash: &slot,
         combined_usage: Some(&usage),
