@@ -64,6 +64,22 @@ impl ThreadTimeout {
     }
 }
 
+// extra_body is read only for its azure_ad_token source, so absent, null and an object must stay apart
+#[derive(Debug, Clone, Default)]
+pub(super) enum ThreadExtraBody {
+    #[default]
+    Absent,
+    Null,
+    Body(BTreeMap<String, Json>),
+}
+
+impl<'de> Deserialize<'de> for ThreadExtraBody {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let body = Option::<BTreeMap<String, Json>>::deserialize(deserializer)?;
+        Ok(body.map_or(Self::Null, Self::Body))
+    }
+}
+
 // The kwargs create_thread and get_thread read: GenericLiteLLMParams' credential and retry fields plus extra_body.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -82,9 +98,7 @@ pub(super) struct ThreadParams {
     pub azure_username: Option<String>,
     pub azure_password: Option<SecretString>,
     pub azure_scope: Option<String>,
-    // absent, null and an object are three different azure_ad_token sources, so the outer option stays
-    #[serde(with = "serde_with::rust::double_option")]
-    pub extra_body: Option<Option<BTreeMap<String, Json>>>,
+    pub extra_body: ThreadExtraBody,
 }
 
 impl ThreadParams {
@@ -108,7 +122,7 @@ pub(super) struct ThreadParamsError {
     pub message: String,
 }
 
-fn seconds_of(timeout: FineTuningTimeout) -> ThreadTimeout {
+const fn seconds_of(timeout: FineTuningTimeout) -> ThreadTimeout {
     match timeout {
         FineTuningTimeout::Seconds(seconds) => ThreadTimeout::Seconds(seconds),
         // openai and azure keep the phases; this arm only guards the resolver's other providers
@@ -125,7 +139,7 @@ pub(super) fn resolve_timeout(params: &ThreadParams) -> Result<ThreadTimeout, Ti
     let raw = selected.and_then(ThreadTimeoutValue::as_raw).or_else(|| {
         params
             .request_timeout
-            .filter(|seconds| *seconds != 0.0)
+            .filter(|seconds| *seconds != 0.0_f64)
             .map(TimeoutValue::Number)
     });
     resolve_fine_tuning_timeout(raw.as_ref(), OPENAI, None).map(seconds_of)
@@ -136,7 +150,7 @@ pub(super) fn forwarded_azure_timeout(params: &ThreadParams) -> Result<Option<f6
     match params.timeout.as_ref() {
         None => Ok(None),
         Some(ThreadTimeoutValue::Phases(phases)) => {
-            Ok(phases.read.filter(|seconds| *seconds > 0.0))
+            Ok(phases.read.filter(|seconds| *seconds > 0.0_f64))
         }
         Some(ThreadTimeoutValue::Seconds(seconds)) if !seconds.is_finite() => {
             Err(TimeoutError::NonFinite)
@@ -176,9 +190,9 @@ pub(super) fn facade_azure_token(
     params: &ThreadParams,
 ) -> Option<SecretString> {
     match &params.extra_body {
-        None => None,
-        Some(None) => resources.azure_ad_token.clone(),
-        Some(Some(body)) => match body.get("azure_ad_token") {
+        ThreadExtraBody::Absent => None,
+        ThreadExtraBody::Null => resources.azure_ad_token.clone(),
+        ThreadExtraBody::Body(body) => match body.get("azure_ad_token") {
             Some(Json::Text(token)) => Some(SecretString::from(token.clone())),
             Some(_) | None => None,
         },

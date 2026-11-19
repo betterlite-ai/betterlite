@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::error::details::ResponseDetails;
@@ -28,7 +29,7 @@ pub enum ThreadError {
     #[error("{message}")]
     Provider {
         message: String,
-        failure: ProviderFailure,
+        failure: Box<ProviderFailure>,
     },
     #[error("the thread call failed: {message}")]
     Call { message: String },
@@ -56,7 +57,7 @@ pub struct ProviderFailure {
 
 #[must_use]
 pub fn provider_failure(status: u16, body: &[u8]) -> ProviderFailure {
-    let body_text = String::from_utf8_lossy(body).into_owned();
+    let body_text = from_utf8(body).map_or_else(|_| String::new(), String::from);
     let flat = flat_body(&body_text);
     let field = |name: &str| {
         flat.as_ref()
@@ -86,7 +87,7 @@ fn flat_body(text: &str) -> Option<BTreeMap<String, Json>> {
     let Json::Object(mut object) = serde_json::from_str::<Json>(text).ok()? else {
         return None;
     };
-    let fields = match object.remove("error") {
+    let fields = match object.shift_remove("error") {
         Some(Json::Object(fields)) => fields,
         // the key is there but its value is not a mapping, so the SDK's APIError gets no fields at all
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
@@ -139,69 +140,28 @@ impl ThreadError {
                 message: message.clone(),
             },
             // docs/compatibility.md names the field with a 400 where LiteLLM's pydantic model raises
-            Self::Unsupported { .. } | Self::Params { .. } | Self::Timeout(_) => SdkFailure {
-                class: "BadRequestError",
-                status: 400,
-                kind: None,
-                param: None,
-                code: None,
-                message: self.to_string(),
-            },
+            Self::Unsupported { .. } | Self::Params { .. } | Self::Timeout(_) => {
+                status_failure("BadRequestError", 400, &self.to_string())
+            }
             // a broken transport or reply decodes as an APIError, but no provider answered with a status
-            Self::Call { message } => SdkFailure {
-                class: "APIError",
-                status: 500,
-                kind: None,
-                param: None,
-                code: None,
-                message: message.clone(),
-            },
-            Self::Reply => SdkFailure {
-                class: "APIError",
-                status: 500,
-                kind: None,
-                param: None,
-                code: None,
-                message: self.to_string(),
-            },
+            Self::Call { message } => status_failure("APIError", 500, message),
+            Self::Reply => status_failure("APIError", 500, &self.to_string()),
         }
     }
 
     // acreate_thread and aget_thread run exception_type() over whatever the synchronous facade raised
     #[must_use]
     pub fn error_class(&self, provider: &str, redactor: &Redactor) -> ErrorClass {
-        match self {
-            Self::Unsupported { .. } => ErrorClass::BadRequest(Box::new(
-                ResponseDetails::with_status(self.context(provider), Some(400)),
-            )),
-            Self::Params { field, message } => {
-                ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
-                    ErrorContext {
-                        message: message.clone(),
-                        model: None,
-                        provider: Some(provider.to_owned()),
-                        max_retries: None,
-                        num_retries: None,
-                        body_type: None,
-                        body_param: field.clone(),
-                        body_code: None,
-                    },
-                    Some(400),
-                )))
-            }
-            Self::Timeout(_) => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
-                ErrorContext {
-                    message: self.to_string(),
-                    model: None,
-                    provider: Some(provider.to_owned()),
-                    max_retries: None,
-                    num_retries: None,
-                    body_type: None,
-                    body_param: None,
-                    body_code: None,
-                },
+        let bad_request = |model: Option<String>, body_param: Option<String>| {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+                self.context(provider, model, body_param),
                 Some(400),
-            ))),
+            )))
+        };
+        match self {
+            Self::Unsupported { .. } => bad_request(Some(UNSUPPORTED_MODEL.to_owned()), None),
+            Self::Params { field, .. } => bad_request(None, field.clone()),
+            Self::Timeout(_) => bad_request(None, None),
             Self::Provider {
                 message, failure, ..
             } => dispatch(
@@ -209,31 +169,41 @@ impl ThreadError {
                 redactor,
             ),
             // no provider answered, so exception_type() has no status to branch on; keep it an internal failure
-            Self::Call { .. } | Self::Reply => ErrorClass::InternalServer(Box::new(ErrorContext {
-                message: self.to_string(),
-                model: None,
-                provider: Some(provider.to_owned()),
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: None,
-                body_code: None,
-            })),
+            Self::Call { .. } | Self::Reply => {
+                ErrorClass::InternalServer(Box::new(self.context(provider, None, None)))
+            }
         }
     }
 
     // Litellm raises the unsupported-provider error with model "n/a" and an empty response body
-    fn context(&self, provider: &str) -> ErrorContext {
+    fn context(
+        &self,
+        provider: &str,
+        model: Option<String>,
+        body_param: Option<String>,
+    ) -> ErrorContext {
         ErrorContext {
             message: self.to_string(),
-            model: Some(UNSUPPORTED_MODEL.to_owned()),
+            model,
             provider: Some(provider.to_owned()),
             max_retries: None,
             num_retries: None,
             body_type: None,
-            body_param: None,
+            body_param,
             body_code: None,
         }
+    }
+}
+
+// the SDK exception no provider status produced: a class, a fixed status and the raised message
+fn status_failure(class: &'static str, status: u16, message: &str) -> SdkFailure {
+    SdkFailure {
+        class,
+        status,
+        kind: None,
+        param: None,
+        code: None,
+        message: message.to_owned(),
     }
 }
 

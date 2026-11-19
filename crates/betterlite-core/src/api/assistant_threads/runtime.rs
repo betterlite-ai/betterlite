@@ -29,30 +29,22 @@ impl<T: AssistantsTransport> ThreadRuntime<T> for SdkThreadRuntime {
         &self,
         prepared: PreparedThread<'_, T>,
     ) -> impl Future<Output = Result<Option<ThreadRecord>, ThreadError>> + Send {
+        let PreparedThread { target, operation } = prepared;
         async move {
-            let PreparedThread {
-                target, operation, ..
-            } = prepared;
             match target {
                 Target::Openai(client) => {
                     let call = match &operation {
                         Operation::Create(data) => ThreadCall::Create(data),
                         Operation::Retrieve(thread_id) => ThreadCall::Retrieve(thread_id),
                     };
-                    match openai_threads::send(&client, call).await {
-                        Ok(ThreadReply::Thread(thread)) => Ok(Some(thread)),
-                        Ok(ThreadReply::Message(_) | ThreadReply::Page(_)) => {
-                            Err(ThreadError::Reply)
-                        }
-                        Err(error) => Err(map_threads_error(error)),
-                    }
+                    openai_reply(openai_threads::send(&client, call).await)
                 }
                 Target::Azure {
                     request,
                     client,
                     flag,
                 } => {
-                    let operation = match &operation {
+                    let azure_operation = match &operation {
                         Operation::Create(data) => AzureOperation::Create(data),
                         Operation::Retrieve(thread_id) => AzureOperation::Retrieve(thread_id),
                     };
@@ -60,14 +52,9 @@ impl<T: AssistantsTransport> ThreadRuntime<T> for SdkThreadRuntime {
                         transport: Arc::clone(&client.transport),
                     };
                     let reply = api
-                        .call(&request, Some(client), flag, operation)
+                        .call(&request, Some(client), flag, azure_operation)
                         .await
-                        .map_err(|error| match error {
-                            ThreadMessagesError::Threads(error) => map_threads_error(error),
-                            ThreadMessagesError::Client(error) => ThreadError::Call {
-                                message: error.to_string(),
-                            },
-                        })?;
+                        .map_err(azure_error)?;
                     Ok(Some(reply.thread))
                 }
             }
@@ -75,18 +62,43 @@ impl<T: AssistantsTransport> ThreadRuntime<T> for SdkThreadRuntime {
     }
 }
 
-fn provider_error(status: u16, body: &[u8]) -> ThreadError {
-    let failure = provider_failure(status, body);
-    ThreadError::Provider {
-        message: format!("Error code: {status} - {}", failure.body_text),
-        failure,
+fn openai_reply(
+    reply: Result<ThreadReply, ThreadsError>,
+) -> Result<Option<ThreadRecord>, ThreadError> {
+    match reply {
+        Ok(ThreadReply::Thread(thread)) => Ok(Some(thread)),
+        Ok(ThreadReply::Message(_) | ThreadReply::Page(_)) => Err(ThreadError::Reply),
+        Err(error) => Err(map_threads_error(error)),
+    }
+}
+
+fn azure_error(error: ThreadMessagesError) -> ThreadError {
+    match error {
+        ThreadMessagesError::Threads(threads) => map_threads_error(threads),
+        ThreadMessagesError::Client(client) => ThreadError::Call {
+            message: client.to_string(),
+        },
     }
 }
 
 fn map_threads_error(error: ThreadsError) -> ThreadError {
     match error {
-        ThreadsError::Status { status, body } => provider_error(status, &body),
-        other => ThreadError::Call {
+        ThreadsError::Status { status, body } => {
+            let failure = provider_failure(status, &body);
+            let message = format!("Error code: {status} - {}", failure.body_text);
+            ThreadError::Provider {
+                message,
+                failure: Box::new(failure),
+            }
+        }
+        other @ (ThreadsError::MissingApiKey
+        | ThreadsError::BaseUrl { .. }
+        | ThreadsError::Header { .. }
+        | ThreadsError::EmptyThreadId
+        | ThreadsError::DotSegment { .. }
+        | ThreadsError::Encode { .. }
+        | ThreadsError::Transport { .. }
+        | ThreadsError::Reply { .. }) => ThreadError::Call {
             message: other.to_string(),
         },
     }

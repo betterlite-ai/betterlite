@@ -27,7 +27,7 @@ pub(super) enum Operation {
 pub(super) enum Target<'call, T> {
     Openai(SdkClient<T>),
     Azure {
-        request: ClientRequest<'call>,
+        request: Box<ClientRequest<'call>>,
         client: AzureAssistantsClient<'call, T>,
         flag: Option<bool>,
     },
@@ -36,7 +36,6 @@ pub(super) enum Target<'call, T> {
 pub(super) struct PreparedThread<'call, T> {
     pub(super) target: Target<'call, T>,
     pub(super) operation: Operation,
-    pub(super) timeout: ThreadTimeout,
 }
 
 pub(super) struct PrepareRequest<'call, T> {
@@ -59,16 +58,17 @@ pub(super) fn create_body(
     messages: Option<Vec<ThreadMessageData>>,
     metadata: Option<BTreeMap<String, Json>>,
 ) -> Result<ThreadCreate, ThreadError> {
-    let metadata: Option<_> = metadata
-        .map(|metadata| {
-            serde_json::to_value(metadata).and_then(|value| serde_json::from_value(value))
-        })
+    let converted = metadata
+        .map(|value| serde_json::from_value(serde_json::to_value(value)?))
         .transpose()
         .map_err(|source| ThreadError::Params {
             field: None,
             message: source.to_string(),
         })?;
-    Ok(ThreadCreate { messages, metadata })
+    Ok(ThreadCreate {
+        messages,
+        metadata: converted,
+    })
 }
 
 // httpx reads a zero or negative timeout as no timeout; this transport takes the largest deadline instead
@@ -77,7 +77,7 @@ fn deadline(timeout: ThreadTimeout) -> Result<Duration, ThreadError> {
     if !seconds.is_finite() {
         return Err(ThreadError::Timeout(TimeoutError::NonFinite));
     }
-    if seconds <= 0.0 {
+    if seconds <= 0.0_f64 {
         return Ok(Duration::MAX);
     }
     Duration::try_from_secs_f64(seconds)
@@ -190,7 +190,6 @@ where
         Ok(PreparedThread {
             target,
             operation: request.operation,
-            timeout,
         })
     }
 
@@ -207,7 +206,7 @@ where
         match client {
             Some(SuppliedClient::Openai(supplied)) => Ok(Target::Openai(supplied)),
             Some(SuppliedClient::Azure(supplied)) => {
-                let request = self.azure_request(resolved, None)?;
+                let request = Box::new(self.azure_request(resolved, None)?);
                 Ok(Target::Azure {
                     request,
                     client: supplied,
@@ -234,7 +233,7 @@ where
                 return Ok(Target::Openai(supplied));
             }
             Some(SuppliedClient::Azure(supplied)) if supplied.kind == ClientKind::Async => {
-                let request = self.azure_request(resolved, token)?;
+                let request = Box::new(self.azure_request(resolved, token)?);
                 return Ok(Target::Azure {
                     request,
                     client: supplied,
@@ -243,16 +242,16 @@ where
             }
             Some(SuppliedClient::Openai(_) | SuppliedClient::Azure(_)) | None => {}
         }
-        let request = self.azure_request(resolved, token)?;
+        let request = Box::new(self.azure_request(resolved, token)?);
         let transport = Arc::clone(&self.transport);
-        let client = AssistantsApi { transport }
+        let azure_client = AssistantsApi { transport }
             .azure_client(&request, None, client_kind(flag))
             .map_err(|error| ThreadError::Call {
                 message: error.to_string(),
             })?;
         Ok(Target::Azure {
             request,
-            client,
+            client: azure_client,
             flag,
         })
     }
