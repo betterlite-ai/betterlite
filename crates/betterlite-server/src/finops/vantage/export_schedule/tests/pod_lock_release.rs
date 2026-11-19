@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Notify;
+use tokio::task::yield_now;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
@@ -81,7 +82,7 @@ async fn draining_waits_for_the_release_task() {
         let logger = Arc::clone(&logger);
         async move { logger.drain().await }
     });
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(!drain.is_finished(), "the drain waits for the release task");
     release.notify_one();
     timeout(Duration::from_secs(10), drain)

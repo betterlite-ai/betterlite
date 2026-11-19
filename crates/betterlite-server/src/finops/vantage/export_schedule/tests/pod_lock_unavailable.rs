@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use crate::finops::focus::export_schedule::FocusPodLock;
 use crate::finops::vantage::export_schedule::initialize_vantage_export_job;
 use crate::finops::vantage::support::{self, Recorder};
@@ -11,7 +13,7 @@ async fn without_a_pod_lock_the_vantage_export_runs_unlocked() {
         &support::environment(&[]),
         support::params(),
         &recorder,
-        None::<std::sync::Arc<dyn FocusPodLock>>,
+        None::<Arc<dyn FocusPodLock>>,
     );
     initialize_vantage_export_job(&logger)
         .await

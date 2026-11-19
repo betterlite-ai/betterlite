@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::export::VantageExportLogger;
@@ -56,7 +57,7 @@ impl Lists {
             VantageCallbackList::AsyncSuccess => &mut self.async_success,
             VantageCallbackList::AsyncFailure => &mut self.async_failure,
         };
-        std::mem::take(registered)
+        take(registered)
     }
 
     // one instance per registered logger, first occurrence winning, in _get_all_callbacks order
