@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 
 use crate::sdk_http::OracleLimits;
@@ -15,7 +16,7 @@ use crate::sdk_http::result::kinds::SdkResult;
 async fn replays_the_rejected_speech_bridge_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fuzz/corpus/sdk_http_case/speech-chat-bridge-rejection.yaml");
-    let source = std::fs::read(corpus).expect("the rejection corpus");
+    let source = fs::read(corpus).expect("the rejection corpus");
     let (selector, payload) = source
         .split_first()
         .expect("the rejection corpus must not be empty");
