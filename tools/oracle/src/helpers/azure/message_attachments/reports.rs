@@ -55,7 +55,10 @@ pub(super) fn failure(error: &MessagesError) -> Result<Value, Box<HelperError>> 
             | ThreadsError::DotSegment { .. }
             | ThreadsError::Reply { .. },
         ) => Ok(json!({"kind": "value"})),
-        other => Err(invalid_input(other.to_string())),
+        // The variants left are the decode, encode and transport failures the Python helper never sees as Azure errors.
+        MessagesError::Definitions(_) | MessagesError::Threads(_) => {
+            Err(invalid_input(error.to_string()))
+        }
     }
 }
 
