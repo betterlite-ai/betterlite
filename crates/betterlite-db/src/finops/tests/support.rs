@@ -25,7 +25,7 @@ const CIPHER_KEY: &str = "b3075-finops-settings-salt";
 const STRING_ROW_INSERT: &str =
     r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value") VALUES ($1, to_jsonb($2::text))"#;
 const MAPPING_ROW_INSERT: &str =
-    r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value") VALUES ($1, $2::jsonb)"#;
+    r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value") VALUES ($1, $2::text::jsonb)"#;
 const NULL_ROW_INSERT: &str =
     r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value") VALUES ($1, NULL)"#;
 const READ_ROW_SQL: &str = r#"SELECT jsonb_typeof("param_value"), "param_value" #>> '{}'
