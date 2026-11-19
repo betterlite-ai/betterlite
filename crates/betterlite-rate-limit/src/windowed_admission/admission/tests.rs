@@ -10,6 +10,7 @@ use crate::windowed_admission::tests::support::{
     GENERATED_SLOT, GaugeWrite, HANDLER_WINDOW_SIZE, NOW, PlannedScript, ScriptCall, descriptor,
     gauge_key, harness, key_list, limits, mixed_plan, request, text,
 };
+use crate::windowed_admission::{SlotIdGenerator, UuidSlotIds, WindowedAdmissionError};
 
 fn window_key() -> String {
     "{api-key:k1}:window".to_owned()
@@ -186,6 +187,49 @@ async fn the_handler_window_size_drives_the_script_and_the_write_back() {
             .iter()
             .all(|write| write.ttl == HANDLER_WINDOW_SIZE)
     );
+}
+
+#[test]
+fn the_uuid_slot_generator_returns_32_lowercase_hex_characters() {
+    let slot = UuidSlotIds.next_slot_id();
+    assert_eq!(slot.len(), 32);
+    assert!(
+        slot.chars()
+            .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+    );
+}
+
+#[tokio::test]
+async fn a_write_back_of_mismatched_or_odd_pairs_is_an_error() {
+    let harness = harness();
+    let limiter = harness.limiter();
+    let keys = key_list(&[window_key().as_str(), requests_key().as_str()]);
+    let longer = vec![
+        CacheCounterValue::Text("1700000000".to_owned()),
+        CacheCounterValue::Int(1),
+        CacheCounterValue::Int(2),
+        CacheCounterValue::Int(3),
+    ];
+    let error = limiter.write_back(&keys, &longer).await.unwrap_err();
+    assert!(matches!(
+        error,
+        WindowedAdmissionError::WindowPairCount { keys: 2, values: 4 }
+    ));
+    let odd_keys = key_list(&[
+        "{api-key:k1}:window",
+        "{api-key:k1}:requests",
+        "{api-key:k1}:tokens",
+    ]);
+    let odd = vec![
+        CacheCounterValue::Text("1700000000".to_owned()),
+        CacheCounterValue::Int(1),
+        CacheCounterValue::Int(2),
+    ];
+    let error = limiter.write_back(&odd_keys, &odd).await.unwrap_err();
+    assert!(matches!(
+        error,
+        WindowedAdmissionError::WindowPairCount { keys: 3, values: 3 }
+    ));
 }
 
 #[tokio::test]
