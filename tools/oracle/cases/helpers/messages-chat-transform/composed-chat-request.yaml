@@ -1,0 +1,47 @@
+kind: helper
+name: messages-chat-transform-composed-chat-request
+call:
+  messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      system: guide
+      max_tokens: 12
+      metadata:
+        user_id: alice
+      litellm_metadata:
+        tag: t
+      stop_sequences:
+      - END
+      tool_choice:
+        type: any
+      unknown: 7
+    custom_llm_provider: null
+calls:
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      stop_sequences:
+      - END
+      stop:
+      - LAST
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      metadata:
+        user_id: alice
+    custom_llm_provider: openai
+env: {}
+compare: {ignore: []}
