@@ -14,6 +14,12 @@ pub const REPLY_MAX_BYTES: usize = 0x0100_0000;
 // outer None is a missing member and inner None is a null one, so the two stay apart
 type Member = Option<Option<Box<RawValue>>>;
 
+#[derive(Clone, Copy)]
+enum Level {
+    RelatedTopics,
+    Nested,
+}
+
 #[derive(Debug, Deserialize)]
 struct DuckDuckGoReply {
     #[serde(default, rename = "AbstractURL", with = "double_option")]
@@ -50,7 +56,7 @@ pub fn decode_duckduckgo_search(
     let mut results = Vec::new();
     push_abstract(abstract_url, abstract_text, heading, &mut results)?;
     let topics = topics_of(related_topics)?;
-    append_topics(&topics, limit, &mut results)?;
+    append_entries(&topics, Level::RelatedTopics, limit, &mut results)?;
     Ok(SearchResponse {
         results,
         object: SearchObject::default(),
@@ -86,39 +92,48 @@ fn topics_of(member: Member) -> Result<Vec<Box<RawValue>>, DuckDuckGoSearchError
     }
 }
 
-fn append_topics(
-    topics: &[Box<RawValue>],
+fn append_entries(
+    entries: &[Box<RawValue>],
+    level: Level,
     limit: Option<i64>,
     results: &mut Vec<SearchResult>,
 ) -> Result<(), DuckDuckGoSearchError> {
-    for topic in topics {
+    for entry in entries {
+        if matches!(level, Level::RelatedTopics)
+            && entry.get().trim_ascii_start().as_bytes().first() != Some(&b'{')
+        {
+            continue;
+        }
         if limit_reached(results.len(), limit) {
             break;
         }
-        if topic.get().trim_ascii_start().as_bytes().first() != Some(&b'{') {
-            continue;
-        }
-        append_topic(&mut parse_entry(topic.get().as_bytes())?, limit, results)?;
+        append_entry(entry.get().as_bytes(), level, limit, results)?;
     }
     Ok(())
 }
 
-fn append_topic(
-    entry: &mut RelatedTopic,
+fn append_entry(
+    bytes: &[u8],
+    level: Level,
     limit: Option<i64>,
     results: &mut Vec<SearchResult>,
 ) -> Result<(), DuckDuckGoSearchError> {
-    if let Some(result) = direct_topic(entry)? {
+    let mut topic = parse_entry(bytes)?;
+    if let Some(result) = direct_topic(&mut topic)? {
         results.push(result);
         return Ok(());
     }
-    let Some(nested) = &entry.topics else {
+    if matches!(level, Level::Nested) {
+        return Ok(());
+    }
+    let Some(nested) = &topic.topics else {
         return Ok(());
     };
     let Some(raw) = nested else {
         return Err(DuckDuckGoSearchError::ReplyNull { field: "Topics" });
     };
-    append_nested(raw, limit, results)
+    let entries = parse_list(raw, "Topics")?;
+    append_entries(&entries, Level::Nested, limit, results)
 }
 
 fn push_abstract(
@@ -152,24 +167,6 @@ fn push_abstract(
         last_updated: None,
         extra: Object::new(),
     });
-    Ok(())
-}
-
-fn append_nested(
-    raw: &RawValue,
-    limit: Option<i64>,
-    results: &mut Vec<SearchResult>,
-) -> Result<(), DuckDuckGoSearchError> {
-    let entries = parse_list(raw, "Topics")?;
-    for entry in &entries {
-        if limit_reached(results.len(), limit) {
-            break;
-        }
-        let mut topic = parse_entry(entry.get().as_bytes())?;
-        if let Some(result) = direct_topic(&mut topic)? {
-            results.push(result);
-        }
-    }
     Ok(())
 }
 
