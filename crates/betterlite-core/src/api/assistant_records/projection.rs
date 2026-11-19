@@ -1,13 +1,16 @@
-use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::time::{Duration, TryFromFloatSecsError};
 
+use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
 use betterlite_azure::azure_urls::AuthParams;
+use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_config::sections::resource_sdk_settings;
+use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
 use betterlite_models::resolution::{
     ResolutionContext, ResolutionError, ResolutionRequest, resolve,
 };
+use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::records::AssistantCreate;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::SecretString;
@@ -157,7 +160,7 @@ pub(super) fn call(request: CallRequest<'_>) -> AssistantCreateCall {
             api_base: resolved.azure_base(&parts.options).map(str::to_owned),
             api_key: resolved.azure_api_key(&parts.options).cloned(),
             api_version: resolved.azure_version(&parts.options).map(str::to_owned),
-            azure_ad_token: azure_ad_token(&request.input.extra_body, request.environment),
+            azure_ad_token: azure_ad_token(request.input, request.environment),
             timeout: request.timeout,
             max_retries: request.input.max_retries,
             client: effective_client(request.input.client),
@@ -167,12 +170,52 @@ pub(super) fn call(request: CallRequest<'_>) -> AssistantCreateCall {
     }
 }
 
+// B519 builds the SDK client from these options, so the deadline and retry count are refused here.
+pub(super) fn openai_options(call: &OpenAiCreateCall) -> Result<ClientOptions, ProjectionError> {
+    Ok(ClientOptions {
+        api_key: call.api_key.clone(),
+        api_base: Some(call.api_base.clone()),
+        timeout: Some(deadline(call.timeout)?),
+        max_retries: retries(call.max_retries)?,
+        organization: call.organization.clone(),
+    })
+}
+
+// The façade's own token, timeout and retries stay beside the B176 params, as get_litellm_params split them.
+pub(super) fn azure_request<'settings>(
+    settings: &'settings azure_endpoints::Settings,
+    environment: &'settings (dyn EnvironmentLookup + Sync),
+    sources: &'settings (dyn CredentialSources + Sync),
+    call: &AzureCreateCall,
+) -> ClientRequest<'settings> {
+    ClientRequest {
+        params: LiteLlmParams {
+            azure_ad_token: call.litellm_params.azure_ad_token.clone(),
+            auth: call.litellm_params.auth.clone(),
+            max_retries: call.litellm_params.max_retries,
+            timeout: call.litellm_params.timeout,
+        },
+        provider: None,
+        api_key: call.api_key.clone(),
+        api_base: call.api_base.clone(),
+        api_version: call.api_version.clone(),
+        azure_ad_token: call.azure_ad_token.clone(),
+        timeout: seconds(call.timeout),
+        max_retries: call.max_retries,
+        refresh_enabled: false,
+        session: SessionKind::Dedicated,
+        settings,
+        environment,
+        sources,
+    }
+}
+
 // The env token is read only when extra_body is explicitly null; an absent or empty mapping reads none.
 fn azure_ad_token(
-    extra_body: &Option<Option<BTreeMap<String, String>>>,
+    input: &AssistantCreateInput,
     environment: &dyn EnvironmentLookup,
 ) -> Option<SecretString> {
-    match extra_body {
+    match &input.extra_body {
         Some(None) => environment.lookup("AZURE_AD_TOKEN").map(SecretString::from),
         Some(Some(body)) => body.get("azure_ad_token").cloned().map(SecretString::from),
         None => None,
@@ -180,7 +223,7 @@ fn azure_ad_token(
 }
 
 // isinstance(client, OpenAI) also matches AzureOpenAI; AsyncOpenAI sits outside that hierarchy.
-fn effective_client(client: Option<ClientClass>) -> Option<ClientClass> {
+const fn effective_client(client: Option<ClientClass>) -> Option<ClientClass> {
     match client {
         Some(ClientClass::OpenAi | ClientClass::AzureOpenAi) => None,
         Some(other) => Some(other),
@@ -235,7 +278,7 @@ fn prepare(input: &AssistantCreateInput) -> Prepared {
     }
 }
 
-fn raw_timeout(timeout: Option<&CreateTimeout>) -> Option<f64> {
+const fn raw_timeout(timeout: Option<&CreateTimeout>) -> Option<f64> {
     match timeout {
         Some(CreateTimeout::Seconds(seconds)) => Some(*seconds),
         Some(CreateTimeout::Text(_) | CreateTimeout::Phases(_)) | None => None,

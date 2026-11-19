@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use betterlite_azure::azure_assistant_definitions::operations::{
-    AssistantsApi as AzureAssistantsApi, ClientRequest, DefinitionCall, DefinitionReply,
+    AssistantsApi as AzureAssistantsApi, DefinitionCall, DefinitionReply,
 };
 use betterlite_azure::credentials::source::CredentialSources;
-use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::records::AssistantObject;
 use betterlite_openai::assistants::transport::AssistantsTransport;
@@ -129,6 +127,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         }))
     }
 
+    // B519 runs the create with the assigned flag; B686 reports the reply kind, so a page or a delete is no assistant
     async fn execute(
         &self,
         call: &AssistantCreateCall,
@@ -136,58 +135,25 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     ) -> Result<Option<AssistantObject>, Raised> {
         match call {
             AssistantCreateCall::OpenAi(openai) => {
-                let deadline = projection::deadline(openai.timeout)
+                let options = projection::openai_options(openai)
                     .map_err(|source| Raised::Local(source.to_string()))?;
-                let max_retries = projection::retries(openai.max_retries)
-                    .map_err(|source| Raised::Local(source.to_string()))?;
-                let api = AssistantsApi {
+                let assistant = AssistantsApi {
                     transport: Arc::clone(&self.transport),
-                };
-                let assistant = api
-                    .create_assistants(
-                        ClientOptions {
-                            api_key: openai.api_key.clone(),
-                            api_base: Some(openai.api_base.clone()),
-                            timeout: Some(deadline),
-                            max_retries,
-                            organization: openai.organization.clone(),
-                        },
-                        &openai.create,
-                        None,
-                        matches!(flag, Some(true)),
-                    )
-                    .await
-                    .map_err(Raised::Assistants)?;
+                }
+                .create_assistants(options, &openai.create, None, matches!(flag, Some(true)))
+                .await
+                .map_err(Raised::Assistants)?;
                 Ok(Some(assistant))
             }
             AssistantCreateCall::Azure(azure) => {
-                let request = ClientRequest {
-                    params: LiteLlmParams {
-                        azure_ad_token: azure.litellm_params.azure_ad_token.clone(),
-                        auth: azure.litellm_params.auth.clone(),
-                        max_retries: azure.litellm_params.max_retries,
-                        timeout: azure.litellm_params.timeout,
-                    },
-                    provider: None,
-                    api_key: azure.api_key.clone(),
-                    api_base: azure.api_base.clone(),
-                    api_version: azure.api_version.clone(),
-                    azure_ad_token: azure.azure_ad_token.clone(),
-                    timeout: projection::seconds(azure.timeout),
-                    max_retries: azure.max_retries,
-                    refresh_enabled: false,
-                    session: SessionKind::Dedicated,
-                    settings: &self.azure,
-                    environment: self.environment,
-                    sources: self.sources,
-                };
-                let api = AzureAssistantsApi {
+                let request =
+                    projection::azure_request(&self.azure, self.environment, self.sources, azure);
+                let reply = AzureAssistantsApi {
                     transport: Arc::clone(&self.transport),
-                };
-                let reply = api
-                    .call(&request, None, flag, DefinitionCall::Create(&azure.create))
-                    .await
-                    .map_err(Raised::from)?;
+                }
+                .call(&request, None, flag, DefinitionCall::Create(&azure.create))
+                .await
+                .map_err(Raised::from)?;
                 match reply.reply {
                     DefinitionReply::Assistant(assistant) => Ok(Some(*assistant)),
                     DefinitionReply::Page(_) | DefinitionReply::Deleted(_) => Ok(None),

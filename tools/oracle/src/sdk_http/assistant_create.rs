@@ -212,7 +212,6 @@ fn input(call: &Call, api_base: &str) -> AssistantCreateInput {
         azure_password: call.azure_password.clone().map(SecretString::from),
         azure_scope: call.azure_scope.clone(),
         extra_body: call.extra_body.clone(),
-        extra: call.extra.clone(),
     }
 }
 

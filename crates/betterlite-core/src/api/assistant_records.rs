@@ -10,8 +10,9 @@ use std::collections::BTreeMap;
 use betterlite_openai::assistants::records::{AssistantTool, ResponseFormat, ToolResources};
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::SecretString;
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
+use serde_json::Number;
 
 // The client class create_assistants was handed: only isinstance(client, OpenAI) is ever decided from it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -25,11 +26,22 @@ pub enum ClientClass {
 }
 
 // async_create_assistants: any bool is legal, and anything else raises ValueError
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AsyncFlag {
     Bool(bool),
-    Other(Value),
+    Other(NonBool),
+}
+
+// What Other carries: the façade only checks that the value is not a bool, never the content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(from = "IgnoredAny")]
+pub struct NonBool;
+
+impl From<IgnoredAny> for NonBool {
+    fn from(_: IgnoredAny) -> Self {
+        Self
+    }
 }
 
 // GenericLiteLLMParams.timeout: seconds, a number written as text, or the pieces of an httpx.Timeout
@@ -73,6 +85,4 @@ pub struct AssistantCreateInput {
     pub azure_scope: Option<String>,
     // GenericLiteLLMParams.get("extra_body", {}): absent, explicit null, or a mapping
     pub extra_body: Option<Option<BTreeMap<String, String>>>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
 }

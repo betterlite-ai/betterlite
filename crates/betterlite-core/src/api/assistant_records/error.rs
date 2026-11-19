@@ -3,7 +3,7 @@ use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, 
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_redact::secret::Redactor;
-use serde_json::Value;
+use serde::Deserialize;
 
 use betterlite_openai::assistants::error::AssistantsError;
 
@@ -21,15 +21,38 @@ pub enum Entry {
 pub enum Raised {
     Local(String),
     Assistants(AssistantsError),
-    Definitions(DefinitionsError),
+    // An Azure endpoint error outside the SDK client: class, status and message are the error's own.
+    Projected {
+        class: String,
+        status: Option<u16>,
+        message: String,
+    },
 }
 
-// The Azure façade wraps its own SDK error; unwrap it so every projection sees one provider error type.
+// The Azure façade wraps its own SDK error; unwrap the SDK one and project the rest as they raise.
 impl From<DefinitionsError> for Raised {
     fn from(error: DefinitionsError) -> Self {
         match error {
-            DefinitionsError::Assistants(inner) => Raised::Assistants(inner),
-            other => Raised::Definitions(other),
+            DefinitionsError::Assistants(inner) => Self::Assistants(inner),
+            DefinitionsError::Endpoint(endpoint) => Self::Projected {
+                class: endpoint.class().to_owned(),
+                status: endpoint.status(),
+                message: endpoint.to_string(),
+            },
+            DefinitionsError::Provider { class, message } => Self::Projected {
+                class,
+                status: None,
+                message,
+            },
+            other @ (DefinitionsError::BaseUrl { .. }
+            | DefinitionsError::MissingCredentials
+            | DefinitionsError::MissingEndpoint
+            | DefinitionsError::ProviderReply
+            | DefinitionsError::Timeout { .. }) => Self::Projected {
+                class: String::from("ValueError"),
+                status: None,
+                message: other.to_string(),
+            },
         }
     }
 }
@@ -45,6 +68,7 @@ pub struct AssistantCreateFailure {
     pub message: String,
 }
 
+#[must_use]
 pub fn unsupported(provider: &str) -> AssistantCreateFailure {
     AssistantCreateFailure {
         class: String::from("BadRequestError"),
@@ -58,6 +82,7 @@ pub fn unsupported(provider: &str) -> AssistantCreateFailure {
     }
 }
 
+#[must_use]
 pub fn no_response() -> AssistantCreateFailure {
     AssistantCreateFailure {
         class: String::from("InternalServerError"),
@@ -70,6 +95,7 @@ pub fn no_response() -> AssistantCreateFailure {
 }
 
 // acreate_assistants wraps every failure in exception_type; create_assistants lets the SDK's own exception out
+#[must_use]
 pub fn raised(
     raised: Raised,
     model: &str,
@@ -77,9 +103,9 @@ pub fn raised(
     entry: Entry,
     redactor: &Redactor,
 ) -> AssistantCreateFailure {
-    let (class, status, message) = source(&raised);
     match entry {
         Entry::Sync => {
+            let (class, status, message) = source(&raised);
             let (kind, param, code) = sdk_fields(&raised);
             AssistantCreateFailure {
                 class,
@@ -90,7 +116,7 @@ pub fn raised(
                 message,
             }
         }
-        Entry::Async => wrapped(&class, status, &message, &raised, model, provider, redactor),
+        Entry::Async => wrapped(source(&raised), &raised, model, provider, redactor),
     }
 }
 
@@ -111,7 +137,7 @@ fn sdk_fields(raised: &Raised) -> (WireField, WireField, WireField) {
             | AssistantsError::Truncated { .. }
             | AssistantsError::Shape { .. },
         ) => (WireField::Null, WireField::Null, WireField::Null),
-        Raised::Local(_) | Raised::Assistants(_) | Raised::Definitions(_) => {
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => {
             (WireField::MISSING, WireField::MISSING, WireField::MISSING)
         }
     }
@@ -121,7 +147,11 @@ fn source(raised: &Raised) -> (String, Option<u16>, String) {
     match raised {
         Raised::Local(message) => (String::from("ValueError"), None, message.clone()),
         Raised::Assistants(error) => assistants(error),
-        Raised::Definitions(error) => definitions(error),
+        Raised::Projected {
+            class,
+            status,
+            message,
+        } => (class.clone(), *status, message.clone()),
     }
 }
 
@@ -130,7 +160,7 @@ fn assistants(error: &AssistantsError) -> (String, Option<u16>, String) {
         AssistantsError::Status { status, body } => (
             sdk_class(*status).to_owned(),
             Some(*status),
-            format!("Error code: {status} - {}", String::from_utf8_lossy(body)),
+            format!("Error code: {status} - {}", replaced_text(body)),
         ),
         AssistantsError::Transport { .. } => {
             (String::from("APIConnectionError"), None, error.to_string())
@@ -155,20 +185,8 @@ fn assistants(error: &AssistantsError) -> (String, Option<u16>, String) {
     }
 }
 
-fn definitions(error: &DefinitionsError) -> (String, Option<u16>, String) {
-    match error {
-        DefinitionsError::Endpoint(endpoint) => (
-            endpoint.class().to_owned(),
-            endpoint.status(),
-            endpoint.to_string(),
-        ),
-        DefinitionsError::Provider { class, message } => (class.clone(), None, message.clone()),
-        _ => (String::from("ValueError"), None, error.to_string()),
-    }
-}
-
 // the pinned openai SDK's status-to-class table inside _make_status_error
-fn sdk_class(status: u16) -> &'static str {
+const fn sdk_class(status: u16) -> &'static str {
     match status {
         400 => "BadRequestError",
         401 => "AuthenticationError",
@@ -183,17 +201,16 @@ fn sdk_class(status: u16) -> &'static str {
 }
 
 fn wrapped(
-    class: &str,
-    status: Option<u16>,
-    message: &str,
+    source: (String, Option<u16>, String),
     raised: &Raised,
     model: &str,
     provider: &str,
     redactor: &Redactor,
 ) -> AssistantCreateFailure {
+    let (class, status, message) = source;
     let body = match raised {
         Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body),
-        Raised::Local(_) | Raised::Assistants(_) | Raised::Definitions(_) => None,
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => None,
     };
     let error_str = match status {
         Some(code) => format!("Error code: {code} - {message}"),
@@ -208,7 +225,7 @@ fn wrapped(
             status_code_is_synthesized: false,
             message: Some(message.to_owned()),
             body,
-            exception_type: class.to_owned(),
+            exception_type: class,
         })),
         redactor,
     );
@@ -221,24 +238,38 @@ fn wrapped(
         code: metadata
             .openai_code
             .map_or(WireField::Null, WireField::Text),
-        message: message.to_owned(),
+        message,
     }
 }
 
 // openai.APIError reads type/param/code from body["error"] when it is a mapping, else from the body itself
-fn flattened(body: &[u8]) -> Option<RawExceptionBody> {
-    let value = serde_json::from_slice::<Value>(body).ok()?;
-    let flat = match value {
-        Value::Object(mut object) => match object.remove("error") {
-            Some(inner @ Value::Object(_)) => inner,
-            Some(_) | None => Value::Object(object),
-        },
-        other => other,
-    };
-    serde_json::from_value(flat).ok()
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ErrorBody {
+    Nested { error: RawExceptionBody },
+    Flat(RawExceptionBody),
 }
 
-fn class_name(class: &ErrorClass) -> &'static str {
+fn flattened(body: &[u8]) -> Option<RawExceptionBody> {
+    match serde_json::from_slice::<ErrorBody>(body).ok()? {
+        ErrorBody::Nested { error } => Some(error),
+        ErrorBody::Flat(flat) => Some(flat),
+    }
+}
+
+// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn replaced_text(body: &[u8]) -> String {
+    let mut text = String::with_capacity(body.len());
+    for chunk in body.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
+}
+
+const fn class_name(class: &ErrorClass) -> &'static str {
     match class {
         ErrorClass::Authentication(_) => "AuthenticationError",
         ErrorClass::NotFound(_) => "NotFoundError",

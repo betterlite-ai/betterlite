@@ -15,12 +15,13 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::assistants::records::AssistantCreate;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::call::{AssistantCreateCall, AssistantCreateResult, AzureCreateCall, OpenAiCreateCall};
 use super::error::{AssistantCreateFailure, Entry, Raised, no_response, raised};
@@ -35,7 +36,7 @@ struct Seen {
     method: String,
     url: String,
     headers: BTreeMap<String, String>,
-    body: Value,
+    body: AssistantCreate,
     deadline: Duration,
 }
 
@@ -47,13 +48,17 @@ struct Scripted {
 
 impl Scripted {
     fn reply(self: &Arc<Self>, status: u16, body: &str) {
+        self.reply_bytes(status, body.as_bytes().to_vec());
+    }
+
+    fn reply_bytes(self: &Arc<Self>, status: u16, body: Vec<u8>) {
         self.replies
             .lock()
             .expect("replies")
             .push(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
-                body: body.as_bytes().to_vec(),
+                body,
             });
     }
 
@@ -64,12 +69,11 @@ impl Scripted {
 
 impl AssistantsTransport for Scripted {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        let body = match &request.body {
-            RequestBody::Json(bytes) => {
-                serde_json::from_slice(bytes).expect("the create body is JSON")
-            }
-            _ => Value::Null,
+        let RequestBody::Json(bytes) = &request.body else {
+            panic!("the create request carries a JSON body");
         };
+        let body = serde_json::from_slice::<AssistantCreate>(bytes)
+            .expect("the create body is an AssistantCreate");
         let mut headers = BTreeMap::new();
         for (name, value) in &request.headers {
             headers.insert(
@@ -170,14 +174,20 @@ fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor")
 }
 
-fn input(extra: Value) -> AssistantCreateInput {
+fn input<Fields: serde::Serialize>(extra: Fields) -> AssistantCreateInput {
     let mut base = json!({"provider": "openai", "model": "gpt-4o-mini"});
-    if let (Some(target), Some(source)) = (base.as_object_mut(), extra.as_object()) {
+    let fields = serde_json::to_value(extra).expect("the extra fields are JSON");
+    if let (Some(target), Some(source)) = (base.as_object_mut(), fields.as_object()) {
         for (key, value) in source {
             target.insert(key.clone(), value.clone());
         }
     }
     serde_json::from_value(base).expect("an assistant create input")
+}
+
+fn create_body<Fields: serde::Serialize>(fields: Fields) -> AssistantCreate {
+    let value = serde_json::to_value(fields).expect("the expected fields are JSON");
+    serde_json::from_value(value).expect("an assistant create body")
 }
 
 fn openai_settings(api_key: &str) -> resource_sdk_settings::Settings {
@@ -274,7 +284,7 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
     assert!(!sent.headers.contains_key("openai-organization"));
     assert_eq!(
         sent.body,
-        json!({
+        create_body(json!({
             "model": "gpt-4o-mini",
             "name": "",
             "description": "",
@@ -285,7 +295,7 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
             "temperature": 0,
             "top_p": 0,
             "response_format": {"type": "json_object"},
-        })
+        }))
     );
 
     // a null for every optional field stays out of the create data
@@ -308,7 +318,7 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
     assert_eq!(result.assistant.id, "asst_a");
     let seen = fixture.transport.seen();
     assert_eq!(seen.len(), 2);
-    assert_eq!(seen[1].body, json!({"model": "gpt-4o-mini"}));
+    assert_eq!(seen[1].body, create_body(json!({"model": "gpt-4o-mini"})));
 }
 
 #[tokio::test]
@@ -346,7 +356,7 @@ async fn assistant_create_credentials() {
         fixture.transport.seen()[0].headers["openai-organization"],
         "org-request"
     );
-    assert_eq!(seen_deadline(&fixture, 0), Duration::from_secs_f64(7.5));
+    assert_eq!(seen_deadline(&fixture, 0), Duration::from_millis(7500));
 
     // the configured values fill in when the request leaves them out, and a zero falls through
     let request = input(json!({"timeout": 0, "request_timeout": 12.0}));
@@ -373,7 +383,7 @@ async fn assistant_create_credentials() {
     assert_eq!(seen_auth(&fixture_empty, 0), "Bearer sk-openai-key");
     assert_eq!(
         seen_deadline(&fixture_empty, 0),
-        Duration::from_secs_f64(7.5)
+        Duration::from_millis(7500)
     );
 
     // with no key the SDK raises its own OpenAIError
@@ -476,7 +486,7 @@ async fn assistant_create_azure_request_values() {
         seen[0].url,
         "https://azure.test/openai/assistants?api-version=2020-01-01"
     );
-    assert_eq!(seen[0].deadline, Duration::from_secs_f64(7.5));
+    assert_eq!(seen[0].deadline, Duration::from_millis(7500));
 
     // a structured timeout is accepted for azure and leaves the deadline at the SDK default
     let request = input(json!({"provider": "azure", "timeout": {"read": 9.0}}));
@@ -568,7 +578,7 @@ async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     );
     assert_eq!(
         fixture.transport.seen()[2].body,
-        json!({"model": "gpt-4o-mini"})
+        create_body(json!({"model": "gpt-4o-mini"}))
     );
 
     // the litellm_params token reaches the SDK and the facade's own token never does
@@ -759,6 +769,27 @@ async fn assistant_create_status_classes(#[case] status: u16, #[case] class: &st
     let sync = failure(service.create_assistants(&input(json!({}))).await);
     assert_eq!(sync.class, class);
     assert_eq!(sync.status, Some(status));
+}
+
+#[tokio::test]
+async fn assistant_create_status_message() {
+    let redactor = redactor();
+    let body = r#"{"error":{"message":"no such assistant","type":"invalid_request_error"}}"#;
+    let fixture = Fixture::new(openai_settings("sk-test")).reply(404, body);
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+    let sync = failure(service.create_assistants(&input(json!({}))).await);
+    assert_eq!(sync.message, format!("Error code: 404 - {body}"));
+
+    // a body that is not UTF-8 decodes like httpx's errors="replace": one U+FFFD per bad sequence
+    let fixture_bad = Fixture::new(openai_settings("sk-test"));
+    fixture_bad
+        .transport
+        .reply_bytes(500, b"oops \xff".to_vec());
+    let resolution = fixture_bad.resolution();
+    let service = fixture_bad.service(&resolution, &redactor);
+    let sync = failure(service.create_assistants(&input(json!({}))).await);
+    assert_eq!(sync.message, "Error code: 500 - oops \u{fffd}");
 }
 
 #[test]
