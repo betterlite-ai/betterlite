@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, tzinfo
-from typing import Final, Literal, Self, TypedDict, override
-from unittest.mock import patch
+from typing import Final, Literal, Self, TypedDict
 
 import litellm
 from litellm.proxy._types import (
@@ -15,20 +14,23 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
     _decode_json_string_column,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L355-L358
     _generate_budget_windows,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L394-L407
     _regenerate_request_as_update_request,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L450-L462
-    _set_key_rotation_fields,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L545-L579
+    _set_key_rotation_fields,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L545-L579
     _update_policy_request,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L378-L391
     _validate_key_alias_format,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7739-L7773
     _verification_token_from_row,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L361-L363
-    handle_key_type,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L852-L867
-    validate_model_max_budget,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7809-L7840
+    handle_key_type,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L852-L867
+    validate_model_max_budget,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7809-L7840
 )
 from litellm.types.secret_managers.main import KeyManagementSettings
 from pydantic import JsonValue, TypeAdapter
+from pydantic_core import to_json
+from typing_extensions import override
 
 _JSON: Final = TypeAdapter(JsonValue)
-_DATETIME: Final = TypeAdapter(datetime)
+_WINDOW: Final = TypeAdapter(dict[str, JsonValue])
 
 
+# the case supplies the request time, so every LiteLLM datetime.now has one answer
 class FrozenClock(datetime):
     fixed: datetime = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -115,43 +117,41 @@ class Input(TypedDict):
     calls: list[Call]
 
 
-def _json_value(value: object) -> JsonValue:
-    if isinstance(value, datetime):
-        return _JSON.validate_json(_DATETIME.dump_json(value))
-    return _JSON.validate_python(value)
+def _alias_answer(call: AliasCall) -> JsonValue:
+    litellm.key_alias_pattern = call["pattern"]
+    litellm.enable_key_alias_format_validation = call["enabled"]
+    _validate_key_alias_format(call["alias"])
+    return None
 
 
 def _rotation_answer(call: RotationCall) -> JsonValue:
     FrozenClock.fixed = datetime.fromisoformat(call["now"])
     data: dict[str, JsonValue] = dict(call["data"])
     settings = KeyManagementSettings(store_virtual_keys=call["store_virtual_keys"])
-    with (
-        patch.object(key_management_endpoints, "datetime", FrozenClock),
-        patch.object(litellm, "_key_management_settings", settings),
-    ):
-        _set_key_rotation_fields(
-            data,
-            call["auto_rotate"],
-            call["rotation_interval"],
-            call["existing_alias"],
-        )
-    stamped: dict[str, JsonValue] = {key: _json_value(value) for key, value in data.items()}
-    return _JSON.validate_python(stamped)
+    litellm._key_management_settings = settings  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1305-L1309
+    key_management_endpoints.datetime = FrozenClock  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L530-L542
+    _set_key_rotation_fields(
+        data,
+        call["auto_rotate"],
+        call["rotation_interval"],
+        call["existing_alias"],
+    )
+    return _JSON.validate_json(to_json(data))
 
 
 def _effective_policy_answer(call: EffectivePolicyCall) -> JsonValue:
     existing = _verification_token_from_row(call["existing"])
     request: UpdateKeyRequest | RegenerateKeyRequest
     if call["operation"] == "update":
-        request = UpdateKeyRequest.model_validate(call["request"])
+        request = UpdateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441
     else:
-        request = RegenerateKeyRequest.model_validate(call["request"])
+        request = RegenerateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487
     record = _update_policy_request(call["operation"], existing, call["patch"], request)
     return _JSON.validate_json(record.model_dump_json())
 
 
 def _regenerate_answer(call: RegenerateCall) -> JsonValue:
-    request = RegenerateKeyRequest.model_validate(call["body"])
+    request = RegenerateKeyRequest.model_validate(call["body"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487
     patch_request = _regenerate_request_as_update_request(call["key"], request)
     if patch_request is None:
         return None
@@ -160,30 +160,20 @@ def _regenerate_answer(call: RegenerateCall) -> JsonValue:
 
 def _budget_windows_answer(call: BudgetWindowsCall) -> JsonValue:
     FrozenClock.fixed = datetime.fromisoformat(call["now"])
-    data = GenerateKeyRequest.model_validate({"budget_limits": call["budget_limits"]})
-    with patch.object(timezone_utils, "datetime", FrozenClock):
-        windows = _generate_budget_windows(data.budget_limits)
+    limits: JsonValue = _JSON.validate_python(call["budget_limits"])
+    body: dict[str, JsonValue] = {"budget_limits": limits}
+    data = GenerateKeyRequest.model_validate(body)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376
+    timezone_utils.datetime = FrozenClock  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/timezone_utils.py#L64-L71
+    windows = _generate_budget_windows(data.budget_limits)
     if windows is None:
         return None
-    return _JSON.validate_python([dict(window) for window in windows])
-
-
-def _alias_answer(call: AliasCall) -> JsonValue:
-    with (
-        patch.object(litellm, "key_alias_pattern", call["pattern"]),
-        patch.object(litellm, "enable_key_alias_format_validation", call["enabled"]),
-    ):
-        _validate_key_alias_format(call["alias"])
-    return None
+    rows: list[JsonValue] = [_WINDOW.validate_python(window) for window in windows]
+    return rows
 
 
 def _model_budget_answer(call: ModelBudgetCall) -> JsonValue:
     validate_model_max_budget(call["budgets"])
     return None
-
-
-def _json_column_answer(call: JsonColumnCall) -> JsonValue:
-    return _JSON.validate_python(_decode_json_string_column(call["column"], call["value"]))
 
 
 def _verification_row_answer(call: VerificationRowCall) -> JsonValue:
@@ -192,29 +182,32 @@ def _verification_row_answer(call: VerificationRowCall) -> JsonValue:
 
 
 def _key_type_answer(call: KeyTypeCall) -> JsonValue:
-    data = GenerateKeyRequest.model_validate(call["request"])
-    handled: dict[str, JsonValue] = handle_key_type(data, call["columns"])
-    return _JSON.validate_python(handled)
+    data = GenerateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376
+    handled: JsonValue = _JSON.validate_python(handle_key_type(data, call["columns"]))  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L852-L867
+    return handled
 
 
 def answer(call: Call) -> JsonValue:
+    result: JsonValue = None
     match call["function"]:
         case "alias":
             result = _alias_answer(call)
-        case "model_budget":
-            result = _model_budget_answer(call)
-        case "json_column":
-            result = _json_column_answer(call)
-        case "verification_row":
-            result = _verification_row_answer(call)
         case "rotation":
             result = _rotation_answer(call)
         case "effective_policy":
             result = _effective_policy_answer(call)
-        case "regenerate":
-            result = _regenerate_answer(call)
+        case "model_budget":
+            result = _model_budget_answer(call)
+        case "json_column":
+            result = _JSON.validate_python(
+                _decode_json_string_column(call["column"], call["value"])
+            )
+        case "verification_row":
+            result = _verification_row_answer(call)
         case "key_type":
             result = _key_type_answer(call)
+        case "regenerate":
+            result = _regenerate_answer(call)
         case "budget_windows":
             result = _budget_windows_answer(call)
     return result
@@ -223,13 +216,13 @@ def answer(call: Call) -> JsonValue:
 def call_outcome(call: Call) -> JsonValue:
     try:
         value = answer(call)
-    except (ValueError, TypeError, KeyError, ProxyException):
-        return _JSON.validate_python({"ok": False})
+    except (ValueError, TypeError, KeyError, ProxyException):  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
+        return {"ok": False}
     if call["function"] in ("alias", "model_budget"):
-        return _JSON.validate_python({"ok": True})
-    return _JSON.validate_python({"ok": True, "value": value})
+        return {"ok": True}
+    return {"ok": True, "value": value}
 
 
 def run(input_value: Input) -> JsonValue:
-    outcomes = [call_outcome(call) for call in input_value["calls"]]
+    outcomes: list[JsonValue] = [call_outcome(call) for call in input_value["calls"]]
     return _JSON.validate_python(outcomes)
