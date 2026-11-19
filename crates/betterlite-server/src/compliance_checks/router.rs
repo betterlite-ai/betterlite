@@ -63,7 +63,9 @@ async fn check(
     } else {
         Regulation::EuAiAct
     };
-    evaluate(&state, caller, &body, regulation).await.map(Json)
+    Box::pin(evaluate(&state, caller, &body, regulation))
+        .await
+        .map(Json)
 }
 
 // LiteLLM validates the body in a FastAPI dependency, so a 422 never reaches the management wrapper.

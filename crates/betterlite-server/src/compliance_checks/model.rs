@@ -106,7 +106,7 @@ impl ModeMapping {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModeBranch {
     Text(String),
-    List(Vec<ModeBranch>),
+    List(Vec<Self>),
     Other,
 }
 

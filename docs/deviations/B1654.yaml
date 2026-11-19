@@ -2,9 +2,9 @@ task: B1654
 deviations:
   - what: >-
       POST /compliance/eu-ai-act and POST /compliance/gdpr answer the declared 422 validation envelope when the JSON
-      body is null, a list or another non-object, and when the body is empty or not valid JSON. LiteLLM reads
-      request_data.get("model") inside its auth middleware before FastAPI validates the body, so those requests raise
-      there and come back as 500 Internal Server Error text.
+      body is null, a list or another non-object. LiteLLM reads request_data.get("model") inside its auth middleware
+      before FastAPI validates the body, so those requests raise there and the proxy's generic handler answers 500
+      with an internal_server_error JSON body.
     why: >-
       A 500 where a 4xx belongs: the request never reaches authentication or the compliance code, and the declared
       request model rejects the shape. No working setup can rely on the crash, and docs/compatibility.md keeps the
@@ -12,12 +12,13 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L589
   - what: >-
-      The same middleware crash is also reachable for a list body through the auth exception handler's model lookup.
-      betterlite answers the 422 envelope for every non-object body, and the native test
-      a_non_object_body_is_rejected_instead_of_failing_inside_auth proves it.
+      A body that is not valid JSON gets a 422 whose loc is only ["body"], while LiteLLM reports the decoder offset
+      in the loc as ["body", <column>] and keeps the message JSON decode error. The column comes from CPython's json
+      decoder and has no serde_json equivalent, and a YAML HTTP case cannot send a malformed body for the oracle to
+      compare.
     why: >-
-      One behavior for every non-object body: the decoder's model_attributes_type issue names the body, instead of
-      LiteLLM's unhandled AttributeError in two different middleware paths.
+      The status, type, message and body-level loc match; only the column inside loc differs, and neither proxy reaches
+      authentication or compliance evaluation for such a body.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L221
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2046
 kept_bugs: []

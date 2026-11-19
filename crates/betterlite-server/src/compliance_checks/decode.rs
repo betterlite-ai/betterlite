@@ -60,13 +60,13 @@ fn checked(value: &JsonValue) -> Result<ComplianceRequest, ComplianceError> {
     if !issues.is_empty() {
         return Err(ComplianceError::Request(issues));
     }
-    let Some(request_id) = request_id else {
+    let Some(found_id) = request_id else {
         return Err(ComplianceError::Request(vec![field_issue(
             "missing", REQUEST_ID, REQUIRED,
         )]));
     };
     Ok(ComplianceRequest {
-        request_id,
+        request_id: found_id,
         user_id,
         model,
         timestamp,

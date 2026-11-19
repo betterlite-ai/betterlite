@@ -501,19 +501,19 @@ async fn both_routes_answer_ordered_article_results() {
     assert_eq!(body["checks"][1]["article"], "Art. 5");
     assert_eq!(body["checks"][2]["article"], "Art. 12");
 
-    let (status, text) = post(
+    let (gdpr_status, gdpr_text) = post(
         app,
         "/compliance/gdpr",
         r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t",
             "guardrail_information":[{"guardrail_status":"success"}]}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    let body: JsonValue = serde_json::from_str(&text).unwrap();
-    assert_eq!(body["regulation"], "GDPR");
-    assert_eq!(body["compliant"], true);
-    assert_eq!(body["checks"][1]["article"], "Art. 5(1)(c)");
-    assert_eq!(body["checks"][2]["article"], "Art. 30");
+    assert_eq!(gdpr_status, StatusCode::OK);
+    let gdpr_body: JsonValue = serde_json::from_str(&gdpr_text).unwrap();
+    assert_eq!(gdpr_body["regulation"], "GDPR");
+    assert_eq!(gdpr_body["compliant"], true);
+    assert_eq!(gdpr_body["checks"][1]["article"], "Art. 5(1)(c)");
+    assert_eq!(gdpr_body["checks"][2]["article"], "Art. 30");
 }
 
 #[tokio::test]
@@ -565,15 +565,15 @@ async fn invalid_shapes_return_the_fastapi_error_envelope() {
         r#"{"detail":[{"type":"missing","loc":["body","request_id"],"msg":"Field required"}]}"#
     );
 
-    let (status, text) = post(
+    let (gdpr_status, gdpr_text) = post(
         application(),
         "/compliance/gdpr",
         r#"{"request_id":"r","guardrail_information":[null]}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(gdpr_status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
-        text,
+        gdpr_text,
         r#"{"detail":[{"type":"dict_type","loc":["body","guardrail_information",0],"msg":"Input should be a valid dictionary"}]}"#
     );
 }
@@ -611,8 +611,11 @@ async fn the_application_mounts_both_routes_behind_the_key_check() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(r#"{"request_id":"r"}"#))
         .unwrap();
-    let response = application.oneshot(anonymous).await.unwrap();
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let anonymous_response = application.oneshot(anonymous).await.unwrap();
+    assert_eq!(
+        anonymous_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 }
 
 #[rstest]
