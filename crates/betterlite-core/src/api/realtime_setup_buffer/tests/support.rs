@@ -181,14 +181,15 @@ impl BackendLog {
     }
 
     pub(super) fn sent_text(&self) -> Vec<String> {
-        lock(&self.0)
-            .sent
-            .iter()
-            .map(|message| match message {
-                RealtimeMessage::Text(text) => text.clone(),
-                RealtimeMessage::Binary(bytes) => String::from_utf8(bytes.clone()).unwrap(),
-            })
-            .collect()
+        let data = lock(&self.0);
+        data.sent.iter().map(text_of).collect()
+    }
+}
+
+fn text_of(message: &RealtimeMessage) -> String {
+    match message {
+        RealtimeMessage::Text(text) => text.clone(),
+        RealtimeMessage::Binary(bytes) => String::from_utf8(bytes.clone()).unwrap(),
     }
 }
 
