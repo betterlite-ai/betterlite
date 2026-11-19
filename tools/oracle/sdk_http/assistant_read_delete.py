@@ -1,11 +1,11 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from typing import Literal, TypeAlias, TypeVar
+from typing import Literal, TypeAlias, TypedDict, cast
 
 import litellm
 import openai
+from litellm import adelete_assistant, aget_assistants, delete_assistant, get_assistants  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L73
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from openai.pagination import AsyncCursorPage, SyncCursorPage
 from openai.types.beta import AssistantDeleted
@@ -13,16 +13,11 @@ from openai.types.beta.assistant import Assistant
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 SENTINEL = "$API_BASE"
-T = TypeVar("T")
 
 Supplied: TypeAlias = OpenAI | AsyncOpenAI | AzureOpenAI | AsyncAzureOpenAI
 
 Page: TypeAlias = SyncCursorPage[Assistant] | AsyncCursorPage[Assistant]
-Answer: TypeAlias = (
-    Page | AssistantDeleted | Coroutine[None, None, SyncCursorPage[Assistant] | AssistantDeleted]
-)
-
-KwargValue: TypeAlias = JsonValue | Supplied
+Answer: TypeAlias = Page | AssistantDeleted | Coroutine[None, None, Page | AssistantDeleted]
 
 
 class Strict(BaseModel):
@@ -64,6 +59,7 @@ class Input(Strict):
 
 class Globals(Strict):
     api_base: str | None = None
+    api_version: str | None = None
     api_key: str | None = None
     openai_key: str | None = None
     azure_key: str | None = None
@@ -77,6 +73,26 @@ class Run(Strict):
 
 class AssistantReadDeleteCall(Strict):
     runs: list[Run]
+
+
+class CallArgs(TypedDict, total=False):
+    custom_llm_provider: Literal["openai", "azure"]
+    client: AsyncOpenAI | None
+    assistant_id: str
+    api_key: str | None
+    api_base: str | None
+    api_version: str | None
+    max_retries: int | None
+    timeout: str | float
+    request_timeout: float | None
+    azure_ad_token: str
+    after: str | None
+    before: str | None
+    limit: int | None
+    order: str | None
+    extra_body: dict[str, JsonValue] | None
+    aget_assistants: JsonValue
+    async_delete_assistants: JsonValue
 
 
 class AssistantView(BaseModel):
@@ -126,12 +142,6 @@ class Outcome(BaseModel):
     runs: list[RunOutcome]
 
 
-LIST_SYNC = partial(litellm.get_assistants)
-LIST_ASYNC = partial(litellm.aget_assistants)
-DELETE_SYNC = partial(litellm.delete_assistant)
-DELETE_ASYNC = partial(litellm.adelete_assistant)
-
-
 class AssistantReadDeleteRequest(Strict):
     assistant_read_delete: AssistantReadDeleteCall
 
@@ -142,7 +152,9 @@ class AssistantReadDeleteRequest(Strict):
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
     set_globals(run.module_globals, api_base)
-    client = supplied_client(run.invocation.client, api_base)
+    # the async wrappers declare AsyncOpenAI | None, and the sync wrapper takes the same instance
+    supplied = supplied_client(run.invocation.client, api_base)
+    client: AsyncOpenAI | None = cast("AsyncOpenAI | None", supplied)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L45
     sync = run_mode(run.invocation, client, api_base, "sync") if run.entries != "async" else None
     asynchronous = (
         run_mode(run.invocation, client, api_base, "async") if run.entries != "sync" else None
@@ -152,6 +164,7 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
 
 def set_globals(module_globals: Globals, api_base: str) -> None:
     litellm.api_base = base_of(module_globals.api_base, api_base)
+    litellm.api_version = module_globals.api_version
     litellm.api_key = module_globals.api_key
     litellm.openai_key = module_globals.openai_key
     litellm.azure_key = module_globals.azure_key
@@ -171,76 +184,78 @@ def supplied_client(spec: SuppliedClient | None, api_base: str) -> Supplied | No
         return OpenAI(api_key=spec.api_key, base_url=endpoint)
     if spec.kind == "async_openai":
         return AsyncOpenAI(api_key=spec.api_key, base_url=endpoint)
+    # a null endpoint falls back to AZURE_OPENAI_ENDPOINT, as the implementation overload declares
+    azure_endpoint = cast("str", endpoint)  # https://github.com/openai/openai-python/blob/03b3ec474241fe3a73c4818dc6b886da28faaf91/src/openai/lib/azure.py#L169-L173
     if spec.kind == "azure_openai":
         return AzureOpenAI(
-            api_key=spec.api_key, azure_endpoint=endpoint, api_version=spec.api_version
+            api_key=spec.api_key, azure_endpoint=azure_endpoint, api_version=spec.api_version
         )
     return AsyncAzureOpenAI(
-        api_key=spec.api_key, azure_endpoint=endpoint, api_version=spec.api_version
+        api_key=spec.api_key, azure_endpoint=azure_endpoint, api_version=spec.api_version
     )
 
 
-def method_kwargs(invocation: Input, api_base: str) -> dict[str, KwargValue]:
+def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> CallArgs:
     params = invocation.params
-    values: tuple[tuple[str, KwargValue], ...] = (
-        ("api_key", params.api_key),
-        ("api_version", params.api_version),
-        ("max_retries", params.max_retries),
-        ("request_timeout", params.request_timeout),
-        ("azure_ad_token", params.azure_ad_token),
-        ("timeout", params.timeout),
-        ("after", invocation.after),
-        ("before", invocation.before),
-        ("limit", invocation.limit),
-        ("order", invocation.order),
-    )
-    kwargs: dict[str, KwargValue] = {name: value for name, value in values if value is not None}
-    if params.api_base is not None:
-        kwargs["api_base"] = base_of(params.api_base, api_base)
-    if "aget_assistants" in invocation.model_fields_set:
-        kwargs["aget_assistants"] = invocation.aget_assistants
-    if "async_delete_assistants" in invocation.model_fields_set:
-        kwargs["async_delete_assistants"] = invocation.async_delete_assistants
+    # the case names any provider, and LiteLLM's wrappers reject the rest themselves
+    args: CallArgs = {
+        "custom_llm_provider": cast("Literal['openai', 'azure']", invocation.provider),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L73-L80
+        "client": client,
+        "api_key": params.api_key,
+        "api_base": base_of(params.api_base, api_base),
+        "api_version": params.api_version,
+        "max_retries": params.max_retries,
+        "request_timeout": params.request_timeout,
+        "after": invocation.after,
+        "before": invocation.before,
+        "limit": invocation.limit,
+        "order": invocation.order,
+        "aget_assistants": invocation.aget_assistants,
+        "async_delete_assistants": invocation.async_delete_assistants,
+    }
+    if invocation.assistant_id is not None:
+        args["assistant_id"] = invocation.assistant_id
+    if params.timeout is not None:
+        args["timeout"] = params.timeout
+    if params.azure_ad_token is not None:
+        args["azure_ad_token"] = params.azure_ad_token
     if "extra_body" in invocation.model_fields_set:
-        kwargs["extra_body"] = invocation.extra_body
-    return kwargs
+        args["extra_body"] = invocation.extra_body
+    return args
 
 
 def run_mode(
-    invocation: Input, client: Supplied | None, api_base: str, mode: Literal["sync", "async"]
+    invocation: Input, client: AsyncOpenAI | None, api_base: str, mode: Literal["sync", "async"]
 ) -> Mode:
-    kwargs: dict[str, KwargValue] = {
-        "custom_llm_provider": invocation.provider,
-        "client": client,
-        **method_kwargs(invocation, api_base),
-    }
-    if invocation.operation == "delete":
-        kwargs["assistant_id"] = invocation.assistant_id
-    value, error = call_entry(invocation, kwargs, mode)
+    args = call_args(invocation, client, api_base)
+    entry = run_async if mode == "async" else entry_sync
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(entry, invocation, args)
+    error = future.exception()
     if error is not None:
         return Mode(failure=failure_view(error))
-    if value is None:
-        raise TypeError("the call returned nothing")
-    return value_mode(value)
+    return value_mode(future.result())
 
 
-def call_entry(
-    invocation: Input, kwargs: dict[str, KwargValue], mode: Literal["sync", "async"]
-) -> tuple[Answer | None, BaseException | None]:
-    listing = invocation.operation == "list"
-    if mode == "async":
-        function = LIST_ASYNC if listing else DELETE_ASYNC
-        return capture(partial(asyncio.run, function(**kwargs)))
-    return capture(partial(LIST_SYNC if listing else DELETE_SYNC, **kwargs))
+def entry_sync(invocation: Input, args: CallArgs) -> Answer:
+    if invocation.operation == "list":
+        page: SyncCursorPage[Assistant] = get_assistants(**args)
+        return page
+    deleted: AssistantDeleted | Coroutine[None, None, AssistantDeleted] = delete_assistant(**args)
+    return deleted
 
 
-def capture(call: Callable[[], T]) -> tuple[T | None, BaseException | None]:
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(call)
-        error = future.exception()
-        if error is not None:
-            return None, error
-        return future.result(), None
+async def entry_async(invocation: Input, args: CallArgs) -> Answer:
+    if invocation.operation == "list":
+        page: AsyncCursorPage[Assistant] = await aget_assistants(**args)
+        return page
+    deleted: AssistantDeleted = await adelete_assistant(**args)
+    return deleted
+
+
+def run_async(invocation: Input, args: CallArgs) -> Answer:
+    with asyncio.Runner() as runner:
+        return runner.run(entry_async(invocation, args))
 
 
 def value_mode(value: Answer) -> Mode:
@@ -272,6 +287,8 @@ def failure_view(error: BaseException) -> FailureView:
             param = error.param
             code = error.code
             message = error.message
+        case BaseException():
+            message = str(error)
     return FailureView(
         class_name=type(error).__name__,
         status=status,

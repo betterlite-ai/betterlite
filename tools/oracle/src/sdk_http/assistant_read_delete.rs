@@ -33,6 +33,7 @@ const API_BASE_SENTINEL: &str = "$API_BASE";
 #[serde(default, deny_unknown_fields)]
 pub struct Globals {
     pub api_base: Option<String>,
+    pub api_version: Option<String>,
     pub api_key: Option<SecretString>,
     pub openai_key: Option<SecretString>,
     pub azure_key: Option<SecretString>,
@@ -267,6 +268,7 @@ fn resolve_settings(
         .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let mut settings = config.sections.resource_sdk_settings;
     settings.api_base = globals.api_base.clone().or(settings.api_base);
+    settings.api_version = globals.api_version.clone().or(settings.api_version);
     settings.api_key = globals.api_key.clone().or(settings.api_key);
     settings.openai_key = globals.openai_key.clone().or(settings.openai_key);
     settings.azure_key = globals.azure_key.clone().or(settings.azure_key);
