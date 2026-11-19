@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::pending;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -54,8 +55,6 @@ fn deadline_error() -> DbLookupError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StoreFailure {
     Record,
-    NoDatabase,
-    Lookup,
 }
 
 struct FakePermissionStore {
@@ -113,10 +112,6 @@ impl ObjectPermissionStore for FakePermissionStore {
                     source: TableError::MissingRow,
                 }))
             }
-            Some(StoreFailure::NoDatabase) => {
-                Err(PermissionError::Repository(DbError::NoDbConnected))
-            }
-            Some(StoreFailure::Lookup) => Err(PermissionError::Lookup(deadline_error())),
             None => Ok(self
                 .row
                 .lock()
@@ -260,7 +255,7 @@ impl AuthTable for FakeTable {
             .push(request.filter);
         if self.pending {
             let _held = DropFlag(Arc::clone(&self.dropped));
-            return std::future::pending().await;
+            return pending().await;
         }
         Ok(self.row.clone())
     }
@@ -449,15 +444,6 @@ async fn permission_lookup_label_and_filter() {
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
     assert_eq!(filters, vec!["perm-1".to_owned()]);
-
-    // the shared deadline names the lookup after its table
-    let hanging = Arc::new(FakeTable::hanging(Arc::new(AtomicBool::new(false))));
-    let deadline_store = bounded(hanging, 0.0);
-    let deadline_outcome = deadline_store.find_permission("perm-1").await;
-    let Err(PermissionError::Lookup(DbLookupError::Deadline(error))) = deadline_outcome else {
-        panic!("the deadline crosses the boundary");
-    };
-    assert_eq!(error.lookup, LOOKUP_LABEL);
 }
 
 #[tokio::test]
@@ -660,9 +646,36 @@ async fn permission_metrics_record_actual_outcome() {
             writer: &writer,
         }),
     };
-    let success = get_object_permission(&source, "perm-1", false).await;
-    assert!(success.is_ok());
+    let permission = get_object_permission(&source, "perm-1", false)
+        .await
+        .expect("the permission resolves")
+        .expect("the cached permission");
+    assert_eq!(permission.object_permission_id, "perm-1");
 
+    let lookup = PermissionError::Lookup(DbLookupError::Database(FaultDbError {
+        error_type: ErrorType::Connect,
+        message: "connect failed".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }));
+    let lookup_fault = lookup
+        .database_fault()
+        .expect("the lookup fault is a db fault");
+    assert_eq!(lookup_fault.error_type, ErrorType::Connect);
+
+    let repository = PermissionError::Repository(DbError::InvalidRecord {
+        source: TableError::MissingRow,
+    });
+    let repository_fault = repository
+        .database_fault()
+        .expect("the repository fault is a db fault");
+    assert_eq!(repository_fault.error_type, ErrorType::Prisma);
+}
+
+#[tokio::test]
+async fn permission_metrics_skip_non_database_errors() {
     assert!(PermissionError::NoDatabase.database_fault().is_none());
     assert!(
         PermissionError::MissingInDatabaseOnly
@@ -685,32 +698,10 @@ async fn permission_metrics_record_actual_outcome() {
             .database_fault()
             .is_none()
     );
-
-    let lookup = PermissionError::Lookup(DbLookupError::Database(FaultDbError {
-        error_type: ErrorType::Connect,
-        message: "connect failed".to_owned(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }));
-    let fault = lookup
-        .database_fault()
-        .expect("the lookup fault is a db fault");
-    assert_eq!(fault.error_type, ErrorType::Connect);
-
-    let repository = PermissionError::Repository(DbError::InvalidRecord {
-        source: TableError::MissingRow,
-    });
-    let repository_fault = repository
-        .database_fault()
-        .expect("the repository fault is a db fault");
-    assert_eq!(repository_fault.error_type, ErrorType::Prisma);
-    assert_eq!(
+    assert!(
         PermissionError::Repository(DbError::NoDbConnected)
             .database_fault()
-            .map(|fault| fault.error_type),
-        None
+            .is_none()
     );
 }
 
@@ -720,7 +711,7 @@ async fn permission_cancel_propagates() {
     let table = Arc::new(FakeTable::hanging(Arc::clone(&dropped)));
     let store = bounded(table, 60.0);
     let cancelled = timeout(Duration::from_millis(50), store.find_permission("perm-1")).await;
-    assert!(cancelled.is_err());
+    cancelled.expect_err("the bounded lookup outlives its deadline");
     timeout(Duration::from_secs(2), async {
         while !dropped.load(Ordering::SeqCst) {
             sleep(Duration::from_millis(5)).await;

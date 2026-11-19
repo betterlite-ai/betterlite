@@ -25,11 +25,11 @@ use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 use super::fixtures;
 use super::support::{auth, json};
 use crate::auth_cache::{AuthCache, gateway_cache};
-use crate::auth_prefetch::fill::{PrefetchClock, SystemPrefetchClock};
+use crate::auth_prefetch::fill::{PrefetchClock as _, SystemPrefetchClock};
 use crate::auth_prefetch::memory::PrefetchCache;
 use crate::auth_prefetch::orchestrator::AdmissionCounterBinding;
 use crate::auth_prefetch::permission::lookup::ObjectPermissionCache;
-use crate::auth_prefetch::redis_rows::{PrefetchRedis, RedisRows, RedisRowsError};
+use crate::auth_prefetch::redis_rows::{PrefetchRedis as _, RedisRows, RedisRowsError};
 use crate::spend_counter_batch::scope::SpendCounterScope;
 
 const CLOCK_SECONDS: f64 = 1000.0;
@@ -159,7 +159,7 @@ fn real_cache_memory_roundtrip() {
         .set(
             "prefetch-key",
             CacheValue::Text("row".to_owned()),
-            Some(30.0),
+            Some(30.0_f64),
         )
         .expect("the memory write");
     assert_eq!(
@@ -173,7 +173,7 @@ async fn real_cache_partitions_and_redis() {
     let cache = real_cache(Some(MANAGEMENT_TTL));
     let hex = "c".repeat(64);
     PrefetchCache::memory_for(&cache, &hex)
-        .set(&hex, CacheValue::Text("key".to_owned()), Some(5.0))
+        .set(&hex, CacheValue::Text("key".to_owned()), Some(5.0_f64))
         .expect("the key partition write");
     assert_eq!(
         PrefetchCache::memory_for(&cache, &hex).get(&hex),
@@ -230,7 +230,7 @@ async fn redis_rows_direct_read_and_guards() {
     };
     assert!(fields.is_empty());
     assert!(matches!(
-        rows.queue_set("k", &Json::Text("v".to_owned()), Some(1.0)),
+        rows.queue_set("k", &Json::Text("v".to_owned()), Some(1.0_f64)),
         Err(RedisRowsError::NoBatch)
     ));
     let outcome = rows
@@ -252,7 +252,10 @@ async fn redis_rows_batch_scope_detection() {
 #[test]
 fn system_clock_reads_unix_seconds() {
     let now = SystemPrefetchClock.now();
-    assert!(now > 1_700_000_000.0, "the clock reads unix seconds: {now}");
+    assert!(
+        now > 1_700_000_000.0_f64,
+        "the clock reads unix seconds: {now}"
+    );
 }
 
 #[tokio::test]

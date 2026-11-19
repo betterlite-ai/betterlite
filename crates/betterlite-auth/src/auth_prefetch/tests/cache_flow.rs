@@ -55,7 +55,7 @@ fn owner<'context>(
 ) -> OwnerPrefetch<'context> {
     OwnerPrefetch {
         cache,
-        database: database.map(|database| -> &dyn PrefetchDatabase { database }),
+        database: database.map(|rows| -> &dyn PrefetchDatabase { rows }),
         clock,
         organization_ttl: ORGANIZATION_TTL,
     }
@@ -270,7 +270,7 @@ async fn ttl_none_omits_memory_argument() {
         vec![
             ("user-1", Some(MANAGEMENT_TTL)),
             ("team_id:team-1", Some(MANAGEMENT_TTL)),
-            ("team-1_user-1", Some(5.0)),
+            ("team-1_user-1", Some(5.0_f64)),
             ("team_membership:user-1:team-1", None),
         ]
     );
@@ -448,7 +448,7 @@ async fn memory_writes_entry_order() {
 #[tokio::test]
 async fn db_membership_memory_uses_default_ttl() {
     let mut cache = FakeCache::new(MANAGEMENT_TTL);
-    cache.default_memory_ttl = Some(600.0);
+    cache.default_memory_ttl = Some(600.0_f64);
     let database = member_rows();
     let clock = FixedClock { now: 10.0 };
     owner(&cache, Some(&database), &clock)
@@ -465,8 +465,8 @@ async fn db_membership_memory_uses_default_ttl() {
         vec![
             Some(MANAGEMENT_TTL),
             Some(MANAGEMENT_TTL),
-            Some(5.0),
-            Some(600.0),
+            Some(5.0_f64),
+            Some(600.0_f64),
         ]
     );
 }
@@ -475,7 +475,7 @@ async fn db_membership_memory_uses_default_ttl() {
 async fn redis_retains_original_none_ttl() {
     let redis = Arc::new(FakeRedis::batch());
     let mut cache = FakeCache::with_redis(MANAGEMENT_TTL, Arc::clone(&redis));
-    cache.default_memory_ttl = Some(600.0);
+    cache.default_memory_ttl = Some(600.0_f64);
     let database = member_rows();
     let clock = FixedClock { now: 10.0 };
     owner(&cache, Some(&database), &clock)
@@ -491,7 +491,7 @@ async fn redis_retains_original_none_ttl() {
         vec![
             ("user-1".to_owned(), Some(MANAGEMENT_TTL)),
             ("team_id:team-1".to_owned(), Some(MANAGEMENT_TTL)),
-            ("team-1_user-1".to_owned(), Some(5.0)),
+            ("team-1_user-1".to_owned(), Some(5.0_f64)),
             (
                 "team_membership:user-1:team-1".to_owned(),
                 Option::<f64>::None
@@ -508,7 +508,7 @@ async fn redis_retains_original_none_ttl() {
     let pipelines = pipeline_redis.pipelines();
     assert_eq!(pipelines.len(), 1);
     assert_eq!(pipelines[0].len(), 4);
-    assert_eq!(pipelines[0][2].ttl, Some(5.0));
+    assert_eq!(pipelines[0][2].ttl, Some(5.0_f64));
     assert_eq!(pipelines[0][3].ttl, None);
 }
 
@@ -582,7 +582,7 @@ async fn owner_prefetch_cancellation_propagates() {
         prefetch.prefetch(&refs_user("user-1")),
     )
     .await;
-    assert!(cancelled.is_err());
+    cancelled.expect_err("the prefetch outlives its deadline");
     timeout(Duration::from_secs(2), async {
         while !dropped.load(Ordering::SeqCst) {
             sleep(Duration::from_millis(5)).await;
@@ -641,8 +641,8 @@ async fn identity_uses_selected_partition() {
         cache.ordinary.get_value(&end_user),
         Some(CacheValue::Text("registry".to_owned()))
     );
-    assert_eq!(cache.key_object.writes()[0].ttl, Some(30.0));
-    assert_eq!(cache.ordinary.writes()[0].ttl, Some(30.0));
+    assert_eq!(cache.key_object.writes()[0].ttl, Some(30.0_f64));
+    assert_eq!(cache.ordinary.writes()[0].ttl, Some(30.0_f64));
 }
 
 #[tokio::test]
@@ -673,7 +673,7 @@ async fn identity_memory_write_failure_propagates() {
     cache.ordinary.fail_writes_for("end_user_id:u");
     let prefetch = IdentityPrefetch { cache: &cache };
     let outcome = prefetch.prefetch(&["end_user_id:u".to_owned()]).await;
-    assert!(outcome.is_err());
+    outcome.expect_err("the memory write failure escapes the prefetch");
 }
 
 #[tokio::test]

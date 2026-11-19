@@ -1,16 +1,19 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::future::pending;
+use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_cache::backend::BackendError;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::postgres_store::errors::DbError;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::auth_cache::keys::{Partition, partition};
 use crate::auth_prefetch::db::{PrefetchDatabase, PrefetchDatabaseError};
@@ -387,22 +390,10 @@ fn queue_write(entry: &(String, Json, Option<f64>)) -> QueueWrite {
     QueueWrite::new(&entry.0, &entry.1, entry.2)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum DatabaseFailure {
-    Database,
-    Column(&'static str),
-}
-
-pub(super) fn database_failure() -> serde_json::Error {
-    serde_json::from_str::<JsonData>("{").expect_err("the fixture is not json")
-}
-
 #[derive(Default)]
 pub(super) struct FakeDatabase {
     pub(super) rows: RowValues,
     calls: Mutex<Vec<Vec<RowKind>>>,
-    refs: Mutex<Vec<AuthObjectRefs>>,
-    failure: Mutex<Option<DatabaseFailure>>,
     pub(super) events: Option<Events>,
 }
 
@@ -415,8 +406,6 @@ impl FakeDatabase {
         Self {
             rows: values,
             calls: Mutex::default(),
-            refs: Mutex::default(),
-            failure: Mutex::default(),
             events: None,
         }
     }
@@ -425,19 +414,8 @@ impl FakeDatabase {
         self.events = Some(events);
     }
 
-    pub(super) fn fail(&self, failure: DatabaseFailure) {
-        *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
-    }
-
     pub(super) fn calls(&self) -> Vec<Vec<RowKind>> {
         self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub(super) fn bound_refs(&self) -> Vec<AuthObjectRefs> {
-        self.refs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -448,31 +426,17 @@ impl FakeDatabase {
 impl PrefetchDatabase for FakeDatabase {
     async fn fetch_rows(
         &self,
-        refs: &AuthObjectRefs,
+        _refs: &AuthObjectRefs,
         kinds: &[RowKind],
     ) -> Result<RowValues, PrefetchDatabaseError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(kinds.to_vec());
-        self.refs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(refs.clone());
         if let Some(events) = &self.events {
             record(events, "db");
         }
-        let failure = *self.failure.lock().unwrap_or_else(PoisonError::into_inner);
-        match failure {
-            Some(DatabaseFailure::Database) => {
-                Err(PrefetchDatabaseError::Database(DbError::NoDbConnected))
-            }
-            Some(DatabaseFailure::Column(row)) => Err(PrefetchDatabaseError::Column {
-                row,
-                source: database_failure(),
-            }),
-            None => Ok(self.rows.clone()),
-        }
+        Ok(self.rows.clone())
     }
 }
 
@@ -489,7 +453,7 @@ impl PrefetchDatabase for HangingDatabase {
         _kinds: &[RowKind],
     ) -> Result<RowValues, PrefetchDatabaseError> {
         let _held = DropFlag(Arc::clone(&self.dropped));
-        std::future::pending().await
+        pending().await
     }
 }
 
@@ -512,37 +476,11 @@ impl PrefetchClock for FixedClock {
     }
 }
 
-#[derive(Default)]
-pub(super) struct CountingClock {
-    pub(super) now: f64,
-    calls: AtomicUsize,
-}
-
-impl CountingClock {
-    pub(super) const fn reading(now: f64) -> Self {
-        Self {
-            now,
-            calls: AtomicUsize::new(0),
-        }
-    }
-
-    pub(super) fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
-    }
-}
-
-impl PrefetchClock for CountingClock {
-    fn now(&self) -> f64 {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.now
-    }
-}
-
 #[derive(Clone, Default)]
 pub(super) struct Logs(Arc<Mutex<Vec<u8>>>);
 
 impl Logs {
-    pub(super) fn capture() -> (Self, tracing::subscriber::DefaultGuard) {
+    pub(super) fn capture() -> (Self, DefaultGuard) {
         let logs = Self::default();
         let subscriber = tracing_subscriber::fmt()
             .with_ansi(false)
@@ -551,7 +489,7 @@ impl Logs {
             .with_max_level(tracing::Level::TRACE)
             .with_writer(logs.clone())
             .finish();
-        (logs, tracing::subscriber::set_default(subscriber))
+        (logs, set_default(subscriber))
     }
 
     pub(super) fn text(&self) -> String {
@@ -565,8 +503,8 @@ impl Logs {
     }
 }
 
-impl std::io::Write for Logs {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -574,12 +512,12 @@ impl std::io::Write for Logs {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
 
-impl tracing_subscriber::fmt::MakeWriter<'_> for Logs {
+impl MakeWriter<'_> for Logs {
     type Writer = Self;
 
     fn make_writer(&self) -> Self {

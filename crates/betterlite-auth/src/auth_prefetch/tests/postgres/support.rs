@@ -98,7 +98,11 @@ pub(super) fn strings(row: &JsonData, name: &str) -> Vec<String> {
         .iter()
         .map(|item| match item {
             JsonData::String(text) => text.clone(),
-            other => panic!("{name} holds a non-string: {other:?}"),
+            other @ (JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_)) => panic!("{name} holds a non-string: {other:?}"),
         })
         .collect()
 }
@@ -106,8 +110,35 @@ pub(super) fn strings(row: &JsonData, name: &str) -> Vec<String> {
 pub(super) fn text(row: &JsonData, name: &str) -> String {
     match field(row, name) {
         JsonData::String(text) => text.clone(),
-        other => panic!("{name} is not a string: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_)) => panic!("{name} is not a string: {other:?}"),
     }
+}
+
+pub(super) fn assert_empty_arrays(row: &JsonData, names: &[&str]) {
+    for name in names {
+        assert!(
+            strings(row, name).is_empty(),
+            "{name} does not normalize to []"
+        );
+    }
+}
+
+pub(super) fn refreshed_at(
+    writes: &[(String, CacheValue, Option<f64>)],
+    key: &str,
+) -> Option<CacheValue> {
+    let write = writes
+        .iter()
+        .find(|write| write.0 == key)
+        .expect("the prefetched write");
+    let CacheValue::Object(fields) = &write.1 else {
+        panic!("the prefetched write holds an object");
+    };
+    fields.get("last_refreshed_at").cloned()
 }
 
 pub(super) fn object(row: &JsonData, name: &str) -> JsonData {

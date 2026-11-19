@@ -2,6 +2,7 @@
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
+use betterlite_db::key_user_writes::hash::hash_token;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -31,7 +32,9 @@ fn decoded(text: &str) -> Json {
 fn object(value: &Json) -> &IndexMap<String, Json> {
     match value {
         Json::Object(fields) => fields,
-        other => panic!("the payload is not an object: {other:?}"),
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            panic!("the payload is not an object: {other:?}")
+        }
     }
 }
 
@@ -158,7 +161,7 @@ fn each_entry_ttl() {
         [
             Some(MANAGEMENT_TTL),
             Some(MANAGEMENT_TTL),
-            Some(5.0),
+            Some(5.0_f64),
             None,
             Some(ORGANIZATION_TTL),
             Some(ORGANIZATION_TTL),
@@ -224,7 +227,7 @@ fn resolved_key_skips_hash() {
             "model_access_group_registry",
         ]
     );
-    assert!(!keys.contains(&betterlite_db::key_user_writes::hash::hash_token("sk-abc")));
+    assert!(!keys.contains(&hash_token("sk-abc")));
 }
 
 #[test]
@@ -291,9 +294,12 @@ fn team_project_timestamp_override() {
     let RowObject::Team(row) = &validated else {
         panic!("the team row validates as a team");
     };
-    assert_eq!(row.last_refreshed_at, Some(42.0));
+    assert_eq!(row.last_refreshed_at, Some(42.0_f64));
     let payload = payload::encode(&validated).expect("the team payload");
-    assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(42.0));
+    assert_eq!(
+        payload_number(&payload, "last_refreshed_at"),
+        Some(42.0_f64)
+    );
 
     let project = with_timestamp(fixtures::project_row("project-1"), 1.5);
     let project_validated =
@@ -301,11 +307,11 @@ fn team_project_timestamp_override() {
     let RowObject::Project(project_row) = &project_validated else {
         panic!("the project row validates as a project");
     };
-    assert_eq!(project_row.last_refreshed_at, Some(9.5));
+    assert_eq!(project_row.last_refreshed_at, Some(9.5_f64));
     let project_payload = payload::encode(&project_validated).expect("the project payload");
     assert_eq!(
         payload_number(&project_payload, "last_refreshed_at"),
-        Some(9.5)
+        Some(9.5_f64)
     );
 }
 
@@ -314,8 +320,8 @@ fn team_project_timestamp_override() {
 #[case::membership(RowKind::Membership, fixtures::membership_row("user-1", "team-1"))]
 #[case::organization(RowKind::Organization, fixtures::organization_row("org-1"))]
 fn other_rows_not_timestamped(#[case] kind: RowKind, #[case] row: JsonData) {
-    let row = with_timestamp(row, 1.5);
-    let validated = validate_row(kind, Some(&row), 42.0).expect("the row validates");
+    let stamped = with_timestamp(row, 1.5);
+    let validated = validate_row(kind, Some(&stamped), 42.0).expect("the row validates");
     let payload = payload::encode(&validated).expect("the payload");
     assert!(
         object(&payload).get("last_refreshed_at").is_none(),
