@@ -7,7 +7,8 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use aws_sdk_bedrockruntime::Client;
-use aws_sdk_bedrockruntime::config::{BehaviorVersion, Region, RetryConfig};
+use aws_sdk_bedrockruntime::config::retry::RetryConfig;
+use aws_sdk_bedrockruntime::config::{BehaviorVersion, Region};
 use aws_smithy_runtime_api::client::http::{HttpClient, SharedHttpClient};
 use secrecy::ExposeSecret as _;
 
