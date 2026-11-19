@@ -116,7 +116,7 @@ fn a_category_the_provider_flags_true_stays_true() {
 #[test]
 fn an_image_input_type_is_only_accepted_where_the_sdk_types_it() {
     let mut allowed = result_with(&every_category(&json!(0.5_f64)));
-    allowed["category_applied_input_types"]["self_harm"] = json!(["text", "image"]);
+    allowed["category_applied_input_types"]["self-harm"] = json!(["text", "image"]);
     let response = ModerationResponse::parse(&body_with(&allowed)).expect("moderation response");
     assert_eq!(
         response.results[0].category_applied_input_types.self_harm,
