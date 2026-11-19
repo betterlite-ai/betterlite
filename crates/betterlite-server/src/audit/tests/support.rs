@@ -275,6 +275,19 @@ impl AuditLogRepository for RecordingRepository {
     }
 }
 
+pub(super) struct PanickingRepository;
+
+#[async_trait]
+impl AuditLogRepository for PanickingRepository {
+    fn available(&self) -> bool {
+        true
+    }
+
+    async fn insert_audit_log(&self, _record: &AuditLogRecord) -> Result<(), AuditRepositoryError> {
+        panic!("the audit write panicked")
+    }
+}
+
 pub(super) struct Fixture {
     pub(super) settings: AuditSettings,
     pub(super) callbacks: Vec<AuditCallbackEntry>,

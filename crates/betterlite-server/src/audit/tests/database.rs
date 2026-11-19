@@ -105,6 +105,7 @@ async fn a_record_without_actor_or_key_keeps_the_column_defaults() {
 async fn a_full_record_round_trips_through_the_partial_insert() {
     let (fixture, pool) = database().await;
     let repository = repository(&pool);
+    assert!(repository.available());
     let mut stored = record();
     stored.updated_values = Some(json(r#"{"api_key":"sk-1*****7890"}"#));
     repository

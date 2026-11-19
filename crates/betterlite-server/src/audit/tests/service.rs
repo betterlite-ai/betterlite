@@ -8,8 +8,8 @@ use betterlite_logging::worker::Rejection;
 use secrecy::SecretString;
 
 use super::support::{
-    Fixture, MapBuilder, MapResolver, RecordingLogger, RecordingRepository, capture, disabled,
-    enabled, logger_entry, record,
+    Fixture, MapBuilder, MapResolver, PanickingRepository, RecordingLogger, RecordingRepository,
+    capture, disabled, enabled, logger_entry, record,
 };
 use crate::audit::callbacks::AuditCallbackEntry;
 use crate::audit::service::{AuditService, AuditSubmission};
@@ -397,4 +397,40 @@ async fn a_rejected_callback_delivery_still_inserts_the_record() {
             .text()
             .contains("the audit log callback was rejected")
     );
+}
+
+#[tokio::test]
+async fn shutdown_drains_accepted_writes_and_callback_deliveries() {
+    let (entry, recorder) = logger_entry("first", false);
+    let repository = Arc::new(RecordingRepository::new(true, false));
+    let service = Fixture {
+        callbacks: vec![entry],
+        repository: trait_repository(&repository),
+        ..Fixture::default()
+    }
+    .start();
+    assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);
+    let report = service.shutdown().await;
+    assert_eq!(report.completed, 1);
+    assert_eq!(repository.inserted.lock().unwrap().len(), 1);
+    assert_eq!(recorder.delivered.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_panicking_write_is_reported_under_the_audit_write_job_name() {
+    let (captured, guard) = capture();
+    let service = Fixture {
+        repository: Arc::new(PanickingRepository),
+        ..Fixture::default()
+    }
+    .start();
+    assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);
+    service.writes.flush().await;
+    drop(guard);
+    let output = captured.text();
+    assert!(
+        output.contains("a logging callback task failed"),
+        "{output}"
+    );
+    assert!(output.contains("callback=audit_log_write"), "{output}");
 }

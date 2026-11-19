@@ -76,6 +76,7 @@ async fn a_python_custom_logger_receives_the_audit_payload() {
     let fixture = Fixture::new();
     let hook = fixture.load("recorder").await;
     let logger = audit_logger(Arc::new(hook)).expect("the instance is a CustomLogger");
+    assert_eq!(logger.callback_name(), "python_audit_log_callback");
     logger
         .async_log_audit_log_event(&build_audit_log_payload(&record()))
         .await

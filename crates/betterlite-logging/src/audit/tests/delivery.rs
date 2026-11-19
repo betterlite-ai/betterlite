@@ -54,15 +54,21 @@ async fn dispatch_submits_every_callback_and_flush_waits_for_delivery() {
 
 #[tokio::test]
 async fn a_failing_callback_does_not_cancel_the_other() {
+    let (captured, guard) = capture();
     let delivery = delivery(8);
     let (callbacks, recorders) = loggers(&[("bad", true), ("good", false)]);
     let report = delivery.dispatch(&callbacks, &payload());
     assert_eq!(report.submitted, 2);
     let flushed = delivery.worker.flush().await;
+    drop(guard);
     assert_eq!(flushed.failed, 1);
     assert_eq!(flushed.completed, 1);
     assert!(recorders[0].delivered.lock().unwrap().is_empty());
     assert_eq!(recorders[1].delivered.lock().unwrap().len(), 1);
+    assert!(
+        captured.text().contains("callback=bad"),
+        "the failure names the callback that failed"
+    );
 }
 
 #[tokio::test]
