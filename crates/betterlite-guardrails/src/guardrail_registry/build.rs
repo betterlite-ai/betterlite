@@ -13,6 +13,10 @@ use crate::guardrail_initializers::lakera::{self, LakeraArgs};
 use crate::guardrail_initializers::lakera_v2::{self, LakeraV2Args};
 use crate::guardrail_initializers::presidio::{self, PresidioArgs};
 use crate::guardrail_initializers::tool_permission::{self, ToolPermissionArgs};
+use crate::hook_registry::hooks::supported_event_hooks;
+use crate::hook_registry::kinds::build_hook_spec;
+use crate::hook_registry::ports::HookPorts;
+use crate::hook_registry::spec::HookSpec;
 use crate::tool_policy::error::ToolPolicyError;
 use crate::tool_policy::{RequestToolNames, ToolPolicyLookup, initialize_tool_policy};
 
@@ -55,6 +59,7 @@ const TOOL_PERMISSION_HOOKS: &[GuardrailEventHooks] =
 pub struct GuardrailFactories {
     policies: Arc<dyn ToolPolicyLookup + Send + Sync>,
     names: Arc<dyn RequestToolNames + Send + Sync>,
+    hooks: Option<HookPorts>,
 }
 
 // What each args struct adds to the base settings, as LiteLLM's constructors do with setdefault
@@ -125,12 +130,21 @@ impl HookArgs for ToolPermissionArgs {
 
 impl GuardrailFactories {
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions
     pub const fn new(
         policies: Arc<dyn ToolPolicyLookup + Send + Sync>,
         names: Arc<dyn RequestToolNames + Send + Sync>,
     ) -> Self {
-        Self { policies, names }
+        Self {
+            policies,
+            names,
+            hooks: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_hooks(mut self, ports: HookPorts) -> Self {
+        self.hooks = Some(ports);
+        self
     }
 
     pub fn build(
@@ -169,10 +183,28 @@ impl GuardrailFactories {
                 .map(|_args| Vec::new())
                 .map_err(RegistryError::Enterprise),
             integrations::TOOL_POLICY => self.tool_policy_callbacks(params, name, strict_modes),
-            other => Err(RegistryError::Unsupported {
-                kind: other.to_owned(),
-            }),
+            other => self.hook_callbacks(other, params, name, strict_modes),
         }
+    }
+
+    fn hook_callbacks(
+        &self,
+        kind: &str,
+        params: &LitellmParams,
+        name: &str,
+        strict_modes: bool,
+    ) -> Result<Vec<GuardrailCallback>, RegistryError> {
+        let Some(ports) = &self.hooks else {
+            return Err(RegistryError::Unsupported {
+                kind: kind.to_owned(),
+            });
+        };
+        let outcome = build_hook_spec(kind, params, name, ports).ok_or_else(|| {
+            RegistryError::Unsupported {
+                kind: kind.to_owned(),
+            }
+        })?;
+        Ok(vec![hook_callback(outcome?, kind, strict_modes)?])
     }
 
     fn tool_policy_callbacks(
@@ -227,6 +259,20 @@ where
     Ok(GuardrailCallback {
         base: GuardrailBase::new(settings, strict_modes)?,
         spec: CallbackSpec::from(args),
+        scoping: CallbackScoping::default(),
+    })
+}
+
+fn hook_callback(
+    spec: HookSpec,
+    kind: &str,
+    strict_modes: bool,
+) -> Result<GuardrailCallback, RegistryError> {
+    let mut settings = spec.settings();
+    settings.supported_event_hooks = Some(supported_event_hooks(kind).to_vec());
+    Ok(GuardrailCallback {
+        base: GuardrailBase::new(settings, strict_modes)?,
+        spec: CallbackSpec::Hook(Box::new(spec)),
         scoping: CallbackScoping::default(),
     })
 }
