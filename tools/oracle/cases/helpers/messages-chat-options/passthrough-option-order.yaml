@@ -1,0 +1,72 @@
+kind: helper
+name: messages-chat-options-passthrough-option-order
+call:
+  messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      stop_sequences:
+      - END
+      max_tokens: 0
+      stream: false
+      temperature: null
+      unknown: 7
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+calls:
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      stop_sequences: []
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      stop_sequences: null
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      thinking:
+        type: disabled
+      stop_sequences:
+      - END
+      stop:
+      - OVERRIDE
+      reasoning_effort: low
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+- messages_chat_options:
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      metadata:
+        session: abc
+      tool_choice: null
+      tools: []
+      output_format: null
+      output_config: null
+    custom_llm_provider: openai
+    auto_summary: false
+    declared: null
+env: {}
+compare: {ignore: []}
