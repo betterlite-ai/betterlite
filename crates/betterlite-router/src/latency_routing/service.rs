@@ -36,9 +36,8 @@ pub struct Selection<'request> {
     pub minute: &'request str,
 }
 
-// What one selection reads from the pool: every deployment's score in pool order, the eligible
-// positions lowest first, and the leading positions the buffer keeps.
-#[derive(Clone, Debug, Default, PartialEq)]
+// What one selection reads from the pool: every score in pool order, then the eligible positions lowest first and the buffer's prefix of them
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ranking {
     pub scores: Vec<f64>,
     pub candidates: Vec<usize>,
@@ -61,15 +60,10 @@ impl Ranking {
 
 // LowestLatencyLoggingHandler._get_available_deployments: the latency strategy's rank and pick.
 pub struct LatencyRouting {
-    args: RoutingArgs,
+    pub args: RoutingArgs,
 }
 
 impl LatencyRouting {
-    #[must_use]
-    pub const fn new(args: RoutingArgs) -> Self {
-        Self { args }
-    }
-
     // the ranked pool: scores for every deployment, then the eligible ones the buffer keeps
     pub fn rank(&self, selection: &Selection<'_>) -> Result<Ranking, RoutingError> {
         let mut scores = Vec::with_capacity(selection.deployments.len());
@@ -95,18 +89,6 @@ impl LatencyRouting {
             candidates,
             valid,
         })
-    }
-
-    // get_available_deployments: the pipeline's index of the deployment the buffer's random pick lands on
-    pub fn select<R>(
-        &self,
-        selection: &Selection<'_>,
-        random: &mut R,
-    ) -> Result<Option<usize>, RoutingError>
-    where
-        R: Rng,
-    {
-        Ok(self.rank(selection)?.choose(random))
     }
 
     // _average_latency and _percentile_latency: streaming reads the TTFT window while it has samples

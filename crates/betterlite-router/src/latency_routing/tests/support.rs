@@ -11,7 +11,7 @@ use crate::latency_observations::samples::{LatencySamples, MinuteUsage, ModelGro
 use crate::latency_routing::service::{LatencyRouting, Ranking, RoutingArgs, Selection};
 use crate::router_core::error::RoutingError;
 
-// the minute every fixture selection reads unless its case says otherwise
+// the minute every fixture selection reads and every stored window sits under unless a case says otherwise
 pub(super) const MINUTE: &str = "2026-01-01-00-00";
 
 // which of the three sources get_available_deployments reads a limit from
@@ -45,7 +45,8 @@ impl LimitValue {
 pub(super) struct Spec {
     pub(super) id: &'static str,
     pub(super) limits: &'static [(&'static str, Source, LimitValue)],
-    pub(super) seen: bool,
+    pub(super) at: &'static str,
+    pub(super) stored: bool,
     pub(super) latency: &'static [f64],
     pub(super) ttft: &'static [f64],
     pub(super) used: (i64, i64),
@@ -57,7 +58,8 @@ impl Spec {
         Self {
             id,
             limits: &[],
-            seen: false,
+            at: MINUTE,
+            stored: false,
             latency: &[],
             ttft: &[],
             used: (0, 0),
@@ -74,11 +76,25 @@ impl Spec {
         Self {
             id,
             limits: &[],
-            seen: true,
+            at: MINUTE,
+            stored: true,
             latency,
             ttft,
             used,
         }
+    }
+
+    // the same, with its windows recorded under another minute's bucket
+    pub(super) const fn stored_at(
+        at: &'static str,
+        id: &'static str,
+        latency: &'static [f64],
+        ttft: &'static [f64],
+        used: (i64, i64),
+    ) -> Self {
+        let mut spec = Self::stored(id, latency, ttft, used);
+        spec.at = at;
+        spec
     }
 
     fn deployment(&self) -> DeploymentSpec {
@@ -122,28 +138,7 @@ pub(super) struct Case {
     pub(super) buffer: f64,
     pub(super) percentile: Option<f64>,
     pub(super) draw: u64,
-    pub(super) minute: &'static str,
-    pub(super) stored_minute: &'static str,
     pub(super) outcome: Outcome,
-}
-
-impl Case {
-    pub(super) const DEFAULT: Self = Self {
-        specs: &[],
-        stream: false,
-        input_tokens: 0,
-        buffer: 0.0_f64,
-        percentile: None,
-        draw: 0,
-        minute: MINUTE,
-        stored_minute: MINUTE,
-        outcome: Outcome::Ranked {
-            scores: &[],
-            candidates: &[],
-            valid: &[],
-            selected: None,
-        },
-    };
 }
 
 // a generator whose every draw is the same value, so a uniform pick is deterministic
@@ -169,19 +164,21 @@ impl TryRng for FixedDraw {
 
 pub(super) fn check(case: &Case) {
     let (deployments, samples) = build(case);
-    let router = LatencyRouting::new(RoutingArgs {
-        lowest_latency_buffer: case.buffer,
-        ttft_percentile: case.percentile,
-    });
+    let router = LatencyRouting {
+        args: RoutingArgs {
+            lowest_latency_buffer: case.buffer,
+            ttft_percentile: case.percentile,
+        },
+    };
     let selection = Selection {
         deployments: &deployments,
         samples: &samples,
         stream: case.stream,
         input_tokens: case.input_tokens,
-        minute: case.minute,
+        minute: MINUTE,
     };
     let mut random = FixedDraw(case.draw);
-    let selected = router.select(&selection, &mut random);
+    let ranked = router.rank(&selection);
     match case.outcome {
         Outcome::Ranked {
             scores,
@@ -189,14 +186,12 @@ pub(super) fn check(case: &Case) {
             valid,
             selected: expected,
         } => {
-            let ranking = router
-                .rank(&selection)
-                .expect("the fixture limits are numbers");
+            let ranking = ranked.expect("the fixture limits are numbers");
             assert_scores(&ranking, scores);
             assert_eq!(ids(&deployments, &ranking.candidates), candidates);
             assert_eq!(ids(&deployments, &ranking.valid), valid);
-            let picked: Vec<&str> = selected
-                .expect("the fixture limits are numbers")
+            let picked: Vec<&str> = ranking
+                .choose(&mut random)
                 .and_then(|position| deployment_id(&deployments, position))
                 .into_iter()
                 .collect();
@@ -204,7 +199,7 @@ pub(super) fn check(case: &Case) {
             assert_eq!(picked, expected);
         }
         Outcome::Rejected { field } => {
-            let error = selected.expect_err("the fixture limit is no number");
+            let error = ranked.expect_err("the fixture limit is no number");
             assert!(
                 matches!(&error, RoutingError::Metric { field: named } if *named == field),
                 "the selection answered {error:?}"
@@ -218,14 +213,14 @@ fn build(case: &Case) -> (Vec<DeploymentSpec>, ModelGroupSamples) {
     let mut stored = BTreeMap::new();
     for spec in case.specs {
         deployments.push(spec.deployment());
-        if spec.seen {
+        if spec.stored {
             stored.insert(
                 spec.id.to_owned(),
                 LatencySamples {
                     latency: spec.latency.to_vec(),
                     time_to_first_token_seconds: spec.ttft.to_vec(),
                     minutes: BTreeMap::from_iter([(
-                        case.stored_minute.to_owned(),
+                        spec.at.to_owned(),
                         MinuteUsage {
                             tpm: spec.used.0,
                             rpm: spec.used.1,
