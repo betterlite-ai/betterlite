@@ -77,6 +77,18 @@ fn sync_retry_policy_overrides_the_request_count_and_is_reset() {
 }
 
 #[test]
+fn sync_retry_policy_without_a_match_clears_the_count() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("completion", bad_request("bad"))
+        .with_retry(response(value(r#"{"retried":true}"#)));
+    let request = chat_request(r#"{"num_retries":5,"retry_policy":{"TimeoutErrorRetries":1}}"#);
+    let error = run_sync(&mut fixture, &stub, request)
+        .expect_err("a policy without a matching class clears the count");
+    assert_eq!(error.to_string(), "bad");
+    assert_eq!(stub.retry_count(), 0);
+}
+
+#[test]
 fn sync_router_call_is_not_retried_and_the_default_is_cleared() {
     let mut fixture = fixture();
     fixture.wrapper.retry.num_retries = Some(2);
@@ -171,6 +183,22 @@ async fn async_failure_retries_and_swallows_a_failed_retry() {
             String::from("failure_async:boom")
         ]
     );
+}
+
+#[tokio::test]
+async fn async_retry_policy_overrides_the_request_count() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("acompletion", bad_request("bad"))
+        .with_retry(response(value(r#"{"retried":true}"#)));
+    let request = chat_request(r#"{"num_retries":5,"retry_policy":{"BadRequestErrorRetries":1}}"#);
+    fixture
+        .wrapper
+        .call(&stub, request, WrapperOptions::default())
+        .await
+        .expect("the retry entry answers");
+    let retries = stub.retries();
+    let retried = retries.first().expect("the retry entry saw one request");
+    assert_eq!(retried.get("num_retries"), Some(&count(1)));
 }
 
 #[tokio::test]
