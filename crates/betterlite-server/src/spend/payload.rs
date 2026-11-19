@@ -18,8 +18,9 @@ use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::session::{SpendTimestamp, ensure_datetime_utc};
 use betterlite_logging::spend_error::log_spend_error;
+use betterlite_logging::spend_metadata::records::SpendLogsMetadata;
 use betterlite_logging::spend_metadata::{
-    SpendLogsMetadata, SpendLogsPayload, SpendMetadataError, optional_text_field,
+    SpendLogsPayload, SpendMetadataError, optional_text_field,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -137,9 +138,7 @@ pub(crate) struct Context<'request> {
 
 impl<'request> Context<'request> {
     fn new(request: &'request PayloadRequest<'request>) -> Result<Self, SpendPayloadError> {
-        let Some(kwargs) = as_object(request.kwargs) else {
-            return Err(SpendPayloadError::FieldType { field: "kwargs" });
-        };
+        let kwargs = request.kwargs;
         let litellm_params = params_of(kwargs)?;
         let metadata = betterlite_logging::spend_metadata::merged_spend_metadata(&litellm_params)?;
         Ok(Self {
@@ -207,13 +206,6 @@ where
 
 #[path = "payload/tests.rs"]
 mod tests;
-
-pub(crate) fn as_object(value: &Json) -> Option<&JsonObject> {
-    match value {
-        Json::Object(fields) => Some(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
 
 // litellm_params defaults to {} when absent or null, and any other type is named instead of crashing a .get call.
 fn params_of(kwargs: &JsonObject) -> Result<std::borrow::Cow<'_, JsonObject>, SpendPayloadError> {

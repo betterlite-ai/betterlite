@@ -14,7 +14,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_models::ptu_pricing::spillover::{AzureSpillover, azure_spillover};
 
 use super::identifiers::Attribution;
-use super::{Context, SpendPayloadError, SpendPayloadSettings, as_object};
+use super::{Context, SpendPayloadError, SpendPayloadSettings};
 
 // The provider whose OAuth client token the proxy forwards; every other provider reads as not forwarded.
 const OAUTH_FORWARD_PROVIDERS: [&str; 1] = ["anthropic"];

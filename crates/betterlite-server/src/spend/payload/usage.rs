@@ -1,10 +1,11 @@
 use betterlite_logging::logging_privacy::internal::{Origin, call_category, is_unbilled};
+use betterlite_logging::spend_metadata::as_object;
 use betterlite_logging::spend_metadata::ocr::extract_usage_for_ocr_call;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use serde_json::Number;
 
-use super::{Context, SpendPayloadError, SpendResponse, as_object};
+use super::{Context, SpendPayloadError, SpendResponse};
 
 const TOKEN_TOTALS: [&str; 3] = ["completion_tokens", "prompt_tokens", "total_tokens"];
 const PROMPT_DETAILS: &str = "prompt_tokens_details";
@@ -82,8 +83,10 @@ pub(crate) fn additional_values(usage: &JsonObject, usage_object: Option<&Json>)
     let Some(details) = details_source(&values, usage_object) else {
         return values;
     };
+    let read_count = positive_integer(details.get("cached_tokens"));
+    let write_count = positive_integer(preferred_write(details));
     if !values.contains_key(CACHE_READ_FIELD)
-        && let Some(count) = positive_integer(details.get("cached_tokens"))
+        && let Some(count) = read_count
     {
         values.insert(
             CACHE_READ_FIELD.to_owned(),
@@ -91,7 +94,7 @@ pub(crate) fn additional_values(usage: &JsonObject, usage_object: Option<&Json>)
         );
     }
     if !values.contains_key(CACHE_WRITE_FIELD)
-        && let Some(count) = positive_integer(preferred_write(details))
+        && let Some(count) = write_count
     {
         values.insert(
             CACHE_WRITE_FIELD.to_owned(),
