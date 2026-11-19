@@ -1,0 +1,37 @@
+kind: helper
+name: genai-http-async-stream
+call:
+  b3488:
+    mode: async
+    provider: gemini
+    model: gemini-2.5-flash
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+    config:
+      temperature: 0.2
+      maxOutputTokens: 16
+    tools: null
+    system_instruction: null
+    litellm_params:
+      api_key: provider-key
+      model_info:
+        id: deployment-b
+    extra_headers: null
+    extra_body: null
+    timeout: 30.0
+    stream: true
+    reply:
+      status: 200
+      headers:
+        x-request-id: r2
+      body: |
+        data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]}}]}
+
+        data: {"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"totalTokenCount":4}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/pre_call/headers/x-goog-api-key
+      why: B249 masks the headers kept on the call details, where LiteLLM stores the live value

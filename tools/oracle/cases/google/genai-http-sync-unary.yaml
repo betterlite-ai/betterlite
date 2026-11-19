@@ -1,0 +1,32 @@
+kind: helper
+name: genai-http-sync-unary
+call:
+  b3488:
+    mode: sync
+    provider: gemini
+    model: gemini-2.5-flash
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+    config:
+      temperature: 0.2
+      maxOutputTokens: 16
+    tools: null
+    system_instruction: null
+    litellm_params:
+      api_key: provider-key
+    extra_headers: null
+    extra_body: null
+    timeout: 30.0
+    stream: false
+    reply:
+      status: 200
+      headers:
+        x-request-id: r1
+      body: '{"candidates":[{"content":{"parts":[{"text":"Hi"}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"totalTokenCount":4},"modelVersion":"gemini-2.5-flash","responseId":"resp-1"}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/pre_call/headers/x-goog-api-key
+      why: B249 masks the headers kept on the call details, where LiteLLM stores the live value
