@@ -18,7 +18,7 @@ pub enum CopilotMessagesError {
 
 impl CopilotMessagesError {
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
+    pub const fn status(&self) -> Option<u16> {
         match self {
             Self::Authentication { .. } => Some(401),
             Self::Beta(_) => None,

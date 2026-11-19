@@ -265,7 +265,7 @@ async fn validate_environment_translates_a_key_error() {
 #[case::explicit(
     Some("https://cached.test"),
     None,
-    "https://explicit.test//",
+    Some("https://explicit.test//"),
     "https://explicit.test/embeddings"
 )]
 #[case::cached_above_env(
@@ -279,9 +279,9 @@ async fn validate_environment_translates_a_key_error() {
 #[tokio::test]
 async fn url_precedence_is_explicit_then_cached_then_environment_then_default(
     #[case] cached: Option<&'static str>,
-    #[case] env_base: Option<&'static str>,
-    #[case] explicit: Option<&'static str>,
-    #[case] expected: &'static str,
+    #[case] env_base: Option<&str>,
+    #[case] explicit: Option<&str>,
+    #[case] expected: &str,
 ) {
     let mut config = EmbeddingConfig {
         credentials: Stored {

@@ -175,7 +175,8 @@ async fn validate_environment_translates_a_key_error() {
             "claude-sonnet-4",
         )
         .await
-        .expect_err("a key error is an authentication error");
+        .err()
+        .expect("a key error is an authentication error");
 
     assert!(matches!(
         &error,
@@ -228,7 +229,8 @@ async fn validate_environment_reports_a_malformed_tools_value() {
             "claude-sonnet-4",
         )
         .await
-        .expect_err("tools must be a list");
+        .err()
+        .expect("tools must be a list");
 
     assert!(matches!(&error, CopilotMessagesError::Beta(_)));
     assert_eq!(error.status(), None);

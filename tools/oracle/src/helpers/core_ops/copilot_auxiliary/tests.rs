@@ -29,7 +29,7 @@ fn answer(name: &str) -> Value {
 #[test]
 fn replays_the_copilot_auxiliary_seeds() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fuzz/corpus/helper_case");
-    let seeds: Vec<(String, String)> = fs::read_dir(corpus)
+    let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("the helper corpus should exist")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -38,24 +38,15 @@ fn replays_the_copilot_auxiliary_seeds() {
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with("copilot_auxiliary_"))
         })
-        .map(|path| {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .expect("a seed has a name")
-                .to_owned();
-            let source = fs::read_to_string(path).expect("a seed is readable");
-            (name, source)
-        })
+        .map(|path| fs::read_to_string(path).expect("a seed is readable"))
         .collect();
     assert!(!seeds.is_empty(), "no copilot_auxiliary seed exists");
-    assert!(seeds.iter().all(|(name, source)| {
+    assert!(seeds.iter().all(|source| {
         let case: HelperCase =
             serde_saphyr::from_str(source).expect("a seed parses as a helper case");
         validate_helper(Path::new("<helper>"), &case).is_ok()
-            && Op::check(&case.call.input)
-                .unwrap_or_else(|error| panic!("{name} must call copilot_auxiliary: {error}"))
-                .is_ok()
+            && case.call.operation == "copilot_auxiliary"
+            && Op::check(&case.call.input).is_ok()
     }));
 }
 

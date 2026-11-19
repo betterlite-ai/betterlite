@@ -40,7 +40,7 @@ pub(crate) struct EmbeddingCall {
 #[derive(Debug, Deserialize)]
 pub(crate) struct MessagesCall {
     model: String,
-    headers: BTreeMap<String, String>,
+    headers: IndexMap<String, String>,
     optional_params: IndexMap<String, Json>,
     messages: Vec<Json>,
     copilot_key: Option<String>,
@@ -82,11 +82,11 @@ fn embedding(call: &EmbeddingCall) -> HelperResult {
         credentials: StoredKey::new(call.copilot_key.as_deref(), call.cached_base.as_deref()),
         settings,
     };
-    let runtime = runtime()?;
-    let headers = runtime
+    let executor = runtime()?;
+    let headers = executor
         .block_on(config.validate_environment(call.headers.clone(), &call.model))
         .map_err(|error| failure(&error, error.status()))?;
-    let url = runtime.block_on(config.get_complete_url(call.api_base.as_deref()));
+    let url = executor.block_on(config.get_complete_url(call.api_base.as_deref()));
     let mut optional = call.optional_params.clone();
     map_openai_params(&call.non_default_params, &mut optional);
     let body = transform_embedding_request(&call.model, &call.input, &optional);
@@ -101,11 +101,11 @@ fn messages(call: &MessagesCall) -> HelperResult {
         optional_params: &call.optional_params,
         messages: &call.messages,
     };
-    let runtime = runtime()?;
-    let environment = runtime
+    let executor = runtime()?;
+    let environment = executor
         .block_on(config.validate_environment(call.headers.clone(), &request, &call.model))
         .map_err(|error| failure(&error, error.status()))?;
-    let url = runtime.block_on(config.get_complete_url(Some(environment.api_base.as_str())));
+    let url = executor.block_on(config.get_complete_url(Some(environment.api_base.as_str())));
     Ok(json!({
         "headers": environment.headers,
         "api_base": environment.api_base,

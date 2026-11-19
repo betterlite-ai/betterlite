@@ -27,7 +27,7 @@ pub struct MessagesRequest<'request> {
     pub messages: &'request [Json],
 }
 
-#[derive(Debug)]
+// no Debug: the headers carry the bearer token, so a derived print would write it to the logs
 pub struct MessagesEnvironment {
     pub headers: Headers,
     pub api_base: String,
@@ -59,9 +59,9 @@ where
             }
         };
         let provider = <&'static str>::from(CUSTOM_LLM_PROVIDER);
-        let headers = headers::with_copilot_defaults(headers, key.as_ref());
-        let headers = inject_native_betas(
-            headers,
+        let with_defaults = headers::with_copilot_defaults(headers, key.as_ref());
+        let with_betas = inject_native_betas(
+            with_defaults,
             &NativeRequest {
                 provider,
                 optional_params: request.optional_params,
@@ -69,7 +69,7 @@ where
             },
         )?;
         Ok(MessagesEnvironment {
-            headers,
+            headers: with_betas,
             api_base: cached
                 .as_deref()
                 .unwrap_or(DEFAULT_COPILOT_API_BASE)
