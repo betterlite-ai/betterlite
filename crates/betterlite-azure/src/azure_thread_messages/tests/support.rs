@@ -11,6 +11,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadCreate;
 use http::HeaderMap;
 use secrecy::SecretString;
@@ -18,6 +19,7 @@ use secrecy::SecretString;
 use crate::azure_assistant_definitions::client::AzureAssistantsClient;
 use crate::azure_assistant_definitions::operations::ClientRequest;
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
+use crate::azure_thread_messages::error::ThreadMessagesError;
 use crate::azure_thread_messages::operations::ThreadMessagesApi;
 use crate::azure_urls::AuthParams;
 use crate::credentials::source::{
@@ -156,6 +158,14 @@ pub(super) fn failing_harness() -> (ThreadMessagesApi<Recorder>, Arc<Recorder>) 
         transport: Arc::clone(&transport),
     };
     (api, transport)
+}
+
+// The status and body a rejected call carries, which the caller reads as the provider's error.
+pub(super) fn status_of(error: ThreadMessagesError) -> (u16, Vec<u8>) {
+    match error {
+        ThreadMessagesError::Threads(ThreadsError::Status { status, body }) => (status, body),
+        other => panic!("expected a status failure, got {other:?}"),
+    }
 }
 
 // What the Azure SDK sends for a method once auth and the API version have been applied.

@@ -59,12 +59,12 @@ fn create_step(runtime: &Runtime, step: &Step) -> HelperResult {
 }
 
 fn retrieve_step(runtime: &Runtime, step: &Step) -> HelperResult {
-    match step.thread_id.as_deref() {
-        Some(thread_id) => thread_step(runtime, step, ThreadOperation::Retrieve(thread_id)),
-        None => Err(reports::invalid_input(String::from(
+    let Some(thread_id) = step.thread_id.as_deref() else {
+        return Err(reports::invalid_input(String::from(
             "a thread_retrieve step carries no thread_id",
-        ))),
-    }
+        )));
+    };
+    thread_step(runtime, step, ThreadOperation::Retrieve(thread_id))
 }
 
 // The mixed variants choose the SDK call by the field the step carries: a thread id means retrieve.

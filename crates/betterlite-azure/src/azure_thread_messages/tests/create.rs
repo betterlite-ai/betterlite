@@ -9,7 +9,7 @@ use crate::azure_thread_messages::operations::ThreadOperation;
 
 use super::support::{
     Auth, ERROR_BODY, Fixture, KEY, PLAIN_THREAD, THREAD, THREADS_URL, failing_harness, harness,
-    wire,
+    status_of, wire,
 };
 
 // Both fields present in the caller's data reach the SDK body; neither gets a default.
@@ -126,7 +126,7 @@ async fn invalid_shape() {
     }
 }
 
-// A status failure wins over a body that happens to look like a thread.
+// A status failure wins over a body that happens to look like a thread, and the reply body rides on the error.
 async fn status_failure() {
     let fixture = Fixture::new();
     let request = fixture.request();
@@ -135,17 +135,11 @@ async fn status_failure() {
         let (api, transport) = harness(status, body);
         let failed = api
             .call(&request, None, None, ThreadOperation::Create(&create))
-            .await;
-        assert!(
-            matches!(
-                failed,
-                Err(ThreadMessagesError::Threads(ThreadsError::Status {
-                    status: seen,
-                    ..
-                })) if seen == status
-            ),
-            "{status}: {failed:?}"
-        );
+            .await
+            .unwrap_err();
+        let (seen, seen_body) = status_of(failed);
+        assert_eq!(seen, status);
+        assert_eq!(seen_body, body.as_bytes(), "{status}");
         assert_eq!(transport.requests().len(), 1, "{status}");
     }
 }

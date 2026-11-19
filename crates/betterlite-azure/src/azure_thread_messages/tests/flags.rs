@@ -16,7 +16,7 @@ use crate::endpoints::projection::CallableProvider;
 
 use super::support::{
     Auth, ERROR_BODY, EmptyToken, FailingToken, FixedToken, Fixture, KEY, Seen, THREAD, THREAD_URL,
-    THREADS_URL, failing_harness, harness, supplied_client, wire,
+    THREADS_URL, failing_harness, harness, status_of, supplied_client, wire,
 };
 
 const KINDS: [(Option<bool>, ClientKind); 3] = [
@@ -239,25 +239,38 @@ async fn provider_alone() {
     );
 }
 
-// A token source that fails or answers no text stops the call before a request is built.
+// A token source that answers no text or fails stops the call before a request is built, with the SDK's error.
 async fn provider_failures() {
-    for failing in [
-        provider(Arc::new(EmptyToken)),
-        provider(Arc::new(FailingToken)),
-    ] {
-        let mut fixture = Fixture::new();
-        fixture.provider = Some(failing);
-        let request = fixture.request();
-        let (api, transport) = harness(200, THREAD);
-        let failed = api
-            .call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
-            .await;
-        assert!(
-            matches!(failed, Err(ThreadMessagesError::Client(_))),
-            "{failed:?}"
-        );
-        assert!(transport.requests().is_empty());
-    }
+    let unanswered = provider_error(provider(Arc::new(EmptyToken))).await;
+    assert!(
+        matches!(
+            unanswered,
+            ThreadMessagesError::Client(DefinitionsError::ProviderReply)
+        ),
+        "{unanswered:?}"
+    );
+    let rejected = provider_error(provider(Arc::new(FailingToken))).await;
+    assert!(
+        matches!(
+            &rejected,
+            ThreadMessagesError::Client(DefinitionsError::Provider { class, .. })
+                if class == "ClientAuthenticationError"
+        ),
+        "{rejected:?}"
+    );
+}
+
+async fn provider_error(provider: CallableProvider) -> ThreadMessagesError {
+    let mut fixture = Fixture::new();
+    fixture.provider = Some(provider);
+    let request = fixture.request();
+    let (api, transport) = harness(200, THREAD);
+    let failed = api
+        .call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
+        .await
+        .unwrap_err();
+    assert!(transport.requests().is_empty());
+    failed
 }
 
 fn provider(token: Arc<dyn CallableTokenProvider>) -> CallableProvider {
@@ -267,7 +280,7 @@ fn provider(token: Arc<dyn CallableTokenProvider>) -> CallableProvider {
     }
 }
 
-// Call failures surface unchanged; neither operation catches or retries them.
+// Call failures surface unchanged with their reply body; neither operation catches or retries them.
 async fn status_failure() {
     let fixture = Fixture::new();
     let request = fixture.request();
@@ -276,17 +289,11 @@ async fn status_failure() {
         let (api, transport) = harness(status, ERROR_BODY);
         let failed = api
             .call(&request, None, Some(true), ThreadOperation::Create(&create))
-            .await;
-        assert!(
-            matches!(
-                failed,
-                Err(ThreadMessagesError::Threads(ThreadsError::Status {
-                    status: seen,
-                    ..
-                })) if seen == status
-            ),
-            "{status}: {failed:?}"
-        );
+            .await
+            .unwrap_err();
+        let (seen, seen_body) = status_of(failed);
+        assert_eq!(seen, status);
+        assert_eq!(seen_body, ERROR_BODY.as_bytes(), "{status}");
         assert_eq!(transport.requests().len(), 1, "{status}");
     }
 }

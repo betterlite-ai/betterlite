@@ -77,9 +77,12 @@ fn outbound<T>(
     })
 }
 
-// The SDK joins the call path onto the raw base path and merges api-version into the base query.
+// The SDK joins the tail onto the raw base path and query with one slash only when it lacks one, and keeps a fragment.
 fn target_url(base_url: &str, api_version: &str, tail: &str) -> Result<Url, ThreadMessagesError> {
-    let joined = format!("{}/{tail}", base_url.trim_end_matches('/'));
+    let at = base_url.find('#').unwrap_or(base_url.len());
+    let (head, fragment) = base_url.split_at(at);
+    let separator = if head.ends_with('/') { "" } else { "/" };
+    let mut joined = format!("{head}{separator}{tail}{fragment}");
     let mut url = Url::parse(&joined).map_err(|source| ThreadsError::BaseUrl { source })?;
     let query = versioned_query(url.query(), api_version);
     url.set_query(query.as_deref());

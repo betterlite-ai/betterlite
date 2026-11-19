@@ -8,7 +8,7 @@ use crate::azure_thread_messages::error::ThreadMessagesError;
 use crate::azure_thread_messages::operations::ThreadOperation;
 
 use super::support::{
-    Auth, ERROR_BODY, Fixture, KEY, THREAD, THREAD_URL, failing_harness, harness, wire,
+    Auth, ERROR_BODY, Fixture, KEY, THREAD, THREAD_URL, failing_harness, harness, status_of, wire,
 };
 
 const QUOTED_ID: &str = "a/b c!$&'()*+,;=:@-._~\u{e9}%";
@@ -117,6 +117,7 @@ async fn dot_segments() {
     }
 }
 
+// The rejected status and its reply body reach the caller unchanged.
 async fn status_failure() {
     let fixture = Fixture::new();
     let request = fixture.request();
@@ -124,17 +125,11 @@ async fn status_failure() {
         let (api, transport) = harness(status, ERROR_BODY);
         let failed = api
             .call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
-            .await;
-        assert!(
-            matches!(
-                failed,
-                Err(ThreadMessagesError::Threads(ThreadsError::Status {
-                    status: seen,
-                    ..
-                })) if seen == status
-            ),
-            "{status}: {failed:?}"
-        );
+            .await
+            .unwrap_err();
+        let (seen, seen_body) = status_of(failed);
+        assert_eq!(seen, status);
+        assert_eq!(seen_body, ERROR_BODY.as_bytes(), "{status}");
         assert_eq!(transport.requests().len(), 1, "{status}");
     }
 }
