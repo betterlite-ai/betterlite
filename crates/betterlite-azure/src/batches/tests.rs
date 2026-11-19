@@ -558,9 +558,9 @@ fn call_through(
     connection: Connection<'_, '_, Materializer>,
     step: &Step,
 ) -> Result<Reply, AzureBatchesError> {
-    let operation = operation(step);
-    let client = connection.open(operation.check())?;
-    runtime.block_on(call(&client, operation))
+    let asked = operation(step);
+    let client = connection.open(asked.check())?;
+    runtime.block_on(call(&client, asked))
 }
 
 fn project_through(
@@ -671,4 +671,4 @@ pub(super) fn status_failure() -> Failure {
     }
 }
 
-mod batches_cases;
+mod scenarios;
