@@ -338,7 +338,7 @@ fn texts(body: BoxStream<'static, Result<Emitted, StreamAbort>>) -> Vec<String> 
         .collect()
 }
 
-fn abort_of(results: &[Result<Emitted, StreamAbort>], index: usize) -> StreamAbort {
+fn abort_of<Out>(results: &[Result<Out, StreamAbort>], index: usize) -> StreamAbort {
     match results.get(index) {
         Some(Err(abort)) => abort.clone(),
         Some(Ok(_)) => panic!("expected an abort"),
