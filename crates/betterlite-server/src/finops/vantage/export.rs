@@ -56,12 +56,12 @@ pub trait VantageExportLogger: Send + Sync {
 
     fn initialize_focus_export_job(&self) -> BoxFuture<'_, Result<(), VantageExportError>>;
 
-    fn export_usage_data<'logger>(
-        &'logger self,
+    fn export_usage_data(
+        &self,
         limit: Option<i64>,
         start_time_utc: Option<DateTime<Utc>>,
         end_time_utc: Option<DateTime<Utc>>,
-    ) -> BoxFuture<'logger, Result<(), VantageExportError>>;
+    ) -> BoxFuture<'_, Result<(), VantageExportError>>;
 }
 
 impl<F: FocusEngineFactory> VantageLogger<F> {
@@ -74,7 +74,8 @@ impl<F: FocusEngineFactory> VantageLogger<F> {
     where
         L: EnvironmentLookup + ?Sized,
     {
-        let settings = VantageSettings::resolve(&params, environment);
+        let cron_offset_minute = params.cron_offset_minute;
+        let settings = VantageSettings::resolve(params, environment);
         let pod_lock = deps.pod_lock.as_ref().map(Arc::clone);
         let clock = Arc::clone(&deps.clock);
         let tasks = deps.tasks.clone();
@@ -84,7 +85,7 @@ impl<F: FocusEngineFactory> VantageLogger<F> {
                 provider: Some(PROVIDER.to_owned()),
                 export_format: Some(EXPORT_FORMAT.to_owned()),
                 frequency: Some(settings.frequency.clone()),
-                cron_offset_minute: params.cron_offset_minute,
+                cron_offset_minute,
                 interval_seconds: settings.interval_seconds,
                 prefix: Some(EXPORT_PREFIX.to_owned()),
                 destination_config: Some(settings.destination_overrides()),
@@ -156,12 +157,12 @@ where
         Box::pin(initialize_vantage_export_job(self))
     }
 
-    fn export_usage_data<'logger>(
-        &'logger self,
+    fn export_usage_data(
+        &self,
         limit: Option<i64>,
         start_time_utc: Option<DateTime<Utc>>,
         end_time_utc: Option<DateTime<Utc>>,
-    ) -> BoxFuture<'logger, Result<(), VantageExportError>> {
+    ) -> BoxFuture<'_, Result<(), VantageExportError>> {
         Box::pin(async move {
             self.focus
                 .export_usage_data(limit, start_time_utc, end_time_utc)

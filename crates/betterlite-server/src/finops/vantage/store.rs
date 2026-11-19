@@ -78,20 +78,22 @@ impl VantageLoggers {
     }
 
     pub fn register(&self, logger: Arc<dyn VantageExportLogger>, list: VantageCallbackList) {
-        let mut lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
         let key = logger.registration_identity().key();
+        let mut lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
         let registered = lists.slot(list);
-        if registered
+        let duplicate = registered
             .iter()
-            .any(|stored| stored.registration_identity().key() == key)
-        {
+            .any(|stored| stored.registration_identity().key() == key);
+        if !duplicate {
+            registered.push(logger);
+        }
+        drop(lists);
+        if duplicate {
             tracing::debug!(
                 list = ?list,
                 "callback already registered in this list; keeping the first"
             );
-            return;
         }
-        registered.push(logger);
     }
 
     // the callers drop the lock before they await: every call hands out its own ordered copy

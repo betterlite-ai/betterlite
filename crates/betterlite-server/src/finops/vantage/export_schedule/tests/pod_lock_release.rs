@@ -75,13 +75,13 @@ async fn draining_waits_for_the_release_task() {
     ));
     let release = Arc::new(Notify::new());
     logger.tasks.spawn({
-        let release = Arc::clone(&release);
-        async move { release.notified().await }
+        let signal = Arc::clone(&release);
+        async move { signal.notified().await }
     });
     let waiting = TaskTracker::new();
     let drain = waiting.spawn({
-        let logger = Arc::clone(&logger);
-        async move { logger.drain().await }
+        let drained = Arc::clone(&logger);
+        async move { drained.drain().await }
     });
     yield_now().await;
     assert!(!drain.is_finished(), "the drain waits for the release task");
@@ -106,8 +106,8 @@ async fn a_cancelled_export_still_releases_the_vantage_lock() {
     ));
     let tasks = TaskTracker::new();
     let job = tasks.spawn({
-        let logger = Arc::clone(&logger);
-        async move { initialize_vantage_export_job(&logger).await }
+        let job_logger = Arc::clone(&logger);
+        async move { initialize_vantage_export_job(&job_logger).await }
     });
     started.notified().await;
     job.abort();

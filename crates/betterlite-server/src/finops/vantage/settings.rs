@@ -37,7 +37,7 @@ pub struct VantageSettings {
 impl VantageSettings {
     // the source's __init__ order: the parameter, then the environment, then the default
     #[must_use]
-    pub fn resolve<L>(params: &VantageLoggerParams, environment: &L) -> Self
+    pub fn resolve<L>(params: VantageLoggerParams, environment: &L) -> Self
     where
         L: EnvironmentLookup + ?Sized,
     {
@@ -49,20 +49,16 @@ impl VantageSettings {
         Self {
             api_key: params
                 .api_key
-                .clone()
                 .or_else(|| lookup(API_KEY_VARIABLE).map(SecretString::from)),
             integration_token: params
                 .integration_token
-                .clone()
                 .or_else(|| lookup(INTEGRATION_TOKEN_VARIABLE).map(SecretString::from)),
             base_url: params
                 .base_url
-                .clone()
                 .or_else(|| lookup(BASE_URL_VARIABLE))
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
             frequency: params
                 .frequency
-                .clone()
                 .or_else(|| lookup(FREQUENCY_VARIABLE))
                 .unwrap_or_else(|| DEFAULT_FREQUENCY.to_owned())
                 .to_lowercase(),

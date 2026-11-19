@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Write as _};
 use std::future::{Future, pending, ready};
 use std::sync::{Arc, Mutex};
 
@@ -277,12 +277,12 @@ impl VantageExportLogger for FakeVantageLogger {
         Box::pin(ready(Ok(())))
     }
 
-    fn export_usage_data<'logger>(
-        &'logger self,
+    fn export_usage_data(
+        &self,
         _limit: Option<i64>,
         _start_time_utc: Option<DateTime<Utc>>,
         _end_time_utc: Option<DateTime<Utc>>,
-    ) -> BoxFuture<'logger, Result<(), VantageExportError>> {
+    ) -> BoxFuture<'_, Result<(), VantageExportError>> {
         Box::pin(ready(Ok(())))
     }
 }
@@ -364,7 +364,7 @@ struct MessageText<'buffer> {
 impl Visit for MessageText<'_> {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
-            self.message.push_str(&format!("{value:?}"));
+            write!(self.message, "{value:?}").unwrap_or(());
         }
     }
 }
