@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::Notify;
+use tokio::time::timeout;
 
 use crate::finops::mavvrik::schedule::initialize_mavvrik_export_job;
 use crate::finops::mavvrik::support::{PodLockCall, Recorder, build, environment, pod_lock};
@@ -40,7 +42,9 @@ async fn a_cancelled_export_still_releases_the_lock() {
     job.abort();
     let cancelled = job.await.expect_err("the run is cancelled");
     assert!(cancelled.is_cancelled());
-    logger.drain().await;
+    let drained = timeout(Duration::from_secs(1), logger.drain()).await;
+    assert!(drained.is_ok(), "the drained tracker finishes");
+    assert!(logger.tasks.is_closed());
     assert_eq!(
         lock.calls(),
         vec![

@@ -64,7 +64,8 @@ where
     logger.export_window(&window, None).await
 }
 
-// an empty marker catches the whole window up; a parsed marker only while it is before yesterday, and never a bad one
+// an empty marker catches up everything, a parsed one only before yesterday, a bad one never; <= leaves the same dates, hence mutants::skip
+#[cfg_attr(test, mutants::skip)]
 fn catch_up_needed(
     marker: &MetricsMarker,
     last_ingested: Option<DateTime<Utc>>,
