@@ -293,9 +293,14 @@ pub(crate) fn chat_platform_headers() {
         ])
     );
 
-    // The environment key answers when the request carries none, and its empty value counts as unset.
-    case.api_key = None;
+    // The environment key answers when the request carries none or an empty one, which `or` skips.
+    case.api_key = Some(SecretString::from(""));
     case.environment.anthropic_aws_api_key = Some(SecretString::from("environment-key"));
+    let chat = case
+        .chat_headers(&records)
+        .expect("an empty request key leaves the environment key");
+    assert_eq!(header(&chat.values, "x-api-key"), Some("environment-key"));
+    case.api_key = None;
     let chat = case.chat_headers(&records).expect("the environment key");
     assert_eq!(header(&chat.values, "x-api-key"), Some("environment-key"));
     case.environment.anthropic_aws_api_key = Some(SecretString::from(""));
