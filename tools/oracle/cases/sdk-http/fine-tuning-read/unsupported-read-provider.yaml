@@ -16,11 +16,13 @@ call:
           call:
             fine_tuning_job_id: ft_a
             provider: vertex_ai
-      - list:
+      - retrieve:
           call:
+            fine_tuning_job_id: ft_a
             provider: null
-      - list:
+      - aretrieve:
           call:
+            fine_tuning_job_id: ft_a
             provider: unknown
       - list:
           call:

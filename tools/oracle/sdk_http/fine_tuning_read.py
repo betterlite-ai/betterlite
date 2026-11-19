@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from enum import Enum
-from typing import TypeAlias
+from typing import Literal, TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -13,6 +13,25 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 # list answers a page and retrieve a job, and an async flag makes either one return a coroutine
 ModelResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
+
+# the provider names list and alist declare; any other name only reaches the unsupported branch
+Provider: TypeAlias = Literal["openai", "azure", "vertex_ai"]
+
+
+# every keyword argument the four calls take, and the per-call ones list and retrieve add
+class ReadValues(TypedDict, total=False):
+    api_base: str
+    api_key: str | None
+    api_version: str | None
+    organization: str | None
+    timeout: float | str | httpx.Timeout | None
+    request_timeout: float | str | None
+    max_retries: int | None
+    client: OpenAI | None
+    after: str | None
+    limit: int | None
+    custom_llm_provider: Provider
+    fine_tuning_job_id: str
 
 
 class StructuredTimeout(BaseModel):
@@ -39,7 +58,7 @@ class ReadParams(BaseModel):
 class ListCall(ReadParams):
     after: str | None = None
     limit: int | None = None
-    provider: str | None = "openai"
+    provider: Provider = "openai"
     extra_headers: dict[str, str] | None = None
     extra_body: dict[str, JsonValue] | None = None
 
@@ -163,19 +182,36 @@ def timeout_value(
             return timeout
 
 
-def arguments(
-    call: ReadParams, harness: str, client: OpenAI | None
-) -> dict[str, object]:
-    return {
-        "api_base": call.api_base if call.api_base is not None else harness,
-        "api_key": call.api_key,
-        "api_version": call.api_version,
-        "organization": call.organization,
-        "timeout": timeout_value(call.timeout),
-        "request_timeout": call.request_timeout,
-        "max_retries": call.max_retries,
-        "client": client,
-    }
+def read_values(
+    step: ListStep | RetrieveStep, harness: str, client: OpenAI | None
+) -> ReadValues:
+    match step:
+        case ListStep(call=call):
+            return ReadValues(
+                api_base=call.api_base if call.api_base is not None else harness,
+                api_key=call.api_key,
+                api_version=call.api_version,
+                organization=call.organization,
+                timeout=timeout_value(call.timeout),
+                request_timeout=call.request_timeout,
+                max_retries=call.max_retries,
+                client=client,
+                after=call.after,
+                limit=call.limit,
+                custom_llm_provider=call.provider,
+            )
+        case RetrieveStep(call=call):
+            return ReadValues(
+                api_base=call.api_base if call.api_base is not None else harness,
+                api_key=call.api_key,
+                api_version=call.api_version,
+                organization=call.organization,
+                timeout=timeout_value(call.timeout),
+                request_timeout=call.request_timeout,
+                max_retries=call.max_retries,
+                client=client,
+                fine_tuning_job_id=call.fine_tuning_job_id,
+            )
 
 
 class ReadOperation(Enum):
@@ -183,33 +219,6 @@ class ReadOperation(Enum):
     ALIST = "alist"
     RETRIEVE = "retrieve"
     ARETRIEVE = "aretrieve"
-
-
-def read_arguments(
-    step: ListStep | RetrieveStep, harness: str, client: OpenAI | None
-) -> dict[str, object]:
-    values = arguments(step.call, harness, client)
-    match step:
-        case ListStep(call=call):
-            values.update(
-                {
-                    "after": call.after,
-                    "limit": call.limit,
-                    "custom_llm_provider": call.provider,
-                    "extra_headers": call.extra_headers,
-                    "extra_body": call.extra_body,
-                }
-            )
-        case RetrieveStep(call=call):
-            values.update(
-                {
-                    "fine_tuning_job_id": call.fine_tuning_job_id,
-                    "custom_llm_provider": call.provider,
-                    "extra_headers": call.extra_headers,
-                    "extra_body": call.extra_body,
-                }
-            )
-    return values
 
 
 # the openai client raises APIStatusError carrying the status and the body's error fields
@@ -230,11 +239,14 @@ def settle(result: ModelResult) -> JsonValue:
             with asyncio.Runner() as runner:
                 settled = runner.run(result)
             return JSON.validate_json(settled.model_dump_json())
-        case BaseModel():
+        case object():
             return JSON.validate_json(result.model_dump_json())
 
 
-def request(operation: ReadOperation, values: dict[str, object]) -> ModelResult:
+# list and alist declare the provider, and a retrieve boundary is decorated into an untyped call
+def request(
+    operation: ReadOperation, values: ReadValues, provider: str | None
+) -> ModelResult:
     result: ModelResult
     match operation:
         case ReadOperation.LIST:
@@ -242,18 +254,19 @@ def request(operation: ReadOperation, values: dict[str, object]) -> ModelResult:
         case ReadOperation.ALIST:
             result = litellm.alist_fine_tuning_jobs(**values)
         case ReadOperation.RETRIEVE:
-            result = litellm.retrieve_fine_tuning_job(**values)
+            result = litellm.retrieve_fine_tuning_job(**values, custom_llm_provider=provider)
         case ReadOperation.ARETRIEVE:
-            result = litellm.aretrieve_fine_tuning_job(**values)
+            result = litellm.aretrieve_fine_tuning_job(**values, custom_llm_provider=provider)
     return result
 
 
 def read_outcome(
     step: ListStep | RetrieveStep, harness: str, operation: ReadOperation
 ) -> StepOutcome:
-    values = read_arguments(step, harness, read_client(step, harness))
+    values = read_values(step, harness, read_client(step, harness))
     try:
-        settled = settle(request(operation, values))
+        result = request(operation, values, step.call.provider)
+        settled = settle(result)
     except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
     except ValueError as error:

@@ -210,7 +210,10 @@ fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
     }
 }
 
-fn plain_failure(class: &str, error: &impl std::fmt::Display) -> Failure {
+fn plain_failure<E>(class: &str, error: &E) -> Failure
+where
+    E: std::fmt::Display,
+{
     Failure {
         class: class.to_owned(),
         status: 0,
