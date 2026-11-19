@@ -17,11 +17,8 @@ use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 
 use crate::aws_settings::AuthError;
 use crate::credentials::error::CredentialError;
-use crate::realtime_events::stream::ClosableBedrockRuntimeClient as _;
 use crate::realtime_transport::error::NO_CREDENTIALS_MESSAGE;
-use crate::realtime_transport::runtime::{
-    RealtimeClient as _, RealtimeRuntime as _, RuntimeConfig, SdkRuntime,
-};
+use crate::realtime_transport::runtime::{RealtimeRuntime as _, RuntimeConfig, SdkRuntime};
 use crate::signing::target::RegionInputs;
 
 pub(super) async fn python_sdk_boundary() {

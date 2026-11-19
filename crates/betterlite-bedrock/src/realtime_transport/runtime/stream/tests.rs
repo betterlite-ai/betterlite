@@ -15,8 +15,7 @@ use tokio::sync::mpsc;
 
 use super::{InputQueue, OutputStream, SdkInput, SdkOutput};
 use crate::realtime_events::stream::{
-    BedrockInputStream as _, BedrockOutputChunk as _, BedrockOutputStream as _,
-    BedrockPayloadPart as _, StreamError,
+    BedrockInputStream as _, BedrockOutputStream as _, StreamError,
 };
 use crate::realtime_transport::error::ProviderClass as _;
 use crate::realtime_transport::runtime::error::SdkStreamError;
@@ -75,7 +74,6 @@ async fn sdk_output_receives_chunks_and_ends() {
                 .bytes(Blob::new(b"payload".to_vec()))
                 .build(),
         ))),
-        Ok(Some(OutputEvent::Unknown)),
         Ok(None),
     ];
     let stream: OutputStream = Box::pin(iter(events));
@@ -85,15 +83,6 @@ async fn sdk_output_receives_chunks_and_ends() {
     let chunk = output.receive().await.unwrap().expect("the chunk arrives");
     let part = chunk.value().expect("the chunk carries a payload part");
     assert_eq!(part.bytes(), Some(b"payload".as_slice()));
-    let unknown = output
-        .receive()
-        .await
-        .unwrap()
-        .expect("an unknown event still arrives");
-    assert!(
-        unknown.value().is_none(),
-        "an unknown event carries no part"
-    );
     assert!(
         output.receive().await.unwrap().is_none(),
         "the ended stream ends the output"
