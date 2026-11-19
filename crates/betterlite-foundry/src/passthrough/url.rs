@@ -27,7 +27,7 @@ pub fn foundry_root(api_base: &str) -> Result<String, FoundryPassthroughError> {
         .iter()
         .position(|segment| segment.as_str() == MODELS_SEGMENT)
         .unwrap_or(segments.len());
-    rebuilt(url, &segments[..end])
+    rebuilt(url, segments.get(..end).unwrap_or_default())
 }
 
 #[must_use]
@@ -51,7 +51,8 @@ pub fn without_repeated_native_prefix(
         .map(caseless::default_case_fold_str)
         .collect();
     let overlap = overlap_length(&root_segments, &native_segments);
-    rebuilt(url, &root_segments[..root_segments.len() - overlap])
+    let kept = root_segments.len().saturating_sub(overlap);
+    rebuilt(url, root_segments.get(..kept).unwrap_or_default())
 }
 
 // relay_query_params: a caller api-version wins even when its value is null or empty
@@ -96,12 +97,17 @@ fn overlap_length(root_segments: &[String], native_segments: &[String]) -> usize
     (1..=longest)
         .rev()
         .find(|&length| {
-            let root_suffix = &root_segments[root_segments.len() - length..];
-            root_suffix
-                .iter()
-                .zip(&native_segments[..length])
-                .all(|(root, native)| caseless::default_case_fold_str(root) == *native)
-                && is_repeated_native_prefix(native_segments, length)
+            let start = root_segments.len().saturating_sub(length);
+            root_segments
+                .get(start..)
+                .zip(native_segments.get(..length))
+                .is_some_and(|(root_suffix, native_prefix)| {
+                    root_suffix
+                        .iter()
+                        .zip(native_prefix)
+                        .all(|(root, native)| caseless::default_case_fold_str(root) == *native)
+                        && is_repeated_native_prefix(native_segments, length)
+                })
         })
         .unwrap_or(0)
 }
