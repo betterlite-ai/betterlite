@@ -61,14 +61,7 @@ CONFIG: Final = BraveSearchConfig()
 
 
 def result_value(result: ResultView) -> JsonValue:
-    view: ResultView = {
-        "title": result["title"],
-        "url": result["url"],
-        "snippet": result["snippet"],
-        "date": result["date"],
-        "last_updated": result["last_updated"],
-    }
-    return JSON.validate_python(view)
+    return JSON.validate_python(result)
 
 
 def request_value(call: RequestCall) -> JsonValue:
@@ -113,12 +106,10 @@ def answer(call: Call) -> JsonValue:
 
 def outcome(call: Call) -> JsonValue:
     try:
-        value: dict[str, JsonValue] = {"ok": True, "value": answer(call)}
-        return JSON.validate_python(value)
+        return JSON.validate_python({"ok": True, "value": answer(call)})
     # the source raises these for a missing key, an untrusted base or a reply it cannot read
     except (AttributeError, TypeError, ValueError):
-        failure: dict[str, JsonValue] = {"ok": False}
-        return JSON.validate_python(failure)
+        return JSON.validate_python({"ok": False})
 
 
 def run(input_value: Input) -> JsonValue:

@@ -13,6 +13,20 @@ pub(super) struct Field {
     pub(super) label: Option<Label>,
 }
 
+// the calendar members a run of numbers names; a member the source fills from its own day is None
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Resolved {
+    pub(super) year: Option<i64>,
+    pub(super) month: Option<i64>,
+    pub(super) day: Option<i64>,
+}
+
+impl Resolved {
+    fn new(year: Option<i64>, month: Option<i64>, day: Option<i64>) -> Self {
+        Self { year, month, day }
+    }
+}
+
 // the year, month and day list the source's parser fills as it walks the tokens
 #[derive(Debug, Clone, Default)]
 pub(super) struct Fields {
@@ -53,13 +67,10 @@ impl Fields {
     }
 }
 
-pub(super) fn resolve(
-    fields: &Fields,
-    flags: DateFlags,
-) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
+pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
     let items = &fields.items;
     if items.is_empty() {
-        return Some((None, None, None));
+        return Some(Resolved::new(None, None, None));
     }
     let mut slots = [
         fields.index(Label::Year),
@@ -73,12 +84,12 @@ pub(super) fn resolve(
         if let (Some(missing), Some(free)) = (missing, slots.iter().position(Option::is_none)) {
             *slots.get_mut(free)? = Some(missing);
         }
-        let value = |slot: Option<usize>| {
+        let value = |slot| {
             slot.and_then(|index| items.get(index))
                 .map(|field| field.value)
         };
         let [year, month, day] = slots;
-        return Some((value(year), value(month), value(day)));
+        return Some(Resolved::new(value(year), value(month), value(day)));
     }
     let month_index = slots.get(1).copied().flatten();
     let values: Vec<i64> = items.iter().map(|field| field.value).collect();
@@ -90,82 +101,74 @@ pub(super) fn resolve(
     }
 }
 
-fn single(
-    values: &[i64],
-    month_index: Option<usize>,
-) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
+fn single(values: &[i64], month_index: Option<usize>) -> Option<Resolved> {
     let value = values.first().copied()?;
     if month_index.is_some() {
-        return Some((None, Some(value), None));
+        return Some(Resolved::new(None, Some(value), None));
     }
     if value > 31 {
-        return Some((Some(value), None, None));
+        return Some(Resolved::new(Some(value), None, None));
     }
-    Some((None, None, Some(value)))
+    Some(Resolved::new(None, None, Some(value)))
 }
 
-fn pair(
-    values: &[i64],
-    month_index: Option<usize>,
-    flags: DateFlags,
-) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
+fn pair(values: &[i64], month_index: Option<usize>, flags: DateFlags) -> Option<Resolved> {
     let first = values.first().copied()?;
     let second = values.get(1).copied()?;
     if let Some(index) = month_index {
         let other = if index == 0 { second } else { first };
+        let month = values.get(index).copied();
         return Some(if other > 31 {
-            (Some(other), Some(values.get(index).copied()?), None)
+            Resolved::new(Some(other), month, None)
         } else {
-            (None, values.get(index).copied(), Some(other))
+            Resolved::new(None, month, Some(other))
         });
     }
     if first > 31 {
-        return Some((Some(first), Some(second), None));
+        return Some(Resolved::new(Some(first), Some(second), None));
     }
     if second > 31 {
-        return Some((Some(second), Some(first), None));
+        return Some(Resolved::new(Some(second), Some(first), None));
     }
     if flags.dayfirst && second <= 12 {
-        return Some((None, Some(second), Some(first)));
+        return Some(Resolved::new(None, Some(second), Some(first)));
     }
-    Some((None, Some(first), Some(second)))
+    Some(Resolved::new(None, Some(first), Some(second)))
 }
 
+// where each member of a three-number run lands, as year, month and day positions
 fn triple(
     values: &[i64],
     month_index: Option<usize>,
     fields: &Fields,
     flags: DateFlags,
-) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
+) -> Option<Resolved> {
     let second = values.get(1).copied()?;
     let slots = match month_index {
-        Some(0) if second > 31 => (1, 0, 2),
-        Some(0) => (2, 0, 1),
+        Some(0) if second > 31 => [1, 0, 2],
+        Some(0) => [2, 0, 1],
         Some(1) => {
             let first = values.first().copied()?;
             let third = values.get(2).copied()?;
             if first > 31 || (flags.yearfirst && third <= 31) {
-                (0, 1, 2)
+                [0, 1, 2]
             } else {
-                (2, 1, 0)
+                [2, 1, 0]
             }
         }
-        Some(2) if second > 31 => (1, 2, 0),
-        Some(2) => (0, 2, 1),
+        Some(2) if second > 31 => [1, 2, 0],
+        Some(2) => [0, 2, 1],
         _ => numeric_shape(values, fields, flags)?,
     };
-    Some((
-        values.get(slots.0).copied(),
-        values.get(slots.1).copied(),
-        values.get(slots.2).copied(),
+    let [year, month, day] = slots;
+    Some(Resolved::new(
+        values.get(year).copied(),
+        values.get(month).copied(),
+        values.get(day).copied(),
     ))
 }
 
-fn numeric_shape(
-    values: &[i64],
-    fields: &Fields,
-    flags: DateFlags,
-) -> Option<(usize, usize, usize)> {
+fn numeric_shape(values: &[i64], fields: &Fields, flags: DateFlags) -> Option<[usize; 3]> {
     let first = values.first().copied()?;
     let second = values.get(1).copied()?;
     let third = values.get(2).copied()?;
@@ -174,15 +177,15 @@ fn numeric_shape(
         || (flags.yearfirst && second <= 12 && third <= 31)
     {
         return Some(if flags.dayfirst && third <= 12 {
-            (0, 2, 1)
+            [0, 2, 1]
         } else {
-            (0, 1, 2)
+            [0, 1, 2]
         });
     }
     if first > 12 || (flags.dayfirst && second <= 12) {
-        return Some((2, 1, 0));
+        return Some([2, 1, 0]);
     }
-    Some((2, 0, 1))
+    Some([2, 0, 1])
 }
 
 pub(super) fn convert_year(year: i64, century: bool, current_year: i64) -> i64 {
