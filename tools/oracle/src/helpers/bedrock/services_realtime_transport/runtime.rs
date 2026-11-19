@@ -135,46 +135,7 @@ impl RealtimeRuntime for FakeRuntime {
     ) -> impl Future<
         Output = Result<Box<dyn RealtimeClient<Error = FakeError>>, StreamError<FakeError>>,
     > + Send {
-        self.recorded.configured.store(true, Ordering::SeqCst);
-        *self
-            .recorded
-            .endpoint
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(config.endpoint_uri);
-        *self
-            .recorded
-            .region
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(config.region);
-        let credentials = &config.credentials;
-        *self
-            .recorded
-            .access_key_id
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) =
-            Some(credentials.access_key_id.expose_secret().to_owned());
-        *self
-            .recorded
-            .secret_access_key
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) =
-            Some(credentials.secret_access_key.expose_secret().to_owned());
-        *self
-            .recorded
-            .session_token
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = credentials
-            .session_token
-            .as_ref()
-            .map(|token| token.expose_secret().to_owned());
-        let state = Arc::new(ClientState {
-            closed: AtomicBool::new(false),
-        });
-        self.recorded
-            .clients
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Arc::clone(&state));
+        let state = record_connection(&self.recorded, config);
         let client: Box<dyn RealtimeClient<Error = FakeError>> = Box::new(FakeRuntimeClient {
             recorded: Arc::clone(&self.recorded),
             plan: self.plan.clone(),
@@ -182,6 +143,45 @@ impl RealtimeRuntime for FakeRuntime {
         });
         ready(Ok(client))
     }
+}
+
+fn record_connection(recorded: &Recorded, config: RuntimeConfig) -> Arc<ClientState> {
+    recorded.configured.store(true, Ordering::SeqCst);
+    *recorded
+        .endpoint
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(config.endpoint_uri);
+    *recorded
+        .region
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(config.region);
+    let credentials = &config.credentials;
+    *recorded
+        .access_key_id
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) =
+        Some(credentials.access_key_id.expose_secret().to_owned());
+    *recorded
+        .secret_access_key
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) =
+        Some(credentials.secret_access_key.expose_secret().to_owned());
+    *recorded
+        .session_token
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = credentials
+        .session_token
+        .as_ref()
+        .map(|token| token.expose_secret().to_owned());
+    let state = Arc::new(ClientState {
+        closed: AtomicBool::new(false),
+    });
+    recorded
+        .clients
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(Arc::clone(&state));
+    state
 }
 
 pub(super) struct ClientState {

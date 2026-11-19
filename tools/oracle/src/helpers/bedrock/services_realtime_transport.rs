@@ -17,6 +17,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Builder;
 
 mod client;
 mod fakes;
@@ -116,7 +117,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(failure)?;
@@ -180,6 +181,8 @@ fn auth_params(auth: Option<&Auth>) -> AuthParams {
     }
 }
 
+type OutcomeLabel = (&'static str, Option<&'static str>, Option<u16>);
+
 async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
     let recorded = Arc::new(Recorded::default());
     let runtime = FakeRuntime {
@@ -215,13 +218,32 @@ async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
             trace_id: TRACE_ID,
         })
         .await;
-    let (outcome_label, error_kind, status_code) = match &outcome {
+    let label = outcome_label(&outcome);
+    scenario_view(&recorded, &client, &logging, &scope, label)
+}
+
+fn outcome_label<E, C>(outcome: &Result<(), RealtimeTransportError<E, C>>) -> OutcomeLabel
+where
+    E: StdError + 'static,
+    C: StdError + 'static,
+{
+    match outcome {
         Ok(()) => ("ok", None, None),
         Err(error) => {
             let (kind, status) = classify(error);
             ("error", Some(kind), status)
         }
-    };
+    }
+}
+
+fn scenario_view(
+    recorded: &Recorded,
+    client: &FakeWebSocket,
+    logging: &FakeLogging,
+    scope: &EventScope,
+    label: OutcomeLabel,
+) -> ScenarioView {
+    let (outcome, error_kind, status_code) = label;
     let view = recorded.view();
     let (access_key_id, secret_access_key, session_token) = recorded.identity();
     let configured = view.configured;
@@ -243,7 +265,7 @@ async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
         committed: matches!(scope.session_committed, Json::Bool(true)),
         failure_set: !matches!(scope.committed_failure, Json::Null),
         success_flag: logging.success_logged(),
-        outcome: outcome_label,
+        outcome,
         error_kind,
         status_code,
     }
