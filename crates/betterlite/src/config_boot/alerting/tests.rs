@@ -248,6 +248,25 @@ fn absent_raw_alerting_settings_are_none() {
 }
 
 #[test]
+fn explicit_null_raw_alerting_settings_are_none() {
+    let ports = RecordingAlerting::default();
+    load_alerting_settings(
+        &settings_of(
+            "general_settings:\n  alerting:\n    - slack\n  alert_types:\n  alert_to_webhook_url:\n  alerting_args:\n  alert_type_config:\n",
+        ),
+        &ports,
+    )
+    .unwrap();
+    assert!(
+        ports
+            .updates()
+            .first()
+            .unwrap()
+            .contains("types:false:webhook:false:args:false:config:false")
+    );
+}
+
+#[test]
 fn alerting_must_be_a_list() {
     let ports = RecordingAlerting::default();
     let error = load_alerting_settings(

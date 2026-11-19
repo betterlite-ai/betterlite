@@ -27,6 +27,9 @@ deviations:
   - what: google_secret_manager validates GOOGLE_SECRET_MANAGER_PROJECT_ID without a license check, where LiteLLM raises ValueError("Google Secret Manager requires an Enterprise License ...") before it reads the project id when premium_user is not True.
     why: betterlite has no paid tier, and a license gate would refuse every Google Secret Manager setup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L28-L31
+  - what: vault_tls reads SSL_VERIFY as a boolean (true/false in any case, ignoring surrounding spaces) before it treats the value as a CA bundle path, where get_ssl_verify first returns SSL_VERIFY unchanged when a file of that name exists in the working directory.
+    why: a working directory holding a file named "true" or "false" would otherwise hand the Vault client a CA bundle path that is not a certificate, and every Vault request fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L351-L359
 kept_bugs:
   - what: A known alerting callback whose logger fails to initialize is logged with the "[Non-Blocking Error] Error initializing custom logger" prefix and boot continues, where betterlite's error rules would surface it.
     why: _init_custom_logger_compatible_class catches every exception, logs it and returns None, and _load_alerting_settings keeps going, so a setup with one broken alerting integration still starts.
