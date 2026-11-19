@@ -11,6 +11,8 @@ use crate::api::resource_sdk_settings::timeout::TimeoutError;
 pub struct AssistantErrorFields {
     pub class: &'static str,
     pub status: Option<u16>,
+    // the OpenAI error body's type; only LiteLLM's internal error sets one on its own class
+    pub error_type: Option<&'static str>,
     // litellm's own exceptions print their class before the message, a plain Exception does not
     pub prefixed: bool,
 }
@@ -38,8 +40,8 @@ where
     MissingAssistantId,
     #[error("No response returned from '{function}'")]
     MissingReply { function: &'static str },
-    #[error("the dispatch answered '{function}' with the wrong reply")]
-    MismatchedReply { function: &'static str },
+    #[error("the dispatch answered with the wrong reply")]
+    MismatchedReply,
     #[error(transparent)]
     Dispatch(#[from] DispatchError),
 }
@@ -54,20 +56,21 @@ where
             Self::Unsupported { .. } => Some(AssistantErrorFields {
                 class: "BadRequestError",
                 status: Some(400),
+                error_type: None,
                 prefixed: true,
             }),
             Self::InvalidFlag { class, .. } => Some(AssistantErrorFields {
                 class,
                 status: None,
+                error_type: None,
                 prefixed: false,
             }),
-            Self::MissingReply { .. } | Self::MismatchedReply { .. } => {
-                Some(AssistantErrorFields {
-                    class: "InternalServerError",
-                    status: Some(500),
-                    prefixed: true,
-                })
-            }
+            Self::MissingReply { .. } | Self::MismatchedReply => Some(AssistantErrorFields {
+                class: "InternalServerError",
+                status: Some(500),
+                error_type: Some("internal_server_error"),
+                prefixed: true,
+            }),
             Self::Limits(_) | Self::Timeout(_) | Self::MissingAssistantId | Self::Dispatch(_) => {
                 None
             }

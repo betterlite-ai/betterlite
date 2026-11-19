@@ -187,7 +187,10 @@ fn failure_view(
         } else {
             text
         };
-        json!({ "class": fields.class, "status": fields.status, "message": message })
+        json!({
+            "class": fields.class, "status": fields.status, "type": fields.error_type,
+            "message": message,
+        })
     } else if let AssistantReadDeleteError::Dispatch(AssistantSdkError::Assistants(
         AssistantsError::Status { status, body },
     )) = error

@@ -640,6 +640,7 @@ async fn invalid_flags_raise_the_litellm_classes_without_a_request() {
     let fields = error.fields().unwrap();
     assert_eq!(fields.class, "Exception");
     assert_eq!(fields.status, None);
+    assert_eq!(fields.error_type, None);
     assert_eq!(
         error.to_string(),
         "Invalid value passed in for aget_assistants. Only bool or None allowed"
@@ -685,6 +686,7 @@ async fn unsupported_providers_and_null_replies_answer_like_litellm() {
     let fields = error.fields().unwrap();
     assert_eq!(fields.class, "BadRequestError");
     assert_eq!(fields.status, Some(400));
+    assert_eq!(fields.error_type, None);
     assert_eq!(
         error.to_string(),
         "LiteLLM doesn't support anthropic for 'get_assistants'. Only 'openai' is supported."
@@ -723,9 +725,25 @@ async fn unsupported_providers_and_null_replies_answer_like_litellm() {
     let fields = error.fields().unwrap();
     assert_eq!(fields.class, "InternalServerError");
     assert_eq!(fields.status, Some(500));
+    assert_eq!(fields.error_type, Some("internal_server_error"));
     assert_eq!(
         error.to_string(),
         "No response returned from 'delete_assistant'"
+    );
+
+    let page = serde_json::from_str::<betterlite_openai::assistants::records::AssistantPage>(PAGE)
+        .unwrap();
+    let scripted = Scripted {
+        reply: Ok(Some(super::AssistantReply::Page(page))),
+    };
+    let error = facade(scripted.into_dispatch(), Settings::default())
+        .run(&input)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.fields().unwrap().class,
+        "InternalServerError",
+        "a reply of the other operation's kind is a dispatch bug, not a page to hand back"
     );
 
     let scripted = Scripted { reply: Ok(None) };

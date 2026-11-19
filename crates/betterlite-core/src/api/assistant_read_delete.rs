@@ -109,11 +109,7 @@ where
             (AssistantOperation::Delete, AssistantReply::Deleted(deleted)) => {
                 AssistantStep::Deleted(deleted)
             }
-            (_, _) => {
-                return Err(AssistantReadDeleteError::MismatchedReply {
-                    function: input.operation.function(),
-                });
-            }
+            (_, _) => return Err(AssistantReadDeleteError::MismatchedReply),
         };
         Ok(AssistantReadDeleteResult { call, step })
     }
