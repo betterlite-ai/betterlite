@@ -74,6 +74,36 @@ async fn walk_drops_each_full_page_before_reading_the_next() {
 }
 
 #[tokio::test]
+async fn an_empty_selection_reads_no_customer_and_drops_nothing() {
+    let (fixture, store, client) = schema().await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('unlinked', NULL, 10)",
+        )
+        .await
+        .unwrap();
+    let cache = RecordingCache::default();
+    let budget_ids: Vec<String> = Vec::new();
+    let request = EndUserWalkRequest {
+        budget_ids: &budget_ids,
+        default_enduser_budget_id: Some("tier-a"),
+        batch_size: 500,
+    };
+    let mut reconnect = CountingReconnect::new(false);
+    let walk = invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
+    assert_eq!(
+        walk,
+        EndUserWalk {
+            cursor: None,
+            invalidated: 0,
+            truncated: false,
+        }
+    );
+    assert!(cache.calls().is_empty());
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
 async fn unlinked_customers_join_only_when_the_default_tier_expires() {
     let (fixture, store, client) = schema().await;
     client

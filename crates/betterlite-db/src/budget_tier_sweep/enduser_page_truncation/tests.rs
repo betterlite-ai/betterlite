@@ -21,6 +21,19 @@ fn a_full_page_moves_the_cursor_after_its_last_row() {
 }
 
 #[test]
+fn a_page_over_the_batch_keeps_the_cursor() {
+    let walk = EndUserWalk::start().after_page(Some("u9"), 3, 2);
+    assert_eq!(
+        walk,
+        EndUserWalk {
+            cursor: Some("u9".to_owned()),
+            invalidated: 3,
+            truncated: false,
+        }
+    );
+}
+
+#[test]
 fn a_short_page_ends_the_walk() {
     let walk = EndUserWalk::start()
         .after_page(Some("u2"), 2, 2)
