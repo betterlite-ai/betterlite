@@ -1,0 +1,15 @@
+kind: helper
+name: upload-url-fetch
+call:
+  b3451:
+    mode: upload
+    options:
+      vector_store:
+        custom_llm_provider: openai
+    file_url: https://host/files/report.txt
+    fetch:
+      status: 200
+      content_type: text/plain
+      body_base64: aGVsbG8gdXJs
+env: {}
+compare: {ignore: []}
