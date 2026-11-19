@@ -2,7 +2,7 @@ id: B9987
 milestone: M4 keys, spend and management
 title: Mount the credential routes over the shared database
 status: todo
-depends_on: [B1601, B8610, B5076, B8590]
+depends_on: [B1601, B8610, B9942, B8590]
 file: tasks/B9987-credential-routes-mount.yaml
 covers: []
 parent: B061

@@ -1,0 +1,25 @@
+kind: probe
+name: usage-routing-rpm-plus-one-equals-limit
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        # the requests check counts the next request before comparing it: a deployment whose window count is one
+        # below its rpm is already skipped, and an id the requests window never saw is never skipped by rpm.
+        deployments:
+          - {id: dep-a, rpm: 2}
+          - {id: dep-b, info_rpm: 3}
+        steps:
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 10}
+          # dep-a sits at rpm 2 with one request counted, so 1 + 1 reaches the limit and dep-b answers instead
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 10}
+          # dep-b at one request keeps answering, since 1 + 1 stays below its rpm 3
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 10}
+          # dep-b at two requests reaches rpm 3 and no deployment is left to answer
+          - {kind: select, now_millis: 1700000000000}
+          - {kind: observe, now_millis: 1700000000000}

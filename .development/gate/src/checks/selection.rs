@@ -92,10 +92,23 @@ pub(crate) fn lint(id: &str) -> bool {
     }
 }
 
-// stage 3: CI runs every other check on the task's pull request, and on 11-13 the local hooks, mypy and basedpyright took 1 to 3 minutes a call under load
-pub(crate) fn committed() -> Selection {
+// stage 3: CI runs every check that builds; these need none and took 2 to 61 s on six task heads on 11-16, while a push that fails only them costs a CI round, 39 minutes median
+pub(crate) fn unbuilt() -> Selection {
     Selection {
-        only: vec!["committed".to_owned()],
+        only: vec![
+            "committed".to_owned(),
+            "hooks".to_owned(),
+            "similarity".to_owned(),
+        ],
+        skip: Vec::new(),
+        beside: Vec::new(),
+    }
+}
+
+// the dispatcher's local clippy lane, which next-slot.sh turns on with GATE_LINT_ROOT (lever 2, 11-19)
+pub(crate) fn linted() -> Selection {
+    Selection {
+        only: vec!["clippy".to_owned()],
         skip: Vec::new(),
         beside: Vec::new(),
     }

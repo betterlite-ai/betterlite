@@ -1,0 +1,25 @@
+kind: helper
+name: ignored_noncolon_key
+call:
+  dataforseo_search:
+    environment: {DATAFORSEO_LOGIN: server, DATAFORSEO_PASSWORD: secret}
+    calls:
+      - {kind: validate_environment, api_key: "sk-caller"}
+      - {kind: validate_environment, api_key: ""}
+calls:
+  - dataforseo_search:
+      environment: {DATAFORSEO_LOGIN: server, DATAFORSEO_PASSWORD: secret}
+      calls:
+        - {kind: validate_environment, api_base: "https://evil.test"}
+        - {kind: validate_environment, api_base: "https://api.dataforseo.com/v3/other"}
+        - {kind: settings}
+  - dataforseo_search:
+      calls:
+        - {kind: validate_environment, api_key: "sk-caller"}
+        - {kind: validate_environment, api_key: "sk-caller", api_base: "https://evil.test"}
+        - {kind: validate_environment, headers: {A: b}}
+        - {kind: settings}
+        - {kind: complete_url, api_base: "https://proxy.test/v3/"}
+        - {kind: complete_url}
+env: {}
+compare: {ignore: []}

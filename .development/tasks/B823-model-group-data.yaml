@@ -21,7 +21,8 @@ description: >-
 
   validate_models_exist checks exact B844 router model names; no router returns (false, original inputs),
   and missing names preserve request order/duplicates. Read-through attempts every initially missing name
-  sequentially via B8231 model_registry_read_through, then rechecks against the current proxy_server router,
+  sequentially through the models read-through, taken as B9949's `&dyn ModelReadThrough` (B9948 builds the
+  production one and the model_read_through state slot carries it), then rechecks against the current proxy_server router,
   since it may have been rebound. Empty missing lists do no work; failures propagate. Native
   readthrough_order_and_rebound_router and readthrough_failure_no_write plus pure exact_model_names
   cover these paths. Read-through settings remain with B8231; this task reads no env/config key.
