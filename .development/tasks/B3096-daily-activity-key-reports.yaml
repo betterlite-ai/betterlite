@@ -12,7 +12,7 @@ description: >-
   `{prefix}/daily/activity/aggregated/model_top_keys`. Only the user prefix also gets GET
   `/user/daily/activity/aggregated/cache_leakage_keys`; a team, tag, organization, customer or agent prefix has
   no such route and answers like any unknown path. That makes 15 routes. /end_user is an alias of /customer
-  that LiteLLM leaves out of /openapi.json; keep it out of the schema too. Each route is authenticated by B052
+  that LiteLLM leaves out of /openapi.json; keep it out of the schema too. Each route is authenticated by B003's key auth middleware
   and carries the resolver's tags and the operation name from `operation_names` (key_page, model_top_keys,
   cache_leakage_keys; B3094's `OperationNames`). Each handler runs inside B865's management completion wrapper,
   like `@management_endpoint_wrapper`. The route functions are named after those operation names. Expose one
@@ -31,7 +31,7 @@ description: >-
   USAGE_CACHE_LEAKAGE_KEYS_MAX). These are fixed constants, not environment settings. Values out of range answer
   422, never a clamped value.
 
-  Order inside every handler. First the dependencies run in this order: the entity query, the caller (B052), the
+  Order inside every handler. First the dependencies run in this order: the entity query, the caller (B732's AuthContext), the
   daily activity repository, the database handle. A missing database stops there with HTTP 500 and detail
   `{"error": <CommonProxyErrors.db_not_connected_error text>}` (litellm/proxy/_types.py L4391-L4395), before
   any 422 for the handler's own parameters is reported. Then `resolved_scope` runs: it checks the date range, then
