@@ -146,6 +146,39 @@ async fn sync_and_async_variations_answer_the_same() {
     assert_eq!(async_transport.take().len(), 1);
 }
 
+// the model-info lookup reads the caller's key and base, not the resolver's dynamic values
+#[tokio::test]
+async fn the_callers_key_and_base_reach_the_request() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("OPENAI_API_KEY", "sk-env")]);
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &NoTopaz,
+        VariationPolicies::default(),
+    );
+    let mut call = variation_call();
+    call.model = Some("openai/dall-e-2".to_owned());
+    call.api_key = Some(SecretString::from("sk-call"));
+    call.api_base = Some("https://call.example/v1".to_owned());
+    let answer = image_variation(&service, &call)
+        .await
+        .expect("the variation succeeds");
+    assert_eq!(answer, VariationAnswer::Response(response()));
+    let requests = transport.take();
+    let [request] = requests.as_slice() else {
+        panic!("exactly one variation request");
+    };
+    assert_eq!(
+        request.url.as_str(),
+        "https://call.example/v1/images/variations"
+    );
+    assert_eq!(request.headers["authorization"], "Bearer sk-call");
+}
+
 #[tokio::test]
 async fn omitting_the_model_uses_dall_e_2() {
     let fixture = Fixture::new();
