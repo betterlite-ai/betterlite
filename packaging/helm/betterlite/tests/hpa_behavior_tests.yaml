@@ -1,0 +1,109 @@
+suite: test HPA rendering gates, targets and scaling behavior
+templates: [gateway/hpa.yaml, backend/hpa.yaml, ui/hpa.yaml]
+values: [./values/required.yaml]
+tests:
+  - it: renders the gateway and backend autoscalers by default and no ui autoscaler
+    asserts:
+      - { hasDocuments: { count: 1 }, template: gateway/hpa.yaml }
+      - { hasDocuments: { count: 1 }, template: backend/hpa.yaml }
+      - { hasDocuments: { count: 0 }, template: ui/hpa.yaml }
+      - { isKind: { of: HorizontalPodAutoscaler }, template: gateway/hpa.yaml }
+      - { equal: { path: apiVersion, value: autoscaling/v2 }, template: gateway/hpa.yaml }
+
+  - it: renders a ui autoscaler once ui.hpa.enabled is set
+    set:
+      ui.hpa.enabled: true
+    asserts:
+      - { hasDocuments: { count: 1 }, template: ui/hpa.yaml }
+      - { isKind: { of: HorizontalPodAutoscaler }, template: ui/hpa.yaml }
+
+  - it: renders no autoscaler for a disabled component even when its own hpa is on
+    set:
+      gateway.enabled: false
+      backend.enabled: false
+      ui.enabled: false
+      ui.hpa.enabled: true
+    asserts:
+      - { hasDocuments: { count: 0 }, template: gateway/hpa.yaml }
+      - { hasDocuments: { count: 0 }, template: backend/hpa.yaml }
+      - { hasDocuments: { count: 0 }, template: ui/hpa.yaml }
+
+  - it: renders no autoscaler for a component whose hpa is off
+    set:
+      gateway.hpa.enabled: false
+      backend.hpa.enabled: false
+      ui.enabled: true
+    asserts:
+      - { hasDocuments: { count: 0 }, template: gateway/hpa.yaml }
+      - { hasDocuments: { count: 0 }, template: backend/hpa.yaml }
+      - { hasDocuments: { count: 0 }, template: ui/hpa.yaml }
+
+  - it: names each autoscaler after its component Deployment and labels it with the component
+    set:
+      ui.hpa.enabled: true
+    asserts:
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-gateway }, template: gateway/hpa.yaml }
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-backend }, template: backend/hpa.yaml }
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-ui }, template: ui/hpa.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: gateway }, template: gateway/hpa.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: backend }, template: backend/hpa.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: ui }, template: ui/hpa.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }, template: gateway/hpa.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }, template: ui/hpa.yaml }
+
+  - it: scales the component Deployment named after the same component
+    set:
+      ui.hpa.enabled: true
+    asserts:
+      - { equal: { path: spec.scaleTargetRef.apiVersion, value: apps/v1 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.scaleTargetRef.kind, value: Deployment }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.scaleTargetRef.name, value: RELEASE-NAME-betterlite-gateway }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.scaleTargetRef.name, value: RELEASE-NAME-betterlite-backend }, template: backend/hpa.yaml }
+      - { equal: { path: spec.scaleTargetRef.name, value: RELEASE-NAME-betterlite-ui }, template: ui/hpa.yaml }
+
+  - it: writes each component's replica bounds from the documented defaults
+    set:
+      ui.hpa.enabled: true
+    asserts:
+      - { equal: { path: spec.minReplicas, value: 1 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.maxReplicas, value: 10 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.minReplicas, value: 1 }, template: backend/hpa.yaml }
+      - { equal: { path: spec.maxReplicas, value: 4 }, template: backend/hpa.yaml }
+      - { equal: { path: spec.minReplicas, value: 1 }, template: ui/hpa.yaml }
+      - { equal: { path: spec.maxReplicas, value: 3 }, template: ui/hpa.yaml }
+
+  - it: honours overridden replica bounds, including a minReplicas of 0
+    set:
+      gateway.hpa.minReplicas: 2
+      gateway.hpa.maxReplicas: 20
+      backend.hpa.minReplicas: 0
+      ui.hpa.enabled: true
+      ui.hpa.maxReplicas: 5
+    asserts:
+      - { equal: { path: spec.minReplicas, value: 2 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.maxReplicas, value: 20 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.minReplicas, value: 0 }, template: backend/hpa.yaml }
+      - { equal: { path: spec.maxReplicas, value: 5 }, template: ui/hpa.yaml }
+
+  - it: renders the scaling behavior of every component
+    set:
+      ui.hpa.enabled: true
+      gateway.hpa.behavior:
+        scaleUp: { stabilizationWindowSeconds: 60, policies: [{ type: Pods, value: 2, periodSeconds: 60 }] }
+      backend.hpa.behavior:
+        scaleDown: { stabilizationWindowSeconds: 90 }
+      ui.hpa.behavior:
+        scaleUp: { stabilizationWindowSeconds: 0 }
+    asserts:
+      - { equal: { path: spec.behavior.scaleUp.stabilizationWindowSeconds, value: 60 }, template: gateway/hpa.yaml }
+      - { equal: { path: 'spec.behavior.scaleUp.policies[0].value', value: 2 }, template: gateway/hpa.yaml }
+      - { equal: { path: spec.behavior.scaleDown.stabilizationWindowSeconds, value: 90 }, template: backend/hpa.yaml }
+      - { equal: { path: spec.behavior.scaleUp.stabilizationWindowSeconds, value: 0 }, template: ui/hpa.yaml }
+
+  - it: leaves spec.behavior out when a component sets none
+    set:
+      ui.hpa.enabled: true
+    asserts:
+      - { isNull: { path: spec.behavior }, template: gateway/hpa.yaml }
+      - { isNull: { path: spec.behavior }, template: backend/hpa.yaml }
+      - { isNull: { path: spec.behavior }, template: ui/hpa.yaml }
