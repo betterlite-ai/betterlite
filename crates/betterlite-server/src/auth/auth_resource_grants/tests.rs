@@ -74,48 +74,35 @@ fn permission_rows() -> BTreeMap<String, LiteLLMObjectPermissionTable> {
     rows
 }
 
-fn search_rule(asked: &str) -> Arc<ResourceGrantRule> {
+fn rule(
+    search_tool: Option<&str>,
+    vector_ids: &[&str],
+    rag: Option<&str>,
+) -> Arc<ResourceGrantRule> {
     Arc::new(ResourceGrantRule {
         key: Some(key(RESTRICTED_KEY)),
         team: None,
-        object_permissions: BTreeMap::new(),
-        search_tool_name: Some(asked.to_owned()),
-        vector_store_ids: Vec::new(),
-        rag_vector_store_id: None,
+        object_permissions: permission_rows(),
+        search_tool_name: search_tool.map(str::to_owned),
+        vector_store_ids: vector_ids.iter().map(|id| (*id).to_owned()).collect(),
+        rag_vector_store_id: rag.map(str::to_owned),
     })
+}
+
+fn search_rule(asked: &str) -> Arc<ResourceGrantRule> {
+    rule(Some(asked), &[], None)
 }
 
 fn vector_rule(ids: &[&str]) -> Arc<ResourceGrantRule> {
-    Arc::new(ResourceGrantRule {
-        key: Some(key(RESTRICTED_KEY)),
-        team: None,
-        object_permissions: permission_rows(),
-        search_tool_name: None,
-        vector_store_ids: ids.iter().map(|id| (*id).to_owned()).collect(),
-        rag_vector_store_id: None,
-    })
+    rule(None, ids, None)
 }
 
 fn rag_rule(id: &str) -> Arc<ResourceGrantRule> {
-    Arc::new(ResourceGrantRule {
-        key: Some(key(RESTRICTED_KEY)),
-        team: None,
-        object_permissions: permission_rows(),
-        search_tool_name: None,
-        vector_store_ids: Vec::new(),
-        rag_vector_store_id: Some(id.to_owned()),
-    })
+    rule(None, &[], Some(id))
 }
 
 fn allowed_rule() -> Arc<ResourceGrantRule> {
-    Arc::new(ResourceGrantRule {
-        key: Some(key(RESTRICTED_KEY)),
-        team: None,
-        object_permissions: permission_rows(),
-        search_tool_name: Some("allowed-tool".to_owned()),
-        vector_store_ids: vec!["vs-allowed".to_owned()],
-        rag_vector_store_id: None,
-    })
+    rule(Some("allowed-tool"), &["vs-allowed"], None)
 }
 
 #[test]

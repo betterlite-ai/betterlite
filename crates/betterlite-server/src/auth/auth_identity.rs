@@ -63,6 +63,12 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
 }
 
+impl From<AuthenticationFailure> for StageFailure {
+    fn from(failure: AuthenticationFailure) -> Self {
+        Self::Authentication(Box::new(failure))
+    }
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
@@ -80,9 +86,7 @@ pub(crate) fn dispatch(
 
 fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthResourceGrants(stage) = input else {
-        return Err(StageFailure::Authentication(Box::new(
-            AuthenticationFailure::Missing,
-        )));
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage)
         .map_err(|exception| StageFailure::ResourceGrants(Box::new(exception)))
@@ -90,9 +94,7 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthModelPatterns(stage) = input else {
-        return Err(StageFailure::Authentication(Box::new(
-            AuthenticationFailure::Missing,
-        )));
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }

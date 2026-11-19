@@ -12,13 +12,11 @@ impl Slot {
     #[must_use]
     pub fn new(config: &Config, _shared: &Shared) -> Self {
         let urls = &config.sections.database_urls;
+        let config_url = urls.config_url.as_ref();
+        let endpoint_url = urls.endpoints.database_url.as_ref();
         Self {
-            database: configured(urls.config_url.as_ref())
-                || configured(urls.endpoints.database_url.as_ref()),
+            database: config_url.is_some_and(|value| !value.expose_secret().is_empty())
+                || endpoint_url.is_some_and(|value| !value.expose_secret().is_empty()),
         }
     }
-}
-
-fn configured(url: Option<&secrecy::SecretString>) -> bool {
-    url.is_some_and(|value| !value.expose_secret().is_empty())
 }
