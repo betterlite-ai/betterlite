@@ -122,6 +122,8 @@ description: >-
   wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-bedrock/src/claude_invoke/request.rs"
+  - "crates/betterlite-bedrock/src/claude_invoke/**"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/mantle_chat.rs
   - crates/betterlite-bedrock/src/mantle_chat/**
