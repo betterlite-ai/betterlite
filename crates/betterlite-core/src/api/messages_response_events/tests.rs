@@ -724,6 +724,7 @@ fn failed_mapping() {
         json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
     );
     assert!(snapshot.stream_failed);
+    assert!(state.stream_failed());
     assert!(!snapshot.sent_message_stop);
     assert_eq!(snapshot.logs.len(), 1);
     let log = snapshot.logs.first().expect("the failure log");
