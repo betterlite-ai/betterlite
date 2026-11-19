@@ -35,7 +35,7 @@ pub(crate) enum PreparedCase<'text> {
 impl PreparedCase<'_> {
     pub(crate) const fn text(&self) -> &str {
         match self {
-            Self::Plain(text) => *text,
+            Self::Plain(text) => text,
             Self::Fixture { text, .. } => text.as_str(),
         }
     }
