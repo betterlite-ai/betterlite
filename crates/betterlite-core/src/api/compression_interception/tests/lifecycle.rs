@@ -8,8 +8,8 @@ use rstest::rstest;
 use tracing::Level;
 
 use super::support::{
-    NOW, applied, cache as content, capture, compressed_output, fixed_clock, harness, manual_clock,
-    number, output, request, skipped_output, text,
+    NOW, applied, cache as content, capture, compressed_output, fixed_clock, harness, list,
+    manual_clock, number, object, output, request, skipped_output, text,
 };
 use crate::api::compression_interception::hook::resolve_call_id;
 
@@ -129,6 +129,37 @@ async fn the_success_log_names_the_call_id_counts_and_keys() {
     assert_eq!(event.original.as_deref(), Some("100"));
     assert_eq!(event.compressed.as_deref(), Some("40"));
     assert_eq!(event.cached_keys, Some(2));
+}
+
+#[tokio::test]
+async fn the_success_log_renders_any_token_count() {
+    let (captured, _guard) = capture();
+    let counts = [
+        (Json::Null, "null"),
+        (Json::Bool(true), "true"),
+        (text("not a number"), "not a number"),
+        (list(Vec::new()), "list"),
+        (object(Vec::new()), "object"),
+    ];
+    for (count, rendered) in counts {
+        let harness = harness(
+            Settings::default(),
+            fixed_clock(NOW),
+            vec![Ok(output(
+                Vec::new(),
+                Vec::new(),
+                count.clone(),
+                count,
+                content(&[("key", "value")]),
+            ))],
+        );
+        let mut body = request();
+        applied(&harness, &mut body).await;
+        let events = captured.events();
+        let event = events.last().expect("the hook logs the compression");
+        assert_eq!(event.original.as_deref(), Some(rendered));
+        assert_eq!(event.compressed.as_deref(), Some(rendered));
+    }
 }
 
 #[tokio::test]

@@ -87,6 +87,15 @@ fn a_custom_tool_with_another_name_is_ignored() {
 }
 
 #[test]
+fn a_tool_with_another_type_is_ignored() {
+    let tools = list(vec![object(vec![
+        ("type", text("web_search")),
+        ("name", text(CONTENT_RETRIEVE_TOOL_NAME)),
+    ])]);
+    assert!(!has_retrieval_tool(Some(&tools)));
+}
+
+#[test]
 fn a_bare_name_without_a_type_is_ignored() {
     let tools = list(vec![object(vec![(
         "name",
