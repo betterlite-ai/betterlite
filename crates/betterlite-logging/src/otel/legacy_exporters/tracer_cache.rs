@@ -16,6 +16,8 @@ use crate::otel::legacy_exporters::headers::HeadersError;
 use crate::otel::legacy_exporters::selection::{SpanProcessorPlan, span_processor_plan};
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
 
+pub mod project;
+
 pub const MAX_DYNAMIC_TRACER_PROVIDERS: usize = 256;
 
 const DEFAULT_TRACER_NAME: &str = "litellm";
@@ -72,6 +74,7 @@ pub struct DynamicTracerCache {
     tracer_name: String,
     max_providers: usize,
     entries: Mutex<IndexMap<CacheKey, CachedProvider>>,
+    projects: Mutex<IndexMap<String, CachedProvider>>,
     shutdowns: SyncSender<ShutdownJob>,
 }
 
@@ -140,6 +143,7 @@ impl DynamicTracerCache {
             max_providers: settings.max_providers.max(1),
             builder,
             entries: Mutex::new(IndexMap::new()),
+            projects: Mutex::new(IndexMap::new()),
             shutdowns,
         }
     }
