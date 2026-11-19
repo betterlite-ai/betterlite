@@ -4,7 +4,7 @@ use serde::Deserialize;
 use crate::anthropic_dispatch::AnthropicResult;
 use crate::anthropic_dispatch::native::tests::support::wire;
 use crate::anthropic_dispatch::tests::gateway::support::{self, Harness, MODEL};
-use crate::operation::{OperationError, OperationResult};
+use crate::operation::{OperationError, OperationRequest, OperationResult};
 
 const CHAT_REPLY: &str = r#"{"id":"msg_gateway","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"native answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#;
 const ERROR_REPLY: &str =
@@ -66,6 +66,26 @@ fn sent_body(request: &wire::Recorded) -> Sent {
     serde_json::from_slice(&request.body).expect("the upstream request body is a Messages request")
 }
 
+fn failure(status: u16, content_type: &'static str, body: &str) -> wire::Answer {
+    wire::Answer {
+        status,
+        content_type,
+        body: String::from(body),
+    }
+}
+
+// The provider error both upstream-failure cases read: the status it carries and its message.
+async fn provider_error(harness: &mut Harness, request: OperationRequest) -> (u16, String) {
+    let result = support::complete(harness, request).await;
+    let Err(OperationError::Provider { response }) = result else {
+        panic!("an upstream failure keeps the status the provider gave it");
+    };
+    (
+        response.status,
+        String::from_utf8_lossy(&response.body).into_owned(),
+    )
+}
+
 pub(super) async fn http() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(&harness, support::chat(chat_body("")))
@@ -98,18 +118,9 @@ pub(super) async fn http() {
 }
 
 pub(super) async fn error() {
-    let mut harness = Harness::start(vec![wire::Answer {
-        status: 400,
-        content_type: "application/json",
-        body: String::from(ERROR_REPLY),
-    }])
-    .await;
-    let result = support::complete(&harness, support::chat(chat_body(""))).await;
-    let Err(OperationError::Provider { response }) = result else {
-        panic!("the upstream 400 is the provider's own error");
-    };
-    assert_eq!(response.status, 400);
-    let body = String::from_utf8_lossy(&response.body);
+    let mut harness = Harness::start(vec![failure(400, "application/json", ERROR_REPLY)]).await;
+    let (status, body) = provider_error(&mut harness, support::chat(chat_body(""))).await;
+    assert_eq!(status, 400);
     assert!(body.contains("model is required"));
     assert_eq!(harness.requests().await.len(), 1);
 }
@@ -184,19 +195,11 @@ pub(super) async fn remote_file() {
 }
 
 pub(super) async fn remote_file_error() {
-    let mut harness = Harness::start(vec![wire::Answer {
-        status: 404,
-        content_type: "text/plain",
-        body: String::from("missing"),
-    }])
-    .await;
+    let mut harness = Harness::start(vec![failure(404, "text/plain", "missing")]).await;
     let url = format!("{}/missing.pdf", harness.base);
-    let result = support::complete(&harness, support::chat(file_body(&url))).await;
-    let Err(OperationError::Provider { response }) = result else {
-        panic!("a failed file fetch is the 400 LiteLLM raises for the message build");
-    };
-    assert_eq!(response.status, 400);
-    assert!(String::from_utf8_lossy(&response.body).contains(&url));
+    let (status, body) = provider_error(&mut harness, support::chat(file_body(&url))).await;
+    assert_eq!(status, 400);
+    assert!(body.contains(&url));
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method, "GET");

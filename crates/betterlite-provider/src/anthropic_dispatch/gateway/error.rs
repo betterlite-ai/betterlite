@@ -5,7 +5,6 @@ use betterlite_anthropic::request::error::RequestError;
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_prompts::anthropic_invokes::file_blocks::FileBlockError;
 use http::HeaderMap;
 
@@ -108,12 +107,8 @@ fn headers(source: &AnthropicCallError) -> HeaderMap {
     }
 }
 
-pub(crate) fn logging(source: LoggingStateError) -> OperationError {
-    internal(source.to_string())
-}
-
 // The 500 AnthropicError LiteLLM raises for a failure its handler did not classify.
-fn internal(message: String) -> OperationError {
+pub(crate) fn internal(message: String) -> OperationError {
     OperationError::Anthropic {
         source: Box::new(AnthropicCallError::Anthropic {
             status_code: 500,

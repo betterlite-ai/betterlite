@@ -10,8 +10,6 @@ use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::user_url::validate::SystemResolver;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -222,7 +220,9 @@ async fn send(
     runtime: &AnthropicRuntime,
     model: &str,
 ) -> Result<ChatOutcome<StreamFailure, Counter>, OperationError> {
-    let (mut state, env) = call_logging(runtime, model)?;
+    let call_id = Uuid::new_v4().to_string();
+    let (mut state, env) = logging::state(&TracingSink, &runtime.redactor, model, &call_id)
+        .map_err(|source| error::internal(source.to_string()))?;
     let mut log = CallLogging {
         state: &mut state,
         env: &env,
@@ -232,14 +232,6 @@ async fn send(
         Ok(Reply::Legacy(_)) => Err(error::unsupported()),
         Err(source) => Err(error::dispatch(source)),
     }
-}
-
-fn call_logging<'env>(
-    runtime: &'env AnthropicRuntime,
-    model: &str,
-) -> Result<(LoggingState, PrePostEnv<'env>), OperationError> {
-    let call_id = Uuid::new_v4().to_string();
-    logging::state(&TracingSink, &runtime.redactor, model, &call_id).map_err(error::logging)
 }
 
 fn completion_call(
