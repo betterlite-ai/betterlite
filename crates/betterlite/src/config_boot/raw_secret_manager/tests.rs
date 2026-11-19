@@ -52,10 +52,8 @@ fn initialize_with(
 }
 
 fn primary_secret_name(state: &RawSecretManager) -> Option<&str> {
-    state
-        .settings
-        .as_ref()
-        .and_then(|settings| settings.primary_secret_name.as_deref())
+    let settings = state.settings.as_ref()?;
+    settings.primary_secret_name.as_deref()
 }
 
 struct RecordingReader {
