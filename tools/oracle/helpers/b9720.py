@@ -4,7 +4,7 @@ from litellm._logging import redact_internal_details_from_client_message
 from litellm.anthropic_interface.exceptions.exception_mapping_utils import anthropic_error_sse_frame
 from litellm.proxy._types import ProxyException
 from litellm.proxy.common_request_processing import (
-    _should_return_raw_model_name,  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L279
+    _should_return_raw_model_name,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L279
 )
 from litellm.proxy.common_utils.openai_error_payload import (
     error_status_code,
