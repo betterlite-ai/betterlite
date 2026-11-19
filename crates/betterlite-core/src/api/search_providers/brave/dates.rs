@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 
 mod fuzzy;
 
@@ -13,7 +13,6 @@ pub struct DateFlags {
 #[derive(Debug, Clone)]
 pub enum DateValue {
     Text(String),
-    Integer(String),
     Decimal(f64),
     // a value to_yyyy_mm_dd answers null for, with whether the source's `x or y` keeps it
     Ignored(bool),
@@ -44,7 +43,6 @@ impl DateValue {
     pub fn is_filled(&self) -> bool {
         match self {
             Self::Text(text) => !text.is_empty(),
-            Self::Integer(text) => text.bytes().any(|byte| byte != b'0'),
             Self::Decimal(number) => *number != 0.0,
             Self::Ignored(filled) => *filled,
         }
@@ -61,7 +59,7 @@ fn number_value(literal: &str) -> DateValue {
     if literal.bytes().all(|byte| byte == b'0' || byte == b'-') {
         return DateValue::Ignored(false);
     }
-    DateValue::Integer(literal.to_owned())
+    DateValue::Text(literal.to_owned())
 }
 
 #[must_use]
@@ -69,7 +67,6 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
     let date = match value {
         DateValue::Ignored(_) => return None,
         DateValue::Text(text) => text_date(text, today, flags)?,
-        DateValue::Integer(text) => unix_date(text)?,
         // the source reads a float through str(), and an infinity has no timestamp
         DateValue::Decimal(number) => {
             if *number == 0.0 || !number.is_finite() {
@@ -129,37 +126,17 @@ fn is_iso_ymd(text: &str) -> bool {
 }
 
 fn unix_date(text: &str) -> Option<NaiveDate> {
-    let negative = text.starts_with('-');
-    let body = text.strip_prefix('-').unwrap_or(text);
-    let (integer_part, fraction_part) = split_decimal(body);
-    let digits = integer_part.trim_start_matches('0');
-    let fraction = fraction_part.unwrap_or_default();
-    if digits.len() > 30 {
-        return None;
-    }
-    let (whole_digits, fraction_digits) = to_seconds(digits, fraction)?;
-    // the 30-digit guard keeps every value inside i128, and an empty run reads as zero
-    let whole: i128 = whole_digits.parse().unwrap_or_default();
-    let fraction_nonzero = fraction_digits.bytes().any(|byte| byte != b'0');
-    let seconds = match (negative, fraction_nonzero) {
-        (true, true) => whole.checked_add(1)?.checked_neg()?,
-        (true, false) => whole.checked_neg()?,
-        (false, _) => whole,
+    let value: f64 = text.replace(',', ".").parse().ok()?;
+    // above 1e11 the source divides by 1000.0, and the float is the instant it then reads
+    let seconds = if value > 1e11 || value < -1e11 {
+        value / 1000.0
+    } else {
+        value
     };
-    let moment = DateTime::<Utc>::from_timestamp(i64::try_from(seconds).ok()?, 0)?;
-    Some(moment.date_naive())
-}
-
-// above 1e11 the value is milliseconds; the source's /1000.0 shift keeps every digit
-fn to_seconds(integer: &str, fraction: &str) -> Option<(String, String)> {
-    const LIMIT: &str = "100000000000";
-    let above = integer.len() > LIMIT.len()
-        || (integer.len() == LIMIT.len()
-            && (integer > LIMIT || fraction.bytes().any(|byte| byte != b'0')));
-    if !above {
-        return Some((integer.to_owned(), fraction.to_owned()));
-    }
-    let cut = integer.len().checked_sub(3)?;
-    let (head, tail) = integer.split_at_checked(cut)?;
-    Some((head.to_owned(), format!("{tail}{fraction}")))
+    // Rust has no checked float-to-integer conversion, and an out-of-range value fails the parse
+    let whole: i64 = format!("{:.0}", seconds.floor()).parse().ok()?;
+    let moment = DateTime::<Utc>::from_timestamp(whole, 0)?;
+    let date = moment.date_naive();
+    // datetime.fromtimestamp refuses a year outside 1..=9999, and chrono reads it anyway
+    (1..=9999).contains(&date.year()).then_some(date)
 }
