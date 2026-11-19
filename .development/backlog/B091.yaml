@@ -2,7 +2,7 @@ id: B091
 milestone: M5 api families
 title: Search API
 status: todo
-depends_on: [B048, B5076, B8634, B8673]
+depends_on: [B048, B9942, B8634, B8673]
 file: tasks/B091-search-http-parity.yaml
 covers:
   - "litellm/proxy/search_endpoints/endpoints.py"

@@ -157,16 +157,7 @@ fn run_checks(
     task: &Task,
 ) -> Result<Vec<String>, GateError> {
     let selection = if env::var("GATE_DISPATCHED").as_deref() == Ok("1") {
-        // they need no build and took 2 to 61 s on six task heads on 11-16, while a push that fails only them costs a CI round, 39 minutes median
-        Selection {
-            only: vec![
-                "committed".to_owned(),
-                "hooks".to_owned(),
-                "similarity".to_owned(),
-            ],
-            skip: Vec::new(),
-            beside: Vec::new(),
-        }
+        checks::selection::unbuilt()
     } else {
         Selection::default()
     };

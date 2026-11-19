@@ -4,7 +4,7 @@ description: >-
   Close the database-backed HTTP coverage gap left when B4503 and B4505 were planned without
   a usable Postgres oracle. B8682 already builds production ports and mounts their routers;
   this task registers no route and changes no handler. B860 supplies independent fixture
-  databases, B1630 supplies kind: http cases with steps and per-proxy captures, and B5076
+  databases, B1630 supplies kind: http cases with steps and per-proxy captures, and B9942
   supplies the Prisma installation needed to boot LiteLLM with those databases. The fixture's
   2025 baseline lacks the Lens tables. Add only their pinned final schema and use the real
   administration endpoints to create records, rather than teaching a helper to invoke handlers.
@@ -134,7 +134,7 @@ deviations: []
 out_of_scope:
   - B4500 owns Lens records and state transitions; B4501 owns every repository method; B4502 owns SourceReader; B4503/B4505 own every endpoint and its nested transforms; this task owns their missing database-backed HTTP proof only.
   - B8682 constructs and mounts both Lens routers; B8610 calls the area aggregator, and neither mount is repeated here.
-  - B860 owns fixture provisioning and typed principal seeds, B1630 owns multi-request HTTP capture, and B5076 owns the oracle Prisma installation; no new fixture seed format, helper operation or HTTP runner is introduced.
+  - B860 owns fixture provisioning and typed principal seeds, B1630 owns multi-request HTTP capture, and B9942 owns the oracle Prisma installation; no new fixture seed format, helper operation or HTTP runner is introduced.
   - B709 owns product schema/migrations, including the Lens rename; fixture DDL must not call that implementation to generate its expected schema.
   - B132 owns worker execution/billing HTTP cases and packaging/lens/README.md; B8232 owns the executable and image files.
   - Native ClickHouse Lens queries remain an unassigned dependency outside this split; B3867 owns provide_storage and B110 owns the tracing receiver composition, while B8682 explicitly supplies no Lens storage.
