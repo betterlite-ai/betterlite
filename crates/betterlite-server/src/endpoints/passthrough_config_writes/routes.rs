@@ -66,7 +66,7 @@ pub(super) fn require_caller(
     })
 }
 
-pub(super) fn decode_body(body: &[u8]) -> Result<EndpointInput, PassthroughWriteError> {
+pub fn decode_body(body: &[u8]) -> Result<EndpointInput, PassthroughWriteError> {
     if body.is_empty() {
         return Err(PassthroughWriteError::MissingBody);
     }
@@ -159,7 +159,7 @@ pub(super) fn install_endpoint<Store>(
     endpoint: &PassThroughGenericEndpoint,
     headers: Option<JsonObject>,
 ) {
-    let methods = endpoint.methods.clone().unwrap_or_default();
+    let methods = endpoint.methods.as_deref().unwrap_or_default();
     let params = PassthroughParams {
         target: endpoint.target.clone(),
         custom_headers: headers,
@@ -175,7 +175,7 @@ pub(super) fn install_endpoint<Store>(
     let spec = RouteSpec {
         endpoint_id: &endpoint_id,
         path: &endpoint.path,
-        methods: &methods,
+        methods,
         auth: endpoint.auth.0,
         params: &params,
     };
@@ -190,9 +190,19 @@ pub(super) fn remove_routes(routes: &SharedPassThroughRoutes, endpoint_id: &str)
     let mut state = routes.lock().unwrap_or_else(PoisonError::into_inner);
     let PassThroughRoutes {
         registry,
+        endpoints,
         openai_routes,
         ..
     } = &mut *state;
+    let mut removed = Vec::new();
+    for (key, metadata) in &registry.registrations {
+        if metadata.endpoint_id == endpoint_id {
+            removed.push(key.clone());
+        }
+    }
     remove_endpoint_routes(&mut registry.registrations, openai_routes, endpoint_id);
+    for key in removed {
+        endpoints.remove(&key);
+    }
     drop(state);
 }

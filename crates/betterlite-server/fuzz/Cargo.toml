@@ -327,3 +327,10 @@ path = "fuzz_targets/credential_request.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "pass_through_config_writes"
+path = "fuzz_targets/pass_through_config_writes.rs"
+test = false
+doc = false
+bench = false

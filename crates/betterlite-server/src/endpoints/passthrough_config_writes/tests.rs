@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+#[path = "tests/corpus.rs"]
+mod corpus;
+
 #[path = "tests/create_routes.rs"]
 mod create_routes;
 
