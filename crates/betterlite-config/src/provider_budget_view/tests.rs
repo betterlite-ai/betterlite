@@ -62,7 +62,7 @@ fn provider_budget_config_is_null_unless_the_map_exists(
         settings
             .provider_budget_config
             .as_ref()
-            .map(|map| map.len()),
+            .map(indexmap::IndexMap::len),
         entries
     );
 }
@@ -119,7 +119,7 @@ fn a_missing_environment_reference_fails_the_load() {
     let error = load_provider_budget_view(source, &BTreeMap::<String, String>::new()).unwrap_err();
     assert!(matches!(
         error,
-        ConfigError::MissingEnvironment { ref variable, ref path }
+        ConfigError::MissingEnvironment { variable, path }
             if variable == "OPENAI_LIMIT"
                 && path == "router_settings.provider_budget_config.openai.budget_limit"
     ));
@@ -140,7 +140,7 @@ fn rejects_a_null_provider_entry() {
     let error = load_provider_budget_view(source, &BTreeMap::<String, String>::new()).unwrap_err();
     assert!(matches!(
         error,
-        ConfigError::InvalidScalar { ref path, .. }
+        ConfigError::InvalidScalar { path, .. }
             if path == "router_settings.provider_budget_config.openai"
     ));
 }

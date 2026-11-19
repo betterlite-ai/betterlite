@@ -101,5 +101,5 @@ where
     };
     let from_environment = text.starts_with(ENV_PREFIX);
     let resolved = resolve_string(text, path, lookup)?;
-    Ok(Some(resolved).filter(|text| !from_environment || !text.is_empty()))
+    Ok(Some(resolved).filter(|candidate| !from_environment || !candidate.is_empty()))
 }

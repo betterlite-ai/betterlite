@@ -267,7 +267,7 @@ async fn a_redis_spend_error_does_not_fall_back_to_local_spend() {
     let error = view.current_provider_spend("openai").await.unwrap_err();
     assert!(matches!(
         error,
-        ProviderBudgetViewError::Spend { ref key } if key == "provider_spend:openai:1d"
+        ProviderBudgetViewError::Spend { key } if key == "provider_spend:openai:1d"
     ));
     assert!(dual.keys.lock().unwrap().is_empty());
 }
@@ -410,6 +410,6 @@ async fn an_expiry_no_calendar_can_add_is_an_error(#[case] seconds: f64) {
         .unwrap_err();
     assert!(matches!(
         error,
-        ProviderBudgetViewError::Expiry { ref key } if key == "provider_spend:openai:1d"
+        ProviderBudgetViewError::Expiry { key } if key == "provider_spend:openai:1d"
     ));
 }

@@ -18,7 +18,7 @@ fn decode_accepts_the_three_optional_fields() {
     )
     .unwrap();
     assert_eq!(request.model.as_deref(), Some("gpt-4o-mini"));
-    assert_eq!(request.messages.map(|messages| messages.len()), Some(1));
+    assert_eq!(request.messages.as_ref().map(Vec::len), Some(1));
     assert!(request.completion_response.is_some());
 }
 
