@@ -187,22 +187,6 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
         filename: String,
         image: Image,
     ) -> Result<UpstreamResponse, UploadError> {
-        let request = self.upload_request(token, filename, image)?;
-        self.transport
-            .upload(request)
-            .await
-            .map_err(|source| UploadError::Transport {
-                step: "upload",
-                source,
-            })
-    }
-
-    fn upload_request(
-        &self,
-        token: &SecretString,
-        filename: String,
-        image: Image,
-    ) -> Result<OutboundRequest, UploadError> {
         let base = get_api_base(self.api_base.as_deref(), self.api_base_env.as_deref());
         let url =
             Url::parse(&format!("{base}{FILES_SUFFIX}")).map_err(|source| UploadError::Url {
@@ -214,7 +198,7 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))?,
         );
-        Ok(OutboundRequest {
+        let request = OutboundRequest {
             method: Method::POST,
             url,
             query: Vec::new(),
@@ -224,7 +208,14 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
                 parts: upload_parts(filename, image),
             },
             deadline: UPLOAD_TIMEOUT,
-        })
+        };
+        self.transport
+            .upload(request)
+            .await
+            .map_err(|source| UploadError::Transport {
+                step: "upload",
+                source,
+            })
     }
 }
 
