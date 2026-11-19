@@ -33,13 +33,18 @@ pub(crate) fn fixed_clock() -> RegistryClock {
     Arc::new(move || fixed)
 }
 
-fn decoded<Record, Document>(document: Document) -> Record
+fn decoded<Record>(document: &str) -> Record
 where
     Record: DeserializeOwned,
+{
+    serde_json::from_str(document).expect("the store document decodes")
+}
+
+pub(crate) fn encoded<Document>(document: &Document) -> String
+where
     Document: Serialize,
 {
-    let encoded = serde_json::to_value(document).expect("the store document encodes");
-    serde_json::from_value(encoded).expect("the store document decodes")
+    serde_json::to_string(document).expect("the store document encodes")
 }
 
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
@@ -58,27 +63,21 @@ pub(crate) fn registry_with_credentials(
 }
 
 pub(crate) fn store(id: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "openai",
-        "vector_store_description": "listed",
-    }))
+    decoded(&format!(
+        r#"{{"vector_store_id": "{id}", "custom_llm_provider": "openai", "vector_store_description": "listed"}}"#
+    ))
 }
 
 pub(crate) fn config_store(id: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "openai",
-        "is_config": true,
-    }))
+    decoded(&format!(
+        r#"{{"vector_store_id": "{id}", "custom_llm_provider": "openai", "is_config": true}}"#
+    ))
 }
 
 pub(crate) fn database_store(id: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "bedrock",
-        "vector_store_description": "from database",
-    }))
+    decoded(&format!(
+        r#"{{"vector_store_id": "{id}", "custom_llm_provider": "bedrock", "vector_store_description": "from database"}}"#
+    ))
 }
 
 pub(crate) fn labelled_store(id: &str, description: &str) -> LiteLlmManagedVectorStore {
@@ -89,19 +88,15 @@ pub(crate) fn labelled_store(id: &str, description: &str) -> LiteLlmManagedVecto
 }
 
 pub(crate) fn named_store(id: &str, credential_name: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "openai",
-        "litellm_credential_name": credential_name,
-    }))
+    decoded(&format!(
+        r#"{{"vector_store_id": "{id}", "custom_llm_provider": "openai", "litellm_credential_name": "{credential_name}"}}"#
+    ))
 }
 
 pub(crate) fn inline_key_store(id: &str) -> LiteLlmManagedVectorStore {
-    decoded(serde_json::json!({
-        "vector_store_id": id,
-        "custom_llm_provider": "openai",
-        "litellm_params": {"api_key": "sk-inline-store-key"},
-    }))
+    decoded(&format!(
+        r#"{{"vector_store_id": "{id}", "custom_llm_provider": "openai", "litellm_params": {{"api_key": "sk-inline-store-key"}}}}"#
+    ))
 }
 
 pub(crate) fn index(id: &str, name: &str) -> LiteLlmManagedVectorStoreIndex {

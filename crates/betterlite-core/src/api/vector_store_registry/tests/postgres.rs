@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
@@ -17,6 +16,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::vector_store_registry::repository::PrismaVectorStoreDatabase;
 use crate::api::vector_store_registry::repository::VectorStoreDatabase as _;
+
+use super::support::encoded;
 
 const STORES_TABLE: &str = r#"
 DROP TABLE IF EXISTS "LiteLLM_ManagedVectorStoresTable";
@@ -153,14 +154,18 @@ async fn store_rows_keep_the_database_order(database: &PrismaVectorStoreDatabase
     assert_eq!(newest_store.vector_store_name.as_deref(), Some("new"));
     assert_eq!(newest_store.vector_store_metadata, None);
     assert_eq!(
-        newest_store.litellm_params,
-        Some(serde_json::json!({"vector_store_id": "vs_new"}))
+        newest_store.litellm_params.as_ref().map(encoded).as_deref(),
+        Some(r#"{"vector_store_id":"vs_new"}"#)
     );
     let oldest_store = stores.get(1).expect("the older store row");
     assert_eq!(oldest_store.vector_store_id.as_deref(), Some("vs_old"));
     assert_eq!(
-        oldest_store.vector_store_metadata,
-        Some(serde_json::json!({"tag": "x"}))
+        oldest_store
+            .vector_store_metadata
+            .as_ref()
+            .map(encoded)
+            .as_deref(),
+        Some(r#"{"tag":"x"}"#)
     );
     assert_eq!(
         oldest_store.litellm_credential_name.as_deref(),
@@ -177,11 +182,8 @@ async fn index_rows_keep_the_database_order(database: &PrismaVectorStoreDatabase
     assert_eq!(newest_index.index_name, "notes");
     assert_eq!(newest_index.litellm_params.vector_store_index, "idx-new");
     assert_eq!(
-        newest_index.index_info,
-        Some(BTreeMap::from([(
-            "dimensions".to_owned(),
-            serde_json::json!(3)
-        )]))
+        newest_index.index_info.as_ref().map(encoded).as_deref(),
+        Some(r#"{"dimensions":3}"#)
     );
     let oldest_index = indexes.get(1).expect("the older index row");
     assert_eq!(oldest_index.id, "i-old");

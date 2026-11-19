@@ -15,9 +15,9 @@ use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManage
 use chrono::SecondsFormat;
 
 use support::{
-    FIXED_TIMESTAMP, ScriptedDatabase, capture_logs, config_store, database_store, fixed_clock,
-    index, inline_key_store, labelled_store, named_store, registry, registry_with_credentials,
-    store,
+    FIXED_TIMESTAMP, ScriptedDatabase, capture_logs, config_store, database_store, encoded,
+    fixed_clock, index, inline_key_store, labelled_store, named_store, registry,
+    registry_with_credentials, store,
 };
 
 use super::diagnostics;
@@ -81,29 +81,39 @@ fn config_records_keep_every_field() {
     ]);
     let mut loaded = registry(Vec::new());
     loaded
-        .load_vector_stores_from_config(&[entry(Some("notes"), Some(full.clone()))])
+        .load_vector_stores_from_config(&[entry(Some("notes"), Some(full))])
         .unwrap();
     let store = loaded.stores.first().unwrap();
     assert_eq!(store.vector_store_id.as_deref(), Some("vs_a"));
     assert_eq!(store.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(store.vector_store_name.as_deref(), Some("notes"));
     assert_eq!(store.vector_store_description.as_deref(), Some("d"));
-    assert_eq!(
-        store.vector_store_metadata,
-        Some(serde_json::json!({"tag": "x"}))
-    );
-    assert_eq!(
-        store.litellm_params,
-        Some(serde_json::json!({
-            "vector_store_id": "vs_a",
-            "custom_llm_provider": "openai",
-            "vector_store_description": "d",
-            "vector_store_metadata": {"tag": "x"},
-        }))
-    );
+    assert_config_record_json(store);
     assert_eq!(store.created_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.updated_at.as_deref(), Some(FIXED_TIMESTAMP));
     assert_eq!(store.is_config, Some(true));
+}
+
+fn assert_config_record_json(store: &LiteLlmManagedVectorStore) {
+    assert_eq!(
+        store.vector_store_metadata.as_ref().map(encoded).as_deref(),
+        Some(r#"{"tag":"x"}"#)
+    );
+    assert_eq!(
+        serde_json::from_str::<JsonObject>(
+            &store.litellm_params.as_ref().map(encoded).expect("params")
+        )
+        .unwrap(),
+        params(&[
+            ("vector_store_id", text("vs_a")),
+            ("custom_llm_provider", text("openai")),
+            ("vector_store_description", text("d")),
+            (
+                "vector_store_metadata",
+                Json::Object(params(&[("tag", text("x"))])),
+            ),
+        ])
+    );
 }
 
 fn config_records_accept_missing_names_and_empty_values() {
@@ -306,7 +316,7 @@ fn missing_id_updates_append() {
 }
 
 fn config_ownership_and_deletion() {
-    let mut registry = registry(vec![store("vs_a"), config_store("vs_b")]);
+    let registry = registry(vec![store("vs_a"), config_store("vs_b")]);
     assert!(!registry.is_config("vs_a"));
     assert!(registry.is_config("vs_b"));
     assert!(!registry.is_config("vs_missing"));
@@ -589,7 +599,7 @@ fn named_credentials_read_the_accessor() {
         "cred".to_owned(),
         params(&[("api_key", text("secret-value"))]),
     )])));
-    let credentials: Arc<dyn VectorStoreCredentials> = accessor.clone();
+    let credentials: Arc<dyn VectorStoreCredentials> = Arc::clone(&accessor);
     let registry = registry_with_credentials(vec![named_store("vs_cred", "cred")], credentials);
     assert_eq!(
         registry.credentials_for_vector_store("vs_cred"),
@@ -611,7 +621,7 @@ fn named_credentials_read_the_accessor() {
 
 fn named_credentials_skip_empty_and_inline_names() {
     let empty_accessor = Arc::new(support::RecordingCredentials::new(BTreeMap::new()));
-    let empty_credentials: Arc<dyn VectorStoreCredentials> = empty_accessor.clone();
+    let empty_credentials: Arc<dyn VectorStoreCredentials> = Arc::clone(&empty_accessor);
     let empty_registry = registry_with_credentials(
         vec![
             named_store("vs_empty", ""),
@@ -652,7 +662,7 @@ fn named_credentials_answer_the_first_record_with_a_name() {
         "second".to_owned(),
         params(&[("api_key", text("second-value"))]),
     )])));
-    let second_credentials: Arc<dyn VectorStoreCredentials> = second_accessor.clone();
+    let second_credentials: Arc<dyn VectorStoreCredentials> = second_accessor;
     let duplicate_registry = registry_with_credentials(
         vec![named_store("vs_dup", ""), named_store("vs_dup", "second")],
         second_credentials,
@@ -687,14 +697,10 @@ fn credential_snapshot_answers_named_lookups() {
 #[test]
 fn registry_debug_redacts_credentials() {
     let secret = "sk-registry-secret";
-    let documented: LiteLlmManagedVectorStore = serde_json::from_value(serde_json::json!({
-        "vector_store_id": "vs_secret",
-        "custom_llm_provider": "openai",
-        "litellm_credential_name": "cred",
-        "litellm_params": {"api_key": secret},
-        "vector_store_metadata": {"nested": {"client_password": secret}},
-    }))
-    .unwrap();
+    let document = format!(
+        r#"{{"vector_store_id": "vs_secret", "custom_llm_provider": "openai", "litellm_credential_name": "cred", "litellm_params": {{"api_key": "{secret}"}}, "vector_store_metadata": {{"nested": {{"client_password": "{secret}"}}}}}}"#
+    );
+    let documented: LiteLlmManagedVectorStore = serde_json::from_str(&document).unwrap();
     let registry = registry(vec![documented]);
     let printed = format!("{registry:?}");
     assert!(printed.contains("vs_secret"));

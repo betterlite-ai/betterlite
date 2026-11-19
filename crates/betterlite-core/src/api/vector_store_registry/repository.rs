@@ -46,9 +46,12 @@ where
 }
 
 // _get_vector_store_indexes_from_db: the same missing-client answer for the index table
-pub async fn indexes_from_database<D: VectorStoreDatabase>(
+pub async fn indexes_from_database<D>(
     database: Option<&D>,
-) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
+) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>
+where
+    D: VectorStoreDatabase,
+{
     let Some(client) = database else {
         return Ok(Vec::new());
     };

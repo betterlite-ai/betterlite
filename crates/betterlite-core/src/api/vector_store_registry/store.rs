@@ -29,8 +29,8 @@ impl VectorStoreCredentials for CredentialSnapshot {
 
 pub struct VectorStoreRegistry {
     pub stores: Vec<LiteLlmManagedVectorStore>,
-    clock: RegistryClock,
-    credentials: Arc<dyn VectorStoreCredentials>,
+    pub clock: RegistryClock,
+    pub credentials: Arc<dyn VectorStoreCredentials>,
 }
 
 impl Default for VectorStoreRegistry {
@@ -93,9 +93,7 @@ impl VectorStoreRegistry {
         if let Some(store) = self.store_by_id(vector_store_id) {
             return Some(store.clone());
         }
-        let Some(source) = database else {
-            return None;
-        };
+        let source = database?;
         let stores = match stores_from_database(Some(source)).await {
             Ok(stores) => stores,
             Err(error) => {
@@ -171,9 +169,9 @@ impl VectorStoreRegistry {
 }
 
 impl fmt::Debug for VectorStoreRegistry {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
-            formatter,
+            f,
             "VectorStoreRegistry {{ stores: {} }}",
             diagnostics::redacted_stores(&self.stores)
         )
