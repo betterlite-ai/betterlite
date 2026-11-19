@@ -1,3 +1,5 @@
+mod input;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::collector::TracebackPolicy;
@@ -29,74 +31,10 @@ use betterlite_server::spend::payload::{
     get_logging_payload,
 };
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use input::{Input, ResponseInput, RouterDeployment, RouterInput, SettingsInput};
 use tokio::sync::watch;
 
 pub(crate) struct Op;
-
-#[derive(Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Input {
-    Payload {
-        kwargs: JsonObject,
-        #[serde(default)]
-        response: ResponseInput,
-        start_time: String,
-        end_time: String,
-        #[serde(default)]
-        settings: SettingsInput,
-        #[serde(default)]
-        router: Option<RouterInput>,
-        #[serde(default)]
-        clock: f64,
-        session_uuid: String,
-    },
-    EndUser {
-        litellm_params: JsonObject,
-        service: String,
-        #[serde(default)]
-        settings: SettingsInput,
-    },
-}
-
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ResponseInput {
-    #[default]
-    Absent,
-    Other,
-    UnknownModelError,
-    Mapping(JsonObject),
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct RouterInput {
-    model_list: Vec<RouterDeployment>,
-    // Router.model_names, which is_recognized_model reads
-    recognized: Vec<String>,
-    // Router.team_public_model_names
-    team_public: Vec<String>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RouterDeployment {
-    model_name: String,
-    #[serde(default)]
-    litellm_params: JsonObject,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct SettingsInput {
-    disable_end_user_cost_tracking: Option<bool>,
-    #[serde(rename = "enable_end_user_cost_tracking_prometheus_only")]
-    enable_prometheus_only: Option<bool>,
-    store_bodies: bool,
-    max_string_length: Option<i64>,
-    turn_off_message_logging: bool,
-    missing_session_id: Option<String>,
-}
 
 impl Helper for Op {
     type Input = Input;
