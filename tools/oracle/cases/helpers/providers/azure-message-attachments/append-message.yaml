@@ -1,0 +1,65 @@
+kind: helper
+name: azure-message-attachments-append-message
+call:
+  azure_message_attachments:
+    append_message:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"in_progress"}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":null}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":""}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"queued"}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi, attachments: [{file_id: file-1, tools: [{type: code_interpreter}]}], metadata: {team: core}}
+        reply:
+          status: 200
+          body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[],"status":"completed","marker":"kept"}'
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        thread_id: "thread a/b?c"
+        data: {role: user, content: hi}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+        reply:
+          status: 400
+          body: '{"error":{"message":"bad thread","type":"invalid_request_error","param":"thread_id"}}'
+env: {}
+compare: {ignore: []}

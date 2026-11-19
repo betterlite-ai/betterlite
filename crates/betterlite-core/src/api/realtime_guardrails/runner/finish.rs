@@ -1,3 +1,5 @@
+#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
+
 use std::error::Error;
 
 use betterlite_config::sections::guardrail_params::base::OnViolation;

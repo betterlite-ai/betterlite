@@ -1,0 +1,39 @@
+kind: helper
+name: bedrock-messages-invoke-url
+call:
+  bedrock_messages:
+    function: invoke_url
+    model: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    api_base: null
+    stream: true
+    optional_params: {}
+    headers:
+      x-custom: keep
+      X-Amzn-Bedrock-Request-Metadata: forged
+    metadata: {user_api_key_hash: hash-1, team: core}
+    policy_fields: [user_api_key_hash]
+    environment: {AWS_REGION_NAME: us-east-1}
+    credentials: {access_key_id: AKIAFIXTURE, secret_access_key: fixture-secret}
+    request_data:
+      messages: [{role: user, content: hi}]
+      max_tokens: 8
+    fake_stream: null
+    now: 1700000000
+calls:
+  - bedrock_messages:
+      function: invoke_url
+      model: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      api_base: https://proxy.test/bedrock
+      stream: null
+      optional_params: {aws_region_name: eu-west-1}
+      headers: {}
+      api_key: fixture-api-key
+      environment: {}
+      credentials:
+        access_key_id: AKIAFIXTURE
+        secret_access_key: fixture-secret
+        session_token: fixture-session
+      request_data: {}
+      now: 1700000000
+env: {}
+compare: {ignore: []}

@@ -68,10 +68,10 @@ pub fn dispatch<'call, Client, Encoding, Transport, Handler>(
     log: &'call mut CallLogging<'_, '_>,
 ) -> completion::HandlerFuture<'call, Outcome<Handler::Reply>, DispatchError<Handler::Failure>>
 where
-    Client: 'call,
-    Encoding: 'call,
+    Client: Send + 'call,
+    Encoding: Send + 'call,
     Transport: CountTokensTransport + BatchTransport + FileTransport,
-    Handler: completion::CompletionHandler<Client, Encoding>,
+    Handler: completion::CompletionHandler<Client, Encoding> + Send,
 {
     Box::pin(async move {
         match operation {
