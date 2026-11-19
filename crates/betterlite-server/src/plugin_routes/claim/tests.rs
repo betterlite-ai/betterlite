@@ -222,6 +222,13 @@ async fn issues_and_verifies_through_the_environment() {
         assert_eq!(claim.user_id, "u1");
         assert_eq!(claim.user_role, "proxy_admin");
         assert_eq!(claim.plugin, PLUGIN);
+        // the Python key pins the token to the salt from the environment, not to a fresh key
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let plaintext = fernet::open(&python_key(KEY_HEX), &token, CLAIM_TTL_SECONDS, now).unwrap();
+        let decoded: Claim = serde_json::from_slice(&plaintext).unwrap();
+        assert_eq!(decoded.user_id, "u1");
     })
     .await;
 }
