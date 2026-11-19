@@ -1,7 +1,9 @@
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
+use crate::deployment_credentials::error::CredentialError;
 use crate::deployment_credentials::params::CredentialParams;
 use crate::deployment_credentials::resolve::{
     deployment_credentials, deployment_credentials_with_provider,
@@ -144,8 +146,8 @@ fn deployment_model_restored() {
 #[test]
 fn explicit_provider_restored() {
     let catalog = catalog_of(vec![named(&[
-        ("model", text("anthropic/claude-3")),
-        ("custom_llm_provider", text("anthropic")),
+        ("model", text("openai/gpt-4o")),
+        ("custom_llm_provider", text("azure")),
         ("litellm_credential_name", text("creds")),
     ])]);
     let credentials = snapshot(&[(
@@ -155,8 +157,74 @@ fn explicit_provider_restored() {
     let (result, _warnings) = rich(&catalog, &credentials);
     assert_eq!(
         field(&result.unwrap(), "custom_llm_provider"),
-        Some("anthropic")
+        Some("azure")
     );
+}
+
+#[test]
+fn wrong_types_name_the_field() {
+    let list_text = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("aws_session_tags", text("team")),
+    ])]);
+    assert!(matches!(
+        deployment_credentials(&list_text, "d1").unwrap_err(),
+        CredentialError::FieldType {
+            field,
+            expected: "a list"
+        } if field == "aws_session_tags"
+    ));
+    let text_object = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("api_key", Json::Object(JsonObject::new())),
+    ])]);
+    assert!(matches!(
+        deployment_credentials(&text_object, "d1").unwrap_err(),
+        CredentialError::FieldType {
+            field,
+            expected: "a string or a list"
+        } if field == "api_key"
+    ));
+    let text_list = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("api_base", Json::List(Vec::new())),
+    ])]);
+    assert!(matches!(
+        deployment_credentials(&text_list, "d1").unwrap_err(),
+        CredentialError::FieldType {
+            field,
+            expected: "a string"
+        } if field == "api_base"
+    ));
+    let text_number = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("api_version", Json::Number(serde_json::Number::from(1_i64))),
+    ])]);
+    assert!(matches!(
+        deployment_credentials(&text_number, "d1").unwrap_err(),
+        CredentialError::FieldType {
+            field,
+            expected: "a string, an object or a list"
+        } if field == "api_version"
+    ));
+}
+
+#[test]
+fn declared_types_accepted() {
+    let vertex = Json::Object(pairs(&[("type", text("service_account"))]));
+    let tags = Json::List(vec![Json::Object(pairs(&[
+        ("Key", text("team")),
+        ("Value", text("alpha")),
+    ]))]);
+    let catalog = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("vertex_credentials", vertex.clone()),
+        ("aws_session_tags", tags.clone()),
+        ("bedrock_tags", Json::List(vec![text("environment")])),
+    ])]);
+    let params = deployment_credentials(&catalog, "d1").unwrap().unwrap();
+    assert_eq!(params.fields.get("vertex_credentials"), Some(&vertex));
+    assert_eq!(params.fields.get("aws_session_tags"), Some(&tags));
 }
 
 #[test]
