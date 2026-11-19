@@ -9,7 +9,7 @@ use betterlite_openai::fine_tuning::client::JobsApi;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::api::batch_provider_cancel::CancelErrorFields;
@@ -28,7 +28,7 @@ fn default_provider() -> Option<String> {
 }
 
 // GenericLiteLLMParams.timeout: seconds, a number written as text, or the pieces of an httpx.Timeout
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum OptionalTimeout {
     Seconds(f64),
