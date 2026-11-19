@@ -5,15 +5,28 @@ call:
     function: chat_url
     calls:
       - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: null
+        optional_params: {}
+        headers: {}
+        metadata: {}
+        project_id: null
+        policy_fields: null
         environment: {AWS_REGION_NAME: us-east-1}
       - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: null
         optional_params: {aws_region_name: eu-west-1}
         headers: {anthropic-beta: fine-grained-tool-streaming-2025-05-14}
         metadata: {user_api_key_alias: team-a}
-        policy_fields: [user_api_key_alias]
         project_id: proj-1
+        policy_fields: [user_api_key_alias]
+        environment: {}
       - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
         api_base: https://mantle.example.test/base/
+        optional_params: {}
+        headers: {}
+        metadata: {}
+        project_id: null
+        policy_fields: null
         environment: {}
 env: {}
 compare: {ignore: []}

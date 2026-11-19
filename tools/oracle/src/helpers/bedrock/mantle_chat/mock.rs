@@ -4,7 +4,6 @@ use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_bedrock::bedrock_model_capabilities::ModelInfoLookup;
-use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::full_model_metadata::record::ModelInfo;
@@ -36,13 +35,7 @@ impl ModelInfoClient for NoHfTransport {
 #[error("the model is not mapped")]
 pub(super) struct Unmapped;
 
-pub(super) struct MapLookup(BTreeMap<String, IndexMap<String, Json>>);
-
-impl MapLookup {
-    pub(super) fn from_cost(cost: &ParamMap) -> Result<Self, serde_json::Error> {
-        Ok(Self(serde_json::from_value(serde_json::to_value(cost)?)?))
-    }
-}
+pub(super) struct MapLookup(pub(super) BTreeMap<String, IndexMap<String, Json>>);
 
 impl ModelInfoLookup for MapLookup {
     type Error = Unmapped;

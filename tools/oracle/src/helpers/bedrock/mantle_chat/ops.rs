@@ -21,7 +21,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::fixture::{Fixture, Session};
-use super::input::{ChatCall, Input, MessagesCall, NativeSseCall, ResponseCall, UrlCall, UrlCases};
+use super::input::{ChatCall, Input, MessagesCall, NativeSseCall, UrlCall, UrlCases};
 use super::mock::RecordingFetcher;
 
 const LIMITS: ApiLimits = ApiLimits {
@@ -73,11 +73,6 @@ fn globals(environment: &BTreeMap<String, String>) -> MantleGlobals {
     }
 }
 
-fn policy(call: &UrlCall) -> Option<BedrockRequestPolicy> {
-    let fields: IndexSet<String> = call.policy_fields.iter().flatten().cloned().collect();
-    (!fields.is_empty()).then(|| BedrockRequestPolicy { fields })
-}
-
 #[derive(Clone, Copy)]
 enum UrlKind {
     Chat,
@@ -86,14 +81,18 @@ enum UrlKind {
 
 // The chat and Messages configs read the same B591/B690 URL; only the header merge and the resolved api_base differ.
 fn url(call: &UrlCall, kind: UrlKind) -> HelperResult {
-    let mut params = call.invoke_params().map_err(failure)?;
+    // The invoke configs take Box<RawValue>, which serde's Content buffering cannot rebuild, so the case sends plain JSON.
+    let plain = serde_json::to_value(&call.optional_params).map_err(failure)?;
+    let mut params: InvokeParams = serde_json::from_value(plain).map_err(failure)?;
+    let fields: IndexSet<String> = call.policy_fields.iter().flatten().cloned().collect();
+    let policy = (!fields.is_empty()).then(|| BedrockRequestPolicy { fields });
     match kind {
         UrlKind::Chat => {
             let headers = chat_headers(
                 &call.headers,
                 &mut params,
                 &metadata_params(call),
-                policy(call).as_ref(),
+                policy.as_ref(),
             )
             .map_err(failure)?;
             Ok(json!({"url": url_of(call, &params)?, "headers": headers}))
@@ -102,7 +101,7 @@ fn url(call: &UrlCall, kind: UrlKind) -> HelperResult {
             let (headers, api_base) = messages_headers(
                 &call.headers,
                 &metadata_params(call),
-                policy(call).as_ref(),
+                policy.as_ref(),
                 call.api_base.as_deref(),
                 None,
             )
@@ -152,8 +151,8 @@ fn chat(call: &ChatCall, inline: bool) -> HelperResult {
 
 fn native_sse(call: &NativeSseCall) -> HelperResult {
     let clock = DecoderClock {
-        next_id: fixed_id,
-        now: fixed_now,
+        next_id: || Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        now: || 1_700_000_000,
     };
     let mut decoder = model_response_iterator("claude", false, None, clock);
     let mut chunks = Vec::with_capacity(call.events.len());
@@ -178,19 +177,6 @@ fn native_sse(call: &NativeSseCall) -> HelperResult {
     }))
 }
 
-fn messages_response(call: &ResponseCall) -> HelperResult {
-    let fields = transform_response(call.body.as_bytes(), call.status, &LIMITS).map_err(failure)?;
-    Ok(json!({"response": fields}))
-}
-
-fn fixed_id() -> Uuid {
-    Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef)
-}
-
-const fn fixed_now() -> i64 {
-    1_700_000_000
-}
-
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::ChatUrl(call) => urls(call, UrlKind::Chat),
@@ -198,7 +184,11 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::MessagesRequest(call) => messages_request(call),
         Input::ChatRequest(call) => chat(call, false),
         Input::NativeSse(call) => native_sse(call),
-        Input::MessagesResponse(call) => messages_response(call),
+        Input::MessagesResponse(call) => {
+            let fields =
+                transform_response(call.body.as_bytes(), call.status, &LIMITS).map_err(failure)?;
+            Ok(json!({"response": fields}))
+        }
         Input::RemoteUrlInlined(call) => chat(call, true),
     }
 }

@@ -13,6 +13,8 @@ call:
           - {type: image_url, image_url: {url: 'http://example.test/pic.png'}}
           - {type: document, source: {type: url, url: 'http://example.test/doc.pdf'}}
     optional_params: {max_tokens: 64}
+    litellm_params: {}
+    headers: {}
     fetch:
       'http://example.test/pic.png': 'data:image/png;base64,iVBORw0KGgo='
       'http://example.test/doc.pdf': 'data:application/pdf;base64,JVBERi0xLjQK'

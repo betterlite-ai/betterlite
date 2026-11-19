@@ -109,7 +109,7 @@ impl Fixture {
             patterns: CandidatePatterns::new()?,
             runtime: serde_json::from_slice(&bytes)?,
             unlisted: RawCatalog::new(),
-            lookup: MapLookup::from_cost(model_cost)?,
+            lookup: MapLookup(serde_json::from_value(serde_json::to_value(model_cost)?)?),
             catalog: ModelCatalog::parse(b"{}", UnknownFields::Warn)?,
             model_cost: model_cost.clone(),
             budgets: Settings::default(),

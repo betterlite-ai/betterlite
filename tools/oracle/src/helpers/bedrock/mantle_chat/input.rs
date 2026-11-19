@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_bedrock::invoke_primitives::config::Params;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as MessageJson;
@@ -44,13 +43,6 @@ pub(crate) struct UrlCall {
     pub(crate) policy_fields: Option<Vec<String>>,
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
-}
-
-impl UrlCall {
-    // The invoke configs take Box<RawValue>, which serde's Content buffering cannot rebuild, so the case sends plain JSON.
-    pub(crate) fn invoke_params(&self) -> Result<Params, serde_json::Error> {
-        serde_json::from_value(serde_json::to_value(&self.optional_params)?)
-    }
 }
 
 #[derive(Deserialize)]
