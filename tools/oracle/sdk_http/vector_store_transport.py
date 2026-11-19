@@ -24,6 +24,8 @@ Operation = Literal["update", "delete"]
 Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+# the handlers take dict[str, object] maps, so the JSON-facing maps bind to that shape
+OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 UpdateWork = VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]
@@ -105,8 +107,8 @@ class TransportCall(BaseModel):
     mode: Mode
     vector_store_id: str
     optional_params: OptionalParams = Field(default_factory=OptionalParams)
-    extra_headers: dict[str, object] | None = None
-    extra_body: dict[str, object] | None = None
+    extra_headers: dict[str, JsonValue] | None = None
+    extra_body: dict[str, JsonValue] | None = None
     timeout_seconds: int | None = None
 
 
@@ -137,7 +139,7 @@ class Handlers(Protocol):
     def vector_store_update_handler(self) -> UpdateCall: ...
 
     @property
-    def async_vector_store_update_handler(
+    def async_vector_store_update_handler(  # ast-grep-ignore: no-long-names
         self,
     ) -> AsyncUpdateCall: ...
 
@@ -145,7 +147,7 @@ class Handlers(Protocol):
     def vector_store_delete_handler(self) -> DeleteCall: ...
 
     @property
-    def async_vector_store_delete_handler(
+    def async_vector_store_delete_handler(  # ast-grep-ignore: no-long-names
         self,
     ) -> AsyncDeleteCall: ...
 
@@ -198,6 +200,8 @@ def execute(
 ) -> JsonValue:
     logging_obj = logging_fixture(call.operation)
     litellm_params = GenericLiteLLMParams(api_base=api_base)
+    extra_headers = OBJECTS.validate_python(call.extra_headers)
+    extra_body = OBJECTS.validate_python(call.extra_body)
     if call.operation == "update":
         optional = requested_params(call.optional_params)
         if call.mode == "sync":
@@ -209,8 +213,8 @@ def execute(
                     "openai",
                     litellm_params,
                     logging_obj,
-                    call.extra_headers,
-                    call.extra_body,
+                    extra_headers,
+                    extra_body,
                     timeout,
                 )
             )
@@ -223,8 +227,8 @@ def execute(
                     "openai",
                     litellm_params,
                     logging_obj,
-                    call.extra_headers,
-                    call.extra_body,
+                    extra_headers,
+                    extra_body,
                     timeout,
                 )
             )
@@ -237,8 +241,8 @@ def execute(
                 "openai",
                 litellm_params,
                 logging_obj,
-                call.extra_headers,
-                call.extra_body,
+                extra_headers,
+                extra_body,
                 timeout,
             )
         )
@@ -250,8 +254,8 @@ def execute(
                 "openai",
                 litellm_params,
                 logging_obj,
-                call.extra_headers,
-                call.extra_body,
+                extra_headers,
+                extra_body,
                 timeout,
             )
         )
