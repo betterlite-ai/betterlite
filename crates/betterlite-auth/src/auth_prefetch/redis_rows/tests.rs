@@ -20,7 +20,7 @@ fn expects_float(value: f64) -> Json {
 
 #[test]
 fn arbitrary_precision_float_map_reads_as_a_number() {
-    assert_eq!(value_json(Some(private_number("1.5"))), expects_float(1.5));
+    assert_eq!(value_json(Some(&private_number("1.5"))), expects_float(1.5));
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn private_key_object_with_extra_fields_stays_an_object() {
     let mut fields = BTreeMap::new();
     fields.insert(NUMBER_KEY.to_owned(), CachedValue::Text("1.5".to_owned()));
     fields.insert("other".to_owned(), CachedValue::Boolean(true));
-    let Json::Object(converted) = value_json(Some(CachedValue::Object(fields))) else {
+    let Json::Object(converted) = value_json(Some(&CachedValue::Object(fields))) else {
         panic!("the two-key map reads as an object");
     };
     assert_eq!(converted.get("other"), Some(&Json::Bool(true)));
@@ -38,7 +38,7 @@ fn private_key_object_with_extra_fields_stays_an_object() {
 fn single_other_key_map_stays_an_object() {
     let mut fields = BTreeMap::new();
     fields.insert("other".to_owned(), CachedValue::Text("1.5".to_owned()));
-    let Json::Object(converted) = value_json(Some(CachedValue::Object(fields))) else {
+    let Json::Object(converted) = value_json(Some(&CachedValue::Object(fields))) else {
         panic!("a single non-number key reads as an object");
     };
     assert_eq!(converted.get("other"), Some(&Json::Text("1.5".to_owned())));
@@ -52,7 +52,7 @@ fn rows_json_builds_the_keyed_map() {
         Some(CachedValue::Text("row".to_owned())),
     );
     found.insert("missing".to_owned(), None);
-    let Json::Object(fields) = rows_json(found) else {
+    let Json::Object(fields) = rows_json(&found) else {
         panic!("the read builds an object");
     };
     assert_eq!(fields.get("user-1"), Some(&Json::Text("row".to_owned())));

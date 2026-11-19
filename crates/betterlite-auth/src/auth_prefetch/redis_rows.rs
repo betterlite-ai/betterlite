@@ -43,7 +43,7 @@ impl PrefetchRedis for RedisRows {
                 .map_err(|error| RedisRowsError::Direct {
                     message: error.to_string(),
                 })?;
-            return Ok(rows_json(found));
+            return Ok(rows_json(&found));
         };
         let found = batch
             .mget(keys)
@@ -51,7 +51,7 @@ impl PrefetchRedis for RedisRows {
             .map_err(|error| RedisRowsError::Batch {
                 message: error.to_string(),
             })?;
-        Ok(rows_json((*found).clone()))
+        Ok(rows_json(found.as_ref()))
     }
     fn has_batch(&self) -> bool {
         active_request_redis_batch(&self.client).is_some()
@@ -74,28 +74,25 @@ impl PrefetchRedis for RedisRows {
         Ok(())
     }
 }
-fn rows_json<Values>(values: Values) -> Json
+fn rows_json<'a, Values>(values: Values) -> Json
 where
-    Values: IntoIterator<Item = (String, Option<CachedValue>)>,
+    Values: IntoIterator<Item = (&'a String, &'a Option<CachedValue>)>,
 {
     let fields = values
         .into_iter()
-        .map(|(key, value)| (key, value_json(value)))
+        .map(|(key, value)| (key.clone(), value_json(value.as_ref())))
         .collect();
     Json::Object(fields)
 }
-fn value_json(value: Option<CachedValue>) -> Json {
+fn value_json(value: Option<&CachedValue>) -> Json {
     match value {
         None | Some(CachedValue::Null) => Json::Null,
-        Some(CachedValue::Boolean(flag)) => Json::Bool(flag),
-        Some(CachedValue::Number(number)) => Json::Number(number),
-        Some(CachedValue::Text(text)) => Json::Text(text),
-        Some(CachedValue::Array(items)) => Json::List(
-            items
-                .into_iter()
-                .map(|item| value_json(Some(item)))
-                .collect(),
-        ),
+        Some(CachedValue::Boolean(flag)) => Json::Bool(*flag),
+        Some(CachedValue::Number(number)) => Json::Number(number.clone()),
+        Some(CachedValue::Text(text)) => Json::Text(text.clone()),
+        Some(CachedValue::Array(items)) => {
+            Json::List(items.iter().map(|item| value_json(Some(item))).collect())
+        }
         Some(CachedValue::Object(entries)) => {
             // arbitrary_precision hands a bare JSON float to the untagged decoder as this one-key map
             let number: Option<serde_json::Number> =
@@ -109,8 +106,8 @@ fn value_json(value: Option<CachedValue>) -> Json {
                 || {
                     Json::Object(
                         entries
-                            .into_iter()
-                            .map(|(key, entry)| (key, value_json(Some(entry))))
+                            .iter()
+                            .map(|(key, entry)| (key.clone(), value_json(Some(entry))))
                             .collect(),
                     )
                 },
