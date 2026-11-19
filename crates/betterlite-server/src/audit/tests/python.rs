@@ -77,7 +77,7 @@ async fn a_python_custom_logger_receives_the_audit_payload() {
     let logger = audit_logger(Arc::new(hook)).expect("the instance is a CustomLogger");
     assert_eq!(logger.callback_name(), "python_audit_log_callback");
     logger
-        .async_log_audit_log_event(&build_audit_log_payload(&record()))
+        .async_log_audit_event(&build_audit_log_payload(&record()))
         .await
         .expect("the Python callback accepted the payload");
     fixture.service.shutdown().await;
@@ -90,7 +90,7 @@ async fn a_python_failure_is_reported_as_a_delivery_error() {
     let logger = audit_logger(Arc::new(hook)).expect("the instance is a CustomLogger");
     let audit = build_audit_log_payload(&record());
     let error = logger
-        .async_log_audit_log_event(&audit)
+        .async_log_audit_event(&audit)
         .await
         .expect_err("the Python callback raises");
     let LoggerError::Delivery { callback, message } = error;

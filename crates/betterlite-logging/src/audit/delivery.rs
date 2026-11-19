@@ -28,7 +28,7 @@ impl Callback for AuditCallbackJob {
     }
 
     async fn call(self) -> Result<(), LoggerError> {
-        self.callback.async_log_audit_log_event(&self.payload).await
+        self.callback.async_log_audit_event(&self.payload).await
     }
 }
 

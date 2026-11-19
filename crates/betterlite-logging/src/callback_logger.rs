@@ -69,8 +69,8 @@ pub trait CallbackLogger: Send + Sync {
         Ok(None)
     }
 
-    // CustomLogger.async_log_audit_log_event's body is pass, and audit_log_callbacks reach only loggers that override it
-    async fn async_log_audit_log_event(
+    // CustomLogger.async_log_audit_log_event is a pass by default; the Rust name drops one "log" because B4002's AzureSentinelLogger keeps LiteLLM's as an inherent method (clippy::same_name_method)
+    async fn async_log_audit_event(
         &self,
         _audit_log: &StandardAuditLogPayload,
     ) -> Result<(), LoggerError> {

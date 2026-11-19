@@ -83,7 +83,7 @@ impl CallbackLogger for S3BatchLogger {
         self.async_log_success_event(event).await
     }
     // S3Logger.async_log_audit_log_event batches the record under audit_logs/ and logs its own failure
-    async fn async_log_audit_log_event(
+    async fn async_log_audit_event(
         &self,
         audit_log: &StandardAuditLogPayload,
     ) -> Result<(), LoggerError> {

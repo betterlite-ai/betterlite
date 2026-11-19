@@ -45,7 +45,7 @@ async fn the_s3_v2_logger_forwards_audit_events_to_the_s3_queue() {
     let source: Source<()> = serde_json::from_str(AUDIT_SOURCE).expect("the audit source loads");
     let logger = build_audit_logger(&inputs, &source).expect("the audit logger builds");
     logger
-        .async_log_audit_log_event(&payload())
+        .async_log_audit_event(&payload())
         .await
         .expect("the s3 logger accepts an audit record");
     let queued = logger.queue.snapshot();
@@ -76,7 +76,7 @@ async fn the_azure_sentinel_logger_queues_audit_events_on_its_audit_stream() {
             tasks: None,
         },
     );
-    CallbackLogger::async_log_audit_log_event(&*logger, &payload())
+    CallbackLogger::async_log_audit_event(&*logger, &payload())
         .await
         .expect("the sentinel logger accepts an audit record");
     let audit = logger

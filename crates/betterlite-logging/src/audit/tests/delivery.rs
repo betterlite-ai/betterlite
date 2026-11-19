@@ -110,7 +110,7 @@ async fn shutdown_drains_accepted_callbacks() {
 async fn a_logger_without_the_override_ignores_audit_events() {
     let logger = PlainLogger;
     logger
-        .async_log_audit_log_event(&payload())
+        .async_log_audit_event(&payload())
         .await
         .expect("the default override accepts and drops the event");
 }

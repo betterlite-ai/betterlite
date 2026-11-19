@@ -63,7 +63,7 @@ impl CallbackLogger for RecordingLogger {
         &self.name
     }
 
-    async fn async_log_audit_log_event(
+    async fn async_log_audit_event(
         &self,
         audit_log: &StandardAuditLogPayload,
     ) -> Result<(), LoggerError> {

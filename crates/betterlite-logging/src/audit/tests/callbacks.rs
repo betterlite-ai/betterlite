@@ -183,7 +183,7 @@ async fn the_real_builder_builds_from_the_audit_parameters() {
     let logger = builder.build(&source).expect("the dedicated logger builds");
     assert_eq!(logger.callback_name(), "s3_v2");
     logger
-        .async_log_audit_log_event(&payload())
+        .async_log_audit_event(&payload())
         .await
         .expect("the s3 logger accepts an audit record");
     builder.inputs.shutdown.cancel();
