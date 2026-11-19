@@ -1,0 +1,22 @@
+kind: helper
+name: apiserpent-quick-defaults
+call:
+  apiserpent_search:
+    query: "rust async"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {Accept: "text/plain"}
+    reply: null
+calls:
+  - apiserpent_search:
+      query: ["rust", "async"]
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}

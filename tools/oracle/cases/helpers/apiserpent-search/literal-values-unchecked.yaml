@@ -1,0 +1,20 @@
+kind: helper
+name: apiserpent-literal-values-unchecked
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params:
+      engine: "yandex"
+      format: "verbose"
+      safe: "kind"
+      freshness: "weird"
+      language: "xx"
+      pages: 10
+      pixel_position: false
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: null
+env: {}
+compare: {ignore: []}
