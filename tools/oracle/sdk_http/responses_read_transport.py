@@ -155,8 +155,8 @@ class Prepared:
     config: BaseResponsesAPIConfig
     params: GenericLiteLLMParams
     logging_obj: Logging
-    extra_headers: JsonValue
-    extra_body: JsonValue
+    extra_headers: dict[str, JsonValue] | None
+    extra_body: dict[str, JsonValue] | None
     timeout: float | None
 
 
