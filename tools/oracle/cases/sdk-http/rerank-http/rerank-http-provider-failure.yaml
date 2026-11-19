@@ -1,0 +1,25 @@
+kind: sdk_http
+name: rerank-http-provider-failure
+env: {}
+call:
+  rerank_http:
+    model: rerank-test
+    modes: [sync]
+    optional_params:
+      query: "slow query"
+      documents: ["a"]
+    api_key: sk-provider
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "2"}
+    body: slow
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type, x-api-key]
+  ignore:
+    - pointer: /rerank_http/value/runs/0/failure/message
+      why: >-
+        LiteLLM carries the provider's response text as the error message and
+        betterlite prefixes it with the status and body, so only the message
+        wording differs.

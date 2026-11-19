@@ -1,0 +1,24 @@
+kind: sdk_http
+name: rerank-http-payload
+env: {}
+call:
+  rerank_http:
+    model: rerank-test
+    modes: [sync]
+    optional_params:
+      query: "é"
+      documents: ["a"]
+    api_key: sk-provider
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: req-1}
+    body:
+      id: r
+      results:
+        - index: 0
+          relevance_score: 0.5
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type, x-api-key]
+  ignore: []
