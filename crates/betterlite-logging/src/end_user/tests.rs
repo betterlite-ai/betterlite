@@ -53,8 +53,8 @@ fn resolves_the_end_user_id(#[case] encoded: &str, #[case] expected: Option<&str
 }
 
 #[rstest]
-#[case::disabled_suppresses(true, None)]
-#[case::enabled_keeps(false, Some("user"))]
+#[case::disabled_suppresses(Some(true), None)]
+#[case::enabled_keeps(Some(false), Some("user"))]
 #[case::unset_keeps(None, Some("user"))]
 fn the_disable_setting_gates_every_service(
     #[case] disable: Option<bool>,

@@ -47,6 +47,7 @@ impl SpendLogStatus {
     }
 }
 
+#[must_use]
 pub const fn as_object(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(entries) => Some(entries),
@@ -72,7 +73,7 @@ where
 {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => convert(value)
+        Some(present) => convert(present)
             .map(Some)
             .ok_or(SpendMetadataError::FieldType { field }),
     }
@@ -144,7 +145,7 @@ pub fn looks_like_model_name(model: &str) -> bool {
 }
 
 // SpendLogsPayload: one field per _types.py annotation, in declaration order.
-#[derive(Clone, PartialEq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct SpendLogsPayload {
     pub request_id: String,
     pub call_type: String,
