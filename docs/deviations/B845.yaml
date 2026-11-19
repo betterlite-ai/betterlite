@@ -1,33 +1,7 @@
 task: B845
 deviations:
-  - what: >-
-      A cached discovery record is current when it names the same catalog generation and row as the
-      published snapshot; LiteLLM compares the cached deployment with the model list entry by
-      Python object identity (is).
-    why: >-
-      betterlite publishes an immutable catalog behind an Arc, so a record's generation plus row
-      index answers the same question as the identity test while a refresh swaps the whole catalog.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10413-L10422
-  - what: >-
-      A discovery cache entry that is not a discovered-model-info record is treated as absent; the
-      cache stores only records of that type.
-    why: >-
-      The Python cache holds object and LiteLLM's isinstance check rejects anything else. The
-      typed cache cannot hold another type, so the same inputs give the same empty mapping.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10414-L10422
-  - what: >-
-      A non-text model_info.base_model or litellm_params.model raises a typed error naming the
-      field instead of reaching a Python attribute error on model.startswith.
-    why: >-
-      LiteLLM dereferences base_model as a string without checking its type, so a number or object
-      fails with AttributeError; betterlite reports the same invalid deployment as a field error.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10773
-  - what: >-
-      A wildcard expansion candidate with an empty litellm_params.model is skipped, and the next
-      candidate carrying the same deployment id is tried; LiteLLM takes the first id match even
-      when its model is empty.
-    why: >-
-      An empty candidate can never resolve in the cost map, so skipping it keeps a working wildcard
-      group routable instead of failing the whole lookup on a malformed sibling.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10754-L10763
+  - {what: "A cached discovery record is current when it names the same catalog generation and row as the published snapshot; LiteLLM compares the cached deployment with the model list entry by Python object identity (is).", why: "betterlite publishes an immutable catalog behind an Arc, so a record's generation plus row index answers the same question as the identity test while a refresh swaps the whole catalog.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10413-L10422"}
+  - {what: "A discovery cache entry that is not a discovered-model-info record is treated as absent; the cache stores only records of that type.", why: "The Python cache holds objects and LiteLLM's isinstance check rejects anything else. The typed cache cannot hold another type, so the same inputs give the same empty mapping.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10414-L10422"}
+  - {what: "A non-text model_info.base_model or litellm_params.model raises a typed error naming the field instead of reaching a Python attribute error on model.startswith.", why: "LiteLLM dereferences base_model as a string without checking its type, so a number or object fails with AttributeError; betterlite reports the same invalid deployment as a field error.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10773"}
+  - {what: "A wildcard expansion candidate with an empty litellm_params.model is skipped, and the next candidate carrying the same deployment id is tried; LiteLLM takes the first id match even when its model is empty.", why: "An empty candidate can never resolve in the cost map, so skipping it keeps a working wildcard group routable instead of failing the whole lookup on a malformed sibling.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10754-L10763"}
 kept_bugs: []
