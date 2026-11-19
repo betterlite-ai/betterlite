@@ -148,6 +148,8 @@ public_subnet_ids  = ["subnet-aaa", "subnet-bbb"]
 private_subnet_ids = ["subnet-ccc", "subnet-ddd"]
 ```
 
+The example root in `examples/default/` sets `azs` to the first two zones of `var.region`; change that argument in its `main.tf` to place the subnets elsewhere.
+
 Security groups stay module-owned in either mode: the ALB group, the tasks group, and the database and cache groups when the module creates those. To reach infrastructure the module does not manage, allow inbound from the group named by `task_security_group_id`, or attach a group of your own with `additional_task_security_group_ids`.
 
 The data stores are optional in the same way. Set `create_database = false` and pass `database_url`, set `create_redis = false` and pass `redis_url`, or leave the URL empty and run without that store. A supplied URL lands in a Secrets Manager entry and reaches the container as `DATABASE_URL` or `REDIS_URL`, so it never appears in plain text in the task definition, and the migration task still runs against the existing database. The Aurora-specific IAM user bootstrap drops out, since the URL already carries its credentials.
