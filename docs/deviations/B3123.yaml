@@ -12,12 +12,15 @@ deviations:
   - what: token_buckets saturates creation tokens at zero when a read count exceeds the prefix, where LiteLLM subtracts and can produce a negative count.
     why: A negative bucket has no meaning in a price scenario, and CacheTokenBuckets in LiteLLM rejects it as a TokenCount; predict_arm never passes a read above the cacheable prefix, so the clamp only guards a nonsensical internal call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L154-L160
+  - what: CacheTokenBuckets.total_tokens saturates at i64::MAX instead of summing arbitrary-precision Python integers.
+    why: betterlite stores token counts as i64, so a sum past the limit clamps rather than wrapping; no prompt reaches it, and every scenario's total stays a sum of the four buckets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/prompt_cache_prediction.py#L17-L24
   - what: Costs, scenarios and arms carry rust_decimal Decimals where LiteLLM returns Python floats.
     why: Money is exact decimal in betterlite and serializes as a standard JSON number; docs/compatibility.md fixes output as standard JSON, so no float formatting is ported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_pricing.py#L86-L94
-  - what: predict, is_warm, fits, predict_arm and count_tokens take the observation cache, price service, minimum-token service, token counter and billing instant as injected services instead of reading DualCache, litellm.get_model_info, get_prompt_cache_min_tokens, count_prompt_tokens and current_billing_time directly.
+  - what: supports, predict, is_warm, fits, predict_arm and count_tokens take the observation cache, price service, minimum-token service, token counter and billing instant as injected services instead of reading DualCache, litellm.get_model_info, get_prompt_cache_min_tokens, count_prompt_tokens and current_billing_time directly.
     why: The price catalog and the catalog-backed minimum live in betterlite-core, which depends on betterlite-anthropic, so the host supplies them; one arm's three scenarios still share the single injected billing instant, as LiteLLM's pinned_billing_time wrapper does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L168-L236
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L100-L236
   - what: has_request_transforms takes the callback list, each logger's kind and its overridden hooks as arguments instead of reading litellm.logging_callback_manager and PROXY_HOOKS.
     why: The proxy callback registry is owned by another task's layer, so the caller prepares the list; a logger counts as transforming exactly when it is not a built-in and overrides at least one of the three request hooks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_prediction.py#L14-L25
