@@ -22,8 +22,8 @@ use super::super::fixture::Fixture;
 use super::super::wire::{Failure, failure};
 use super::{chat_failure, watsonx_auth};
 
-// _complete_watsonx: B5971's plan over the IAM token, then the OpenAILike body
-pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Result<(), Failure> {
+// the map and the IAM token B5971's chat config reads before it signs a request
+async fn chat_plan(case: &Case, fixture: &Fixture) -> Result<WatsonxChatPlan, Failure> {
     let mut mapped = JsonMap::new();
     map_chat_params(
         &chat_options(&case.non_default(), case.stream.unwrap_or(false)),
@@ -34,7 +34,7 @@ pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Re
     let api_base = case.api_base();
     let api_key = case.key();
     let auth = watsonx_auth(fixture)?;
-    let plan = WatsonxChatPlan::prepare(
+    WatsonxChatPlan::prepare(
         &auth,
         WatsonxChatRequest {
             model: &case.model,
@@ -45,7 +45,12 @@ pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Re
         },
     )
     .await
-    .map_err(|error| chat_failure(&error))?;
+    .map_err(|error| chat_failure(&error))
+}
+
+// _complete_watsonx: B5971's plan over the IAM token, then the OpenAILike body
+pub(in crate::b8331) async fn watsonx_chat(case: &Case, fixture: &Fixture) -> Result<(), Failure> {
+    let plan = chat_plan(case, fixture).await?;
     let messages = serde_json::to_value(&case.messages).map_err(|error| failure(None, &error))?;
     let body = chat_body(plan.model, messages, plan.options);
     fixture.transport.keep_json(plan.url, plan.headers, &body)
