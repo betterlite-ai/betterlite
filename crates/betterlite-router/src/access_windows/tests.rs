@@ -69,6 +69,32 @@ fn ids(deployments: &[DeploymentSpec]) -> Vec<String> {
         .collect()
 }
 
+fn admin(team_id: Option<&str>) -> Authority<'_> {
+    Authority {
+        team_id,
+        proxy_admin: true,
+    }
+}
+
+// A team-owned pool whose deployments answer to one model name, optionally under a team public name too.
+fn team_pool(model: &str, public_name: &str, owners: &[(&str, &str)]) -> Vec<DeploymentSpec> {
+    owners
+        .iter()
+        .map(|&(id, team)| {
+            spec(
+                model,
+                id,
+                &[
+                    ("team_id", text(team)),
+                    ("team_public_model_name", text(public_name)),
+                ],
+            )
+        })
+        .collect()
+}
+
+const AMBIGUOUS_TEAMS_MESSAGE: &str = "Model name 'shared' matches deployments from multiple teams. Specify the deployment ID directly to disambiguate.";
+
 fn absent_and_null_parse_empty() {
     let zones = database();
     assert!(
@@ -596,43 +622,15 @@ fn an_invalid_window_is_refused_with_its_deployment() {
 }
 
 fn an_admin_pool_named_by_two_teams_is_refused() {
-    let deployments = vec![
-        spec(
-            "shared",
-            "a",
-            &[
-                ("team_id", text("t1")),
-                ("team_public_model_name", text("shared")),
-            ],
-        ),
-        spec(
-            "shared",
-            "b",
-            &[
-                ("team_id", text("t2")),
-                ("team_public_model_name", text("shared")),
-            ],
-        ),
-    ];
-    let error = filter_team_based_models(
-        deployments,
-        Authority {
-            team_id: None,
-            proxy_admin: true,
-        },
-        "shared",
-    )
-    .unwrap_err();
+    let pool = team_pool("shared", "shared", &[("a", "t1"), ("b", "t2")]);
+    let error = filter_team_based_models(pool, admin(None), "shared").unwrap_err();
     assert_eq!(
         error,
         CatalogLookupError::AmbiguousTeams {
             model: String::from("shared")
         }
     );
-    assert_eq!(
-        error.to_string(),
-        "Model name 'shared' matches deployments from multiple teams. Specify the deployment ID directly to disambiguate."
-    );
+    assert_eq!(error.to_string(), AMBIGUOUS_TEAMS_MESSAGE);
 }
 
 fn kept_deployments_keep_catalog_order() {
@@ -678,89 +676,22 @@ fn a_pool_with_one_blocked_deployment_keeps_the_rest() {
 }
 
 fn an_admin_pool_keeps_only_authorized_teams() {
-    let deployments = vec![
-        spec(
-            "shared",
-            "a",
-            &[
-                ("team_id", text("t1")),
-                ("team_public_model_name", text("shared")),
-            ],
-        ),
-        spec(
-            "shared",
-            "b",
-            &[
-                ("team_id", text("t2")),
-                ("team_public_model_name", text("shared")),
-            ],
-        ),
-    ];
-    let kept = filter_team_based_models(
-        deployments,
-        Authority {
-            team_id: Some("t1"),
-            proxy_admin: true,
-        },
-        "shared",
-    )
-    .unwrap();
+    let pool = team_pool("shared", "shared", &[("a", "t1"), ("b", "t2")]);
+    let kept = filter_team_based_models(pool, admin(Some("t1")), "shared").unwrap();
     assert_eq!(ids(&kept), ["a"]);
 }
 
 fn an_admin_pool_without_a_named_team_keeps_only_shared() {
-    let mixed = vec![
-        spec(
-            "shared",
-            "c",
-            &[
-                ("team_id", text("t1")),
-                ("team_public_model_name", text("shared")),
-            ],
-        ),
-        spec("shared", "open", &[]),
-    ];
-    let kept = filter_team_based_models(
-        mixed,
-        Authority {
-            team_id: None,
-            proxy_admin: true,
-        },
-        "shared",
-    )
-    .unwrap();
+    let mut pool = team_pool("shared", "shared", &[("c", "t1")]);
+    pool.push(spec("shared", "open", &[]));
+    let kept = filter_team_based_models(pool, admin(None), "shared").unwrap();
     assert_eq!(ids(&kept), ["open"]);
 }
 
 // LiteLLM's admin arm also matches a team's public model name, not only the deployment's own model name.
 fn an_admin_pool_named_by_its_public_name_is_kept() {
-    let deployments = vec![
-        spec(
-            "internal",
-            "a",
-            &[
-                ("team_id", text("t1")),
-                ("team_public_model_name", text("public")),
-            ],
-        ),
-        spec(
-            "internal",
-            "b",
-            &[
-                ("team_id", text("t1")),
-                ("team_public_model_name", text("public")),
-            ],
-        ),
-    ];
-    let kept = filter_team_based_models(
-        deployments,
-        Authority {
-            team_id: None,
-            proxy_admin: true,
-        },
-        "public",
-    )
-    .unwrap();
+    let pool = team_pool("internal", "public", &[("a", "t1"), ("b", "t1")]);
+    let kept = filter_team_based_models(pool, admin(None), "public").unwrap();
     assert_eq!(ids(&kept), ["a", "b"]);
 }
 
