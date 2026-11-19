@@ -82,8 +82,7 @@ resource "google_compute_global_forwarding_rule" "http" {
   labels                = local.labels
 }
 
-# A managed certificate's domain list cannot change in place, so the name follows it and a new cert is
-# created before the proxy moves off the old one
+# A managed certificate's domain list cannot change in place, so the name follows it and create_before_destroy swaps it
 resource "google_compute_managed_ssl_certificate" "betterlite" {
   count = var.create_runtime && local.tls_enabled ? 1 : 0
 
