@@ -116,11 +116,11 @@ fn prompt_details(request: &CostEstimateRequest) -> Option<IndexMap<String, Json
     let mut details = IndexMap::new();
     details.insert(
         "cached_tokens".to_owned(),
-        count_value(request.cache_read_input_tokens),
+        Json::Number(Number::from(request.cache_read_input_tokens)),
     );
     details.insert(
         "cache_creation_tokens".to_owned(),
-        count_value(request.cache_creation_input_tokens),
+        Json::Number(Number::from(request.cache_creation_input_tokens)),
     );
     Some(details)
 }
@@ -133,21 +133,17 @@ fn completion_details(request: &CostEstimateRequest) -> Option<IndexMap<String, 
     let mut details = IndexMap::new();
     details.insert(
         "reasoning_tokens".to_owned(),
-        count_value(request.reasoning_tokens),
+        Json::Number(Number::from(request.reasoning_tokens)),
     );
     details.insert(
         "text_tokens".to_owned(),
-        count_value(
+        Json::Number(Number::from(
             request
                 .output_tokens
                 .saturating_sub(request.reasoning_tokens),
-        ),
+        )),
     );
     Some(details)
-}
-
-fn count_value(count: i64) -> Json {
-    Json::Number(Number::from(count))
 }
 
 // completion_cost is never asked to count anything: the quote's only tokens are the ones the request declares.

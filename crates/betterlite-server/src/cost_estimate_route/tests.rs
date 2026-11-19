@@ -13,7 +13,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::Config;
 use betterlite_core::cost::prepare::BillingTokenCounter;
-use betterlite_models::catalog::CatalogError;
+use betterlite_models::catalog::{BundledCatalog, CatalogError};
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -652,7 +652,8 @@ async fn answers_not_found_when_the_cost_service_is_unavailable() {
 async fn selects_the_off_peak_prices_at_the_pinned_moment() {
     let owned = config(DEEPSEEK);
     let deployments = DeploymentSet::from_config(&owned).unwrap();
-    let service = testing::service().unwrap();
+    let asset = (BundledCatalog::default().asset)().unwrap();
+    let service = testing::service_from(&asset).unwrap();
     let request: JsonValue = serde_json::from_str(
         r#"{"model":"deepseek-flash","input_tokens":1000,"output_tokens":500}"#,
     )

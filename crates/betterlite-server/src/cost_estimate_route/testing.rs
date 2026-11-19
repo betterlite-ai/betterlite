@@ -38,10 +38,6 @@ pub enum FixtureError {
     Json(#[from] serde_json::Error),
 }
 
-pub fn service() -> Result<CostService<ProviderFormulas>, FixtureError> {
-    service_from(&(BundledCatalog::default().asset)()?)
-}
-
 pub fn service_from(model_cost: &[u8]) -> Result<CostService<ProviderFormulas>, FixtureError> {
     let settings = LookupSettings {
         known_model_names: BTreeSet::new(),
@@ -65,7 +61,7 @@ pub fn service_from(model_cost: &[u8]) -> Result<CostService<ProviderFormulas>, 
 
 pub fn quote(records: &[JsonObject], request: &JsonValue) -> Result<JsonValue, FixtureError> {
     let deployments = DeploymentSet::from_records(records)?;
-    let service = service()?;
+    let service = service_from(&(BundledCatalog::default().asset)()?)?;
     let request = CostEstimateRequest::from_value(request)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

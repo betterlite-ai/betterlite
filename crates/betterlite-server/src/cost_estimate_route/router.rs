@@ -32,12 +32,9 @@ async fn quote(
     State(state): State<RouteState>,
     body: Bytes,
 ) -> Result<Json<CostEstimateResponse>, EstimateError> {
-    Ok(Json(answer(&state.server, &body).await?))
-}
-
-async fn answer(server: &ServerState, body: &[u8]) -> Result<CostEstimateResponse, EstimateError> {
-    let request = decode_cost_estimate_request(body)?;
-    let service = server
+    let request = decode_cost_estimate_request(&body)?;
+    let service = state
+        .server
         .cost_service
         .service
         .as_ref()
@@ -47,10 +44,11 @@ async fn answer(server: &ServerState, body: &[u8]) -> Result<CostEstimateRespons
                 request.model, request.model
             ),
         })?;
-    let deployments = DeploymentSet::from_config(&server.config)
+    let deployments = DeploymentSet::from_config(&state.server.config)
         .inspect_err(|error| {
             tracing::warn!(error = %error, "the cost estimate could not index the configured deployments");
         })
         .ok();
-    estimate(service, deployments.as_ref(), &request, SystemTime::now()).await
+    let response = estimate(service, deployments.as_ref(), &request, SystemTime::now()).await?;
+    Ok(Json(response))
 }
