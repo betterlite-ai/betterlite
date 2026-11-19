@@ -20,7 +20,7 @@ use betterlite_bedrock::request_policy::{
 };
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_bedrock::signing::target::RegionInputs;
-use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream;
+use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream as _;
 use betterlite_http::error::HttpError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -72,7 +72,7 @@ fn metadata_params(call: &InvokeUrl) -> MetadataParams {
     params
 }
 
-fn environment<'call>(call: &'call InvokeUrl) -> InvokeEnvironment<'call> {
+fn environment(call: &InvokeUrl) -> InvokeEnvironment<'_> {
     InvokeEnvironment {
         region_name: call.environment.get("AWS_REGION_NAME").map(String::as_str),
         region: call.environment.get("AWS_REGION").map(String::as_str),
@@ -92,9 +92,9 @@ fn signed_headers(pairs: &[(String, String)]) -> serde_json::Map<String, Value> 
     object
 }
 
-fn messages_environment(
-    call: &InvokeUrl,
-) -> Result<(IndexMap<String, String>, Option<String>), Box<HelperError>> {
+type MergedEnvironment = (IndexMap<String, String>, Option<String>);
+
+fn messages_environment(call: &InvokeUrl) -> Result<MergedEnvironment, Box<HelperError>> {
     let metadata = metadata_params(call);
     let fields: IndexSet<String> = call.policy_fields.iter().flatten().cloned().collect();
     let policy = (!fields.is_empty()).then(|| BedrockRequestPolicy { fields });

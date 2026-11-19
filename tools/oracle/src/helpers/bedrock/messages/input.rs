@@ -13,7 +13,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    InvokeUrl(InvokeUrl),
+    InvokeUrl(Box<InvokeUrl>),
     Transform(Transform),
     EventStream(EventStream),
     ErrorClass(ErrorClass),

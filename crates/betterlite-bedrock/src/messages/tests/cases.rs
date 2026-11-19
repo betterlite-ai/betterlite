@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::iter::once;
 
 use betterlite_anthropic::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -140,7 +141,7 @@ fn merged_environment() -> IndexMap<String, String> {
         "X-Amzn-Bedrock-Request-Metadata".to_owned(),
         "forged".to_owned(),
     );
-    let fields: IndexSet<String> = std::iter::once("user_api_key_hash".to_owned()).collect();
+    let fields: IndexSet<String> = once("user_api_key_hash".to_owned()).collect();
     let policy = BedrockRequestPolicy { fields };
     let (merged, api_base) =
         validate_messages_environment(&input, &metadata_params(), Some(&policy), None, None)
