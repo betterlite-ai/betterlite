@@ -19,6 +19,7 @@ use crate::paths::unique_id;
 use crate::process::Gateway;
 use crate::runner::run_group_with_url;
 use betterlite_oracle_runner::case::BodyKind;
+use betterlite_oracle_runner::helpers::{generate_prisma_client, sync_litellm};
 
 fn case(extra: &str) -> String {
     let body = "name: scim\nconfig: |\n  general_settings: {}\n";
@@ -146,6 +147,9 @@ fn boot_scim_gateway(eligible: bool, suffix: &str) -> Gateway {
     fs::write(&config_path, "general_settings: {}\n").expect("scim config is written");
     let mut case_env = BTreeMap::new();
     if eligible {
+        // the 401 below needs the venv's prisma, so sync and generate it before the proxy boots
+        sync_litellm(&root()).expect("the litellm environment syncs");
+        generate_prisma_client(&root()).expect("the prisma client generates");
         let fixture = root().join("tools/oracle/fixtures/native-feature-oracle");
         case_env.insert(
             "LITELLM_WORKER_STARTUP_HOOKS".to_owned(),
@@ -200,8 +204,12 @@ fn eligible_scim_service_provider_config_reaches_the_mit_handler() {
     );
     let unauthenticated = http::send(&request_client, &gateway.base_url, &scim_request(None))
         .expect("the eligible proxy answers");
-    // Same unstructured 500 as tools/oracle/cases/auth/missing-key.yaml; auth still ran.
-    assert_eq!(unauthenticated.status, 500);
+    // The route sits behind user_api_key_auth, so a missing key gets the structured 401; auth still ran.
+    assert_eq!(unauthenticated.status, 401);
+    assert_eq!(
+        unauthenticated.body["error"]["type"],
+        Value::from("auth_error")
+    );
     gateway.stop().expect("the gateway stops");
 }
 
