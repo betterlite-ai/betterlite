@@ -43,7 +43,7 @@ fn push_tool_result(
     let mut message = Object::new();
     message.insert("role".to_owned(), Json::Text("tool".to_owned()));
     message.insert("tool_call_id".to_owned(), Json::Text(id.to_owned()));
-    let encoded = serde_json::to_value(&tool_result_content(content))?;
+    let encoded = serde_json::to_value(tool_result_content(content))?;
     message.insert("content".to_owned(), serde_json::from_value(encoded)?);
     copy_cache_control(block, &mut message, model);
     tool_messages.push(Json::Object(message));
