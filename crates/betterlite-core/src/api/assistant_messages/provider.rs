@@ -32,6 +32,7 @@ pub struct MessageContext<'context, T> {
     pub redactor: &'context Redactor,
 }
 
+#[derive(Clone, Copy)]
 pub enum ProviderCall<'call> {
     Append {
         thread_id: &'call str,
@@ -79,7 +80,7 @@ where
     }
 }
 
-fn thread_call(call: ProviderCall<'_>) -> ThreadCall<'_> {
+const fn thread_call(call: ProviderCall<'_>) -> ThreadCall<'_> {
     match call {
         ProviderCall::Append { thread_id, data } => ThreadCall::AddMessage { thread_id, data },
         ProviderCall::List(thread_id) => ThreadCall::ListMessages(thread_id),
@@ -131,7 +132,7 @@ where
     }
 }
 
-fn message_call(call: ProviderCall<'_>) -> MessageCall<'_> {
+const fn message_call(call: ProviderCall<'_>) -> MessageCall<'_> {
     match call {
         ProviderCall::Append { thread_id, data } => MessageCall::Append { thread_id, data },
         ProviderCall::List(thread_id) => MessageCall::List(thread_id),

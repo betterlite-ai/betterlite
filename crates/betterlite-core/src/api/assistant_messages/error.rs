@@ -1,7 +1,10 @@
+use std::str::from_utf8;
 use std::time::TryFromFloatSecsError;
 
 use betterlite_azure::azure_message_attachments::error::MessagesError;
-use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
+use betterlite_error::dispatch::{
+    DispatchInput, RawException, RawExceptionBody, RawExceptionBodyDetail, dispatch,
+};
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_openai::threads::error::ThreadsError;
@@ -52,12 +55,10 @@ pub enum MessageError {
 impl MessageError {
     // the status and body a provider answer carried, which the raw SDK exception reports as-is
     #[must_use]
-    pub fn provider_answer(&self) -> Option<(u16, &[u8])> {
+    pub const fn provider_answer(&self) -> Option<(u16, &[u8])> {
         match self {
-            Self::OpenAi(ThreadsError::Status { status, body, .. }) => {
-                Some((*status, body.as_slice()))
-            }
-            Self::Azure(MessagesError::Threads(ThreadsError::Status { status, body, .. })) => {
+            Self::OpenAi(ThreadsError::Status { status, body, .. })
+            | Self::Azure(MessagesError::Threads(ThreadsError::Status { status, body, .. })) => {
                 Some((*status, body.as_slice()))
             }
             Self::Setup(_) | Self::OpenAi(_) | Self::Azure(_) | Self::UnexpectedReply { .. } => {
@@ -94,7 +95,10 @@ pub fn failure(error: MessageError, provider: &str, redactor: &Redactor) -> Mess
 // the selector's own classes never reach the provider, so they map straight from its error
 fn setup_class(error: &SetupError, provider: &str) -> ErrorClass {
     match error {
-        SetupError::Options(OptionError::MalformedAttachment) => {
+        SetupError::Options(OptionError::MalformedAttachment)
+        | SetupError::Timeout(_)
+        | SetupError::Data { .. }
+        | SetupError::Deadline { .. } => {
             ErrorClass::Unclassified(Box::new(context(error.to_string(), provider)))
         }
         SetupError::Options(options) => {
@@ -106,9 +110,6 @@ fn setup_class(error: &SetupError, provider: &str) -> ErrorClass {
                 ..context(error.to_string(), provider)
             };
             ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(details, None)))
-        }
-        SetupError::Timeout(_) | SetupError::Data { .. } | SetupError::Deadline { .. } => {
-            ErrorClass::Unclassified(Box::new(context(error.to_string(), provider)))
         }
     }
 }
@@ -133,10 +134,10 @@ fn exception(error: &MessageError, provider: &str) -> RawException {
     let body = answer.map(|(_status, body)| body);
     let error_str = status.map_or_else(
         || error.to_string(),
-        |status| {
+        |status_code| {
             format!(
-                "Error code: {status} - {}",
-                body.map_or("", |bytes| std::str::from_utf8(bytes).unwrap_or(""))
+                "Error code: {status_code} - {}",
+                body.map_or("", |bytes| from_utf8(bytes).unwrap_or(""))
             )
         },
     );
@@ -152,15 +153,31 @@ fn exception(error: &MessageError, provider: &str) -> RawException {
     }
 }
 
-// body["error"] when it is an object, otherwise the body itself
+// _make_status_error hands APIError the object under "error" when the parsed body is a mapping (openai/_client.py#L687)
 fn flattened_body(bytes: &[u8]) -> Option<RawExceptionBody> {
-    let value = serde_json::from_slice::<Json>(bytes).ok()?;
-    let Json::Object(mut fields) = value else {
+    let Json::Object(mut fields) = serde_json::from_slice::<Json>(bytes).ok()? else {
         return None;
     };
     let flat = match fields.shift_remove("error") {
         Some(Json::Object(inner)) => inner,
-        Some(_) | None => fields,
+        // a non-mapping body keeps no fields, so the whole object stands in for it
+        Some(_) => return Some(RawExceptionBody::default()),
+        None => fields,
+    };
+    let error = match flat.get("error") {
+        Some(Json::Object(inner)) => Some(RawExceptionBodyDetail {
+            kind: None,
+            param: None,
+            code: None,
+            message: inner
+                .get("message")
+                .and_then(Json::as_str)
+                .map(str::to_owned),
+            inner_error: None,
+            innererror: None,
+        }),
+        Some(Json::Text(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_))
+        | None => None,
     };
     let text = |name: &str| flat.get(name).and_then(Json::as_str).map(str::to_owned);
     Some(RawExceptionBody {
@@ -168,6 +185,6 @@ fn flattened_body(bytes: &[u8]) -> Option<RawExceptionBody> {
         param: text("param"),
         code: text("code"),
         message: text("message"),
-        error: None,
+        error,
     })
 }

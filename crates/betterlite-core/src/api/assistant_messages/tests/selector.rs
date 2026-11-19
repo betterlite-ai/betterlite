@@ -37,7 +37,7 @@ fn message_option_omissions() {
     assert!(!unknown.contains_key("role"));
     assert_eq!(
         selected(&options(
-            r#"{"provider":"anthropic","role":"user","content":"hi","trace":"x"}"#
+            r#"{"provider":"anthropic","role":"user","content":"hi","kwargs":{"trace":"x"}}"#
         )),
         object(r#"{"trace":"x"}"#)
     );

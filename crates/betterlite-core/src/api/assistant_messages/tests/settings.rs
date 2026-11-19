@@ -378,6 +378,7 @@ fn message_settings_and_failures_maps_the_async_not_found() {
     assert_eq!(metadata.openai_code, None);
 }
 
+// the SDK unwraps body["error"] before APIError reads type/param/code, and LiteLLM forwards that unwrapped body
 #[test]
 fn message_settings_and_failures_keeps_the_async_body_fields() {
     let fixture = Fixture::new();
@@ -401,13 +402,58 @@ fn message_settings_and_failures_keeps_the_async_body_fields() {
     assert_eq!(metadata.openai_code.as_deref(), Some("unsupported_value"));
 }
 
+// APIError.__init__ reads no fields off a body that is not a mapping, so the whole object becomes the body
+#[test]
+fn message_settings_and_failures_ignores_a_non_object_error() {
+    let fixture = Fixture::new();
+    fixture.transport.queue(
+        400,
+        r#"{"error":"boom","type":"invalid_request_error","param":"role","code":"stale"}"#,
+    );
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let failure = call(
+        &fixture,
+        &request("openai", Some(&message), &params("openai")),
+        Operation::Append,
+        true,
+    )
+    .unwrap_err();
+    let metadata = failure.class.metadata();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.openai_code, None);
+}
+
+// get_error_message falls back to the message of a body["error"] object nested inside the unwrapped body
+#[test]
+fn message_settings_and_failures_reads_a_nested_error_message() {
+    let fixture = Fixture::new();
+    fixture.transport.queue(
+        400,
+        r#"{"error":{"error":{"message":"deep failure"},"type":"invalid_request_error"}}"#,
+    );
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let failure = call(
+        &fixture,
+        &request("openai", Some(&message), &params("openai")),
+        Operation::Append,
+        true,
+    )
+    .unwrap_err();
+    let ErrorClass::BadRequest(details) = failure.class else {
+        panic!("the 400 must map to the bad request class");
+    };
+    assert!(details.message.contains("deep failure"));
+}
+
 #[test]
 fn message_settings_and_failures_runs_the_selector_before_the_provider() {
     let fixture = Fixture::new();
     let message = data(r#"{"role":"user","content":"hello","attachments":[{"tools":[]}]}"#);
     let error = call(
         &fixture,
-        &request("anthropic", Some(&message), &params("azure")),
+        &request("azure", Some(&message), &params("azure")),
         Operation::Append,
         false,
     )

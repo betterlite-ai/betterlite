@@ -94,17 +94,17 @@ pub fn select_message_params(options: &MessageOptions) -> Result<Object, OptionE
         ("attachments", &options.attachments),
         ("metadata", &options.metadata),
     ] {
-        if let Some(value) = value
-            && !matches!(value, Json::Null)
+        if let Some(present) = value
+            && !matches!(present, Json::Null)
         {
-            non_default.insert(key.to_owned(), value.clone());
+            non_default.insert(key.to_owned(), present.clone());
         }
     }
     let mut optional = Object::new();
     match options.provider.as_str() {
         "openai" => optional.clone_from(&non_default),
         "azure" => map_create_message_params(&non_default, &mut optional, options.drop_params)
-            .map_err(|error| params_error(error, non_default.get("attachments")))?,
+            .map_err(|error| params_error(&error, non_default.get("attachments")))?,
         _ => {}
     }
     for (key, value) in &options.kwargs {
@@ -113,7 +113,7 @@ pub fn select_message_params(options: &MessageOptions) -> Result<Object, OptionE
     Ok(optional)
 }
 
-fn params_error(error: ParamsError, attachments: Option<&Json>) -> OptionError {
+fn params_error(error: &ParamsError, attachments: Option<&Json>) -> OptionError {
     match error {
         ParamsError::ContentNotString => OptionError::ContentNotString,
         ParamsError::UnsupportedAttachment => OptionError::UnsupportedAttachment {

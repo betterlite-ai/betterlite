@@ -92,12 +92,13 @@ pub struct PrepareInput<'request> {
 }
 
 pub fn prepare(input: &PrepareInput<'_>) -> Result<Prepared, SetupError> {
+    // add_message selects its options before any provider client exists; get_messages selects none (main.py#L1063-L1065)
     let selected = match input.data {
-        Some(data) => Some(select_message_params(&MessageOptions {
-            role: Some(Json::Text(data.role.clone())),
-            content: Some(data.content.clone()),
-            attachments: data.attachments.clone(),
-            metadata: data.metadata.clone(),
+        Some(message) => Some(select_message_params(&MessageOptions {
+            role: Some(Json::Text(message.role.clone())),
+            content: Some(message.content.clone()),
+            attachments: message.attachments.clone(),
+            metadata: message.metadata.clone(),
             provider: input.provider.to_owned(),
             drop_params: input.drop_params,
             kwargs: Object::new(),
@@ -106,28 +107,7 @@ pub fn prepare(input: &PrepareInput<'_>) -> Result<Prepared, SetupError> {
     };
     let timeout = resolve_timeout(input.params, input.provider)?;
     let deadline = deadline_of(&timeout)?;
-    let settings = input.settings;
-    let options = &ResourceSdkRequestOptions::from(input.params);
-    let route = match input.provider {
-        "openai" => Route::OpenAi(OpenAiCredentials {
-            api_base: settings.openai_base(options),
-            api_key: settings.openai_api_key(options).cloned(),
-            organization: settings.openai_organization(options).map(str::to_owned),
-        }),
-        "azure" => Route::Azure(AzureCredentials {
-            api_base: settings.azure_base(options).map(str::to_owned),
-            api_version: settings.azure_version(options).map(str::to_owned),
-            api_key: settings.azure_api_key(options).cloned(),
-            facade_ad_token: facade_ad_token(input.params, settings),
-            params: azure_params(input.params),
-        }),
-        other => {
-            return Err(SetupError::UnsupportedProvider {
-                provider: other.to_owned(),
-                operation: input.operation,
-            });
-        }
-    };
+    let route = route_of(input)?;
     Ok(Prepared {
         route,
         data: selected.as_ref().map(selected_data).transpose()?,
@@ -138,6 +118,29 @@ pub fn prepare(input: &PrepareInput<'_>) -> Result<Prepared, SetupError> {
             .max_retries
             .and_then(|value| u32::try_from(value).ok()),
     })
+}
+
+fn route_of(input: &PrepareInput<'_>) -> Result<Route, SetupError> {
+    let settings = input.settings;
+    let options = &ResourceSdkRequestOptions::from(input.params);
+    match input.provider {
+        "openai" => Ok(Route::OpenAi(OpenAiCredentials {
+            api_base: settings.openai_base(options),
+            api_key: settings.openai_api_key(options).cloned(),
+            organization: settings.openai_organization(options).map(str::to_owned),
+        })),
+        "azure" => Ok(Route::Azure(AzureCredentials {
+            api_base: settings.azure_base(options).map(str::to_owned),
+            api_version: settings.azure_version(options).map(str::to_owned),
+            api_key: settings.azure_api_key(options).cloned(),
+            facade_ad_token: facade_ad_token(input.params, settings),
+            params: azure_params(input.params),
+        })),
+        other => Err(SetupError::UnsupportedProvider {
+            provider: other.to_owned(),
+            operation: input.operation,
+        }),
+    }
 }
 
 pub(crate) fn resolve_timeout(

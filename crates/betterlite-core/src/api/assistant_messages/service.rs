@@ -26,6 +26,7 @@ pub struct MessageRequest<'request> {
     pub drop_params: bool,
 }
 
+#[derive(Debug)]
 pub enum Reply {
     Message(Box<ThreadMessage>),
     Page(Box<ThreadMessagePage>),
@@ -64,8 +65,8 @@ where
         match (operation, provider::send(&prepared, context, call).await?) {
             (Operation::Append, Reply::Message(message)) => Ok(Reply::Message(message)),
             (Operation::List, Reply::Page(page)) => Ok(Reply::Page(page)),
-            (operation, _) => Err(MessageError::UnexpectedReply {
-                operation: operation_name(operation),
+            (wrong, _) => Err(MessageError::UnexpectedReply {
+                operation: operation_name(wrong),
             }),
         }
     }

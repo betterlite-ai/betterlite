@@ -170,7 +170,13 @@ fn message_list_ignores_pagination() {
     );
     assert!(sync_page.data.is_empty());
     assert_eq!(sync_page.has_more, Some(false));
-    assert_eq!(sync_page.extra.get("object"), Some(&json(r#""list""#)));
+    assert_eq!(
+        sync_page
+            .extra
+            .get("object")
+            .and_then(|value| value.as_str()),
+        Some("list")
+    );
     assert_eq!(async_page, sync_page);
     let seen = fixture.transport.requests();
     assert_eq!(seen.len(), 2);
