@@ -22,17 +22,13 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::model_catalog_lookup::alias::AliasMap;
-use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
-use betterlite_router::routing_groups::index::RoutingGroupIndex;
+use betterlite_server::model_visibility::testing::{Row, Snapshot};
 use betterlite_server::spend::payload::{
     CompletionStart, PayloadRequest, SpendPayloadSettings, SpendResponse, SpendRouter,
     get_logging_payload,
 };
 use chrono::{DateTime, Utc};
-use input::{Input, ResponseInput, RouterDeployment, RouterInput, SettingsInput};
+use input::{Input, ResponseInput, RouterInput, SettingsInput};
 use tokio::sync::watch;
 
 pub(crate) struct Op;
@@ -86,7 +82,7 @@ struct PayloadCall<'call> {
 fn payload(call: &PayloadCall<'_>) -> HelperResult {
     let policy = payload_settings(call.settings)?;
     let completion_start_time = completion_start(call.kwargs)?;
-    let router = OwnedRouter::build(call.router_input);
+    let router = OwnedRouter::build(call.router_input)?;
     record(
         call,
         Record {
@@ -99,9 +95,7 @@ fn payload(call: &PayloadCall<'_>) -> HelperResult {
 
 // The catalog and router settings get_logging_payload reads, owned so the request can borrow them.
 struct OwnedRouter {
-    deployment_catalog: DeploymentCatalog,
-    aliases: AliasMap,
-    groups: RoutingGroupIndex,
+    snapshot: Snapshot,
     model_catalog: Arc<ModelCatalog>,
     known: BTreeSet<String>,
     custom: BTreeSet<String>,
@@ -112,21 +106,27 @@ struct OwnedRouter {
 }
 
 impl OwnedRouter {
-    fn build(input: Option<&RouterInput>) -> Self {
-        let mut deployment_catalog = DeploymentCatalog::default();
+    fn build(input: Option<&RouterInput>) -> Result<Self, Box<HelperError>> {
+        // the fixture's rows carry the identity the catalog derives, not a declared one
+        let info = Json::Null;
+        let mut rows = Vec::new();
         let mut recognized = BTreeSet::new();
         let mut teams = BTreeSet::new();
         if let Some(router) = input {
             for deployment in &router.model_list {
-                deployment_catalog.push(deployment_spec(deployment));
+                rows.push(Row {
+                    model_name: deployment.model_name.as_str(),
+                    litellm_params: &deployment.litellm_params,
+                    model_info: &info,
+                });
             }
             recognized.extend(router.recognized.iter().cloned());
             teams.extend(router.team_public.iter().cloned());
         }
-        Self {
-            deployment_catalog,
-            aliases: AliasMap::new(),
-            groups: RoutingGroupIndex::default(),
+        let snapshot = Snapshot::build(&rows, &JsonObject::new())
+            .map_err(|error| invalid(&error.to_string()))?;
+        Ok(Self {
+            snapshot,
             model_catalog: BundledCatalog::default().get(),
             known: BTreeSet::new(),
             custom: BTreeSet::new(),
@@ -134,7 +134,7 @@ impl OwnedRouter {
             recognized,
             teams,
             attribution_settings: SpendAttributionSettings::default(),
-        }
+        })
     }
 
     fn resolution(&self) -> ResolutionContext<'_> {
@@ -164,13 +164,7 @@ fn record(call: &PayloadCall<'_>, parts: Record<'_>) -> HelperResult {
         completion_start_time,
         router,
     } = parts;
-    let inferred = |_: &str| -> Option<String> { None };
-    let lookup = CatalogLookup {
-        catalog: &router.deployment_catalog,
-        model_group_alias: &router.aliases,
-        routing_groups: &router.groups,
-        inferred_provider: &inferred,
-    };
+    let lookup = router.snapshot.lookup();
     let resolution = router.resolution();
     let router_state = call.router_input.map(|_| SpendRouter {
         catalog: Some(&lookup),
@@ -255,20 +249,6 @@ const fn spend_response(input: &ResponseInput) -> SpendResponse<'_> {
         ResponseInput::Other => SpendResponse::Other,
         ResponseInput::UnknownModelError => SpendResponse::UnknownModelError,
         ResponseInput::Mapping(fields) => SpendResponse::Mapping(fields),
-    }
-}
-
-fn deployment_spec(deployment: &RouterDeployment) -> DeploymentSpec {
-    let mut model_info = JsonObject::new();
-    model_info.insert(
-        "id".to_owned(),
-        Json::Text(format!("deployment-{}", deployment.model_name)),
-    );
-    DeploymentSpec {
-        model_name: deployment.model_name.clone(),
-        litellm_params: deployment.litellm_params.clone(),
-        model_info,
-        extra: JsonObject::new(),
     }
 }
 
