@@ -237,12 +237,39 @@ fn summary_part_without_string_id() {
     }
 }
 
+// A provider object has no dict, so _field reads the part event's item_id and summary_index by getattr.
+fn summary_part_attribute_fields() {
+    let delta = mapping(
+        r#"{"type":"response.reasoning_summary_text.delta","item_id":"reason_a","delta":"think"}"#,
+    );
+    let mut state = state();
+    process(&mut state, &delta);
+    discard(&mut state);
+    let event_type = text("response.reasoning_summary_part.added");
+    let item_id = text("reason_a");
+    let summary_index = json("1");
+    let attributes = EventAttributes {
+        event_type: Some(&event_type),
+        item_id: Some(&item_id),
+        summary_index: Some(&summary_index),
+        ..EventAttributes::default()
+    };
+    process_attribute(&mut state, &attributes);
+    assert_eq!(
+        drained(&mut state),
+        json(
+            r#"[{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n\n"}}]"#
+        )
+    );
+}
+
 #[test]
 fn reasoning_summary_boundaries() {
     summary_delta_opens_block();
     summary_delta_needs_text();
     summary_part_indexes();
     summary_part_without_string_id();
+    summary_part_attribute_fields();
 }
 
 fn reasoning_signature_mapped() {
