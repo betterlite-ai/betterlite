@@ -5,6 +5,9 @@ use indexmap::IndexMap;
 
 pub const CACHE_TTL_SECONDS: f64 = 900.0;
 
+// a client sending a distinct litellm_call_id per request would otherwise grow the cache without bound
+pub const MAX_ENTRIES: usize = 10_000;
+
 // The source stamps and prunes with time.time(), so the wall clock is a value tests replace.
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
@@ -30,6 +33,7 @@ impl CompressionCache {
 
     pub fn store(&self, call_id: String, content: IndexMap<String, String>) {
         let created_at = (self.clock)();
+        self.prune();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries.insert(
             call_id,
@@ -38,6 +42,9 @@ impl CompressionCache {
                 created_at,
             },
         );
+        while entries.len() > MAX_ENTRIES {
+            entries.shift_remove_index(0);
+        }
     }
 
     pub fn prune(&self) {

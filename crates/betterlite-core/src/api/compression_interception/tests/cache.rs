@@ -3,7 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::support::{cache as content, manual_clock};
-use crate::api::compression_interception::cache::CompressionCache;
+use crate::api::compression_interception::cache::{CompressionCache, MAX_ENTRIES};
 
 const CALL_ID: &str = "call-1";
 
@@ -89,6 +89,18 @@ fn pruning_leaves_only_the_expired_entries_out() {
     cache.prune();
     assert_eq!(cache.entry("old"), None);
     assert!(cache.entry("young").is_some());
+}
+
+#[test]
+fn storing_past_the_cap_drops_the_oldest_entry() {
+    let (clock, _now) = manual_clock(100.0);
+    let cache = CompressionCache::with_clock(clock);
+    (0..MAX_ENTRIES + 1).for_each(|index| {
+        cache.store(format!("call-{index}"), content(&[("key", "value")]));
+    });
+    assert_eq!(cache.entry("call-0"), None);
+    assert!(cache.entry("call-1").is_some());
+    assert!(cache.entry(&format!("call-{MAX_ENTRIES}")).is_some());
 }
 
 #[test]

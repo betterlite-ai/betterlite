@@ -55,4 +55,11 @@ deviations:
       value whose section has not registered with it as an owner, and only otel registers nested
       keys; the map is therefore accepted under litellm_settings.compression_interception_params.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
+  - what: >-
+      The compression cache holds at most 10,000 entries and drops the oldest past that, where
+      LiteLLM's _compression_cache_by_call_id keeps every entry for its 900 seconds.
+    why: >-
+      Distinct call ids would otherwise let one client allocate memory without bound inside the
+      TTL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L187
 kept_bugs: []
