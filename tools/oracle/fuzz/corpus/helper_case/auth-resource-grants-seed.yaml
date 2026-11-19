@@ -1,0 +1,11 @@
+kind: helper
+name: auth-resource-grants-seed
+call:
+  auth_resource_grants:
+    function: managed_rows
+    rows:
+      - id: vs-seed
+        model_dump: {vector_store_id: vs-seed, custom_llm_provider: openai}
+    rounds: [[vs-seed], [vs-seed]]
+env: {}
+compare: {ignore: []}

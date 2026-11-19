@@ -1,14 +1,14 @@
 id: B9944
 milestone: M5 api families
 title: Video route choice and router call port in betterlite-core
-status: todo
+status: done
 depends_on: [B9964]
 file: tasks/B9944-video-route-plan.yaml
 covers:
   - "litellm/proxy/route_llm_request.py"
 parent: B093
 split_from: B6460
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2555

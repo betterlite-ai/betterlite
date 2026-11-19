@@ -1,0 +1,14 @@
+region = "us-east-1"
+tenant = "demo"
+env    = "dev"
+
+# Build and push the betterlite image, then put its reference here; there is no published image yet
+image = "ghcr.io/your-org/betterlite:latest"
+
+# Replace this sample key before the first apply, or set it to "" to have the module generate one
+# A value here outranks TF_VAR_litellm_master_key, so delete or comment out this line to use that variable
+litellm_master_key = "sk-change-me"
+
+# Leave the certificate empty for a trial stack and set allow_plaintext_alb = true; real traffic needs an ACM certificate here
+acm_certificate_arn = ""
+allow_plaintext_alb = false

@@ -1,0 +1,65 @@
+kind: helper
+name: native-messages-hosts-deepseek-beta-and-anthropic-paths
+call:
+  native_messages_hosts:
+    calls:
+      - function: url
+        host: deepseek
+        api_bases:
+          - null
+          - "https://api.deepseek.com/anthropic/"
+          - "https://api.deepseek.com/beta"
+          - "https://proxy.test/anthropic/v1/messages"
+          - "https://proxy.test/anthropic/beta/v1/messages"
+          - "https://proxy.test/prefix/v1/messages"
+          - "https://proxy.test/anthropic/proxy"
+        environment: {}
+      - function: url
+        host: deepseek
+        api_bases: [null]
+        environment:
+          DEEPSEEK_ANTHROPIC_API_BASE: "https://env.deepseek.test"
+      - function: url
+        host: deepseek
+        api_bases: [null]
+        environment:
+          DEEPSEEK_ANTHROPIC_API_BASE: ""
+          DEEPSEEK_API_BASE: "https://fallback.deepseek.test"
+      - function: url
+        host: deepseek
+        api_bases: ["https://explicit.deepseek.test"]
+        environment:
+          DEEPSEEK_ANTHROPIC_API_BASE: "https://env.deepseek.test"
+      - function: environment
+        host: deepseek
+        api_base: null
+        headers: {}
+        optional_params:
+          compaction: {}
+        messages: []
+        explicit_api_key: null
+        global_api_key: null
+        environment: {}
+      - function: environment
+        host: deepseek
+        api_base: null
+        headers:
+          anthropic-beta: "context-management-2025-06-27"
+        optional_params:
+          compaction: {}
+        messages: []
+        explicit_api_key: null
+        global_api_key: null
+        environment: {}
+      - function: environment
+        host: deepseek
+        api_base: null
+        headers: {}
+        optional_params:
+          output_format: {}
+        messages: []
+        explicit_api_key: null
+        global_api_key: null
+        environment: {}
+env: {}
+compare: {ignore: []}

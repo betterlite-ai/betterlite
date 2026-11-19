@@ -1,0 +1,7 @@
+model_list:
+  - model_name: omni-moderation
+    litellm_params:
+      model: openai/omni-moderation-latest
+      api_key: os.environ/OPENAI_API_KEY
+general_settings:
+  moderation_model: omni-moderation

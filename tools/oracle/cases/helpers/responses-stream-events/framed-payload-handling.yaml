@@ -1,0 +1,19 @@
+kind: helper
+name: responses-stream-events-framed-payload-handling
+call:
+  responses_stream_events:
+    payloads:
+      - ""
+      - 'data:{"type":"response.output_text.delta"}'
+      - "7"
+      - "[DONE]"
+      - '{"type":"response.output_text.delta","item_id":"msg_1"}'
+    model: gpt-4o
+    provider: openai
+    request_data: {"input": "hello"}
+    metadata: {}
+    transform: absent
+    estimate: fixed
+    cost: missing
+env: {}
+compare: {ignore: []}

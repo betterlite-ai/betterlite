@@ -1,0 +1,22 @@
+kind: helper
+name: read_only-redis-success
+call:
+  b3035:
+    function: gauge_check
+    descriptors:
+      - key: api-key
+        value: k1
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 5
+          window_size: null
+    slot_id: slot-1
+    read_only: true
+    fail_closed: false
+    now: 1700000000
+    cache: {}
+    replies:
+      - values: [2]
+env: {}
+compare: {ignore: []}
