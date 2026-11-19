@@ -246,6 +246,14 @@ fn malformed_candidate_propagates() {
 }
 
 #[test]
+fn stale_index_reports_the_row() {
+    let mut catalog = catalog_of(vec![row("known", "d1", "openai/gpt-4o")]);
+    catalog.id_index.insert("ghost".to_owned(), 7);
+    let report = credential_deployment(&catalog, "ghost", None).unwrap_err();
+    assert!(matches!(report, CredentialError::InvalidRow { index: 7 }));
+}
+
+#[test]
 fn unknown_returns_none() {
     let catalog = catalog_of(vec![row("known", "d1", "openai/gpt-4o")]);
     assert_eq!(chosen(&catalog, "unknown", None), None);
