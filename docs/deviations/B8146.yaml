@@ -1,0 +1,48 @@
+task: B8146
+deviations:
+  - what: One Cloud Run service, one serverless NEG and one backend service replace the gateway, backend and ui services, the URL map has no host rule or path rule, and STORE_MODEL_IN_DB, which LiteLLM sets only on the backend, rides on the one service.
+    why: betterlite serves the API, the management routes and the admin UI from one process on port 4000.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf#L23-L131
+  - what: There is no num_workers variable, no --workers flag, no startup shell command and no config download; the config reaches the service through LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY and LITELLM_CONFIG_BUCKET_TYPE.
+    why: betterlite is one async process and reads the bucket itself (B4143), while LiteLLM assembles DATABASE_URL in a shell wrapper and downloads or mounts the config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L147-L158
+  - what: The image variable has no default and no separate migrations image exists; the migration job runs betterlite-db-admin from the service image.
+    why: There is no published betterlite image name yet, and B5071 puts betterlite and betterlite-db-admin in one image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/locals.tf#L95-L101
+  - what: The backend service speaks HTTPS to the Cloud Run NEG, where LiteLLM sets protocol HTTP.
+    why: Cloud Run serves its serverless NEG over HTTPS, and this module follows the Cloud Run examples rather than LiteLLM's HTTP setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf#L61-L71
+  - what: timeout_seconds sets the backend service timeout, 300 seconds by default, where LiteLLM leaves the provider default of 30 seconds.
+    why: An LLM response can stream for minutes, and a 30-second backend timeout would cut the connection before the model finishes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf#L61-L71
+  - what: timeout_seconds also sets the Cloud Run request timeout, so raising it lifts the service limit together with the load balancer limit; LiteLLM sets no request timeout and keeps the Cloud Run default of 300 seconds.
+    why: A load balancer timeout above the service timeout would still see the service cut the request at its own limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L241-L328
+  - what: The container CPU defaults to 2 vCPUs, where LiteLLM defaults its gateway, backend and ui containers to 1000m each.
+    why: betterlite runs what LiteLLM splits across three services in one process, and two vCPUs keep the API, the management routes and the UI responsive without a second container.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf#L186-L190
+  - what: One extra_env map replaces gateway_extra_env and backend_extra_env, and a caller's name replaces the module's value instead of being appended next to it.
+    why: betterlite is one service, so one map covers both, and Cloud Run rejects two environment variables with the same name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L111-L127
+  - what: A non-empty otel_endpoint sets OTEL_ENDPOINT only; LITELLM_OTEL_V2, OTEL_EXPORTER, OTEL_ENVIRONMENT_NAME, OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT and OTEL_SERVICE_NAME are left to the caller through extra_env.
+    why: The module exposes one endpoint variable, and betterlite's OTel path picks the OTLP HTTP exporter when an endpoint is set instead of requiring the V2 switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L32-L44
+  - what: The service runs no metrics, collector or spend-collector sidecar and mounts no volume; LiteLLM adds them to the gateway instance.
+    why: betterlite has no collector process or metrics subcommand to run as a second container yet, and it reads the config from the bucket rather than a mounted file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L330-L475
+  - what: The migration job keeps Cloud Run's default resources, where LiteLLM gives its Prisma migrations image 1 CPU and 4 GiB.
+    why: betterlite-db-admin is a small Rust binary with no Prisma Node and Rust engine, so the Prisma memory floor does not apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L727-L733
+  - what: REDIS_SSL is set when redis_transit_encryption is true, but neither REDIS_SSL_CA_CERTS nor REDIS_CA_PEM_B64 is passed, where LiteLLM base64-encodes the Memorystore CA and decodes it at container startup.
+    why: The Memorystore server CA still has no betterlite owner (B8144), so a TLS connection cannot be validated yet; the README (B8147) calls this unsupported for now.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L22-L26
+  - what: REDIS_HOST and REDIS_PORT reach the service only when the module creates Memorystore; LiteLLM always creates the instance and always sets both.
+    why: B8144 added create_redis so a caller can point betterlite at a Redis it runs, and in that case the module has no host or port to pass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L19-L20
+  - what: The migration job sets max_retries = 0 and names the binary explicitly with command ["betterlite-db-admin"] and args ["migrate"]; LiteLLM leaves the provider default of three retries and its migrations image supplies the entrypoint.
+    why: A failed schema migration must fail the apply instead of being retried blind, and B5071 ships betterlite and betterlite-db-admin in one image, so the job has to pick the binary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf#L703-L721
+  - what: The outputs are renamed and trimmed for the one-service shape. service_url replaces gateway_service_url, backend_service_url and ui_service_url, writer_private_ip and reader_private_ip replace cloudsql_writer_ip and cloudsql_reader_ip, runtime_service_account replaces runtime_service_account_email, data_bucket replaces gcs_bucket, migration_job_name replaces migration_run_command, and redis_endpoint, redis_port, redis_server_ca_pem, db_username and db_name are dropped; cloud_run_service_name, config_bucket and network_id are new.
+    why: One service has one URL, the database user and name are the caller's own variables, the Redis endpoint and CA are readable from the Redis resource, and config_bucket and network_id are what a caller wiring a custom host needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/outputs.tf#L11-L24
+kept_bugs: []
