@@ -67,6 +67,7 @@ fn assert_user_overlay(alice: &ScimUserRow) {
 }
 
 fn assert_team_overlay(teams: &[ScimTeamRow]) {
+    assert!(teams.len() > 1);
     let first = teams[0]
         .members_with_roles
         .first()
@@ -84,6 +85,7 @@ fn assert_team_overlay(teams: &[ScimTeamRow]) {
 }
 
 fn assert_key_overlay(keys: &[ScimKeyRow]) {
+    assert!(keys.len() > 2);
     assert_eq!(keys[0].blocked, Some(true));
     assert_eq!(keys[0].token.expose_secret(), "sk-alice-token");
     assert_eq!(keys[1].blocked, Some(false));
