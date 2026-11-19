@@ -35,7 +35,7 @@ impl PrefetchedSource {
     #[must_use]
     pub fn new(items: Vec<Result<Vec<u8>, SourceFailure>>) -> Self {
         Self {
-            items: items.into(),
+            items: VecDeque::from(items),
         }
     }
 }

@@ -1,10 +1,7 @@
+use crate::sdk_http::result::Failure;
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
-
-use crate::sdk_http::result::Failure;
-
 pub type Outcome = Vec<RunOutcome>;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -13,14 +10,12 @@ pub enum Mode {
     Fake,
     Cached,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
     Next,
     Drain,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureKind {
@@ -28,14 +23,12 @@ pub enum FailureKind {
     Protocol,
     Timeout,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScriptedFailure {
     pub kind: FailureKind,
     pub message: String,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -45,7 +38,6 @@ pub struct Call {
     pub timeout_seconds: u64,
     pub runs: Vec<RunSpec>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunSpec {
@@ -59,13 +51,11 @@ pub struct RunSpec {
     #[serde(default)]
     pub response: Option<Json>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepOutcome {
     pub events: Vec<Json>,
     pub end: bool,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunOutcome {
     pub steps: Vec<StepOutcome>,

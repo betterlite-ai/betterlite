@@ -9,15 +9,16 @@ import litellm
 import openai
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfig
+from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.responses.streaming_iterator import (
-    CachedResponsesAPIStreamingIterator,
-    MockResponsesAPIStreamingIterator,
-    ResponsesAPIStreamingIterator,
-    SyncResponsesAPIStreamingIterator,
+    CachedResponsesAPIStreamingIterator as Cached,
+    MockResponsesAPIStreamingIterator as Mock,
+    ResponsesAPIStreamingIterator as Async,
+    SyncResponsesAPIStreamingIterator as Sync,
 )
 from litellm.types.llms.openai import ResponsesAPIResponse, ResponsesAPIStreamingResponse
 from litellm.types.utils import CallTypes
+from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 from typing_extensions import override
@@ -65,7 +66,9 @@ class RunOutcome(TypedDict):
     logged: list[str]
 
 
-Answer: TypeAlias = dict[Literal["responses_stream_driver"], dict[Literal["value"], list[RunOutcome]]]
+Answer: TypeAlias = dict[
+    Literal["responses_stream_driver"], dict[Literal["value"], list[RunOutcome]]
+]
 
 
 # one recorder stands in for both the LiteLLM callback and its logging object
@@ -78,10 +81,10 @@ class Recorder(CustomLogger):
         self.completion_start_time: datetime | None = None
 
     @override
-    # ast-grep-ignore: no-long-names
     async def async_post_call_streaming_deployment_hook(
         self,
         request_data: dict[str, Json],
+        # ast-grep-ignore: no-loose-types
         response_chunk: object,
         call_type: CallTypes | None,
     ) -> None:
@@ -165,13 +168,21 @@ def recording() -> tuple[Recorder, LiteLLMLoggingObj]:
     return recorder, cast("LiteLLMLoggingObj", recorder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556
 
 
+def provider_config(model: str) -> BaseResponsesAPIConfig:
+    provider = ProviderConfigManager.get_provider_responses_api_config("openai", model)
+    if provider is None:
+        raise ValueError("openai needs a responses provider config")
+    return provider
+
+
 def live_request(
     client: httpx.Client | httpx.AsyncClient, call: ResponsesStreamDriverCall, api_base: str
 ) -> httpx.Request:
+    body: dict[str, Json] = {"model": call.model, "input": call.input, "stream": True}
     return client.build_request(
         "POST",
         f"{api_base}/responses",
-        json={"model": call.model, "input": call.input, "stream": True},
+        json=body,
         headers={"Authorization": f"Bearer {call.api_key}"},
     )
 
@@ -179,37 +190,36 @@ def live_request(
 def sync_iterator(
     call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: LiteLLMLoggingObj
 ) -> tuple[httpx.Client | None, Iterator[ResponsesAPIStreamingResponse]]:
-    provider = OpenAIResponsesAPIConfig()
-    match spec.mode:
-        case "live":
-            client = httpx.Client(timeout=float(call.timeout_seconds))
-            response = client.send(live_request(client, call, api_base), stream=True)
-            return client, SyncResponsesAPIStreamingIterator(response, call.model, provider, stub, None, "openai")
-        case "scripted":
-            body = httpx.Response(200, stream=scripted_body(spec))
-            return None, SyncResponsesAPIStreamingIterator(body, call.model, provider, stub, None, "openai")
-        case "fake":
-            body = httpx.Response(200, content=json.dumps(spec.response))
-            return None, MockResponsesAPIStreamingIterator(body, call.model, provider, stub, None, "openai")
+    provider = provider_config(call.model)
+    if spec.mode == "live":
+        client = httpx.Client(timeout=float(call.timeout_seconds))
+        response = client.send(live_request(client, call, api_base), stream=True)
+        return client, Sync(response, call.model, provider, stub, None, "openai")
+    if spec.mode == "scripted":
+        body = httpx.Response(200, stream=scripted_body(spec))
+        return None, Sync(body, call.model, provider, stub, None, "openai")
+    if spec.mode == "fake":
+        body = httpx.Response(200, content=json.dumps(spec.response))
+        return None, Mock(body, call.model, provider, stub, None, "openai")
     record = RESPONSES.validate_json(json.dumps(spec.response))
-    return None, CachedResponsesAPIStreamingIterator(record, stub)
+    return None, Cached(record, stub)
 
 
 async def async_iterator(
     call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: LiteLLMLoggingObj
 ) -> tuple[httpx.AsyncClient | None, AsyncIterator[ResponsesAPIStreamingResponse]]:
-    provider = OpenAIResponsesAPIConfig()
+    provider = provider_config(call.model)
     if spec.mode == "live":
         client = httpx.AsyncClient(timeout=float(call.timeout_seconds))
         response = await client.send(live_request(client, call, api_base), stream=True)
-        return client, ResponsesAPIStreamingIterator(response, call.model, provider, stub, None, "openai")
+        return client, Async(response, call.model, provider, stub, None, "openai")
     if spec.mode == "scripted":
         body = httpx.Response(200, stream=scripted_body(spec))
-        return None, ResponsesAPIStreamingIterator(body, call.model, provider, stub, None, "openai")
+        return None, Async(body, call.model, provider, stub, None, "openai")
     if spec.mode == "fake":
         body = httpx.Response(200, content=json.dumps(spec.response))
-        return None, MockResponsesAPIStreamingIterator(body, call.model, provider, stub, None, "openai")
-    return None, CachedResponsesAPIStreamingIterator(RESPONSES.validate_json(json.dumps(spec.response)), stub)
+        return None, Mock(body, call.model, provider, stub, None, "openai")
+    return None, Cached(RESPONSES.validate_json(json.dumps(spec.response)), stub)
 
 
 def sync_run(
@@ -267,7 +277,7 @@ def run_sync(call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str) -> R
 
 async def run_async(call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str) -> RunOutcome:
     recorder, stub = recording()
-    client, iterator = async_iterator(call, spec, api_base, stub)
+    client, iterator = await async_iterator(call, spec, api_base, stub)
     steps, failure = await async_run(iterator, spec)
     if client is not None:
         await client.aclose()

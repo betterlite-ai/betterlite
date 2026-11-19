@@ -60,7 +60,6 @@ impl ResponsesStreamSuccessTarget for Recorder {
         Self::push(&self.logging, "success");
     }
     fn success_handler(&self, _request: &SuccessRequest) {}
-
     fn deferred_armed(&self) -> bool {
         false
     }
@@ -115,7 +114,6 @@ pub(super) struct Decoder;
 
 impl ResponsesEventTransform for Decoder {
     type Error = serde_json::Error;
-
     fn transform(
         &self,
         _model: &str,
@@ -129,7 +127,6 @@ pub(super) struct NoTokenization;
 
 impl UsageTokenization for NoTokenization {
     type Error = std::io::Error;
-
     fn messages(&self, _request: &EstimateRequest<'_>) -> Result<Vec<Json>, Self::Error> {
         Ok(Vec::new())
     }
@@ -141,7 +138,6 @@ pub(super) struct NoCost;
 
 impl ResponsesCostCalculator for NoCost {
     type Error = std::io::Error;
-
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
         Ok(None)
     }
