@@ -147,7 +147,7 @@ fn boot_scim_gateway(eligible: bool, suffix: &str) -> Gateway {
     fs::write(&config_path, "general_settings: {}\n").expect("scim config is written");
     let mut case_env = BTreeMap::new();
     if eligible {
-        // the 401 below needs the venv's prisma, so sync and generate it before the proxy boots
+        // the 401 below needs prisma importable, so sync the venv and generate the client before the proxy boots
         sync_litellm(&root()).expect("the litellm environment syncs");
         generate_prisma_client(&root()).expect("the prisma client generates");
         let fixture = root().join("tools/oracle/fixtures/native-feature-oracle");
