@@ -136,11 +136,10 @@ struct LogWriter(Arc<Mutex<Vec<u8>>>);
 
 impl Write for LogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut bytes = self
-            .0
+        self.0
             .lock()
-            .map_err(|_poisoned| io::Error::other("the log bytes"))?;
-        bytes.extend_from_slice(buf);
+            .map_err(|_poisoned| io::Error::other("the log bytes"))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
