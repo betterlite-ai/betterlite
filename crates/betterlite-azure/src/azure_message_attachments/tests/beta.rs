@@ -140,7 +140,7 @@ async fn base_query() {
         second_transport.requests(),
         vec![wire(
             "GET",
-            "https://example.test/openai?foo=1%2Fthreads%2Fthread_1%2Fmessages&api-version=2024-02-01",
+            "https://example.test/openai?foo=1%2Fopenai%2Fthreads%2Fthread_1%2Fmessages&api-version=2024-02-01",
             None,
             Auth::Key(KEY)
         )]
