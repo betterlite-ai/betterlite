@@ -142,24 +142,36 @@ fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::
         }
     }
     if let Some(JsonValue::Array(calls)) = &source.tool_calls {
-        let mut projected = Vec::with_capacity(calls.len());
-        for call in calls {
-            let JsonValue::Object(fields) = call else {
-                continue;
-            };
-            // LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
-            let mut kept = Map::new();
-            for name in ["index", "id", "type", "function"] {
-                let Some(present) = fields.get(name) else {
-                    continue;
-                };
-                kept.insert(name.to_owned(), serde_json::to_value(present)?);
-            }
-            projected.push(Value::Object(kept));
-        }
+        let projected = projected_tool_calls(calls)?;
         delta.insert(String::from("tool_calls"), Value::Array(projected));
     }
     Ok(delta)
+}
+
+fn projected_tool_calls(calls: &[JsonValue]) -> Result<Vec<Value>, serde_json::Error> {
+    let mut projected = Vec::with_capacity(calls.len());
+    for call in calls {
+        let Some(kept) = projected_call(call)? else {
+            continue;
+        };
+        projected.push(kept);
+    }
+    Ok(projected)
+}
+
+// LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
+fn projected_call(call: &JsonValue) -> Result<Option<Value>, serde_json::Error> {
+    let JsonValue::Object(fields) = call else {
+        return Ok(None);
+    };
+    let mut kept = Map::new();
+    for name in ["index", "id", "type", "function"] {
+        let Some(present) = fields.get(name) else {
+            continue;
+        };
+        kept.insert(name.to_owned(), serde_json::to_value(present)?);
+    }
+    Ok(Some(Value::Object(kept)))
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped
