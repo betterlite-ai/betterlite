@@ -252,5 +252,5 @@ pitfalls:
   - "A missing response returns empty kwargs, not the kwargs built so far, and the Vertex and Gemini error log texts differ only in the provider name."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0
