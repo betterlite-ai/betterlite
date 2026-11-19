@@ -1071,6 +1071,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
