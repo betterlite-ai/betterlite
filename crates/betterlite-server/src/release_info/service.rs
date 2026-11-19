@@ -128,10 +128,10 @@ where
             )?;
             *slot = Some(built);
         }
-        let outcome = match slot.as_mut() {
-            Some(cache) => action(cache).map_err(ReleaseError::Cache),
-            None => Err(ReleaseError::Cache(CacheError::Unavailable)),
-        };
+        let outcome = slot.as_mut().map_or_else(
+            || Err(ReleaseError::Cache(CacheError::Unavailable)),
+            |cache| action(cache).map_err(ReleaseError::Cache),
+        );
         drop(slot);
         outcome
     }
