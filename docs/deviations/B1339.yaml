@@ -1,0 +1,15 @@
+task: B1339
+deviations:
+  - what: The anthropic-beta header is written with its tokens sorted. LiteLLM collects them in a Python set and comma-joins the set iteration order, which differs between its own runs because str hashing is randomized, so the membership matches and only the order of the comma-joined header can differ.
+    why: No setup can depend on an order Python itself does not repeat, and a sorted header makes the request byte-stable run to run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py#L118-L119
+  - what: A malformed context_management on the Vertex beta scan is answered 400. A value that is not an object answers 400 "context_management must be an object"; edits that is not a list answers 400 "context_management.edits must be a list"; an edit that is not an object answers 400 "context_management edit N is not an object". LiteLLM reads the value with optional_params.get and then calls .get on the value and on every edit, so a malformed value raises AttributeError or TypeError, which surfaces as a 500.
+    why: The request field is the caller's, so a malformed value belongs in a 400 that names it rather than a crash, and no working setup sends a malformed edit list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py#L79-L99
+kept_bugs:
+  - what: An existing anthropic-beta header keeps its empty stripped entries, so "one, ,two" produces a header holding an empty token next to the named ones. LiteLLM splits the header on commas and strips each entry without filtering the empty ones, and the task's source parity keeps that.
+    why: A caller that sends the header with an empty entry gets the same header membership on both sides, and the empty entry is the caller's own input rather than a value betterlite invents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py#L74-L76
+  - what: The policy writes Authorization and content-type with exactly those spellings, so a caller header spelled authorization or Content-Type survives next to the written one instead of being replaced. LiteLLM assigns the two literal keys on the copied dict, and both sides then send a dict holding both spellings.
+    why: A working setup that sends one of the other spellings through extra_headers cannot tell whether the request then carries one header or two, so the parity keeps LiteLLM's dict assignment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py#L55-L67
