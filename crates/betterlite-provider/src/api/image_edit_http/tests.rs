@@ -952,10 +952,7 @@ fn reply_failures_recompute_the_body_length() {
         })
     );
     assert_eq!(failure.facts.display, "");
-}
 
-#[test]
-fn reply_failures_without_a_body_carry_no_length() {
     let empty = UpstreamResponse {
         status: 500,
         headers: HttpHeaders::new(),
