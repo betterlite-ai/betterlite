@@ -53,46 +53,9 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         entry: Entry,
     ) -> Result<AssistantCreateResult, AssistantCreateFailure> {
         let provider = self.provider(input, entry)?;
-        let flag = match (entry, &input.async_create_assistants) {
-            (Entry::Async, _) => Some(true),
-            (Entry::Sync, Some(AsyncFlag::Bool(value))) => Some(*value),
-            (Entry::Sync, Some(AsyncFlag::Other(_))) => {
-                return Err(error::raised(
-                    Raised::Local(String::from(INVALID_FLAG)),
-                    &input.model,
-                    &provider,
-                    entry,
-                    self.redactor,
-                ));
-            }
-            (Entry::Sync, None) => None,
-        };
-        let timeout = projection::timeout(input, &provider).map_err(|source| {
-            error::raised(
-                Raised::Local(source.to_string()),
-                &input.model,
-                &provider,
-                entry,
-                self.redactor,
-            )
-        })?;
+        let flag = self.flag(input, entry, &provider)?;
         let is_async = matches!(flag, Some(true));
-        let call = match provider.as_str() {
-            "openai" => AssistantCreateCall::OpenAi(Box::new(projection::openai(
-                &self.settings,
-                input,
-                timeout,
-                is_async,
-            ))),
-            "azure" => AssistantCreateCall::Azure(Box::new(projection::azure(
-                &self.settings,
-                self.environment,
-                input,
-                timeout,
-                is_async,
-            ))),
-            _ => return Err(error::unsupported(&provider)),
-        };
+        let call = self.call(input, &provider, entry, is_async)?;
         let assistant = match self.execute(&call, flag).await {
             Ok(Some(assistant)) => assistant,
             Ok(None) => return Err(error::no_response()),
@@ -107,6 +70,61 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
             }
         };
         Ok(AssistantCreateResult { call, assistant })
+    }
+
+    // acreate forces the flag true; the sync facade takes the caller's bool and refuses anything else
+    fn flag(
+        &self,
+        input: &AssistantCreateInput,
+        entry: Entry,
+        provider: &str,
+    ) -> Result<Option<bool>, AssistantCreateFailure> {
+        match (entry, &input.async_create_assistants) {
+            (Entry::Async, _) => Ok(Some(true)),
+            (Entry::Sync, Some(AsyncFlag::Bool(value))) => Ok(Some(*value)),
+            (Entry::Sync, Some(AsyncFlag::Other(_))) => Err(error::raised(
+                Raised::Local(String::from(INVALID_FLAG)),
+                &input.model,
+                provider,
+                entry,
+                self.redactor,
+            )),
+            (Entry::Sync, None) => Ok(None),
+        }
+    }
+
+    fn call(
+        &self,
+        input: &AssistantCreateInput,
+        provider: &str,
+        entry: Entry,
+        is_async: bool,
+    ) -> Result<AssistantCreateCall, AssistantCreateFailure> {
+        let timeout = projection::timeout(input, provider).map_err(|source| {
+            error::raised(
+                Raised::Local(source.to_string()),
+                &input.model,
+                provider,
+                entry,
+                self.redactor,
+            )
+        })?;
+        match provider {
+            "openai" => Ok(AssistantCreateCall::OpenAi(Box::new(projection::openai(
+                &self.settings,
+                input,
+                timeout,
+                is_async,
+            )))),
+            "azure" => Ok(AssistantCreateCall::Azure(Box::new(projection::azure(
+                &self.settings,
+                self.environment,
+                input,
+                timeout,
+                is_async,
+            )))),
+            _ => Err(error::unsupported(provider)),
+        }
     }
 
     // Only acreate_assistants resolves the model first; the sync façade hands the declared name straight over.
