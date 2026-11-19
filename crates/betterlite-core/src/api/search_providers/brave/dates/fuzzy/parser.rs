@@ -42,27 +42,30 @@ impl Parser<'_> {
         Some(index)
     }
 
-    // a number followed by an h/m/s label or an am/pm name is a time of day, not part of the date
+    // a number beside an h/m/s label or an am/pm name names a time of day, not part of the date
     fn clock_member(&mut self, index: usize) -> Option<usize> {
         let Token::Number(text) = self.tokens.get(index)? else {
             return None;
         };
-        let value: i64 = text.parse().ok()?;
         let next = index.saturating_add(1);
-        let following = self.tokens.get(next)?;
+        let following = self.tokens.get(next);
         let after = self.tokens.get(index.saturating_add(2));
-        let attached = is_clock_label(following) || is_meridiem(following);
-        let spaced = *following == Token::Punct(' ') && after.is_some_and(is_clock_label);
-        let meridiem = is_jump(following) && after.is_some_and(is_meridiem);
-        if !(0..24).contains(&value) || !(attached || spaced || meridiem) {
+        let before = self.tokens.get(index.saturating_sub(1));
+        let earlier = self.tokens.get(index.saturating_sub(2));
+        let behind = before.is_some_and(is_clock_label)
+            || (next == self.tokens.len()
+                && before == Some(&Token::Punct(' '))
+                && earlier.is_some_and(is_clock_label));
+        let label = following.is_some_and(is_clock_label);
+        let attached = following.is_some_and(is_meridiem) && text.parse::<i64>().ok()? < 24;
+        let spaced = following == Some(&Token::Punct(' ')) && after.is_some_and(is_clock_label);
+        let meridiem = following.is_some_and(is_jump) && after.is_some_and(is_meridiem);
+        if !(behind || label || attached || spaced || meridiem) {
             return None;
         }
         self.saw = true;
-        Some(if attached {
-            next
-        } else {
-            index.saturating_add(2)
-        })
+        let last = index.saturating_add(if behind { 0 } else { 2 });
+        Some(if label || attached { next } else { last })
     }
 
     // the clock time only says how far into the day the moment is, and the caller reads the day
