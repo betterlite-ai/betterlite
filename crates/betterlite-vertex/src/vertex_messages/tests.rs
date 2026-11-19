@@ -365,7 +365,7 @@ fn a_failed_lookup_is_a_500() {
 }
 
 #[test]
-fn the_configured_credentials_reach_the_lookup() {
+fn the_configured_credentials_and_project_reach_the_lookup() {
     let credentials = ConfiguredCredentials::from_text("credentials.json".to_owned())
         .expect("the text stays a text credential");
     let catalog = catalog();
@@ -376,7 +376,7 @@ fn the_configured_credentials_reach_the_lookup() {
             messages: &[],
             optional_params: &Object::new(),
             params: VertexParams {
-                project: None,
+                project: Some("deployment-project"),
                 ai_project: None,
                 location: None,
                 ai_location: None,
@@ -389,8 +389,8 @@ fn the_configured_credentials_reach_the_lookup() {
         },
         |given, project| {
             let forwarded = given.is_some_and(|value| value.as_text() == Some("credentials.json"));
-            let no_hint = project.is_none();
-            if forwarded && no_hint {
+            let hinted = project == Some("deployment-project");
+            if forwarded && hinted {
                 ready(Ok::<AccessToken, CredentialCacheError>(access()))
             } else {
                 ready(Err(CredentialCacheError::MissingCredentials))
