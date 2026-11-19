@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
 use betterlite_error::error::ErrorClass;
+use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::super::live::Event;
+use super::super::live::{Event, LiveStream, LiveStreamSetup, StreamEngine};
 use super::{
-    BAD_REQUEST, COMPLETED, CREATED, CountingSource, DELTA, FailurePort, Fixture, IN_PROGRESS,
-    LATE, Ports, QUEUED, RATE_LIMITED, RecordingCache, ReplacingHook, SERVER_ERROR, START,
-    SuccessPort, caching_handler, class_of, connection_message, delta, event_type, fallback,
-    fixed_clock, payload, poll_count, prefetched, scripted_clock, timeout_details,
+    BAD_REQUEST, COMPLETED, CREATED, CREATED_AT, CountingSource, DELTA, FailurePort, Fixture,
+    IN_PROGRESS, LATE, Ports, QUEUED, RATE_LIMITED, RecordingCache, ReplacingHook, SERVER_ERROR,
+    START, SuccessPort, caching_handler, class_of, connection_message, delta, event_type, fallback,
+    fixed_clock, payload, poll_count, prefetched, scripted_clock, timeout_details, timestamp,
 };
+use crate::api::responses_stream_events::StreamTimes;
 #[rstest]
 #[case::rate_limit(RATE_LIMITED, 429, true)]
 #[case::server_error(SERVER_ERROR, 500, true)]
@@ -242,4 +244,40 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     assert_eq!(success.sync_calls().len(), 1);
     assert_eq!(success.async_calls()[0].cache_hit, Some(true));
     assert!(cache.writes().is_empty());
+}
+
+#[tokio::test]
+async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
+    let fixture = Fixture::new(Ports::default(), fixed_clock());
+    let mut stream = LiveStream::new(
+        StreamEngine {
+            transform: Some(&fixture.transform),
+            tokenization: Some(&fixture.tokenization),
+            calculator: Some(&fixture.calculator),
+            hooks: &fixture.hooks,
+            logging: &fixture.logging,
+            details: IndexMap::new(),
+            limits: &fixture.limits,
+        },
+        LiveStreamSetup {
+            model: "gpt-4o",
+            custom_llm_provider: None,
+            litellm_metadata: None,
+            request_data: None,
+            call_type: Some("responses"),
+            headers: &fixture.headers,
+            api_base: &fixture.api_base,
+            times: StreamTimes {
+                now: timestamp(START),
+                created_timestamp: CREATED_AT,
+            },
+            max_streaming_duration_seconds: None,
+        },
+        prefetched(vec![payload(CREATED)]),
+    );
+    let error = stream.next_event().await.expect_err("the stream fails");
+    assert_eq!(
+        fallback(&error).context.message,
+        "litellm.MidStreamFallbackError: litellm.APIConnectionError: provider closed the responses stream before any terminal event (response.completed, response.incomplete or response.failed)"
+    );
 }
