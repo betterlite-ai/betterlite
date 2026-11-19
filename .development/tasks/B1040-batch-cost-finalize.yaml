@@ -54,13 +54,14 @@ description: >-
 
 
   Callable ownership: litellm/batches/batch_utils.py: _uses_native_vertex_output (L39-L48); litellm/batches/batch_utils.py:
-  batch_cost_is_final (L54-L68); litellm/batches/batch_utils.py: _handle_completed_batch (L98-L161); litellm/batches/batch_utils.py:
+  _handle_completed_batch (L98-L161); litellm/batches/batch_utils.py:
   _provider_output_file_id (L409-L432); litellm/batches/batch_utils.py: _fetch_batch_managed_file_content (L435-L462);
   litellm/batches/batch_utils.py: _fetch_batch_output_file_content (L465-L484); litellm/batches/batch_utils.py:
   count_error_file_failed_requests (L487-L508); litellm/batches/batch_utils.py: _extract_file_access_credentials
   (L511-L551). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
   a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
+  to the following stage. batch_cost_is_final (L54-L68) is B069's, in core::cost::batch_status: the pending-versus-final
+  check here calls it there and writes no copy.
 
 
   Sizing: 142 owned nonblank/non-comment/non-docstring Python lines (196 nonblank/non-comment physical lines, including
@@ -192,6 +193,7 @@ deviations: []
 out_of_scope:
 - 'litellm/batches/batch_utils.py: calculate_batch_cost_and_usage L71-L95, _get_file_content_as_dictionary L554-L559
   are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/batches/batch_utils.py: B069 owns batch_cost_is_final L54-L68 in core::cost::batch_status; this task calls it.'
 - 'litellm/batches/batch_utils.py: B1039 owns _classify_output_line_stats L184-L200, _safe_output_line_stats L203-L222,
   _compute_output_line_stats L225-L255, _ocr_usage_info_from_response_body L258-L263, _output_line_cost L266-L293,
   _aggregate_batch_cost_usage_models L296-L345, calculate_vertex_ai_batch_cost_and_usage L348-L406, _iter_batch_input_lines

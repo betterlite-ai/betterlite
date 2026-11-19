@@ -13,6 +13,11 @@ description: >-
   ManagementEndpointLoggingPayload records, injection clock/span/tracing container, and exceptions.
 scope:
   paths:
+  - "crates/betterlite-logging/src/payload/compose.rs"
+  - "crates/betterlite-logging/src/payload/compose/error_info.rs"
+  - "crates/betterlite-logging/src/otel/v2_callback/span_error.rs"
+  - "crates/betterlite-logging/src/otel/legacy_lifecycle/lifecycle.rs"
+  - "crates/betterlite-logging/src/otel/legacy_lifecycle/guardrail.rs"
   - crates/betterlite-logging/src/otel/service.rs
   - crates/betterlite-logging/src/otel/service/**
   - tools/oracle/cases/otel/service-span-success.yaml

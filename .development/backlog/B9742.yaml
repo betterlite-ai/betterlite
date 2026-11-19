@@ -2,7 +2,7 @@ id: B9742
 milestone: M10 admin ui
 title: Usage, activity and export page HTTP contracts
 status: todo
-depends_on: [B9090, B9091, B9740, B9270, B9260, B5076, B8482, B8661, B8662, B815, B1604]
+depends_on: [B9090, B9091, B9740, B9270, B9260, B9942, B8482, B8661, B8662, B815, B1604]
 file: tasks/B9742-dashboard-usage-requests.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/{usage,old-usage}/**"

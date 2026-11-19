@@ -2,7 +2,7 @@ id: B1062
 title: Vector-store and index registry state
 description: >-
   Implement registry storage/lookup in core::api::vector_store_registry with ordered records, B726
-  repositories, B858 database rows, B061 credential lookup and B1131 wire types. Own index constructor,
+  repositories, B858 database rows, B759's credential lookup (CredentialSnapshot::values in betterlite-auth::auth_model_lists::credential, on main) and B1131 wire types. Own index constructor,
   list/name lookup/upsert/is-index/database loading; store constructor, _extract_tool_params,
   get_vector_store_ids_to_run, id lookup with optional database fallback, _get_vector_store_ids_from_tool_calls,
   config loading, is_config, add/delete/update, database loading and get_credentials_for_vector_store.
@@ -106,7 +106,7 @@ deviations:
 out_of_scope:
 - B1063 owns get_and_pop_recognised_vector_store_tools,get_vector_store_to_run,get_litellm_managed_vector_store_from_registry_by_name,pop_vector_stores_to_run_with_db_fallback.
 - delete_vector_store_index,list_all_vector_stores and pop_vector_stores_to_run have no caller at the pin; do not build or test these unused entry points.
-- B061 owns credential resolution; B726/B858 own repository schema/rows. This registry layer performs no store permission check.
+- B759 owns the credential lookup and B061 credential loading and storage; B726/B858 own repository schema/rows. This registry layer performs no store permission check.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_store_registry in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_registry.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_registry.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Config loading appends incrementally and does not roll back earlier records when a later one is invalid.

@@ -1,0 +1,48 @@
+kind: probe
+name: latency-observations-ttft-percentile-boundary
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.5}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 250}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 500}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 750}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 1000}
+          - {kind: view, now_millis: 0, model_group: gpt}
+          - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.25}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 250}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 500}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 750}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 1000}
+          - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.2500001}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 250}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 500}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 750}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 1000}
+          - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 1.0}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 5000, first_token_millis: 1000}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 5000, first_token_millis: 3000}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 5000, first_token_millis: 2000}
+          - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
+compare: {ignore: []}
