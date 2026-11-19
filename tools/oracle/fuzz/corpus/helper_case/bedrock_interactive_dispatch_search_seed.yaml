@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-interactive-dispatch-search-seed
+call:
+  bedrock_interactive_dispatch:
+    case: search
+    runs:
+      - query: q
+        optional: {}
+        status: 200
+        reply: '{}'
+env: {}
+compare: {ignore: []}

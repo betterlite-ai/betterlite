@@ -1,0 +1,35 @@
+kind: helper
+name: responses
+call:
+  bedrock_interactive_dispatch:
+    case: responses
+    runs:
+      - model: openai.gpt-oss-120b
+        model_cost:
+          openai.gpt-oss-120b:
+            supported_endpoints: ["/v1/responses"]
+        input:
+          - {type: message, role: user, content: keep}
+        params:
+          background: true
+          temperature: 0.5
+          tools:
+            - {type: function, name: f}
+            - {type: web_search}
+        api_key: fixture-token
+        status: 200
+        reply: '{"id":"resp_1"}'
+      - model: openai.gpt-oss-120b
+        model_cost:
+          openai.gpt-oss-120b:
+            supported_endpoints: ["/v1/responses"]
+        input:
+          - type: message
+            role: user
+            content:
+              - {type: input_image, image_url: "https://images.example/cat.png"}
+        params: {}
+        status: 200
+        reply: '{}'
+env: {}
+compare: {ignore: []}

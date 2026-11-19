@@ -1,0 +1,23 @@
+kind: helper
+name: search
+call:
+  bedrock_interactive_dispatch:
+    case: search
+    runs:
+      - query: bedrock agents
+        optional: {max_results: 3}
+        api_key: gateway-token
+        status: 200
+        reply: '{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[{\"title\":\"Docs\",\"url\":\"https://docs.example.com\",\"text\":\"snippet\",\"publishedDate\":\"2026-01-01\"}]"}]}}'
+      - query: q
+        optional: {}
+        api_key: gateway-token
+        status: 200
+        reply: '{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"bad"}}'
+      - query: q
+        optional: {}
+        tool_name: other-tool
+        status: 200
+        reply: '{}'
+env: {}
+compare: {ignore: []}

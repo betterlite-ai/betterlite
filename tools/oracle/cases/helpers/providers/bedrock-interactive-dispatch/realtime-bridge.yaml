@@ -1,0 +1,9 @@
+kind: helper
+name: realtime-bridge
+call:
+  bedrock_interactive_dispatch:
+    case: realtime_bridge
+    runs:
+      - pending: '{"type":"session.update","session":{}}'
+env: {}
+compare: {ignore: []}

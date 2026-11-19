@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-interactive-dispatch-passthrough-seed
+call:
+  bedrock_interactive_dispatch:
+    case: passthrough
+    runs:
+      - endpoint: model/anthropic.claude-3/invoke
+        data: {input: hi}
+        status: 200
+        reply: '{}'
+env: {}
+compare: {ignore: []}

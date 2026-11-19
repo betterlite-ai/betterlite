@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-interactive-dispatch-vector-seed
+call:
+  bedrock_interactive_dispatch:
+    case: vector_retrieve
+    runs:
+      - query: q
+        optional: {}
+        status: 200
+        reply: '{"retrievalResults":[]}'
+env: {}
+compare: {ignore: []}
