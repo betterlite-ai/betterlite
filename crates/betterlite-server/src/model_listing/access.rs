@@ -84,8 +84,10 @@ impl ListingSources<'_> {
         ExpansionContext {
             providers: self.providers,
             credentials: self.credentials,
-            // the field's type upcasts the listing router to its deployment lookup supertrait
-            deployments: self.router.map(|router: &dyn ListingRouter| router),
+            // the closure's return type upcasts the listing router to its deployment lookup supertrait
+            deployments: self
+                .router
+                .map(|router: &dyn ListingRouter| -> &dyn DeploymentLookup { router }),
         }
     }
 }

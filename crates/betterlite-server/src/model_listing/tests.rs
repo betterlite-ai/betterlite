@@ -327,7 +327,7 @@ fn listing_sources<'listing>(
     credentials: &'listing CredentialSnapshot,
 ) -> ListingSources<'listing> {
     ListingSources {
-        router: router.map(|fake: &FakeRouter| fake),
+        router: router.map(|fake: &FakeRouter| -> &dyn ListingRouter { fake }),
         access,
         providers,
         credentials,
@@ -341,7 +341,7 @@ fn info_sources<'info>(
     groups: &'info ExpectedGroups,
 ) -> ModelInfoSources<'info> {
     ModelInfoSources {
-        router: router.map(|fake: &FakeRouter| fake),
+        router: router.map(|fake: &FakeRouter| -> &dyn ListingRouter { fake }),
         cost_map,
         fallback_settings: settings,
         fallback_groups: groups,
