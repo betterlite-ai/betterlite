@@ -1,0 +1,15 @@
+kind: helper
+name: member_one_identifier
+call:
+  team_request_contracts:
+    operation: member_ref
+    document: {"user_id": "u"}
+calls:
+  - team_request_contracts: {operation: member_ref, document: {"user_email": "e@x"}}
+  - team_request_contracts: {operation: member_ref, document: {"user_id": "", "user_email": null}}
+  - team_request_contracts: {operation: member_ref, document: {"user_id": null, "user_email": null}}
+  - team_request_contracts: {operation: member_ref, document: {}}
+  - team_request_contracts: {operation: member_ref, document: {"user_id": "u", "user_email": "e"}}
+  - team_request_contracts: {operation: member_ref, document: {"user_id": "u", "extra": 1}}
+env: {}
+compare: {ignore: []}
