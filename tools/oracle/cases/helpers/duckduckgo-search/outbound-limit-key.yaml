@@ -1,0 +1,35 @@
+kind: helper
+name: duckduckgo-search-outbound-limit-key
+call:
+  duckduckgo_search:
+    environment: {DUCKDUCKGO_API_BASE: "https://instant.example"}
+    calls:
+      - kind: request
+        query: limit
+        optional_params: {max_results: 3, pretty: 1}
+      - kind: url
+        api_base: null
+        query: limit
+        optional_params: {max_results: 3, pretty: 1, no_redirect: 0, no_html: 0, skip_disambig: 0}
+      - kind: url
+        api_base: "https://instant.test/"
+        query: slash
+        optional_params: {}
+      - kind: url
+        api_base: ""
+        query: empty base
+        optional_params: {}
+      - kind: url
+        api_base: null
+        query: repeated
+        optional_params: {max_results: [4, "5", null]}
+      - kind: url
+        api_base: null
+        query: scalar
+        optional_params: {max_results: true}
+      - kind: url
+        api_base: null
+        query: fraction
+        optional_params: {max_results: 1.5}
+env: {}
+compare: {ignore: []}
