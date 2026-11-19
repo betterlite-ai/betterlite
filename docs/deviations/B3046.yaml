@@ -1,0 +1,12 @@
+task: B3046
+deviations:
+  - what: The failure callbacks share one reservation_released flag on the request stash; whichever of async_log_failure_event and async_post_call_failure_hook runs first settles the reservation and sets it, and the other skips the refund.
+    why: A proxy-level rejection that also bubbles up as an LLM error reaches both callbacks; without the guard the same reservation would be refunded twice and drive the counters negative. LiteLLM carries the same flag as one inline check per callback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5126-L5135
+  - what: A completed batch refunds only when its status is one of BATCH_ENQUEUED_REFUND_STATUSES (failed, expired and the other terminal states); a successful batch keeps the reservation spent.
+    why: Batch enqueuing and batch execution are separate outcomes; only a batch that ended without running should return its reserved tokens, so the terminal-state set decides whether pop_reservation and refund run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5278
+  - what: The post-call success hook and the logging hook receive their header targets as Option<&mut AdditionalHeaders> and only write when a target is present; a response without _hidden_params passes None and gets no rate-limit headers.
+    why: betterlite's response type does not create hidden params on demand, so the decision belongs to the caller that holds the response, where LiteLLM's response_has_hidden_params and ensure_response_additional_headers live; with a target present the merged entries are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5243-L5251
+kept_bugs: []
