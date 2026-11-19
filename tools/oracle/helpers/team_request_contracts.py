@@ -8,7 +8,6 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _DUMP: Final = TypeAdapter(dict[str, JsonValue])
-_NAMES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 Operation: TypeAlias = Literal[
     "create", "update", "patch", "member_ref", "budget_patch", "bulk_delete", "bulk_update",
@@ -61,7 +60,7 @@ def dump_member_ref(document: dict[str, JsonValue]) -> JsonValue:
 def dump_budget_patch(document: dict[str, JsonValue]) -> JsonValue:
     patch = teams.TeamMemberBudgetPatch.model_validate(document)
     return {
-        "supplied_fields": _NAMES.validate_python(sorted(document)),
+        "supplied_fields": _JSON.validate_python(sorted(document)),
         "dump": dumped(patch),
     }
 
