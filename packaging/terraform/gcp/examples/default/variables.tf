@@ -1,9 +1,3 @@
-# The handful of inputs the one-command deploy asks a caller for. Everything
-# else the module accepts (sizing, database and Redis tiers, the proxy config,
-# the buckets) keeps its default; set it on the module "betterlite" block in
-# main.tf, or call the module from a root of your own. The module's variables
-# files list every input with its type, default and description.
-
 variable "project_id" {
   description = "GCP project that holds the network, the data stores, the runtime and their secrets."
   type        = string
