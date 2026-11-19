@@ -442,6 +442,15 @@ fn phoenix_proxy_mode_reads_the_auth_metadata() {
 }
 
 #[test]
+fn phoenix_proxy_mode_ignores_a_blank_auth_project() {
+    let mut kwargs = base_kwargs("call-blank-auth");
+    with_proxy(&mut kwargs);
+    with_auth_project(&mut kwargs, "phoenix_project_name", "   ");
+    let env = env_map(&[("PHOENIX_PROJECT_NAME", "env-project")]);
+    assert_eq!(resolve_project_name(&kwargs, &env), "env-project");
+}
+
+#[test]
 fn phoenix_sdk_mode_starts_a_root_span() {
     let rig = Rig::new();
     let lifecycle = rig.phoenix();
