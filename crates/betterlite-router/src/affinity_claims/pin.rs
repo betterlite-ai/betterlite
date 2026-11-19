@@ -21,6 +21,16 @@ impl AffinityPin {
             Err(_error) => String::new(),
         }
     }
+
+    #[must_use]
+    pub fn decoded(&self) -> Json {
+        Json::Object(
+            self.0
+                .iter()
+                .map(|(field, value)| (field.clone(), Json::Text(value.clone())))
+                .collect(),
+        )
+    }
 }
 
 impl TryFrom<&Json> for AffinityPin {
@@ -52,22 +62,12 @@ pub enum StoredPin {
 impl StoredPin {
     #[must_use]
     pub fn from_json(value: Json) -> Self {
-        match value {
-            Json::Object(map) => {
-                if map.values().all(|value| matches!(value, Json::Text(_))) {
-                    let mut fields = IndexMap::with_capacity(map.len());
-                    for (field, value) in map {
-                        if let Json::Text(text) = value {
-                            fields.insert(field, text);
-                        }
-                    }
-                    Self::Pin(AffinityPin(fields))
-                } else {
-                    Self::Other(Json::Object(map))
-                }
-            }
-            Json::Text(text) => Self::Text(text),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Self::Other(value),
+        match AffinityPin::try_from(&value) {
+            Ok(pin) => Self::Pin(pin),
+            Err(_error) => match value {
+                Json::Text(text) => Self::Text(text),
+                other => Self::Other(other),
+            },
         }
     }
 
@@ -103,12 +103,7 @@ impl StoredPin {
     #[must_use]
     pub fn decoded(&self) -> Json {
         match self {
-            Self::Pin(pin) => Json::Object(
-                pin.0
-                    .iter()
-                    .map(|(field, value)| (field.clone(), Json::Text(value.clone())))
-                    .collect(),
-            ),
+            Self::Pin(pin) => pin.decoded(),
             Self::Text(text) => Json::Text(text.clone()),
             Self::Other(value) => value.clone(),
         }
@@ -117,51 +112,38 @@ impl StoredPin {
     // claim_affinity_pin_in_memory's legacy check: extra stored fields are allowed
     #[must_use]
     pub fn matches_legacy(&self, pin: &AffinityPin) -> bool {
-        match self {
-            Self::Pin(stored) => pin
-                .0
-                .iter()
-                .all(|(field, value)| stored.get(field) == Some(value)),
-            Self::Other(Json::Object(stored)) => pin.0.iter().all(|(field, value)| {
-                matches!(stored.get(field), Some(Json::Text(text)) if text == value)
-            }),
-            Self::Other(Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_))
-            | Self::Text(_) => false,
-        }
+        let Some(fields) = self.fields() else {
+            return false;
+        };
+        fields.contains(pin)
     }
 
     // the Redis script's table comparison: the stored key set must equal the candidate's
     #[must_use]
     pub fn matches_exactly(&self, pin: &AffinityPin) -> bool {
-        match self {
-            Self::Pin(stored) => {
-                stored.len() == pin.0.len()
-                    && pin
-                        .0
-                        .iter()
-                        .all(|(field, value)| stored.get(field) == Some(value))
-            }
-            Self::Other(Json::Object(stored)) => {
-                stored.len() == pin.0.len()
-                    && pin.0.iter().all(|(field, value)| {
-                        matches!(stored.get(field), Some(Json::Text(text)) if text == value)
-                    })
-            }
-            Self::Other(Json::List(items)) => items.is_empty() && pin.0.is_empty(),
-            Self::Other(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_))
-            | Self::Text(_) => false,
-        }
+        let Some(fields) = self.fields() else {
+            return matches!(self, Self::Other(Json::List(items)) if items.is_empty() && pin.0.is_empty());
+        };
+        fields.field_count() == pin.0.len() && fields.contains(pin)
     }
 
     // Python's `existing in eligible_values`: plain equality, so an empty list never equals an empty pin
     #[must_use]
     pub fn equals_pin(&self, pin: &AffinityPin) -> bool {
+        if self.fields().is_none() {
+            return false;
+        }
+        self.matches_exactly(pin)
+    }
+
+    fn fields(&self) -> Option<Fields<'_>> {
         match self {
-            Self::Pin(_) | Self::Other(Json::Object(_)) => self.matches_exactly(pin),
+            Self::Pin(pin) => Some(Fields::TextMap(&pin.0)),
+            Self::Other(Json::Object(fields)) => Some(Fields::JsonMap(fields)),
             Self::Other(
                 Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_),
             )
-            | Self::Text(_) => false,
+            | Self::Text(_) => None,
         }
     }
 
@@ -181,6 +163,32 @@ impl StoredPin {
             Self::Other(
                 Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_),
             ) => None,
+        }
+    }
+}
+
+enum Fields<'a> {
+    TextMap(&'a IndexMap<String, String>),
+    JsonMap(&'a IndexMap<String, Json>),
+}
+
+impl Fields<'_> {
+    fn field_count(&self) -> usize {
+        match self {
+            Self::TextMap(fields) => fields.len(),
+            Self::JsonMap(fields) => fields.len(),
+        }
+    }
+
+    fn contains(&self, pin: &AffinityPin) -> bool {
+        match self {
+            Self::TextMap(stored) => pin
+                .0
+                .iter()
+                .all(|(field, value)| stored.get(field) == Some(value)),
+            Self::JsonMap(stored) => pin.0.iter().all(|(field, value)| {
+                matches!(stored.get(field), Some(Json::Text(text)) if text == value)
+            }),
         }
     }
 }

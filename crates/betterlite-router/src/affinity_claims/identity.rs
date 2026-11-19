@@ -158,18 +158,20 @@ fn positive_integer(value: &Json) -> Option<u64> {
 pub fn marker_session_affinity_ttl(
     request_kwargs: &JsonObject,
 ) -> Result<Option<u32>, AffinityError> {
-    for metadata in metadata_dicts(request_kwargs) {
-        let Some(value) = metadata.get(SESSION_TTL_MARKER_KEY) else {
-            continue;
-        };
-        if let Some(ttl) = positive_integer(value) {
-            let seconds = u32::try_from(ttl).map_err(|_error| AffinityError::TtlOutOfRange {
-                field: SESSION_TTL_MARKER_KEY,
-            })?;
-            return Ok(Some(seconds));
-        }
-    }
-    Ok(None)
+    let found = metadata_dicts(request_kwargs)
+        .into_iter()
+        .find_map(|metadata| {
+            metadata
+                .get(SESSION_TTL_MARKER_KEY)
+                .and_then(positive_integer)
+        });
+    let Some(ttl) = found else {
+        return Ok(None);
+    };
+    let seconds = u32::try_from(ttl).map_err(|_error| AffinityError::TtlOutOfRange {
+        field: SESSION_TTL_MARKER_KEY,
+    })?;
+    Ok(Some(seconds))
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
