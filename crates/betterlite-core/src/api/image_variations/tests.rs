@@ -750,6 +750,26 @@ async fn rate_limited_variations_project_without_a_retry() {
 }
 
 #[tokio::test]
+async fn rate_limits_win_over_a_context_window_body() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("OPENAI_API_KEY", "sk-test")]);
+    let body = br#"{"error":{"message":"This model's maximum context length is 8192 tokens","type":"invalid_request_error","param":null,"code":null}}"#;
+    let transport = RecordingTransport::new(429, body);
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &NoTopaz,
+        VariationPolicies::default(),
+    );
+    let error = aimage_variation(&service, &variation_call())
+        .await
+        .expect_err("the provider rate limits the call");
+    assert!(matches!(&error.class, ErrorClass::RateLimit(_)));
+}
+
+#[tokio::test]
 async fn sync_variation_errors_keep_the_provider_status() {
     let fixture = Fixture::new();
     let context = fixture.context();
