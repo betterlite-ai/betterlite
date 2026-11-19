@@ -32,7 +32,7 @@ Step = Literal["next", "drain", "close"]
 
 @runtime_checkable
 class StreamView(Protocol):
-    # LiteLLM types messages as AllMessageValues, which carries Any, so the view names only what a case reads
+    # LiteLLM types messages with Any, so the view names only what a case reads
     @property
     def model(self) -> str: ...
 
