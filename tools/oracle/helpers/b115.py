@@ -56,7 +56,7 @@ def _stop_flush_tasks() -> None:
 
 async def execute(input_value: Input) -> JsonValue:
     FrozenDatetime.instant = datetime.fromisoformat(input_value["now"])
-    previous_params: dict[str, JsonValue] | None = litellm.s3_callback_params  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L444
+    previous_params: dict[str, JsonValue] | None = litellm.s3_callback_params  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L444
     try:
         litellm.s3_callback_params = input_value["global_params"]
         s3_v2.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L490
