@@ -85,14 +85,14 @@ fn nonstring_pattern_rejected() {
     };
     match error {
         ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
-        other @ ConfigError::CustomDimensions(_)
-        | other @ ConfigError::Environment { .. }
-        | other @ ConfigError::Yaml { .. }
-        | other @ ConfigError::Unsupported { .. }
-        | other @ ConfigError::MissingEnvironment { .. }
-        | other @ ConfigError::InvalidFloat { .. }
-        | other @ ConfigError::InvalidInteger { .. }
-        | other @ ConfigError::LoadThread { .. } => {
+        other @ (ConfigError::CustomDimensions(_)
+        | ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. }) => {
             panic!("expected an invalid scalar, got: {other}")
         }
     }
@@ -180,14 +180,14 @@ fn invalid_regex_rejected() {
     };
     match error {
         ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
-        other @ ConfigError::CustomDimensions(_)
-        | other @ ConfigError::Environment { .. }
-        | other @ ConfigError::Yaml { .. }
-        | other @ ConfigError::Unsupported { .. }
-        | other @ ConfigError::MissingEnvironment { .. }
-        | other @ ConfigError::InvalidFloat { .. }
-        | other @ ConfigError::InvalidInteger { .. }
-        | other @ ConfigError::LoadThread { .. } => {
+        other @ (ConfigError::CustomDimensions(_)
+        | ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. }) => {
             panic!("expected an invalid scalar, got: {other}")
         }
     }

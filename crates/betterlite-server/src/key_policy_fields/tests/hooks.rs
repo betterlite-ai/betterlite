@@ -135,10 +135,7 @@ async fn synchronous_hook_rejected_before_builder() {
     let error = enforce_key_update_hook(Some(&sync_update), &data)
         .await
         .unwrap_err();
-    assert!(matches!(
-        &error,
-        HookPolicyError::NotCoroutine { message } if *message == UPDATE_NOT_COROUTINE
-    ));
+    assert!(matches!(&error, HookPolicyError::NotCoroutine { .. }));
     assert_eq!(error.to_string(), UPDATE_NOT_COROUTINE);
     assert_eq!(error.status_code(), None);
     let sync_policy = load(&service, HookSlot::CustomKeyPolicy, "policy_sync").await;
@@ -148,8 +145,9 @@ async fn synchronous_hook_rejected_before_builder() {
             .unwrap_err();
     assert!(matches!(
         &policy_error,
-        HookPolicyError::NotCoroutine { message } if *message == POLICY_NOT_COROUTINE
+        HookPolicyError::NotCoroutine { .. }
     ));
+    assert_eq!(policy_error.to_string(), POLICY_NOT_COROUTINE);
     service.shutdown().await;
 }
 

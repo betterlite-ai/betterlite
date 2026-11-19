@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 
-use crate::key_fields::decode::{DecodeError, decode_group, to_object};
+use crate::key_fields::decode::{decode_group, to_object};
+use crate::key_fields::error::DecodeError;
 use crate::key_fields::policy::{CustomKeyPolicyRequest, PolicyOperation, PolicyRequestBody};
 
 pub const JSON_STRING_COLUMNS: [&str; 2] = ["router_settings", "budget_limits"];

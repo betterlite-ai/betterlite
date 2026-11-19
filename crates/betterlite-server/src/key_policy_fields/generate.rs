@@ -9,7 +9,8 @@ use betterlite_secrets::callback_vars::{Transform, transform_callback_vars};
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{NonceSource, StoredCipher};
 
-use crate::key_fields::decode::{DecodeError, to_object};
+use crate::key_fields::decode::to_object;
+use crate::key_fields::error::DecodeError;
 use crate::key_fields::request::GenerateKeyRequest;
 use crate::key_fields::values::LiteLLMKeyType;
 use crate::key_policy_fields::columns::{ColumnError, verification_token_from_row};
@@ -103,7 +104,6 @@ pub fn resolved_key_type(request: &GenerateKeyRequest) -> Option<LiteLLMKeyType>
         .generate
         .key_type
         .unwrap_or(Some(LiteLLMKeyType::Default))
-        .flatten()
 }
 
 // an absent, null or empty window list stores no windows; each kept window keeps its fields and a fresh reset time

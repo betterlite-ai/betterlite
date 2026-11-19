@@ -3,7 +3,8 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_pyhost::call_error::CallError;
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 
-use crate::key_fields::decode::{DecodeError, to_json};
+use crate::key_fields::decode::to_json;
+use crate::key_fields::error::DecodeError;
 use crate::key_fields::policy::{CustomKeyPolicyRequest, PolicyRequestBody};
 use crate::key_fields::update::UpdateKeyRequest;
 use crate::python_hooks::slots::LoadedHook;

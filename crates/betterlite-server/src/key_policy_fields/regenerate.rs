@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
-use crate::key_fields::decode::{DecodeError, TypedValue};
+use crate::key_fields::decode::TypedValue;
+use crate::key_fields::error::DecodeError;
 use crate::key_fields::regenerate::RegenerateKeyRequest;
 use crate::key_fields::update::UpdateKeyRequest;
 

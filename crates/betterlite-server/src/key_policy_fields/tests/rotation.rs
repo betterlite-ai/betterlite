@@ -23,7 +23,8 @@ const ROTATION_UNSTORED: RotationSwitches = RotationSwitches {
 
 #[test]
 fn disabled_rotation_keeps_fields() {
-    let clock = fixture().clock();
+    let fixture = fixture();
+    let clock = fixture.clock();
     let before = object(
         r#"{"auto_rotate":true,"rotation_interval":"1d","key_rotation_at":"2026-01-01T00:00:00Z"}"#,
     );
@@ -100,7 +101,8 @@ fn assert_alias_requirement_cleared(fixture: &Fixture) {
 
 #[test]
 fn empty_alias_is_present() {
-    let clock = fixture().clock();
+    let fixture = fixture();
+    let clock = fixture.clock();
     let mut data = object(r#"{"key_alias":""}"#);
     set_key_rotation_fields(&mut data, ROTATION_STORED, Some("1h"), None, clock).unwrap();
     assert_eq!(
