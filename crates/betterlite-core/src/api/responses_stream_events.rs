@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use thiserror::Error;
 
 use crate::api::api_boundaries::ApiLimits;
+use crate::api::response_id_traversal::response_id::ResponseRewriteError;
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
 use crate::api::responses_stream_hooks::ports::{Dispatch, PortFailure};
 
@@ -70,7 +71,7 @@ where
     #[error(transparent)]
     Hook(#[from] PortFailure),
     #[error(transparent)]
-    Rewrite(#[from] identity::RewriteError),
+    Rewrite(#[from] ResponseRewriteError),
 }
 
 impl<TransformError> ProcessEventError<TransformError>

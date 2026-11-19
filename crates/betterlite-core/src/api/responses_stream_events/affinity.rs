@@ -10,9 +10,6 @@ use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 
 // only an added/done item the provider transform turned into a typed record carries cipher text here
 pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesStreamBaseState) {
-    if !enabled(state) {
-        return;
-    }
     let Some(model_id) = state
         .hidden_params
         .model_id
@@ -21,7 +18,7 @@ pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesS
     else {
         return;
     };
-    if !item_event(event) {
+    if !enabled(state) || !item_event(event) {
         return;
     }
     if let Some(Target::Extra(extra)) = slot_target(event) {
@@ -30,12 +27,9 @@ pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesS
 }
 
 pub fn request_metadata(state: &ResponsesStreamBaseState) -> AffinityMetadata {
+    let model_id = state.hidden_params.model_id.clone();
     AffinityMetadata {
-        model_info: state
-            .hidden_params
-            .model_id
-            .clone()
-            .map(|id| ModelInfo { id: Some(id) }),
+        model_info: model_id.map(|id| ModelInfo { id: Some(id) }),
         affinity_enabled: enabled(state),
     }
 }

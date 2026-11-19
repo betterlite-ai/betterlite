@@ -41,6 +41,31 @@ pub enum TraversalError {
 }
 
 impl Record {
+    // serde's untagged Record decode reads a float as its private number map and the Dict arm wins, so a JSON value converts by hand
+    #[must_use]
+    pub fn from_json(value: Json) -> Self {
+        match value {
+            Json::Object(fields) => Self::Dict(DictRecord {
+                values: fields
+                    .into_iter()
+                    .map(|(name, child)| (name, Self::from_json(child)))
+                    .collect(),
+            }),
+            Json::List(items) => Self::List(items.into_iter().map(Self::from_json).collect()),
+            scalar => Self::Scalar(scalar),
+        }
+    }
+
+    #[must_use]
+    pub fn into_json(self) -> Json {
+        match self {
+            Self::Dict(dict) => object_json(dict.values),
+            Self::Object { object } => object_json(object.fields),
+            Self::List(items) => Json::List(items.into_iter().map(Self::into_json).collect()),
+            Self::Scalar(value) => value,
+        }
+    }
+
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&Self> {
         match self {
@@ -97,4 +122,13 @@ impl Record {
             Self::Scalar(value) => json_has_value(value),
         }
     }
+}
+
+fn object_json(fields: IndexMap<String, Record>) -> Json {
+    Json::Object(
+        fields
+            .into_iter()
+            .map(|(name, child)| (name, child.into_json()))
+            .collect(),
+    )
 }

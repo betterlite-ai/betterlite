@@ -9,6 +9,7 @@ use super::{
     ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
     decode_responses_stream_value, deltas, identity,
 };
+use crate::api::response_id_traversal::response_id;
 use crate::api::response_synthetic_events::estimate::{EstimateRequest, UsageTokenization};
 use crate::api::response_synthetic_events::stamping::ResponsesCostCalculator;
 use crate::api::responses_stream_hooks::failed::handle_logging_failed_response;
@@ -89,10 +90,10 @@ where
             let provider = state.custom_llm_provider.as_deref();
             match response_target(&mut event) {
                 Some(ResponseTarget::Typed(response)) => {
-                    identity::rewrite_response(response, provider, &metadata)?;
+                    response_id::rewrite_typed_response(response, provider, &metadata)?;
                 }
                 Some(ResponseTarget::Value(value)) => {
-                    identity::rewrite_response_value(value, provider, &metadata)?;
+                    response_id::rewrite_value(value, provider, &metadata)?;
                 }
                 None => {}
             }
@@ -119,29 +120,25 @@ where
         callback: &mut ResponsesStreamHookState,
     ) -> Result<ResponsesAPIStreamingResponse, ProcessEventError<Transform::Error>> {
         let failed = matches!(kind, Terminal::Failed);
-        {
-            let generated = format!(
-                "{}{}",
-                state.generated_content, state.generated_tool_arguments
-            );
-            let request = Json::Object(state.request_data.clone());
-            let missing = Json::Null;
-            let request_input = state.request_data.get("input").unwrap_or(&missing);
-            let estimate = if failed {
-                None
-            } else {
-                self.tokenization.map(|tokenization| EstimatedUsage {
-                    tokenization,
-                    request: EstimateRequest {
-                        model: &state.model,
-                        request_input,
-                        responses_api_request: &request,
-                        generated_text: &generated,
-                    },
-                })
-            };
-            terminal::bill(&mut event, estimate.as_ref(), self.calculator);
-        }
+        let mut generated = state.generated_content.clone();
+        generated.push_str(&state.generated_tool_arguments);
+        let request = Json::Object(state.request_data.clone());
+        let missing = Json::Null;
+        let request_input = state.request_data.get("input").unwrap_or(&missing);
+        let estimate = if failed {
+            None
+        } else {
+            self.tokenization.map(|tokenization| EstimatedUsage {
+                tokenization,
+                request: EstimateRequest {
+                    model: &state.model,
+                    request_input,
+                    responses_api_request: &request,
+                    generated_text: &generated,
+                },
+            })
+        };
+        terminal::bill(&mut event, estimate.as_ref(), self.calculator);
         state.completed_response = Some(event.clone());
         if failed {
             handle_logging_failed_response(

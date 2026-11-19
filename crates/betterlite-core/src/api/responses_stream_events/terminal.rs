@@ -39,17 +39,12 @@ impl Terminal {
     #[must_use]
     pub fn of(event: &ResponsesAPIStreamingResponse) -> Option<Self> {
         match event {
-            ResponsesAPIStreamingResponse::Known(known) => {
-                if let KnownResponseEvent::ResponseFailed(_) = known.as_ref() {
-                    return Some(Self::Failed);
-                }
-                if let KnownResponseEvent::ResponseCompleted(_)
-                | KnownResponseEvent::ResponseIncomplete(_) = known.as_ref()
-                {
-                    return Some(Self::Billed);
-                }
-                None
-            }
+            ResponsesAPIStreamingResponse::Known(known) => match known.as_ref() {
+                KnownResponseEvent::ResponseFailed(_) => Some(Self::Failed),
+                KnownResponseEvent::ResponseCompleted(_)
+                | KnownResponseEvent::ResponseIncomplete(_) => Some(Self::Billed),
+                _ => None,
+            },
             ResponsesAPIStreamingResponse::Generic(record) => match record.r#type.as_str() {
                 "response.failed" => Some(Self::Failed),
                 "response.completed" | "response.incomplete" => Some(Self::Billed),

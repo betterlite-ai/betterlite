@@ -6,9 +6,8 @@ use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use indexmap::IndexMap;
 
-use crate::api::response_id_traversal::record::{DictRecord, Record};
+use crate::api::responses_stream_hooks::events::nested_response_mut;
 
 pub enum Target<'event> {
     Extra(&'event mut Extra),
@@ -25,20 +24,13 @@ pub enum ResponseTarget<'event> {
 // a JSON null stays a value here; the rewrite itself ignores anything that is not an object
 #[must_use]
 pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<ResponseTarget<'_>> {
+    if let Some(response) = nested_response_mut(event) {
+        return Some(ResponseTarget::Typed(response));
+    }
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => {
-            if let KnownResponseEvent::ResponseCreated(record)
-            | KnownResponseEvent::ResponseInProgress(record)
-            | KnownResponseEvent::ResponseCompleted(record)
-            | KnownResponseEvent::ResponseFailed(record)
-            | KnownResponseEvent::ResponseIncomplete(record) = known.as_mut()
-            {
-                return Some(ResponseTarget::Typed(&mut record.response));
-            }
-            known_extra(known.as_mut())
-                .and_then(|extra| extra.get_mut("response"))
-                .map(ResponseTarget::Value)
-        }
+        ResponsesAPIStreamingResponse::Known(known) => known_extra(known.as_mut())
+            .and_then(|extra| extra.get_mut("response"))
+            .map(ResponseTarget::Value),
         ResponsesAPIStreamingResponse::Generic(record) => {
             record.extra.get_mut("response").map(ResponseTarget::Value)
         }
@@ -57,27 +49,23 @@ pub fn slot_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Target<'
 }
 
 fn known_target(event: &mut KnownResponseEvent) -> Option<Target<'_>> {
-    if let KnownResponseEvent::OutputItemAdded(record) = event {
-        return match &mut record.item {
+    match event {
+        KnownResponseEvent::OutputItemAdded(record) => match &mut record.item {
             RequiredNullable::Value(extra) => Some(Target::Extra(extra)),
             RequiredNullable::Null => None,
-        };
-    }
-    if let KnownResponseEvent::OutputItemDone(record) = event {
-        return Some(Target::Extra(&mut record.item));
-    }
-    if let KnownResponseEvent::OutputTextAnnotationAdded(record) = event {
-        return Some(Target::Extra(&mut record.annotation));
-    }
-    if let KnownResponseEvent::ContentPartDone(record) = event {
-        return match &mut record.part {
+        },
+        KnownResponseEvent::OutputItemDone(record) => Some(Target::Extra(&mut record.item)),
+        KnownResponseEvent::OutputTextAnnotationAdded(record) => {
+            Some(Target::Extra(&mut record.annotation))
+        }
+        KnownResponseEvent::ContentPartDone(record) => match &mut record.part {
             ContentPartDonePart::OutputText { annotations, .. } => {
                 Some(Target::Extras(annotations))
             }
             ContentPartDonePart::Refusal { .. } | ContentPartDonePart::ReasoningText { .. } => None,
-        };
+        },
+        _ => None,
     }
-    None
 }
 
 fn generic_target<'event>(extra: &'event mut Extra, event_type: &str) -> Option<Target<'event>> {
@@ -101,11 +89,6 @@ fn generic_target<'event>(extra: &'event mut Extra, event_type: &str) -> Option<
 // a pydantic event model answers getattr("response") from its allowed extras, so any variant may carry one
 fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
     match event {
-        KnownResponseEvent::ResponseCreated(_)
-        | KnownResponseEvent::ResponseInProgress(_)
-        | KnownResponseEvent::ResponseCompleted(_)
-        | KnownResponseEvent::ResponseFailed(_)
-        | KnownResponseEvent::ResponseIncomplete(_) => None,
         KnownResponseEvent::ResponsePartAdded(record) => Some(&mut record.extra),
         KnownResponseEvent::ReasoningSummaryTextDelta(record) => Some(&mut record.extra),
         KnownResponseEvent::ReasoningSummaryTextDone(record) => Some(&mut record.extra),
@@ -137,48 +120,6 @@ fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
         | KnownResponseEvent::McpCallFailed(record) => Some(&mut record.extra),
         KnownResponseEvent::ImageGenerationPartialImage(record) => Some(&mut record.extra),
         KnownResponseEvent::Error(record) => Some(&mut record.extra),
+        _ => None,
     }
-}
-
-// serde's untagged Record decode reads a float as its private number map and the Dict arm wins, so a JSON value converts by hand
-#[must_use]
-pub fn record_of(value: &Json) -> Record {
-    if let Json::Object(fields) = value {
-        return record_of_fields(fields.iter());
-    }
-    if let Json::List(items) = value {
-        return Record::List(items.iter().map(record_of).collect());
-    }
-    Record::Scalar(value.clone())
-}
-
-#[must_use]
-pub fn record_of_fields<'field, Fields>(fields: Fields) -> Record
-where
-    Fields: Iterator<Item = (&'field String, &'field Json)>,
-{
-    Record::Dict(DictRecord {
-        values: fields
-            .map(|(name, child)| (name.clone(), record_of(child)))
-            .collect(),
-    })
-}
-
-#[must_use]
-pub fn json_of(record: &Record) -> Json {
-    match record {
-        Record::Dict(dict) => object_of(&dict.values),
-        Record::Object { object } => object_of(&object.fields),
-        Record::List(items) => Json::List(items.iter().map(json_of).collect()),
-        Record::Scalar(value) => value.clone(),
-    }
-}
-
-fn object_of(fields: &IndexMap<String, Record>) -> Json {
-    Json::Object(
-        fields
-            .iter()
-            .map(|(name, child)| (name.clone(), json_of(child)))
-            .collect(),
-    )
 }
