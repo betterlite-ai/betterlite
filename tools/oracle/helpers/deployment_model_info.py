@@ -3,6 +3,8 @@ from typing import Final, Literal, TypedDict
 
 import litellm
 from litellm.router import Router
+from litellm.types.router import ModelInfo as DeploymentModelInfo
+from litellm.types.utils import ModelInfo as ModelMapInfo
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -40,6 +42,28 @@ class DeploymentRow(TypedDict):
     model_name: str
     litellm_params: dict[str, JsonValue]
     model_info: dict[str, JsonValue]
+
+
+class ListingPayload(TypedDict):
+    cost_map_keys: list[str]
+    max_input_tokens: int | None
+    max_output_tokens: int | None
+
+
+class ConfiguredPayload(TypedDict):
+    limits: list[int | None]
+    mode: str | None
+    display_name: str | None
+
+
+class RawPayload(TypedDict):
+    deployment: dict[str, JsonValue] | None
+    group: list[dict[str, JsonValue] | None] | None
+
+
+class AzurePayload(TypedDict):
+    logs: list[str]
+    info: dict[str, JsonValue] | None
 
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -81,10 +105,12 @@ def received_of(arguments: Arguments) -> str:
     return value
 
 
-def project_optional(info: object) -> dict[str, JsonValue] | None:
-    if info is None:
+def project_optional(
+    info: DeploymentModelInfo | ModelMapInfo | None,
+) -> dict[str, JsonValue] | None:
+    if info is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L426
         return None
-    values = OBJECT.validate_python(info)
+    values = OBJECT.validate_python(info)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L426
     return {name: values[name] for name in FIELDS if name in values}
 
 
@@ -104,13 +130,12 @@ def listing_answer(router: Router, arguments: Arguments) -> JsonValue:
     info = router.get_model_listing_info(model_name_of(arguments))
     if info is None:
         return None
-    return JSON.validate_python(
-        {
-            "cost_map_keys": list(info.cost_map_keys),
-            "max_input_tokens": info.max_input_tokens,
-            "max_output_tokens": info.max_output_tokens,
-        }
-    )
+    payload: ListingPayload = {
+        "cost_map_keys": list(info.cost_map_keys),
+        "max_input_tokens": info.max_input_tokens,
+        "max_output_tokens": info.max_output_tokens,
+    }
+    return JSON.validate_python(payload)
 
 
 def configured_answer(router: Router, arguments: Arguments) -> JsonValue:
@@ -118,9 +143,12 @@ def configured_answer(router: Router, arguments: Arguments) -> JsonValue:
     limits = router.get_configured_token_limits(name)
     mode = router.get_configured_mode(name)
     display_name = router.get_configured_display_name(name)
-    return JSON.validate_python(
-        {"limits": [limits[0], limits[1]], "mode": mode, "display_name": display_name}
-    )
+    payload: ConfiguredPayload = {
+        "limits": [limits[0], limits[1]],
+        "mode": mode,
+        "display_name": display_name,
+    }
+    return JSON.validate_python(payload)
 
 
 def router_answer(router: Router, arguments: Arguments) -> JsonValue:
@@ -130,25 +158,28 @@ def router_answer(router: Router, arguments: Arguments) -> JsonValue:
         model_id = arguments.get("id")
         if model_id is None:
             raise ValueError("arguments.id is required")
-        info = router.get_router_model_info(None, name, model_id)
+        info = router.get_router_model_info(None, name, model_id)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10679
     else:
-        info = router.get_router_model_info(deployment, name)
-    return JSON.validate_python(project_optional(info))
+        info = router.get_router_model_info(deployment, name)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10679
+    projected = project_optional(info)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10679
+    return JSON.validate_python(projected)
 
 
 def deployment_answer(router: Router, arguments: Arguments) -> JsonValue:
-    info = router.get_deployment_model_info(
+    info = router.get_deployment_model_info(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10830
         model_id_of(arguments), model_name_of(arguments)
     )
-    return JSON.validate_python(project_optional(info))
+    projected = project_optional(info)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10830
+    return JSON.validate_python(projected)
 
 
 def raw_answer(router: Router, arguments: Arguments) -> JsonValue:
     model_id = model_id_of(arguments)
-    deployment = ROW.validate_python(router.get_model_info(model_id))
-    group = ROWS.validate_python(router.get_model_group(model_id))
-    found = None if group is None else [summary(row) for row in group]
-    return JSON.validate_python({"deployment": summary(deployment), "group": found})
+    deployment = ROW.validate_python(router.get_model_info(model_id))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10802-L10816
+    rows = ROWS.validate_python(router.get_model_group(model_id))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10818-L10829
+    found = None if rows is None else [summary(row) for row in rows]
+    payload: RawPayload = {"deployment": summary(deployment), "group": found}
+    return JSON.validate_python(payload)
 
 
 def azure_answer(router: Router, arguments: Arguments) -> JsonValue:
@@ -164,7 +195,7 @@ def azure_answer(router: Router, arguments: Arguments) -> JsonValue:
     logger.propagate = False
     logger.setLevel(logging.DEBUG)
     try:
-        info = router.get_router_model_info(deployment, received_of(arguments))
+        info = router.get_router_model_info(deployment, received_of(arguments))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10679
     finally:
         logger.handlers = kept_handlers
         logger.propagate = previous_propagate
@@ -174,7 +205,9 @@ def azure_answer(router: Router, arguments: Arguments) -> JsonValue:
         for message in capture.messages
         if any(marker in message for marker in AZURE_MARKERS)
     ]
-    return JSON.validate_python({"logs": logs, "info": project_optional(info)})
+    projected = project_optional(info)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10679
+    payload: AzurePayload = {"logs": logs, "info": projected}
+    return JSON.validate_python(payload)
 
 
 def run(input_value: Input) -> JsonValue:
