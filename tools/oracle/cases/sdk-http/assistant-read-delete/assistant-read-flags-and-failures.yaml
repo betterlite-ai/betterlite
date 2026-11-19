@@ -63,5 +63,5 @@ compare:
   headers_present: []
   upstream_headers: [authorization, api-key, openai-beta]
   ignore:
-    - {pointer: /assistant_read_delete/runs/8/sync/failure/message, why: the SDK prints the raw error body and betterlite writes its own message text}
-    - {pointer: /assistant_read_delete/runs/8/async/failure/message, why: LiteLLM prefixes its mapped exception and betterlite does not add the prefix}
+    - {pointer: /assistant_read_delete/value/runs/8/sync/failure/message, why: the SDK formats the error body with Python's dict repr and betterlite prints the raw JSON}
+    - {pointer: /assistant_read_delete/value/runs/8/async/failure/message, why: LiteLLM prefixes the body with its mapped class and provider name and betterlite reports the class separately}

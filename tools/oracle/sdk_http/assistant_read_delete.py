@@ -25,8 +25,7 @@ class Strict(BaseModel):
 
 
 class Params(Strict):
-    # the wire also carries the Azure credential kwargs, which the mocked entry points never take
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore")  # the wire carries Azure credential kwargs the entry points never take
     api_key: str | None = None
     api_base: str | None = None
     api_version: str | None = None
@@ -158,8 +157,7 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
     litellm.api_key = run.module_globals.api_key
     litellm.openai_key = run.module_globals.openai_key
     litellm.azure_key = run.module_globals.azure_key
-    supplied = supplied_client(run.invocation.client, api_base)
-    client: AsyncOpenAI | None = cast("AsyncOpenAI | None", supplied)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L45
+    client = cast("AsyncOpenAI | None", supplied_client(run.invocation.client, api_base))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L45
     sync = run_mode(run.invocation, client, api_base, "sync") if run.entries != "async" else None
     asynchronous = (
         run_mode(run.invocation, client, api_base, "async") if run.entries != "sync" else None
@@ -193,7 +191,6 @@ def supplied_client(spec: SuppliedClient | None, api_base: str) -> Supplied | No
 
 def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> CallArgs:
     params = invocation.params
-    # the case names any provider, and LiteLLM's wrappers reject the rest themselves
     args: CallArgs = {
         "custom_llm_provider": cast("Literal['openai', 'azure']", invocation.provider),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L73-L80
         "client": client,
@@ -283,6 +280,7 @@ def failure_view(error: BaseException) -> FailureView:
         case openai.APIError():
             return FailureView(
                 class_name=type(error).__name__,
+                status=500 if isinstance(error, litellm.exceptions.APIConnectionError) else None,
                 kind=error.type,
                 param=error.param,
                 code=error.code,
