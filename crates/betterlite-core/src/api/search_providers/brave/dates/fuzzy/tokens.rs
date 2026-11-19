@@ -10,9 +10,9 @@ pub(super) enum Token {
 // the words the source skips; an ordinal suffix needs no entry because any unknown word is skipped
 const JUMPS: [&str; 7] = ["at", "on", "and", "ad", "m", "t", "of"];
 // the names the source's parserinfo accepts for each month and weekday: the full name and its abridgement
-const MONTHS: &str =
+pub(super) const MONTHS: &str =
     "january february march april may june july august september october november december";
-const WEEKDAYS: &str = "monday tuesday wednesday thursday friday saturday sunday";
+pub(super) const WEEKDAYS: &str = "monday tuesday wednesday thursday friday saturday sunday";
 // the h/m/s labels and the am/pm names that turn a number into a time of day
 const CLOCK_LABELS: [&str; 9] = [
     "h", "hour", "hours", "m", "minute", "minutes", "s", "second", "seconds",
