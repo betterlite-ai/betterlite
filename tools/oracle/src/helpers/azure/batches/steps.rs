@@ -86,6 +86,16 @@ fn reply_value(result: Result<Reply, AzureBatchesError>) -> Value {
     }
 }
 
+// The sync open picks the client class, then the call sends the record through it
+fn operate(
+    runtime: &Runtime,
+    connection: Connection<'_, '_, Materializer>,
+    operation: Operation<'_>,
+) -> Result<Reply, AzureBatchesError> {
+    let client = connection.open(operation.check())?;
+    runtime.block_on(call(&client, operation))
+}
+
 // A client builder that answers None makes every handler action report the missing client first
 fn project_value(
     outcome: &ClientOutcome<'_>,
@@ -109,34 +119,31 @@ fn perform(
             Err(error) => raised(&error),
         },
         Action::Create => match step.data.as_ref() {
-            Some(data) => reply_value(runtime.block_on(call(connection, Operation::Create(data)))),
+            Some(data) => reply_value(operate(runtime, connection, Operation::Create(data))),
             None => json!({
                 "raised": { "class": "ValueError", "message": "a create step carries no data" },
             }),
         },
         Action::Retrieve => match step.query.as_ref() {
-            Some(query) => {
-                reply_value(runtime.block_on(call(connection, Operation::Retrieve(query))))
-            }
+            Some(query) => reply_value(operate(runtime, connection, Operation::Retrieve(query))),
             None => json!({
                 "raised": { "class": "ValueError", "message": "a retrieve step carries no query" },
             }),
         },
         Action::Cancel => match step.query.as_ref() {
-            Some(query) => {
-                reply_value(runtime.block_on(call(connection, Operation::Cancel(query))))
-            }
+            Some(query) => reply_value(operate(runtime, connection, Operation::Cancel(query))),
             None => json!({
                 "raised": { "class": "ValueError", "message": "a cancel step carries no query" },
             }),
         },
-        Action::List => reply_value(runtime.block_on(call(
+        Action::List => reply_value(operate(
+            runtime,
             connection,
             Operation::List {
                 after: step.after.as_deref(),
                 limit: step.limit,
             },
-        ))),
+        )),
     }
 }
 

@@ -9,6 +9,7 @@ use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchPage, BatchQuery};
 use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::{Builder, Runtime};
 
 use super::client::{ClientMaterializer, ClientSettings, Connection};
 use super::error::AzureBatchesError;
@@ -203,7 +204,7 @@ const fn class_name(kind: OutcomeKind) -> &'static str {
 
 fn endpoint_base(endpoint: &EndpointSelection) -> Option<String> {
     match (&endpoint.azure_endpoint, &endpoint.base_url) {
-        (Some(endpoint), _) => Some(format!("{}/openai/", endpoint.trim_end_matches('/'))),
+        (Some(azure), _) => Some(format!("{}/openai/", azure.trim_end_matches('/'))),
         (None, Some(path)) => Some(format!("{}/", path.trim_end_matches('/'))),
         (None, None) => None,
     }
@@ -492,7 +493,7 @@ pub(super) fn timed_out(step: Step, seconds: f64) -> Step {
     }
 }
 
-fn operation<'step>(step: &'step Step) -> Operation<'step> {
+fn operation(step: &Step) -> Operation<'_> {
     match step.action {
         Action::Create => Operation::Create(
             step.data
@@ -518,13 +519,16 @@ fn operation<'step>(step: &'step Step) -> Operation<'step> {
 fn with_connection<T>(
     step: &Step,
     materializer: &Materializer,
-    work: fn(Connection<'_, '_, Materializer>, &Step) -> T,
+    work: fn(&Runtime, Connection<'_, '_, Materializer>, &Step) -> T,
 ) -> T {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let sources = Sources;
     let mut cache = Cache;
     let mut refresh = RefreshProviderCache::new(&sources);
+    let runtime = Builder::new_current_thread()
+        .build()
+        .expect("the test runtime builds");
     let connection = Connection {
         settings: ClientSettings {
             api_base: step.api_base.clone(),
@@ -546,20 +550,21 @@ fn with_connection<T>(
         refresh: &mut refresh,
         materializer,
     };
-    work(connection, step)
+    work(&runtime, connection, step)
 }
 
 fn call_through(
+    runtime: &Runtime,
     connection: Connection<'_, '_, Materializer>,
     step: &Step,
 ) -> Result<Reply, AzureBatchesError> {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the test runtime builds")
-        .block_on(call(connection, operation(step)))
+    let operation = operation(step);
+    let client = connection.open(operation.check())?;
+    runtime.block_on(call(&client, operation))
 }
 
 fn project_through(
+    _runtime: &Runtime,
     mut connection: Connection<'_, '_, Materializer>,
     _step: &Step,
 ) -> Result<Projection, Raised> {

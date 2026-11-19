@@ -3,9 +3,9 @@ pub mod error;
 
 use betterlite_openai::batches::decode::decode_batch_object;
 use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchPage, BatchQuery};
-use betterlite_openai::batches::sdk::BatchesSdk as _;
+use betterlite_openai::batches::sdk::BatchesSdk;
 
-use self::client::{ClientCheck, ClientMaterializer, Connection};
+use self::client::ClientCheck;
 use self::error::AzureBatchesError;
 
 // The call a caller asks for; list carries the cursor pair instead of a request record
@@ -21,7 +21,8 @@ pub enum Operation<'request> {
 }
 
 impl Operation<'_> {
-    const fn check(&self) -> ClientCheck {
+    // Which class the open step checks; cancel names both async classes
+    pub const fn check(&self) -> ClientCheck {
         match self {
             Self::Cancel(_) => ClientCheck::Cancel,
             Self::Create(_) | Self::Retrieve(_) | Self::List { .. } => ClientCheck::Lifecycle,
@@ -37,15 +38,10 @@ pub enum Reply {
 }
 
 // LiteLLM forwards the request record as it is and validates the SDK's model_dump into LiteLLMBatch
-pub async fn call<M>(
-    connection: Connection<'_, '_, M>,
-    operation: Operation<'_>,
-) -> Result<Reply, AzureBatchesError>
+pub async fn call<C>(client: &C, operation: Operation<'_>) -> Result<Reply, AzureBatchesError>
 where
-    M: ClientMaterializer,
+    C: BatchesSdk<Page = BatchPage>,
 {
-    let check = operation.check();
-    let client = connection.open(check)?;
     match operation {
         Operation::Create(request) => Ok(Reply::Batch(Box::new(decode_batch_object(
             &client.create(request).await?,

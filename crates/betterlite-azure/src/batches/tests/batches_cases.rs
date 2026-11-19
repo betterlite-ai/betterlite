@@ -7,44 +7,57 @@ const CREATE_DATA: &str = concat!(
     r#""metadata":{"team":"ml"},"output_expires_after":{"anchor":"created_at","seconds":3600}}"#
 );
 
+// One case per oracle file, each driving the production operation over the fixture SDK
+#[derive(Clone, Copy)]
+enum Scenario {
+    BatchCreate,
+    BatchRetrieveCancelList,
+    ResourceApiVersion,
+    ListAfterLimit,
+    SdkClientMissing,
+    SdkClientWrongAsync,
+    CancelSyncClientType,
+    SdkErrorPassthrough,
+}
+
 fn create_step() -> Step {
     creating(CREATE_DATA)
 }
 
-fn batch_reply() -> Option<Answered> {
-    Some(Answered::Batch(Box::new(batch_object(&batch_body()))))
+fn batch_reply() -> Answered {
+    Answered::Batch(Box::new(batch_object(&batch_body())))
 }
 
-fn page_reply() -> Option<Answered> {
-    Some(Answered::Page(Box::new(page_object(&page_body()))))
+fn page_reply() -> Answered {
+    Answered::Page(Box::new(page_object(&page_body())))
 }
 
 // Every create key reaches the SDK unchanged, the reply becomes the batch, and async accepts both client families
-fn case_1_batch_create() {
+fn batch_create() {
     let azure = async_(create_step());
-    let seen = observe(&azure);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.reply, batch_reply());
+    let azure_seen = observe(&azure);
+    assert_eq!(azure_seen.raised, None);
+    assert_eq!(azure_seen.reply, Some(batch_reply()));
     assert_eq!(
-        seen.calls,
+        azure_seen.calls,
         vec![Recorded::Create(create_request(CREATE_DATA))]
     );
-    assert_eq!(seen.seen[0].class, "AsyncAzureOpenAI");
+    assert_eq!(azure_seen.seen[0].class, "AsyncAzureOpenAI");
     assert_eq!(
-        seen.seen[0].base_url.as_deref(),
+        azure_seen.seen[0].base_url.as_deref(),
         Some("https://fixture.test/openai/")
     );
 
     let v1 = async_(versioned(create_step(), Some("v1")));
-    let seen = observe(&v1);
-    assert_eq!(seen.raised, None);
+    let v1_seen = observe(&v1);
+    assert_eq!(v1_seen.raised, None);
     assert_eq!(
-        seen.calls,
+        v1_seen.calls,
         vec![Recorded::Create(create_request(CREATE_DATA))]
     );
-    assert_eq!(seen.seen[0].class, "AsyncOpenAI");
+    assert_eq!(v1_seen.seen[0].class, "AsyncOpenAI");
     assert_eq!(
-        seen.seen[0].base_url.as_deref(),
+        v1_seen.seen[0].base_url.as_deref(),
         Some("https://fixture.test/openai/v1/")
     );
 
@@ -53,34 +66,40 @@ fn case_1_batch_create() {
         async_(versioned(create_step(), Some("v1"))),
         OutcomeKind::AsyncOpenAi,
     );
-    let seen = observe(&supplied);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.calls.len(), 1);
-    assert!(seen.seen[0].supplied);
+    let supplied_seen = observe(&supplied);
+    assert_eq!(supplied_seen.raised, None);
+    assert_eq!(supplied_seen.calls.len(), 1);
+    assert!(supplied_seen.seen[0].supplied);
 }
 
 // Retrieve and cancel forward their record, and list answers with the page the SDK gave
-fn case_2_batch_retrieve_cancel_list() {
+fn batch_retrieve_cancel_list() {
     let query = r#"{"batch_id":"batch_9","extra_headers":{"x-vendor":"a"},"extra_body":{"note":"n"},"timeout":12.5}"#;
     let retrieve = query_data(step(Action::Retrieve), query);
-    let seen = observe(&retrieve);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.reply, batch_reply());
-    assert_eq!(seen.calls, vec![Recorded::Retrieve(query_request(query))]);
+    let retrieve_seen = observe(&retrieve);
+    assert_eq!(retrieve_seen.raised, None);
+    assert_eq!(retrieve_seen.reply, Some(batch_reply()));
+    assert_eq!(
+        retrieve_seen.calls,
+        vec![Recorded::Retrieve(query_request(query))]
+    );
 
     let cancel = async_(query_data(step(Action::Cancel), query));
-    let seen = observe(&cancel);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.reply, batch_reply());
-    assert_eq!(seen.calls, vec![Recorded::Cancel(query_request(query))]);
-    assert_eq!(seen.seen[0].class, "AsyncAzureOpenAI");
+    let cancel_seen = observe(&cancel);
+    assert_eq!(cancel_seen.raised, None);
+    assert_eq!(cancel_seen.reply, Some(batch_reply()));
+    assert_eq!(
+        cancel_seen.calls,
+        vec![Recorded::Cancel(query_request(query))]
+    );
+    assert_eq!(cancel_seen.seen[0].class, "AsyncAzureOpenAI");
 
     let list = listing(Some("batch_0"), Some(20));
-    let seen = observe(&list);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.reply, page_reply());
+    let list_seen = observe(&list);
+    assert_eq!(list_seen.raised, None);
+    assert_eq!(list_seen.reply, Some(page_reply()));
     assert_eq!(
-        seen.calls,
+        list_seen.calls,
         vec![Recorded::List {
             after: Some("batch_0".to_owned()),
             limit: Some(20),
@@ -89,7 +108,7 @@ fn case_2_batch_retrieve_cancel_list() {
 }
 
 // The api_version argument picks the client family, and the resolved version rides on the Azure client
-fn case_3_resource_api_version() {
+fn resource_api_version() {
     let azure = project(&step(Action::List)).expect("the Azure client projects");
     assert_eq!(azure.class, "AzureOpenAI");
     assert_eq!(azure.api_version.as_deref(), Some("2024-10-21"));
@@ -139,10 +158,10 @@ fn v1_api_versions() {
 }
 
 // List always passes the cursor pair on, as None when the caller gave none, and keeps the SDK page
-fn case_4_list_after_limit() {
+fn list_after_limit() {
     let defaults = observe(&listing(None, None));
     assert_eq!(defaults.raised, None);
-    assert_eq!(defaults.reply, page_reply());
+    assert_eq!(defaults.reply, Some(page_reply()));
     assert_eq!(
         defaults.calls,
         vec![Recorded::List {
@@ -180,7 +199,7 @@ fn case_4_list_after_limit() {
 }
 
 // Every operation raises the same ValueError when the client builder returns no client
-fn case_5_sdk_client_missing() {
+fn sdk_client_missing() {
     let cases = [
         missing(create_step()),
         missing(async_(query_data(
@@ -203,7 +222,7 @@ fn case_5_sdk_client_missing() {
 }
 
 // Create, retrieve and list name AsyncOpenAI; cancel names both Azure async classes
-fn case_6_sdk_client_wrong_async() {
+fn sdk_client_wrong_async() {
     let wrong = [
         async_(supplying(create_step(), OutcomeKind::OpenAi)),
         async_(supplying(
@@ -222,33 +241,36 @@ fn case_6_sdk_client_wrong_async() {
         query_data(step(Action::Cancel), r#"{"batch_id":"batch_1"}"#),
         OutcomeKind::OpenAi,
     ));
-    let seen = observe(&cancel);
+    let cancel_seen = observe(&cancel);
     assert_eq!(
-        seen.raised,
+        cancel_seen.raised,
         Some(Raised::CancelNotAsync(CANCEL_NOT_ASYNC.to_owned()))
     );
-    assert!(seen.calls.is_empty());
+    assert!(cancel_seen.calls.is_empty());
 
     // the matching async families pass the same check
-    let accepted = async_(supplying(create_step(), OutcomeKind::AsyncOpenAi));
-    assert_eq!(observe(&accepted).raised, None);
-    let accepted = async_(supplying(
+    let accepted_create = async_(supplying(create_step(), OutcomeKind::AsyncOpenAi));
+    assert_eq!(observe(&accepted_create).raised, None);
+    let accepted_cancel = async_(supplying(
         query_data(step(Action::Cancel), r#"{"batch_id":"batch_1"}"#),
         OutcomeKind::AsyncAzureOpenAi,
     ));
-    assert_eq!(observe(&accepted).raised, None);
+    assert_eq!(observe(&accepted_cancel).raised, None);
 }
 
 // Only cancel checks the sync class; the other sync calls hand the client on as it is
-fn case_7_cancel_sync_client_type() {
+fn cancel_sync_client_type() {
     for kind in [OutcomeKind::AsyncOpenAi, OutcomeKind::AsyncAzureOpenAi] {
         let cancel = supplying(
             query_data(step(Action::Cancel), r#"{"batch_id":"batch_1"}"#),
             kind,
         );
-        let seen = observe(&cancel);
-        assert_eq!(seen.raised, Some(Raised::NotSync(NOT_SYNC.to_owned())));
-        assert!(seen.calls.is_empty());
+        let cancel_seen = observe(&cancel);
+        assert_eq!(
+            cancel_seen.raised,
+            Some(Raised::NotSync(NOT_SYNC.to_owned()))
+        );
+        assert!(cancel_seen.calls.is_empty());
     }
 
     for kind in [OutcomeKind::OpenAi, OutcomeKind::AzureOpenAi] {
@@ -256,9 +278,9 @@ fn case_7_cancel_sync_client_type() {
             query_data(step(Action::Cancel), r#"{"batch_id":"batch_1"}"#),
             kind,
         );
-        let seen = observe(&cancel);
-        assert_eq!(seen.raised, None);
-        assert_eq!(seen.calls.len(), 1);
+        let cancel_seen = observe(&cancel);
+        assert_eq!(cancel_seen.raised, None);
+        assert_eq!(cancel_seen.calls.len(), 1);
     }
 
     sync_calls_hand_the_client_on();
@@ -267,10 +289,10 @@ fn case_7_cancel_sync_client_type() {
 // a sync create, retrieve or list handed an async client sends the request anyway
 fn sync_calls_hand_the_client_on() {
     let create = supplying(create_step(), OutcomeKind::AsyncOpenAi);
-    let seen = observe(&create);
-    assert_eq!(seen.raised, None);
+    let create_seen = observe(&create);
+    assert_eq!(create_seen.raised, None);
     assert_eq!(
-        seen.calls,
+        create_seen.calls,
         vec![Recorded::Create(create_request(CREATE_DATA))]
     );
 
@@ -278,41 +300,39 @@ fn sync_calls_hand_the_client_on() {
         query_data(step(Action::Retrieve), r#"{"batch_id":"batch_1"}"#),
         OutcomeKind::AsyncOpenAi,
     );
-    let seen = observe(&retrieve);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.calls.len(), 1);
+    let retrieve_seen = observe(&retrieve);
+    assert_eq!(retrieve_seen.raised, None);
+    assert_eq!(retrieve_seen.calls.len(), 1);
 
     let list = supplying(listing(None, None), OutcomeKind::AsyncOpenAi);
-    let seen = observe(&list);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.reply, page_reply());
+    let list_seen = observe(&list);
+    assert_eq!(list_seen.raised, None);
+    assert_eq!(list_seen.reply, Some(page_reply()));
 }
 
 // Every SDK failure reaches the caller unchanged, and only litellm_params reaches the client
-fn case_8_sdk_error_passthrough() {
+fn sdk_error_passthrough() {
     let failure = status_failure();
-    let failing_step = failing(async_(create_step()), failure.clone());
-    let seen = observe(&failing_step);
+    let expected = Raised::Status {
+        status: failure.status,
+        error_type: failure.error_type.clone(),
+        param: failure.param.clone(),
+        code: failure.code.clone(),
+        message: failure.message.clone(),
+    };
+    let failing_step = failing(async_(create_step()), failure);
+    let failing_seen = observe(&failing_step);
+    assert_eq!(failing_seen.raised, Some(expected));
+    assert_eq!(failing_seen.reply, None);
     assert_eq!(
-        seen.raised,
-        Some(Raised::Status {
-            status: failure.status,
-            error_type: failure.error_type.clone(),
-            param: failure.param.clone(),
-            code: failure.code.clone(),
-            message: failure.message.clone(),
-        })
-    );
-    assert_eq!(seen.reply, None);
-    assert_eq!(
-        seen.calls,
+        failing_seen.calls,
         vec![Recorded::Create(create_request(CREATE_DATA))]
     );
 
     let broken = timed_out(create_step(), 0.5);
-    let seen = observe(&broken);
+    let broken_seen = observe(&broken);
     assert_eq!(
-        seen.raised,
+        broken_seen.raised,
         Some(Raised::Sdk(
             "the timeout must be a finite, non-negative number of seconds, not 0.5".to_owned()
         ))
@@ -327,11 +347,11 @@ fn params_reach_the_client() {
         create_step(),
         r#"{"timeout":30.0,"max_retries":5,"azure_ad_token":"ad-token"}"#,
     );
-    let seen = observe(&tuned);
-    assert_eq!(seen.raised, None);
-    assert_eq!(seen.seen[0].timeout, Some(30.0));
-    assert_eq!(seen.seen[0].max_retries, Some(5));
-    assert_eq!(seen.seen[0].ad_token.as_deref(), Some("ad-token"));
+    let tuned_seen = observe(&tuned);
+    assert_eq!(tuned_seen.raised, None);
+    assert_eq!(tuned_seen.seen[0].timeout, Some(30.0_f64));
+    assert_eq!(tuned_seen.seen[0].max_retries, Some(5));
+    assert_eq!(tuned_seen.seen[0].ad_token.as_deref(), Some("ad-token"));
 
     let untouched = observe(&create_step());
     assert_eq!(untouched.seen[0].timeout, None);
@@ -359,14 +379,23 @@ fn a_reply_that_is_not_a_batch_is_refused() {
 }
 
 #[rstest]
-#[case::batch_create(case_1_batch_create)]
-#[case::batch_retrieve_cancel_list(case_2_batch_retrieve_cancel_list)]
-#[case::resource_api_version(case_3_resource_api_version)]
-#[case::list_after_limit(case_4_list_after_limit)]
-#[case::sdk_client_missing(case_5_sdk_client_missing)]
-#[case::sdk_client_wrong_async(case_6_sdk_client_wrong_async)]
-#[case::cancel_sync_client_type(case_7_cancel_sync_client_type)]
-#[case::sdk_error_passthrough(case_8_sdk_error_passthrough)]
-fn batches_cases(#[case] case: fn()) {
-    case();
+#[case::batch_create(Scenario::BatchCreate)]
+#[case::batch_retrieve_cancel_list(Scenario::BatchRetrieveCancelList)]
+#[case::resource_api_version(Scenario::ResourceApiVersion)]
+#[case::list_after_limit(Scenario::ListAfterLimit)]
+#[case::sdk_client_missing(Scenario::SdkClientMissing)]
+#[case::sdk_client_wrong_async(Scenario::SdkClientWrongAsync)]
+#[case::cancel_sync_client_type(Scenario::CancelSyncClientType)]
+#[case::sdk_error_passthrough(Scenario::SdkErrorPassthrough)]
+fn batches_cases(#[case] scenario: Scenario) {
+    match scenario {
+        Scenario::BatchCreate => batch_create(),
+        Scenario::BatchRetrieveCancelList => batch_retrieve_cancel_list(),
+        Scenario::ResourceApiVersion => resource_api_version(),
+        Scenario::ListAfterLimit => list_after_limit(),
+        Scenario::SdkClientMissing => sdk_client_missing(),
+        Scenario::SdkClientWrongAsync => sdk_client_wrong_async(),
+        Scenario::CancelSyncClientType => cancel_sync_client_type(),
+        Scenario::SdkErrorPassthrough => sdk_error_passthrough(),
+    }
 }

@@ -22,7 +22,7 @@ fn helper_seeds_select_azure_batches() {
     assert!(!seeds.is_empty());
     let selected = seeds.iter().all(|source| {
         let parsed: HelperCase = serde_saphyr::from_str(source).unwrap();
-        assert!(validate_helper(Path::new("<helper>"), &parsed).is_ok());
+        validate_helper(Path::new("<helper>"), &parsed).unwrap();
         parsed.call.operation == "azure_batches"
     });
     assert!(selected);
