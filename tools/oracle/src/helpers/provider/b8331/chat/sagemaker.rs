@@ -1,6 +1,7 @@
 use betterlite_bedrock::sagemaker_runtime::chat::{ChatCall, ChatVariant, prepare_chat};
 use betterlite_bedrock::sagemaker_runtime::endpoint::ParamMap;
 use betterlite_bedrock::sagemaker_runtime::error::RuntimeFailure;
+use betterlite_bedrock::sagemaker_runtime::runtime::PreparedCall;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
 use betterlite_openai::openai_base_config::Headers;
@@ -24,35 +25,44 @@ fn headers_from(pairs: &[(String, String)]) -> Result<HeaderMap, Failure> {
     Ok(headers)
 }
 
-// the call the SageMaker chat config reads: the case's messages, the nova variant and a fixed clock
-fn chat_call<'case>(
-    case: &'case Case,
-    messages: &'case [ChatMessage],
-    optional_params: &'case Object,
-    signing: &'case ParamMap,
-) -> ChatCall<'case> {
-    ChatCall {
-        model: &case.model,
-        messages,
-        optional_params,
-        signing,
-        headers: Headers::new(),
-        hf_model_name: None,
-        variant: if case.op == Operation::SagemakerNova {
-            ChatVariant::Nova
-        } else {
-            ChatVariant::Chat
+// the request B5960's chat config signs: the case's messages, the nova variant and a fixed clock
+async fn signed_request(case: &Case, fixture: &Fixture) -> Result<PreparedCall, Failure> {
+    let messages: Vec<ChatMessage> =
+        convert(&case.messages).map_err(|error| failure(error.status(), &error))?;
+    let optional_params = Object::new();
+    let signing = ParamMap::new();
+    let runtime = fixture.runtime();
+    let variant = if case.op == Operation::SagemakerNova {
+        ChatVariant::Nova
+    } else {
+        ChatVariant::Chat
+    };
+    prepare_chat(
+        &runtime,
+        &ChatCall {
+            model: &case.model,
+            messages: &messages,
+            optional_params: &optional_params,
+            signing: &signing,
+            headers: Headers::new(),
+            hf_model_name: None,
+            variant,
+            stream: false,
+            reply: ReplyOptions {
+                json_mode: false,
+                provider: None,
+                base_model: None,
+                identifier: NEW_ID,
+                clock: system_clock,
+            },
+            configured_bearer: None,
         },
-        stream: false,
-        reply: ReplyOptions {
-            json_mode: false,
-            provider: None,
-            base_model: None,
-            identifier: NEW_ID,
-            clock: system_clock,
-        },
-        configured_bearer: None,
-    }
+    )
+    .await
+    .map_err(|error| {
+        let raised = RuntimeFailure::from(error);
+        failure(raised.status_code(), &raised)
+    })
 }
 
 // _complete_sagemaker_chat: the context provider reaches B5960's own chat config, so its body and signature are built here
@@ -60,16 +70,7 @@ pub(in crate::b8331) async fn sagemaker_chat(
     case: &Case,
     fixture: &Fixture,
 ) -> Result<(), Failure> {
-    let messages: Vec<ChatMessage> =
-        convert(&case.messages).map_err(|error| failure(error.status(), &error))?;
-    let optional_params = Object::new();
-    let signing = ParamMap::new();
-    let runtime = fixture.runtime();
-    let call = chat_call(case, &messages, &optional_params, &signing);
-    let prepared = prepare_chat(&runtime, &call).await.map_err(|error| {
-        let raised = RuntimeFailure::from(error);
-        failure(raised.status_code(), &raised)
-    })?;
+    let prepared = signed_request(case, fixture).await?;
     fixture.transport.keep(Sent {
         method: String::from("POST"),
         url: prepared.url,
