@@ -4,11 +4,11 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
 
-pub const ADMIN_VIEW_REQUIRED: &str = "Admin-only endpoint. Not allowed to access this.";
-pub const NO_ADAPTIVE_ROUTER: &str = "No adaptive_router is configured on this proxy.";
+const ADMIN_VIEW_REQUIRED: &str = "Admin-only endpoint. Not allowed to access this.";
+const NO_ADAPTIVE_ROUTER: &str = "No adaptive_router is configured on this proxy.";
 
 #[derive(Debug, Error)]
-pub enum RootRouteError {
+pub(super) enum RootRouteError {
     #[error("the caller does not have admin view")]
     AdminViewRequired,
     #[error("no adaptive_router is configured on this proxy")]

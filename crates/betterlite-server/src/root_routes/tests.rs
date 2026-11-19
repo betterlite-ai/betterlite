@@ -33,12 +33,12 @@ const NO_ROUTER_DETAIL: &str = "No adaptive_router is configured on this proxy."
 
 #[tokio::test]
 async fn home_answers_the_running_string_to_an_authenticated_caller() {
-    let (root_state, routers) = route_state(Vec::new());
+    let (root_state, fake_routers) = route_state(Vec::new());
     let reply = get(root_state, Some(&caller("key-owner", &[])), HOME_PATH).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.content_type.as_deref(), Some("application/json"));
     assert_eq!(reply.json::<String>(), "LiteLLM: RUNNING");
-    assert_eq!(routers.reads(), 0);
+    assert_eq!(fake_routers.reads(), 0);
 }
 
 #[rstest]
@@ -46,7 +46,7 @@ async fn home_answers_the_running_string_to_an_authenticated_caller() {
 #[case::adaptive_router_state(ADAPTIVE_ROUTER_STATE_PATH)]
 #[tokio::test]
 async fn the_keyed_routes_take_only_get(#[case] path: &str) {
-    let (root_state, _routers) = route_state(Vec::new());
+    let (root_state, _fake_routers) = route_state(Vec::new());
     let reply = call(root_state, None, "POST", path).await;
     assert_eq!(reply.status, StatusCode::METHOD_NOT_ALLOWED);
 }
@@ -59,7 +59,7 @@ async fn the_keyed_routes_take_only_get(#[case] path: &str) {
 #[case::platform_viewer_role(caller("jwt-user", &[Role::PlatformViewer]))]
 #[tokio::test]
 async fn state_admits_every_admin_view_caller(#[case] caller_context: AuthContext) {
-    let (root_state, routers) = route_state(vec![Vec::new()]);
+    let (root_state, fake_routers) = route_state(vec![Vec::new()]);
     let reply = get(
         root_state,
         Some(&caller_context),
@@ -67,7 +67,7 @@ async fn state_admits_every_admin_view_caller(#[case] caller_context: AuthContex
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(routers.reads(), 1);
+    assert_eq!(fake_routers.reads(), 1);
 }
 
 #[rstest]
@@ -82,7 +82,7 @@ async fn state_admits_every_admin_view_caller(#[case] caller_context: AuthContex
 async fn state_refuses_every_other_caller_before_reading_the_router(
     #[case] caller_context: AuthContext,
 ) {
-    let (root_state, routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
+    let (root_state, fake_routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
     let reply = get(
         root_state,
         Some(&caller_context),
@@ -91,21 +91,21 @@ async fn state_refuses_every_other_caller_before_reading_the_router(
     .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     assert_eq!(reply.json::<DetailReply>().detail.error, ADMIN_ONLY_DETAIL);
-    assert_eq!(routers.reads(), 0);
+    assert_eq!(fake_routers.reads(), 0);
 }
 
 #[tokio::test]
 async fn state_refuses_a_request_without_an_authenticated_caller() {
-    let (root_state, routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
+    let (root_state, fake_routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
     let reply = get(root_state, None, ADAPTIVE_ROUTER_STATE_PATH).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     assert_eq!(reply.json::<DetailReply>().detail.error, ADMIN_ONLY_DETAIL);
-    assert_eq!(routers.reads(), 0);
+    assert_eq!(fake_routers.reads(), 0);
 }
 
 #[tokio::test]
 async fn state_answers_not_configured_without_any_adaptive_router() {
-    let (root_state, routers) = route_state(Vec::new());
+    let (root_state, fake_routers) = route_state(Vec::new());
     let reply = get(
         root_state,
         Some(&caller("master_key", &[])),
@@ -114,12 +114,12 @@ async fn state_answers_not_configured_without_any_adaptive_router() {
     .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert_eq!(reply.json::<DetailReply>().detail.error, NO_ROUTER_DETAIL);
-    assert_eq!(routers.reads(), 1);
+    assert_eq!(fake_routers.reads(), 1);
 }
 
 #[tokio::test]
 async fn state_answers_an_empty_list_when_no_deployment_is_registered() {
-    let (root_state, _routers) = route_state(vec![Vec::new(), Vec::new()]);
+    let (root_state, _fake_routers) = route_state(vec![Vec::new(), Vec::new()]);
     let reply = get(
         root_state,
         Some(&caller("master_key", &[])),
@@ -132,7 +132,7 @@ async fn state_answers_an_empty_list_when_no_deployment_is_registered() {
 
 #[tokio::test]
 async fn state_lists_snapshots_in_registry_order() {
-    let (root_state, _routers) = route_state(vec![
+    let (root_state, _fake_routers) = route_state(vec![
         vec![
             snapshot("alpha-second", &["slow"]),
             snapshot("alpha-first", &["fast"]),
@@ -157,7 +157,7 @@ async fn state_lists_snapshots_in_registry_order() {
 
 #[tokio::test]
 async fn state_serializes_every_snapshot_field() {
-    let (root_state, _routers) = route_state(vec![vec![detailed_snapshot()]]);
+    let (root_state, _fake_routers) = route_state(vec![vec![detailed_snapshot()]]);
     let reply = get(
         root_state,
         Some(&caller("master_key", &[])),
@@ -269,9 +269,9 @@ impl AdaptiveRouterSnapshots for FakeAdaptiveRouters {
 }
 
 fn route_state(groups: Vec<Vec<StateSnapshot>>) -> (RootRouteState, Arc<FakeAdaptiveRouters>) {
-    let routers = FakeAdaptiveRouters::answering(groups);
-    let adaptive_routers: Arc<dyn AdaptiveRouterSnapshots> = Arc::clone(&routers);
-    (RootRouteState { adaptive_routers }, routers)
+    let fake_routers = FakeAdaptiveRouters::answering(groups);
+    let adaptive_routers: Arc<dyn AdaptiveRouterSnapshots> = Arc::clone(&fake_routers);
+    (RootRouteState { adaptive_routers }, fake_routers)
 }
 
 fn caller(subject: &str, roles: &[Role]) -> AuthContext {

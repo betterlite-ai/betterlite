@@ -1,5 +1,5 @@
-pub mod error;
-pub mod wire;
+mod error;
+mod wire;
 
 mod tests;
 
@@ -25,7 +25,7 @@ pub const ADAPTIVE_ROUTER_STATE_PATH: &str = "/adaptive_router/state";
 // B003 authenticates the master key into this subject, and a master-key request carries no key record to read a role from
 const MASTER_KEY_SUBJECT: &str = "master_key";
 
-// LiteLLM's llm_router.adaptive_routers: the deployments under each router key, in the registry's own order; an empty list is both "no router" and "no adaptive routers"
+// LiteLLM's llm_router.adaptive_routers: the deployments under each router key, in the registry's own order; an empty outer list is both "no router" and "no adaptive routers"
 pub trait AdaptiveRouterSnapshots: Send + Sync {
     fn snapshots(&self) -> Vec<Vec<StateSnapshot>>;
 }

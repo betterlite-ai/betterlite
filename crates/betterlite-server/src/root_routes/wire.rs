@@ -5,37 +5,37 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
-pub struct RoutersBody {
-    pub routers: Vec<SnapshotWire>,
+pub(super) struct RoutersBody {
+    pub(super) routers: Vec<SnapshotWire>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SnapshotWire {
-    pub router_name: String,
-    pub available_models: Vec<String>,
-    pub weights: WeightsWire,
-    pub model_costs: IndexMap<String, CostWire>,
-    pub cells: Vec<CellWire>,
+pub(super) struct SnapshotWire {
+    router_name: String,
+    available_models: Vec<String>,
+    weights: WeightsWire,
+    model_costs: IndexMap<String, CostWire>,
+    cells: Vec<CellWire>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct WeightsWire {
-    pub quality: f64,
-    pub cost: f64,
+struct WeightsWire {
+    quality: f64,
+    cost: f64,
 }
 
 // the exact Decimal value lands as a JSON number, as LiteLLM's float costs do
 #[derive(Debug, Serialize)]
-pub struct CostWire(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
+struct CostWire(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
 
 #[derive(Debug, Serialize)]
-pub struct CellWire {
-    pub request_type: RequestType,
-    pub model: String,
-    pub alpha: f64,
-    pub beta: f64,
-    pub samples: u64,
-    pub quality_mean: f64,
+struct CellWire {
+    request_type: RequestType,
+    model: String,
+    alpha: f64,
+    beta: f64,
+    samples: u64,
+    quality_mean: f64,
 }
 
 impl From<StateSnapshot> for SnapshotWire {
