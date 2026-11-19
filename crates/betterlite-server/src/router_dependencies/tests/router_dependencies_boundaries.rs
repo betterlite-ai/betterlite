@@ -325,6 +325,7 @@ fn a_config_write_accepts_the_edge_shapes_the_load_accepts() {
         r#"{"session_affinity":true}"#,
         r#"{"stall_escalation_enabled":true}"#,
         r#"{"custom_dimensions":[],"dimension_weights":{}}"#,
+        r#"{"custom_dimensions":null,"dimension_weights":null}"#,
     ] {
         let judged = validate_complexity_router_config_write(Some(&json(accepted)));
         assert!(judged.is_ok(), "{accepted}: {judged:?}");
