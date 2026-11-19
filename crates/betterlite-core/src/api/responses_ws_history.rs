@@ -6,8 +6,6 @@ pub mod provider;
 pub mod serialization;
 pub mod warmup;
 
-mod values;
-
 mod tests;
 
 use std::collections::HashMap;
@@ -23,7 +21,7 @@ use secrecy::SecretString;
 use self::error::{FrameSinkError, ResponsesWsHistoryError};
 use self::provider::ProviderResolution;
 use self::serialization::{ChunkWriter, INVALID_JSON_MESSAGE, INVALID_REQUEST_ERROR, send_error};
-use self::values::has_content;
+use crate::api::response_synthetic_events::python_value::has_content;
 use crate::api::responses_stream_events::ProjectQuotaCallback;
 
 pub const MANAGED_WS_SKIP_KWARGS: [&str; 5] = [

@@ -3,10 +3,10 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::api::response_id_codecs::response::decode_previous_response_id;
+use crate::api::response_synthetic_events::python_value::has_content;
 
 use super::error::ResponsesWsHistoryError;
 use super::serialization::Chunk;
-use super::values::has_content;
 use super::{FrameSink, ManagedResponsesWebSocket};
 
 pub const WARMUP_RESPONSE_ID_PREFIX: &str = "resp_warmup_";

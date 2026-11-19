@@ -1,5 +1,12 @@
 task: B944
-deviations: []
+deviations:
+  - what: >-
+      A non-finite timeout is refused with a shape error naming the field; LiteLLM copies any non-None float
+      into call_kwargs, so Infinity or NaN reaches the model call unchanged.
+    why: >-
+      JSON has no non-finite numbers and docs/compatibility.md makes the output standard JSON; a working
+      setup sends a finite timeout, which both sides copy unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2831-L2832
 kept_bugs:
   - what: >-
       A websocket send that fails while writing an error frame is swallowed, so no error frame reaches the

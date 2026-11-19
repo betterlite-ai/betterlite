@@ -5,9 +5,9 @@ use serde_json::Number;
 
 use super::error::ResponsesWsHistoryError;
 use super::provider::same_provider;
-use super::values::has_content;
 use super::warmup::warmup_source_params;
 use super::{FrameSink, ManagedResponsesWebSocket};
+use crate::api::response_synthetic_events::python_value::has_content;
 use crate::api::responses_parameters::requested::RESPONSES_OPTIONAL_PARAMS;
 
 const OPTIONAL_PROXY_FIELDS: [&str; 4] = ["tools", "tool_choice", "instructions", "metadata"];
