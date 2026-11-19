@@ -13,7 +13,10 @@ use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::run::{CALL_ID_FIELD, Diagnostics, GENERATED_ID, ScriptedEngine};
-use super::{Call, Outcome, ScriptedResult, SettingsRecord, SettingsSource, Step, StepOutcome};
+use super::{
+    Call, CompressCallRecord, DiagnosticRecord, Outcome, ScriptedResult, SettingsRecord,
+    SettingsSource, Step, StepOutcome,
+};
 use crate::sdk_http::error::SdkHttpError;
 
 #[derive(Serialize)]
@@ -104,7 +107,19 @@ impl Session {
             .into_keys()
             .collect();
         lookup.sort();
-        let compress_calls = take(
+        let (compress_calls, diagnostics) = self.drain_engine();
+        Ok(StepOutcome {
+            settings: record_of(&interception.settings),
+            skipped: result == HookResult::Skipped,
+            request,
+            compress_calls,
+            lookup,
+            diagnostics,
+        })
+    }
+
+    fn drain_engine(&self) -> (Vec<CompressCallRecord>, Vec<DiagnosticRecord>) {
+        let calls = take(
             &mut *self
                 .engine
                 .calls
@@ -118,14 +133,7 @@ impl Session {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner),
         );
-        Ok(StepOutcome {
-            settings: record_of(&interception.settings),
-            skipped: result == HookResult::Skipped,
-            request,
-            compress_calls,
-            lookup,
-            diagnostics,
-        })
+        (calls, diagnostics)
     }
 }
 
