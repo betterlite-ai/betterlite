@@ -404,17 +404,20 @@ impl FakeDatabase {
         for (kind, value) in rows {
             values.insert(*kind, value.clone());
         }
-        Self {
-            rows: values,
-            ..Self::default()
-        }
+        Self::assemble(values, None)
     }
 
     // a lookup that never answers, holding a flag that proves the future was dropped
     pub(super) fn hanging(dropped: Arc<AtomicBool>) -> Self {
+        Self::assemble(RowValues::default(), Some(dropped))
+    }
+
+    fn assemble(rows: RowValues, dropped: Option<Arc<AtomicBool>>) -> Self {
         Self {
-            dropped: Some(dropped),
-            ..Self::default()
+            rows,
+            calls: Mutex::default(),
+            events: None,
+            dropped,
         }
     }
 
