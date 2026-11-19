@@ -1,0 +1,17 @@
+kind: helper
+name: responses-stream-events-terminal-state-and-logging
+call:
+  responses_stream_events:
+    payloads:
+      - '{"type":"response.completed","sequence_number":2,"response":{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"gpt-4o","output":[],"parallel_tool_calls":false,"tool_choice":"auto","tools":[],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}}'
+      - '{"type":"response.incomplete","sequence_number":3,"response":{"id":"resp_2","object":"response","created_at":0,"status":"incomplete","model":"gpt-4o","output":[],"parallel_tool_calls":false,"tool_choice":"auto","tools":[],"incomplete_details":{"reason":"max_output_tokens"}}}'
+      - '{"type":"response.failed","sequence_number":4,"response":{"id":"resp_3","object":"response","created_at":0,"status":"failed","model":"gpt-4o","output":[],"parallel_tool_calls":false,"tool_choice":"auto","tools":[],"error":{"code":"server_error","message":"boom"},"usage":{"input_tokens":5,"output_tokens":6,"total_tokens":11}}}'
+    model: gpt-4o
+    provider: openai
+    request_data: {"input": "hello"}
+    metadata: {}
+    transform: configured
+    estimate: fixed
+    cost: positive
+env: {}
+compare: {ignore: []}

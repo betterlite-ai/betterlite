@@ -1,0 +1,19 @@
+kind: helper
+name: embedding_scalar_and_prefix
+call:
+  copilot_auxiliary:
+    action: embedding
+    model: github_copilot/text-embedding-3-small
+    input: hello
+    non_default_params: {}
+    optional_params: {}
+    headers: {x-caller: kept}
+    copilot_key: stored-key
+    api_base: null
+    cached_base: null
+    env_base: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/headers/x-request-id
+      why: LiteLLM draws a random request id for every call
