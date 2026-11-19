@@ -613,7 +613,8 @@ fn phoenix_proxy_mode_closes_the_parent_on_failure() {
     let mut kwargs = base_kwargs("call-failure");
     with_proxy(&mut kwargs);
     handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Failure).expect("the failed call");
-    let parent = named(&rig.spans(), PROXY_PARENT_SPAN_NAME);
+    let spans = rig.spans();
+    let parent = named(&spans, PROXY_PARENT_SPAN_NAME);
     assert!(matches!(parent.status, Status::Error { .. }));
 }
 
