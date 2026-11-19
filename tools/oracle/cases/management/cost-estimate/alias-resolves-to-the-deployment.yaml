@@ -1,4 +1,4 @@
-name: cost-estimate-alias-with-on-prem-custom-prices
+name: cost-estimate-alias-resolves-to-the-deployment
 config: |
   general_settings:
     master_key: oracle-master

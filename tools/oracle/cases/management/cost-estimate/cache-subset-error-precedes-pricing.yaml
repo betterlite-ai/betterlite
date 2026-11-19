@@ -1,4 +1,4 @@
-name: cost-estimate-unpriceable-model-and-invalid-subsets
+name: cost-estimate-cache-subset-error-precedes-pricing
 config: |
   general_settings:
     master_key: oracle-master
