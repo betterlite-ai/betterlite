@@ -28,6 +28,6 @@ deviations:
     why: betterlite has no paid tier, and a license gate would refuse every Google Secret Manager setup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L28-L31
 kept_bugs:
-  - what: A known alerting callback whose logger fails to initialize is logged with "[Non-Blocking Error] Error initializing custom logger: ..." and boot continues, where betterlite's error rules would surface it.
+  - what: A known alerting callback whose logger fails to initialize is logged with the "[Non-Blocking Error] Error initializing custom logger" prefix and boot continues, where betterlite's error rules would surface it.
     why: _init_custom_logger_compatible_class catches every exception, logs it and returns None, and _load_alerting_settings keeps going, so a setup with one broken alerting integration still starts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5185-L5187
