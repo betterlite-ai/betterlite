@@ -18,6 +18,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -144,6 +145,7 @@ async fn execute(
 ) -> Result<SdkResult, SdkHttpError> {
     let client = outbound_client(env)?;
     let settings = variation_settings(env, api_base)?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     let call = ImageVariationCall::from(input);
     let catalog = BundledCatalog::default().get();
     let known_model_names = BTreeSet::new();
@@ -168,7 +170,7 @@ async fn execute(
         clock: || 0,
     };
     if input.asynchronous {
-        match aimage_variation(&service, &call).await {
+        match aimage_variation(&service, &call, &redactor).await {
             Ok(answer) => success(answer),
             Err(error) => exception_failure(&error),
         }

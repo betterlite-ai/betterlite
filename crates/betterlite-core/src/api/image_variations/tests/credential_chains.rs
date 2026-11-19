@@ -57,6 +57,30 @@ fn openai_key_falls_through_its_sources() {
 }
 
 #[test]
+fn openai_key_skips_an_empty_configured_key() {
+    let policies = VariationPolicies::default();
+    let settings = settings(
+        "litellm_settings:\n  api_key: \"\"\n  openai_key: yaml-openai-key\n",
+        &[],
+    );
+    let key = (policies.credentials)(ProviderId::Openai, None, None, &settings)
+        .api_key
+        .expect("the empty configured key falls through");
+    assert_eq!(key.expose_secret(), "yaml-openai-key");
+}
+
+#[test]
+fn openai_base_skips_an_empty_configured_base() {
+    let policies = VariationPolicies::default();
+    let settings = settings(
+        "litellm_settings:\n  api_base: \"\"\n",
+        &[("OPENAI_BASE_URL", "https://env.example/v1")],
+    );
+    let base = (policies.credentials)(ProviderId::Openai, None, None, &settings).api_base;
+    assert_eq!(base.as_deref(), Some("https://env.example/v1"));
+}
+
+#[test]
 fn openai_base_prefers_the_supplied_then_yaml_value() {
     let policies = VariationPolicies::default();
     let all = settings(

@@ -1,7 +1,5 @@
 use betterlite_config::sections::image_variations::Settings;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::identity::azure::is_non_openai_azure_model;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionRequest, resolve,
@@ -46,7 +44,10 @@ where
     Topaz: TopazVariationExecutor,
 {
     fn begin(&self, call: &ImageVariationCall) -> Result<VariationStep<'_>, ImageVariationError> {
-        let model = declared_model(call, self.resolution.catalog);
+        let model = call
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
         let request = ResolutionRequest {
             model: &model,
             // resolve treats an empty declaration as absent, as get_llm_provider's falsy check does
@@ -199,27 +200,6 @@ struct ResolvedCall {
     api_key: SecretString,
     api_base: String,
     provider: VariationProvider,
-}
-
-// get_llm_provider's line 207 prefix runs after its azure non-openai branch, whose model keeps its prefix
-fn declared_model(call: &ImageVariationCall, catalog: &ModelCatalog) -> String {
-    let model = call
-        .model
-        .clone()
-        .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
-    let Some(provider) = call
-        .custom_llm_provider
-        .as_deref()
-        .filter(|provider| !provider.is_empty())
-    else {
-        return model;
-    };
-    let azure_branch =
-        model.split('/').next() == Some("azure") && is_non_openai_azure_model(&model, catalog);
-    if azure_branch || model.split('/').next() == Some(provider) {
-        return model;
-    }
-    format!("{provider}/{model}")
 }
 
 // the handler builds ImageResponse(**response_json) over the reply: litellm's ImageUsage defaults to zeros

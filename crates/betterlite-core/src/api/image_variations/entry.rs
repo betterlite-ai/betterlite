@@ -1,8 +1,9 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageResponse;
+use betterlite_redact::secret::Redactor;
 
 use super::call::{ImageVariationCall, VariationAnswer, VariationStep};
-use super::error::{ImageVariationError, VariationException, project};
+use super::error::{ImageVariationError, VariationException, project, raw_exception};
 
 const DEFAULT_PROVIDER: &str = "openai";
 
@@ -32,6 +33,7 @@ where
 pub async fn aimage_variation<O>(
     operation: &O,
     call: &ImageVariationCall,
+    redactor: &Redactor,
 ) -> Result<VariationAnswer, VariationException>
 where
     O: ImageVariationOperation + Sync,
@@ -41,15 +43,21 @@ where
     let provider = attributed_provider(operation, call);
     let first = image_variation(operation, &asynchronous)
         .await
-        .map_err(|error| VariationException::mapped(&error, call.model.as_deref(), &provider))?;
+        .map_err(|error| {
+            VariationException::mapped(&error, call.model.as_deref(), &provider, redactor)
+        })?;
     match first {
         VariationAnswer::Mapping(mapping) => {
-            let response = normalized(mapping, call.model.as_deref(), &provider)?;
+            let response = normalized(mapping, call.model.as_deref(), &provider, redactor)?;
             Ok(VariationAnswer::Response(response))
         }
-        VariationAnswer::Unexpected(_) => image_variation(operation, &asynchronous)
-            .await
-            .map_err(|error| VariationException::mapped(&error, call.model.as_deref(), &provider)),
+        VariationAnswer::Unexpected(_) => {
+            image_variation(operation, &asynchronous)
+                .await
+                .map_err(|error| {
+                    VariationException::mapped(&error, call.model.as_deref(), &provider, redactor)
+                })
+        }
         VariationAnswer::Response(response) => Ok(VariationAnswer::Response(response)),
     }
 }
@@ -75,13 +83,22 @@ fn normalized(
     mapping: Json,
     model: Option<&str>,
     provider: &str,
+    redactor: &Redactor,
 ) -> Result<ImageResponse, VariationException> {
     let value = serde_json::to_value(mapping).map_err(|error| {
         let message = error.to_string();
-        project(&message, &message, None, model, provider)
+        project(
+            raw_exception(&message, None, model, provider),
+            &message,
+            redactor,
+        )
     })?;
     serde_json::from_value(value).map_err(|error| {
         let message = error.to_string();
-        project(&message, &message, None, model, provider)
+        project(
+            raw_exception(&message, None, model, provider),
+            &message,
+            redactor,
+        )
     })
 }

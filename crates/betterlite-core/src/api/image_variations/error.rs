@@ -1,7 +1,8 @@
+use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::error::ErrorClass;
-use betterlite_error::openai::{OpenaiExceptionInput, map_openai_exception};
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
+use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
 // image_variation's own failures: every message is the one its ValueError carries in LiteLLM
@@ -45,57 +46,126 @@ pub struct VariationException {
 }
 
 impl VariationException {
-    pub(crate) fn mapped(error: &ImageVariationError, model: Option<&str>, provider: &str) -> Self {
-        let (status, message, error_str) = match error {
+    pub(crate) fn mapped(
+        error: &ImageVariationError,
+        model: Option<&str>,
+        provider: &str,
+        redactor: &Redactor,
+    ) -> Self {
+        match error {
             ImageVariationError::Resolution(source) => {
-                (Some(400), source.to_string(), source.to_string())
+                let message = source.to_string();
+                project(
+                    raw_exception(&message, Some(400), model, provider),
+                    &message,
+                    redactor,
+                )
             }
             ImageVariationError::OpenAi(source) => {
-                // exception_type reads the OpenAIError text "Error code: {status} - {body}"
-                let text = match source.source.as_ref() {
-                    ImageVariationSource::Status { .. } => {
-                        format!("Error code: {} - {}", source.status_code, source.message)
-                    }
-                    _ => source.message.clone(),
-                };
-                (Some(source.status_code), source.message.clone(), text)
+                let (error_str, body) = openai_projection(source);
+                project(
+                    RawException {
+                        body,
+                        ..raw_exception(&error_str, Some(source.status_code), model, provider)
+                    },
+                    &source.message,
+                    redactor,
+                )
             }
-            ImageVariationError::Topaz(source) => (
-                source.status_code,
-                source.message.clone(),
-                source.message.clone(),
+            ImageVariationError::Topaz(source) => project(
+                raw_exception(&source.message, source.status_code, model, provider),
+                &source.message,
+                redactor,
             ),
             ImageVariationError::InvalidProvider { .. }
             | ImageVariationError::UnknownModelInfo { .. }
             | ImageVariationError::MissingKey { .. }
             | ImageVariationError::MissingBase { .. }
             | ImageVariationError::InvalidTimeout { .. } => {
-                (None, error.to_string(), error.to_string())
+                let message = error.to_string();
+                project(
+                    raw_exception(&message, None, model, provider),
+                    &message,
+                    redactor,
+                )
             }
-        };
-        project(&message, &error_str, status, model, provider)
+        }
     }
 }
 
-// litellm's exception_type reads no structured body off these exceptions, so only status and text reach it
-pub(crate) fn project(
-    message: &str,
+// exception_type reads the SDK's "Error code: {status} - {body}" text, while the raised message stays the body's own
+fn openai_projection(source: &OpenAiImageVariationError) -> (String, Option<RawExceptionBody>) {
+    match source.source.as_ref() {
+        ImageVariationSource::Status { .. } => (
+            format!("Error code: {} - {}", source.status_code, source.message),
+            status_body(&source.message),
+        ),
+        ImageVariationSource::MissingConfig { .. }
+        | ImageVariationSource::MissingData
+        | ImageVariationSource::MaxRetries
+        | ImageVariationSource::MissingApiKey
+        | ImageVariationSource::ClientKind { .. }
+        | ImageVariationSource::Option { .. }
+        | ImageVariationSource::Unsupported { .. }
+        | ImageVariationSource::Form(_)
+        | ImageVariationSource::Url(_)
+        | ImageVariationSource::Transport(_)
+        | ImageVariationSource::Logging(_)
+        | ImageVariationSource::Reply(_)
+        | ImageVariationSource::Header(_) => (source.message.clone(), None),
+    }
+}
+
+// the openai SDK's APIStatusError: e.body is the response's error object, or the whole body when it has none
+fn status_body(text: &str) -> Option<RawExceptionBody> {
+    let RawExceptionBody {
+        kind,
+        param,
+        code,
+        message,
+        error,
+    } = serde_json::from_str::<RawExceptionBody>(text).ok()?;
+    let Some(detail) = error else {
+        return Some(RawExceptionBody {
+            kind,
+            param,
+            code,
+            message,
+            error: None,
+        });
+    };
+    Some(RawExceptionBody {
+        kind: detail.kind,
+        param: detail.param,
+        code: detail.code,
+        message: detail.message,
+        error: None,
+    })
+}
+
+// the attributes exception_type reads off the original exception before any provider branch runs
+pub(crate) fn raw_exception(
     error_str: &str,
     status_code: Option<u16>,
     model: Option<&str>,
     provider: &str,
-) -> VariationException {
-    let input = OpenaiExceptionInput {
+) -> RawException {
+    RawException {
         model: model.unwrap_or_default().to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: error_str.to_owned(),
         status_code,
         status_code_is_synthesized: false,
-        message: Some(message.to_owned()),
+        message: Some(error_str.to_owned()),
         body: None,
-    };
+        exception_type: String::new(),
+    }
+}
+
+// exception_type's full dispatch: the timeout preamble, every provider family, then _map_exception_by_status
+pub(crate) fn project(raw: RawException, message: &str, redactor: &Redactor) -> VariationException {
     VariationException {
-        class: map_openai_exception(&input),
+        class: dispatch(&DispatchInput::Raw(Box::new(raw)), redactor),
         message: message.to_owned(),
     }
 }

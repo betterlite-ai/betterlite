@@ -22,6 +22,7 @@ use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageFile, ImageInputTokens, ImageParams, ImageResponse, ImageUsage,
 };
 use betterlite_openai::image_variations::transport::ImageVariationTransport;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::super::call::{
     ImageVariationCall, PendingVariation, VariationAnswer, VariationOptions,
@@ -71,6 +72,10 @@ impl Fixture {
             globals: GlobalCredentials::default(),
         }
     }
+}
+
+pub(super) fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles")
 }
 
 pub(super) fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
@@ -257,9 +262,9 @@ impl TopazVariationExecutor for NoTopaz {
 pub(super) struct FailingTopaz(TopazVariationError);
 
 impl FailingTopaz {
-    pub(super) fn bad_gateway(message: &str) -> Self {
+    pub(super) fn new(status_code: u16, message: &str) -> Self {
         Self(TopazVariationError {
-            status_code: Some(502),
+            status_code: Some(status_code),
             message: message.to_owned(),
         })
     }

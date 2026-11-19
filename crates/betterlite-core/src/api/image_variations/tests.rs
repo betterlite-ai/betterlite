@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod credential_chains;
+mod status_mapping;
 mod support;
 
 use std::sync::atomic::Ordering;
@@ -26,7 +27,8 @@ use super::error::ImageVariationError;
 use self::support::{
     ERROR_BODY, FailingOperation, FailingTopaz, Fixture, NoTopaz, RecordingTopaz,
     RecordingTransport, SOURCE, SUCCESS_BODY, Scripted, ScriptedOperation, ignored_options,
-    metadata, multipart_parts, recorded_calls, response, service, settings, variation_call,
+    metadata, multipart_parts, recorded_calls, redactor, response, service, settings,
+    variation_call,
 };
 
 #[test]
@@ -93,7 +95,7 @@ async fn async_variation_posts_the_image_alone() {
     );
     let mut call = variation_call();
     call.options = ignored_options();
-    let answer = aimage_variation(&service, &call)
+    let answer = aimage_variation(&service, &call, &redactor())
         .await
         .expect("the async variation succeeds");
     assert_eq!(answer, VariationAnswer::Response(response()));
@@ -138,7 +140,7 @@ async fn sync_and_async_variations_answer_the_same() {
     let sync_answer = image_variation(&sync_service, &call)
         .await
         .expect("the sync answer");
-    let async_answer = aimage_variation(&async_service, &call)
+    let async_answer = aimage_variation(&async_service, &call, &redactor())
         .await
         .expect("the async answer");
     assert_eq!(sync_answer, async_answer);
@@ -501,6 +503,17 @@ async fn invalid_providers_raise_before_http() {
         anthropic_error.to_string(),
         "Invalid image variation provider: anthropic_text. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>"
     );
+    // get_llm_provider prefixes a bare model after its azure branch, so command-r resolves as azure here
+    let mut bare_azure = variation_call();
+    bare_azure.custom_llm_provider = Some("azure".to_owned());
+    bare_azure.model = Some("command-r".to_owned());
+    let bare_azure_error = image_variation(&service, &bare_azure)
+        .await
+        .expect_err("the declared provider is not a variation provider");
+    assert_eq!(
+        bare_azure_error.to_string(),
+        "Invalid image variation provider: azure. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>"
+    );
     assert_eq!(transport.take().len(), 0);
 }
 
@@ -519,7 +532,7 @@ async fn unknown_models_project_a_bad_request() {
     );
     let mut call = variation_call();
     call.model = Some("mystery-variation-model".to_owned());
-    let error = aimage_variation(&service, &call)
+    let error = aimage_variation(&service, &call, &redactor())
         .await
         .expect_err("the model names no provider");
     assert_eq!(error.class.metadata().status_code, 400);
@@ -651,7 +664,7 @@ async fn topaz_failures_keep_their_status_and_message() {
     let context = fixture.context();
     let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
     let transport = RecordingTransport::new(200, SUCCESS_BODY);
-    let topaz = FailingTopaz::bad_gateway("topaz is down");
+    let topaz = FailingTopaz::new(502, "topaz is down");
     let service = service(
         &settings,
         &context,
@@ -661,7 +674,7 @@ async fn topaz_failures_keep_their_status_and_message() {
     );
     let mut call = variation_call();
     call.custom_llm_provider = Some("topaz".to_owned());
-    let error = aimage_variation(&service, &call)
+    let error = aimage_variation(&service, &call, &redactor())
         .await
         .expect_err("the topaz executor fails");
     assert_eq!(error.class.metadata().status_code, 502);
@@ -708,12 +721,16 @@ async fn bad_request_variations_project_a_bad_request() {
         &NoTopaz,
         VariationPolicies::default(),
     );
-    let error = aimage_variation(&service, &variation_call())
+    let error = aimage_variation(&service, &variation_call(), &redactor())
         .await
         .expect_err("the provider refuses the request");
     let metadata = error.class.metadata();
     assert_eq!(metadata.status_code, 400);
-    assert_eq!(metadata.error_type, WireField::Null);
+    // the SDK's APIStatusError.body is the response's error object, so openai.APIError reads its type
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text("invalid_request_error".to_owned())
+    );
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
     assert!(matches!(&error.class, ErrorClass::BadRequest(_)));
@@ -734,7 +751,7 @@ async fn rate_limited_variations_project_without_a_retry() {
         &NoTopaz,
         VariationPolicies::default(),
     );
-    let error = aimage_variation(&service, &variation_call())
+    let error = aimage_variation(&service, &variation_call(), &redactor())
         .await
         .expect_err("the provider rate limits the call");
     let metadata = error.class.metadata();
@@ -763,7 +780,7 @@ async fn rate_limits_win_over_a_context_window_body() {
         &NoTopaz,
         VariationPolicies::default(),
     );
-    let error = aimage_variation(&service, &variation_call())
+    let error = aimage_variation(&service, &variation_call(), &redactor())
         .await
         .expect_err("the provider rate limits the call");
     assert!(matches!(&error.class, ErrorClass::RateLimit(_)));
@@ -796,7 +813,7 @@ async fn async_call_forces_the_flag_and_keeps_the_context() {
     let operation = ScriptedOperation::new(vec![Scripted::Response(response())]);
     let mut call = variation_call();
     call.metadata = metadata();
-    let answer = aimage_variation(&operation, &call)
+    let answer = aimage_variation(&operation, &call, &redactor())
         .await
         .expect("the scripted answer");
     assert_eq!(answer, VariationAnswer::Response(response()));
@@ -815,7 +832,7 @@ async fn dict_answers_normalize_once() {
         serde_json::from_str(r#"{"created":1,"data":[{"url":"https://example.test/a.png"}]}"#)
             .expect("the cached answer parses");
     let operation = ScriptedOperation::new(vec![Scripted::Mapping(mapping)]);
-    let answer = aimage_variation(&operation, &variation_call())
+    let answer = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect("the dict normalizes");
     let expected = ImageResponse {
@@ -834,7 +851,7 @@ async fn dict_answers_normalize_once() {
 #[tokio::test]
 async fn pending_answers_are_awaited_once() {
     let operation = ScriptedOperation::new(vec![Scripted::Pending(response())]);
-    let answer = aimage_variation(&operation, &variation_call())
+    let answer = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect("the pending answer resolves");
     assert_eq!(answer, VariationAnswer::Response(response()));
@@ -845,7 +862,7 @@ async fn pending_answers_are_awaited_once() {
 #[tokio::test]
 async fn response_answers_pass_through() {
     let operation = ScriptedOperation::new(vec![Scripted::Response(response())]);
-    let answer = aimage_variation(&operation, &variation_call())
+    let answer = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect("the response passes through");
     assert_eq!(answer, VariationAnswer::Response(response()));
@@ -859,7 +876,7 @@ async fn unexpected_answers_repeat_the_sync_call() {
         Scripted::Unexpected(Json::Number(Number::from(5_i32))),
         Scripted::Unexpected(Json::Number(Number::from(7_i32))),
     ]);
-    let answer = aimage_variation(&operation, &variation_call())
+    let answer = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect("the second answer is returned unchecked");
     assert_eq!(
@@ -877,7 +894,7 @@ async fn dict_answers_with_wrong_fields_raise_the_wrapper_exception() {
     let mapping: Json =
         serde_json::from_str(r#"{"created":"soon"}"#).expect("the broken answer parses");
     let operation = ScriptedOperation::new(vec![Scripted::Mapping(mapping)]);
-    let error = aimage_variation(&operation, &variation_call())
+    let error = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect_err("the fields do not normalize");
     assert_eq!(error.class.metadata().status_code, 500);
@@ -886,7 +903,7 @@ async fn dict_answers_with_wrong_fields_raise_the_wrapper_exception() {
 #[tokio::test]
 async fn async_failures_default_to_openai() {
     let operation = FailingOperation::new(None);
-    let error = aimage_variation(&operation, &variation_call())
+    let error = aimage_variation(&operation, &variation_call(), &redactor())
         .await
         .expect_err("the operation fails");
     assert_eq!(error.class.metadata().provider.as_deref(), Some("openai"));
@@ -902,7 +919,7 @@ async fn async_failures_infer_a_provider_only_with_a_model() {
     let operation = FailingOperation::new(Some("topaz"));
     let mut call = variation_call();
     call.model = Some("dall-e-2".to_owned());
-    let error = aimage_variation(&operation, &call)
+    let error = aimage_variation(&operation, &call, &redactor())
         .await
         .expect_err("the operation fails");
     assert_eq!(error.class.metadata().provider.as_deref(), Some("topaz"));
@@ -915,7 +932,7 @@ async fn async_failures_prefer_the_declared_provider() {
     let mut call = variation_call();
     call.model = Some("dall-e-2".to_owned());
     call.custom_llm_provider = Some("azure".to_owned());
-    let error = aimage_variation(&operation, &call)
+    let error = aimage_variation(&operation, &call, &redactor())
         .await
         .expect_err("the operation fails");
     assert_eq!(error.class.metadata().provider.as_deref(), Some("azure"));
@@ -942,7 +959,7 @@ async fn async_failures_use_the_provider_the_model_resolves_to() {
     );
     let mut call = variation_call();
     call.model = Some("topaz/dall-e-3".to_owned());
-    let error = aimage_variation(&service, &call)
+    let error = aimage_variation(&service, &call, &redactor())
         .await
         .expect_err("the topaz key is missing");
     assert_eq!(error.class.metadata().provider.as_deref(), Some("topaz"));
