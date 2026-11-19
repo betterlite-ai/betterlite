@@ -59,6 +59,8 @@ fn assert_spoofed_signing_hosts_need_configuration() {
         "https://gateway-abc.gateway.bedrock-agentcore.us-east-1.amazonaws.com.cn/mcp",
         "https://gateway-abc.gateway.bedrock-agentcore.us-east-1.amazonaws.com.evil.com/mcp",
         "https://gateway-abc.gateway.bedrock-agentcore.us-east-1.amazonaws.com@evil.com/mcp",
+        "https://gateway-abc.gateway.bedrock-agentcore.us-east-1.amazonaws.org/mcp",
+        "https://gateway-abc.gateway.bedrock-agentcore..amazonaws.com/mcp",
     ];
     for api_base in spoofs {
         let mut case = baseline(api_base);
