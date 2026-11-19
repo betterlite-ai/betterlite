@@ -1,0 +1,23 @@
+kind: helper
+name: auth-resource-grants-search-tool-allowlist
+call:
+  auth_resource_grants:
+    function: search_key
+    search_tool_name: search-b
+    key:
+      object_permission_id: op-allow
+      permission:
+        object_permission_id: op-allow
+        search_tools: [search-a, search-b]
+calls:
+  - auth_resource_grants:
+      function: search_key
+      search_tool_name: search-b
+      key:
+        object_permission_id: op-glob
+        permission:
+          object_permission_id: op-glob
+          search_tools: [search-*]
+env: {}
+compare:
+  ignore: []

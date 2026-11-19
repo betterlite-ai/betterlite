@@ -1,0 +1,12 @@
+task: B984
+deviations:
+- what: Responses function-call arguments that are valid JSON but not an object are refused with a typed ArgumentsNotObject error; LiteLLM hands the value to AnthropicResponseContentBlockToolUse, whose pydantic input dict check raises ValidationError. The typed branch at line 668 and the raw branch at line 708 both behave this way.
+  why: A client-supplied call id or arguments that cannot become a tool_use block is a bad request, so betterlite returns a typed rejection instead of an internal server error.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/transformation.py#L668-L680
+- what: Function-call arguments larger than the resolved JSON boundary (16 MiB by default) are refused with a typed limit error; LiteLLM calls json.loads on them with no size cap.
+  why: The ApiLimits boundary from B1087 guards untrusted provider bytes before parsing, so an oversized arguments string cannot allocate unbounded memory.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/transformation.py#L708-L718
+- what: context_management.edits[].trigger.value must be a JSON integer, an integer-valued float, or an integer string; any other JSON type is refused with a typed error. Python's int() also accepts booleans and digit-grouped strings such as "1_000".
+  why: The translated compact_threshold is an integer field, so betterlite follows docs/compatibility.md and refuses a value outside that type instead of copying Python's runtime conversions.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/transformation.py#L450-L454
+kept_bugs: []

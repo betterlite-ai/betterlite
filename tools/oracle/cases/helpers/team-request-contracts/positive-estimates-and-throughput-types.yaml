@@ -1,0 +1,18 @@
+kind: helper
+name: positive_estimates_and_throughput_types
+call:
+  team_request_contracts:
+    operation: create
+    document: {"default_estimated_output_tokens": 1}
+calls:
+  - team_request_contracts: {operation: create, document: {"default_estimated_output_tokens": 0}}
+  - team_request_contracts: {operation: create, document: {"default_estimated_output_tokens": -1}}
+  - team_request_contracts: {operation: create, document: {"default_estimated_output_tokens": 1.5}}
+  - team_request_contracts: {operation: create, document: {"default_estimated_output_tokens_per_model": {"gpt": 2}}}
+  - team_request_contracts: {operation: create, document: {"default_estimated_output_tokens_per_model": {"gpt": 0}}}
+  - team_request_contracts: {operation: create, document: {"rpm_limit_type": "guaranteed_throughput", "tpm_limit_type": "best_effort_throughput"}}
+  - team_request_contracts: {operation: create, document: {"rpm_limit_type": "dynamic"}}
+  - team_request_contracts: {operation: create, document: {"tpm_limit_type": ""}}
+  - team_request_contracts: {operation: create, document: {"rpm_limit_type": null}}
+env: {}
+compare: {ignore: []}
