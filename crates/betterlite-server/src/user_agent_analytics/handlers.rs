@@ -18,12 +18,13 @@ use super::responses::ActiveUsersAnalyticsResponse;
 use super::responses::DistinctTagResponse;
 use super::responses::DistinctTagsResponse;
 use super::responses::TagActiveUsersResponse;
+use super::rows::ActiveUsersReport;
 use super::state::UserAgentAnalyticsState;
 use super::store::UserAgentAnalyticsStore;
 use super::window::MAX_DAYS;
 use super::window::WAU_SPAN_DAYS;
 use super::window::Window;
-use super::window::weekly_result;
+use super::window::active_users_result;
 
 #[derive(Clone, Copy)]
 pub(super) enum AnalyticsReport {
@@ -52,8 +53,12 @@ pub(super) async fn respond(
     let raw_query = raw_query.as_deref().unwrap_or_default();
     match report {
         AnalyticsReport::Distinct => distinct(store).await,
-        AnalyticsReport::Daily => daily(&state, store, raw_query).await,
-        AnalyticsReport::Weekly => weekly(&state, store, raw_query).await,
+        AnalyticsReport::Daily => {
+            active_users(&state, store, raw_query, ActiveUsersReport::Daily).await
+        }
+        AnalyticsReport::Weekly => {
+            active_users(&state, store, raw_query, ActiveUsersReport::Weekly).await
+        }
     }
 }
 
@@ -80,17 +85,23 @@ async fn distinct(store: &dyn UserAgentAnalyticsStore) -> Response {
     }
 }
 
-async fn daily(
+async fn active_users(
     state: &UserAgentAnalyticsState,
     store: &dyn UserAgentAnalyticsStore,
     raw_query: &str,
+    report: ActiveUsersReport,
 ) -> Response {
-    let request = match active_users_request(state.clock.as_ref(), raw_query, MAX_DAYS) {
+    let (span_days, failure) = match report {
+        ActiveUsersReport::Daily => (MAX_DAYS, "Failed to fetch DAU analytics"),
+        ActiveUsersReport::Weekly => (WAU_SPAN_DAYS, "Failed to fetch WAU analytics"),
+    };
+    let request = match active_users_request(state.clock.as_ref(), raw_query, span_days) {
         Ok(request) => request,
-        Err(source) => return query_failed("Failed to fetch DAU analytics", &source),
+        Err(source) => return query_failed(failure, &source),
     };
     let rows = match store
-        .daily_active_users(
+        .active_users(
+            report,
             &request.window.start_date,
             &request.window.end_date,
             request.filter.as_ref(),
@@ -98,47 +109,15 @@ async fn daily(
         .await
     {
         Ok(rows) => rows,
-        Err(source) => return query_failed("Failed to fetch DAU analytics", &source),
+        Err(source) => return query_failed(failure, &source),
     };
-    let results = rows
+    let results = match rows
         .into_iter()
-        .map(|row| TagActiveUsersResponse {
-            tag: row.tag,
-            active_users: row.active_users,
-            date: row.date,
-            period_start: None,
-            period_end: None,
-        })
-        .collect();
-    Json(ActiveUsersAnalyticsResponse { results }).into_response()
-}
-
-async fn weekly(
-    state: &UserAgentAnalyticsState,
-    store: &dyn UserAgentAnalyticsStore,
-    raw_query: &str,
-) -> Response {
-    let request = match active_users_request(state.clock.as_ref(), raw_query, WAU_SPAN_DAYS) {
-        Ok(request) => request,
-        Err(source) => return query_failed("Failed to fetch WAU analytics", &source),
-    };
-    let rows = match store
-        .weekly_active_users(
-            &request.window.start_date,
-            &request.window.end_date,
-            request.filter.as_ref(),
-        )
-        .await
-    {
-        Ok(rows) => rows,
-        Err(source) => return query_failed("Failed to fetch WAU analytics", &source),
-    };
-    match rows
-        .into_iter()
-        .map(|row| weekly_result(&request.window, row))
+        .map(|row| active_users_result(&request.window, report, row))
         .collect::<Result<Vec<TagActiveUsersResponse>, AnalyticsError>>()
     {
-        Ok(results) => Json(ActiveUsersAnalyticsResponse { results }).into_response(),
-        Err(source) => query_failed("Failed to fetch WAU analytics", &source),
-    }
+        Ok(results) => results,
+        Err(source) => return query_failed(failure, &source),
+    };
+    Json(ActiveUsersAnalyticsResponse { results }).into_response()
 }

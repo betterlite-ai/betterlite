@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use rstest::rstest;
 
 use crate::user_agent_analytics::error::AnalyticsError;
-use crate::user_agent_analytics::rows::WeeklyActiveUsersRow;
+use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::tests::support::at;
 use crate::user_agent_analytics::tests::support::fixed_clock;
 use crate::user_agent_analytics::tests::support::now;
@@ -19,11 +19,11 @@ fn window() -> Window {
     Window::ending_tomorrow(fixed_clock(now()).as_ref(), WAU_SPAN_DAYS).expect("a window")
 }
 
-fn row(week_offset: i64) -> WeeklyActiveUsersRow {
-    WeeklyActiveUsersRow {
+fn row(week_offset: i64) -> ActiveUsersRow {
+    ActiveUsersRow {
         tag: "User-Agent:alpha".to_owned(),
         active_users: 4,
-        week_offset,
+        date: week_offset.to_string(),
     }
 }
 
@@ -91,4 +91,12 @@ fn a_week_row_becomes_its_labelled_period(
 fn an_impossible_week_offset_reports_an_offset_error(#[case] offset: i64) {
     let error = weekly_result(&window(), row(offset)).expect_err("the offset is impossible");
     assert!(matches!(error, AnalyticsError::WeekOffset { .. }));
+}
+
+#[test]
+fn a_week_bucket_that_is_not_an_offset_reports_a_bucket_error() {
+    let mut week_row = row(0);
+    week_row.date = "not-a-week".to_owned();
+    let error = weekly_result(&window(), week_row).expect_err("the bucket is impossible");
+    assert!(matches!(error, AnalyticsError::WeekBucket { bucket } if bucket == "not-a-week"));
 }

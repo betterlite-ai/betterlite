@@ -15,6 +15,8 @@ pub enum AnalyticsError {
     Window,
     #[error("week offset {week_offset} is outside the supported range")]
     WeekOffset { week_offset: i64 },
+    #[error("the week bucket {bucket} is not a week offset")]
+    WeekBucket { bucket: String },
 }
 
 #[derive(Debug, Serialize)]

@@ -6,7 +6,7 @@ use tokio_postgres::types::ToSql;
 
 use super::error::AnalyticsError;
 use super::query::TagFilter;
-use super::rows::{ActiveUsersRow, DistinctTagRow, WeeklyActiveUsersRow};
+use super::rows::{ActiveUsersReport, ActiveUsersRow, DistinctTagRow};
 
 pub const MAX_TAGS: i64 = 250;
 
@@ -18,25 +18,19 @@ const DISTINCT_TAGS_SQL: &str = "SELECT dts.tag, COUNT(*) AS usage_count FROM \"
 const DAILY_ACTIVE_USERS_SQL: &str = "SELECT dts.tag, dts.date, COUNT(DISTINCT vt.user_id) AS active_users FROM \"LiteLLM_DailyTagSpend\" dts INNER JOIN \"LiteLLM_VerificationToken\" vt ON dts.api_key = vt.token WHERE dts.date >= $1 AND dts.date <= $2 AND vt.user_id IS NOT NULL/*conditions*/ GROUP BY dts.tag, dts.date ORDER BY dts.date DESC, active_users DESC";
 
 // the outer filter keeps the seven MAX_WEEKS buckets the WAU labels number, as LiteLLM's inline constant does
-const WEEKLY_ACTIVE_USERS_SQL: &str = "WITH weekly_data AS (SELECT dts.tag, vt.user_id, ($2::text::date - dts.date::date) / 7 AS week_offset FROM \"LiteLLM_DailyTagSpend\" dts INNER JOIN \"LiteLLM_VerificationToken\" vt ON dts.api_key = vt.token WHERE dts.date >= $1 AND dts.date <= $2 AND vt.user_id IS NOT NULL/*conditions*/) SELECT tag, COUNT(DISTINCT user_id) AS active_users, week_offset FROM weekly_data WHERE week_offset < 7 GROUP BY tag, week_offset ORDER BY week_offset DESC, active_users DESC";
+const WEEKLY_ACTIVE_USERS_SQL: &str = "WITH weekly_data AS (SELECT dts.tag, vt.user_id, ($2::text::date - dts.date::date) / 7 AS week_offset FROM \"LiteLLM_DailyTagSpend\" dts INNER JOIN \"LiteLLM_VerificationToken\" vt ON dts.api_key = vt.token WHERE dts.date >= $1 AND dts.date <= $2 AND vt.user_id IS NOT NULL/*conditions*/) SELECT tag, COUNT(DISTINCT user_id) AS active_users, week_offset::text AS date FROM weekly_data WHERE week_offset < 7 GROUP BY tag, week_offset ORDER BY week_offset DESC, active_users DESC";
 
 #[async_trait]
 pub trait UserAgentAnalyticsStore: Send + Sync {
     async fn distinct_tags(&self) -> Result<Vec<DistinctTagRow>, AnalyticsError>;
 
-    async fn daily_active_users(
+    async fn active_users(
         &self,
+        report: ActiveUsersReport,
         start_date: &str,
         end_date: &str,
         filter: Option<&TagFilter>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError>;
-
-    async fn weekly_active_users(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
-    ) -> Result<Vec<WeeklyActiveUsersRow>, AnalyticsError>;
 }
 
 pub struct PostgresAnalyticsStore {
@@ -111,23 +105,18 @@ impl UserAgentAnalyticsStore for PostgresAnalyticsStore {
         rows.iter().map(DistinctTagRow::try_from).collect()
     }
 
-    async fn daily_active_users(
+    async fn active_users(
         &self,
+        report: ActiveUsersReport,
         start_date: &str,
         end_date: &str,
         filter: Option<&TagFilter>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError> {
-        let (sql, values) = active_users_sql(DAILY_ACTIVE_USERS_SQL, start_date, end_date, filter);
-        self.active_rows(&sql, &values).await
-    }
-
-    async fn weekly_active_users(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
-    ) -> Result<Vec<WeeklyActiveUsersRow>, AnalyticsError> {
-        let (sql, values) = active_users_sql(WEEKLY_ACTIVE_USERS_SQL, start_date, end_date, filter);
+        let template = match report {
+            ActiveUsersReport::Daily => DAILY_ACTIVE_USERS_SQL,
+            ActiveUsersReport::Weekly => WEEKLY_ACTIVE_USERS_SQL,
+        };
+        let (sql, values) = active_users_sql(template, start_date, end_date, filter);
         self.active_rows(&sql, &values).await
     }
 }

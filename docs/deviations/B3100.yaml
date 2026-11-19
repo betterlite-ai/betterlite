@@ -10,12 +10,14 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L263-L288
   - what: >-
       week_offset, period_start, period_end and the "Week N (Mon DD)" label are computed in Rust with chrono
-      from the row's integer week_offset, where LiteLLM computes the week difference with FLOOR, formats the
-      label with TO_CHAR and returns the period boundaries as text columns of the SQL result.
+      from the week offset the weekly query returns in its date column, where LiteLLM computes the week
+      difference with FLOOR, formats the label with TO_CHAR and returns the period boundaries as text columns
+      of the SQL result.
     why: >-
-      The query returns the integer offset PostgreSQL computes and chrono renders the same text: "Week 7
-      (Jan 05)" for the period 2026-01-05 to 2026-01-11. Integer division equals FLOOR here because every row
-      lies between start_date and end_date, so the difference is never negative.
+      The query returns the integer offset PostgreSQL computes, cast to text so both active-user reports share
+      one row model, and chrono renders the same text: "Week 7 (Jan 05)" for the period 2026-01-05 to
+      2026-01-11. Integer division equals FLOOR here because every row lies between start_date and end_date,
+      so the difference is never negative.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L383-L402
 kept_bugs:
   - what: >-

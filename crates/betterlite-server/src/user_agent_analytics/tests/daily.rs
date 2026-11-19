@@ -4,9 +4,9 @@ use axum::http::StatusCode;
 use rstest::rstest;
 
 use crate::user_agent_analytics::query::TagFilter;
+use crate::user_agent_analytics::rows::ActiveUsersReport;
 use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::tests::support::ActiveUsersBody;
-use crate::user_agent_analytics::tests::support::ActiveUsersCall;
 use crate::user_agent_analytics::tests::support::FakeStore;
 use crate::user_agent_analytics::tests::support::app;
 use crate::user_agent_analytics::tests::support::app_at;
@@ -24,20 +24,16 @@ fn row(tag: &str, active_users: i64, date: &str) -> ActiveUsersRow {
     }
 }
 
-fn call(start_date: &str, end_date: &str, filter: Option<TagFilter>) -> ActiveUsersCall {
-    ActiveUsersCall {
-        start_date: start_date.to_owned(),
-        end_date: end_date.to_owned(),
-        filter,
-    }
-}
-
 #[tokio::test]
 async fn the_daily_report_asks_for_the_seven_days_before_utc_tomorrow() {
     let store = Arc::new(FakeStore::empty());
     let reply = get(app(Some(Arc::clone(&store))), Some(&caller()), DAU).await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(store.calls(), vec![call("2026-01-04", "2026-01-11", None)]);
+    let recorded = store.only_call();
+    assert_eq!(recorded.report, ActiveUsersReport::Daily);
+    assert_eq!(recorded.start_date, "2026-01-04");
+    assert_eq!(recorded.end_date, "2026-01-11");
+    assert_eq!(recorded.filter, None);
 }
 
 #[tokio::test]
@@ -46,13 +42,17 @@ async fn the_daily_report_ends_at_the_next_utc_midnight() {
     let late = at(2026, 1, 31, 23, 59);
     let reply = get(app_at(Some(Arc::clone(&store)), late), Some(&caller()), DAU).await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(store.calls(), vec![call("2026-01-25", "2026-02-01", None)]);
+    let recorded = store.only_call();
+    assert_eq!(recorded.report, ActiveUsersReport::Daily);
+    assert_eq!(recorded.start_date, "2026-01-25");
+    assert_eq!(recorded.end_date, "2026-02-01");
+    assert_eq!(recorded.filter, None);
 }
 
 #[tokio::test]
 async fn the_daily_report_answers_the_exact_wire_body() {
     let store = Arc::new(FakeStore {
-        daily: vec![
+        active: vec![
             row("User-Agent:alpha", 2, "2026-01-11"),
             row("User-Agent:alpha", 1, "2026-01-10"),
         ],
@@ -74,7 +74,7 @@ async fn the_daily_report_answers_the_exact_wire_body() {
 #[tokio::test]
 async fn the_daily_report_keeps_the_order_the_store_returns() {
     let store = Arc::new(FakeStore {
-        daily: vec![
+        active: vec![
             row("User-Agent:beta", 4, "2026-01-11"),
             row("User-Agent:alpha", 9, "2026-01-10"),
         ],
@@ -114,10 +114,11 @@ async fn the_daily_report_forwards_the_decoded_tag_filter(
     let uri = format!("{DAU}{query}");
     let reply = get(app(Some(Arc::clone(&store))), Some(&caller()), &uri).await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(
-        store.calls(),
-        vec![call("2026-01-04", "2026-01-11", expected)]
-    );
+    let recorded = store.only_call();
+    assert_eq!(recorded.report, ActiveUsersReport::Daily);
+    assert_eq!(recorded.start_date, "2026-01-04");
+    assert_eq!(recorded.end_date, "2026-01-11");
+    assert_eq!(recorded.filter, expected);
 }
 
 #[tokio::test]

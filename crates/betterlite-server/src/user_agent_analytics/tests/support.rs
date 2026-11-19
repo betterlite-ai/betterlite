@@ -42,9 +42,9 @@ use crate::auth::auth_identity::AuthContext;
 use crate::user_agent_analytics::error::AnalyticsError;
 use crate::user_agent_analytics::query::TagFilter;
 use crate::user_agent_analytics::routes;
+use crate::user_agent_analytics::rows::ActiveUsersReport;
 use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::rows::DistinctTagRow;
-use crate::user_agent_analytics::rows::WeeklyActiveUsersRow;
 use crate::user_agent_analytics::state::UserAgentAnalyticsState;
 use crate::user_agent_analytics::store::PostgresAnalyticsStore;
 use crate::user_agent_analytics::store::UserAgentAnalyticsStore;
@@ -73,15 +73,16 @@ pub(super) fn fixed_clock(instant: DateTime<Utc>) -> Arc<dyn GatewayRequestClock
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ActiveUsersCall {
+    pub(super) report: ActiveUsersReport,
     pub(super) start_date: String,
     pub(super) end_date: String,
     pub(super) filter: Option<TagFilter>,
 }
 
+#[derive(Default)]
 pub(super) struct FakeStore {
     pub(super) distinct: Vec<DistinctTagRow>,
-    pub(super) daily: Vec<ActiveUsersRow>,
-    pub(super) weekly: Vec<WeeklyActiveUsersRow>,
+    pub(super) active: Vec<ActiveUsersRow>,
     pub(super) failure: Mutex<Option<AnalyticsError>>,
     pub(super) calls: Mutex<Vec<ActiveUsersCall>>,
     pub(super) distinct_calls: AtomicUsize,
@@ -89,14 +90,7 @@ pub(super) struct FakeStore {
 
 impl FakeStore {
     pub(super) fn empty() -> Self {
-        Self {
-            distinct: Vec::new(),
-            daily: Vec::new(),
-            weekly: Vec::new(),
-            failure: Mutex::new(None),
-            calls: Mutex::new(Vec::new()),
-            distinct_calls: AtomicUsize::new(0),
-        }
+        Self::default()
     }
 
     pub(super) fn failing() -> Self {
@@ -110,23 +104,18 @@ impl FakeStore {
         self.calls.lock().expect("the recorded calls").clone()
     }
 
+    pub(super) fn only_call(&self) -> ActiveUsersCall {
+        let mut calls = self.calls();
+        assert_eq!(calls.len(), 1, "the store records exactly one call");
+        calls.remove(0)
+    }
+
     pub(super) fn distinct_calls(&self) -> usize {
         self.distinct_calls.load(Ordering::Relaxed)
     }
 
     fn take_failure(&self) -> Option<AnalyticsError> {
         self.failure.lock().expect("the recorded failure").take()
-    }
-
-    fn record(&self, start_date: &str, end_date: &str, filter: Option<&TagFilter>) {
-        self.calls
-            .lock()
-            .expect("the recorded calls")
-            .push(ActiveUsersCall {
-                start_date: start_date.to_owned(),
-                end_date: end_date.to_owned(),
-                filter: filter.cloned(),
-            });
     }
 }
 
@@ -140,30 +129,26 @@ impl UserAgentAnalyticsStore for FakeStore {
         Ok(self.distinct.clone())
     }
 
-    async fn daily_active_users(
+    async fn active_users(
         &self,
+        report: ActiveUsersReport,
         start_date: &str,
         end_date: &str,
         filter: Option<&TagFilter>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError> {
-        self.record(start_date, end_date, filter);
+        self.calls
+            .lock()
+            .expect("the recorded calls")
+            .push(ActiveUsersCall {
+                report,
+                start_date: start_date.to_owned(),
+                end_date: end_date.to_owned(),
+                filter: filter.cloned(),
+            });
         if let Some(error) = self.take_failure() {
             return Err(error);
         }
-        Ok(self.daily.clone())
-    }
-
-    async fn weekly_active_users(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
-    ) -> Result<Vec<WeeklyActiveUsersRow>, AnalyticsError> {
-        self.record(start_date, end_date, filter);
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.weekly.clone())
+        Ok(self.active.clone())
     }
 }
 

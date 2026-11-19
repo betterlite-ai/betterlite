@@ -3,6 +3,12 @@ use tokio_postgres::Row;
 
 use super::error::AnalyticsError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActiveUsersReport {
+    Daily,
+    Weekly,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DistinctTagRow {
     pub tag: String,
@@ -13,13 +19,6 @@ pub struct ActiveUsersRow {
     pub tag: String,
     pub active_users: i64,
     pub date: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WeeklyActiveUsersRow {
-    pub tag: String,
-    pub active_users: i64,
-    pub week_offset: i64,
 }
 
 impl TryFrom<&Row> for DistinctTagRow {
@@ -50,27 +49,6 @@ impl TryFrom<&Row> for ActiveUsersRow {
             tag,
             active_users,
             date,
-        })
-    }
-}
-
-impl TryFrom<&Row> for WeeklyActiveUsersRow {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        let tag = row
-            .try_get("tag")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        let active_users = row
-            .try_get("active_users")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        let week_offset = row
-            .try_get("week_offset")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        Ok(Self {
-            tag,
-            active_users,
-            week_offset,
         })
     }
 }

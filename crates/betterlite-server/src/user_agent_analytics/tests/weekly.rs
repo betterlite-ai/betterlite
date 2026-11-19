@@ -4,10 +4,10 @@ use axum::http::StatusCode;
 use rstest::rstest;
 
 use crate::user_agent_analytics::query::TagFilter;
-use crate::user_agent_analytics::rows::WeeklyActiveUsersRow;
+use crate::user_agent_analytics::rows::ActiveUsersReport;
+use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::tests::support::ActiveUserBody;
 use crate::user_agent_analytics::tests::support::ActiveUsersBody;
-use crate::user_agent_analytics::tests::support::ActiveUsersCall;
 use crate::user_agent_analytics::tests::support::FakeStore;
 use crate::user_agent_analytics::tests::support::app;
 use crate::user_agent_analytics::tests::support::caller;
@@ -15,19 +15,11 @@ use crate::user_agent_analytics::tests::support::get;
 
 const WAU: &str = "/tag/wau";
 
-fn row(tag: &str, active_users: i64, week_offset: i64) -> WeeklyActiveUsersRow {
-    WeeklyActiveUsersRow {
+fn row(tag: &str, active_users: i64, week_offset: i64) -> ActiveUsersRow {
+    ActiveUsersRow {
         tag: tag.to_owned(),
         active_users,
-        week_offset,
-    }
-}
-
-fn call(start_date: &str, end_date: &str, filter: Option<TagFilter>) -> ActiveUsersCall {
-    ActiveUsersCall {
-        start_date: start_date.to_owned(),
-        end_date: end_date.to_owned(),
-        filter,
+        date: week_offset.to_string(),
     }
 }
 
@@ -46,13 +38,17 @@ async fn the_weekly_report_asks_for_the_forty_eight_days_before_utc_tomorrow() {
     let store = Arc::new(FakeStore::empty());
     let reply = get(app(Some(Arc::clone(&store))), Some(&caller()), WAU).await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(store.calls(), vec![call("2025-11-24", "2026-01-11", None)]);
+    let recorded = store.only_call();
+    assert_eq!(recorded.report, ActiveUsersReport::Weekly);
+    assert_eq!(recorded.start_date, "2025-11-24");
+    assert_eq!(recorded.end_date, "2026-01-11");
+    assert_eq!(recorded.filter, None);
 }
 
 #[tokio::test]
 async fn the_weekly_report_answers_the_exact_wire_body() {
     let store = Arc::new(FakeStore {
-        weekly: vec![row("User-Agent:alpha", 3, 0), row("User-Agent:alpha", 2, 6)],
+        active: vec![row("User-Agent:alpha", 3, 0), row("User-Agent:alpha", 2, 6)],
         ..FakeStore::empty()
     });
     let reply = get(app(Some(store)), Some(&caller()), WAU).await;
@@ -73,7 +69,7 @@ async fn the_weekly_report_answers_the_exact_wire_body() {
 #[tokio::test]
 async fn the_weekly_report_labels_every_week_of_the_window() {
     let store = Arc::new(FakeStore {
-        weekly: (0..7)
+        active: (0..7)
             .map(|offset| row("User-Agent:alpha", 1, offset))
             .collect(),
         ..FakeStore::empty()
@@ -107,8 +103,9 @@ async fn the_weekly_report_forwards_the_decoded_tag_filter(
     let uri = format!("{WAU}{query}");
     let reply = get(app(Some(Arc::clone(&store))), Some(&caller()), &uri).await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(
-        store.calls(),
-        vec![call("2025-11-24", "2026-01-11", expected)]
-    );
+    let recorded = store.only_call();
+    assert_eq!(recorded.report, ActiveUsersReport::Weekly);
+    assert_eq!(recorded.start_date, "2025-11-24");
+    assert_eq!(recorded.end_date, "2026-01-11");
+    assert_eq!(recorded.filter, expected);
 }
