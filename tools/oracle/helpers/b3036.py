@@ -53,6 +53,7 @@ class WindowedLimiter(Protocol):
         keys_to_fetch: list[str],
         cache_values: CacheCounterValues,
         key_metadata: dict[str, WindowKeyMetadata],
+        *,
         read_only: bool = False,
     ) -> RateLimitResponse: ...
 
@@ -71,44 +72,41 @@ def make_limiter() -> WindowedLimiter:
 
 
 def metadata_value(metadata: dict[str, WindowKeyMetadata]) -> dict[str, JsonValue]:
-    result: dict[str, JsonValue] = {}
-    for window_key, entry in metadata.items():
-        result[window_key] = {
+    return {
+        window_key: {
             "requests_limit": entry["requests_limit"],
             "tokens_limit": entry["tokens_limit"],
             "window_size": entry["window_size"],
             "descriptor_key": entry["descriptor_key"],
             "descriptor_value": entry["descriptor_value"],
         }
-    return result
+        for window_key, entry in metadata.items()
+    }
 
 
 def gauges_value(gauges: Sequence[ParallelRequestGauge]) -> list[JsonValue]:
-    result: list[JsonValue] = []
-    for gauge in gauges:
-        result.append(
-            {
-                "counter_key": gauge["counter_key"],
-                "limit": gauge["limit"],
-                "descriptor_key": gauge["descriptor_key"],
-            }
-        )
-    return result
+    return [
+        {
+            "counter_key": gauge["counter_key"],
+            "limit": gauge["limit"],
+            "descriptor_key": gauge["descriptor_key"],
+        }
+        for gauge in gauges
+    ]
 
 
 def response_value(response: RateLimitResponse) -> dict[str, JsonValue]:
-    statuses: list[JsonValue] = []
-    for status in response["statuses"]:
-        statuses.append(
-            {
-                "code": status["code"],
-                "current_limit": status["current_limit"],
-                "limit_remaining": status["limit_remaining"],
-                "rate_limit_type": status["rate_limit_type"],
-                "descriptor_key": status["descriptor_key"],
-                "descriptor_value": status.get("descriptor_value"),
-            }
-        )
+    statuses: list[JsonValue] = [
+        {
+            "code": status["code"],
+            "current_limit": status["current_limit"],
+            "limit_remaining": status["limit_remaining"],
+            "rate_limit_type": status["rate_limit_type"],
+            "descriptor_key": status["descriptor_key"],
+            "descriptor_value": status.get("descriptor_value"),
+        }
+        for status in response["statuses"]
+    ]
     return {
         "overall_code": response["overall_code"],
         "statuses": statuses,
@@ -124,8 +122,7 @@ def collect(input_value: CollectInput) -> dict[str, JsonValue]:
         skip_tpm_check=input_value["skip_tpm_check"],
     )
     keys_value: list[JsonValue] = []
-    for key in keys:
-        keys_value.append(key)
+    keys_value.extend(keys)
     return {
         "keys_to_fetch": keys_value,
         "key_metadata": metadata_value(metadata),
