@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::future::{Future, ready};
 
@@ -13,6 +12,8 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use serde_json::{Value, json};
+
+use super::input::PlatformMaps;
 
 pub(super) fn invalid<E>(error: E) -> Box<HelperError>
 where
@@ -82,23 +83,22 @@ impl FileBlocks for NoFileBlocks {
 }
 
 // The case values parse through the B2211 loader, so the workspace fields arrive the way a config file hands them over.
-pub(super) fn platform_inputs(
-    deployment: &BTreeMap<String, String>,
-    litellm_settings: &BTreeMap<String, String>,
-    environment: &BTreeMap<String, String>,
-) -> Result<PlatformInputsCase, Box<HelperError>> {
+pub(super) fn platform_inputs<Maps>(maps: &Maps) -> Result<PlatformInputsCase, Box<HelperError>>
+where
+    Maps: PlatformMaps,
+{
     let mut params = serde_json::Map::new();
     params.insert("model".to_owned(), Value::String("bedrock/unit".to_owned()));
-    for (key, value) in deployment {
+    for (key, value) in maps.deployment() {
         params.insert(key.clone(), Value::String(value.clone()));
     }
     let document = json!({
         "model_list": [{"model_name": "unit", "litellm_params": params}],
-        "litellm_settings": litellm_settings,
+        "litellm_settings": maps.litellm_settings(),
     });
     let source = serde_saphyr::to_string(&document).map_err(invalid)?;
     let config = ConfigLoader {
-        lookup: environment.clone(),
+        lookup: maps.environment().clone(),
     }
     .load(&source)
     .map_err(invalid)?;

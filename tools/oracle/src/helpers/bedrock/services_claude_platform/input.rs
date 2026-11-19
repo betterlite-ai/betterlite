@@ -70,3 +70,38 @@ pub(crate) struct BodyInput {
     #[serde(default)]
     pub(crate) headers: IndexMap<String, String>,
 }
+
+// The workspace maps a validate_environment call reads, whether the case or the request carries them.
+pub(crate) trait PlatformMaps {
+    fn deployment(&self) -> &BTreeMap<String, String>;
+    fn litellm_settings(&self) -> &BTreeMap<String, String>;
+    fn environment(&self) -> &BTreeMap<String, String>;
+}
+
+impl PlatformMaps for HeaderInput {
+    fn deployment(&self) -> &BTreeMap<String, String> {
+        &self.deployment
+    }
+
+    fn litellm_settings(&self) -> &BTreeMap<String, String> {
+        &self.litellm_settings
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
+impl PlatformMaps for WorkspaceCase {
+    fn deployment(&self) -> &BTreeMap<String, String> {
+        &self.deployment
+    }
+
+    fn litellm_settings(&self) -> &BTreeMap<String, String> {
+        &self.litellm_settings
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
