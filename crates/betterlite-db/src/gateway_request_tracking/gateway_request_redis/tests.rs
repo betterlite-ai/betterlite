@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use betterlite_redis::list_operations::results::LpopResult;
+
 use super::GATEWAY_REQUESTS_BUFFER_KEY;
 use super::GATEWAY_REQUESTS_JOB_NAME;
 use super::GatewayRequestRedisError;
@@ -237,10 +239,26 @@ async fn an_entry_that_is_not_a_row_list_is_dropped_alone() {
 fn a_byte_entry_that_is_not_utf8_is_dropped_alone() {
     let (logs, _guard) = captured_logs();
     assert_eq!(
-        super::adapters::decode_text(b"a row list".to_vec()),
-        Some("a row list".to_owned())
+        super::adapters::text_entries(LpopResult::ItemBytes(b"a row list".to_vec())),
+        vec!["a row list".to_owned()]
     );
-    assert_eq!(super::adapters::decode_text(vec![0xff, 0xfe]), None);
+    assert!(super::adapters::text_entries(LpopResult::ItemBytes(vec![0xff, 0xfe])).is_empty());
+    assert!(
+        logs.text()
+            .contains("dropped a buffered entry that is not UTF-8")
+    );
+}
+
+#[test]
+fn a_byte_batch_that_is_not_utf8_drops_only_the_bad_entry() {
+    let (logs, _guard) = captured_logs();
+    assert_eq!(
+        super::adapters::text_entries(LpopResult::ItemsBytes(vec![
+            b"a row list".to_vec(),
+            vec![0xff, 0xfe],
+        ])),
+        vec!["a row list".to_owned()]
+    );
     assert!(
         logs.text()
             .contains("dropped a buffered entry that is not UTF-8")
