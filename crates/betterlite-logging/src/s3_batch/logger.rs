@@ -1,3 +1,4 @@
+use crate::s3_audit::{append_audit_element, audit_record};
 use crate::s3_batch::Element;
 use crate::s3_batch::flush::{
     FlushContext, FlushError, FlushSettings, MonotonicClock, UploadOperation, send_batch,
@@ -10,6 +11,8 @@ use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::{S3HttpClient, S3Transport, ThrottleSink, UploadOutcome};
 use crate::s3_v2::{Feature, PartitionGranularityCache, S3Parameters};
 use betterlite_config::loader::EnvironmentLookup;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -144,6 +147,20 @@ impl S3BatchLogger {
                 );
                 Err(error)
             }
+        }
+    }
+    // an audit record shares the model-event queue, and the one that fills a batch flushes it at once
+    pub async fn log_audit_event<Audit: Serialize + Sync>(
+        &self,
+        audit_log: &Audit,
+        now: DateTime<Utc>,
+    ) {
+        let outcome = match audit_record(self, audit_log, now) {
+            Ok(element) => append_audit_element(self, element).await,
+            Err(error) => Err(error),
+        };
+        if let Err(error) = outcome {
+            tracing::error!("S3 audit log error: {error}");
         }
     }
     async fn upload_bounded(&self, element: &Element) -> UploadOutcome {
