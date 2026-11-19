@@ -124,7 +124,7 @@ impl NativeOcrPassthrough for RecordingOcr {
 
 #[derive(Debug, Default)]
 pub(super) struct RecordingChat {
-    pub(super) calls: Arc<Mutex<usize>>,
+    pub(super) calls: Arc<Mutex<Vec<Object>>>,
 }
 
 impl ChatReplyProjection for RecordingChat {
@@ -134,7 +134,10 @@ impl ChatReplyProjection for RecordingChat {
         _reply: &ResponseReply<'_>,
         _input: LogInput,
     ) -> Option<Object> {
-        *self.calls.lock().unwrap_or_else(PoisonError::into_inner) += 1_usize;
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Object::new());
         Some(Object::new())
     }
 }

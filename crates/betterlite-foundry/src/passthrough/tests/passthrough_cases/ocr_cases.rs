@@ -54,7 +54,10 @@ fn azure_chat_projection_runs_first() {
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Chat(_)))
     ));
     assert_eq!(
-        *chat_calls.lock().unwrap_or_else(PoisonError::into_inner),
+        chat_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len(),
         1_usize
     );
     assert_eq!(logging.call_type, None);
