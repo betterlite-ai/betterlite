@@ -1,0 +1,25 @@
+kind: sdk_http
+name: file-http-metadata-request-order
+env: {}
+call:
+  file_http_metadata:
+    operation: retrieve
+    mode: sync
+    file_id: file_batch
+    api_key: sk-xai
+    extra_headers: {x-trace: trace-a}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: file_batch
+      bytes: 12
+      created_at: 1700000000
+      filename: batch.jsonl
+      purpose: batch
+      expires_at: 1800000000
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-trace]
+  ignore: []
