@@ -13,7 +13,7 @@ pub enum StorageBackendError {
     Unsupported { backend: String },
     #[error("Storage backend litellm_db requires a database-connected proxy")]
     DatabaseRequired,
-    #[error(transparent)]
+    #[error("{0}")]
     Settings(#[from] SettingsError),
 }
 

@@ -38,12 +38,12 @@ pub fn get_storage_backend<R>(
             let backend = AzureBlobStorageBackend::new(settings, deps.azure);
             Ok(StorageBackend::Azure(backend))
         }
-        LITELLM_DB_BACKEND_NAME => match deps.database {
-            Some(contents) => Ok(StorageBackend::LiteLlmDb(Box::new(
+        LITELLM_DB_BACKEND_NAME => {
+            let contents = deps.database.ok_or(StorageBackendError::DatabaseRequired)?;
+            Ok(StorageBackend::LiteLlmDb(Box::new(
                 LiteLlmDbStorageBackend { contents },
-            ))),
-            None => Err(StorageBackendError::DatabaseRequired),
-        },
+            )))
+        }
         other => Err(StorageBackendError::Unsupported {
             backend: other.to_owned(),
         }),

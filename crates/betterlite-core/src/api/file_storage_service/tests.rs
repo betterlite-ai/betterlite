@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::str;
 use std::sync::Arc;
 
@@ -306,10 +307,17 @@ fn assert_factory_logs(logs: &Captured) {
 async fn storage_factory_errors() {
     let (logs, _guard) = capture_logs();
     let recorder = Recorder::new(&[]);
+    assert_factory_errors(&recorder);
+    assert_factory_refusals(&recorder).await;
+    assert!(recorder.calls().is_empty());
+    assert_factory_logs(&logs);
+}
+
+fn assert_factory_errors(recorder: &Arc<Recorder>) {
     let unsupported = get_storage_backend(
         "other",
         backend_deps(
-            &recorder,
+            recorder,
             None::<ManagedFileContentRepository<'static>>,
             environment(),
         ),
@@ -320,7 +328,7 @@ async fn storage_factory_errors() {
     let database = get_storage_backend(
         LITELLM_DB_BACKEND_NAME,
         backend_deps(
-            &recorder,
+            recorder,
             None::<ManagedFileContentRepository<'static>>,
             environment(),
         ),
@@ -328,27 +336,29 @@ async fn storage_factory_errors() {
     .err()
     .expect("the missing database");
     assert_eq!(database.to_string(), DATABASE_REQUIRED);
-    let no_settings = backend_deps(
-        &recorder,
-        None::<ManagedFileContentRepository<'static>>,
-        BTreeMap::new(),
-    );
-    let settings = get_storage_backend("azure_storage", no_settings)
-        .err()
-        .expect("the Azure settings are missing");
+    let settings = get_storage_backend(
+        "azure_storage",
+        backend_deps(
+            recorder,
+            None::<ManagedFileContentRepository<'static>>,
+            BTreeMap::new(),
+        ),
+    )
+    .err()
+    .expect("the Azure settings are missing");
     assert_eq!(settings.to_string(), MISSING_ACCOUNT);
-    assert!(matches!(settings, StorageBackendError::Settings(_)));
-    let cause = std::error::Error::source(&settings).expect("the settings cause");
+    let cause = Error::source(&settings).expect("the settings cause");
     assert_eq!(cause.to_string(), MISSING_ACCOUNT);
+    assert!(matches!(settings, StorageBackendError::Settings(_)));
+}
 
-    let other = refusal("other", &[], &recorder, environment()).await;
+async fn assert_factory_refusals(recorder: &Arc<Recorder>) {
+    let other = refusal("other", &[], recorder, environment()).await;
     assert_invalid_request(&other, UNSUPPORTED_OTHER, "target_storage");
-    let missing = refusal(LITELLM_DB_BACKEND_NAME, &[], &recorder, environment()).await;
+    let missing = refusal(LITELLM_DB_BACKEND_NAME, &[], recorder, environment()).await;
     assert_invalid_request(&missing, DATABASE_REQUIRED, "target_storage");
-    let missing_settings = refusal("azure_storage", &[], &recorder, BTreeMap::new()).await;
+    let missing_settings = refusal("azure_storage", &[], recorder, BTreeMap::new()).await;
     assert_invalid_request(&missing_settings, MISSING_ACCOUNT, "target_storage");
-    assert!(recorder.calls().is_empty());
-    assert_factory_logs(&logs);
 }
 
 #[tokio::test]

@@ -13,6 +13,7 @@ pub struct StoredFile {
     pub storage_url: String,
 }
 
+#[derive(Clone, Copy)]
 pub struct FileMetadata<'data> {
     pub content: &'data [u8],
     pub filename: &'data str,
