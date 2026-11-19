@@ -605,7 +605,63 @@ async fn azure_extra_body_reads_and_removes_the_token() {
         Some("kwarg-token")
     );
     assert_eq!(values.params.max_retries, Some(4));
+    assert_eq!(
+        values.params.timeout, None,
+        "an absent kwargs timeout stays absent"
+    );
     assert!(values.extra_body.is_empty());
+
+    let (_, dispatch) = harness(200, PAGE);
+    let mut input = delete_azure(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Number(9.5));
+    let result = facade(dispatch, settings.clone())
+        .run(&input)
+        .await
+        .unwrap();
+    let AssistantProviderCall::Azure(values) = &result.call.provider else {
+        panic!("expected the azure branch");
+    };
+    assert_eq!(
+        values.params.timeout,
+        Some(9.5),
+        "a numeric timeout reaches litellm_params"
+    );
+
+    let (_, dispatch) = harness(200, PAGE);
+    let mut input = delete_azure(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Text(" 7.5 ".to_owned()));
+    let result = facade(dispatch, settings.clone())
+        .run(&input)
+        .await
+        .unwrap();
+    let AssistantProviderCall::Azure(values) = &result.call.provider else {
+        panic!("expected the azure branch");
+    };
+    assert_eq!(
+        values.params.timeout,
+        Some(7.5),
+        "a text timeout is parsed the way float() reads it"
+    );
+
+    let (_, dispatch) = harness(200, PAGE);
+    let mut input = delete_azure(AssistantWrapper::Sync);
+    input.params.timeout = Some(AssistantTimeout::Structured(TimeoutPhases {
+        connect: Some(1.0),
+        read: None,
+        write: None,
+        pool: None,
+    }));
+    let result = facade(dispatch, settings.clone())
+        .run(&input)
+        .await
+        .unwrap();
+    let AssistantProviderCall::Azure(values) = &result.call.provider else {
+        panic!("expected the azure branch");
+    };
+    assert_eq!(
+        values.params.timeout, None,
+        "an httpx.Timeout leaves litellm_params without one"
+    );
 
     let (_, dispatch) = harness(200, PAGE);
     let mut input = delete_azure(AssistantWrapper::Sync);
