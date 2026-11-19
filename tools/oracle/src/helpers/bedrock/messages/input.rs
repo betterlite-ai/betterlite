@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_bedrock::event_frames::beta::BetaHeader;
-use betterlite_bedrock::invoke_primitives::config::Params;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as MessageJson;
@@ -29,7 +28,7 @@ pub(crate) struct InvokeUrl {
     #[serde(default)]
     pub(crate) stream: Option<bool>,
     #[serde(default)]
-    pub(crate) optional_params: Params,
+    pub(crate) optional_params: Object,
     #[serde(default)]
     pub(crate) headers: IndexMap<String, String>,
     #[serde(default)]

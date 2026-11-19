@@ -8,6 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::bedrock_settings::ErrorHeaders;
 use betterlite_bedrock::credentials::error::CredentialError;
+use betterlite_bedrock::invoke_primitives::config::Params;
 use betterlite_bedrock::invoke_primitives::url::{InvokeEnvironment, InvokeModelUrl};
 use betterlite_bedrock::messages::config::MessagesConfig;
 use betterlite_bedrock::messages::stream::{MessagesStreamRequest, messages_sse_stream};
@@ -72,6 +73,12 @@ fn metadata_params(call: &InvokeUrl) -> MetadataParams {
     params
 }
 
+// The invoke configs take Box<RawValue>, which serde's Content buffering cannot rebuild, so the case sends plain JSON.
+fn invoke_params(call: &InvokeUrl) -> Result<Params, Box<HelperError>> {
+    let value = serde_json::to_value(&call.optional_params).map_err(failure)?;
+    serde_json::from_value(value).map_err(failure)
+}
+
 fn environment(call: &InvokeUrl) -> InvokeEnvironment<'_> {
     InvokeEnvironment {
         region_name: call.environment.get("AWS_REGION_NAME").map(String::as_str),
@@ -108,11 +115,11 @@ fn messages_environment(call: &InvokeUrl) -> Result<MergedEnvironment, Box<Helpe
     .map_err(failure)
 }
 
-fn complete_url(call: &InvokeUrl) -> Result<InvokeModelUrl, Box<HelperError>> {
+fn complete_url(call: &InvokeUrl, params: &Params) -> Result<InvokeModelUrl, Box<HelperError>> {
     messages_complete_url(&MessagesEndpoint {
         api_base: call.api_base.as_deref(),
         model: &call.model,
-        optional_params: &call.optional_params,
+        optional_params: params,
         stream: call.stream,
         environment: environment(call),
     })
@@ -130,6 +137,7 @@ fn signed_request(
     call: &InvokeUrl,
     url: &InvokeModelUrl,
     headers: &IndexMap<String, String>,
+    params: &Params,
 ) -> Result<AwsSignedRequest, Box<HelperError>> {
     let credentials = Credentials {
         access_key_id: call.credentials.access_key_id.clone(),
@@ -138,7 +146,7 @@ fn signed_request(
     };
     let request = MessagesSignRequest {
         headers,
-        optional_params: &call.optional_params,
+        optional_params: params,
         request_data: &call.request_data,
         api_base: &url.endpoint_url,
         api_key: call.api_key.as_ref(),
@@ -167,8 +175,9 @@ fn header_object(headers: &IndexMap<String, String>) -> serde_json::Map<String, 
 
 fn invoke_url(call: &InvokeUrl) -> HelperResult {
     let (headers, unchanged) = messages_environment(call)?;
-    let url = complete_url(call)?;
-    let signed = signed_request(call, &url, &headers)?;
+    let params = invoke_params(call)?;
+    let url = complete_url(call, &params)?;
+    let signed = signed_request(call, &url, &headers, &params)?;
     Ok(json!({
         "url": {
             "endpoint_url": url.endpoint_url,
