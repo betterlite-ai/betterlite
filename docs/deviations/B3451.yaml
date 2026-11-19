@@ -1,0 +1,50 @@
+task: B3451
+deviations:
+  - what: >-
+      The chunking strategy is validated as typed configuration before the splitter
+      runs: chunk_size <= 0, chunk_overlap < 0 and chunk_overlap >= chunk_size return
+      ChunkError::Configuration. LiteLLM builds the splitter with the same values and
+      _force_split never advances when chunk_size is zero or chunk_overlap covers the
+      step, so the call hangs on a nonempty text.
+    why: >-
+      A caller-supplied strategy must not hang a gateway task. The typed error reaches
+      the pipeline as a failed result with its message preserved, which is the same
+      shape the pipeline gives every other chunk error. The oracle case chunk-config-invalid
+      cannot run LiteLLM's splitter for the same reason, so its Python side raises from a
+      GuardedSplitter subclass that applies these three checks before calling the real one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L227-L242
+  - what: >-
+      The ingest options struct rejects keys it does not declare, so an ingest request
+      carrying an unknown top-level option fails with a serde error naming it. LiteLLM
+      reads the options dict by key and ignores everything else.
+    why: >-
+      betterlite-config's RAGIngestOptions already denies unknown fields for the same
+      record, and a misspelled option that is silently ignored is a failure the caller
+      cannot see. Keys inside vector_store and chunking_strategy stay open: providers and
+      stored credentials add keys this module never names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L47-L67
+  - what: >-
+      A file_url download is bounded by the RAG upload ceiling (512 MiB) and fails with
+      UrlFetchError::Read when the body is larger. LiteLLM buffers the whole response
+      with no bound.
+    why: >-
+      An unauthenticated URL is caller-supplied input, and an unbounded buffer is a
+      memory exhaustion path. The bound is the same largest file the pipeline accepts
+      from an upload, so a file that could be ingested still downloads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L101-L134
+  - what: >-
+      The OCR data URL for an absent content type is "data:;base64,<body>". LiteLLM's
+      f-string writes Python's str(None), "data:None;base64,<body>".
+    why: >-
+      Python's str() of None is runtime formatting, which docs/compatibility.md keeps out
+      of parity. An absent content type means the default, which is an empty media type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L160-L182
+kept_bugs:
+  - what: >-
+      Endpoint removal only happens when the stored credential's values are non-empty. A
+      credential that exists but holds no values leaves the caller's api_base,
+      aws_sts_endpoint and aws_web_identity_token in place.
+    why: >-
+      A working setup can rely on the distinction between an unknown credential name and
+      an empty one (both skip removal), so the quirk is copied rather than tightened.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L69-L94
