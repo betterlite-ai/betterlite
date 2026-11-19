@@ -1,31 +1,38 @@
 kind: sdk_http
 name: sdk-http-fine-tuning-cancel-job
 env:
-  OPENAI_API_KEY: sk-env-openai
-  AZURE_API_VERSION: "2024-10-21"
+  OPENAI_API_KEY: sk-env-decoy
+  OPENAI_ORGANIZATION: org-env-decoy
+  AZURE_API_KEY: azure-env-decoy
+  AZURE_OPENAI_API_KEY: azure-openai-decoy
+  AZURE_API_VERSION: "2024-05-01-preview"
 call:
   fine_tuning_cancel:
     runs:
-      - fine_tuning_job_id: ftjob_param
+      - fine_tuning_job_id: ft_a
         custom_llm_provider: openai
         base: param
+        extra_headers: {x-caller-extra: leaked-header}
+        extra_body: {caller_field: leaked-body}
         params:
           api_key: sk-param
           organization: org-param
-      - fine_tuning_job_id: ftjob_env
-        custom_llm_provider: openai
+      - fine_tuning_job_id: ft_a
         base: env
         asynchronous: true
-      - fine_tuning_job_id: ftjob_azure
+      - fine_tuning_job_id: ft_azure
         custom_llm_provider: azure
         base: env
+        extra_body: {azure_ad_token: leaked-token, caller_field: leaked-body}
         params:
           api_key: azure-param
+          api_version: "2024-10-21"
+          azure_ad_token: leaked-token
 upstream:
   - status: 200
     headers: {content-type: application/json}
     body:
-      id: ftjob_param
+      id: ft_a
       created_at: 1700000000
       error: null
       fine_tuned_model: null
@@ -47,7 +54,7 @@ upstream:
   - status: 200
     headers: {content-type: application/json}
     body:
-      id: ftjob_env
+      id: ft_a
       created_at: 1700000001
       error: null
       fine_tuned_model: null
@@ -69,7 +76,7 @@ upstream:
   - status: 200
     headers: {content-type: application/json}
     body:
-      id: ftjob_azure
+      id: ft_azure
       created_at: 1700000002
       error: null
       fine_tuned_model: null
@@ -91,5 +98,5 @@ upstream:
 compare:
   headers: []
   headers_present: []
-  upstream_headers: [authorization, api-key, content-type, accept]
+  upstream_headers: [authorization, api-key, openai-organization, content-type, accept, x-caller-extra]
   ignore: []

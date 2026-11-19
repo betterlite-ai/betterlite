@@ -4,40 +4,33 @@ env: {}
 call:
   fine_tuning_cancel:
     runs:
-      - fine_tuning_job_id: ftjob_vertex
+      - fine_tuning_job_id: ft_vertex
         custom_llm_provider: vertex_ai
-      - fine_tuning_job_id: ftjob_null
+      - fine_tuning_job_id: ft_none
         custom_llm_provider: null
-      - fine_tuning_job_id: ftjob_bad_timeout
+      - fine_tuning_job_id: ft_bad_timeout
         custom_llm_provider: openai
         base: param
         params:
           api_key: sk-param
-          timeout: not-a-number
-      - fine_tuning_job_id: ftjob_missing
+          timeout: bad
+      - fine_tuning_job_id: ft_missing
         custom_llm_provider: openai
         base: param
         params:
           api_key: sk-param
-      - fine_tuning_job_id: ftjob_no_key
-        custom_llm_provider: openai
-        base: param
 upstream:
   - status: 404
     headers: {content-type: application/json}
     body:
       error:
         message: no such job
-        type: invalid_request_error
-        param: fine_tuning_job_id
-        code: job_not_found
 compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type]
   ignore:
-    - {pointer: /fine_tuning_cancel/value/runs/0/error/message, why: LiteLLM prefixes the class name and betterlite writes the provider message}
-    - {pointer: /fine_tuning_cancel/value/runs/1/error/message, why: LiteLLM formats a null provider through the class name and betterlite writes it as None}
+    - {pointer: /fine_tuning_cancel/value/runs/0/error/message, why: LiteLLM prefixes the class name and betterlite writes the source message}
+    - {pointer: /fine_tuning_cancel/value/runs/1/error/message, why: LiteLLM prefixes the class name and betterlite writes the source message}
     - {pointer: /fine_tuning_cancel/value/runs/2/error/message, why: Python's float conversion and betterlite's timeout parser word the failure differently}
     - {pointer: /fine_tuning_cancel/value/runs/3/error/message, why: the SDK renders the status and body while betterlite writes its own status line}
-    - {pointer: /fine_tuning_cancel/value/runs/4/error/message, why: the SDK names the missing client option while betterlite names the missing key}

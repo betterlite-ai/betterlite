@@ -32,6 +32,8 @@ use super::result::{Failure, Nullable};
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const JSON_CONTENT: &str = "application/json";
+// the openai client sends the organization it was built with as a header
+const ORGANIZATION: &str = "openai-organization";
 
 fn openai_provider() -> Option<String> {
     Some("openai".to_owned())
@@ -267,7 +269,7 @@ async fn run_once(
     }
 }
 
-// the harness owns the mock, so its base replaces both the parameter and the environment variable
+// the harness owns the mock, so the mode a run picks supplies that base and leaves the other one a decoy
 fn prepared_params(
     run: &Run,
     api_base: &str,
@@ -278,9 +280,15 @@ fn prepared_params(
         Some("azure") => "AZURE_API_BASE",
         _ => "OPENAI_BASE_URL",
     };
-    env.insert(variable.to_owned(), format!("{api_base}/env-base"));
+    let decoy = format!("{api_base}/env-base");
+    let from_environment = if run.base == Base::Env {
+        api_base
+    } else {
+        decoy.as_str()
+    };
+    env.insert(variable.to_owned(), from_environment.to_owned());
     if run.base == Base::Param {
-        params.api_base = Some(format!("{api_base}/param-base"));
+        params.api_base = Some(api_base.to_owned());
     }
     params
 }
@@ -304,6 +312,12 @@ fn openai_request(target: &OpenAiFineTuningCancel<'_>) -> Result<OutboundRequest
         AUTHORIZATION,
         HeaderValue::from_str(&authorization).map_err(|_source| CancelFailure::InvalidHeader)?,
     );
+    if let Some(organization) = target.organization {
+        headers.insert(
+            ORGANIZATION,
+            HeaderValue::from_str(organization).map_err(|_source| CancelFailure::InvalidHeader)?,
+        );
+    }
     let url = format!(
         "{}/fine_tuning/jobs/{}/cancel",
         target.api_base.trim_end_matches('/'),

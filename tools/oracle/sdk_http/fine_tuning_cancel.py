@@ -55,7 +55,7 @@ class FineTuningCancelRequest(BaseModel):
 
 def prepare_env(run: Run, api_base: str) -> None:
     variable = "AZURE_API_BASE" if run.custom_llm_provider == "azure" else "OPENAI_BASE_URL"
-    os.environ[variable] = f"{api_base}/env-base"
+    os.environ[variable] = api_base if run.base == "env" else f"{api_base}/env-base"
 
 
 def call_kwargs(run: Run, api_base: str) -> dict[str, object]:
@@ -65,7 +65,7 @@ def call_kwargs(run: Run, api_base: str) -> dict[str, object]:
         "custom_llm_provider": run.custom_llm_provider,
     }
     if run.base == "param":
-        kwargs["api_base"] = f"{api_base}/param-base"
+        kwargs["api_base"] = api_base
     if run.extra_headers is not None:
         kwargs["extra_headers"] = run.extra_headers
     if run.extra_body is not None:
