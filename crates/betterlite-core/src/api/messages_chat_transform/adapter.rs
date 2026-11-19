@@ -50,14 +50,14 @@ impl AnthropicAdapter {
     pub async fn translate_completion_input_params<Predicates>(
         &self,
         kwargs: &mut Object,
-        settings: &AdapterSettings<'_>,
+        settings: AdapterSettings<'_>,
         predicates: &mut Predicates,
     ) -> Result<Object, TransformError>
     where
         Predicates: CapabilityPredicates + Send,
     {
         // LiteLLM's convenience method takes no provider keyword, so it composes as if none was named.
-        let mut unrouted = *settings;
+        let mut unrouted = settings;
         unrouted.custom_llm_provider = None;
         let (request, _tool_name_mapping) = self
             .translate_completion_input_params_with_tool_mapping(kwargs, &unrouted, predicates)

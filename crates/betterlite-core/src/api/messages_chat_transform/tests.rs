@@ -204,7 +204,7 @@ async fn empty_required_keys_raise_litellms_value_errors() {
     let convenience_error = adapter()
         .translate_completion_input_params(
             &mut convenience,
-            &AdapterSettings::new(&declared),
+            AdapterSettings::new(&declared),
             &mut Capabilities::new(&[]),
         )
         .await
@@ -382,7 +382,7 @@ async fn long_tool_names_roundtrip_through_the_returned_mapping() {
     let convenience = adapter()
         .translate_completion_input_params(
             &mut again,
-            &AdapterSettings::new(&declared),
+            AdapterSettings::new(&declared),
             &mut Capabilities::new(&[]),
         )
         .await
@@ -481,7 +481,7 @@ async fn the_convenience_wrapper_composes_without_a_provider() {
     capabilities.providers.push("openai".to_owned());
     let mut unrouted = object(request_json);
     let folded = adapter()
-        .translate_completion_input_params(&mut unrouted, &settings, &mut capabilities)
+        .translate_completion_input_params(&mut unrouted, settings, &mut capabilities)
         .await
         .expect("the convenience request composes");
     assert_eq!(

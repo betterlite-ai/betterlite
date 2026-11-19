@@ -167,7 +167,7 @@ fn wrapped_answer(
     let request = runtime
         .block_on(adapter.translate_completion_input_params(
             &mut kwargs,
-            &settings,
+            settings,
             &mut capabilities,
         ))
         .map_err(|error| transform_failure(&error))?;
