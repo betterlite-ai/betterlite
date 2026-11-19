@@ -1,0 +1,53 @@
+kind: helper
+name: deployment-credentials-simple-projection
+call:
+  deployment_credentials:
+    function: get_deployment_credentials
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+          api_key: sk-deployment
+          api_base: https://proxy.test
+          api_version: "2024-01-01"
+          vertex_credentials:
+            type: service_account
+            project_id: project-1
+          aws_session_tags:
+            - Key: team
+              Value: alpha
+          bedrock_tags:
+            - environment
+          custom_llm_provider: openai
+          litellm_credential_name: creds
+          organization: org-1
+        model_info:
+          id: d1
+    arguments:
+      model_id: d1
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials
+      model_list:
+        - model_name: unknown-model
+          litellm_params:
+            model: openai/unknown
+            api_key: sk-unknown
+          model_info:
+            id: d2
+      arguments:
+        model_id: d1
+  - deployment_credentials:
+      function: get_deployment_credentials
+      model_list:
+        - model_name: paused
+          litellm_params:
+            model: openai/paused
+            api_key: sk-paused
+          model_info:
+            id: d3
+            blocked: true
+      arguments:
+        model_id: d3
+env: {}
+compare: {ignore: []}

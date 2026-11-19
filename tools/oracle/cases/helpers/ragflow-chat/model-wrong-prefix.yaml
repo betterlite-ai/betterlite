@@ -1,0 +1,12 @@
+kind: helper
+name: ragflow-chat-model-wrong-prefix
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'other/chat/abc/m', api_base: 'http://host:9380'}
+      - {model: 'ragflowx/chat/abc/m', api_base: 'http://host:9380'}

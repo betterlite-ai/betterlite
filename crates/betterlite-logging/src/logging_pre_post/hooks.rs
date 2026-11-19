@@ -21,18 +21,18 @@ pub struct PostCallEvent<'call> {
     pub start_time: DateTime<FixedOffset>,
 }
 
-pub trait ApiCallLogger {
+pub trait ApiCallLogger: Send + Sync {
     fn log_pre_api_call(&self, event: &PreCallEvent<'_>) -> Result<(), PrePostError>;
 
     fn log_post_api_call(&self, event: &PostCallEvent<'_>) -> Result<(), PrePostError>;
 }
 
 // Callable input callbacks and the supabase client, whose exporters belong to B110-B118
-pub trait InputEventSink {
+pub trait InputEventSink: Send + Sync {
     fn log_input_event(&self, event: &PreCallEvent<'_>) -> Result<(), PrePostError>;
 }
 
-pub trait SentrySink {
+pub trait SentrySink: Send + Sync {
     fn add_breadcrumb(&self, message: &str) -> Result<(), PrePostError>;
 
     fn capture_exception(&self, message: &str);

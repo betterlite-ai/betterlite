@@ -1,0 +1,13 @@
+kind: helper
+name: azure-search-error-seed
+call:
+  azure_search:
+    error:
+      scenarios:
+        - environment: {}
+          status: 200
+          body: |
+            {"output": [], "status": "failed", "error": {"message": "{\"error\": {\"message\": \"seed failure. \"}}"}}
+env: {}
+compare:
+  ignore: []

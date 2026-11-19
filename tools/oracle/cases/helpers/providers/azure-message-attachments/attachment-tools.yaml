@@ -1,0 +1,32 @@
+kind: helper
+name: azure-message-attachments-attachment-tools
+call:
+  azure_message_attachments:
+    map_create_message_params:
+      - non_default: {role: user, content: hi, metadata: {team: core}}
+        optional: {temperature: 0.2}
+        drop_params: false
+      - non_default: {role: assistant, content: "plain text", tools: [{type: code_interpreter}], file_ids: [file-1], response_format: {type: json_object}}
+        optional: {temperature: 0.2}
+        drop_params: false
+      - non_default: {attachments: [{file_id: file-1}, {file_id: file-2, tools: [{type: file_search}]}]}
+        optional: {attachments: [{file_id: existing}], file_ids: [old]}
+        drop_params: false
+calls:
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {role: null, metadata: null, content: ""}
+          optional: {}
+          drop_params: false
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {content: [{type: text, text: hi}]}
+          optional: {}
+          drop_params: false
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: []}
+          optional: {}
+          drop_params: false
+env: {}
+compare: {ignore: []}

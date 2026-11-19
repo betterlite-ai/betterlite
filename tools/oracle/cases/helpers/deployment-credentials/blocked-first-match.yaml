@@ -1,0 +1,69 @@
+kind: helper
+name: deployment-credentials-blocked-first-match
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: guarded
+        litellm_params:
+          model: openai/a
+          api_key: sk-a
+        model_info:
+          id: b1
+          blocked: true
+      - model_name: guarded
+        litellm_params:
+          model: openai/b
+          api_key: sk-b
+        model_info:
+          id: b2
+    arguments:
+      model_id: guarded
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: "openai/*"
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-global
+          model_info:
+            id: g1
+        - model_name: team-wildcard-model
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-team
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: "openai/*"
+            blocked: true
+      arguments:
+        model_id: openai/gpt-4o
+        team_id: team-a
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: null-flag
+          litellm_params:
+            model: openai/n
+            api_key: sk-n
+          model_info:
+            id: n1
+            blocked: null
+      arguments:
+        model_id: null-flag
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: false-flag
+          litellm_params:
+            model: openai/f
+            api_key: sk-f
+          model_info:
+            id: f1
+            blocked: false
+      arguments:
+        model_id: false-flag
+env: {}
+compare: {ignore: []}

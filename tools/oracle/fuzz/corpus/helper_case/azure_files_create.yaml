@@ -1,0 +1,12 @@
+kind: helper
+name: azure-files-create-seed
+call:
+  azure_files:
+    steps:
+    - action: create
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      content: seed
+      create_purpose: batch
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "file-1", "object": "file", "bytes": 4, "created_at": 1700000000, "filename": "seed.txt", "purpose": "batch", "status": "processed"}'}
+env: {}
+compare: {ignore: []}
