@@ -76,6 +76,22 @@ async fn an_unpaired_window_is_refused_before_the_engine_runs() {
 }
 
 #[test]
+fn the_registration_identity_carries_the_resolved_parent_settings() {
+    let logger = support::build(
+        &BTreeMap::new(),
+        support::params(),
+        &Recorder::new(false),
+        None,
+    );
+    let identity = logger.registration_identity();
+    assert_eq!(identity.class_name, "VantageLogger");
+    assert_eq!(
+        identity.key(),
+        "VantageLogger-provider=vantage-export_format=csv-frequency=hourly-cron_offset_minute=5-interval_seconds=60-prefix=vantage_exports"
+    );
+}
+
+#[test]
 fn the_destination_config_carries_the_resolved_base_url() {
     let logger = support::build(
         &BTreeMap::new(),
