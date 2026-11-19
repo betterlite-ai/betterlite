@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::sync::PoisonError;
 
 use axum::Router;
-use axum::body::Bytes;
 use axum::extract::Extension;
 use axum::routing::post;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -195,4 +194,5 @@ pub(super) fn remove_routes(routes: &SharedPassThroughRoutes, endpoint_id: &str)
         ..
     } = &mut *state;
     remove_endpoint_routes(&mut registry.registrations, openai_routes, endpoint_id);
+    drop(state);
 }

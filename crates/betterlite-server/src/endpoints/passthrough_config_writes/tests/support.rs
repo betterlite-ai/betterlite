@@ -50,6 +50,7 @@ use crate::endpoints::passthrough_config_writes::settings_port::ConfigFieldUpdat
 use crate::endpoints::passthrough_config_writes::settings_port::GeneralSettingsError;
 use crate::endpoints::passthrough_config_writes::settings_port::GeneralSettingsStore;
 use crate::passthrough::route_registration::PassThroughEndpoint;
+use crate::passthrough::route_registration::PassThroughRoutes;
 use crate::passthrough::route_registration::PassthroughParams;
 use crate::passthrough::route_registration::SharedPassThroughRoutes;
 use crate::passthrough::route_registration::initialize_pass_through_endpoints;
@@ -96,7 +97,11 @@ impl FakeStore {
     }
 
     pub(crate) fn field(&self) -> JsonData {
-        lock(&self.cells).field.clone()
+        self.cells
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .field
+            .clone()
     }
 
     pub(crate) fn stored_ids(&self) -> Vec<String> {
@@ -106,14 +111,19 @@ impl FakeStore {
         items
             .iter()
             .map(|item| {
-                let record: HeldEndpoint = serde_json::from_str(&item.to_string()).expect("record");
+                let wire = serde_json::to_value(item).expect("stored json");
+                let record: HeldEndpoint = serde_json::from_value(wire).expect("record");
                 record.id.unwrap_or_default()
             })
             .collect()
     }
 
     pub(crate) fn writes(&self) -> Vec<JsonData> {
-        lock(&self.cells).writes.clone()
+        self.cells
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .writes
+            .clone()
     }
 }
 
@@ -136,7 +146,12 @@ impl GeneralSettingsStore for FakeStore {
         }
         Ok(ConfigFieldInfo {
             field_name: name.to_owned(),
-            field_value: lock(&self.cells).field.clone(),
+            field_value: self
+                .cells
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .field
+                .clone(),
         })
     }
 
@@ -144,9 +159,10 @@ impl GeneralSettingsStore for FakeStore {
         if self.write_fails {
             return Err(refusal());
         }
-        let mut cells = lock(&self.cells);
+        let mut cells = self.cells.lock().unwrap_or_else(PoisonError::into_inner);
         cells.field = update.field_value.clone();
         cells.writes.push(update.field_value);
+        drop(cells);
         Ok(())
     }
 }
@@ -242,14 +258,10 @@ pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 pub(crate) fn registry() -> SharedPassThroughRoutes {
-    Arc::new(Mutex::new(
-        crate::passthrough::route_registration::PassThroughRoutes::default(),
-    ))
+    Arc::new(Mutex::new(PassThroughRoutes::default()))
 }
 
-pub(crate) fn lock(
-    routes: &SharedPassThroughRoutes,
-) -> MutexGuard<'_, crate::passthrough::route_registration::PassThroughRoutes> {
+pub(crate) fn lock(routes: &SharedPassThroughRoutes) -> MutexGuard<'_, PassThroughRoutes> {
     routes.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -452,7 +464,7 @@ pub(crate) fn endpoint_field(reply: &Reply, name: &str) -> JsonData {
     let JsonData::Object(mut top) = body else {
         panic!("a response object");
     };
-    let Some(JsonData::Array(mut items)) = top.remove("endpoints") else {
+    let Some(JsonData::Array(items)) = top.remove("endpoints") else {
         panic!("an endpoint list");
     };
     let Some(JsonData::Object(mut record)) = items.into_iter().next() else {

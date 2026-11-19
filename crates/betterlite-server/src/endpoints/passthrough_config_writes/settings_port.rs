@@ -5,14 +5,14 @@ use betterlite_db::budget_permission_rows::JsonData;
 use thiserror::Error;
 
 // LiteLLM's ConfigFieldInfo: one general_settings field as the store currently holds it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFieldInfo {
     pub field_name: String,
     pub field_value: JsonData,
 }
 
 // LiteLLM's ConfigFieldUpdate: the whole field replaced by the list the route built
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFieldUpdate {
     pub field_name: String,
     pub field_value: JsonData,

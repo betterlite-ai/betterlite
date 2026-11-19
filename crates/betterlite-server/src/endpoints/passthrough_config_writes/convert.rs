@@ -23,7 +23,7 @@ fn json_of(value: &JsonData) -> Json {
         JsonData::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), json_of(value)))
+                .map(|(key, entry)| (key.clone(), json_of(entry)))
                 .collect(),
         ),
     }
@@ -38,8 +38,8 @@ pub(super) fn json_object(fields: &BTreeMap<String, JsonData>) -> JsonObject {
 }
 
 fn text_list(items: Option<&[String]>) -> Json {
-    items.map_or(Json::Null, |items| {
-        Json::List(items.iter().map(|item| Json::Text(item.clone())).collect())
+    items.map_or(Json::Null, |names| {
+        Json::List(names.iter().map(|item| Json::Text(item.clone())).collect())
     })
 }
 
