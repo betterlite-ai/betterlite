@@ -26,6 +26,20 @@ fn payload() -> ModelUsagePayload {
 }
 
 #[test]
+fn a_payload_decodes_from_its_wire_shape() {
+    let decoded: ModelUsagePayload = serde_json::from_str(
+        r#"{"startTime":"2026-01-02T10:00:00Z","metadata":"{}","model":"gpt-4o","request_tags":"[]","spend":0.25,"prompt_tokens":10,"completion_tokens":5,"status":"success"}"#,
+    )
+    .expect("a wire payload");
+    assert_eq!(decoded.model, Some(String::from("gpt-4o")));
+    assert_eq!(decoded.model_group, None);
+    assert_eq!(decoded.custom_llm_provider, None);
+    let built = build_model_usage_transaction(&decoded).expect("a dated payload");
+    assert_eq!(built.key.date, "2026-01-02");
+    assert_eq!(built.key.task_type, "uncategorized");
+}
+
+#[test]
 fn a_payload_becomes_one_transaction() {
     let built = build_model_usage_transaction(&payload()).expect("a dated payload");
     assert_eq!(

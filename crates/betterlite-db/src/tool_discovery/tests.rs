@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::timeout;
@@ -103,6 +104,21 @@ async fn a_full_buffer_waits_for_a_flush_without_dropping_the_tool() {
     timeout(Duration::from_secs(1), queue.add_update(named("fetch")))
         .await
         .expect("the flush freed the buffer");
+    assert_eq!(queue.flush(), [named("fetch")]);
+}
+
+#[tokio::test]
+async fn a_flush_wakes_a_waiter_for_room() {
+    let queue = Arc::new(ToolDiscoveryQueue::new(1).expect("a queue"));
+    queue.add_update(named("search")).await;
+    let waiting = Arc::clone(&queue);
+    let producer = tokio::spawn(async move { waiting.add_update(named("fetch")).await });
+    tokio::task::yield_now().await;
+    assert_eq!(queue.flush(), [named("search")]);
+    timeout(Duration::from_secs(1), producer)
+        .await
+        .expect("the flush wakes the producer")
+        .expect("the producer queued the tool");
     assert_eq!(queue.flush(), [named("fetch")]);
 }
 

@@ -197,6 +197,31 @@ async fn a_full_queue_waits_for_a_flush() {
 }
 
 #[tokio::test]
+async fn a_flush_wakes_a_waiter_for_room() {
+    let queue = Arc::new(WindowSpendUpdateQueue::new(1, 100, 10).expect("a queue"));
+    queue
+        .add_update(same_window("1.0", None))
+        .await
+        .expect("the first increment");
+    let waiting = Arc::clone(&queue);
+    let producer = tokio::spawn(async move { waiting.add_update(same_window("2.0", None)).await });
+    tokio::task::yield_now().await;
+    assert_eq!(
+        queue.flush().expect("the first increment flushes"),
+        [same_window("1.0", None)]
+    );
+    timeout(Duration::from_secs(1), producer)
+        .await
+        .expect("the flush wakes the producer")
+        .expect("the producer queued the increment")
+        .expect("the increment queued");
+    assert_eq!(
+        queue.flush().expect("the second increment flushes"),
+        [same_window("2.0", None)]
+    );
+}
+
+#[tokio::test]
 async fn a_zero_flush_count_drains_nothing() {
     let queue = WindowSpendUpdateQueue::new(4, 100, 0).expect("a queue");
     queue

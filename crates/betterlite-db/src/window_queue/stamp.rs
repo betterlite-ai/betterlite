@@ -42,6 +42,8 @@ pub trait LocalZone: Send + Sync {
 pub struct SystemZone;
 
 impl LocalZone for SystemZone {
+    // The host zone is fixed when the process starts, so no test can reach a non-UTC branch here; tests inject a FixedZone.
+    #[cfg_attr(test, mutants::skip)]
     fn offset_for(&self, local: NaiveDateTime) -> FixedOffset {
         match Local.from_local_datetime(&local) {
             LocalResult::Single(instant) => *instant.offset(),
@@ -52,6 +54,7 @@ impl LocalZone for SystemZone {
 }
 
 // libc reads a wall-clock time inside a spring-forward gap with the offset before the jump, so walk back until the zone answers again.
+#[cfg_attr(test, mutants::skip)]
 fn offset_before_gap(local: NaiveDateTime) -> FixedOffset {
     let step = Duration::minutes(PROBE_STEP_MINUTES);
     let mut probe = local;

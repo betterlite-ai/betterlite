@@ -250,20 +250,14 @@ async fn a_failed_statement_rolls_back_every_increment_of_the_flush() {
     };
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
-    let outcome = flush_model_usage_transactions(
-        &writer,
-        &transactions,
-        DEFAULT_RETRY_TIMES,
-        &jitter,
-        &pause,
-    )
-    .await;
+    let outcome = flush_model_usage_transactions(&writer, &transactions, 1, &jitter, &pause).await;
     assert!(matches!(
         outcome,
         Err(ModelUsageFlushError::Write(
             ModelUsageWriteError::AfterSend(_)
         ))
     ));
+    assert!(pause.delays().is_empty());
     assert_eq!(
         case.rollups().await,
         [RollupRow {
