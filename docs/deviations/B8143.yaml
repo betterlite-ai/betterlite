@@ -1,0 +1,15 @@
+task: B8143
+deviations:
+  - what: The example has one module call and no separate gateway, backend or ui settings.
+    why: The module runs one service, so there are no per-component variables to surface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/main.tf
+  - what: The image variable in the example has no default.
+    why: There is no published betterlite image name yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: The example exposes seven inputs (region, tenant, env, image, litellm_master_key, acm_certificate_arn, allow_plaintext_alb), not LiteLLM's curated set with azs, vpc_id, the database and cache URLs, the extra env and secret maps and proxy_config.
+    why: The task fixes this shorter surface, and every other input keeps its module default and can still be set on the module "betterlite" block in examples/default/main.tf.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+  - what: The example sets azs to the first two availability zones of var.region instead of taking an azs input.
+    why: The module needs two AZs for its VPC, Aurora and ElastiCache subnet groups, and the shorter input surface has no azs variable, so the example derives them to stay runnable as written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+kept_bugs: []
