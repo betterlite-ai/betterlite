@@ -1,0 +1,303 @@
+kind: probe
+name: router-dependencies-misplaced-router-config
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: classify
+        model: auto_router/support-bot
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: classify
+        model: auto_router/complexity_router_eu
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: classify
+        model: gpt-4o
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: classify
+        model: "auto_router/"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/support-bot
+          auto_router_default_model: gpt-4o
+          auto_router_embedding_model: text-embedding-3-small
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/adaptive_router
+          adaptive_router_config:
+            available_models: [m1, m2]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/quality_router
+          quality_router_default_model: m3
+          quality_router_config:
+            available_models: [m1, m2]
+            default_model: m2
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_default_model: default-x
+          complexity_router_config:
+            tiers:
+              SIMPLE: mini
+              MEDIUM: [mid, mini]
+              COMPLEX: big
+            classifier_type: llm
+            classifier_llm_config: {model: classifier-x}
+            context_compaction: {model: compactor-x}
+            semantic_keyword_matching: true
+            embedding_model: embed-x
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config:
+            classifier_type: jev
+            jev_classifier_config: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config:
+            classifier_type: jev
+            jev_classifier_config: {deployment_name: jev-prod}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: dependencies
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config:
+            tiers:
+              SIMPLE: {model_name: y}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: predicates
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config: {classifier_type: heuristic_v2}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: predicates
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config: {tier_definitions: []}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: predicates
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config:
+            classifier_type: jev
+            jev_classifier_config: {instructions: pick the tier}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: predicates
+        litellm_params:
+          model: auto_router/complexity_router
+          complexity_router_config:
+            classifier_type: llm
+            classification_prompt: pick the tier
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: predicates
+        litellm_params:
+          model: auto_router/complexity_router
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: carries
+        model: auto_router/complexity_router
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: carries
+        model: gpt-4o
+        present_fields: [complexity_router_config]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: carries
+        model: gpt-4o
+        present_fields: [auto_router_config, embedding_model]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: model_write
+        model: auto_router/support-bot
+        present_fields: [auto_router_config, auto_router_default_model, auto_router_embedding_model]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: model_write
+        model: gpt-4o
+        present_fields: [auto_router_config, adaptive_router_config, model]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: model_write
+        model: auto_router/auto_router/x
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: model_write
+        model: "auto_router/"
+        present_fields: [auto_router_config]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: model_write
+        model: auto_router/complexity_router
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: placement
+        litellm_params:
+          model: gpt-4o
+          tier_labels: {}
+          adaptive: false
+          match_threshold: 0.5
+          complexity_router_config: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: placement
+        litellm_params:
+          model: gpt-4o
+          complexity_router_config: {tiers: {}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config: {plan_mode_min_tier: NOPE}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          classifier_type: llm
+          classifier_llm_config: {model: classifier-x}
+          fallback_tier: ECO
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tiers: {ECO: eco, DEEP: deep}
+          adaptive: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          classifier_type: llm
+          classifier_llm_config: {model: classifier-x}
+          fallback_tier: ECO
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tiers: {ECO: eco, DEEP: deep}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          classifier_type: hybrid
+          classifier_llm_config: {model: classifier-x}
+          hybrid_boundary_margin: 1.5
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          classifier_type: hybrid
+          classifier_llm_config: {model: classifier-x}
+          hybrid_boundary_margin: 0.5
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          tiers:
+            SIMPLE: [x, {model_name: y, litellm_params: {temperature: 0.2}}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          escalation_keywords: []
+          semantic_keyword_matching: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config: {future_key: 1}
