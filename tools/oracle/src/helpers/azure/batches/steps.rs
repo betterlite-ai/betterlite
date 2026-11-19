@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::fixture::{Cache, Log, Materializer, Planned, Sources};
-use super::reports::{projection, raised, value_error};
+use super::reports::{projection, raised};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -110,19 +110,25 @@ fn perform(
         },
         Action::Create => match step.data.as_ref() {
             Some(data) => reply_value(runtime.block_on(call(connection, Operation::Create(data)))),
-            None => value_error("a create step carries no data"),
+            None => json!({
+                "raised": { "class": "ValueError", "message": "a create step carries no data" },
+            }),
         },
         Action::Retrieve => match step.query.as_ref() {
             Some(query) => {
                 reply_value(runtime.block_on(call(connection, Operation::Retrieve(query))))
             }
-            None => value_error("a retrieve step carries no query"),
+            None => json!({
+                "raised": { "class": "ValueError", "message": "a retrieve step carries no query" },
+            }),
         },
         Action::Cancel => match step.query.as_ref() {
             Some(query) => {
                 reply_value(runtime.block_on(call(connection, Operation::Cancel(query))))
             }
-            None => value_error("a cancel step carries no query"),
+            None => json!({
+                "raised": { "class": "ValueError", "message": "a cancel step carries no query" },
+            }),
         },
         Action::List => reply_value(runtime.block_on(call(
             connection,

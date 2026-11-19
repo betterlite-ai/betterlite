@@ -20,9 +20,10 @@ fn helper_seeds_select_azure_batches() {
         .map(|path| fs::read_to_string(path).unwrap())
         .collect();
     assert!(!seeds.is_empty());
-    for source in &seeds {
+    let selected = seeds.iter().all(|source| {
         let parsed: HelperCase = serde_saphyr::from_str(source).unwrap();
         assert!(validate_helper(Path::new("<helper>"), &parsed).is_ok());
-        assert_eq!(parsed.call.operation, "azure_batches");
-    }
+        parsed.call.operation == "azure_batches"
+    });
+    assert!(selected);
 }

@@ -5,10 +5,6 @@ use betterlite_openai::batches::error::SdkError;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-pub(crate) fn value_error(message: &str) -> Value {
-    json!({ "raised": { "class": "ValueError", "message": message } })
-}
-
 pub(crate) fn raised(error: &AzureBatchesError) -> Value {
     match error {
         AzureBatchesError::Sdk { source } => sdk_raised(source),
@@ -19,7 +15,9 @@ pub(crate) fn raised(error: &AzureBatchesError) -> Value {
         AzureBatchesError::ClientMissing
         | AzureBatchesError::NotAsync
         | AzureBatchesError::CancelNotAsync
-        | AzureBatchesError::NotSync => value_error(&error.to_string()),
+        | AzureBatchesError::NotSync => json!({ "raised": {
+            "class": "ValueError", "message": error.to_string(),
+        } }),
     }
 }
 
