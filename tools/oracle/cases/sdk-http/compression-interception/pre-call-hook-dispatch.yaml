@@ -1,0 +1,87 @@
+kind: sdk_http
+name: compression-interception-pre-call-hook-dispatch
+env: {}
+call:
+  compression_interception:
+    steps:
+      - settings:
+          litellm_settings:
+            compression_interception_params: {enabled: false}
+          callback_settings: {}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: disabled}]
+        now: 0
+      - settings: {litellm_settings: {}, callback_settings: {}}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: foreign call type}]
+        call_type: completion
+        now: 10
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: messages call}]
+        call_type: anthropic_messages
+        now: 20
+        compress:
+          messages: [{role: user, content: compressed messages}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-1: original one}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: agentic}]
+          _agentic_loop_depth: 2
+        call_type: anthropic_messages
+        now: 30
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: top loop}]
+          _agentic_loop_depth: 0
+        call_type: anthropic_messages
+        now: 40
+        compress:
+          messages: [{role: user, content: compressed top loop}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1500
+          compressed_tokens: 700
+          cache: {key-2: original two}
+      - request:
+          model: claude-sonnet-4
+          messages: not a list
+        call_type: anthropic_messages
+        now: 50
+      - request:
+          model: 42
+          messages: [{role: user, content: numeric model}]
+        call_type: anthropic_messages
+        now: 60
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: function tool}]
+          tools: [{type: function, function: {name: litellm_content_retrieve}}]
+        call_type: anthropic_messages
+        now: 70
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: custom tool}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+        call_type: anthropic_messages
+        now: 80
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: no call type}]
+        now: 90
+        compress:
+          messages: [{role: user, content: compressed no call type}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 900
+          compressed_tokens: 300
+          cache: {key-3: original three}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
