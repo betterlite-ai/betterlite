@@ -1,3 +1,5 @@
+use std::io;
+use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -44,9 +46,9 @@ impl Recorder {
             .push(label.to_owned());
     }
     pub(super) fn take(&self) -> (Vec<String>, Vec<String>) {
-        let hooks = std::mem::take(&mut *self.hooks.lock().unwrap_or_else(PoisonError::into_inner));
+        let hooks = mem::take(&mut *self.hooks.lock().unwrap_or_else(PoisonError::into_inner));
         let mut logging =
-            std::mem::take(&mut *self.logging.lock().unwrap_or_else(PoisonError::into_inner));
+            mem::take(&mut *self.logging.lock().unwrap_or_else(PoisonError::into_inner));
         logging.sort_unstable();
         (hooks, logging)
     }
@@ -126,7 +128,7 @@ impl ResponsesEventTransform for Decoder {
 pub(super) struct NoTokenization;
 
 impl UsageTokenization for NoTokenization {
-    type Error = std::io::Error;
+    type Error = io::Error;
     fn messages(&self, _request: &EstimateRequest<'_>) -> Result<Vec<Json>, Self::Error> {
         Ok(Vec::new())
     }
@@ -137,7 +139,7 @@ impl UsageTokenization for NoTokenization {
 pub(super) struct NoCost;
 
 impl ResponsesCostCalculator for NoCost {
-    type Error = std::io::Error;
+    type Error = io::Error;
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
         Ok(None)
     }
@@ -145,7 +147,7 @@ impl ResponsesCostCalculator for NoCost {
 // Everything one run's hooks report, rebuilt per run so no state leaks between drivers
 pub(super) struct Environment {
     pub(super) recorder: Arc<Recorder>,
-    redactor: Redactor,
+    pub(super) redactor: Redactor,
     pub(super) logging: StreamLoggingObject,
     pub(super) limits: ApiLimits,
 }
@@ -162,19 +164,16 @@ impl Environment {
         })
     }
     pub(super) fn hooks(&self) -> ResponsesStreamHooks<'_> {
-        let success: Arc<dyn ResponsesStreamSuccessTarget> = Arc::clone(&self.recorder);
-        let failure: Arc<dyn ResponsesStreamFailureTarget> = Arc::clone(&self.recorder);
         let chunk: Arc<dyn ChunkDeploymentHook> = Arc::clone(&self.recorder);
-        let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock);
         ResponsesStreamHooks {
             cache: None,
             cache_handler: None,
-            success: Some(success),
-            failure: Some(failure),
+            success: Some(Arc::clone(&self.recorder)),
+            failure: Some(Arc::clone(&self.recorder)),
             metadata: None,
             success_hook: None,
             chunk_hooks: vec![chunk],
-            clock,
+            clock: Arc::new(FixedClock),
             redactor: &self.redactor,
         }
     }

@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use betterlite_core::api::responses_stream_driver::errors::{TransportFailure, TransportKind};
 use betterlite_core::api::responses_stream_driver::source::{SourceFailure, classify};
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::{ProxiedClient, StreamResponse};
 use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use http::header::{AUTHORIZATION, HeaderValue};
@@ -31,8 +31,8 @@ pub(super) fn scripted(spec: &RunSpec) -> Opened {
         .iter()
         .map(|text| Ok(text.as_bytes().to_vec()))
         .collect();
-    if let Some(failure) = &spec.failure {
-        items.push(Err(SourceFailure::Transport(self::failure(failure))));
+    if let Some(scripted) = &spec.failure {
+        items.push(Err(SourceFailure::Transport(failure(scripted))));
     }
     items
 }
@@ -48,9 +48,9 @@ pub(super) async fn prefetch(
         "stream": true,
     }))
     .map_err(SdkHttpError::Serialize)?;
-    let mut headers = HeaderMap::new();
     let bearer = HeaderValue::from_bytes(format!("Bearer {}", call.api_key).as_bytes())
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, bearer);
     let url = format!("{}/responses", api_base.trim_end_matches('/'));
     let response = client
@@ -70,6 +70,9 @@ pub(super) async fn prefetch(
             "the mock answered the responses call with status {status}"
         )));
     }
+    Ok(read_body(response).await)
+}
+async fn read_body(response: StreamResponse) -> Opened {
     let mut body = response.body_stream();
     let mut parser = SseParser::default();
     let mut items = Opened::new();
@@ -78,17 +81,17 @@ pub(super) async fn prefetch(
             Ok(bytes) => bytes,
             Err(error) => {
                 items.push(Err(SourceFailure::Transport(classify(error))));
-                return Ok(items);
+                return items;
             }
         };
         match parser.push(&bytes) {
             Ok(payloads) => items.extend(payloads.into_iter().map(Ok)),
             Err(error) => {
                 items.push(Err(SourceFailure::Decode(error.to_string())));
-                return Ok(items);
+                return items;
             }
         }
     }
     items.extend(parser.finish().into_iter().map(Ok));
-    Ok(items)
+    items
 }

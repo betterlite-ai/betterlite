@@ -10,7 +10,7 @@ mod call;
 mod run;
 mod source;
 
-pub use call::{Call, Mode, Outcome, RunOutcome, RunSpec, ScriptedFailure, Step, StepOutcome};
+pub(super) use call::{Call, Outcome};
 
 impl CallKind for Call {
     fn send(

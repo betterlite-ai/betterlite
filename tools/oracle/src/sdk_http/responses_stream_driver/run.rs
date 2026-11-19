@@ -5,16 +5,17 @@ use betterlite_core::api::responses_stream_driver::synthetic::{SyntheticSetup, S
 use betterlite_core::api::responses_stream_events::{
     BaseStreamStateInput, LoggingSnapshot, StreamTimes,
 };
-use betterlite_core::api::responses_stream_hooks::failure::await_pending_logging;
+use betterlite_core::api::responses_stream_hooks::ResponsesStreamHooks;
 use betterlite_core::api::responses_stream_hooks::ports::Dispatch;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use chrono::DateTime;
 use indexmap::IndexMap;
 
 use super::assemble::{Decoder, Environment, Event, NoApiBase, NoCost, NoTokenization};
 use super::call::{Call, Mode, RunOutcome, RunSpec, Step, StepOutcome};
-use super::source;
+use super::source::{self, Opened};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
 
@@ -24,7 +25,7 @@ use self::outcome::{failure_of, view};
 
 enum Stream<'stream> {
     Live(Box<LiveStream<'stream, Decoder, NoTokenization, NoCost>>),
-    Synthetic(SyntheticStream<'stream>),
+    Synthetic(Box<SyntheticStream<'stream>>),
 }
 impl Stream<'_> {
     async fn next_async(&mut self) -> Result<Option<Event>, DriverError> {
@@ -39,15 +40,79 @@ impl Stream<'_> {
             Self::Synthetic(stream) => futures_executor::block_on(stream.advance(Dispatch::Inline)),
         }
     }
-    async fn drain_logging(&mut self) {
-        match self {
-            Self::Live(stream) => await_pending_logging(&mut stream.callback).await,
-            Self::Synthetic(stream) => {
-                let callback = &mut stream.callback;
-                await_pending_logging(callback).await;
-            }
-        }
+}
+fn live_stream<'stream>(
+    hooks: &'stream ResponsesStreamHooks<'stream>,
+    environment: &'stream Environment,
+    headers: &'stream IndexMap<String, String>,
+    call: &Call,
+    items: Opened,
+) -> Stream<'stream> {
+    let state = BaseStreamStateInput {
+        model: &call.model,
+        custom_llm_provider: Some("openai"),
+        litellm_metadata: None,
+        request_data: None,
+        call_type: None,
+        logging: LoggingSnapshot::read(&environment.logging),
+        headers,
+        api_base: &NoApiBase,
+        times: times(),
+        max_streaming_duration_seconds: None,
+    };
+    Stream::Live(Box::new(LiveStream::new(
+        StreamEngine {
+            transform: Some(&Decoder),
+            tokenization: None::<&NoTokenization>,
+            calculator: None::<&NoCost>,
+            hooks,
+            logging: &environment.logging,
+            details: IndexMap::new(),
+            limits: &environment.limits,
+        },
+        state,
+        Box::new(PrefetchedSource::new(items)),
+    )))
+}
+fn synthesize<'stream>(
+    hooks: &'stream ResponsesStreamHooks<'stream>,
+    environment: &'stream Environment,
+    headers: &'stream IndexMap<String, String>,
+    spec: &RunSpec,
+    model: &'stream mut String,
+) -> Result<Stream<'stream>, SdkHttpError> {
+    let cached = matches!(spec.mode, Mode::Cached);
+    let response = spec
+        .response
+        .as_ref()
+        .ok_or_else(|| SdkHttpError::Invalid("a fake or cached run needs a response".to_owned()))?;
+    let value = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
+    let response: ResponsesApiResponse =
+        serde_json::from_value(value).map_err(SdkHttpError::ResultParse)?;
+    if cached {
+        *model = response.model.clone().unwrap_or_default();
     }
+    let state = BaseStreamStateInput {
+        model: model.as_str(),
+        custom_llm_provider: Some(if cached { "cached_response" } else { "openai" }),
+        litellm_metadata: None,
+        request_data: None,
+        call_type: None,
+        logging: LoggingSnapshot::read(&environment.logging),
+        headers,
+        api_base: &NoApiBase,
+        times: times(),
+        max_streaming_duration_seconds: None,
+    };
+    let setup = SyntheticSetup {
+        state,
+        hooks,
+        cache_hit: cached.then_some(true),
+        persist_before_logging: !cached,
+    };
+    let synthesized = SyntheticStream::build(response, setup, None::<&NoCost>)
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    Ok(Stream::Synthetic(Box::new(synthesized)))
 }
 pub(super) async fn run(
     client: &ProxiedClient,
@@ -58,9 +123,6 @@ pub(super) async fn run(
     let environment = Environment::new()?;
     let hooks = environment.hooks();
     let headers = IndexMap::new();
-    let no_api_base = NoApiBase;
-    let transform = Decoder;
-    let cached = matches!(spec.mode, Mode::Cached);
     let opened = match spec.mode {
         Mode::Live => Some(source::prefetch(client, call, api_base).await?),
         Mode::Scripted => Some(source::scripted(spec)),
@@ -68,71 +130,14 @@ pub(super) async fn run(
     };
     let mut model = call.model.clone();
     let mut stream = match opened {
-        Some(items) => Stream::Live(Box::new(LiveStream::new(
-            StreamEngine {
-                transform: Some(&transform),
-                tokenization: None::<&NoTokenization>,
-                calculator: None::<&NoCost>,
-                hooks: &hooks,
-                logging: &environment.logging,
-                details: IndexMap::new(),
-                limits: &environment.limits,
-            },
-            BaseStreamStateInput {
-                model: &call.model,
-                custom_llm_provider: Some("openai"),
-                litellm_metadata: None,
-                request_data: None,
-                call_type: None,
-                logging: LoggingSnapshot::read(&environment.logging),
-                headers: &headers,
-                api_base: &no_api_base,
-                times: times(),
-                max_streaming_duration_seconds: None,
-            },
-            Box::new(PrefetchedSource::new(items)),
-        ))),
-        None => {
-            let response = spec.response.as_ref().ok_or_else(|| {
-                SdkHttpError::Invalid("a fake or cached run needs a response".to_owned())
-            })?;
-            let value = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
-            let response: ResponsesApiResponse =
-                serde_json::from_value(value).map_err(SdkHttpError::ResultParse)?;
-            if cached {
-                model = response.model.clone().unwrap_or_default();
-            }
-            let synthesized = SyntheticStream::build::<NoCost>(
-                response,
-                SyntheticSetup {
-                    state: BaseStreamStateInput {
-                        model: &model,
-                        custom_llm_provider: Some(if cached {
-                            "cached_response"
-                        } else {
-                            "openai"
-                        }),
-                        litellm_metadata: None,
-                        request_data: None,
-                        call_type: None,
-                        logging: LoggingSnapshot::read(&environment.logging),
-                        headers: &headers,
-                        api_base: &no_api_base,
-                        times: times(),
-                        max_streaming_duration_seconds: None,
-                    },
-                    hooks: &hooks,
-                    cache_hit: cached.then_some(true),
-                    persist_before_logging: !cached,
-                },
-                None,
-            )
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-            Stream::Synthetic(synthesized)
-        }
+        Some(items) => live_stream(&hooks, &environment, &headers, call, items),
+        None => synthesize(&hooks, &environment, &headers, spec, &mut model)?,
     };
     let (steps, failure) = drive_stream(&mut stream, spec).await?;
-    stream.drain_logging().await;
+    match &mut stream {
+        Stream::Live(live) => live.drain_pending_logging().await,
+        Stream::Synthetic(synthetic) => synthetic.drain_pending_logging().await,
+    }
     let (effects, logged) = environment.recorder.take();
     Ok(RunOutcome {
         steps,
@@ -141,44 +146,42 @@ pub(super) async fn run(
         logged,
     })
 }
+
 async fn drive_stream(
     stream: &mut Stream<'_>,
     spec: &RunSpec,
 ) -> Result<(Vec<StepOutcome>, Option<Failure>), SdkHttpError> {
     let mut steps = Vec::new();
     for &step in &spec.steps {
-        let mut events = Vec::new();
-        let mut end = false;
-        let mut failure = None;
-        loop {
-            let outcome = if spec.asynchronous {
-                stream.next_async().await
-            } else {
-                stream.next_blocking()
-            };
-            match outcome {
-                Ok(Some(event)) => {
-                    events.push(view(&event)?);
-                    if matches!(step, Step::Next) {
-                        break;
-                    }
-                }
-                Ok(None) => {
-                    end = true;
-                    break;
-                }
-                Err(error) => {
-                    failure = Some(failure_of(&error)?);
-                    break;
-                }
-            }
-        }
+        let (events, end, failure) = drive_step(stream, spec.asynchronous, step).await?;
         steps.push(StepOutcome { events, end });
         if failure.is_some() {
             return Ok((steps, failure));
         }
     }
     Ok((steps, None))
+}
+async fn drive_step(
+    stream: &mut Stream<'_>,
+    asynchronous: bool,
+    step: Step,
+) -> Result<(Vec<Json>, bool, Option<Failure>), SdkHttpError> {
+    let mut events = Vec::new();
+    loop {
+        let outcome = if asynchronous {
+            stream.next_async().await
+        } else {
+            stream.next_blocking()
+        };
+        match outcome {
+            Ok(Some(event)) => events.push(view(&event)?),
+            Ok(None) => return Ok((events, true, None)),
+            Err(error) => return Ok((events, false, Some(failure_of(&error)?))),
+        }
+        if matches!(step, Step::Next) {
+            return Ok((events, false, None));
+        }
+    }
 }
 fn times() -> StreamTimes {
     StreamTimes {

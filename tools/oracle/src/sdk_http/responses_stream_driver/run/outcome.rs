@@ -2,7 +2,6 @@ use betterlite_core::api::responses_stream_driver::errors::{DriverError, Transpo
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
-use serde_json::Value;
 
 use super::super::assemble::Event;
 use crate::sdk_http::error::SdkHttpError;
@@ -70,7 +69,7 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     }
 }
 // the only read failure a scripted case injects outside the transport pair is httpx.ReadTimeout
-fn transport_class(kind: TransportKind) -> &'static str {
+const fn transport_class(kind: TransportKind) -> &'static str {
     match kind {
         TransportKind::ReadError => "ReadError",
         TransportKind::RemoteProtocolError => "RemoteProtocolError",
@@ -83,8 +82,8 @@ fn message_of(class: &ErrorClass) -> String {
     };
     value
         .pointer("/context/message")
-        .or_else(|| value.pointer("/message"))
-        .and_then(Value::as_str)
+        .or(value.pointer("/message"))
+        .and_then(|found| found.as_str())
         .unwrap_or_default()
         .to_owned()
 }
