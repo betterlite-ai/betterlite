@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -59,7 +59,7 @@ fn application(config: &Config) -> Router {
     )
 }
 
-async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode, JsonValue) {
+async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode, String) {
     let mut request =
         Request::post("/cost/estimate").header(header::CONTENT_TYPE, "application/json");
     if let Some(key) = key {
@@ -71,14 +71,13 @@ async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode
         .unwrap();
     let status = response.status();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let value = serde_json::from_slice::<JsonValue>(&bytes).unwrap_or(JsonValue::Null);
-    (status, value)
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
 async fn quote(body: &str, source: &str) -> CostEstimateResponse {
-    let (status, value) = post(application(&config(source)), body, Some("oracle-master")).await;
+    let (status, text) = post(application(&config(source)), body, Some("oracle-master")).await;
     assert_eq!(status, StatusCode::OK);
-    CostEstimateResponse::from_value(&value).unwrap()
+    serde_json::from_str(&text).unwrap()
 }
 
 fn helper_quote(records: &str, request: &str) -> CostEstimateResponse {
@@ -86,10 +85,6 @@ fn helper_quote(records: &str, request: &str) -> CostEstimateResponse {
     let body: JsonValue = serde_json::from_str(request).unwrap();
     let value = testing::quote(&rows, &body).unwrap();
     serde_json::from_value(value).unwrap()
-}
-
-fn body_text(value: &JsonValue) -> String {
-    serde_json::to_string(value).unwrap()
 }
 
 #[test]
@@ -124,7 +119,7 @@ async fn answers_missing_required_fields_at_the_route() {
     let (status, body) = post(application(&config(AUTH)), "{}", Some("oracle-master")).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
-        body_text(&body),
+        body,
         r#"{"detail":[{"type":"missing","loc":["body","model"],"msg":"Field required"},{"type":"missing","loc":["body","input_tokens"],"msg":"Field required"},{"type":"missing","loc":["body","output_tokens"],"msg":"Field required"}]}"#
     );
 }
@@ -134,7 +129,7 @@ async fn answers_an_empty_body_at_the_route() {
     let (status, body) = post(application(&config(AUTH)), "", Some("oracle-master")).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
-        body_text(&body),
+        body,
         r#"{"detail":[{"type":"missing","loc":["body"],"msg":"Field required"}]}"#
     );
 }
@@ -278,7 +273,7 @@ async fn answers_the_validation_issues_at_the_route() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
-        body_text(&body),
+        body,
         r#"{"detail":[{"type":"value_error","loc":["body"],"msg":"Value error, cache_read_input_tokens plus cache_creation_input_tokens cannot exceed input_tokens"}]}"#
     );
 }
@@ -288,7 +283,7 @@ async fn answers_invalid_json_at_the_route() {
     let (status, body) = post(application(&config(AUTH)), "{", Some("oracle-master")).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
-        body_text(&body),
+        body,
         r#"{"detail":[{"type":"json_invalid","loc":["body"],"msg":"JSON decode error"}]}"#
     );
 }
@@ -303,7 +298,7 @@ async fn requires_the_master_key() {
 async fn rejects_a_wrong_key() {
     let (status, body) = post(application(&config(AUTH)), "{}", Some("wrong-key")).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body_text(&body).contains("no_db_connection"));
+    assert!(body.contains("no_db_connection"));
 }
 
 #[tokio::test]
@@ -622,7 +617,7 @@ async fn answers_not_found_for_an_unpriceable_model() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body_text(&body).contains(
+    assert!(body.contains(
         "Could not calculate cost for model 'no-such-model-xyz' (resolved to 'no-such-model-xyz')"
     ));
 }
@@ -650,7 +645,7 @@ async fn answers_not_found_when_the_cost_service_is_unavailable() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body_text(&body).contains("the cost service is unavailable"));
+    assert!(body.contains("the cost service is unavailable"));
 }
 
 #[tokio::test]
