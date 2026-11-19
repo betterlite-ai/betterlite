@@ -6,10 +6,11 @@ use indexmap::IndexMap;
 use super::capture::capture;
 use super::logging::FakeQueue;
 use super::support::{
-    CONTENT_END, CONTENT_START, Chunk, FakeCredentials, FakeError, FakeRuntime, Fixture, MODEL,
-    Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET, RESOLVED_TOKEN, ReceiveStep, RecordedConfig,
-    SESSION_UPDATE, ScriptedClient, StreamPlan, TEXT_OUTPUT, TRACE_ID, USAGE_EVENT, event_key,
-    event_type, field, full_auth, full_session_tags, stream_error,
+    ACCESS, CONTENT_END, CONTENT_START, Chunk, FakeCredentials, FakeError, FakeRuntime, Fixture,
+    MODEL, Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET, RESOLVED_TOKEN, ReceiveStep,
+    RecordedConfig, SECRET, SESSION_UPDATE, ScriptedClient, StreamPlan, TEXT_OUTPUT, TOKEN,
+    TRACE_ID, USAGE_EVENT, event_key, event_type, field, full_auth, full_session_tags,
+    stream_error,
 };
 use crate::aws_settings::{AuthError, AuthParams};
 use crate::credentials::error::CredentialError;
@@ -147,7 +148,7 @@ fn environment_cases() -> [(RegionInputs<'static>, &'static str); 5] {
 }
 
 async fn region_falls_back_through_the_environment() {
-    for (region_inputs, expected) in environment_cases() {
+    for (inputs, expected) in environment_cases() {
         let mut fixture = Fixture::new();
         let config = config_for(
             &mut fixture,
@@ -159,7 +160,7 @@ async fn region_falls_back_through_the_environment() {
                 api_base: None,
                 endpoint: None,
                 region: None,
-                region_inputs,
+                region_inputs: inputs,
                 auth: AuthParams::default(),
                 logged_types: LoggedEventTypes::Default,
             },

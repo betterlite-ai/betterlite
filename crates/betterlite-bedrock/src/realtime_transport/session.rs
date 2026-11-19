@@ -142,7 +142,7 @@ async fn send_created_event<E, C>(
 ) -> Result<(), RealtimeTransportError<E, C>>
 where
     E: StdError + 'static,
-    C: StdError + 'static,
+    C: StdError + Send + Sync + 'static,
 {
     if pending.is_some() {
         return Ok(());
@@ -196,7 +196,7 @@ fn collect_logged_events<E, C>(
 ) -> Result<Vec<IndexMap<String, Json>>, RealtimeTransportError<E, C>>
 where
     E: StdError + 'static,
-    C: StdError + 'static,
+    C: StdError + Send + Sync + 'static,
 {
     for event in leftover_usage_done_events(&mut input.session, call.ids)? {
         let record = logging_record(&event)?;
@@ -210,7 +210,7 @@ where
 // Success handlers run before a provider failure is raised, so a failed session still records served usage
 fn log_success<C>(call: &RealtimeCall<'_, C>, logged_events: &[IndexMap<String, Json>])
 where
-    C: StdError + 'static,
+    C: StdError + Send + Sync + 'static,
 {
     if logged_events.is_empty() {
         return;

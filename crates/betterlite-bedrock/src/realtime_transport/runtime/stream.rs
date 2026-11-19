@@ -56,7 +56,7 @@ impl SdkStream {
             .send()
             .await
             .map_err(provider_error)?;
-        let mut events = output.body;
+        let events = output.body;
         let stream = unfold(events, |mut events| async move {
             let event = events.recv().await.map_err(provider_error);
             Some((event, events))
