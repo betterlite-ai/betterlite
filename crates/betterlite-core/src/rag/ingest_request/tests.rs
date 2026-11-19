@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::api::request_body::{JsonObject, ParsedJson, parse_json_text};
-use crate::api::request_form::values::{FormPart, FormParts, PartValue, UploadFile};
+use crate::api::request_form::values::{FormError, FormPart, FormParts, PartValue, UploadFile};
 use crate::rag::upload_security::{EICAR_TEST_SIGNATURE, EicarTestMalwareScanner, RejectionReason};
 
 use super::base64::{Base64DecodeError, decode};
@@ -160,6 +160,18 @@ fn multipart_request_json_supplies_url_and_id() {
         Some("https://example.test/doc.pdf")
     );
     assert_eq!(parsed.file_id.as_deref(), Some("file-abc"));
+}
+
+#[test]
+fn multipart_list_entry_after_a_scalar_is_a_form_error() {
+    let file = upload_part("file", "notes.txt", b"hello\n");
+    let extra = text_part("file[]", "again");
+    assert_eq!(
+        form(vec![file, extra]),
+        Err(IngestRequestError::Form(FormError::ScalarAppend {
+            name: "file".to_owned()
+        }))
+    );
 }
 
 #[test]
