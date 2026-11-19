@@ -14,10 +14,12 @@ from litellm.responses.streaming_iterator import (
     CachedResponsesAPIStreamingIterator,
     MockResponsesAPIStreamingIterator,
     ResponsesAPIStreamingIterator,
-    ResponsesAPIStreamingResponse,
     SyncResponsesAPIStreamingIterator,
 )
-from litellm.types.llms.openai import ResponsesAPIResponse
+from litellm.types.llms.openai import (
+    ResponsesAPIResponse,
+    ResponsesAPIStreamingResponse,
+)
 from litellm.types.utils import CallTypes
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
@@ -95,10 +97,9 @@ class Recorder(CustomLogger):
         request_data: dict[str, Json],
         response_chunk: object,
         call_type: CallTypes | None,
-    ) -> object | None:
-        del request_data, call_type
+    ) -> None:
+        del request_data, response_chunk, call_type
         self.effects.append("chunk")
-        return response_chunk
 
 
 class RecordingLogging:
@@ -189,6 +190,7 @@ class FailingBytes(httpx.SyncByteStream):
         self.chunks = chunks
         self.error = error
 
+    @override
     def __iter__(self) -> Iterator[bytes]:
         return self
 
@@ -205,6 +207,7 @@ class AsyncFailingBytes(httpx.AsyncByteStream):
         self.chunks = chunks
         self.error = error
 
+    @override
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self
 
@@ -214,10 +217,6 @@ class AsyncFailingBytes(httpx.AsyncByteStream):
         if self.error is None:
             raise StopAsyncIteration
         raise self.error
-
-
-def frames(payloads: list[str]) -> list[bytes]:
-    return [f"data: {payload}\n\n".encode() for payload in payloads]
 
 
 def scripted_error_of(spec: RunSpec) -> Exception | None:
@@ -242,7 +241,7 @@ def outcome(
 
 
 def drive_sync(
-    iterator: SyncResponsesAPIStreamingIterator, spec: RunSpec
+    iterator: Iterator[ResponsesAPIStreamingResponse], spec: RunSpec
 ) -> tuple[list[StepOutcome], Failure | None]:
     steps: list[StepOutcome] = []
     for step in spec.steps:
@@ -268,7 +267,7 @@ def drive_sync(
 
 
 async def drive_async(
-    iterator: ResponsesAPIStreamingIterator, spec: RunSpec
+    iterator: AsyncIterator[ResponsesAPIStreamingResponse], spec: RunSpec
 ) -> tuple[list[StepOutcome], Failure | None]:
     steps: list[StepOutcome] = []
     for step in spec.steps:
@@ -293,10 +292,6 @@ async def drive_async(
     return steps, None
 
 
-def request_body(call: ResponsesStreamDriverCall) -> dict[str, Json]:
-    return {"model": call.model, "input": call.input, "stream": True}
-
-
 def run_live_sync(
     call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str
 ) -> RunOutcome:
@@ -307,7 +302,7 @@ def run_live_sync(
         request = client.build_request(
             "POST",
             f"{api_base}/responses",
-            json=request_body(call),
+            json={"model": call.model, "input": call.input, "stream": True},
             headers={"Authorization": f"Bearer {call.api_key}"},
         )
         response = client.send(request, stream=True)
@@ -333,7 +328,7 @@ async def run_live_async(
         request = client.build_request(
             "POST",
             f"{api_base}/responses",
-            json=request_body(call),
+            json={"model": call.model, "input": call.input, "stream": True},
             headers={"Authorization": f"Bearer {call.api_key}"},
         )
         response = await client.send(request, stream=True)
@@ -354,7 +349,10 @@ def run_scripted_sync(call: ResponsesStreamDriverCall, spec: RunSpec) -> RunOutc
     recorder = Recorder()
     litellm.callbacks = [recorder]
     typed, stub = logging_object()
-    body = FailingBytes(frames(spec.payloads), scripted_error_of(spec))
+    body = FailingBytes(
+        [f"data: {payload}\n\n".encode() for payload in spec.payloads],
+        scripted_error_of(spec),
+    )
     iterator = SyncResponsesAPIStreamingIterator(
         response=httpx.Response(200, stream=body),
         model=call.model,
@@ -372,7 +370,10 @@ async def run_scripted_async(
     recorder = Recorder()
     litellm.callbacks = [recorder]
     typed, stub = logging_object()
-    body = AsyncFailingBytes(frames(spec.payloads), scripted_error_of(spec))
+    body = AsyncFailingBytes(
+        [f"data: {payload}\n\n".encode() for payload in spec.payloads],
+        scripted_error_of(spec),
+    )
     iterator = ResponsesAPIStreamingIterator(
         response=httpx.Response(200, stream=body),
         model=call.model,
