@@ -52,13 +52,12 @@ pub fn filter_reserved_deployments(
     let mut kept = Vec::with_capacity(deployments.len());
     let mut blocking = None;
     for deployment in deployments {
-        match blocking_window(deployment, caller_team, now, database)? {
-            None => kept.push(deployment.clone()),
-            Some(window) => {
-                if blocking.is_none() {
-                    blocking = Some(window);
-                }
-            }
+        let Some(window) = blocking_window(deployment, caller_team, now, database)? else {
+            kept.push(deployment.clone());
+            continue;
+        };
+        if blocking.is_none() {
+            blocking = Some(window);
         }
     }
     Ok(Reservations {
@@ -70,13 +69,13 @@ pub fn filter_reserved_deployments(
 // Router._filter_reserved_deployments: a pool an active reservation emptied earns the refusal naming its window.
 pub fn reserved_deployments(
     model: &str,
-    deployments: Vec<DeploymentSpec>,
+    deployments: &[DeploymentSpec],
     team_id: Option<&str>,
     now: DateTime<Utc>,
     database: &TimeZoneDatabase,
 ) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
     let reservations =
-        filter_reserved_deployments(&deployments, team_id, now, database).map_err(|error| {
+        filter_reserved_deployments(deployments, team_id, now, database).map_err(|error| {
             CatalogLookupError::Reserved {
                 message: format!(
                     "Deployment {model} has an invalid model_info.access_windows: {error}"

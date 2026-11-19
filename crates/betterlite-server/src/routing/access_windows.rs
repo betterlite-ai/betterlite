@@ -16,13 +16,13 @@ pub fn deployment_windows(
 ) -> Result<Vec<Option<Vec<ModelAccessWindow>>>, AccessWindowsError> {
     let mut deployments = Vec::with_capacity(section.deployments.len());
     for (index, windows) in section.deployments.iter().enumerate() {
-        let Some(windows) = windows else {
+        let Some(configured_windows) = windows else {
             deployments.push(None);
             continue;
         };
         let configured = JsonObject::from_iter([(
             "access_windows".to_owned(),
-            Json::List(windows.iter().map(window_json).collect()),
+            Json::List(configured_windows.iter().map(window_json).collect()),
         )]);
         let parsed = parse_access_windows(&configured, database)
             .map_err(|source| AccessWindowsError { index, source })?;

@@ -94,5 +94,5 @@ fn an_empty_window_list_stays_configured() {
 #[test]
 fn an_unknown_window_field_is_refused() {
     let source = "model_list:\n  - model_name: probe\n    model_info:\n      access_windows:\n        - {start: \"09:00\", end: \"17:00\", timezone: UTC, team_ids: [t1], colour: blue}\n";
-    assert!(settings(source, &[]).is_err());
+    settings(source, &[]).unwrap_err();
 }

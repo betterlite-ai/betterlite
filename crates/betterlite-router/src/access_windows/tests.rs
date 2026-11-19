@@ -537,7 +537,7 @@ fn a_blocked_pool_is_refused_with_the_window_end() {
     )];
     let error = reserved_deployments(
         "gpt",
-        deployments,
+        &deployments,
         Some("other"),
         at("2026-01-05T23:00:00Z"),
         &database(),
@@ -583,7 +583,7 @@ fn an_invalid_window_is_refused_with_its_deployment() {
     )];
     let error = reserved_deployments(
         "gpt",
-        deployments,
+        &deployments,
         Some("other"),
         at("2026-01-05T10:00:00Z"),
         &database(),
@@ -668,7 +668,7 @@ fn a_pool_with_one_blocked_deployment_keeps_the_rest() {
     ];
     let kept = reserved_deployments(
         "gpt",
-        deployments,
+        &deployments,
         Some("other"),
         at("2026-01-05T10:00:00Z"),
         &database(),
@@ -706,6 +706,9 @@ fn an_admin_pool_keeps_only_authorized_teams() {
     )
     .unwrap();
     assert_eq!(ids(&kept), ["a"]);
+}
+
+fn an_admin_pool_without_a_named_team_keeps_only_shared() {
     let mixed = vec![
         spec(
             "shared",
@@ -717,7 +720,7 @@ fn an_admin_pool_keeps_only_authorized_teams() {
         ),
         spec("shared", "open", &[]),
     ];
-    let kept_mixed = filter_team_based_models(
+    let kept = filter_team_based_models(
         mixed,
         Authority {
             team_id: None,
@@ -726,7 +729,7 @@ fn an_admin_pool_keeps_only_authorized_teams() {
         "shared",
     )
     .unwrap();
-    assert_eq!(ids(&kept_mixed), ["open"]);
+    assert_eq!(ids(&kept), ["open"]);
 }
 
 fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
@@ -766,6 +769,9 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
 #[case::an_admin_pool_keeps_only_authorized_teams(an_admin_pool_keeps_only_authorized_teams)]
 #[case::an_admin_pool_unnamed_by_the_request_is_only_filtered(
     an_admin_pool_unnamed_by_the_request_is_only_filtered
+)]
+#[case::an_admin_pool_without_a_named_team_keeps_only_shared(
+    an_admin_pool_without_a_named_team_keeps_only_shared
 )]
 fn access_windows_behaviors(#[case] run: fn()) {
     run();

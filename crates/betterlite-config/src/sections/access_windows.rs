@@ -74,12 +74,12 @@ fn configured<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(entries) = raw else {
         return Ok(None);
     };
     let prefix = format!("model_list.{index}.model_info.access_windows");
-    let mut windows = Vec::with_capacity(raw.len());
-    for (position, window) in raw.into_iter().enumerate() {
+    let mut windows = Vec::with_capacity(entries.len());
+    for (position, window) in entries.into_iter().enumerate() {
         windows.push(window_config(
             &format!("{prefix}.{position}"),
             window,

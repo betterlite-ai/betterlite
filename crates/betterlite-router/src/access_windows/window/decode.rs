@@ -65,14 +65,14 @@ fn zone_field(
         Some(_) => return Err(WindowError::ZoneType { location }),
     };
     // Python's ZoneInfo matches the on-disk name case-sensitively, while jiff's lookup ignores ASCII case
-    let zone = database
+    let found = database
         .get(name)
         .ok()
         .filter(|zone| zone.iana_name() == Some(name.as_str()));
-    zone.map_or_else(
+    found.map_or_else(
         || {
             Err(WindowError::UnknownZone {
-                location: location.clone(),
+                location,
                 name: name.clone(),
             })
         },
@@ -96,9 +96,7 @@ fn team_ids_field(entries: &JsonObject, index: usize) -> Result<Vec<String>, Win
             });
         };
         if team_id.is_empty() {
-            return Err(WindowError::EmptyTeamId {
-                location: location.clone(),
-            });
+            return Err(WindowError::EmptyTeamId { location });
         }
         team_ids.push(team_id.clone());
     }
@@ -115,14 +113,7 @@ fn wall_clock(text: &str, location: String) -> Result<Time, WindowError> {
             Err(WindowError::Time { location })
         };
     }
-    clock_shape(text).map_or_else(
-        || {
-            Err(WindowError::Time {
-                location: location.clone(),
-            })
-        },
-        Ok,
-    )
+    clock_shape(text).map_or_else(|| Err(WindowError::Time { location }), Ok)
 }
 
 fn offset_marker(text: &str) -> Option<usize> {
@@ -143,22 +134,23 @@ fn clock_shape(text: &str) -> Option<Time> {
     }
     let hour = digits(bytes.get(..2)?)?;
     let minute = digits(bytes.get(3..5)?)?;
-    let (second, nanos) = if bytes.len() == 5 {
-        (0, 0)
-    } else {
-        if bytes.get(5) != Some(&b':') {
-            return None;
-        }
-        let second = digits(bytes.get(6..8)?)?;
-        if bytes.len() == 8 {
-            (second, 0)
-        } else {
-            if bytes.get(8) != Some(&b'.') {
-                return None;
-            }
-            (second, fraction(bytes.get(9..)?)?)
-        }
-    };
+    if bytes.len() == 5 {
+        return clock(hour, minute, 0, 0);
+    }
+    if bytes.get(5) != Some(&b':') {
+        return None;
+    }
+    let second = digits(bytes.get(6..8)?)?;
+    if bytes.len() == 8 {
+        return clock(hour, minute, second, 0);
+    }
+    if bytes.get(8) != Some(&b'.') {
+        return None;
+    }
+    clock(hour, minute, second, fraction(bytes.get(9..)?)?)
+}
+
+fn clock(hour: i32, minute: i32, second: i32, nanos: i32) -> Option<Time> {
     Time::new(
         i8::try_from(hour).ok()?,
         i8::try_from(minute).ok()?,
@@ -183,12 +175,12 @@ fn digits(bytes: &[u8]) -> Option<i32> {
 // A one-to-six digit fraction, scaled to the nanosecond field jiff's Time keeps.
 fn fraction(bytes: &[u8]) -> Option<i32> {
     let scale = match bytes.len() {
-        1 => 100_000_000,
-        2 => 10_000_000,
-        3 => 1_000_000,
-        4 => 100_000,
-        5 => 10_000,
-        6 => 1_000,
+        1 => 100_000_000_i32,
+        2 => 10_000_000_i32,
+        3 => 1_000_000_i32,
+        4 => 100_000_i32,
+        5 => 10_000_i32,
+        6 => 1_000_i32,
         _ => return None,
     };
     if !bytes.iter().all(u8::is_ascii_digit) {

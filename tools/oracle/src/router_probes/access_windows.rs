@@ -114,7 +114,7 @@ fn filtered(
             let database = TimeZoneDatabase::from_env();
             reserved_deployments(
                 &input.model,
-                deployments,
+                &deployments,
                 input.team_id.as_deref(),
                 now,
                 &database,
