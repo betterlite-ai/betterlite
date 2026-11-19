@@ -45,12 +45,12 @@ pub(super) async fn routed_deployment(
     let executor = Arc::clone(&state.executor);
     // the AsyncFn bound cannot prove Send for a captured reference, so the attempt owns its reads
     let attempt = move || {
-        let executor = Arc::clone(&executor);
-        let model_text = model_text.clone();
+        let shared_executor = Arc::clone(&executor);
+        let shared_model = model_text.clone();
         async move {
-            let text = model_text.as_deref().unwrap_or("None");
+            let text = shared_model.as_deref().unwrap_or("None");
             let route = route_endpoint("acompletion").unwrap_or("acompletion");
-            let deployment = pick_deployment(&executor, text)
+            let deployment = pick_deployment(&shared_executor, text)
                 .map_err(|_error| ProxyModelNotFoundError::new(route, text, true))?;
             Ok(deployment.clone())
         }
