@@ -1,10 +1,12 @@
 use std::time::Duration;
 
-use super::support::{Events, Fixture, RecordingConfig, Reply, Source, Wire, params};
+use super::support::{
+    Events, Fixture, RecordingConfig, Reply, Source, UpdateRequest, Wire, params, write_deps,
+};
 use super::{STORE, json, run, target};
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
-    ClientKind, DeleteCall, SuppliedClient, UpdateCall, WriteCall, WriteDeps,
+    ClientKind, DeleteCall, SuppliedClient, WriteCall,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -45,156 +47,112 @@ impl Bench {
 pub(super) async fn execution_mode_case(case: ModeCase) {
     let mut bench = Bench::new();
     match case {
-        ModeCase::SuppliedSync => supplied_sync(&mut bench).await,
-        ModeCase::SuppliedAsynchronous => supplied_asynchronous(&mut bench).await,
+        ModeCase::SuppliedSync => supplied_client(&mut bench, ClientKind::Sync, None).await,
+        ModeCase::SuppliedAsynchronous => {
+            supplied_client(
+                &mut bench,
+                ClientKind::Asynchronous,
+                Some(Duration::from_secs(7)),
+            )
+            .await;
+        }
         ModeCase::Mismatch => mismatch(&mut bench).await,
         ModeCase::QueryBase => query_base(&mut bench).await,
         ModeCase::LoggingOrder => logging_order(&mut bench).await,
     }
 }
 
-async fn supplied_sync(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &bench.supplied,
-        }),
-    };
+async fn supplied_client(bench: &mut Bench, kind: ClientKind, expected: Option<Duration>) {
     let write_params = params("http://unused.test");
     let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, Some(Duration::from_secs(7))),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let request = UpdateRequest {
+        timeout: Some(Duration::from_secs(7)),
+        ..UpdateRequest::new("vs_a", &write_params, &optional)
+    };
+    let deps = write_deps(
+        &bench.config,
+        &bench.source,
+        Some(SuppliedClient {
+            kind,
+            transport: &bench.supplied,
+        }),
+    );
     let value = run(
         &mut bench.fixture,
         &deps,
-        ClientKind::Sync,
-        &call,
+        kind,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
     assert_eq!(value, json(STORE));
     assert!(bench.source.calls().is_empty());
-    let requests = bench.supplied.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].timeout, None);
-}
-
-async fn supplied_asynchronous(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &bench.supplied,
-        }),
-    };
-    let write_params = params("http://unused.test");
-    let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, Some(Duration::from_secs(7))),
-        optional_params: &optional,
-        extra_body: None,
-    });
-    run(
-        &mut bench.fixture,
-        &deps,
-        ClientKind::Asynchronous,
-        &call,
-        &bench.events,
-    )
-    .await
-    .expect("the update succeeds");
-    assert!(bench.source.calls().is_empty());
-    let requests = bench.supplied.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
+    let sent = bench.supplied.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].timeout, expected);
 }
 
 async fn mismatch(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &bench.supplied,
-        }),
-    };
     let mut unverified = params("http://unused.test");
     unverified.ssl_verify = Some(false);
     let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &unverified, None, Some(Duration::from_secs(7))),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let mut request = UpdateRequest::new("vs_a", &unverified, &optional);
+    request.timeout = Some(Duration::from_secs(7));
+    let deps = write_deps(
+        &bench.config,
+        &bench.source,
+        Some(SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &bench.supplied,
+        }),
+    );
     run(
         &mut bench.fixture,
         &deps,
         ClientKind::Asynchronous,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
     assert_eq!(bench.source.calls(), vec![Some(false)]);
     assert!(bench.supplied.requests().is_empty());
-    let requests = bench.pooled.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
+    let sent = bench.pooled.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].timeout, Some(Duration::from_secs(7)));
 }
 
 async fn query_base(bench: &mut Bench) {
     let query_config = RecordingConfig::new("https://mock.test/vector_stores?api-version=v1");
-    let deps = WriteDeps {
-        config: &query_config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, None),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let request = UpdateRequest::new("vs_a", &write_params, &optional);
+    let deps = write_deps(&query_config, &bench.source, None);
     run(
         &mut bench.fixture,
         &deps,
         ClientKind::Asynchronous,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
-    let requests = bench.pooled.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].url.path(), "/vector_stores");
-    assert_eq!(requests[0].url.query(), Some("api-version=v1/vs_a"));
+    let sent = bench.pooled.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url.path(), "/vector_stores");
+    assert_eq!(sent[0].url.query(), Some("api-version=v1/vs_a"));
     assert_eq!(
-        requests[0].url.as_str(),
+        sent[0].url.as_str(),
         "https://mock.test/vector_stores?api-version=v1/vs_a"
     );
 }
 
 async fn logging_order(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let optional = UpdateParams::default();
-    let update = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, None),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let update = UpdateRequest::new("vs_a", &write_params, &optional).call();
+    let deps = write_deps(&bench.config, &bench.source, None);
     run(
         &mut bench.fixture,
         &deps,

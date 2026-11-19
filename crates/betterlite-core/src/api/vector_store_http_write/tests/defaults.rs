@@ -1,11 +1,11 @@
 use super::support::{
-    Events, Fixture, RecordingConfig, Reply, Source, Wire, body_bytes, body_json, caller_headers,
-    extra_body, params, update_params,
+    Events, Fixture, RecordingConfig, Reply, Source, UpdateRequest, Wire, body_bytes, body_json,
+    caller_headers, extra_body, params, update_params, write_deps,
 };
 use super::{STORE, json, run, target};
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
-    ClientKind, DeleteCall, SuppliedClient, UpdateCall, WriteCall, WriteDeps,
+    ClientKind, DeleteCall, SuppliedClient, WriteCall,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -56,59 +56,42 @@ pub(super) async fn write_argument_defaults_case(case: DefaultsCase) {
 }
 
 async fn empty_params(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, None),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let request = UpdateRequest::new("vs_a", &write_params, &optional);
+    let deps = write_deps(&bench.config, &bench.source, None);
     let value = run(
         &mut bench.fixture,
         &deps,
         ClientKind::Asynchronous,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
     assert_eq!(value, json(STORE));
     assert_eq!(bench.source.calls(), vec![None]);
-    let requests = bench.wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(body_json(&requests[0]), json("{}"));
-    assert_eq!(requests[0].timeout, None);
+    let sent = bench.wire.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(body_json(&sent[0]), json("{}"));
+    assert_eq!(sent[0].timeout, None);
 }
 
 async fn metadata_state(bench: &mut Bench, update_json: &str) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let optional = update_params(update_json);
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, None),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    let request = UpdateRequest::new("vs_a", &write_params, &optional);
+    let deps = write_deps(&bench.config, &bench.source, None);
     run(
         &mut bench.fixture,
         &deps,
         ClientKind::Asynchronous,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
-    let requests = bench.wire.requests();
-    let sent = body_json(&requests[0]);
+    let sent = body_json(&bench.wire.requests()[0]);
     let expected = match update_json {
         r#"{"metadata":null}"# => json(r#"{"metadata":null}"#),
         r#"{"metadata":{}}"# => json(r#"{"metadata":{}}"#),
@@ -118,57 +101,54 @@ async fn metadata_state(bench: &mut Bench, update_json: &str) {
 }
 
 async fn extra_empty(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let optional = UpdateParams::default();
     let no_headers = caller_headers(&[]);
     let no_body = extra_body("{}");
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, Some(&no_headers), None),
-        optional_params: &optional,
+    let request = UpdateRequest {
+        headers: Some(&no_headers),
         extra_body: Some(&no_body),
-    });
+        ..UpdateRequest::new("vs_a", &write_params, &optional)
+    };
+    let deps = write_deps(&bench.config, &bench.source, None);
     run(
         &mut bench.fixture,
         &deps,
         ClientKind::Asynchronous,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
     .expect("the update succeeds");
-    let requests = bench.wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(body_json(&requests[0]), json("{}"));
-    assert_eq!(requests[0].headers.len(), 3);
+    let sent = bench.wire.requests();
+    assert_eq!(body_bytes(&sent[0]), Some(&b"{}"[..]));
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("openai-beta")
+            .and_then(|value| value.to_str().ok()),
+        Some("assistants=v2")
+    );
 }
 
 async fn supplied_bypasses_pool(bench: &mut Bench) {
     let supplied = Wire::replying(Reply::json(200, STORE), &bench.events);
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: Some(SuppliedClient {
+    let write_params = params("http://unused.test");
+    let optional = UpdateParams::default();
+    let request = UpdateRequest::new("vs_a", &write_params, &optional);
+    let deps = write_deps(
+        &bench.config,
+        &bench.source,
+        Some(SuppliedClient {
             kind: ClientKind::Sync,
             transport: &supplied,
         }),
-    };
-    let write_params = params("http://unused.test");
-    let optional = UpdateParams::default();
-    let call = WriteCall::Update(UpdateCall {
-        target: target("vs_a", &write_params, None, None),
-        optional_params: &optional,
-        extra_body: None,
-    });
+    );
     run(
         &mut bench.fixture,
         &deps,
         ClientKind::Sync,
-        &call,
+        &request.call(),
         &bench.events,
     )
     .await
@@ -178,16 +158,12 @@ async fn supplied_bypasses_pool(bench: &mut Bench) {
 }
 
 async fn delete_omitted(bench: &mut Bench) {
-    let deps = WriteDeps {
-        config: &bench.config,
-        source: &bench.source,
-        supplied: None,
-    };
     let write_params = params("http://unused.test");
     let call = WriteCall::Delete(DeleteCall {
         target: target("vs_a", &write_params, None, None),
         extra_body: None,
     });
+    let deps = write_deps(&bench.config, &bench.source, None);
     let value = run(
         &mut bench.fixture,
         &deps,
@@ -198,7 +174,7 @@ async fn delete_omitted(bench: &mut Bench) {
     .await
     .expect("the delete succeeds");
     assert_eq!(value, json(STORE));
-    let requests = bench.wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(body_bytes(&requests[0]), None);
+    let sent = bench.wire.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(body_bytes(&sent[0]), None);
 }

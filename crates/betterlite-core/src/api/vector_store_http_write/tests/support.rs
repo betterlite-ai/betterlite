@@ -33,8 +33,8 @@ use crate::api::vector_store_http_write::error::{
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext, PreparedWrite, WriteCall, WriteDeps, WriteRequest,
-    WriteTransport, prepare,
+    ClientKind, ClientSource, LogContext, PreparedWrite, SuppliedClient, UpdateCall, WriteCall,
+    WriteDeps, WriteRequest, WriteTarget, WriteTransport, prepare,
 };
 
 #[derive(Clone, Default)]
@@ -427,5 +427,57 @@ impl ClientSource for ProxiedSource {
 
     fn client(&self, _ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
         Ok(self.client.clone())
+    }
+}
+
+// One update call's inputs; a case sets only the overrides it exercises
+pub(crate) struct UpdateRequest<'call> {
+    pub(crate) vector_store_id: &'call str,
+    pub(crate) params: &'call WriteParams,
+    pub(crate) optional: &'call UpdateParams,
+    pub(crate) headers: Option<&'call BTreeMap<String, String>>,
+    pub(crate) extra_body: Option<&'call IndexMap<String, Json>>,
+    pub(crate) timeout: Option<Duration>,
+}
+
+impl<'call> UpdateRequest<'call> {
+    pub(crate) const fn new(
+        vector_store_id: &'call str,
+        params: &'call WriteParams,
+        optional: &'call UpdateParams,
+    ) -> Self {
+        Self {
+            vector_store_id,
+            params,
+            optional,
+            headers: None,
+            extra_body: None,
+            timeout: None,
+        }
+    }
+
+    pub(crate) const fn call(&self) -> WriteCall<'call> {
+        WriteCall::Update(UpdateCall {
+            target: WriteTarget {
+                vector_store_id: self.vector_store_id,
+                params: self.params,
+                extra_headers: self.headers,
+                timeout: self.timeout,
+            },
+            optional_params: self.optional,
+            extra_body: self.extra_body,
+        })
+    }
+}
+
+pub(crate) const fn write_deps<'deps>(
+    config: &'deps RecordingConfig,
+    source: &'deps Source,
+    supplied: Option<SuppliedClient<'deps, Wire>>,
+) -> WriteDeps<'deps, RecordingConfig, Source> {
+    WriteDeps {
+        config,
+        source,
+        supplied,
     }
 }
