@@ -28,6 +28,9 @@ use crate::api::responses_ws_history::provider::{ProviderResolution, ProviderRes
 use crate::api::responses_ws_history::serialization::{ChunkWriter, serialize_chunk};
 use crate::api::responses_ws_history::{Connection, FrameSink, ManagedResponsesWebSocket, WsDeps};
 
+// decode_previous_response_id logs its own debug line for a raw id, so the capture keeps only this module's events
+const WS_HISTORY_TARGET: &str = "betterlite_core::api::responses_ws_history";
+
 pub(super) const MODEL: &str = "openai/gpt-4o-mini";
 pub(super) const OTHER_MODEL: &str = "anthropic/claude-3-5-sonnet-20241022";
 pub(super) const UNKNOWN_MODEL: &str = "not-a-real-provider/model";
@@ -244,6 +247,9 @@ impl Visit for Message {
 impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
         if *event.metadata().level() != Level::DEBUG {
+            return;
+        }
+        if !event.metadata().target().starts_with(WS_HISTORY_TARGET) {
             return;
         }
         let mut message = Message::default();
