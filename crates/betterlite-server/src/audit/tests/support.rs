@@ -297,8 +297,8 @@ pub(super) struct Fixture {
     pub(super) queue: usize,
 }
 
-impl Default for Fixture {
-    fn default() -> Self {
+impl Fixture {
+    pub(super) fn new() -> Self {
         Self {
             settings: enabled(),
             callbacks: Vec::new(),
@@ -308,9 +308,7 @@ impl Default for Fixture {
             queue: 8,
         }
     }
-}
 
-impl Fixture {
     pub(super) fn start(self) -> AuditService {
         let queue = self.queue;
         let delivery = Arc::new(AuditDelivery {

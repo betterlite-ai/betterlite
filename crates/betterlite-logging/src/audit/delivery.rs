@@ -33,8 +33,7 @@ impl Callback for AuditCallbackJob {
     }
 }
 
-// Each audit event reaches every configured callback through B191's bounded worker, so a slow logger never holds the caller.
-// A delivery is built where the worker can start inside a runtime, with a struct literal.
+// The worker must start inside a runtime, and it keeps a slow audit callback from holding the caller.
 pub struct AuditDelivery {
     pub named: NamedAuditCallbacks,
     pub worker: LoggingWorker<AuditCallbackJob>,
