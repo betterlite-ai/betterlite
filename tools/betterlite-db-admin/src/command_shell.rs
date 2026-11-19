@@ -174,7 +174,7 @@ where
                     options.use_migrate, options.use_v2_resolver
                 ));
             }
-            outcome_exit(backend.run(command, config).await, diagnostics)
+            outcome_exit(Box::pin(backend.run(command, config)).await, diagnostics)
         }
         Err(error) => {
             diagnostics.error(&error.to_string());
