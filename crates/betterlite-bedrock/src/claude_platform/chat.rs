@@ -243,8 +243,7 @@ where
     let (filtered, warnings) = convert::filtered_params(
         &request.optional_params,
         &request.litellm_params,
-        true,
-        true,
+        convert::FilterWarnings::Report,
     )?;
     let anthropic_request = AnthropicRequest {
         model: request.model,

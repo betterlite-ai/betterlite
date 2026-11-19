@@ -216,7 +216,7 @@ impl Records {
     ) -> Result<AnthropicHeaders, ChatValidationError> {
         let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
-        let sources = HeaderSources {
+        let mut sources = HeaderSources {
             environment: &mut environment,
             catalogs: &catalogs,
         };

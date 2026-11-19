@@ -70,18 +70,28 @@ pub fn resolve_override(
     ))
 }
 
+// The native route filters the same params twice; only the request transform reports the warnings.
+#[derive(Clone, Copy)]
+pub enum FilterWarnings {
+    Report,
+    Suppress,
+}
+
 // Every warning the policy emitted, in the order LiteLLM logs them: the override first, then the drop.
 pub fn filtered_params(
     optional_params: &IndexMap<String, Json>,
     litellm_params: &IndexMap<String, Json>,
-    log_invalid: bool,
-    log_dropped: bool,
+    warnings: FilterWarnings,
 ) -> Result<(ParamMap, Vec<PlatformWarning>), serde_json::Error> {
+    let (log_invalid, log_dropped) = match warnings {
+        FilterWarnings::Report => (true, true),
+        FilterWarnings::Suppress => (false, false),
+    };
     let resolution = resolve_override(optional_params, litellm_params, log_invalid)?;
     let converted: ParamMap = mapped(optional_params)?;
     let filtered = filter_request_body(&converted, resolution.names.as_ref(), log_dropped);
-    let mut warnings = Vec::new();
-    warnings.extend(resolution.warning);
-    warnings.extend(filtered.warning);
-    Ok((filtered.body, warnings))
+    let mut reported = Vec::new();
+    reported.extend(resolution.warning);
+    reported.extend(filtered.warning);
+    Ok((filtered.body, reported))
 }
