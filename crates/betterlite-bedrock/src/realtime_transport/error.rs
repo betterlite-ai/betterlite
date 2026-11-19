@@ -63,7 +63,7 @@ where
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Committed(SessionCommitted { status_code })
+            Self::Committed(SessionCommitted { status_code, .. })
             | Self::NoCredentials { status_code, .. }
             | Self::Provider(ProviderStreamError::Bedrock { status_code, .. }) => {
                 Some(*status_code)
