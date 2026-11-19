@@ -19,8 +19,8 @@ mod pod_lock_key;
 mod pod_lock_release;
 #[path = "export_schedule/tests/pod_lock_unavailable.rs"]
 mod pod_lock_unavailable;
-#[path = "export_schedule/tests/scheduler_registration.rs"]
-mod scheduler_registration;
+#[path = "export_schedule/tests/scheduler_register.rs"]
+mod scheduler_register;
 #[path = "export_schedule/tests/scheduler_skip_empty.rs"]
 mod scheduler_skip_empty;
 #[path = "export_schedule/tests/scheduler_type_match.rs"]
