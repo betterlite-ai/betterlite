@@ -622,6 +622,22 @@ async fn async_flags_and_unused_extras() {
     assert_eq!(openai(&extras.calls()), openai(&sync.calls()));
 }
 
+// max_retries and an openai api_version ride to the call; the openai client sends no version
+#[tokio::test]
+async fn openai_keeps_max_retries_and_api_version() {
+    let fake = Fake::answering(&page());
+    run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {"max_retries": 3, "api_version": "2023-01-01"}}"#),
+    )
+    .await
+    .expect("a listed page");
+    let call = openai(&fake.calls());
+    assert_eq!(call.max_retries, Some(3));
+    assert_eq!(call.api_version.as_deref(), Some("2023-01-01"));
+}
+
 // an unsupported provider answers its own 400 without a call, and list keeps create_batch's name
 #[tokio::test]
 async fn unsupported_read_provider() {
