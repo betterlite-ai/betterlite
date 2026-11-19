@@ -1,0 +1,13 @@
+id: B9996
+milestone: R2 bug fixes
+title: GigaChat image upload fetches internal addresses for a client
+status: todo
+depends_on: [B8178]
+file: tasks/B9996-gigachat-image-ssrf.yaml
+covers: []
+parent: B043
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
