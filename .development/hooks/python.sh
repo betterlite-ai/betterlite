@@ -44,9 +44,12 @@ case ${mode} in
       echo "mypy comments, a pyright comment other than ignore[rule] and a file-wide ruff noqa have no upstream case; fix the code" >&2
       status=1
     fi
+    reexport='^$|^from [A-Za-z0-9_.]+ import [A-Za-z0-9_, ()]+$|^    [A-Za-z_][A-Za-z0-9_]*( as [A-Za-z_][A-Za-z0-9_]*)?,$|^\)$|^__all__(: list\[str\])? = \[$|^    ("[A-Za-z_][A-Za-z0-9_]*", ?)*"[A-Za-z_][A-Za-z0-9_]*",?$|^\]$'
     for file in "${strict[@]}"; do
       limit=300
       [[ ${file} == */tests/* ]] && limit=1000
+      # ruff's isort puts one name per line, so a package init that only re-exports has no boundary to split along
+      [[ ${file} == */__init__.py ]] && ! grep -q -v -E "${reexport}" "${file}" && continue
       lines=$(wc -l < "${file}") || exit 1
       if [[ ${lines} -gt ${limit} ]]; then
         echo "${file}: ${lines} lines, past the ${limit}-line limit; split it along a real boundary" >&2

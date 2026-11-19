@@ -1,0 +1,45 @@
+kind: "helper"
+name: "post-call-success-guardrails"
+call:
+  b3858:
+    function: "post_call_success"
+    start_time: 1704067200.0
+    end_time: 1704067202.0
+    parent:
+      name: "proxy"
+      start: 1704067200.0
+      end: 1704067202.0
+    key_parent:
+      name: "key-parent"
+      start: 1704067200.25
+      end: 1704067202.25
+    kwargs:
+      model: "gpt-4o"
+      messages:
+        - role: "user"
+          content: "hello"
+      call_type: "completion"
+      optional_params: {}
+      first_api_call_start_time: 1704067201.5
+      litellm_params:
+        custom_llm_provider: "openai"
+        metadata:
+          litellm_call_id: "call-1"
+          litellm_received_at: 1704067200.0
+      standard_logging_object:
+        id: "chatcmpl-1"
+        call_type: "completion"
+        status: "success"
+        metadata:
+          litellm_call_id: "call-1"
+          user_api_key_team_id: "team-a"
+          user_api_key_team_alias: "team-alias"
+        guardrail_information:
+          - guardrail_name: "pii"
+            guardrail_mode: "pre_call"
+            guardrail_status: "success"
+            start_time: 1704067200.5
+            end_time: 1704067200.75
+env: {}
+compare:
+  ignore: []

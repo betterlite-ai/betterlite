@@ -134,6 +134,7 @@ base:
         if [[ ${GITHUB_ACTIONS} == true && ${GITHUB_EVENT_NAME:-} != pull_request ]]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
         if [[ -z ${packages} ]]; then echo "the change affects no package"; exit 0; fi
         read -r -a flags <<< "${packages}"
+        if [[ -n ${GATE_LINT_ROOT:-} ]]; then exec bash .development/flow/lint-lane.sh "${flags[@]}"; fi
         cargo clippy --keep-going --all-targets --locked "${flags[@]}" -- -D warnings
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
