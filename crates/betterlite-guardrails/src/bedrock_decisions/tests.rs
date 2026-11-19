@@ -71,10 +71,11 @@ fn catalog(prices: &[(&str, &str)]) -> ModelCatalog {
 }
 
 fn base(name: Option<&str>) -> GuardrailBase {
-    let mut settings = GuardrailSettings::default();
-    settings.guardrail_name = name.map(str::to_owned);
     GuardrailBase {
-        settings,
+        settings: GuardrailSettings {
+            guardrail_name: name.map(str::to_owned),
+            ..GuardrailSettings::default()
+        },
         mode: None,
     }
 }

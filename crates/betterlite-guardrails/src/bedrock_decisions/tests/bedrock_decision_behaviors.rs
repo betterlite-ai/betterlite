@@ -262,6 +262,7 @@ fn http_exception_reports_output_text_and_redacted_assessments() {
 
 #[test]
 fn http_exception_omits_unknown_and_empty_guardrail_identity() {
+    let merged = response(r#"{"outputs":[{"text":"blocked"}]}"#);
     let request_data = empty_request_data();
     let missing = BlockedGuardrail {
         identifier: None,
