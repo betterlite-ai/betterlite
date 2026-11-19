@@ -1,0 +1,45 @@
+kind: helper
+name: ragflow-chat-key-and-header-chain
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: headers
+    environment: {RAGFLOW_API_KEY: 'env-key'}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat/abc/m', api_key: null, headers: {}}
+      - {model: 'ragflow/chat/abc/m', api_key: 'explicit-key', headers: {}}
+      - {model: 'ragflow/chat/abc/m', api_key: '', headers: {}}
+      - {model: 'ragflow/chat/abc/m', api_key: null, headers: {Content-Type: text/plain}}
+      - {model: 'ragflow/chat/abc/m', api_key: null, headers: {content-type: text/plain}}
+      - {model: 'ragflow/chat/abc/m', api_key: null, headers: {Content-type: text/plain}}
+      - {model: 'ragflow/completion/abc/m', api_key: null, headers: {}}
+      - {model: 'ragflow/chat/abc/openai/gpt-4o', api_key: null, headers: {}}
+calls:
+  - b049:
+      op: headers
+      environment: {}
+      sdk: {api_base: null, api_key: 'sdk-key'}
+      cases:
+        - {model: 'ragflow/chat/abc/m', api_key: null, headers: {}}
+        - {model: 'ragflow/chat/abc/m', api_key: 'explicit-key', headers: {}}
+  - b049:
+      op: headers
+      environment: {}
+      sdk: {api_base: null, api_key: null}
+      cases:
+        - {model: 'ragflow/chat/abc/m', api_key: null, headers: {}}
+  - b049:
+      op: provider
+      environment: {RAGFLOW_API_BASE: 'http://env:9380', RAGFLOW_API_KEY: 'env-key'}
+      sdk: {api_base: null, api_key: null}
+      cases:
+        - {model: 'ragflow/chat/abc/openai/gpt-4o', api_base: null, api_key: null}
+        - {model: 'ragflow/chat/abc/m', api_base: 'http://explicit:9380', api_key: 'explicit-key'}
+  - b049:
+      op: provider
+      environment: {RAGFLOW_API_BASE: 'http://env:9380', RAGFLOW_API_KEY: 'env-key'}
+      sdk: {api_base: 'http://sdk:9380', api_key: 'sdk-key'}
+      cases:
+        - {model: 'ragflow/agent/abc/glm-4', api_base: null, api_key: null}

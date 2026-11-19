@@ -1,0 +1,12 @@
+kind: helper
+name: install_failure
+call:
+  skill_sandbox:
+    code: "print('never runs')\n"
+    files:
+      requirements.txt: "broken-pkg==0.0.1\n"
+    requirements: "missing-pkg==9.9.9\n"
+    image: null
+    install: {exit_code: 1, stdout: "Collecting missing-pkg\n", stderr: "ERROR: No matching distribution\n"}
+env: {}
+compare: {ignore: []}
