@@ -22,9 +22,6 @@ pub const UNSUPPORTED_REQUEST_METHOD: &str = "create_thread";
 pub const UNSUPPORTED_REQUEST_URL: &str = "https://github.com/BerriAI/litellm";
 pub const UNSUPPORTED_MODEL: &str = "n/a";
 
-// the source declares a three-field record that allows extra keys, which is B518's extensible record
-pub type OpenAIFineTuningHyperparameters = betterlite_openai::fine_tuning::job::Hyperparameters;
-
 fn default_provider() -> String {
     "openai".to_owned()
 }
@@ -59,8 +56,7 @@ pub struct CreateFineTuningJobCall {
     pub is_async: bool,
 }
 
-// the BadRequestError an unsupported provider raises: openai's APIError leaves type, param and code null,
-// and the source attaches an httpx.Response that stays on the error
+// openai's APIError leaves type, param and code null and attaches an httpx.Response to the error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnsupportedProviderError {
     pub status: u16,

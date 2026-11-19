@@ -43,6 +43,7 @@ fn job() -> FineTuneJob {
 
 struct Scripted {
     calls: Arc<Mutex<Vec<FineTuningCreateTarget>>>,
+    checks_context: bool,
 }
 
 impl FineTuningCreateDispatch for Scripted {
@@ -56,7 +57,17 @@ impl FineTuningCreateDispatch for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(target);
-        async move { Ok(job()) }
+        let checks_context = self.checks_context;
+        async move {
+            if checks_context {
+                CONTEXT
+                    .try_with(|value| *value)
+                    .map_err(|_error| ScriptFailure {
+                        message: "the caller's context was lost".to_owned(),
+                    })?;
+            }
+            Ok(job())
+        }
     }
 }
 
@@ -69,6 +80,7 @@ async fn ran(settings: ResourceSdkSettings, call: &CreateFineTuningJobCall) -> R
     let calls = Arc::new(Mutex::new(Vec::new()));
     let dispatch = Scripted {
         calls: Arc::clone(&calls),
+        checks_context: false,
     };
     let outcome = FineTuningCreate { dispatch, settings }.create(call).await;
     let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -396,16 +408,34 @@ async fn vertex_tuning_dispatch() {
     vertex_response();
 }
 
-fn selection_settings() -> ResourceSdkSettings {
+enum Selected {
+    OpenAi,
+    Azure,
+}
+
+fn selection(selected: Selected) -> ResourceSdkSettings {
     let mut settings = settings();
     settings.api_base = Some("https://settings-base.test".to_owned());
-    settings.api_key = Some(SecretString::from("sk-settings".to_owned()));
-    settings.openai_key = Some(SecretString::from("sk-openai-key".to_owned()));
-    settings.openai_api_key = Some(SecretString::from("sk-openai-api-key".to_owned()));
-    settings.organization = Some("org-settings".to_owned());
-    settings.openai_organization = Some("org-env".to_owned());
-    settings.openai_base_url = Some("https://base-url.test".to_owned());
-    settings.openai_api_base = Some("https://api-base.test".to_owned());
+    match selected {
+        Selected::OpenAi => {
+            settings.api_key = Some(SecretString::from("sk-settings".to_owned()));
+            settings.openai_key = Some(SecretString::from("sk-openai-key".to_owned()));
+            settings.openai_api_key = Some(SecretString::from("sk-openai-api-key".to_owned()));
+            settings.organization = Some("org-settings".to_owned());
+            settings.openai_organization = Some("org-env".to_owned());
+            settings.openai_base_url = Some("https://base-url.test".to_owned());
+            settings.openai_api_base = Some("https://api-base.test".to_owned());
+        }
+        Selected::Azure => {
+            settings.api_version = Some("2023-05-01".to_owned());
+            settings.api_key = Some(SecretString::from("azure-settings".to_owned()));
+            settings.azure_key = Some(SecretString::from("azure-key".to_owned()));
+            settings.azure_api_base = Some("https://azure-env-base.test".to_owned());
+            settings.azure_api_version = Some("2024-02-01".to_owned());
+            settings.azure_openai_api_key = Some(SecretString::from("azure-openai".to_owned()));
+            settings.azure_api_key = Some(SecretString::from("azure-api".to_owned()));
+        }
+    }
     settings
 }
 
@@ -415,7 +445,7 @@ async fn openai_request_wins() {
     call.params.api_key = Some(SecretString::from("sk-request".to_owned()));
     call.params.organization = Some("org-request".to_owned());
     call.params.api_version = Some("2024-01-01".to_owned());
-    let (outcome, calls) = ran(selection_settings(), &call).await;
+    let (outcome, calls) = ran(selection(Selected::OpenAi), &call).await;
     outcome.expect("the provider answered");
     let target = openai_target("openai", calls);
     assert_eq!(target.api_base, "https://request.test");
@@ -425,7 +455,7 @@ async fn openai_request_wins() {
 }
 
 async fn openai_base_fallthrough() {
-    let mut settings = selection_settings();
+    let mut settings = selection(Selected::OpenAi);
     settings.api_base = None;
     let (outcome, calls) = ran(settings.clone(), &base_call("openai")).await;
     outcome.expect("the provider answered");
@@ -450,7 +480,7 @@ async fn openai_base_fallthrough() {
 }
 
 async fn openai_key_fallthrough() {
-    let mut settings = selection_settings();
+    let mut settings = selection(Selected::OpenAi);
     settings.api_key = Some(SecretString::from(String::new()));
     let (outcome, calls) = ran(settings.clone(), &base_call("openai")).await;
     outcome.expect("the provider answered");
@@ -474,21 +504,8 @@ async fn openai_key_fallthrough() {
     );
 }
 
-fn azure_settings() -> ResourceSdkSettings {
-    let mut settings = settings();
-    settings.api_base = Some("https://settings-base.test".to_owned());
-    settings.api_version = Some("2023-05-01".to_owned());
-    settings.api_key = Some(SecretString::from("azure-settings".to_owned()));
-    settings.azure_key = Some(SecretString::from("azure-key".to_owned()));
-    settings.azure_api_base = Some("https://azure-env-base.test".to_owned());
-    settings.azure_api_version = Some("2024-02-01".to_owned());
-    settings.azure_openai_api_key = Some(SecretString::from("azure-openai".to_owned()));
-    settings.azure_api_key = Some(SecretString::from("azure-api".to_owned()));
-    settings
-}
-
 async fn azure_selection() {
-    let mut settings = azure_settings();
+    let mut settings = selection(Selected::Azure);
     settings.organization = Some("org-azure".to_owned());
     let (outcome, calls) = ran(settings, &base_call("azure")).await;
     outcome.expect("the provider answered");
@@ -503,7 +520,7 @@ async fn azure_selection() {
 }
 
 async fn azure_fallthrough() {
-    let mut settings = azure_settings();
+    let mut settings = selection(Selected::Azure);
     settings.api_base = None;
     settings.api_version = None;
     settings.api_key = Some(SecretString::from(String::new()));
@@ -762,30 +779,13 @@ tokio::task_local! {
     static CONTEXT: u64;
 }
 
-struct ContextDispatch;
-
-impl FineTuningCreateDispatch for ContextDispatch {
-    type Error = ScriptFailure;
-
-    fn create(
-        &self,
-        _target: FineTuningCreateTarget,
-    ) -> impl Future<Output = Result<FineTuneJob, ScriptFailure>> + Send {
-        async move {
-            CONTEXT
-                .try_with(|value| *value)
-                .map_err(|_error| ScriptFailure {
-                    message: "the caller's context was lost".to_owned(),
-                })?;
-            Ok(job())
-        }
-    }
-}
-
 #[tokio::test]
 async fn async_context_is_preserved() {
     let service = FineTuningCreate {
-        dispatch: ContextDispatch,
+        dispatch: Scripted {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            checks_context: true,
+        },
         settings: settings(),
     };
     assert!(

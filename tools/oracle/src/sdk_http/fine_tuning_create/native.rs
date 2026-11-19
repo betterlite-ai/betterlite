@@ -22,8 +22,6 @@ use betterlite_openai::fine_tuning::job::FineTuneJob;
 use betterlite_openai::fine_tuning::{Connection, JobRequest, request_fine_tuning_job};
 use betterlite_vertex::vertex_fine_tuning::execution::TuningExecutionError;
 use secrecy::SecretString;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -210,14 +208,14 @@ fn settings(env: &BTreeMap<String, String>) -> ResourceSdkSettings {
         vertexai_credentials: secret("VERTEXAI_CREDENTIALS"),
     }
 }
-fn json<T: DeserializeOwned>(value: &Value) -> Option<T> {
-    serde_json::from_value(value.clone()).ok()
-}
 fn create_call(run: &Run, api_base: &str) -> CreateFineTuningJobCall {
     CreateFineTuningJobCall {
         model: run.model.clone(),
         training_file: run.training_file.clone(),
-        hyperparameters: run.hyperparameters.as_ref().and_then(json::<Extra>),
+        hyperparameters: run
+            .hyperparameters
+            .as_ref()
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
         suffix: run.suffix.clone(),
         validation_file: run.validation_file.clone(),
         integrations: run
@@ -227,7 +225,10 @@ fn create_call(run: &Run, api_base: &str) -> CreateFineTuningJobCall {
         seed: run.seed,
         custom_llm_provider: run.provider.clone(),
         extra_headers: run.extra_headers.clone(),
-        extra_body: run.extra_body.as_ref().and_then(json::<Extra>),
+        extra_body: run
+            .extra_body
+            .as_ref()
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
         params: CreateParams {
             api_base: Some(api_base.to_owned()),
             ..run.params.clone()

@@ -7,8 +7,7 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{
-    AzureClientInputs, ClientIdentity, ClientInputs, ClientKind, ClientOutcome,
-    OpenAiV1ClientInputs, SessionKind, V1Key,
+    ClientIdentity, ClientInputs, ClientKind, ClientOutcome, SessionKind, V1Key,
 };
 use betterlite_azure::fine_tuning::client::{ClientMaterializer, Connection};
 use betterlite_azure::fine_tuning::create_fine_tuning_job;
@@ -73,43 +72,43 @@ impl ClientMaterializer for Materializer {
             outcome.kind,
             ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi
         );
-        Ok(match inputs {
-            ClientInputs::Azure(azure) => azure_api(azure, is_async),
-            ClientInputs::OpenAiV1(v1) => v1_api(v1, is_async),
-        })
+        Ok(job_api(inputs, is_async))
     }
 }
-// AzureOpenAI builds "{azure_endpoint}/openai" and appends the api-version query
-fn azure_api(azure: &AzureClientInputs<'_>, is_async: bool) -> Option<Box<dyn JobsApi>> {
-    let base = match (&azure.endpoint.base_url, &azure.endpoint.azure_endpoint) {
-        (Some(base), _) => base.trim_end_matches('/').to_owned(),
-        (None, Some(endpoint)) => format!("{}/openai", endpoint.trim_end_matches('/')),
-        (None, None) => return None,
-    };
-    Some(Box::new(HttpJobsApi {
-        is_async,
-        url: format!("{base}/fine_tuning/jobs?api-version={}", azure.api_version),
-        api_key: azure.api_key.clone(),
-        organization: None,
-        auth: Auth::ApiKey,
-        timeout: azure.timeout,
-    }))
-}
-// a v1 api-version builds the standard OpenAI client against "{api_base}/openai/v1/"
-fn v1_api(v1: &OpenAiV1ClientInputs<'_>, is_async: bool) -> Option<Box<dyn JobsApi>> {
-    let base = v1.base_url.as_deref()?.trim_end_matches('/').to_owned();
-    let api_key = match &v1.key {
-        Some(V1Key::Static(key)) => Some(key.clone()),
-        Some(V1Key::Provider { .. }) | None => None,
-    };
-    Some(Box::new(HttpJobsApi {
-        is_async,
-        url: format!("{base}/fine_tuning/jobs"),
-        api_key,
-        organization: None,
-        auth: Auth::Bearer,
-        timeout: v1.timeout,
-    }))
+// AzureOpenAI builds "{azure_endpoint}/openai" and appends the api-version query, while a v1 api-version builds the standard client against "{api_base}/openai/v1/"
+fn job_api(inputs: &ClientInputs<'_>, is_async: bool) -> Option<Box<dyn JobsApi>> {
+    Some(match inputs {
+        ClientInputs::Azure(azure) => {
+            let base = match (&azure.endpoint.base_url, &azure.endpoint.azure_endpoint) {
+                (Some(base), _) => base.trim_end_matches('/').to_owned(),
+                (None, Some(endpoint)) => format!("{}/openai", endpoint.trim_end_matches('/')),
+                (None, None) => return None,
+            };
+            Box::new(HttpJobsApi {
+                is_async,
+                url: format!("{base}/fine_tuning/jobs?api-version={}", azure.api_version),
+                api_key: azure.api_key.clone(),
+                organization: None,
+                auth: Auth::ApiKey,
+                timeout: azure.timeout,
+            })
+        }
+        ClientInputs::OpenAiV1(v1) => {
+            let base = v1.base_url.as_deref()?.trim_end_matches('/').to_owned();
+            let api_key = match &v1.key {
+                Some(V1Key::Static(key)) => Some(key.clone()),
+                Some(V1Key::Provider { .. }) | None => None,
+            };
+            Box::new(HttpJobsApi {
+                is_async,
+                url: format!("{base}/fine_tuning/jobs"),
+                api_key,
+                organization: None,
+                auth: Auth::Bearer,
+                timeout: v1.timeout,
+            })
+        }
+    })
 }
 struct Sources;
 fn source_failure() -> SourceFailure {

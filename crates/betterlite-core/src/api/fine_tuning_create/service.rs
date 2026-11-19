@@ -54,102 +54,64 @@ where
         hyperparameters: Extra,
         azure_hyperparameters: Extra,
     ) -> Result<FineTuningCreateTarget, FineTuningCreateError<Dispatch::Error>> {
+        let options = ResourceSdkRequestOptions::from(&call.params);
         match call.custom_llm_provider.as_str() {
-            "openai" => Ok(FineTuningCreateTarget::OpenAi(self.openai(
-                call,
+            "openai" => Ok(FineTuningCreateTarget::OpenAi(OpenAiCreateCall {
+                is_async: call.is_async,
+                data: job_data(call, hyperparameters, None)?,
+                api_base: self.settings.openai_base(&options),
+                api_key: self.settings.openai_api_key(&options).cloned(),
+                api_version: self
+                    .settings
+                    .openai_api_version(&options)
+                    .map(str::to_owned),
+                organization: self
+                    .settings
+                    .openai_organization(&options)
+                    .map(str::to_owned),
                 timeout,
-                hyperparameters,
-            )?)),
-            "azure" => Ok(FineTuningCreateTarget::Azure(self.azure(
-                call,
+                max_retries: call.params.max_retries,
+            })),
+            "azure" => {
+                // the public extra_body argument is discarded here: the helper starts from the params one, which is empty
+                let mut extra_body = Extra::new();
+                prepare_azure_extra_body(
+                    &mut extra_body,
+                    call.params.training_type.as_ref(),
+                    &azure_hyperparameters,
+                );
+                Ok(FineTuningCreateTarget::Azure(AzureCreateCall {
+                    is_async: call.is_async,
+                    data: job_data(
+                        call,
+                        hyperparameters,
+                        (!extra_body.is_empty()).then_some(&extra_body),
+                    )?,
+                    api_base: self.settings.azure_base(&options).map(str::to_owned),
+                    api_key: self.settings.azure_api_key(&options).cloned(),
+                    api_version: self.settings.azure_version(&options).map(str::to_owned),
+                    organization: self
+                        .settings
+                        .azure_organization(&options)
+                        .map(str::to_owned),
+                    timeout,
+                    max_retries: call.params.max_retries,
+                }))
+            }
+            "vertex_ai" => Ok(FineTuningCreateTarget::Vertex(VertexCreateCall {
+                is_async: call.is_async,
+                data: job_data(call, hyperparameters.clone(), None)?,
+                original_hyperparameters: hyperparameters,
+                api_base: call.params.api_base.clone().unwrap_or_default(),
+                vertex_project: self.settings.vertex_project(&options).map(str::to_owned),
+                vertex_location: self.settings.vertex_location(&options).map(str::to_owned),
+                vertex_credentials: self.settings.vertex_credentials(&options).cloned(),
                 timeout,
-                hyperparameters,
-                azure_hyperparameters,
-            )?)),
-            "vertex_ai" => Ok(FineTuningCreateTarget::Vertex(self.vertex(
-                call,
-                timeout,
-                hyperparameters,
-            )?)),
+            })),
             provider => Err(FineTuningCreateError::Unsupported {
                 provider: provider.to_owned(),
             }),
         }
-    }
-    fn openai(
-        &self,
-        call: &CreateFineTuningJobCall,
-        timeout: FineTuningTimeout,
-        hyperparameters: Extra,
-    ) -> Result<OpenAiCreateCall, FineTuningCreateError<Dispatch::Error>> {
-        let options = ResourceSdkRequestOptions::from(&call.params);
-        Ok(OpenAiCreateCall {
-            is_async: call.is_async,
-            data: job_data(call, hyperparameters, None)?,
-            api_base: self.settings.openai_base(&options),
-            api_key: self.settings.openai_api_key(&options).cloned(),
-            api_version: self
-                .settings
-                .openai_api_version(&options)
-                .map(str::to_owned),
-            organization: self
-                .settings
-                .openai_organization(&options)
-                .map(str::to_owned),
-            timeout,
-            max_retries: call.params.max_retries,
-        })
-    }
-    fn azure(
-        &self,
-        call: &CreateFineTuningJobCall,
-        timeout: FineTuningTimeout,
-        hyperparameters: Extra,
-        azure_hyperparameters: Extra,
-    ) -> Result<AzureCreateCall, FineTuningCreateError<Dispatch::Error>> {
-        let options = ResourceSdkRequestOptions::from(&call.params);
-        // the public extra_body argument is discarded here: the helper starts from the params one, which is empty
-        let mut extra_body = Extra::new();
-        prepare_azure_extra_body(
-            &mut extra_body,
-            call.params.training_type.as_ref(),
-            &azure_hyperparameters,
-        );
-        Ok(AzureCreateCall {
-            is_async: call.is_async,
-            data: job_data(
-                call,
-                hyperparameters,
-                (!extra_body.is_empty()).then_some(&extra_body),
-            )?,
-            api_base: self.settings.azure_base(&options).map(str::to_owned),
-            api_key: self.settings.azure_api_key(&options).cloned(),
-            api_version: self.settings.azure_version(&options).map(str::to_owned),
-            organization: self
-                .settings
-                .azure_organization(&options)
-                .map(str::to_owned),
-            timeout,
-            max_retries: call.params.max_retries,
-        })
-    }
-    fn vertex(
-        &self,
-        call: &CreateFineTuningJobCall,
-        timeout: FineTuningTimeout,
-        hyperparameters: Extra,
-    ) -> Result<VertexCreateCall, FineTuningCreateError<Dispatch::Error>> {
-        let options = ResourceSdkRequestOptions::from(&call.params);
-        Ok(VertexCreateCall {
-            is_async: call.is_async,
-            data: job_data(call, hyperparameters.clone(), None)?,
-            original_hyperparameters: hyperparameters,
-            api_base: call.params.api_base.clone().unwrap_or_default(),
-            vertex_project: self.settings.vertex_project(&options).map(str::to_owned),
-            vertex_location: self.settings.vertex_location(&options).map(str::to_owned),
-            vertex_credentials: self.settings.vertex_credentials(&options).cloned(),
-            timeout,
-        })
     }
 }
 // Azure pops prompt_loss_weight from the caller's map before the OpenAI-spec hyperparameters are built
@@ -197,10 +159,13 @@ where
         model: call.model.clone(),
         training_file: call.training_file.clone(),
         hyperparameters: Some(wire_map(&hyperparameters)?),
+        integrations: None,
+        metadata: None,
+        method: None,
+        seed: call.seed,
         suffix: call.suffix.clone(),
         validation_file: call.validation_file.clone(),
-        seed: call.seed,
-        ..FineTuneCreate::default()
+        extra: Extra::new(),
     };
     if let Some(integrations) = &call.integrations {
         let encoded = serde_json::to_value(integrations)
