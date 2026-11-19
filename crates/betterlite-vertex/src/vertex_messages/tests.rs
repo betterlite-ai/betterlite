@@ -235,6 +235,7 @@ fn expected(tokens: &[&str]) -> BTreeSet<String> {
     &["context-management-2025-06-27"]
 )]
 #[case::no_edits(r#"{"context_management":{"edits":[]}}"#, &[])]
+#[case::no_edits_key(r#"{"context_management":{}}"#, &[])]
 #[case::null_edits(r#"{"context_management":{"edits":null}}"#, &[])]
 #[case::null_context_management(r#"{"context_management":null}"#, &[])]
 fn compact_and_clear(#[case] optional: &str, #[case] tokens: &[&str]) {
@@ -296,6 +297,10 @@ fn per_turn_output(#[case] message: &str, #[case] tokens: &[&str]) {
 #[case::non_string_types_are_skipped(
     r#"{"tools":[{"type":7},{"type":"web_search_20250305"}]}"#,
     &["web-search-2025-03-05"]
+)]
+#[case::non_list_tools_are_skipped(
+    r#"{"tools":{"type":"web_search_20250305"}}"#,
+    &[]
 )]
 fn hosted_tool_betas(#[case] optional: &str, #[case] tokens: &[&str]) {
     assert_eq!(beta_set(optional), expected(tokens));
