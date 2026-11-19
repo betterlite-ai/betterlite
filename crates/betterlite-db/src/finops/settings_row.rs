@@ -12,8 +12,6 @@ use crate::auxiliary_repository::repository::PrismaClient;
 use crate::budget_permission_rows::JsonData;
 use crate::resource_repository::config::ConfigError;
 use crate::resource_repository::config::ConfigRepository;
-use crate::resource_repository::config::ConfigStoredRow;
-use crate::resource_repository::table::KeyFilter;
 use crate::stored_cipher::DbCipher;
 
 // LiteLLM's decrypt_value_helper with exception_type="error" and return_original_value=False
@@ -53,18 +51,11 @@ pub enum SettingsRowError {
     Decrypt { field: &'static str },
 }
 
-pub async fn read_settings_row(
-    client: Option<PrismaClient<'_>>,
+fn settings_fields(
+    value: JsonData,
     param: &'static str,
 ) -> Result<Option<BTreeMap<String, JsonData>>, SettingsRowError> {
-    let stored = ConfigRepository::new(client, false)
-        .get_param(param)
-        .await
-        .map_err(|source| SettingsRowError::Read { param, source })?;
-    let Some(config) = stored else {
-        return Ok(None);
-    };
-    match config.param_value {
+    match value {
         JsonData::Null => Ok(None),
         JsonData::Object(fields) => Ok(Some(fields)),
         JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Array(_) => {
@@ -73,25 +64,19 @@ pub async fn read_settings_row(
     }
 }
 
-// LiteLLM checks the raw param_value for None without decoding it, so a malformed value still counts
-pub async fn settings_row_present(
+pub async fn read_settings_row(
     client: Option<PrismaClient<'_>>,
     param: &'static str,
-) -> Result<bool, SettingsRowError> {
-    let rows = ConfigRepository::new(client, false)
-        .table()
-        .map_err(|source| SettingsRowError::Read {
-            param,
-            source: ConfigError::Database(source),
-        })?
-        .as_ref()
-        .find::<ConfigStoredRow>(KeyFilter::Equal(param))
+) -> Result<Option<BTreeMap<String, JsonData>>, SettingsRowError> {
+    let read_error = |source| SettingsRowError::Read { param, source };
+    let stored = ConfigRepository::new(client, false)
+        .get_param(param)
         .await
-        .map_err(|source| SettingsRowError::Read {
-            param,
-            source: ConfigError::Table(source),
-        })?;
-    Ok(rows.iter().any(|row| row.param_value != JsonData::Null))
+        .map_err(read_error)?;
+    let Some(config) = stored else {
+        return Ok(None);
+    };
+    settings_fields(config.param_value, param)
 }
 
 // LiteLLM stores json.dumps(settings), which the table keeps as a JSONB string
@@ -112,13 +97,16 @@ pub fn plain_field(
     param: &'static str,
     field: &'static str,
 ) -> Result<Option<String>, SettingsRowError> {
-    match fields.get(field) {
-        None | Some(JsonData::Null) => Ok(None),
-        Some(JsonData::String(text)) => Ok(Some(text.clone())),
-        Some(
-            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
-        ) => Err(SettingsRowError::Field { param, field }),
-    }
+    let Some(value) = fields.get(field) else {
+        return Ok(None);
+    };
+    let JsonData::String(text) = value else {
+        if value == &JsonData::Null {
+            return Ok(None);
+        }
+        return Err(SettingsRowError::Field { param, field });
+    };
+    Ok(Some(text.clone()))
 }
 
 pub fn secret_field(

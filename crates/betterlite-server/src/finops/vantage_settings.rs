@@ -1,5 +1,5 @@
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
-use betterlite_db::finops::settings_row::settings_row_present;
+use betterlite_db::finops::settings_row_presence::settings_row_present;
 use betterlite_db::finops::vantage_settings::VANTAGE_SETTINGS_PARAM_NAME;
 
 use super::vantage::store::VantageCallbackList;

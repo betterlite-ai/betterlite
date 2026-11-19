@@ -10,8 +10,8 @@ use crate::finops::settings_row::plain_field;
 use crate::finops::settings_row::read_settings_row;
 use crate::finops::settings_row::seal_secret;
 use crate::finops::settings_row::secret_field;
-use crate::finops::settings_row::settings_row_present;
 use crate::finops::settings_row::write_settings_row;
+use crate::finops::settings_row_presence::settings_row_present;
 use crate::postgres_store::errors::DbError;
 use crate::resource_repository::config::ConfigError;
 

@@ -1,6 +1,6 @@
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::finops::cloudzero_settings::CLOUDZERO_SETTINGS_PARAM_NAME;
-use betterlite_db::finops::settings_row::settings_row_present;
+use betterlite_db::finops::settings_row_presence::settings_row_present;
 
 pub const CLOUDZERO_CALLBACK: &str = "cloudzero";
 
