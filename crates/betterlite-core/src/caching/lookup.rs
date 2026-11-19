@@ -4,7 +4,6 @@ pub mod embedding;
 pub mod error;
 pub mod hit;
 pub mod json;
-pub mod parent_span;
 pub mod request;
 pub mod response;
 pub mod services;

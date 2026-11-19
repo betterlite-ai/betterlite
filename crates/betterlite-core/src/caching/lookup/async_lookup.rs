@@ -7,6 +7,7 @@ use betterlite_cache::handler::state::CachingHandler;
 use betterlite_cache::replay::{
     CacheHit, ReplayConversions, Replayed, ReplayedBy, replay_cached_result,
 };
+use betterlite_cache::write_completion::request::add_parent_otel_span;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 
@@ -17,7 +18,6 @@ use super::hit::{
     CacheTiming, HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record,
     log_converted_hit,
 };
-use super::parent_span::add_parent_otel_span;
 use super::request::{CacheLookup, replay_request};
 use super::response::LookupResponse;
 use super::services::LookupServices;
