@@ -95,6 +95,10 @@ struct Dependency {
     role: String,
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "The probe dispatch hands every operation a Result, and these checks are total over the validated payload, as the Python probe's run is."
+)]
 pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
