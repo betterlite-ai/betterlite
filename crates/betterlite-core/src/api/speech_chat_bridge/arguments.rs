@@ -74,7 +74,7 @@ where
 {
     value
         .and_then(read)
-        .map_or_else(|| Err(SpeechBridgeError::Required { name }), Ok)
+        .ok_or(SpeechBridgeError::Required { name })
 }
 
 const fn text_of(value: &Json) -> Option<&str> {
