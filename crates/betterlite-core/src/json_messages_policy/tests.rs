@@ -8,7 +8,7 @@ use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
 use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::{
-    BaseClass, Constraints, ProviderConfig, ProviderDescriptor,
+    BaseClass, Constraints, JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -126,6 +126,21 @@ fn messages(source: &str) -> Vec<Json> {
 fn assert_object(actual: &Object, expected: &str) {
     let expected = object(expected);
     assert_eq!(actual, &expected);
+}
+
+#[test]
+fn policy_accessors_and_lookup_report_the_descriptor() {
+    let policy = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1");
+    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(
+        policy.descriptor().config.base_url.as_str(),
+        "https://descriptor.invalid/v1"
+    );
+    let registry = JSONProviderRegistry::load();
+    let from_registry = JsonMessagesPolicy::for_provider(&registry, ProviderId::Cortecs)
+        .expect("cortecs is pinned");
+    assert_eq!(from_registry.provider(), ProviderId::Cortecs);
+    assert!(JsonMessagesPolicy::for_provider(&registry, ProviderId::Openai).is_none());
 }
 
 #[rstest::rstest]

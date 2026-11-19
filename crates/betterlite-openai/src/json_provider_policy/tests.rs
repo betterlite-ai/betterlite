@@ -108,6 +108,27 @@ fn pinned_publicai_and_sail_descriptors_drive_the_policy() {
 }
 
 #[test]
+fn policy_accessors_and_lookup_report_the_descriptor() {
+    let policy = chat("https://example.invalid/v1");
+    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(
+        policy.descriptor().config.base_url.as_str(),
+        "https://example.invalid/v1"
+    );
+    let policy = responses("https://descriptor.invalid/v1");
+    assert_eq!(policy.provider(), ProviderId::Cortecs);
+    assert_eq!(
+        policy.descriptor().config.base_url.as_str(),
+        "https://descriptor.invalid/v1"
+    );
+    let registry = JSONProviderRegistry::load();
+    let from_registry =
+        ResponsesPolicy::for_provider(&registry, ProviderId::Parasail).expect("parasail is pinned");
+    assert_eq!(from_registry.provider(), ProviderId::Parasail);
+    assert!(ResponsesPolicy::for_provider(&registry, ProviderId::Openai).is_none());
+}
+
+#[test]
 fn identity_prefers_the_explicit_base_then_the_declared_environment() {
     let policy = chat("https://descriptor.invalid/v1");
     let explicit_key = SecretString::from("sk-explicit");
@@ -284,6 +305,23 @@ fn temperature_clamps_run_in_max_min_then_n_order(
         .map_params(&Object::new(), &mut existing, &[])
         .expect("numbers clamp");
     assert_eq!(existing.get("temperature"), Some(&decimal(expected)));
+}
+
+#[test]
+fn a_temperature_at_every_limit_keeps_the_callers_number() {
+    let mut provider = config("https://example.invalid/v1", "openai_like");
+    provider.constraints.temperature_max = Some("1000".parse().expect("decimal"));
+    provider.constraints.temperature_min = Some("1000".parse().expect("decimal"));
+    provider.constraints.temperature_min_with_n_gt_1 = Some("1000".parse().expect("decimal"));
+    let policy = ChatPolicy::new(ProviderDescriptor {
+        provider: ProviderId::Cortecs,
+        config: provider,
+    });
+    let mut existing = object(&[("temperature", decimal("1000.0")), ("n", number(2))]);
+    policy
+        .map_params(&Object::new(), &mut existing, &[])
+        .expect("numbers clamp");
+    assert_eq!(existing.get("temperature"), Some(&decimal("1000.0")));
 }
 
 #[test]
@@ -535,6 +573,7 @@ fn the_responses_cache_keeps_the_first_descriptor_for_a_slug() {
         "https://first.invalid/v1/responses"
     );
     assert_eq!(cache.len(), 1);
+    assert!(!cache.is_empty());
     let other = ProviderDescriptor {
         provider: ProviderId::Edenai,
         config: config("https://edenai.invalid/v1", "openai_gpt"),
@@ -600,6 +639,7 @@ fn openai_like_responses_preserves_headers_for_a_truthy_key() {
     let mut settings = OpenAiLikeSettings::default();
     settings.api_key = Some(SecretString::from("sk-env"));
     let policy = OpenAiLikeResponsesPolicy::new(settings);
+    assert!(policy.settings().api_key.is_some());
     let headers = Headers::from([("X-Trace".to_owned(), "1".to_owned())]);
     let with_environment = policy.validate_environment(headers.clone(), None);
     assert_eq!(
