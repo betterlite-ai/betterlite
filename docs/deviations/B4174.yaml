@@ -9,4 +9,7 @@ deviations:
   - what: The details and GC query integers are parsed by Rust's i64 parser, so a value Python parses with surrounding whitespace, a leading plus, underscores or beyond i64 range is answered with 422 int_parsing.
     why: Python integers are arbitrary precision, while betterlite's typed query fields are fixed width; both routes validate the value only because LiteLLM declares the parameter type and answers 501 here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L672-L677
+  - what: This router contributes no paths to betterlite's OpenAPI document, including /debug/asyncio-tasks, which LiteLLM leaves in its schema because that route's decorator does not set include_in_schema=False.
+    why: betterlite builds its document from typed RouteDoc inputs that each route module supplies, and this one supplies none; the other debug endpoints are operator-only and the task's schema proof covers the include_in_schema=False routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L65
 kept_bugs: []
