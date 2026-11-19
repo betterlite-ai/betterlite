@@ -119,8 +119,9 @@ def url_case(config: RAGFlowConfig, case: UrlProbe) -> JsonValue:
 
 def headers_case(config: RAGFlowConfig, case: HeadersProbe) -> JsonValue:
     params: dict[str, JsonValue] = {}
+    headers: dict[str, str] = dict(case["headers"])
     merged: dict[str, JsonValue] = config.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L160
-        headers=dict(case["headers"]),
+        headers=headers,
         model=case["model"],
         messages=NO_MESSAGES,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
         optional_params=EMPTY,
