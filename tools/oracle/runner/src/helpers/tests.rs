@@ -280,13 +280,13 @@ fn prisma_generate_lock_serializes_its_holders() {
     let root = env::temp_dir().join(format!("betterlite-lock-{}-venv", process::id()));
     fs::create_dir_all(&root).unwrap();
     let path = root.join("generate.lock");
-    let held = super::lock_prisma_generate(&path).unwrap();
+    let held = super::prisma::lock_prisma_generate(&path).unwrap();
     let (began, wait) = mpsc::sync_channel(0);
     let (took, probe) = mpsc::sync_channel(0);
     thread::scope(|scope| {
         scope.spawn(|| {
             began.send(()).unwrap();
-            let second = super::lock_prisma_generate(&path).unwrap();
+            let second = super::prisma::lock_prisma_generate(&path).unwrap();
             took.send(()).unwrap();
             drop(second);
         });
@@ -300,7 +300,7 @@ fn prisma_generate_lock_serializes_its_holders() {
 
 #[test]
 fn fill_key_models_reports_a_missing_venv() {
-    let error = super::fill_key_models(
+    let error = super::prisma::fill_key_models(
         Path::new("/definitely-missing-betterlite-oracle-project"),
         "postgresql://oracle@127.0.0.1:1/oracle",
     )
@@ -315,8 +315,8 @@ fn fill_key_models_reports_a_missing_schema() {
         root.join("tools/oracle/litellm/.venv/lib/python3.13/site-packages/litellm/proxy"),
     )
     .unwrap();
-    let error =
-        super::fill_key_models(&root, "postgresql://oracle@127.0.0.1:1/oracle").unwrap_err();
+    let error = super::prisma::fill_key_models(&root, "postgresql://oracle@127.0.0.1:1/oracle")
+        .unwrap_err();
     fs::remove_dir_all(&root).unwrap();
     assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
 }

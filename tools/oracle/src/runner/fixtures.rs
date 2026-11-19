@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use betterlite_oracle_runner::helpers::{fill_key_models, generate_prisma_client, sync_litellm};
+use betterlite_oracle_runner::helpers::{
+    generate_prisma_client, prisma::fill_key_models, sync_litellm,
+};
 use betterlite_postgres_fixture::connection::{
     DatabaseNameGenerator, PostgresFixture, RandomDatabaseName,
 };
