@@ -36,27 +36,27 @@ impl Helper for Op {
 async fn execute(input: &Input) -> HelperResult {
     let rows = Arc::new(FakeRows::build(input)?);
     let source = input.prisma.0.then(|| Arc::clone(&rows));
-    let counter: Counters = counter(source);
+    let reseed: Counters = counter(source);
     let cache = FakeCache::build(&input.cache);
     // LiteLLM only opens a spend counter batch against a configured Redis cache
     let batch = FakeBatch::new(input.batch.clone().filter(|_| input.cache.redis));
     let value = match &input.op {
-        Operation::FromDb => counter.from_db(&input.counter_key).await.map_err(failure)?,
-        Operation::EndUserFromDb => counter
+        Operation::FromDb => reseed.from_db(&input.counter_key).await.map_err(failure)?,
+        Operation::EndUserFromDb => reseed
             .end_user_from_db(&input.counter_key)
             .await
             .map_err(failure)?,
-        Operation::IncrementInMemory => increment(input, &counter, &cache).await?,
+        Operation::IncrementInMemory => increment(input, &reseed, &cache).await?,
         Operation::Coalesced => {
             let warm = input.require_cache_warm.0;
-            counter
+            reseed
                 .coalesced(&cache, &batch, &input.counter_key, warm)
                 .await
                 .map_err(failure)?
         }
-        Operation::WindowFromTable => window_table(input, &counter).await?,
-        Operation::WindowFromDb => window_db(input, &counter).await?,
-        Operation::WindowFromSpendLogs => window_logs(input, &counter).await?,
+        Operation::WindowFromTable => window_table(input, &reseed).await?,
+        Operation::WindowFromDb => window_db(input, &reseed).await?,
+        Operation::WindowFromSpendLogs => window_logs(input, &reseed).await?,
     };
     Ok(json!({
         "value": value.map_or(Value::Null, amount_json),

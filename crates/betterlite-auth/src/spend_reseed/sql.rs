@@ -113,8 +113,8 @@ impl SpendCounterRows for SqlSpendCounterRows {
             return Ok(Vec::new());
         };
         let spend = row.spend.unwrap_or(JsonData::Null);
-        let sum = JsonData::Object(BTreeMap::from([("spend".to_owned(), spend)]));
-        Ok(vec![SpendAggregateRow::Attribute { sum: Some(sum) }])
+        let total = JsonData::Object(BTreeMap::from([("spend".to_owned(), spend)]));
+        Ok(vec![SpendAggregateRow::Attribute { sum: Some(total) }])
     }
 }
 
