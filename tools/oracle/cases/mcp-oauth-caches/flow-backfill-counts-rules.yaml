@@ -38,8 +38,8 @@ call:
         credentials: null
     user_credentials:
       - server_id: srv-c
-        kind: oauth2
+        credential_b64: eyJ0eXBlIjoib2F1dGgyIiwiYWNjZXNzX3Rva2VuIjoidG9rIn0=
       - server_id: srv-f
-        kind: key
+        credential_b64: YS1wbGFpbi1hcGkta2V5
 env: {}
 compare: {ignore: []}

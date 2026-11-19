@@ -18,8 +18,6 @@ call:
         - write
       upstream_token_header: x-api-key
     mcp_auth_header:
-      kind: headers
-      headers:
-        x-api-key: override
+      x-api-key: override
 env: {}
 compare: {ignore: []}

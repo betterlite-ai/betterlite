@@ -16,9 +16,7 @@ call:
       scopes:
         - read
         - write
-    mcp_auth_header:
-      kind: text
-      value: Bearer override
+    mcp_auth_header: Bearer override
     outcomes: []
 env: {}
 compare: {ignore: []}
