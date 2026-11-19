@@ -1,0 +1,2 @@
+environment_variables:
+  DEFAULT_MAX_TOKENS: "8192"
