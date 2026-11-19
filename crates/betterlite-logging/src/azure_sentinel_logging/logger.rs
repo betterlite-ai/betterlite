@@ -177,4 +177,13 @@ impl CallbackLogger for AzureSentinelLogger {
         self.async_log_model_event(Some(&event.payload)).await;
         Ok(())
     }
+
+    // AzureSentinel.async_log_audit_log_event queues the record on the audit stream, apart from model events
+    async fn async_log_audit_log_event(
+        &self,
+        audit_log: &StandardAuditLogPayload,
+    ) -> Result<(), LoggerError> {
+        AzureSentinelLogger::async_log_audit_log_event(self, audit_log.clone()).await;
+        Ok(())
+    }
 }

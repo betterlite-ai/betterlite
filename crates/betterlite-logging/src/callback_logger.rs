@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use error::LoggerError;
 use event::LoggerEvent;
 
+use crate::audit::payload::StandardAuditLogPayload;
 use crate::cold_storage_key::ColdStorageTarget;
 use crate::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
 
@@ -66,5 +67,13 @@ pub trait CallbackLogger: Send + Sync {
         _call: McpToolHookCall<'_>,
     ) -> Result<Option<McpPostCallResponse>, LoggerError> {
         Ok(None)
+    }
+
+    // CustomLogger.async_log_audit_log_event's body is pass, and audit_log_callbacks reach only loggers that override it
+    async fn async_log_audit_log_event(
+        &self,
+        _audit_log: &StandardAuditLogPayload,
+    ) -> Result<(), LoggerError> {
+        Ok(())
     }
 }

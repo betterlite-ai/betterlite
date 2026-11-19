@@ -1,0 +1,83 @@
+use std::future::Future;
+use std::sync::Arc;
+
+use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::error::LoggerError;
+use crate::worker::{Admission, Callback, LoggingWorker, ShutdownReport};
+
+use super::callbacks::NamedAuditCallbacks;
+use super::payload::StandardAuditLogPayload;
+
+pub type AuditCallback = Arc<dyn CallbackLogger>;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DispatchReport {
+    pub submitted: usize,
+    pub rejected: usize,
+}
+
+pub struct AuditCallbackJob {
+    callback: AuditCallback,
+    payload: StandardAuditLogPayload,
+}
+
+impl Callback for AuditCallbackJob {
+    type Error = LoggerError;
+
+    fn name(&self) -> &str {
+        self.callback.callback_name()
+    }
+
+    fn call(self) -> impl Future<Output = Result<(), LoggerError>> + Send + 'static {
+        async move { self.callback.async_log_audit_log_event(&self.payload).await }
+    }
+}
+
+// Each audit event reaches every configured callback through B191's bounded worker, so a slow logger never holds the caller.
+// A delivery is built where the worker can start inside a runtime, with a struct literal.
+pub struct AuditDelivery {
+    pub named: NamedAuditCallbacks,
+    pub worker: LoggingWorker<AuditCallbackJob>,
+}
+
+impl AuditDelivery {
+    pub fn dispatch(
+        &self,
+        callbacks: &[AuditCallback],
+        payload: &StandardAuditLogPayload,
+    ) -> DispatchReport {
+        let mut report = DispatchReport::default();
+        for callback in callbacks {
+            let job = AuditCallbackJob {
+                callback: Arc::clone(callback),
+                payload: payload.clone(),
+            };
+            match self.worker.enqueue(job) {
+                Admission::Accepted => report.submitted += 1,
+                Admission::Rejected(rejection) => {
+                    report.rejected += 1;
+                    tracing::error!(
+                        callback = %callback.callback_name(),
+                        ?rejection,
+                        "the audit log callback was rejected; its delivery was dropped"
+                    );
+                }
+            }
+        }
+        report
+    }
+
+    pub async fn shutdown(&self) -> ShutdownReport {
+        let report = self.worker.stop().await;
+        tracing::info!(
+            accepted = report.accepted,
+            completed = report.completed,
+            failed = report.failed,
+            timed_out = report.timed_out,
+            cancelled = report.cancelled,
+            dropped = report.dropped,
+            "the audit callback delivery worker stopped"
+        );
+        report
+    }
+}
