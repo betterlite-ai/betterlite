@@ -1,0 +1,22 @@
+kind: probe
+name: stream-count-until-close
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      least_busy:
+        model_group: gpt
+        shared: true
+        deployments:
+          - {id: a}
+          - {id: b}
+        steps:
+          - {kind: pre_call, call_id: 1, deployment: a}
+          - {kind: pre_call, call_id: 2, deployment: b}
+          - {kind: shared}
+          - {kind: select}
+          - {kind: success, call_id: 2, callback: async}
+          - {kind: shared}
+          - {kind: select}
+compare:
+  ignore: []

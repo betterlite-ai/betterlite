@@ -26,6 +26,13 @@ description: >-
   scim_user_patch helper cases and the actual route through B1644 eligible HTTP transcripts,
   including status/type/param/code, content type and authentication. The 250 owned lines
   budget 280 implementation, 190 tests, 100 adapters and 160 fuzz/HTTP fixtures, capped 800.
+
+  B9941 mounts scim_router with crates/betterlite-server/src/scim_user_patch.rs as an empty routes stub it already
+  merges, so fill only scim_user_patch.rs and scim_user_patch/** and leave scim.rs and routes.rs as they are.
+  Register PATCH at /scim/v2/Users/{user_id} with that exact parameter name so it joins B1638's PUT and DELETE and
+  B1641's GET on one path. The HTTP cases seed SCIM-blocked keys, user metadata, user teams and members_with_roles
+  through B9941's `scim:` seed block, LiteLLM reads that database through B9942's generated Prisma client, the
+  handler reads it through B8610's shared.db, and B052 gives the missing-key sub-case LiteLLM's 401.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml

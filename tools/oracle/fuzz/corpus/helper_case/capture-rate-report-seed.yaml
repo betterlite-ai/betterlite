@@ -1,0 +1,15 @@
+kind: helper
+name: capture-rate-report-seed
+call:
+  capture_rate:
+    cases:
+      seeded_window:
+        function: report
+        provider: openai
+        start_date: "2026-11-01"
+        end_date: "2026-11-02"
+        threshold: 0.75
+        captured_by_day: {"2026-11-01": 3.0}
+        billed_by_day: {"2026-11-01": 4.0}
+env: {}
+compare: {ignore: []}

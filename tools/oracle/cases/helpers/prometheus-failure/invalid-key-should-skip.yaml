@@ -1,0 +1,47 @@
+kind: helper
+name: prometheus-failure-invalid-key-should-skip
+call:
+  b3880:
+    function: should_skip_metrics_for_invalid_key
+    enum_status_code: "401"
+    exception: null
+    kwargs_exception: null
+calls:
+  - b3880:
+      function: should_skip_metrics_for_invalid_key
+      enum_status_code: null
+      exception:
+        kind: scripted
+        message: "no auth"
+        status_code: "401"
+        code: "401"
+      kwargs_exception: null
+  - b3880:
+      function: should_skip_metrics_for_invalid_key
+      enum_status_code: null
+      exception: null
+      kwargs_exception:
+        kind: scripted
+        message: "no auth"
+        status_code: "401"
+        code: "401"
+  - b3880:
+      function: should_skip_metrics_for_invalid_key
+      enum_status_code: null
+      exception: null
+      kwargs_exception:
+        kind: scripted
+        message: "Invalid API Key provided"
+        status_code: null
+        code: null
+  - b3880:
+      function: should_skip_metrics_for_invalid_key
+      enum_status_code: "403"
+      exception:
+        kind: scripted
+        message: "rate limit exceeded"
+        status_code: null
+        code: null
+      kwargs_exception: null
+env: {}
+compare: {ignore: []}

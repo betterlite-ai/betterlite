@@ -1,0 +1,90 @@
+kind: helper
+name: realtime-guardrail-selection-and-clean-result
+call:
+  realtime_guardrails_websocket:
+    request_data:
+      transcript: stale
+      metadata: {}
+    user_api_key_dict:
+      user_id: u-1
+    guardrails:
+      - kind: custom
+        name: eligible
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: clean
+      - kind: plain
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: clean
+      - kind: native
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: clean
+      - kind: custom
+        name: pre-call
+        hooks: [pre_call]
+        default_on: true
+        outcome: clean
+      - kind: custom
+        name: never
+        hooks: [realtime_input_transcription]
+        default_on: false
+        outcome: clean
+    callbacks: [0, 0, 1, 2, 3, 4]
+    backend_failures: []
+    client_failures: []
+    close_failure: false
+    runs:
+      - transcript: hello
+        item_id: item-1
+calls:
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: rewrite
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: hello
+          event_hooks: []
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [pre_call]
+          default_on: true
+          outcome: rewrite
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: hello
+          event_hooks: [pre_call]
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: native
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: raise
+          raised:
+            message: denied
+            value_error: true
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: hello
+env: {}
+compare: {ignore: []}

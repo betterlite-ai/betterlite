@@ -14,6 +14,7 @@ description: >-
   futures_util::future::LocalBoxFuture<...> under one #[expect(clippy::disallowed_types, reason = "the realtime relay
   state holds connection trait objects that are not Send yet")]. Max chose Send provider and logging futures, with
   the trait objects they hold bound on the trait (decision 2026-11-18). This task does the same for the relay.
+  B1007 (#2449) added the realtime guardrails runner in crates/betterlite-core/src/api/realtime_guardrails with the same local futures: RunRealtimeGuardrails and its impl in runner.rs are #[async_trait(?Send)], and callback.rs, runner.rs, runner/block.rs, runner/finish.rs and tests/harness.rs use LocalBoxFuture. B9984 leaves each of those five files under one #![expect(clippy::disallowed_types)]. This task makes the runner Send too and removes the five expects.
 
 
   Add the bounds as supertraits on the trait definitions. In crates/betterlite-core/src/api/realtime_contracts/transport.rs,
@@ -86,6 +87,8 @@ scope:
   - crates/betterlite-core/src/api/realtime_sender/tests.rs
   - crates/betterlite-core/src/api/realtime_sender/tests/send.rs
   - tools/oracle/src/helpers/core_ops/realtime_sender_websocket/provider.rs
+  - crates/betterlite-core/src/api/realtime_guardrails.rs
+  - crates/betterlite-core/src/api/realtime_guardrails/**
   lint_tables: false
 references:
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/.development/decisions/2026-11-18-provider-futures-send.md
@@ -115,6 +118,7 @@ dod:
     ClientWebSocket and RealtimeSend require Send, and RealtimeGuardrailCallback requires Send + Sync. The sender's
     source files hold no async_trait(?Send), LocalBoxFuture, boxed_local or disallowed_types expect, SenderFuture is a
     BoxFuture, and no comment there blames a missing Send.
+    The same holds for crates/betterlite-core/src/api/realtime_guardrails.rs and every file under crates/betterlite-core/src/api/realtime_guardrails.
   proof: [no-local-futures]
 - text: >-
     RealtimeEventNormalizer is defined once, as the Send + Sync trait in crates/betterlite-openai/src/realtime/normalizer.rs,
@@ -137,6 +141,7 @@ checks:
       ! git grep -n -E 'LocalBoxFuture|boxed_local|async_trait\(\?Send\)|disallowed_types|not Send|non-Send|local future'
       -- crates/betterlite-core/src/api/realtime_sender.rs crates/betterlite-core/src/api/realtime_sender/methods.rs
       crates/betterlite-core/src/api/realtime_sender/client.rs crates/betterlite-core/src/api/realtime_sender/backend.rs
+      crates/betterlite-core/src/api/realtime_guardrails.rs crates/betterlite-core/src/api/realtime_guardrails
       && grep -q -F 'futures_util::future::BoxFuture' crates/betterlite-core/src/api/realtime_sender.rs
       && grep -q -E 'pub trait RealtimeSend: Send \{' crates/betterlite-core/src/api/realtime_sender.rs
       && grep -q -E 'pub trait ClientWebSocket: ScopedWebSocket \+ Send \{' crates/betterlite-core/src/api/realtime_contracts/transport.rs
@@ -178,5 +183,5 @@ pitfalls:
 - Keep the words the no-local-futures check looks for out of the comments in realtime_sender.rs, methods.rs, client.rs and backend.rs.
 review_level: standard
 budget:
-  max_changed_lines: 300
+  max_changed_lines: 500
   max_new_expects: 0
