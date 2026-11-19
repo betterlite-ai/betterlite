@@ -20,7 +20,7 @@ const PRE_OUTPUT_EVENT_TYPES: [&str; 3] = [
 
 pub(super) fn source_error(failure: SourceFailure) -> DriverError {
     match failure {
-        SourceFailure::Transport(failure) => DriverError::Transport(failure),
+        SourceFailure::Transport(transport) => DriverError::Transport(transport),
         SourceFailure::Decode(message) => DriverError::Class {
             class: unclassified(message),
         },

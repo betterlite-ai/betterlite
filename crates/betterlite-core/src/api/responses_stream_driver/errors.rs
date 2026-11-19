@@ -16,13 +16,6 @@ pub struct TransportFailure {
 }
 impl TransportFailure {
     #[must_use]
-    pub fn new(kind: TransportKind, message: &str) -> Self {
-        Self {
-            kind,
-            message: message.to_owned(),
-        }
-    }
-    #[must_use]
     pub const fn is_transport(&self) -> bool {
         matches!(
             self.kind,

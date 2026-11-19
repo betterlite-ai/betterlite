@@ -10,10 +10,20 @@ use super::errors::{TransportFailure, TransportKind};
 #[must_use]
 pub fn classify(error: HttpError) -> TransportFailure {
     match timed_out(error) {
-        HttpError::Request(source) => {
-            TransportFailure::new(TransportKind::ReadError, &source.to_string())
-        }
-        other => TransportFailure::new(TransportKind::HttpError, &other.to_string()),
+        HttpError::Request(source) => TransportFailure {
+            kind: TransportKind::ReadError,
+            message: source.to_string(),
+        },
+        other @ (HttpError::Required { .. }
+        | HttpError::DotSegment { .. }
+        | HttpError::UnsupportedProxyScheme { .. }
+        | HttpError::InvalidProxyUrl { .. }
+        | HttpError::Client(_)
+        | HttpError::Timeout
+        | HttpError::TooLarge { .. }) => TransportFailure {
+            kind: TransportKind::HttpError,
+            message: other.to_string(),
+        },
     }
 }
 #[derive(Debug)]

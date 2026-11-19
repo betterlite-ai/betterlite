@@ -27,8 +27,8 @@ async fn terminal_error_events_raise_before_the_deployment_hook(
         ReplacingHook::new(serde_json::from_str(COMPLETED).expect("the replacement decodes"));
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
-    ports.chunk_hooks = vec![Arc::clone(&hook)];
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    ports.chunk_hooks = vec![Arc::<ReplacingHook>::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -58,7 +58,7 @@ async fn the_deployment_hook_decides_whether_output_started() {
     let replacement: Event = serde_json::from_str(DELTA).expect("the replacement decodes");
     let hook = ReplacingHook::new(replacement);
     let mut ports = Ports::default();
-    ports.chunk_hooks = vec![Arc::clone(&hook)];
+    ports.chunk_hooks = vec![Arc::<ReplacingHook>::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(vec![payload(CREATED)]), None);
@@ -121,10 +121,31 @@ async fn undecodable_payloads_are_skipped() {
 }
 
 #[tokio::test]
+async fn invalid_utf8_payload_raises_an_unclassified_error() {
+    let failure = Arc::new(FailurePort::default());
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let fixture = Fixture::new(ports, fixed_clock());
+    let hooks = fixture.hooks();
+    let mut stream = fixture.stream(&hooks, prefetched(vec![Ok(b"\xff\xfe".to_vec())]), None);
+    let error = stream
+        .next_event()
+        .await
+        .expect_err("the payload is not UTF-8");
+    match class_of(&error) {
+        ErrorClass::Unclassified(context) => {
+            assert!(context.message.starts_with("invalid UTF-8: "));
+        }
+        other => panic!("expected an unclassified error, got {other:?}"),
+    }
+    assert_eq!(failure.classes().len(), 1);
+}
+
+#[tokio::test]
 async fn streaming_duration_limit_blocks_the_first_read() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, scripted_clock(&[LATE]));
     let hooks = fixture.hooks();
     let (source, polls) = CountingSource::new(&[CREATED]);
@@ -153,7 +174,7 @@ async fn streaming_duration_limit_stops_after_a_received_event() {
 fn sync_iteration_runs_failure_handlers_without_a_runtime() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(vec![payload(CREATED)]), None);
@@ -170,7 +191,7 @@ fn sync_iteration_runs_failure_handlers_without_a_runtime() {
 fn sync_iteration_logs_a_completed_response_inline() {
     let success = Arc::new(SuccessPort::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(vec![payload(COMPLETED)]), None);
@@ -186,7 +207,7 @@ fn sync_iteration_logs_a_completed_response_inline() {
 async fn live_iteration_drains_pending_logging_after_completion() {
     let success = Arc::new(SuccessPort::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(vec![payload(COMPLETED)]), None);
@@ -204,8 +225,8 @@ async fn fake_response_iteration_slices_text_into_chunks() {
     let success = Arc::new(SuccessPort::default());
     let cache = Arc::new(RecordingCache::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
-    ports.cache = Some(Arc::clone(&cache));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
+    ports.cache = Some(Arc::<RecordingCache>::clone(&cache));
     ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -239,8 +260,8 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     let success = Arc::new(SuccessPort::default());
     let cache = Arc::new(RecordingCache::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
-    ports.cache = Some(Arc::clone(&cache));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
+    ports.cache = Some(Arc::<RecordingCache>::clone(&cache));
     ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -268,7 +289,7 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
 async fn cached_response_iteration_logs_only_when_completed_is_yielded() {
     let success = Arc::new(SuccessPort::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.synthetic(&hooks, Some(true), false);
@@ -288,7 +309,7 @@ async fn cached_response_iteration_logs_only_when_completed_is_yielded() {
 fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
     let success = Arc::new(SuccessPort::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut first = fixture.synthetic(&hooks, Some(true), false);
@@ -328,7 +349,7 @@ async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
             details: IndexMap::new(),
             limits: &fixture.limits,
         },
-        BaseStreamStateInput {
+        &BaseStreamStateInput {
             model: "gpt-4o",
             custom_llm_provider: None,
             litellm_metadata: None,

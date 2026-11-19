@@ -79,9 +79,10 @@ fn payload(text: &str) -> Result<Vec<u8>, SourceFailure> {
 }
 
 fn transport(kind: TransportKind, message: &str) -> Result<Vec<u8>, SourceFailure> {
-    Err(SourceFailure::Transport(TransportFailure::new(
-        kind, message,
-    )))
+    Err(SourceFailure::Transport(TransportFailure {
+        kind,
+        message: message.to_owned(),
+    }))
 }
 
 fn field(event: &Event, key: &str) -> String {
@@ -542,7 +543,7 @@ impl Fixture {
                 details: IndexMap::new(),
                 limits: &self.limits,
             },
-            BaseStreamStateInput {
+            &BaseStreamStateInput {
                 model: "gpt-4o",
                 custom_llm_provider: Some("openai"),
                 litellm_metadata: None,
@@ -571,7 +572,7 @@ impl Fixture {
             serde_json::from_str(RESPONSE_FIXTURE).expect("the response fixture decodes");
         SyntheticStream::build(
             response,
-            SyntheticSetup {
+            &SyntheticSetup {
                 state: BaseStreamStateInput {
                     model: "gpt-4o",
                     custom_llm_provider: Some("openai"),
@@ -658,8 +659,8 @@ async fn live_sse_delivery_yields_events_and_finishes() {
     let success = Arc::new(SuccessPort::default());
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.success = Some(Arc::clone(&success));
-    ports.failure = Some(Arc::clone(&failure));
+    ports.success = Some(Arc::<SuccessPort>::clone(&success));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -695,7 +696,7 @@ async fn live_sse_delivery_yields_events_and_finishes() {
 async fn early_stream_end_before_any_event_raises_a_fallback() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(Vec::new()), None);
@@ -734,7 +735,7 @@ async fn early_stream_end_after_a_lifecycle_event_still_falls_back() {
 async fn early_stream_end_after_output_raises_the_connection_error() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -774,7 +775,7 @@ async fn the_done_marker_without_a_terminal_event_raises_the_early_end_error() {
 async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -800,7 +801,7 @@ async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
 async fn transport_error_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -829,7 +830,7 @@ async fn transport_error_after_a_terminal_event_ends_the_iteration() {
 async fn transport_error_before_output_raises_a_fallback_with_503() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -855,7 +856,7 @@ async fn transport_error_before_output_raises_a_fallback_with_503() {
 async fn transport_error_after_output_raises_the_transport_error() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -884,7 +885,7 @@ async fn transport_error_after_output_raises_the_transport_error() {
 async fn other_http_errors_raise_even_after_a_terminal_event() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -911,7 +912,7 @@ async fn other_http_errors_raise_even_after_a_terminal_event() {
 async fn a_framing_failure_raises_an_unclassified_error() {
     let failure = Arc::new(FailurePort::default());
     let mut ports = Ports::default();
-    ports.failure = Some(Arc::clone(&failure));
+    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(

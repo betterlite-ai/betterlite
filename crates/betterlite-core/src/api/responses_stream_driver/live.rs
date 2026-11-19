@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_error::error::ErrorClass;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_models::decisions::Json;
@@ -8,7 +10,7 @@ use num_traits::ToPrimitive as _;
 use super::errors::{DriverError, TransportFailure};
 use super::fallback::{
     context, fallback_error, note_yielded_event, source_error, stream_ended_early_message,
-    timeout_class,
+    timeout_class, unclassified,
 };
 use super::source::PayloadSource;
 use crate::api::api_boundaries::ApiLimits;
@@ -62,11 +64,11 @@ where
     #[must_use]
     pub fn new(
         engine: StreamEngine<'stream, Transform, Tokenization, Calculator>,
-        input: BaseStreamStateInput<'_>,
+        input: &BaseStreamStateInput<'_>,
         source: Box<dyn PayloadSource>,
     ) -> Self {
         Self {
-            state: base_stream_state(&input),
+            state: base_stream_state(input),
             callback: ResponsesStreamHookState::default(),
             engine,
             source,
@@ -76,20 +78,26 @@ where
     pub async fn next_event(&mut self) -> Result<Option<Event>, DriverError> {
         let outcome = self.drive(Dispatch::Spawned).await;
         if !matches!(&outcome, Ok(Some(_))) {
-            await_pending_logging(&mut self.callback).await;
+            self.drain_pending_logging().await;
         }
         outcome
     }
-    // ast-grep-ignore: no-one-line-functions
     pub async fn drain_pending_logging(&mut self) {
         await_pending_logging(&mut self.callback).await;
+        self.state.pending_tasks.close();
+        self.state.pending_tasks.wait().await;
     }
     // both iterators share this pipeline and only the dispatch differs
     pub async fn drive(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         match self.pull(dispatch).await {
             Ok(event) => Ok(event),
-            Err(DriverError::Transport(failure)) => self.transport_failed(failure).await,
-            Err(DriverError::Class { class }) => {
+            Err(error) => self.recovered(error).await,
+        }
+    }
+    async fn recovered(&mut self, error: DriverError) -> Result<Option<Event>, DriverError> {
+        match error {
+            DriverError::Transport(failure) => self.transport_failed(failure).await,
+            DriverError::Class { class } => {
                 self.state.finished = true;
                 handle_failure(
                     self.engine.hooks,
@@ -111,29 +119,11 @@ where
                 return Ok(None);
             };
             let payload = item.map_err(source_error)?;
-            self.check_duration()?;
-            // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
-            let text = replaced_text(&payload);
-            let processed = ResponsesEventProcessor {
-                transform: self.engine.transform,
-                tokenization: self.engine.tokenization,
-                calculator: self.engine.calculator,
-                hooks: self.engine.hooks,
-                details: &mut self.engine.details,
-                dispatch,
-                limits: self.engine.limits,
-            }
-            .process(
-                &text,
-                &mut self.state,
-                &mut self.callback,
-                self.engine.logging,
-            )
-            .await;
-            let yielded = processed.map_err(|error| DriverError::Class {
-                class: error
-                    .error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
+            let text = from_utf8(&payload).map_err(|error| DriverError::Class {
+                class: unclassified(format!("invalid UTF-8: {error}")),
             })?;
+            self.check_duration()?;
+            let yielded = self.process_payload(text, dispatch).await?;
             if self.state.finished {
                 self.raise_if_ended().await?;
                 return Ok(None);
@@ -157,6 +147,31 @@ where
             }
         }
     }
+    async fn process_payload(
+        &mut self,
+        text: &str,
+        dispatch: Dispatch,
+    ) -> Result<Option<Event>, DriverError> {
+        let processed = ResponsesEventProcessor {
+            transform: self.engine.transform,
+            tokenization: self.engine.tokenization,
+            calculator: self.engine.calculator,
+            hooks: self.engine.hooks,
+            details: &mut self.engine.details,
+            dispatch,
+            limits: self.engine.limits,
+        }
+        .process(
+            text,
+            &mut self.state,
+            &mut self.callback,
+            self.engine.logging,
+        )
+        .await;
+        processed.map_err(|error| DriverError::Class {
+            class: error.error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
+        })
+    }
     fn check_duration(&self) -> Result<(), DriverError> {
         self.state
             .check_max_streaming_duration(self.clock_seconds())
@@ -165,14 +180,10 @@ where
             })
     }
     fn clock_seconds(&self) -> f64 {
-        self.engine
-            .hooks
-            .clock
-            .now()
-            .timestamp_micros()
+        let micros = self.engine.hooks.clock.now().timestamp_micros();
+        micros
             .to_f64()
-            .map(|micros| micros.mul_add(1e-6_f64, 0.0_f64))
-            .unwrap_or(f64::INFINITY)
+            .map_or(f64::INFINITY, |value| value.mul_add(1e-6_f64, 0.0_f64))
     }
     async fn raise_if_ended(&mut self) -> Result<(), DriverError> {
         if self.state.completed_response.is_some() {
@@ -220,15 +231,4 @@ where
             class: fallback_error(&self.state, &failure.message, 503),
         })
     }
-}
-// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
-fn replaced_text(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    for chunk in bytes.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-    }
-    text
 }

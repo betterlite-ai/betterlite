@@ -41,7 +41,7 @@ pub struct SyntheticStream<'stream> {
 impl<'stream> SyntheticStream<'stream> {
     pub fn build<Calculator>(
         mut transformed: ResponsesApiResponse,
-        setup: SyntheticSetup<'stream>,
+        setup: &SyntheticSetup<'stream>,
         calculator: Option<&Calculator>,
     ) -> Result<Self, SyntheticEventsError>
     where
@@ -84,9 +84,10 @@ impl<'stream> SyntheticStream<'stream> {
         }
         Ok(Some(event))
     }
-    // ast-grep-ignore: no-one-line-functions
     pub async fn drain_pending_logging(&mut self) {
         await_pending_logging(&mut self.callback).await;
+        self.state.pending_tasks.close();
+        self.state.pending_tasks.wait().await;
     }
 }
 pub(super) fn is_completed(event: &Event) -> bool {
