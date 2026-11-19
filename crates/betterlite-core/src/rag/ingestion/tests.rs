@@ -368,16 +368,15 @@ fn credential_removes_every_endpoint_field_a_credential_omits() {
     );
 }
 
-#[rstest]
-#[case::api_base("api_base", "https://stored.example")]
-#[case::aws_sts_endpoint("aws_sts_endpoint", "https://sts.stored")]
-#[case::aws_web_identity_token("aws_web_identity_token", "stored-token")]
 #[test]
-fn credential_keeps_endpoint_fields_the_credential_defines(
-    #[case] field: &str,
-    #[case] value: &str,
-) {
-    let harness = Harness::default().with_credentials(&format!(r#"{{"{field}": "{value}"}}"#));
+fn credential_keeps_endpoint_fields_the_credential_defines() {
+    let harness = Harness::default().with_credentials(
+        r#"{
+            "api_base": "https://stored.example",
+            "aws_sts_endpoint": "https://sts.stored",
+            "aws_web_identity_token": "stored-token"
+        }"#,
+    );
     let parsed = serde_json::from_str(
         r#"{
             "vector_store": {
@@ -390,7 +389,18 @@ fn credential_keeps_endpoint_fields_the_credential_defines(
     )
     .expect("the options parse");
     let state = harness.state(parsed);
-    assert_eq!(text_of(&state.vector_store_config, field), value);
+    assert_eq!(
+        text_of(&state.vector_store_config, "api_base"),
+        "https://stored.example"
+    );
+    assert_eq!(
+        text_of(&state.vector_store_config, "aws_sts_endpoint"),
+        "https://sts.stored"
+    );
+    assert_eq!(
+        text_of(&state.vector_store_config, "aws_web_identity_token"),
+        "stored-token"
+    );
 }
 
 #[test]
