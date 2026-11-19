@@ -7,13 +7,14 @@ mod tests;
 
 #[async_trait]
 pub trait ModelReadThrough: Send + Sync {
-    async fn attempt(&self, model: &str) -> bool;
+    // clippy's same_name_method refuses `attempt` while RegistryReadThrough has an inherent one
+    async fn attempt_model(&self, model: &str) -> bool;
 }
 
 #[async_trait]
 impl<R: Resync> ModelReadThrough for RegistryReadThrough<R> {
-    async fn attempt(&self, model: &str) -> bool {
-        RegistryReadThrough::attempt(self, model).await
+    async fn attempt_model(&self, model: &str) -> bool {
+        Self::attempt(self, model).await
     }
 }
 
@@ -54,7 +55,7 @@ where
     if !retryable {
         return Err(first);
     }
-    if !read_through_port.attempt(model_name).await {
+    if !read_through_port.attempt_model(model_name).await {
         return Err(first);
     }
     attempt().await

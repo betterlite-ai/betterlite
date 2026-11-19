@@ -36,10 +36,6 @@ fn not_found(retryable_with_model_read_through: bool) -> Result<&'static str, Fa
     )))
 }
 
-fn other_error() -> Result<&'static str, FakeError> {
-    Err(FakeError::Other)
-}
-
 struct FakeAttempt<E> {
     calls: AtomicUsize,
     results: Mutex<VecDeque<Result<&'static str, E>>>,
@@ -56,10 +52,6 @@ impl<E> FakeAttempt<E> {
     fn next_result(&self) -> Result<&'static str, E> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.results.lock().unwrap().pop_front().unwrap()
-    }
-
-    fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
     }
 }
 
@@ -98,7 +90,7 @@ async fn retry_runs_the_attempt_twice_and_returns_the_second_result() {
     })
     .await;
     assert_eq!(result, Ok("second"));
-    assert_eq!(attempt.calls(), 2);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 2);
     assert_eq!(recorded(&keys), vec![MODEL.to_owned()]);
 }
 
@@ -108,7 +100,7 @@ async fn retry_runs_the_attempt_twice_and_returns_the_second_result() {
     MODEL,
     true,
 ))))]
-#[case::another_error(other_error())]
+#[case::another_error(Err(FakeError::Other))]
 #[tokio::test]
 async fn retry_returns_the_second_attempt_error(#[case] second: Result<&'static str, FakeError>) {
     let attempt = FakeAttempt::new(vec![not_found(true), second.clone(), Ok("third")]);
@@ -119,7 +111,7 @@ async fn retry_returns_the_second_attempt_error(#[case] second: Result<&'static 
     })
     .await;
     assert_eq!(result, second);
-    assert_eq!(attempt.calls(), 2);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 2);
 }
 
 #[rstest]
@@ -137,7 +129,7 @@ async fn retry_asks_the_read_through_with_the_model_text(#[case] model: &str) {
     })
     .await;
     assert_eq!(result, Ok("second"));
-    assert_eq!(attempt.calls(), 2);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 2);
     assert_eq!(recorded(&keys), vec![model.to_owned()]);
 }
 
@@ -154,7 +146,7 @@ async fn retry_treats_a_proxy_not_found_error_as_the_cause() {
     })
     .await;
     assert_eq!(result, Ok("second"));
-    assert_eq!(attempt.calls(), 2);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 2);
     assert_eq!(recorded(&keys), vec![MODEL.to_owned()]);
 }
 
@@ -168,7 +160,7 @@ async fn no_retry_when_the_flag_is_false() {
     })
     .await;
     assert_eq!(result, not_found(false));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert!(recorded(&keys).is_empty());
 }
 
@@ -180,7 +172,7 @@ async fn no_retry_without_a_model() {
     let result =
         route_with_read_through(None, Some(&read_through), async || attempt.next_result()).await;
     assert_eq!(result, not_found(true));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert!(recorded(&keys).is_empty());
 }
 
@@ -194,7 +186,7 @@ async fn no_retry_with_an_empty_model() {
     })
     .await;
     assert_eq!(result, not_found(true));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert!(recorded(&keys).is_empty());
 }
 
@@ -203,7 +195,7 @@ async fn no_retry_without_a_read_through() {
     let attempt = FakeAttempt::new(vec![not_found(true), Ok("second")]);
     let result = route_with_read_through(Some(MODEL), None, async || attempt.next_result()).await;
     assert_eq!(result, not_found(true));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -216,13 +208,13 @@ async fn no_retry_when_the_read_through_misses() {
     })
     .await;
     assert_eq!(result, not_found(true));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert_eq!(recorded(&keys), vec![MODEL.to_owned()]);
 }
 
 #[tokio::test]
 async fn no_retry_when_the_first_attempt_succeeds() {
-    let attempt = FakeAttempt::new(vec![Ok("first"), Ok("second")]);
+    let attempt: FakeAttempt<FakeError> = FakeAttempt::new(vec![Ok("first"), Ok("second")]);
     let keys = Arc::new(Mutex::new(Vec::new()));
     let read_through = RegistryReadThrough::new(FakeResync::new(true, &keys));
     let result = route_with_read_through(Some(MODEL), Some(&read_through), async || {
@@ -230,7 +222,7 @@ async fn no_retry_when_the_first_attempt_succeeds() {
     })
     .await;
     assert_eq!(result, Ok("first"));
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert!(recorded(&keys).is_empty());
 }
 
@@ -243,7 +235,7 @@ async fn no_retry_when_the_error_is_not_a_model_not_found() {
         attempt.next_result()
     })
     .await;
-    assert_eq!(result, other_error());
-    assert_eq!(attempt.calls(), 1);
+    assert_eq!(result, Err(FakeError::Other));
+    assert_eq!(attempt.calls.load(Ordering::SeqCst), 1);
     assert!(recorded(&keys).is_empty());
 }
