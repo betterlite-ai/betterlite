@@ -43,8 +43,8 @@ use crate::api::file_http_content::config::{
 use crate::api::file_http_content::error::ContentError;
 use crate::api::file_http_content::service::{
     BufferedReply, ClientSource, ContentDeps, ContentRequest, ContentTransport, LogContext,
-    PreparedContent, RetrieveCall, StreamedReply, prepare, retrieve_file_content,
-    retrieve_file_content_streaming,
+    PreparedContent, RetrieveCall, StreamedReply, prepare, retrieve_content_streaming,
+    retrieve_file_content,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
 
@@ -673,5 +673,5 @@ where
     S: ClientSource,
 {
     let prepared = fixture.prepare(deps, call, events)?;
-    retrieve_file_content_streaming(prepared, chunk, &mut fixture.state).await
+    retrieve_content_streaming(prepared, chunk, &mut fixture.state).await
 }

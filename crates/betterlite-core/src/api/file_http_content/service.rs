@@ -225,7 +225,7 @@ where
 }
 
 // async_retrieve_file_content_streaming: the prepared query overrides the transform's own, and the body stays unread until the caller iterates
-pub async fn retrieve_file_content_streaming<C, S>(
+pub async fn retrieve_content_streaming<C, S>(
     prepared: PreparedContent<'_, C, S>,
     chunk_size: NonZeroUsize,
     logging: &mut LoggingState,
