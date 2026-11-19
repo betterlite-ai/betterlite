@@ -1,0 +1,68 @@
+task: B4774
+deviations:
+  - what: >-
+      betterlite rejects request-supplied push-callback URLs with HTTP 400 before forwarding.
+      LiteLLM's proxy accepts them if they pass SSRF checks.
+    why: >-
+      The bounded-inputs rule forbids external request destinations; operator-configured webhook URLs are
+      trusted. Request callbacks are deferred to a future decision on SSRF policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-L136
+  - what: >-
+      The kill switch request uses a configured finite deadline (B173's default pooled-client timeout or
+      AGENT_KILL_SWITCH_TIMEOUT_SECONDS, default 10.0 seconds). LiteLLM does not override keepalive behavior.
+    why: >-
+      Bounded request timeouts prevent indefinite hangs on slow webhook servers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L579
+  - what: >-
+      A failed attempt records the transport error's message in AgentKillSwitchResult.error, so the audit row
+      carries text such as "connection refused". LiteLLM records type(exc).__name__, such as "ConnectError".
+    why: >-
+      The injected client's error type is opaque here and its message is what an operator can act on; the
+      project policy makes error text betterlite's own. The request's URL and method still identify the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L209-L216
+  - what: >-
+      Every error the injected kill switch client reports becomes a failed attempt with no status code and no
+      response body. LiteLLM catches only httpx.HTTPError, so any other exception escapes fire_kill_switch.
+    why: >-
+      The injected client's error type is opaque here and recording it keeps the audit row that explains a
+      failed attempt; the error text names what went wrong, which the warning log carries too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L209-L216
+  - what: >-
+      Configured query parameters the URL does not already carry are appended in key order, configured headers
+      are sent in key order, and the JSON body's object keys serialize in key order. LiteLLM keeps the order
+      the operator wrote in the YAML.
+    why: >-
+      AgentKillSwitchConfig stores query_params, headers and body as BTreeMaps, which sort their keys; none of
+      these orders changes what the webhook receives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-L136
+  - what: >-
+      The request URL and the reported URL come from the standard URL parser, which lowercases scheme and host,
+      drops a default port, resolves dot segments and writes "/" for an empty path; httpx keeps an empty path
+      empty, so LiteLLM reports "https://agent.example" where betterlite reports "https://agent.example/".
+    why: >-
+      The config URL is parsed by the same parser when it is read, so the parsed form builds the request; both
+      send the same request target.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-L131
+  - what: >-
+      An auth-derived header replaces a configured header whose name matches in any case. LiteLLM merges the
+      two dicts case-sensitively, so a config with an "authorization" header plus Bearer auth sends both the
+      stale header and the token.
+    why: >-
+      HTTP header names are case-insensitive, and sending a stale credential next to the live one is a defect
+      no working setup depends on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L134
+  - what: >-
+      An unparsable URL is a typed request error, and firing records it as a result with no status code. LiteLLM
+      parses the URL outside its try block, so httpx.InvalidURL reaches the endpoint and becomes a 500.
+    why: >-
+      AgentKillSwitchConfig.url is validated when the config is read, so a stored kill switch never reaches this
+      path; a config built in code reports its failure instead of crashing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L193
+  - what: >-
+      A response text chunk with no text ends the captured body. LiteLLM keeps reading while chunks carry no
+      text, so an injected client that only yields empty chunks never returns.
+    why: >-
+      That client would hang the request and hold its task open; a client that returns text chunks never sends
+      an empty one, so no working setup sees a difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L233-L239
+kept_bugs: []
