@@ -132,6 +132,7 @@ fn page_below_one_reports_greater_than_equal(#[case] raw: &str) {
 #[case::fraction("page=1.5")]
 #[case::empty("page=")]
 #[case::leading_point("page=.5")]
+#[case::leading_underscore("page=_1")]
 #[case::mixed_fraction("page=2.50")]
 #[case::trailing_letter("page=1x")]
 #[case::trailing_underscore("page=1_")]
