@@ -24,6 +24,15 @@ deviations:
       A locally raised error never reached a provider, so betterlite has no response to attach;
       the error kind maps to the same 400 the proxy returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L624-L634
+  - what: >-
+      An OpenAI read given an api_version sends its request with no version, where LiteLLM
+      passes the field into the OpenAI client's constructor and answers TypeError before any
+      request; with a supplied client LiteLLM ignores the field, as betterlite does.
+    why: >-
+      The TypeError names a constructor keyword rather than a declared read parameter, so no
+      working setup can rely on it; betterlite keeps the declared field and drops it from the
+      request instead of copying a Python signature into its contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L91
 kept_bugs:
   - what: >-
       The list call's unsupported-provider message names 'create_batch' instead of the list
@@ -38,10 +47,3 @@ kept_bugs:
       The azure branch forwards organization into a handler that never reads it, and Azure
       authenticates with api-key, so a setup depends on the silent drop rather than an error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L613-L623
-  - what: >-
-      An api_version given to an OpenAI read is accepted and never sent, since the plain OpenAI
-      client has no versioned URL surface.
-    why: >-
-      LiteLLM passes it into the OpenAI handler, which ignores it for a non-Azure client; a setup
-      that sets it globally relies on the request still succeeding.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L201-L241
