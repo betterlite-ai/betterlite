@@ -37,7 +37,7 @@ fn replays_the_native_messages_hosts_seeds() {
 }
 
 #[test]
-fn native_messages_hosts_seed_covers_each_host() {
+fn seed_covers_each_host() {
     let seeds = seed_paths();
     assert!(
         !seeds.is_empty(),
@@ -57,7 +57,7 @@ fn native_messages_hosts_seed_covers_each_host() {
     assert_eq!(hosts, expected);
 }
 
-fn step_host(step: &Step) -> Host {
+const fn step_host(step: &Step) -> Host {
     match step {
         Step::Url(call) => call.host,
         Step::Environment(call) => call.host,
@@ -65,7 +65,7 @@ fn step_host(step: &Step) -> Host {
     }
 }
 
-fn host_name(host: Host) -> &'static str {
+const fn host_name(host: Host) -> &'static str {
     match host {
         Host::Deepseek => "deepseek",
         Host::Tencent => "tencent",

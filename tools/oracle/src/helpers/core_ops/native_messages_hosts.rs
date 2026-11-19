@@ -111,7 +111,7 @@ fn answer(step: &Step, runtime: &Runtime) -> HelperResult {
     }
 }
 
-fn environment_of(host: Host, settings: &HostSettings) -> &HostEnvironment {
+const fn environment_of(host: Host, settings: &HostSettings) -> &HostEnvironment {
     match host {
         Host::Deepseek => &settings.deepseek,
         Host::Tencent => &settings.tencent,

@@ -46,7 +46,7 @@ fn header_map(pairs: &[(&str, &str)]) -> Headers {
 #[case::empty_environment(Some(""), Some(""), Some("global"), Some("global"))]
 #[case::empty_global(Some(""), Some(""), Some(""), Some(""))]
 #[case::nothing(None, None, None, None)]
-fn native_messages_hosts_keys_follow_the_python_or_chain(
+fn keys_follow_the_python_or_chain(
     #[case] explicit: Option<&str>,
     #[case] environment: Option<&str>,
     #[case] global: Option<&str>,
@@ -120,7 +120,7 @@ fn native_messages_hosts_keys_follow_the_python_or_chain(
     Some("https://fallback.deepseek.test"),
     "https://fallback.deepseek.test/anthropic/v1/messages"
 )]
-fn native_messages_hosts_deepseek_urls_follow_its_suffix_policy(
+fn deepseek_urls_follow_its_suffix_policy(
     #[case] explicit: Option<&str>,
     #[case] environment: Option<&str>,
     #[case] fallback: Option<&str>,
@@ -153,10 +153,7 @@ fn native_messages_hosts_deepseek_urls_follow_its_suffix_policy(
     Some("https://tokenhub.test/v2"),
     "https://tokenhub.test/v2/v1/messages"
 )]
-fn native_messages_hosts_tencent_urls_swap_the_chat_endpoint(
-    #[case] explicit: Option<&str>,
-    #[case] expected: &str,
-) {
+fn tencent_urls_swap_the_chat_endpoint(#[case] explicit: Option<&str>, #[case] expected: &str) {
     let sources = BaseSources {
         explicit,
         environment: None,
@@ -192,7 +189,7 @@ fn native_messages_hosts_tencent_urls_swap_the_chat_endpoint(
     Some("https://gateway.test/minimax/v1/"),
     "https://gateway.test/minimax/v1/v1/messages"
 )]
-fn native_messages_hosts_minimax_urls_only_adjust_the_separator(
+fn minimax_urls_only_adjust_the_separator(
     #[case] explicit: Option<&str>,
     #[case] environment: Option<&str>,
     #[case] expected: &str,
@@ -272,7 +269,7 @@ fn compaction_parameters() -> IndexMap<String, Json> {
 }
 
 #[test]
-fn native_messages_hosts_deepseek_permits_missing_auth_and_adds_its_headers() {
+fn deepseek_permits_missing_auth_and_adds_its_headers() {
     let sources = Sources::default();
     let (headers, api_base) = deepseek_headers(
         &sources,
@@ -293,7 +290,7 @@ fn native_messages_hosts_deepseek_permits_missing_auth_and_adds_its_headers() {
 }
 
 #[test]
-fn native_messages_hosts_deepseek_inserts_x_api_key_for_a_resolved_key() {
+fn deepseek_inserts_x_api_key_for_a_resolved_key() {
     let sources = Sources {
         explicit: Some("explicit-key".to_owned()),
         ..Sources::default()
@@ -306,7 +303,7 @@ fn native_messages_hosts_deepseek_inserts_x_api_key_for_a_resolved_key() {
 }
 
 #[test]
-fn native_messages_hosts_deepseek_checks_header_names_in_exact_lowercase() {
+fn deepseek_checks_header_names_in_exact_lowercase() {
     let sources = Sources {
         explicit: Some("explicit-key".to_owned()),
         ..Sources::default()
@@ -332,7 +329,7 @@ fn native_messages_hosts_deepseek_checks_header_names_in_exact_lowercase() {
 }
 
 #[test]
-fn native_messages_hosts_deepseek_keeps_supplied_lowercase_headers() {
+fn deepseek_keeps_supplied_lowercase_headers() {
     let sources = Sources::default();
     let (headers, _) = deepseek_headers(
         &sources,
@@ -354,14 +351,14 @@ fn native_messages_hosts_deepseek_keeps_supplied_lowercase_headers() {
 }
 
 #[test]
-fn native_messages_hosts_deepseek_tags_beta_synthesis_with_its_own_provider() {
+fn deepseek_tags_beta_synthesis_with_its_own_provider() {
     let sources = Sources::default();
     let (headers, _) = deepseek_headers(&sources, &[], &compaction_parameters(), None);
     assert_eq!(headers.get("anthropic-beta"), None);
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_tag_beta_synthesis_as_anthropic() {
+fn inherited_hosts_tag_beta_synthesis_as_anthropic() {
     let sources = Sources::default();
     let headers = inherited_headers(
         &sources,
@@ -377,7 +374,7 @@ fn native_messages_hosts_inherited_hosts_tag_beta_synthesis_as_anthropic() {
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_accept_any_header_case() {
+fn inherited_hosts_accept_any_header_case() {
     let sources = Sources::default();
     let headers = inherited_headers(
         &sources,
@@ -400,7 +397,7 @@ fn native_messages_hosts_inherited_hosts_accept_any_header_case() {
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_report_a_missing_credential() {
+fn inherited_hosts_report_a_missing_credential() {
     let sources = Sources::default();
     let error = inherited_headers(&sources, &[], &empty_parameters(), &settings(None, None))
         .expect_err("no credential is configured");
@@ -409,7 +406,7 @@ fn native_messages_hosts_inherited_hosts_report_a_missing_credential() {
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_fall_back_to_the_anthropic_key() {
+fn inherited_hosts_fall_back_to_the_anthropic_key() {
     let sources = Sources::default();
     let headers = inherited_headers(
         &sources,
@@ -425,7 +422,7 @@ fn native_messages_hosts_inherited_hosts_fall_back_to_the_anthropic_key() {
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token() {
+fn inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token() {
     let sources = Sources {
         explicit: Some("sk-ant-oat01-token".to_owned()),
         ..Sources::default()
@@ -440,7 +437,7 @@ fn native_messages_hosts_inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token(
 }
 
 #[test]
-fn native_messages_hosts_inherited_hosts_keep_the_requested_api_base() {
+fn inherited_hosts_keep_the_requested_api_base() {
     let parameters = empty_parameters();
     let messages: Vec<Json> = Vec::new();
     let mut headers = header_map(&[]);
@@ -551,7 +548,7 @@ fn transform_parameters(tools: Json) -> Object {
 }
 
 #[tokio::test]
-async fn native_messages_hosts_deepseek_strips_only_custom_tool_types() {
+async fn deepseek_strips_only_custom_tool_types() {
     let tools = Json::List(vec![
         custom_tool("bash", true),
         typed_tool("web_search_20250305"),
@@ -574,7 +571,7 @@ async fn native_messages_hosts_deepseek_strips_only_custom_tool_types() {
 }
 
 #[tokio::test]
-async fn native_messages_hosts_deepseek_leaves_a_non_list_tools_value_alone() {
+async fn deepseek_leaves_a_non_list_tools_value_alone() {
     let request = HostRequest {
         model: "deepseek-chat",
         messages: vec![user_message()],
@@ -590,7 +587,7 @@ async fn native_messages_hosts_deepseek_leaves_a_non_list_tools_value_alone() {
 }
 
 #[tokio::test]
-async fn native_messages_hosts_other_hosts_keep_custom_tool_types() {
+async fn other_hosts_keep_custom_tool_types() {
     let tools = Json::List(vec![custom_tool("bash", true)]);
     let tencent_request = HostRequest {
         model: "hunyuan-t1",
@@ -614,7 +611,7 @@ async fn native_messages_hosts_other_hosts_keep_custom_tool_types() {
 }
 
 #[tokio::test]
-async fn native_messages_hosts_all_hosts_strip_billing_system_metadata() {
+async fn all_hosts_strip_billing_system_metadata() {
     let system = Json::Text("x-anthropic-billing-header: cc_version=1".to_owned());
     for name in ["deepseek", "tencent", "minimax"] {
         let mut parameters = Object::new();

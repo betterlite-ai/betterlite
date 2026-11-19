@@ -15,7 +15,7 @@ enum Host {
 }
 
 impl Host {
-    fn of(self, settings: &Settings) -> &HostEnvironment {
+    const fn of(self, settings: &Settings) -> &HostEnvironment {
         match self {
             Self::Deepseek => &settings.deepseek,
             Self::Tencent => &settings.tencent,
@@ -41,7 +41,7 @@ fn revealed(key: Option<&SecretString>) -> Option<String> {
 }
 
 #[test]
-fn native_messages_hosts_settings_default_to_nothing() {
+fn default_to_nothing() {
     let settings = load("", &[]);
     assert!(settings.global_api_key.is_none());
     for host in [&settings.deepseek, &settings.tencent, &settings.minimax] {
@@ -55,7 +55,7 @@ fn native_messages_hosts_settings_default_to_nothing() {
 #[case::deepseek(Host::Deepseek, &[("DEEPSEEK_API_KEY", "deepseek-key"), ("DEEPSEEK_ANTHROPIC_API_BASE", "https://anthropic.deepseek.test"), ("DEEPSEEK_API_BASE", "https://deepseek.test")], "deepseek-key", "https://anthropic.deepseek.test", Some("https://deepseek.test"))]
 #[case::tencent(Host::Tencent, &[("TENCENT_API_KEY", "tencent-key"), ("TENCENT_ANTHROPIC_API_BASE", "https://anthropic.tencent.test"), ("TENCENT_API_BASE", "https://tencent.test")], "tencent-key", "https://anthropic.tencent.test", Some("https://tencent.test"))]
 #[case::minimax(Host::Minimax, &[("MINIMAX_API_KEY", "minimax-key"), ("MINIMAX_API_BASE", "https://minimax.test")], "minimax-key", "https://minimax.test", None)]
-fn native_messages_hosts_settings_read_each_alias(
+fn read_each_alias(
     #[case] host: Host,
     #[case] environment: &[(&str, &str)],
     #[case] expected_key: &str,
@@ -76,10 +76,7 @@ fn native_messages_hosts_settings_read_each_alias(
 #[case::deepseek(Host::Deepseek, &[("DEEPSEEK_API_KEY", ""), ("DEEPSEEK_ANTHROPIC_API_BASE", ""), ("DEEPSEEK_API_BASE", "")])]
 #[case::tencent(Host::Tencent, &[("TENCENT_API_KEY", ""), ("TENCENT_ANTHROPIC_API_BASE", ""), ("TENCENT_API_BASE", "")])]
 #[case::minimax(Host::Minimax, &[("MINIMAX_API_KEY", ""), ("MINIMAX_API_BASE", "")])]
-fn native_messages_hosts_settings_ignore_empty_aliases(
-    #[case] host: Host,
-    #[case] environment: &[(&str, &str)],
-) {
+fn ignore_empty_aliases(#[case] host: Host, #[case] environment: &[(&str, &str)]) {
     let settings = load("", environment);
     let loaded = host.of(&settings);
     assert!(loaded.api_key.is_none());
@@ -91,7 +88,7 @@ fn native_messages_hosts_settings_ignore_empty_aliases(
 #[case::module_key("litellm_settings:\n  api_key: global-key\n", &[], Some("global-key"))]
 #[case::environment_reference("litellm_settings:\n  api_key: os.environ/SHARED_KEY\n", &[("SHARED_KEY", "referenced-key")], Some("referenced-key"))]
 #[case::absent("", &[], None)]
-fn native_messages_hosts_settings_load_the_global_key(
+fn load_the_global_key(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
     #[case] expected: Option<&str>,
