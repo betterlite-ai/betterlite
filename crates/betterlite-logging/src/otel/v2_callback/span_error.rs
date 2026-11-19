@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use betterlite_error::normalize::Normalizer;
-use betterlite_models::call_helpers::expected_error::{ClientErrorFacts, is_expected_client_error};
-use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use serde_json::Number;
 
 use crate::logging_metadata::error_info::{ExceptionLogging, get_error_information};
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::otel::model::payloads::error::SpanError;
+use crate::payload::compose::error_info::expected_client_error;
 
 pub struct ErrorInformationConfig {
     pub normalizer: Normalizer,
@@ -43,24 +41,6 @@ pub fn span_error_from_exception(
         stack_trace: text(info.traceback.flatten()),
         llm_provider: text(info.llm_provider.flatten()),
     }
-}
-
-// the proxy's own 4xx is an expected client error; anything the provider originated is not
-fn expected_client_error(exception: Option<&ExceptionFacts>) -> bool {
-    let facts = ClientErrorFacts {
-        code: exception
-            .and_then(|facts| facts.code.clone())
-            .map(Json::Text),
-        status_code: exception
-            .and_then(|facts| facts.status_code)
-            .map(|status| Json::Number(Number::from(status))),
-        llm_provider: exception.and_then(|facts| facts.llm_provider.clone()),
-        category: exception.and_then(|facts| facts.category.clone()),
-        // ExceptionFacts carries no HTTPException or BaseLLMException marker; see docs/deviations/B190.yaml
-        http_exception: false,
-        base_llm_exception: false,
-    };
-    is_expected_client_error(Some(&facts))
 }
 
 fn text(value: Option<String>) -> Option<String> {

@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -71,7 +72,11 @@ fn failures(
             red: vec![Red::Report],
         }));
     }
-    let verdict = checks::run(worktree, &task, &checks::selection::unbuilt())?;
+    let mut verdict = checks::run(worktree, &task, &checks::selection::unbuilt())?;
+    // the lint lane runs only after the cheap checks pass, so a hooks failure never waits behind a build
+    if verdict.passed && env::var_os("GATE_LINT_ROOT").is_some() {
+        verdict = checks::run(worktree, &task, &checks::selection::linted())?;
+    }
     if verdict.passed {
         return Ok(None);
     }
