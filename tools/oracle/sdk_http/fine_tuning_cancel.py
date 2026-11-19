@@ -111,8 +111,10 @@ def settle(result: ModelResult) -> JsonValue:
             return JSON.validate_json(result.model_dump_json())
 
 
-def failure(error: ValueError | openai.OpenAIError, status: int) -> dict[str, JsonValue]:
-    details = error if isinstance(error, openai.APIStatusError) else None
+def failure(
+    error: ValueError | openai.OpenAIError, details: openai.APIStatusError | None
+) -> dict[str, JsonValue]:
+    status = 0 if details is None else details.status_code
     return {
         "class": type(error).__name__,
         "status": status,
@@ -128,7 +130,7 @@ def run_one(run: Run, api_base: str) -> dict[str, JsonValue]:
     try:
         job = settle(called(run, api_base))
     except openai.APIStatusError as error:
-        return {"job": None, "error": failure(error, error.status_code)}
+        return {"job": None, "error": failure(error, error)}
     except (ValueError, openai.OpenAIError) as error:
-        return {"job": None, "error": failure(error, 0)}
+        return {"job": None, "error": failure(error, None)}
     return {"job": job, "error": None}
