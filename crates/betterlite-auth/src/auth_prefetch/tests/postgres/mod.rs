@@ -6,6 +6,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::postgres_store::errors::DbError;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_prefetch::db::{PrefetchDatabase as _, WriterRows};
@@ -15,7 +16,7 @@ use crate::auth_prefetch::permission::store::{
     BoundedPermissionStore, ObjectPermissionStore as _, PermissionTable,
 };
 use crate::auth_prefetch::rows::RowKind;
-use crate::auth_read::table::ReadContext;
+use crate::auth_read::table::{AuthReadError, AuthTable as _, FindOne, Presence, ReadContext};
 
 mod support;
 
@@ -608,4 +609,26 @@ async fn permission_table_reads_seeded_row() {
             .is_none()
     );
     close(database).await;
+}
+
+#[tokio::test]
+async fn permission_table_wraps_a_pool_failure() {
+    let database = database().await;
+    let table = PermissionTable {
+        reader: database.store.clone(),
+        writer: database.store.clone(),
+        availability: Arc::new(Availability::default()),
+        use_writer: true,
+    };
+    close(database).await;
+    let outcome = table
+        .find_unique(FindOne {
+            filter: "perm-1".to_owned(),
+            include: Presence::Omitted,
+        })
+        .await;
+    assert!(matches!(
+        outcome,
+        Err(AuthReadError::Repository(DbError::Pool { .. }))
+    ));
 }
