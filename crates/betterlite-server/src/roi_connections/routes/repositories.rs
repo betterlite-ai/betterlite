@@ -8,7 +8,7 @@ use crate::roi_github::repositories::repositories;
 use crate::roi_github::transport::Transport;
 use crate::roi_settings::store::load_settings;
 
-use super::super::access::{READ_FORBIDDEN, READ_ROLES, require_admin};
+use super::super::access::{READ_FORBIDDEN, READ_ROLES, ensure_admin};
 use super::super::error::{QueryIssue, RoiConnectionsError};
 use super::super::state::{RoiConnectionsState, github_client, require_repository};
 
@@ -35,7 +35,7 @@ where
     T: Transport + Clone + Send + Sync + 'static,
 {
     let context = caller.as_ref().map(|extension| &extension.0);
-    require_admin(context, READ_ROLES, READ_FORBIDDEN)?;
+    ensure_admin(context, READ_ROLES, READ_FORBIDDEN)?;
     let repository = require_repository(&state)?;
     let (query, page) = parse_query(&raw)?;
     let settings = load_settings(repository, state.cipher.as_ref()).await?;

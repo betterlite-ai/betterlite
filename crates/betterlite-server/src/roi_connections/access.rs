@@ -1,26 +1,24 @@
-use betterlite_auth::auth_identity::roles::Role;
-
 use crate::auth::auth_identity::AuthContext;
+use crate::tracing_routes::access::{TraceAuth, TraceRole};
 
 use super::error::RoiConnectionsError;
 
 pub const READ_FORBIDDEN: &str = "Only proxy admins can access the ROI Calculator.";
 pub const WRITE_FORBIDDEN: &str = "Only proxy admins can change ROI Calculator settings.";
-pub const READ_ROLES: &[Role] = &[Role::PlatformAdmin, Role::PlatformViewer];
-pub const WRITE_ROLES: &[Role] = &[Role::PlatformAdmin];
-const MASTER_KEY_SUBJECT: &str = "master_key";
+pub const READ_ROLES: &[TraceRole] = &[TraceRole::Admin, TraceRole::AdminViewOnly];
+pub const WRITE_ROLES: &[TraceRole] = &[TraceRole::Admin];
 
-pub fn require_admin(
+// TraceAuth already maps the master key and LiteLLM's two proxy admin roles onto its roles.
+pub fn ensure_admin(
     caller: Option<&AuthContext>,
-    roles: &[Role],
+    allowed: &[TraceRole],
     forbidden: &'static str,
 ) -> Result<(), RoiConnectionsError> {
     let Some(context) = caller else {
         return Err(RoiConnectionsError::Unauthenticated);
     };
-    let principal = &context.principal;
-    let master = principal.subject == MASTER_KEY_SUBJECT;
-    if master || principal.roles.iter().any(|role| roles.contains(role)) {
+    let role = TraceAuth::from_principal(&context.principal).role;
+    if allowed.contains(&role) {
         return Ok(());
     }
     Err(RoiConnectionsError::Forbidden(forbidden))

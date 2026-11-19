@@ -8,7 +8,7 @@ use crate::roi_github::transport::Transport;
 use crate::roi_settings::public::public_settings;
 use crate::roi_settings::store::load_settings;
 
-use super::super::access::{WRITE_FORBIDDEN, WRITE_ROLES, require_admin};
+use super::super::access::{WRITE_FORBIDDEN, WRITE_ROLES, ensure_admin};
 use super::super::error::RoiConnectionsError;
 use super::super::gateway_http_client::GatewayHttpClient;
 use super::super::state::{RoiConnectionsState, github_client, require_repository};
@@ -25,7 +25,7 @@ where
     T: Transport + Clone + Send + Sync + 'static,
 {
     let context = caller.as_ref().map(|extension| &extension.0);
-    require_admin(context, WRITE_ROLES, WRITE_FORBIDDEN)?;
+    ensure_admin(context, WRITE_ROLES, WRITE_FORBIDDEN)?;
     let repository = require_repository(&state)?;
     let settings = load_settings(repository, state.cipher.as_ref()).await?;
     let public = public_settings(&settings, state.catalog.as_deref());
