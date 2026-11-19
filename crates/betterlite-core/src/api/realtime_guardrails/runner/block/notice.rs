@@ -16,7 +16,7 @@ pub(super) fn send_client_notice<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let error = Json::Object(IndexMap::from([

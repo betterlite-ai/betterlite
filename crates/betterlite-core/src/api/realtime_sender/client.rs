@@ -28,8 +28,8 @@ pub(super) fn send_client_frame<'call, ConfigError, CallbackError>(
     frame: ClientFrame<'call>,
 ) -> SenderFuture<'call, bool, ConfigError, CallbackError>
 where
-    ConfigError: Error + 'static,
-    CallbackError: Error + 'static,
+    ConfigError: Error + Send + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let encoded = match frame {

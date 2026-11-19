@@ -23,7 +23,7 @@ pub(super) fn finish_block<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         runner.state.setup.violation_count = runner.state.setup.violation_count.saturating_add(1);
@@ -49,7 +49,7 @@ fn close_backend<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let backend = runner

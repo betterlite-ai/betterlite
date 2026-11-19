@@ -48,7 +48,7 @@ pub(super) fn send_block_frames<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let steps = block_steps(message, pre_block_backend_message)

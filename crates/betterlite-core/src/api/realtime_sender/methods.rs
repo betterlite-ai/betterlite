@@ -17,7 +17,7 @@ use std::error::Error;
 impl<Config, CallbackError> RealtimeSender<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     fn deliver_frame<'call>(
         &'call mut self,
@@ -145,7 +145,7 @@ where
 impl<Config, CallbackError> RealtimeSend for RealtimeSender<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     type Error = RealtimeSenderError<Config::Error, CallbackError>;
 

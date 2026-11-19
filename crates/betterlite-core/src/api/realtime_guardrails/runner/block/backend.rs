@@ -17,7 +17,7 @@ pub(super) fn send_backend_text<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let guardrails: &[&dyn RealtimeGuardrailCallback<Error = CallbackError>] = &[];

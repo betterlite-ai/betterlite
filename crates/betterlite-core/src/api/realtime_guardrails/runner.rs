@@ -28,7 +28,7 @@ type BlockFuture<'call, ConfigError, CallbackError> =
 pub struct RealtimeGuardrails<'run, Config, CallbackError = Infallible>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     pub state: &'run mut RealtimeStreaming,
     pub provider: Option<&'run Config>,
@@ -53,7 +53,7 @@ pub trait RunRealtimeGuardrails: Send {
 impl<Config, CallbackError> RunRealtimeGuardrails for RealtimeGuardrails<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     type Error = RealtimeGuardrailsError<Config::Error, CallbackError>;
 
@@ -87,7 +87,7 @@ where
 impl<Config, CallbackError> RealtimeGuardrails<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     // LiteLLM's _check_data: the request data the relay already holds, with the transcript replacing any key of that name
     fn check_data(&self, transcript: &str) -> RequestData {

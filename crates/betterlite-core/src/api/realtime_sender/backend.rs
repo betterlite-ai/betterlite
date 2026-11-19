@@ -36,8 +36,8 @@ pub(super) async fn send_backend<ConfigError, CallbackError>(
     frame: RealtimeMessage,
 ) -> Result<(), RealtimeSenderError<ConfigError, CallbackError>>
 where
-    ConfigError: Error + 'static,
-    CallbackError: Error + 'static,
+    ConfigError: Error + Send + 'static,
+    CallbackError: Error + Send + 'static,
 {
     let Some(socket) = connection.as_mut() else {
         return Err(RealtimeSenderError::BackendMissing);
