@@ -1,7 +1,7 @@
 use super::support::{
     Events, Fixture, RecordingConfig, Reply, Source, Wire, caller_headers, params, write_deps,
 };
-use super::{CREATED, run, target};
+use super::{CREATED, json, run, target};
 use crate::api::vector_store_http_write::error::WriteError;
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{ClientKind, UpdateCall, WriteCall};
@@ -28,7 +28,8 @@ async fn invalid_api_base_fails_before_the_pre_call() {
         panic!("an api_base that is not a URL fails the request URL");
     };
     assert_eq!(url, "not a url/vs_a");
-    assert!(fixture.input().is_none());
+    // The state starts with a null input; the pre-call would replace it with an empty string
+    assert_eq!(fixture.input(), Some(&json("null")));
     assert!(events.recorded().is_empty());
     assert!(wire.requests().is_empty());
 }
@@ -70,6 +71,6 @@ async fn invalid_extra_headers_fail_after_the_pre_call() {
     };
     assert_eq!(trace_header, "X-Trace");
     assert_eq!(events.recorded(), ["log", "log"]);
-    assert!(fixture.input().is_some());
+    assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert!(wire.requests().is_empty());
 }
