@@ -1,0 +1,182 @@
+suite: test pod disruption budgets, topology spread and the gateway ServiceMonitor
+templates:
+  - gateway/poddisruptionbudget.yaml
+  - backend/poddisruptionbudget.yaml
+  - ui/poddisruptionbudget.yaml
+  - gateway/deployment.yaml
+  - backend/deployment.yaml
+  - ui/deployment.yaml
+  - gateway/configmap.yaml
+  - gateway/servicemonitor.yaml
+release:
+  name: release
+  namespace: observability
+values: [./values/required.yaml]
+tests:
+  - it: renders no PodDisruptionBudget for any component by default
+    asserts:
+      - { hasDocuments: { count: 0 }, template: gateway/poddisruptionbudget.yaml }
+      - { hasDocuments: { count: 0 }, template: backend/poddisruptionbudget.yaml }
+      - { hasDocuments: { count: 0 }, template: ui/poddisruptionbudget.yaml }
+
+  - it: renders one PDB per component once enabled, named and labelled after the component
+    set:
+      gateway.pdb.enabled: true
+      backend.pdb.enabled: true
+      ui.pdb.enabled: true
+    asserts:
+      - { hasDocuments: { count: 1 }, template: gateway/poddisruptionbudget.yaml }
+      - { isKind: { of: PodDisruptionBudget }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: apiVersion, value: policy/v1 }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: metadata.name, value: release-betterlite-gateway }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: metadata.name, value: release-betterlite-backend }, template: backend/poddisruptionbudget.yaml }
+      - { equal: { path: metadata.name, value: release-betterlite-ui }, template: ui/poddisruptionbudget.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: gateway }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: backend }, template: backend/poddisruptionbudget.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: ui }, template: ui/poddisruptionbudget.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: release }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }, template: ui/poddisruptionbudget.yaml }
+
+  - it: selects the pods of its own component only
+    set:
+      gateway.pdb.enabled: true
+      backend.pdb.enabled: true
+      ui.pdb.enabled: true
+    asserts:
+      - { equal: { path: spec.selector.matchLabels, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: release, app.kubernetes.io/component: gateway } }, template: gateway/poddisruptionbudget.yaml }
+      - { equal: { path: spec.selector.matchLabels, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: release, app.kubernetes.io/component: backend } }, template: backend/poddisruptionbudget.yaml }
+      - { equal: { path: spec.selector.matchLabels, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: release, app.kubernetes.io/component: ui } }, template: ui/poddisruptionbudget.yaml }
+
+  - it: falls back to maxUnavailable 1 when neither bound is set
+    set:
+      gateway.pdb.enabled: true
+    asserts:
+      - { equal: { path: spec.maxUnavailable, value: 1 }, template: gateway/poddisruptionbudget.yaml }
+      - { notExists: { path: spec.minAvailable }, template: gateway/poddisruptionbudget.yaml }
+
+  - it: writes maxUnavailable 0 instead of treating it as unset
+    set:
+      gateway.pdb.enabled: true
+      gateway.pdb.maxUnavailable: 0
+    asserts:
+      - { equal: { path: spec.maxUnavailable, value: 0 }, template: gateway/poddisruptionbudget.yaml }
+      - { notExists: { path: spec.minAvailable }, template: gateway/poddisruptionbudget.yaml }
+
+  - it: keeps minAvailable when both bounds are set
+    set:
+      gateway.pdb.enabled: true
+      gateway.pdb.minAvailable: 1
+      gateway.pdb.maxUnavailable: 0
+    asserts:
+      - { equal: { path: spec.minAvailable, value: 1 }, template: gateway/poddisruptionbudget.yaml }
+      - { notExists: { path: spec.maxUnavailable }, template: gateway/poddisruptionbudget.yaml }
+
+  - it: writes a percentage bound verbatim
+    set:
+      backend.pdb.enabled: true
+      backend.pdb.minAvailable: "50%"
+    asserts:
+      - { equal: { path: spec.minAvailable, value: "50%" }, template: backend/poddisruptionbudget.yaml }
+
+  - it: renders no PDB for a disabled component even with its own pdb block on
+    set:
+      gateway.enabled: false
+      gateway.pdb.enabled: true
+      backend.enabled: false
+      backend.pdb.enabled: true
+      ui.enabled: false
+      ui.pdb.enabled: true
+    asserts:
+      - { hasDocuments: { count: 0 }, template: gateway/poddisruptionbudget.yaml }
+      - { hasDocuments: { count: 0 }, template: backend/poddisruptionbudget.yaml }
+      - { hasDocuments: { count: 0 }, template: ui/poddisruptionbudget.yaml }
+
+  - it: leaves the topology spread constraints out of every Deployment until they are set
+    asserts:
+      - { notExists: { path: spec.template.spec.topologySpreadConstraints }, template: gateway/deployment.yaml }
+      - { notExists: { path: spec.template.spec.topologySpreadConstraints }, template: backend/deployment.yaml }
+      - { notExists: { path: spec.template.spec.topologySpreadConstraints }, template: ui/deployment.yaml }
+
+  - it: renders the topology spread constraints of every component
+    set:
+      gateway.topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: gateway } }
+      backend.topologySpreadConstraints:
+        - maxSkew: 2
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app.kubernetes.io/component: backend } }
+      ui.topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app.kubernetes.io/component: ui } }
+    asserts:
+      - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].topologyKey', value: topology.kubernetes.io/zone }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].maxSkew', value: 1 }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable', value: ScheduleAnyway }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0]', value: { maxSkew: 2, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: { matchLabels: { app.kubernetes.io/component: backend } } } }, template: backend/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable', value: DoNotSchedule }, template: ui/deployment.yaml }
+
+  - it: renders no ServiceMonitor by default
+    template: gateway/servicemonitor.yaml
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: scrapes the gateway http port once the ServiceMonitor is enabled without a metrics server
+    template: gateway/servicemonitor.yaml
+    set:
+      gateway.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: ServiceMonitor }
+      - equal: { path: apiVersion, value: monitoring.coreos.com/v1 }
+      - equal: { path: metadata.name, value: release-betterlite-gateway }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: gateway }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: spec.selector.matchLabels, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: release, app.kubernetes.io/component: gateway } }
+      - equal: { path: spec.namespaceSelector.matchNames, value: [observability] }
+      - lengthEqual: { path: spec.endpoints, count: 1 }
+      - equal: { path: 'spec.endpoints[0].port', value: http }
+      - equal: { path: 'spec.endpoints[0].path', value: /metrics/ }
+      - equal: { path: 'spec.endpoints[0].interval', value: 15s }
+      - equal: { path: 'spec.endpoints[0].scrapeTimeout', value: 10s }
+      - equal: { path: 'spec.endpoints[0].scheme', value: http }
+
+  - it: scrapes the metrics Service port when the metrics server is enabled
+    template: gateway/servicemonitor.yaml
+    set:
+      gateway.serviceMonitor.enabled: true
+      gateway.metricsServer.enabled: true
+    asserts:
+      - equal: { path: 'spec.endpoints[0].port', value: metrics }
+
+  - it: writes a custom interval and scrape timeout
+    template: gateway/servicemonitor.yaml
+    set:
+      gateway.serviceMonitor.enabled: true
+      gateway.serviceMonitor.interval: 30s
+      gateway.serviceMonitor.scrapeTimeout: 20s
+    asserts:
+      - equal: { path: 'spec.endpoints[0].interval', value: 30s }
+      - equal: { path: 'spec.endpoints[0].scrapeTimeout', value: 20s }
+
+  - it: carries the configured ServiceMonitor labels over the chart labels
+    template: gateway/servicemonitor.yaml
+    set:
+      gateway.serviceMonitor.enabled: true
+      gateway.serviceMonitor.labels: { release: prometheus }
+    asserts:
+      - equal: { path: metadata.labels.release, value: prometheus }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: release }
+
+  - it: renders no ServiceMonitor for a disabled gateway
+    template: gateway/servicemonitor.yaml
+    set:
+      gateway.enabled: false
+      gateway.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments: { count: 0 }
