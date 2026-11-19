@@ -37,7 +37,7 @@ fn fits(
 }
 
 #[rstest]
-#[case::comfortably_inside(100, 10, true)]
+#[case::comfortably_inside(50, 10, true)]
 #[case::exactly_at_both_limits(60, 40, true)]
 #[case::past_the_input_window(61, 40, false)]
 #[case::past_the_output_limit(10, 51, false)]

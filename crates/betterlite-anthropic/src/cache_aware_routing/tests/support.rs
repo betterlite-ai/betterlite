@@ -231,7 +231,7 @@ impl CacheCostService for FakeCost {
         read_tokens: i64,
         ttl_seconds: u32,
     ) -> CacheTokenBuckets {
-        let creation = prefix_tokens.saturating_sub(read_tokens);
+        let creation = prefix_tokens.saturating_sub(read_tokens).max(0);
         CacheTokenBuckets {
             uncached_input_tokens: suffix_tokens,
             cache_read_input_tokens: read_tokens,

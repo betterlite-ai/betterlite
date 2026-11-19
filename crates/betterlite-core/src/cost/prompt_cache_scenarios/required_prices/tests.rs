@@ -20,8 +20,13 @@ fn an_empty_tariff_has_no_input_price() {
 
 #[test]
 fn the_input_rate_is_always_required() {
-    assert!(has_required_prices(&input_only(), &tokens(0, 0, 0, 0), 0));
-    assert!(has_required_prices(&input_only(), &tokens(100, 0, 0, 0), 5));
+    assert!(has_required_prices(&input_only(), &tokens(100, 0, 0, 0), 0));
+    let without_input = record(&[("output_cost_per_token", number("0.002"))]);
+    assert!(!has_required_prices(
+        &without_input,
+        &tokens(100, 0, 0, 0),
+        0
+    ));
 }
 
 #[test]
