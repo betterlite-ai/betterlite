@@ -290,7 +290,7 @@ fn the_global_headers_are_not_merged_into_the_call() {
 }
 
 #[test]
-fn an_absent_context_header_list_becomes_an_empty_dict() {
+fn an_absent_context_header_list_stays_absent() {
     let fixture = Fixture::new();
     let handler = Recorder::succeeding();
     let (outcome, calls, _state) = run_arm(
@@ -300,7 +300,7 @@ fn an_absent_context_header_list_becomes_an_empty_dict() {
         &handler,
     );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
-    assert_eq!(calls[0].headers, Some(BTreeMap::new()));
+    assert_eq!(calls[0].headers, None);
 }
 
 #[test]
@@ -366,7 +366,7 @@ fn a_handler_error_is_logged_and_returned_unchanged() {
 }
 
 #[test]
-fn a_handler_error_without_context_headers_logs_an_empty_header_dict() {
+fn a_handler_error_without_context_headers_logs_no_header_key() {
     let fixture = Fixture::new();
     let handler = Recorder::failing(502);
     let (outcome, _calls, state) = run_arm(
@@ -384,10 +384,7 @@ fn a_handler_error_without_context_headers_logs_an_empty_header_dict() {
     let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
         panic!("the post_call log holds the additional arguments");
     };
-    let Some(Json::Object(headers)) = args.get("headers") else {
-        panic!("the post_call log holds an empty header dict");
-    };
-    assert!(headers.is_empty());
+    assert_eq!(args.get("headers"), None);
 }
 
 #[test]
@@ -427,7 +424,7 @@ fn another_provider_tag_is_left_to_its_own_arm(#[case] tag: ChatConfigTag) {
 }
 
 #[test]
-fn the_literal_provider_and_no_provider_config_reach_the_handler() {
+fn the_literal_provider_and_the_selected_config_reach_the_handler() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from("azure");
     fixture.provider_config = Some(ChatConfigTag::A2a);
@@ -440,7 +437,7 @@ fn the_literal_provider_and_no_provider_config_reach_the_handler() {
     );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(calls[0].custom_llm_provider, "ragflow");
-    assert_eq!(calls[0].provider_config, None);
+    assert_eq!(calls[0].provider_config, Some(ChatConfigTag::A2a));
 }
 
 #[test]

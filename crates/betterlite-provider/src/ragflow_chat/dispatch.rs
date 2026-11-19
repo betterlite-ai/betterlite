@@ -78,13 +78,13 @@ fn complete_ragflow<R>(
         api_base: info.api_base,
         api_key: info.api_key,
         custom_llm_provider: String::from(PROVIDER),
-        // LiteLLM's completion() normalizes headers to a dict and the ragflow arm never merges litellm.headers
-        headers: Some(context.headers.cloned().unwrap_or_default()),
+        // the ragflow arm passes the caller's headers and config through and never merges litellm.headers
+        headers: context.headers.cloned(),
         litellm_params: context.litellm_params.clone(),
         optional_params: context.optional_params.clone(),
         messages: context.messages.to_vec(),
         timeout: context.timeout,
-        provider_config: None,
+        provider_config: context.provider_config,
     };
     match handler.complete(&call) {
         Ok(reply) => Ok(reply),
