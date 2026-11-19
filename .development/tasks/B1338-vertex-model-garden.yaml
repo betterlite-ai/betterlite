@@ -9,8 +9,8 @@ description: >-
   and send an empty model. An explicitly supplied api_base is preserved without custom-proxy
   colon-verb rewriting. Without it, default location is us-central1 and requested project wins
   over the project resolved by B1302 authentication. Normalize stream to false when falsey and
-  pass the resulting OpenAI-compatible call to B038's existing handler seam, which appends
-  /chat/completions. The pure leaf returns ModelGardenTarget; executable composition belongs
+  pass the resulting OpenAI-compatible call to B1428's CompatibleChatExecution (betterlite-provider
+  compatible_chat_call, on main), which appends /chat/completions. The pure leaf returns ModelGardenTarget; executable composition belongs
   in betterlite-provider/model_garden_call.rs so the leaf cannot import provider/core. All
   exceptions inside the main try become Vertex 500, even an inner exception carrying status.
   Python package availability checks remain outside the native path. Helper model_garden_target
@@ -66,7 +66,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-garden-target/beta-endpoint-path.yaml
 deviations: []
 out_of_scope:
-  - B038 owns OpenAILikeChatHandler; B032 installs the Model Garden dispatcher branch without duplicating that handler.
+  - B1428 owns OpenAILikeChatHandler as CompatibleChatExecution in compatible_chat_call; B032 installs the Model Garden dispatcher branch without duplicating that handler.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as model_garden_target in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/model_garden_target.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_garden_target.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - create_vertex_url accepts api_base and stream arguments but does not use either.

@@ -32,7 +32,7 @@ description: >-
   an endpoint containing "embeddings" with the embedding reply conversion above. Any other endpoint gives none. Streaming
   logging: each collected chunk is trimmed, skipped when empty or "[DONE]", stripped of "data: ", skipped when it is not
   JSON, parsed with B8177's chunk parser, and the parsed chunks are returned in order for the cost layer. No chunks gives
-  none. B3570 owns the pass-through contract and B3627 owns the GigaChat pass-through routes, which call this config.
+  none. B3570 owns the pass-through contract and B3627 the GigaChat pass-through routes, and B8690's pass-through call picks this config for the gigachat tag.
 
   Size. About 330 nonblank, non-comment LiteLLM lines. Plan 300 production, 360 tests, 80 adapters, 50 fuzz and 20 wiring
   lines. No split.

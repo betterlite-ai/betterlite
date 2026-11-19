@@ -1,0 +1,18 @@
+kind: probe
+name: latency-observations-stale-window
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      latency_observations:
+        settings: {ttl: 60.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: null}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, elapsed_millis: 1000, usage: {completion_tokens: 2, total_tokens: 5}}
+          - {kind: view, now_millis: 59999, model_group: gpt}
+          - {kind: success, now_millis: 59999, model_group: gpt, deployment_id: dep-a, elapsed_millis: 1000, usage: {completion_tokens: 2, total_tokens: 5}}
+          - {kind: view, now_millis: 60000, model_group: gpt}
+          - {kind: success, now_millis: 60000, model_group: gpt, deployment_id: dep-a, elapsed_millis: 1000, usage: {completion_tokens: 2, total_tokens: 5}}
+          - {kind: view, now_millis: 60001, model_group: gpt}
+          - {kind: view, now_millis: 120000, model_group: gpt}
+          - {kind: view, now_millis: 120001, model_group: gpt}
+compare: {ignore: []}
