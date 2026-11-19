@@ -58,7 +58,7 @@ pub fn json_object_frame(frame: &[u8]) -> Option<Map<String, Value>> {
 // LiteLLM's _rewrite_vertex_live_setup_model: every frame that is not a setup frame stays byte-identical
 #[must_use]
 pub fn rewrite_live_setup_model(text: &str, rewriter: Option<&dyn Fn(&str) -> String>) -> String {
-    let Some(rewriter) = rewriter else {
+    let Some(rewrite_with) = rewriter else {
         return text.to_owned();
     };
     let Ok(Value::Object(mut message)) = serde_json::from_str::<Value>(text) else {
@@ -70,7 +70,7 @@ pub fn rewrite_live_setup_model(text: &str, rewriter: Option<&dyn Fn(&str) -> St
     let Some(Value::String(model)) = setup.get("model") else {
         return text.to_owned();
     };
-    let rewritten = rewriter(model);
+    let rewritten = rewrite_with(model);
     if rewritten == *model {
         return text.to_owned();
     }
@@ -87,13 +87,13 @@ pub fn resolved_vertex_live_setup(
     setup_data: &Map<String, Value>,
     rewriter: Option<&dyn Fn(&str) -> String>,
 ) -> Map<String, Value> {
-    let Some(rewriter) = rewriter else {
+    let Some(rewrite_with) = rewriter else {
         return setup_data.clone();
     };
     let Some(Value::String(model)) = setup_data.get("model") else {
         return setup_data.clone();
     };
     let mut resolved = setup_data.clone();
-    resolved.insert("model".to_owned(), Value::String(rewriter(model)));
+    resolved.insert("model".to_owned(), Value::String(rewrite_with(model)));
     resolved
 }

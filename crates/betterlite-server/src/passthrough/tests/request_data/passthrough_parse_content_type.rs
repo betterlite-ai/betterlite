@@ -81,7 +81,9 @@ fn a_non_object_json_body_is_rejected(#[case] body: &[u8]) {
 fn a_wrongly_typed_envelope_field_is_rejected(#[case] body: &[u8], #[case] expected: &'static str) {
     match parse("application/json", body, &[]).unwrap_err() {
         ParsedRequestError::FieldType { field } => assert_eq!(field, expected),
-        other => panic!("expected a field type error, got {other:?}"),
+        other @ (ParsedRequestError::BodyNotObject | ParsedRequestError::Form(_)) => {
+            panic!("expected a field type error, got {other:?}")
+        }
     }
 }
 

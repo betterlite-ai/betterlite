@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
+use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::routing::any;
@@ -30,7 +31,7 @@ async fn capture(State(seen): State<Seen>, request: Request) -> StatusCode {
     let method = request.method().clone();
     let uri = request.uri().to_string();
     let headers = request.headers().clone();
-    let body = axum::body::to_bytes(request.into_body(), usize::MAX)
+    let body = to_bytes(request.into_body(), usize::MAX)
         .await
         .unwrap()
         .to_vec();

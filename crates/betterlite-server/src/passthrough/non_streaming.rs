@@ -45,8 +45,8 @@ pub async fn non_streaming_request_handler(
     let body = if target.method == Method::GET {
         RequestBody::Empty
     } else if is_multipart(&target.headers) && forward_multipart {
-        let form = form.ok_or(NonStreamingError::UndecodedForm)?;
-        let outbound = make_multipart_http_request(target, form, &boundary);
+        let decoded_form = form.ok_or(NonStreamingError::UndecodedForm)?;
+        let outbound = make_multipart_http_request(target, decoded_form, &boundary);
         return client
             .send(outbound)
             .await

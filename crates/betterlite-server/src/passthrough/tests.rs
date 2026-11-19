@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "the fixtures state the JSON LiteLLM and its clients exchange, and serde_json's json! macro builds it"
+    )
+)]
 
 mod multipart;
 mod non_streaming;
