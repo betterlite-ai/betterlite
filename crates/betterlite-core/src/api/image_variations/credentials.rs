@@ -35,55 +35,76 @@ pub(crate) fn provider_credentials(
     supplied_base: Option<&str>,
     settings: &Settings,
 ) -> Credentials {
-    let supplied_key = supplied_key
-        .filter(|key| !key.expose_secret().is_empty())
+    let key = supplied_key
+        .filter(|given| !given.expose_secret().is_empty())
         .cloned();
-    let supplied_base = supplied_base
-        .filter(|base| !base.is_empty())
+    let base = supplied_base
+        .filter(|given| !given.is_empty())
         .map(str::to_owned);
-    match provider {
-        ProviderId::Openai => Credentials {
-            api_key: supplied_key.or_else(|| {
-                [
-                    settings.api_key.clone(),
-                    settings.openai_key.clone(),
-                    settings.openai_api_key.clone(),
-                ]
-                .into_iter()
-                .flatten()
-                .find(|key| !key.expose_secret().is_empty())
-            }),
-            api_base: supplied_base.or_else(|| {
-                let configured = [
-                    settings.api_base.as_deref(),
-                    settings.openai_base_url.as_deref(),
-                    settings.openai_api_base.as_deref(),
-                ]
-                .into_iter()
-                .flatten()
-                .find(|value| !value.is_empty());
-                Some(configured.unwrap_or(DEFAULT_OPENAI_API_BASE).to_owned())
-            }),
-        },
-        ProviderId::Topaz => Credentials {
-            api_key: supplied_key.or_else(|| {
-                settings
-                    .topaz_api_key
-                    .as_ref()
-                    .filter(|key| !key.expose_secret().is_empty())
-                    .cloned()
-            }),
-            api_base: supplied_base.or_else(|| {
-                let configured = settings
-                    .topaz_api_base
-                    .as_deref()
-                    .filter(|value| !value.is_empty());
-                Some(configured.unwrap_or(DEFAULT_TOPAZ_API_BASE).to_owned())
-            }),
-        },
-        _ => Credentials {
-            api_key: None,
-            api_base: None,
-        },
+    if provider == ProviderId::Openai {
+        return openai_credentials(key, base, settings);
+    }
+    if provider == ProviderId::Topaz {
+        return topaz_credentials(key, base, settings);
+    }
+    Credentials {
+        api_key: None,
+        api_base: None,
+    }
+}
+
+// OpenAIGPTConfig's chain: api_key, openai_key, openai_api_key, then OPENAI_API_BASE's default
+fn openai_credentials(
+    key: Option<SecretString>,
+    base: Option<String>,
+    settings: &Settings,
+) -> Credentials {
+    let configured_key = [
+        settings.api_key.clone(),
+        settings.openai_key.clone(),
+        settings.openai_api_key.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|candidate| !candidate.expose_secret().is_empty());
+    let configured_base = [
+        settings.api_base.as_deref(),
+        settings.openai_base_url.as_deref(),
+        settings.openai_api_base.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|candidate| !candidate.is_empty());
+    let resolved_base = base.unwrap_or_else(|| {
+        configured_base
+            .unwrap_or(DEFAULT_OPENAI_API_BASE)
+            .to_owned()
+    });
+    Credentials {
+        api_key: key.or(configured_key),
+        api_base: Some(resolved_base),
+    }
+}
+
+// TopazModelInfo's chain: topaz_api_key and topaz_api_base, then the Topaz default base
+fn topaz_credentials(
+    key: Option<SecretString>,
+    base: Option<String>,
+    settings: &Settings,
+) -> Credentials {
+    let configured_key = settings
+        .topaz_api_key
+        .as_ref()
+        .filter(|candidate| !candidate.expose_secret().is_empty())
+        .cloned();
+    let configured_base = settings
+        .topaz_api_base
+        .as_deref()
+        .filter(|candidate| !candidate.is_empty());
+    let resolved_base =
+        base.unwrap_or_else(|| configured_base.unwrap_or(DEFAULT_TOPAZ_API_BASE).to_owned());
+    Credentials {
+        api_key: key.or(configured_key),
+        api_base: Some(resolved_base),
     }
 }

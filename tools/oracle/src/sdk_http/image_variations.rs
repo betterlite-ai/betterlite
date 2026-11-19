@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::image_variations::Settings;
 use betterlite_core::api::image_variations::call::{
     ImageVariationCall, PendingVariation, VariationOptions, VariationResponseFormat,
 };
@@ -37,7 +38,9 @@ use self::outcome::{error_failure, exception_failure, success};
 pub struct Call {
     pub image: Image,
     pub model: Option<String>,
-    pub n: Option<i64>,
+    // the wire name LiteLLM's signature and the case files use
+    #[serde(rename = "n")]
+    pub count: Option<i64>,
     pub response_format: Option<ResponseFormat>,
     pub size: Option<String>,
     pub user: Option<String>,
@@ -105,7 +108,7 @@ impl From<&Call> for ImageVariationCall {
             },
             model: input.model.clone(),
             options: VariationOptions {
-                n: input.n.unwrap_or(1),
+                count: input.count.unwrap_or(1),
                 response_format: match input.response_format {
                     Some(ResponseFormat::B64Json) => VariationResponseFormat::B64Json,
                     Some(ResponseFormat::Url) | None => VariationResponseFormat::Url,
@@ -140,16 +143,7 @@ async fn execute(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let client = outbound_client(env)?;
-    let loader = ConfigLoader {
-        lookup: env.clone(),
-    };
-    let mut settings = loader
-        .load("model_list: []")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
-        .sections
-        .image_variations;
-    settings.api_base = Some(api_base.to_owned());
-    settings.topaz_api_base = Some(api_base.to_owned());
+    let settings = variation_settings(env, api_base)?;
     let call = ImageVariationCall::from(input);
     let catalog = BundledCatalog::default().get();
     let known_model_names = BTreeSet::new();
@@ -184,6 +178,23 @@ async fn execute(
             Err(error) => Ok(error_failure(&error)),
         }
     }
+}
+
+fn variation_settings(
+    env: &BTreeMap<String, String>,
+    api_base: &str,
+) -> Result<Settings, SdkHttpError> {
+    let loader = ConfigLoader {
+        lookup: env.clone(),
+    };
+    let mut settings = loader
+        .load("model_list: []")
+        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
+        .sections
+        .image_variations;
+    settings.api_base = Some(api_base.to_owned());
+    settings.topaz_api_base = Some(api_base.to_owned());
+    Ok(settings)
 }
 
 // B046 supplies Topaz through a B010 operation and is not part of the SDK comparison

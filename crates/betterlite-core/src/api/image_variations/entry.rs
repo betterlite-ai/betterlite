@@ -20,7 +20,7 @@ pub async fn image_variation<O>(
     call: &ImageVariationCall,
 ) -> Result<VariationAnswer, ImageVariationError>
 where
-    O: ImageVariationOperation,
+    O: ImageVariationOperation + Sync,
 {
     match operation.begin(call)? {
         VariationStep::Answer(answer) => Ok(answer),
@@ -34,7 +34,7 @@ pub async fn aimage_variation<O>(
     call: &ImageVariationCall,
 ) -> Result<VariationAnswer, VariationException>
 where
-    O: ImageVariationOperation,
+    O: ImageVariationOperation + Sync,
 {
     let mut asynchronous = call.clone();
     asynchronous.async_call = true;

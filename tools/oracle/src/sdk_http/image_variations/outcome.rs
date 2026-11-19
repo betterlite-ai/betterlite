@@ -49,48 +49,42 @@ pub(super) fn error_failure(error: &ImageVariationError) -> SdkResult {
         }
         ImageVariationError::Topaz(source) => ("Exception", source.status_code.unwrap_or(0)),
     };
-    SdkResult::Failure(Failure {
+    let failure = Failure {
         class: class.to_owned(),
         status,
         kind: None,
         param: None,
         code: None,
         message: error.to_string(),
-    })
+    };
+    failure_result(failure)
 }
 
 // aimage_variation re-raises through exception_type, so the class and its fields come from the mapping
 pub(super) fn exception_failure(error: &VariationException) -> Result<SdkResult, SdkHttpError> {
     let metadata = error.class.metadata();
-    mapped_failure(
-        &error.class,
-        metadata.status_code,
-        field(metadata.error_type),
-        field(metadata.param),
-        Some(metadata.openai_code),
-        error.message.clone(),
-    )
+    let failure = Failure {
+        class: class_name(&error.class)?.to_owned(),
+        status: metadata.status_code,
+        kind: field(metadata.error_type),
+        param: field(metadata.param),
+        code: Some(metadata.openai_code),
+        message: error.message.clone(),
+    };
+    Ok(failure_result(failure))
 }
 
-fn mapped_failure(
-    class: &ErrorClass,
-    status: u16,
-    kind: Nullable,
-    param: Nullable,
-    code: Nullable,
-    message: String,
-) -> Result<SdkResult, SdkHttpError> {
-    Ok(SdkResult::Failure(Failure {
-        class: class_name(class)?.to_owned(),
-        status,
-        kind,
-        param,
-        code,
-        message,
-    }))
+// the helper's Result wraps both outcomes the same way: one outcome object under image_variations.value
+fn failure_result(failure: Failure) -> SdkResult {
+    SdkResult::ImageVariations {
+        value: Box::new(Outcome {
+            success: None,
+            failure: Some(failure),
+        }),
+    }
 }
 
-fn class_for_status(status: u16) -> &'static str {
+const fn class_for_status(status: u16) -> &'static str {
     match status {
         400 => "BadRequestError",
         401 => "AuthenticationError",
@@ -132,7 +126,7 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     }
 }
 
-fn field(wire: WireField) -> Nullable {
+const fn field(wire: WireField) -> Nullable {
     match wire {
         WireField::Missing(_) => None,
         WireField::Null => Some(None),

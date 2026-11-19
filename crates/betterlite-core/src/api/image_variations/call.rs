@@ -20,7 +20,7 @@ pub enum VariationResponseFormat {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariationOptions {
-    pub n: i64,
+    pub count: i64,
     pub response_format: VariationResponseFormat,
     pub size: Option<String>,
     pub user: Option<String>,
@@ -29,7 +29,7 @@ pub struct VariationOptions {
 impl Default for VariationOptions {
     fn default() -> Self {
         Self {
-            n: 1,
+            count: 1,
             response_format: VariationResponseFormat::Url,
             size: None,
             user: None,

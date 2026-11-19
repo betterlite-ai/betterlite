@@ -130,7 +130,7 @@ pub(super) fn metadata() -> ImageParams {
 // the four signature options a variation accepts but never forwards
 pub(super) fn ignored_options() -> VariationOptions {
     VariationOptions {
-        n: 3,
+        count: 3,
         response_format: VariationResponseFormat::B64Json,
         size: Some(String::from("1024x1024")),
         user: Some(String::from("u")),
@@ -300,12 +300,12 @@ impl ImageVariationOperation for ScriptedOperation {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.clone());
-        let scripted = self
+        let next = self
             .steps
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        let Some(scripted) = scripted else {
+        let Some(scripted) = next else {
             return Err(ImageVariationError::InvalidProvider {
                 provider: String::from("unscripted"),
             });
