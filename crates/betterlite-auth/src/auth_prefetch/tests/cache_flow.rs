@@ -26,7 +26,10 @@ const ORGANIZATION_TTL: f64 = 7.0;
 fn refs_user(user_id: &str) -> AuthObjectRefs {
     AuthObjectRefs {
         user_id: Some(user_id.to_owned()),
-        ..AuthObjectRefs::default()
+        team_id: None,
+        membership_user_id: None,
+        organization_id: None,
+        project_id: None,
     }
 }
 
@@ -332,8 +335,11 @@ async fn row_kind_validated_once() {
     let database = FakeDatabase::with(&[(RowKind::Organization, json(r#""not a row""#))]);
     let clock = FixedClock { now: 10.0 };
     let refs = AuthObjectRefs {
+        user_id: None,
+        team_id: None,
+        membership_user_id: None,
         organization_id: Some("org-1".to_owned()),
-        ..AuthObjectRefs::default()
+        project_id: None,
     };
     owner(&cache, Some(&database), &clock).prefetch(&refs).await;
     assert!(cache.ordinary.writes().is_empty());
@@ -390,8 +396,11 @@ async fn serialization_all_before_memory() {
         FakeDatabase::with(&[(RowKind::Organization, fixtures::organization_row("org-1"))]);
     let clock = FixedClock { now: 10.0 };
     let refs = AuthObjectRefs {
+        user_id: None,
+        team_id: None,
+        membership_user_id: None,
         organization_id: Some("org-1".to_owned()),
-        ..AuthObjectRefs::default()
+        project_id: None,
     };
     owner(&cache, Some(&database), &clock).prefetch(&refs).await;
     let writes = cache.ordinary.writes();
