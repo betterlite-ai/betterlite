@@ -680,6 +680,12 @@ fn assert_provider_error(status: u16, reply: &Reply) {
     let (kind, param) = provider_fields(status).expect("a stubbed provider status");
     assert_eq!(error.kind.as_deref(), kind, "{text}");
     assert_eq!(error.param.as_deref(), param, "{text}");
+    // betterlite writes its own message instead of copying the SDK exception's, which repeats the provider body
+    assert_eq!(
+        error.message,
+        format!("the provider answered with status {status}"),
+        "{text}"
+    );
     // an absent type or param reaches the client as an explicit null
     assert_eq!(text.contains(r#""type":null"#), kind.is_none(), "{text}");
     assert_eq!(text.contains(r#""param":null"#), param.is_none(), "{text}");
