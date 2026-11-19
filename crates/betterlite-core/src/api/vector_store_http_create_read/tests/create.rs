@@ -87,6 +87,8 @@ async fn create_writes_every_field_as_null_when_absent(#[case] mode: ClientKind)
             r#"{"name":null,"file_ids":null,"expires_after":null,"chunking_strategy":null,"metadata":null}"#
         )
     );
+    // an async create with no caller timeout hands the client no deadline either
+    assert_eq!(requests[0].timeout, None);
 }
 
 #[tokio::test]
@@ -169,5 +171,35 @@ async fn create_unmappable_response_is_a_provider_error_at_200() {
     };
     assert_eq!(error.status_code, 200);
     assert!(!error.status_code_is_synthesized);
+    assert_eq!(wire.requests().len(), 1);
+}
+
+// httpx raises for every status outside 2xx, so a redirect the client did not follow is a provider error, not a body to convert
+#[rstest]
+#[case::moved(302_u16)]
+#[case::not_found(404_u16)]
+#[tokio::test]
+async fn create_non_success_status_is_a_provider_error(#[case] status: u16) {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(status, STORE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let optional = CreateParams::default();
+    let call = CreateReadCall::Create(CreateCall {
+        target: target(&params),
+        optional_params: &optional,
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_create");
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(CreateReadError::Write(WriteError::Provider(error))) = result else {
+        panic!("a status outside 2xx is a provider error");
+    };
+    assert_eq!(error.status_code, status);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, STORE);
+    assert_eq!(config.errors().len(), 1);
     assert_eq!(wire.requests().len(), 1);
 }

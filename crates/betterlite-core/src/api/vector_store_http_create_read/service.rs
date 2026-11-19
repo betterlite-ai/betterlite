@@ -274,8 +274,8 @@ where
             Some(provider),
         )))
     })?;
-    // the two GET handlers hand the response to their converter or to response.json(), status and all
-    if operation == Operation::Create && answer.status >= 400 {
+    // httpx raises for every status outside 2xx, redirects included, so only a create reads a 3xx as an answer
+    if operation == Operation::Create && !(200..300).contains(&answer.status) {
         return Err(CreateReadError::Write(WriteError::Provider(handle_error(
             &facts::status_facts(&answer),
             Some(provider),

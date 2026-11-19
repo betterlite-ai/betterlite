@@ -84,6 +84,8 @@ async fn list_omits_absent_fields(#[case] mode: ClientKind) {
     run(&mut fixture, &deps, mode, &call, &events)
         .await
         .expect("the list succeeds");
+    // the list handler logs its argument map even when every field is absent
+    assert_eq!(fixture.logged("params"), Some(&json("{}")));
     let requests = wire.requests();
     assert!(requests[0].url.query().is_none());
     assert_eq!(
