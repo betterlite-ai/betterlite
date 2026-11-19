@@ -9,6 +9,7 @@ use betterlite_core::api::batch_enqueued_reserve::{
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::call_helpers::metadata::MetadataMap;
 use betterlite_rate_limit::concurrency_gauges::ConcurrencyGauges;
+use betterlite_rate_limit::concurrency_gauges::cache::GaugeCache;
 use betterlite_rate_limit::fail_closed::FailClosedPolicy;
 use betterlite_rate_limit::limiter_records::{
     LimiterClock, ModelGroupResolver, RateLimitResponse, ReservationAwareIncrement,
@@ -171,6 +172,7 @@ impl Fixture {
         let counters = Arc::new(RecordingCounters::seeded(&case.seed));
         let gauges = Arc::new(RecordingGauges::seeded(&case.seed, &gauge_keys));
         let store = Arc::new(FakeBatchStore::new(popped_record(case.pop_tokens)));
+        let gauge_cache: Arc<dyn GaugeCache> = Arc::<RecordingGauges>::clone(&gauges);
         Self {
             slot,
             metadata: MetadataMap::new(),
@@ -180,7 +182,7 @@ impl Fixture {
             },
             usage: Arc::clone(&usage),
             gauge_values: ConcurrencyGauges {
-                cache: Arc::clone(&gauges),
+                cache: gauge_cache,
                 clock: Arc::new(FixedClock),
                 acquire_script: None,
                 release_script: None,

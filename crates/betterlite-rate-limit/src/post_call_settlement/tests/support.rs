@@ -139,7 +139,7 @@ where
     let stash = slot.get_or_create();
     {
         let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-        configure(&mut state)
+        configure(&mut state);
     };
     stash
 }
