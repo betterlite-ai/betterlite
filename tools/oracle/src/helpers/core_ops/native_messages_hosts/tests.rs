@@ -43,20 +43,20 @@ fn seed_covers_each_host() {
         !seeds.is_empty(),
         "the native_messages_hosts seed is present"
     );
-    let inputs: Vec<Input> = seeds
+    let hosts: BTreeSet<&str> = seeds
         .iter()
-        .map(|path| {
+        .flat_map(|path| {
             let case = parse_case(path);
             assert_eq!(case.call.operation, OPERATION, "{}", path.display());
-            serde_json::from_value::<Input>(case.call.input.clone())
-                .expect("the seed names a typed input")
+            let input: Input = serde_json::from_value(case.call.input.clone())
+                .expect("the seed names a typed input");
+            input
+                .calls
+                .iter()
+                .map(step_host)
+                .map(host_name)
+                .collect::<Vec<&str>>()
         })
-        .collect();
-    let hosts: BTreeSet<&str> = inputs
-        .iter()
-        .flat_map(|input| &input.calls)
-        .map(step_host)
-        .map(host_name)
         .collect();
     let expected: BTreeSet<&str> = ["deepseek", "minimax", "tencent"].into_iter().collect();
     assert_eq!(hosts, expected);
