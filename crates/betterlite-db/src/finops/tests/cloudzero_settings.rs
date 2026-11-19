@@ -167,6 +167,43 @@ async fn get_reads_a_mapping_row() {
 }
 
 #[tokio::test]
+async fn get_ignores_a_mapping_field_no_response_type_names() {
+    let database = Database::provision().await;
+    seed_mapping(
+        &database,
+        CLOUDZERO_SETTINGS_PARAM_NAME,
+        &json_object(&[
+            ("api_key", JsonData::String(seal(PLAINTEXT_KEY))),
+            ("connection_id", JsonData::String(CONNECTION_ID.to_owned())),
+            ("timezone", JsonData::String(TIMEZONE.to_owned())),
+            ("unnamed_key", JsonData::String("kept out".to_owned())),
+        ]),
+    )
+    .await;
+    let loaded = get_cloudzero_settings(Some(database.client()), &cipher())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
+    assert_eq!(loaded.timezone.as_deref(), Some(TIMEZONE));
+    database.close().await;
+}
+
+#[tokio::test]
+async fn get_reads_a_json_null_string_as_unconfigured() {
+    let database = Database::provision().await;
+    seed_string(&database, CLOUDZERO_SETTINGS_PARAM_NAME, "null").await;
+    assert!(
+        get_cloudzero_settings(Some(database.client()), &cipher())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    database.close().await;
+}
+
+#[tokio::test]
 async fn get_reports_a_provider_without_settings_as_none() {
     let database = Database::provision().await;
     assert!(
