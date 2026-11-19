@@ -6,10 +6,10 @@ import litellm
 from litellm.llms.sail.common_utils import (
     CompletionWindow,
     chat_request_for_sail,
-    completion_window_for_service_tier,
+    completion_window_for_service_tier as window_for_tier,
     extra_body_for_sail,
     json_body,
-    responses_params_with_completion_window,
+    responses_params_with_completion_window as responses_window_params,
 )
 from pydantic import JsonValue
 
@@ -52,27 +52,30 @@ def body_record(call: Callable[[], Mapping[str, _Body]]) -> JsonValue:
 def window_value(step: WindowStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
     tier = step["service_tier"]
-    call = partial(completion_window_for_service_tier, tier, model=model, drop_params=step["drop_params"])
+    call = partial(window_for_tier, tier, model=model, drop_params=step["drop_params"])
     return window_record(call)
 
 
 def chat_request_value(step: ChatRequestStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
-    call = partial(chat_request_for_sail, step["request"], model=model, drop_params=step["drop_params"])
+    request = step["request"]
+    call = partial(chat_request_for_sail, request, model=model, drop_params=step["drop_params"])
     return body_record(call)
 
 
 def extra_body_value(step: ExtraBodyStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
+    extra_body = step["extra_body"]
     metadata = step["request_metadata"]
-    call = partial(extra_body_for_sail, step["extra_body"], metadata, model=model, drop_params=step["drop_params"])
+    drop_flag = step["drop_params"]
+    call = partial(extra_body_for_sail, extra_body, metadata, model=model, drop_params=drop_flag)
     return body_record(call)
 
 
 def responses_params_value(step: ResponsesParamsStep, model: str) -> JsonValue:
     litellm.drop_params = step["global_drop_params"]
     params = step["params"]
-    call = partial(responses_params_with_completion_window, params, model=model, drop_params=step["drop_params"])
+    call = partial(responses_window_params, params, model=model, drop_params=step["drop_params"])
     return body_record(call)
 
 
