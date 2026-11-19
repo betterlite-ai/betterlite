@@ -11,6 +11,7 @@ pub struct ActiveUsersQuery {
 }
 
 impl ActiveUsersQuery {
+    #[must_use]
     pub fn decode(raw: &str) -> Self {
         let mut tag_filter = None;
         let mut tag_filters = Vec::new();
@@ -28,6 +29,7 @@ impl ActiveUsersQuery {
         }
     }
 
+    #[must_use]
     pub fn filter(&self) -> Option<TagFilter> {
         if !self.tag_filters.is_empty() {
             return Some(TagFilter::Exact(self.tag_filters.clone()));
