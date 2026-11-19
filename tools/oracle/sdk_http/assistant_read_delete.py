@@ -126,10 +126,10 @@ class Outcome(BaseModel):
     runs: list[RunOutcome]
 
 
-LIST_SYNC: Callable[..., Answer] = litellm.get_assistants
-LIST_ASYNC: Callable[..., Coroutine[None, None, Answer]] = litellm.aget_assistants
-DELETE_SYNC: Callable[..., Answer] = litellm.delete_assistant
-DELETE_ASYNC: Callable[..., Coroutine[None, None, Answer]] = litellm.adelete_assistant
+LIST_SYNC = partial(litellm.get_assistants)
+LIST_ASYNC = partial(litellm.aget_assistants)
+DELETE_SYNC = partial(litellm.delete_assistant)
+DELETE_ASYNC = partial(litellm.adelete_assistant)
 
 
 class AssistantReadDeleteRequest(Strict):
