@@ -27,6 +27,6 @@ call:
         api_key: null
         api_base: null
         query: extra
-        optional_params: {safesearch: strict, text_decorations: false, count: 7}
+        optional_params: {count: 7, safesearch: strict, text_decorations: false}
 env: {}
 compare: {ignore: []}

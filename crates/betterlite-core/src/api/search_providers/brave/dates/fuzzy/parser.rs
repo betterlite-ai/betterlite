@@ -131,7 +131,23 @@ impl<'a> Parser<'a> {
         let Token::Number(text) = self.tokens.get(index)? else {
             return None;
         };
-        self.number_tail(index, text.parse().ok()?)
+        let members = self.fields.items.len();
+        match (text.len(), members) {
+            (6, 0) => self.push_compact(text, 2)?,
+            (6, _) | (2 | 4, 3) => return Some(index),
+            (8 | 12 | 14, _) => self.push_compact(text, 4)?,
+            _ => return self.number_tail(index, text.parse().ok()?),
+        }
+        Some(index)
+    }
+
+    // a compact run is YYMMDD, or YYYYMMDD with its clock time dropped
+    fn push_compact(&mut self, text: &str, width: usize) -> Option<()> {
+        let (middle, end) = (width.checked_add(2)?, width.checked_add(4)?);
+        let label = (width == 4).then_some(Label::Year);
+        self.fields.push_text(text.get(..width)?, label)?;
+        self.fields.push_text(text.get(width..middle)?, None)?;
+        self.fields.push_text(text.get(middle..end)?, None)
     }
 
     fn number_tail(&mut self, index: usize, value: i64) -> Option<usize> {

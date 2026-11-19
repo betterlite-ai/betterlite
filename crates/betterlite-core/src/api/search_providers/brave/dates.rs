@@ -79,7 +79,8 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
 }
 
 fn decimal_date(number: f64) -> Option<NaiveDate> {
-    if number == 0.0 || !(1e-4..1e16).contains(&number.abs()) {
+    // the source reads a float through str(), and an infinity has no timestamp
+    if number == 0.0 || !number.is_finite() {
         return None;
     }
     unix_date(&format!("{number}"))
