@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::thread_runs::stream::RunEventHandler;
 
-use super::support::{self, Fixture, Recorder, STREAM_BODY, run_request};
+use super::support::{self, Fixture, Recorder, RecordingHandler, STREAM_BODY, run_request};
 use crate::assistants::operations::{RunCall, RunDispatch, RunInvocation};
 
 fn streaming() -> RunDispatch {
@@ -28,7 +28,7 @@ async fn passes_the_handler_through() {
     let recorder = Recorder::start();
     let fixture = Fixture::new();
     let handler = support::RecordingHandler::start();
-    let expected: Arc<dyn RunEventHandler> = Arc::clone(&handler);
+    let expected: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(&handler);
     let manager = support::streamed(
         &recorder,
         &fixture,
@@ -55,7 +55,7 @@ async fn delivers_events_before_ending() {
     recorder.queue(200, STREAM_BODY);
     let fixture = Fixture::new();
     let handler = support::RecordingHandler::start();
-    let attached: Arc<dyn RunEventHandler> = Arc::clone(&handler);
+    let attached: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(&handler);
     let manager = support::streamed(
         &recorder,
         &fixture,
