@@ -1,7 +1,7 @@
 id: B345
 title: Shadow evaluation request and access validation
 description: 'Add the typed shadow-evaluation request model and pure validation service for B356''s endpoint
-  handlers. Resolve configured router arms, baseline/judge models and key/team/user targets through B051/B052/B060.
+  handlers. Resolve configured router arms, baseline/judge models and key/team/user targets through B051/B060, with the caller''s role read from B2314''s UserAPIKeyAuth.
   Enforce direction-specific model scope and reject judge/candidate overlap before any work is queued.
   Keep Decimal budgets and explicit target kinds throughout, and fuzz the management request parser. This
   part creates no jobs and runs no judge calls. Implement the owned native service in crates/betterlite-server/src/shadow_eval_validation.rs.

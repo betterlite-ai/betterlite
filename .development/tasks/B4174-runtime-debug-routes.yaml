@@ -3,7 +3,7 @@ title: Authenticated memory and task debug routes
 description: >-
   Register GET /debug/asyncio-tasks, /memory-usage, /memory-usage-in-mem-cache, /memory-usage-in-mem-cache-items, /debug/memory/summary, /debug/memory/details,
   POST /debug/memory/gc/configure and GET /otel-spans in betterlite-server.
-  Each route requires authentication through B052's user_api_key_auth.
+  Each route sits behind B003's key auth middleware (LiteLLM's Depends(user_api_key_auth)).
 
   GET /debug/asyncio-tasks, /memory-usage, /debug/memory/summary, /debug/memory/details and POST /debug/memory/gc/configure are unsupported in native Rust
   and return HTTP 501 with error.type=unsupported_runtime, error.code=unsupported_runtime because native runtime has no Python asyncio tasks, tracemalloc,

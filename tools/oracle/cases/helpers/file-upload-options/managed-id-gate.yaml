@@ -1,0 +1,18 @@
+kind: helper
+name: file-upload-options-managed-id-gate
+call:
+  file_upload_options:
+    calls:
+      - {function: managed_id, resource_id: null, resource_kind: file, require_managed_files: true}
+      - {function: managed_id, resource_id: "", resource_kind: batch, require_managed_files: true}
+      - {function: managed_id, resource_id: file-1, resource_kind: file, require_managed_files: true}
+      - {function: managed_id, resource_id: batch-1, resource_kind: batch, require_managed_files: true}
+      - {function: managed_id, resource_id: job-1, resource_kind: "fine-tuning job", require_managed_files: true}
+      - {function: managed_id, resource_id: bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ, resource_kind: file, require_managed_files: true}
+      - {function: managed_id, resource_id: bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ, resource_kind: file, require_managed_files: false}
+      - {function: managed_id, resource_id: bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ, resource_kind: file, require_managed_files: null}
+      - {function: managed_id, resource_id: bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ, resource_kind: file, require_managed_files: 0}
+      - {function: managed_id, resource_id: file-1, resource_kind: batch, require_managed_files: 1}
+      - {function: managed_id, resource_id: job-1, resource_kind: "fine-tuning job", require_managed_files: "true"}
+env: {}
+compare: {ignore: []}
