@@ -45,10 +45,6 @@ pub struct SignRequest<'search> {
 // the request carries a caller key and a body, so Debug prints names and no secret values
 impl Debug for SignRequest<'_> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        let request_data = match &self.request_data {
-            Json::Null => "null",
-            _ => "<redacted>",
-        };
         formatter
             .debug_struct("SignRequest")
             .field("api_base", &self.api_base)
@@ -57,7 +53,7 @@ impl Debug for SignRequest<'_> {
                 "optional_params",
                 &self.optional_params.keys().collect::<Vec<_>>(),
             )
-            .field("request_data", &request_data)
+            .field("request_data", &"<redacted>")
             .field("api_key", &self.api_key.map(|_| "<redacted>"))
             .field("session_region", &self.session_region)
             .field("now", &self.now)
