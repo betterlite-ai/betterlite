@@ -12,7 +12,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use rstest::rstest;
-use serde::Serialize;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -25,7 +24,8 @@ use super::fixtures::auth_cache::memory_auth_cache;
 use super::fixtures::cache::FakeCacheError;
 use super::fixtures::clock::{end_instant, start_instant};
 use super::fixtures::harness::{
-    Harness, actor_auth, call, call_with, created_key, exception, http_request, parent_span,
+    CreatedKey, Harness, actor_auth, call, call_with, created_key, exception, http_request,
+    parent_span,
 };
 use super::fixtures::journal::{Effect, Journal};
 use super::fixtures::transports::SpanHook;
@@ -50,14 +50,13 @@ fn expected_response() -> Json {
     ]))
 }
 
-async fn run<Handler, R>(
+async fn run<Handler>(
     harness: &Harness,
     request: ManagementCall<'_>,
     handler: Handler,
-) -> Result<R, FakeHandlerError>
+) -> Result<CreatedKey, FakeHandlerError>
 where
-    R: Serialize + Send + Sync,
-    Handler: Future<Output = Result<R, ManagementFailure<FakeHandlerError>>> + Send,
+    Handler: Future<Output = Result<CreatedKey, ManagementFailure<FakeHandlerError>>> + Send,
 {
     management_endpoint_wrapper(request, harness.deps(), handler).await
 }
