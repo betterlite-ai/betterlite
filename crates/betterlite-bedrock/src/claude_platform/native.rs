@@ -91,7 +91,7 @@ pub fn validate_environment(
     {
         headers.insert(API_KEY_HEADER.to_owned(), key.expose_secret().to_owned());
     }
-    let headers = inject_native_betas(
+    let injected = inject_native_betas(
         headers,
         &BetaRequest {
             provider: MESSAGES_PROVIDER,
@@ -100,7 +100,7 @@ pub fn validate_environment(
         },
     )?;
     Ok(NativeHeaders {
-        headers,
+        headers: injected,
         api_base: request.api_base.map(str::to_owned),
     })
 }

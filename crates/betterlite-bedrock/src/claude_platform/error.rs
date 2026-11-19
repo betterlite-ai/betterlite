@@ -27,7 +27,7 @@ impl WorkspaceError {
 
     // LiteLLM passes the provider and the model to the AuthenticationError it raises
     #[must_use]
-    pub fn model(&self) -> Option<&str> {
+    pub const fn model(&self) -> Option<&str> {
         match self {
             Self::Missing { model } => Some(model.as_str()),
             Self::Input(_) => None,

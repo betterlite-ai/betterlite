@@ -50,10 +50,10 @@ pub(super) fn warning_json(warning: &PlatformWarning) -> Value {
 }
 
 fn beta_view(headers: &IndexMap<String, String>) -> Value {
-    match headers.get(BETA_HEADER) {
-        Some(value) => Value::Array(beta_tokens(value).into_iter().map(Value::String).collect()),
-        None => Value::Array(Vec::new()),
-    }
+    headers.get(BETA_HEADER).map_or_else(
+        || Value::Array(Vec::new()),
+        |value| Value::Array(beta_tokens(value).into_iter().map(Value::String).collect()),
+    )
 }
 
 fn system_texts(body: Option<&Map<String, Value>>) -> Vec<String> {

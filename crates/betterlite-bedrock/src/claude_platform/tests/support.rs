@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_types,
+        reason = "the decoded chunks compare as serde_json values"
+    )
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 
@@ -40,7 +48,8 @@ use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use uuid::Uuid;
 
 use crate::claude_platform::chat::{
-    ChatHeadersRequest, ChatPrepared, ChatRequest, ChatSources, HeaderSources, validate_environment,
+    ChatHeadersRequest, ChatPrepared, ChatRequest, ChatSources, HeaderSources, transform_request,
+    validate_environment,
 };
 use crate::claude_platform::error::{ChatValidationError, NativeTransformError};
 use crate::claude_platform::native::transform_request as native_transform;
@@ -237,7 +246,7 @@ impl Records {
             blocks: &blocks,
             new_id: &new_id,
         };
-        block_on(crate::claude_platform::chat::transform_request(
+        block_on(transform_request(
             request,
             &mut ChatSources {
                 environment: &mut environment,

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::future::{Future, ready};
 
 use betterlite_bedrock::claude_platform::WorkspaceSources;
@@ -15,7 +16,7 @@ use serde_json::{Value, json};
 
 pub(super) fn invalid<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "InvalidInput".to_owned(),

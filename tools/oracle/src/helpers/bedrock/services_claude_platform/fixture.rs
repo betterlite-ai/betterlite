@@ -6,7 +6,7 @@ use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_anthropic::request::error::RequestError;
 use betterlite_bedrock::claude_platform::chat::{
     ChatHeadersRequest, ChatPrepared, ChatRequest, ChatSources, HeaderSources,
-    validate_environment as validate_chat,
+    transform_request as chat_transform, validate_environment as validate_chat,
 };
 use betterlite_bedrock::claude_platform::error::{ChatValidationError, NativeTransformError};
 use betterlite_bedrock::claude_platform::native::{
@@ -189,16 +189,14 @@ impl Fixture {
             modify_params: false,
             global_drop_params: false,
         };
-        self.runtime.block_on(
-            betterlite_bedrock::claude_platform::chat::transform_request(
-                &request,
-                &mut ChatSources {
-                    environment: &mut environment,
-                    catalogs: &catalogs,
-                    prompts: &prompts,
-                },
-            ),
-        )
+        self.runtime.block_on(chat_transform(
+            &request,
+            &mut ChatSources {
+                environment: &mut environment,
+                catalogs: &catalogs,
+                prompts: &prompts,
+            },
+        ))
     }
 
     pub(super) fn native_body(

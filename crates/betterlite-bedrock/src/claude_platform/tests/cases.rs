@@ -1,12 +1,15 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::disallowed_types,
+        clippy::shadow_unrelated,
         clippy::too_many_lines,
-        reason = "each named case states one LiteLLM behavior as a single scenario"
+        reason = "each case states one LiteLLM behavior as a scenario, builds its request JSON as serde_json values, and rebinds `case` to the next scenario"
     )
 )]
 
 use std::collections::BTreeSet;
+use std::iter::empty;
 
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::stream_decode::TransportChunk;
@@ -579,7 +582,7 @@ pub(crate) fn native_anthropic_stream() {
     );
 
     let plain = get_model_response_iterator(
-        std::iter::empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
+        empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
         StreamFlags {
             sync_stream: false,
             json_mode: None,
@@ -590,7 +593,7 @@ pub(crate) fn native_anthropic_stream() {
     );
     assert_eq!(plain.converter.state.json_mode, Some(false));
     let json_mode = get_model_response_iterator(
-        std::iter::empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
+        empty::<Result<TransportChunk, ReceiveError<CounterError>>>(),
         StreamFlags {
             sync_stream: false,
             json_mode: Some(true),
