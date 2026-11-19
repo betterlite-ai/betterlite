@@ -159,7 +159,7 @@ async def failure_event_answer(case: Case, fixture: Fixture) -> Record:
     return record(fixture, None, None)
 
 
-async def disconnect_answer(case: Case, fixture: Fixture) -> Record:
+async def disconnect_answer(fixture: Fixture) -> Record:
     await fixture.limiter.async_release_max_parallel_requests_on_disconnect(UserAPIKeyAuth())
     return record(fixture, None, None)
 
@@ -188,16 +188,14 @@ async def failure_hook_answer(case: Case, fixture: Fixture) -> Record:
 
 async def answer(input_value: Case, fixture: Fixture) -> Record:
     function = input_value["function"]
-    if function == "header_merge":
-        return await logging_answer(input_value, fixture, mirror=False)
-    if function == "logging_hook":
-        return await logging_answer(input_value, fixture, mirror=True)
+    if function in ("header_merge", "logging_hook"):
+        return await logging_answer(input_value, fixture, mirror=function == "logging_hook")
     if function == "success_event":
         return await success_event_answer(input_value, fixture)
     if function == "failure_event":
         return await failure_event_answer(input_value, fixture)
     if function == "disconnect":
-        return await disconnect_answer(input_value, fixture)
+        return await disconnect_answer(fixture)
     if function == "success_hook":
         return await success_hook_answer(input_value, fixture)
     return await failure_hook_answer(input_value, fixture)

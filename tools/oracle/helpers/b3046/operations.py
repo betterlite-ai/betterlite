@@ -25,6 +25,11 @@ from .inputs import (
 ReservationWindow = tuple[str, str, Literal["redis", "local"]]
 
 
+def require_no_span(span: JsonValue, subject: str) -> None:
+    if span is not None:
+        raise RuntimeError(f"{subject} carry no parent span")
+
+
 class RecordingCache:
     def __init__(self, values: dict[str, JsonValue], gauge_keys: set[str]) -> None:
         self.dual_cache = RecordingDualCache(self)
@@ -43,8 +48,9 @@ class RecordingCache:
         litellm_parent_otel_span: JsonValue = None,
         local_only: bool = False,
     ) -> JsonValue:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the settlement cache reads carry no parent span")
+        require_no_span(litellm_parent_otel_span, "the settlement cache reads")
+        if not local_only:
+            raise RuntimeError("the settlement cache reads local counters only")
         if key in self.gauge_keys:
             self.gauge_reads.append(key)
         return self.values.get(key)
@@ -58,8 +64,9 @@ class RecordingCache:
         litellm_parent_otel_span: JsonValue = None,
         local_only: bool = False,
     ) -> None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the settlement cache writes carry no parent span")
+        require_no_span(litellm_parent_otel_span, "the settlement cache writes")
+        if not local_only:
+            raise RuntimeError("the settlement cache writes local counters only")
         record: JsonValue = {"key": key, "value": value, "ttl": ttl}
         if key in self.gauge_keys:
             self.gauge_writes.append(record)
@@ -75,8 +82,7 @@ class RecordingCache:
         litellm_parent_otel_span: JsonValue = None,
         ttl: int | None = None,
     ) -> None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the counter increments carry no parent span")
+        require_no_span(litellm_parent_otel_span, "the counter increments")
         operation: PipelineOperation = {"key": key, "increment_value": value, "ttl": ttl}
         self.increments.append(operation_json(operation))
 
@@ -93,18 +99,16 @@ class RecordingDualCache:
         increment_list: Sequence[PipelineOperation],
         litellm_parent_otel_span: JsonValue = None,
     ) -> None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the pipeline writes carry no parent span")
+        require_no_span(litellm_parent_otel_span, "the pipeline writes")
         batch: list[JsonValue] = [operation_json(operation) for operation in increment_list]
         self.owner.pipelines.append(batch)
 
-    async def async_increment_cache_pipeline_post_call(
+    async def async_increment_cache_pipeline_post_call(  # ast-grep-ignore: no-long-names
         self,
         increment_list: Sequence[PipelineOperation],
         parent_otel_span: JsonValue = None,
     ) -> None:
-        if parent_otel_span is not None:
-            raise RuntimeError("the post-call pipeline writes carry no parent span")
+        require_no_span(parent_otel_span, "the post-call pipeline writes")
         await self.async_increment_cache_pipeline(increment_list=increment_list)
 
 
@@ -114,39 +118,24 @@ class FakeBatchStore:
         self.popped = popped
 
     async def save_reservation(
-        self,
-        *,
-        batch_id: str,
-        reservation: BatchEnqueuedTokenReservation,
-        litellm_parent_otel_span: JsonValue = None,
+        self, *, batch_id: str, reservation: BatchEnqueuedTokenReservation, **_span: JsonValue
     ) -> None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the batch store calls carry no parent span")
-        record: JsonValue = {"call": "save", "batch_id": batch_id, "tokens": reservation.tokens}
-        self.calls.append(record)
+        self.calls.append(
+            {"call": "save", "batch_id": batch_id, "tokens": reservation.tokens}
+        )
 
     async def pop_reservation(
-        self,
-        *,
-        batch_id: str,
-        litellm_parent_otel_span: JsonValue = None,
+        self, *, batch_id: str, **_span: JsonValue
     ) -> BatchEnqueuedTokenReservation | None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the batch store calls carry no parent span")
-        record: JsonValue = {"call": "pop", "batch_id": batch_id}
-        self.calls.append(record)
+        self.calls.append({"call": "pop", "batch_id": batch_id})
         return self.popped
 
     async def refund(
-        self,
-        *,
-        reservation: BatchEnqueuedTokenReservation,
-        litellm_parent_otel_span: JsonValue = None,
+        self, *, reservation: BatchEnqueuedTokenReservation, **_span: JsonValue
     ) -> None:
-        if litellm_parent_otel_span is not None:
-            raise RuntimeError("the batch store calls carry no parent span")
-        record: JsonValue = {"call": "refund", "tokens": reservation.tokens}
-        self.calls.append(record)
+        self.calls.append(
+            {"call": "refund", "tokens": reservation.tokens}
+        )
 
 
 class HiddenResponse:
@@ -158,9 +147,9 @@ class HiddenResponse:
         return hidden["additional_headers"]
 
 
-class GroupMap:
+class GroupMap(dict[str, str]):
     def __call__(self, model: str) -> str | None:
-        return None
+        return self.get(model)
 
 
 class Limiter(Protocol):
@@ -244,13 +233,7 @@ def window_set(windows: list[WindowInput]) -> frozenset[ReservationWindow]:
     return frozenset(identities)
 
 
-def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
-    stash = get_or_create_request_stash()
-    if input_value is None:
-        return stash
-    owner = input_value.get("owner_call_id")
-    if owner is not None:
-        stash.owner_litellm_call_id = owner
+def install_slot_fields(stash: RequestRateLimiterStash, input_value: StashInput) -> None:
     slot = input_value.get("parallel_slot")
     if slot is not None:
         stash.parallel_slot = ParallelSlotAcquisition(
@@ -259,6 +242,9 @@ def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
     statuses = input_value.get("statuses")
     if statuses is not None:
         stash.rate_limit_response = RateLimitResponse(overall_code="OK", statuses=statuses)
+
+
+def install_reservation_fields(stash: RequestRateLimiterStash, input_value: StashInput) -> None:
     reserved = input_value.get("reserved_tokens")
     if reserved is not None:
         stash.reserved_tokens = reserved
@@ -283,10 +269,20 @@ def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
     otpm_windows = input_value.get("otpm_reserved_windows")
     if otpm_windows is not None:
         stash.otpm_reserved_window_identities = window_set(otpm_windows)
+
+
+def install_batch_fields(stash: RequestRateLimiterStash, input_value: StashInput) -> None:
+    owner = input_value.get("owner_call_id")
+    if owner is not None:
+        stash.owner_litellm_call_id = owner
     batch_tokens = input_value.get("batch_tokens")
     if batch_tokens is not None:
         stash.batch_enqueued_reservation = BatchEnqueuedTokenReservation(
-            tokens=batch_tokens, scopes=(), backend="redis", owner="worker", reserved_at_monotonic=0.0
+            tokens=batch_tokens,
+            scopes=(),
+            backend="redis",
+            owner="worker",
+            reserved_at_monotonic=0.0,
         )
     tpd_ops = input_value.get("batch_tpd_ops")
     if tpd_ops is not None:
@@ -294,4 +290,13 @@ def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
     released = input_value.get("reservation_released")
     if released is not None:
         stash.reservation_released = released
+
+
+def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
+    stash = get_or_create_request_stash()
+    if input_value is None:
+        return stash
+    install_slot_fields(stash, input_value)
+    install_reservation_fields(stash, input_value)
+    install_batch_fields(stash, input_value)
     return stash

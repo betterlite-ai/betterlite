@@ -2,7 +2,7 @@ from typing import Literal, Required, TypeAlias, TypedDict
 
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitStatus,
-    ReservationAwareIncrementOperation,
+    ReservationAwareIncrementOperation as PipelineOperation,
 )
 from litellm.types.utils import Usage
 from pydantic import JsonValue
@@ -53,7 +53,7 @@ class StashInput(TypedDict, total=False):
     otpm_reserved_scopes: list[list[str]]
     otpm_reserved_windows: list[WindowInput]
     batch_tokens: int
-    batch_tpd_ops: list[ReservationAwareIncrementOperation]
+    batch_tpd_ops: list[PipelineOperation]
     reservation_released: bool
 
 
@@ -85,7 +85,5 @@ class CallbackArguments(TypedDict, total=False):
     litellm_params: LiteLLMParams
     standard_logging_object: LoggingPayload
 
-
-PipelineOperation: TypeAlias = ReservationAwareIncrementOperation
 
 Input: TypeAlias = Case
