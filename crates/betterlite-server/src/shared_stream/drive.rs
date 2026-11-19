@@ -95,11 +95,11 @@ where
         let item = match self.items.next().await {
             None => return Step::End(self.framing.frame_tail()),
             Some(Ok(item)) => item,
-            Some(Err(failure)) => return self.fail(failure).await,
+            Some(Err(failure)) => return Step::Failed(self.fail(failure).await),
         };
         let item = match self.prepare(item).await {
             Ok(item) => item,
-            Err(failure) => return self.fail(failure).await,
+            Err(failure) => return Step::Failed(self.fail(failure).await),
         };
         self.write(item)
     }
@@ -149,16 +149,15 @@ where
         }
     }
 
-    async fn fail(&mut self, failure: StreamFailure) -> Step<F::Out> {
-        let ending = finish_failure(
+    async fn fail(&mut self, failure: StreamFailure) -> Result<F::Out, StreamAbort> {
+        finish_failure(
             self.hooks.as_ref(),
             &mut self.framing,
             &mut self.guard,
             failure,
             self.redactor.as_deref(),
         )
-        .await;
-        Step::Failed(ending)
+        .await
     }
 }
 
