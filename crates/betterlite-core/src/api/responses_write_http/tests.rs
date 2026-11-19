@@ -296,7 +296,8 @@ async fn write_transport_failures(#[case] operation: Operation) {
     let wire = Wire::replying(
         Reply::json(429, "slow down")
             .with_header("retry-after", "3")
-            .with_header("content-type", "text/plain"),
+            .with_header("content-type", "text/plain")
+            .with_header("content-encoding", "gzip"),
         &events,
     );
     let source = Source::new(wire.clone());
@@ -324,6 +325,8 @@ async fn write_transport_failures(#[case] operation: Operation) {
         provider_error.headers.get("content-length"),
         Some(&Json::Text(String::from("9")))
     );
+    // The masked error drops the encoding of the original reply
+    assert_eq!(provider_error.headers.get("content-encoding"), None);
     assert_eq!(wire.requests().len(), 1);
     assert_eq!(
         config.errors(),
