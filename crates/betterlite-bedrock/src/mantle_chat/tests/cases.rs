@@ -93,6 +93,12 @@ pub(super) fn mantle_chat_url() {
 }
 
 fn chat_url_cases() {
+    chat_url_regions();
+    chat_url_endpoints();
+    chat_url_errors();
+}
+
+fn chat_url_regions() {
     let globals = MantleGlobals::default();
     assert_eq!(
         url(None, "claude", "{}", &globals),
@@ -120,6 +126,10 @@ fn chat_url_cases() {
         url(None, "claude", "{}", &region_globals("ca-central-1")),
         "https://bedrock-mantle.ca-central-1.api.aws/anthropic/v1/messages"
     );
+}
+
+fn chat_url_endpoints() {
+    let globals = MantleGlobals::default();
     assert_eq!(
         url(
             None,
@@ -156,6 +166,10 @@ fn chat_url_cases() {
         ),
         "https://mantle.test/anthropic/v1/messages"
     );
+}
+
+fn chat_url_errors() {
+    let globals = MantleGlobals::default();
     let error = complete_url(
         None,
         "claude",
@@ -176,19 +190,12 @@ fn chat_url_cases() {
 
 fn chat_environment_cases() {
     let policy = policy_of("user_api_key_alias");
-    let mut params = invoke_params(
-        r#"{"guardrailConfig":{"guardrailIdentifier":"g-1","guardrailVersion":"2","trace":"enabled_full"}}"#,
-    );
-    let mut headers = IndexMap::new();
-    headers.insert("x-custom".to_owned(), "keep".to_owned());
-    headers.insert("anthropic-workspace".to_owned(), "old".to_owned());
-    let merged = chat_headers(
-        &headers,
-        &mut params,
-        &metadata_params("team-a"),
-        Some(&policy),
-    )
-    .expect("the chat environment merges");
+    let merged = chat_guardrail_headers(&policy);
+    merged_guardrail_headers(&merged);
+    empty_project_id_keeps_header(&policy);
+}
+
+fn merged_guardrail_headers(merged: &IndexMap<String, String>) {
     assert_eq!(merged.get("x-custom").map(String::as_str), Some("keep"));
     assert_eq!(
         merged
@@ -217,14 +224,36 @@ fn chat_environment_cases() {
         Some("team-a")
     );
     assert!(!merged.contains_key("authorization"));
-    assert!(!params.contains_key("guardrailConfig"));
+}
+
+fn empty_project_id_keeps_header(policy: &BedrockRequestPolicy) {
+    let mut headers = IndexMap::new();
+    headers.insert("anthropic-workspace".to_owned(), "old".to_owned());
     let mut empty = invoke_params("{}");
-    let merged = chat_headers(&headers, &mut empty, &metadata_params(""), Some(&policy))
+    let merged = chat_headers(&headers, &mut empty, &metadata_params(""), Some(policy))
         .expect("the empty project id merges");
     assert_eq!(
         merged.get("anthropic-workspace").map(String::as_str),
         Some("old")
     );
+}
+
+fn chat_guardrail_headers(policy: &BedrockRequestPolicy) -> IndexMap<String, String> {
+    let mut params = invoke_params(
+        r#"{"guardrailConfig":{"guardrailIdentifier":"g-1","guardrailVersion":"2","trace":"enabled_full"}}"#,
+    );
+    let mut headers = IndexMap::new();
+    headers.insert("x-custom".to_owned(), "keep".to_owned());
+    headers.insert("anthropic-workspace".to_owned(), "old".to_owned());
+    let merged = chat_headers(
+        &headers,
+        &mut params,
+        &metadata_params("team-a"),
+        Some(policy),
+    )
+    .expect("the chat environment merges");
+    assert!(!params.contains_key("guardrailConfig"));
+    merged
 }
 
 pub(super) fn mantle_message_url() {
@@ -233,6 +262,11 @@ pub(super) fn mantle_message_url() {
 }
 
 fn message_url_cases() {
+    message_url_regions();
+    message_url_endpoints();
+}
+
+fn message_url_regions() {
     let globals = MantleGlobals::default();
     assert_eq!(
         url(None, "mantle/claude", "{}", &globals),
@@ -256,6 +290,10 @@ fn message_url_cases() {
         ),
         "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1/messages"
     );
+}
+
+fn message_url_endpoints() {
+    let globals = MantleGlobals::default();
     assert_eq!(
         url(
             None,
@@ -291,8 +329,14 @@ fn message_url_cases() {
 
 fn message_environment_cases() {
     let empty = IndexMap::new();
+    messages_version_default(&empty);
+    messages_version_caller();
+    messages_workspace_and_metadata(&empty);
+}
+
+fn messages_version_default(empty: &IndexMap<String, String>) {
     let (merged, base) = messages_headers(
-        &empty,
+        empty,
         &MetadataParams::new(),
         None,
         Some("https://proxy.test"),
@@ -304,6 +348,9 @@ fn message_environment_cases() {
         Some("2023-06-01")
     );
     assert_eq!(base.as_deref(), Some("https://proxy.test"));
+}
+
+fn messages_version_caller() {
     let mut versioned = IndexMap::new();
     versioned.insert("Anthropic-Version".to_owned(), String::new());
     let (merged, base) = messages_headers(&versioned, &MetadataParams::new(), None, None, None)
@@ -314,6 +361,14 @@ fn message_environment_cases() {
         Some("")
     );
     assert_eq!(base, None);
+}
+
+fn messages_workspace_and_metadata(empty: &IndexMap<String, String>) {
+    caller_workspace_kept();
+    metadata_and_api_key_headers(empty);
+}
+
+fn caller_workspace_kept() {
     let mut caller = IndexMap::new();
     caller.insert("Anthropic-Workspace".to_owned(), "caller".to_owned());
     let (merged, _) = messages_headers(&caller, &metadata_params("team-a"), None, None, None)
@@ -326,8 +381,11 @@ fn message_environment_cases() {
         merged.get("Anthropic-Workspace").map(String::as_str),
         Some("caller")
     );
+}
+
+fn metadata_and_api_key_headers(empty: &IndexMap<String, String>) {
     let (merged, _) = messages_headers(
-        &empty,
+        empty,
         &metadata_params("team-a"),
         Some(&policy_of("user_api_key_alias")),
         None,
@@ -342,7 +400,7 @@ fn message_environment_cases() {
     );
     let key = SecretString::from("fixture-api-key");
     let (merged, _) = messages_headers(
-        &empty,
+        empty,
         &MetadataParams::new(),
         None,
         Some("https://proxy.test"),
@@ -392,6 +450,11 @@ fn beta_provider_is_mantle() {
 fn moved_betas_through_transform() {
     let fixture = Fixture::new();
     let mut session = MessagesSession::new(&fixture);
+    moved_tool_search_betas(&mut session);
+    moved_quiet_betas(&mut session);
+}
+
+fn moved_tool_search_betas(session: &mut MessagesSession<'_>) {
     let mut headers = IndexMap::new();
     headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
     headers.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
@@ -415,6 +478,9 @@ fn moved_betas_through_transform() {
     assert!(!body.contains_key("anthropic_beta"));
     assert!(!body.contains_key("anthropic_version"));
     assert_eq!(body.get("model"), Some(&js(r#""fixture-tool-search""#)));
+}
+
+fn moved_quiet_betas(session: &mut MessagesSession<'_>) {
     let mut quiet = IndexMap::new();
     quiet.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
     quiet.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
@@ -437,6 +503,11 @@ fn moved_betas_through_transform() {
 }
 
 fn beta_shapes() {
+    beta_lists_join();
+    beta_shape_errors();
+}
+
+fn beta_lists_join() {
     let mut headers = IndexMap::new();
     headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
     headers.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
@@ -457,6 +528,10 @@ fn beta_shapes() {
         move_betas_into_header(&body, &mut headers).expect("a falsey list means no betas");
         assert!(!headers.contains_key("anthropic-beta"));
     }
+}
+
+fn beta_shape_errors() {
+    let mut headers = IndexMap::new();
     let mut body = obj(r#"{"anthropic_beta":"b1"}"#);
     let error =
         move_betas_into_header(&body, &mut headers).expect_err("a string is not a tuple of betas");
@@ -517,6 +592,11 @@ pub(super) fn model_body_restoration() {
 }
 
 fn restored_model_anywhere() {
+    restored_prefixed_model();
+    restored_plain_model();
+}
+
+fn restored_prefixed_model() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::default();
@@ -535,6 +615,12 @@ fn restored_model_anywhere() {
         Some(&js(r#""bedrock-2023-05-31""#))
     );
     assert!(!body.contains_key("stream"));
+}
+
+fn restored_plain_model() {
+    let fixture = Fixture::new();
+    let mut session = ChatSession::new(&fixture);
+    let fetcher = MapFetcher::default();
     let request = fixture.chat_request(
         "fixture-plain",
         prompt_messages(),
@@ -855,6 +941,11 @@ pub(super) const SYNC_MESSAGES: &str = r#"[{"role":"user","content":[
 pub(super) fn remote_url_inlined() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
+    async_media_inlined(&fixture, &mut session);
+    sync_media_kept(&fixture, &mut session);
+}
+
+fn async_media_inlined(fixture: &Fixture, session: &mut ChatSession<'_>) {
     let fetcher = MapFetcher::new(&[
         (
             "http://example.test/pic.png",
@@ -885,6 +976,9 @@ pub(super) fn remote_url_inlined() {
         fetcher.calls(),
         vec!["http://example.test/pic.png", "http://example.test/doc.pdf"]
     );
+}
+
+fn sync_media_kept(fixture: &Fixture, session: &mut ChatSession<'_>) {
     let quiet = MapFetcher::default();
     let request = fixture.chat_request(
         "fixture-plain",

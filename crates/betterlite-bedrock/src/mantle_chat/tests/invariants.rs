@@ -1,3 +1,4 @@
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use indexmap::IndexMap;
@@ -41,18 +42,26 @@ fn params_for(name: &str) -> MetadataParams {
 fn mantle_claude_credential_identity_isolation() {
     let alice = identity("alice", "eu-west-1", "https://mantle.alice.test");
     let bob = identity("bob", "us-east-2", "https://mantle.bob.test");
+    urls_keep_their_identity(&alice, &bob);
+    headers_keep_their_identity();
+}
+
+fn urls_keep_their_identity(alice: &MantleGlobals, bob: &MantleGlobals) {
     assert_eq!(
-        url(None, "claude", "{}", &alice),
+        url(None, "claude", "{}", alice),
         "https://mantle.alice.test/anthropic/v1/messages"
     );
     assert_eq!(
-        url(None, "claude", "{}", &bob),
+        url(None, "claude", "{}", bob),
         "https://mantle.bob.test/anthropic/v1/messages"
     );
     assert_eq!(
-        url(None, "claude", "{}", &alice),
+        url(None, "claude", "{}", alice),
         "https://mantle.alice.test/anthropic/v1/messages"
     );
+}
+
+fn headers_keep_their_identity() {
     let caller: IndexMap<String, String> =
         IndexMap::from([("x-caller".to_owned(), "kept".to_owned())]);
     let alice_headers = chat_headers(
@@ -140,6 +149,20 @@ fn mantle_claude_media_fetch() {
 }
 
 fn async_media_shapes(fixture: &Fixture, session: &mut ChatSession<'_>) {
+    let (fetcher, body) = async_media_body(fixture, session);
+    async_media_sources(&body);
+    assert_eq!(
+        fetcher.calls(),
+        vec![
+            "http://example.test/pic.png",
+            "https://files.example.test/f1",
+            "http://example.test/doc.pdf"
+        ]
+    );
+    assert_eq!(fetcher.transport_attempts(), 3);
+}
+
+fn async_media_body(fixture: &Fixture, session: &mut ChatSession<'_>) -> (MapFetcher, Object) {
     let fetcher = MapFetcher::new(&[
         (
             "http://example.test/pic.png",
@@ -162,27 +185,22 @@ fn async_media_shapes(fixture: &Fixture, session: &mut ChatSession<'_>) {
     let body = session
         .transform(&request, &fetcher, Mode::Async)
         .expect("the media request transforms");
+    (fetcher, body)
+}
+
+fn async_media_sources(body: &Object) {
     assert_eq!(
-        at(&body, &["messages", "0", "content", "0", "source"]),
+        at(body, &["messages", "0", "content", "0", "source"]),
         &js(IMAGE_BODY)
     );
     assert_eq!(
-        at(&body, &["messages", "0", "content", "1", "source"]),
+        at(body, &["messages", "0", "content", "1", "source"]),
         &js(r#"{"data":"ZmlsZQ==","media_type":"application/pdf","type":"base64"}"#)
     );
     assert_eq!(
-        at(&body, &["messages", "0", "content", "2", "source"]),
+        at(body, &["messages", "0", "content", "2", "source"]),
         &js(r#"{"data":"JVBERi0xLjQK","media_type":"application/pdf","type":"base64"}"#)
     );
-    assert_eq!(
-        fetcher.calls(),
-        vec![
-            "http://example.test/pic.png",
-            "https://files.example.test/f1",
-            "http://example.test/doc.pdf"
-        ]
-    );
-    assert_eq!(fetcher.transport_attempts(), 3);
 }
 
 fn sync_media_untouched(fixture: &Fixture, session: &mut ChatSession<'_>) {

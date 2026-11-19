@@ -20,14 +20,12 @@ pub fn transform_response(
     limits: &ApiLimits,
 ) -> Result<Fields, MantleMessagesError> {
     let mut fields = decode_messages_response(body, status, limits)?.fields;
-    let usage = normalized_usage(fields.get(USAGE))?;
+    let usage = normalized_usage(fields.get(USAGE).map(Box::as_ref))?;
     fields.insert(USAGE.to_owned(), usage);
     Ok(fields)
 }
 
-fn normalized_usage(
-    existing: Option<&Box<RawValue>>,
-) -> Result<Box<RawValue>, MantleMessagesError> {
+fn normalized_usage(existing: Option<&RawValue>) -> Result<Box<RawValue>, MantleMessagesError> {
     let mut usage = Object::new();
     usage.insert(
         INPUT_TOKENS.to_owned(),
