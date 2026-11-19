@@ -3,6 +3,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::spend_metadata::{as_text, optional_field, optional_text_field};
 
@@ -167,7 +168,7 @@ fn a_declared_string_field_reads_text_and_leaves_absence_and_null_unset(
 
 #[rstest]
 #[case::boolean(Json::Bool(false))]
-#[case::number(Json::Number(7.into()))]
+#[case::number(Json::Number(Number::from(7_i32)))]
 #[case::list(Json::List(Vec::new()))]
 #[case::object(Json::Object(JsonObject::new()))]
 fn a_declared_string_field_names_the_field_for_another_type(#[case] value: Json) {
