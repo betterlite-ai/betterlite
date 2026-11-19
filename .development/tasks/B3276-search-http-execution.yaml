@@ -55,6 +55,7 @@ scope:
   paths:
     - crates/betterlite-core/src/api/search_http.rs
     - crates/betterlite-core/src/api/search_http/**
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-openai/src/search/provider.rs
     - crates/betterlite-openai/src/search/provider/tests.rs
   lint_tables: false
