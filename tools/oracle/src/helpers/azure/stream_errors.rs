@@ -113,8 +113,6 @@ pub(crate) struct ErrorSpec {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SendSpec {
-    #[serde(default = "default_status")]
-    pub(crate) status: u16,
     #[serde(default)]
     pub(crate) headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -126,7 +124,6 @@ pub(crate) struct SendSpec {
 impl Default for SendSpec {
     fn default() -> Self {
         Self {
-            status: default_status(),
             headers: BTreeMap::new(),
             events: Vec::new(),
             body: None,

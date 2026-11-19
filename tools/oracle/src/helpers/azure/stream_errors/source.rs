@@ -60,7 +60,12 @@ pub(super) fn raised_of(spec: &ErrorSpec) -> Raised {
     } else {
         Reported::Absent
     };
-    let mut raised = Raised::raised("ScriptedError", status, message, spec.text.clone());
+    let mut raised = Raised::raised(
+        "ScriptedError".to_owned(),
+        status,
+        message,
+        spec.text.clone(),
+    );
     raised.headers = spec
         .headers
         .value
