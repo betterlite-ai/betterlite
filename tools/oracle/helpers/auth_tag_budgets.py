@@ -215,7 +215,7 @@ class FakePrismaClient(PrismaClient):
 
 
 def tag_of(fields: dict[str, JsonValue]) -> LiteLLM_TagTable:
-    return LiteLLM_TagTable.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/tag.py#L16
+    return LiteLLM_TagTable.model_validate(fields)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/tag.py#L16
 
 
 def tag_view(tag: LiteLLM_TagTable) -> TagView:
@@ -270,7 +270,7 @@ async def tag_answer(call: TagCall) -> Answer:
             call["names"], client if call["database"] else None, fixture.cache()
         )
         return fixture.answer({name: tag_view(tag) for name, tag in found.items()}, {}, None)
-    loaded = await auth_checks._load_tag_registry(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2086
+    loaded = await auth_checks._load_tag_registry(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2086
         prisma_client=client, user_api_key_cache=fixture.cache()
     )
     return fixture.answer({}, {}, None if loaded is None else sorted(loaded))
@@ -291,7 +291,7 @@ async def group_answer(call: GroupCall) -> Answer:
         )
         groups = {name: group_view(budget) for name, budget in found.items()}
         return fixture.answer({}, groups, None)
-    loaded = await auth_checks._load_model_access_group_registry(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2108
+    loaded = await auth_checks._load_model_access_group_registry(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2108
         prisma_client=client, user_api_key_cache=fixture.cache()
     )
     return fixture.answer({}, {}, None if loaded is None else sorted(loaded))
