@@ -13,7 +13,7 @@ description: >-
   discovered auth_header_name. GETs carry no body. JSON writes send Content-Type
   application/json. Compare status, content-type, error type/param/code and the full stable
   response projection the page reads; capture only generated ids, timestamps and the session
-  key. Use B860's per-peer Postgres fixture with B5076's Prisma bootstrap, master key
+  key. Use B860's per-peer Postgres fixture with B9942's Prisma bootstrap, master key
   oracle-master, store_model_in_db true, a fixed proxy_admin, a proxy_admin_viewer and an
   internal_user from the existing key seeds, and the local upstream mock as api_base.
 

@@ -1,0 +1,19 @@
+kind: probe
+name: missing-count-zero
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      least_busy:
+        model_group: gpt
+        shared: true
+        deployments:
+          - {id: a}
+          - {id: b}
+        steps:
+          - {kind: pre_call, call_id: 1, deployment: b}
+          - {kind: pre_call, call_id: 2, deployment: a, call_type: aretrieve_batch}
+          - {kind: select}
+          - {kind: shared}
+compare:
+  ignore: []

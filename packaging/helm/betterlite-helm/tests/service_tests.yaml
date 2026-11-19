@@ -1,0 +1,62 @@
+suite: service
+templates:
+  - service.yaml
+tests:
+  - it: creates a ClusterIP Service on the proxy port by default
+    asserts:
+      - isKind: { of: Service }
+      - equal: { path: apiVersion, value: v1 }
+      - equal: { path: metadata.name, value: RELEASE-NAME-betterlite }
+      - equal: { path: spec.type, value: ClusterIP }
+      - equal: { path: 'spec.ports[0]', value: { port: 4000, targetPort: http, protocol: TCP, name: http } }
+      - notExists: { path: spec.loadBalancerClass }
+      - notExists: { path: metadata.annotations }
+
+  - it: selects the deployment's pods
+    asserts:
+      - equal: { path: spec.selector, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME } }
+
+  - it: carries the chart labels
+    asserts:
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/managed-by"]', value: Helm }
+
+  - it: creates a NodePort Service when asked
+    set: { service: { type: NodePort } }
+    asserts:
+      - equal: { path: spec.type, value: NodePort }
+      - notExists: { path: spec.loadBalancerClass }
+
+  - it: creates a LoadBalancer Service when asked
+    set: { service: { type: LoadBalancer } }
+    asserts:
+      - equal: { path: spec.type, value: LoadBalancer }
+      - notExists: { path: spec.loadBalancerClass }
+
+  - it: sets loadBalancerClass on a LoadBalancer Service
+    set: { service: { type: LoadBalancer, loadBalancerClass: tailscale } }
+    asserts:
+      - equal: { path: spec.loadBalancerClass, value: tailscale }
+
+  - it: leaves loadBalancerClass out of a ClusterIP Service
+    set: { service: { type: ClusterIP, loadBalancerClass: tailscale } }
+    asserts:
+      - equal: { path: spec.type, value: ClusterIP }
+      - notExists: { path: spec.loadBalancerClass }
+
+  - it: follows the configured proxy port
+    set: { service: { port: 8080 } }
+    asserts:
+      - equal: { path: 'spec.ports[0].port', value: 8080 }
+
+  - it: adds the Service annotations from values
+    set:
+      service:
+        annotations:
+          cloud.google.com/load-balancer-type: Internal
+          service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value: { cloud.google.com/load-balancer-type: Internal, service.beta.kubernetes.io/aws-load-balancer-internal: "true" }

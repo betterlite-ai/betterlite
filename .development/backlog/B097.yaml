@@ -2,7 +2,7 @@ id: B097
 milestone: M5 api families
 title: RAG ingestion and query
 status: todo
-depends_on: [B3457, B3460, B3461, B3463, B3464, B3465, B7170, B7171, B1601, B8610, B8775, B9850]
+depends_on: [B3457, B3460, B3461, B3463, B3464, B3465, B7170, B7171, B1601, B8610, B9850]
 file: tasks/B097-rag-routes-mount.yaml
 covers: []
 parent: null

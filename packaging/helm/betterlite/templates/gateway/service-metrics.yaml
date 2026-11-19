@@ -1,0 +1,14 @@
+{{- if and .Values.gateway.enabled .Values.gateway.metricsServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "betterlite.gateway.fullname" . }}-metrics
+  labels:
+    {{- include "betterlite.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  ports: [{ port: {{ .Values.gateway.metricsServer.port }}, targetPort: metrics, protocol: TCP, name: metrics }]
+  selector:
+    {{- include "betterlite.gateway.selectorLabels" . | nindent 4 }}
+{{- end }}

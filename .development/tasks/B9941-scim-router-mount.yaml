@@ -1,0 +1,147 @@
+id: B9941
+title: Mount the SCIM router once and seed SCIM rows in the Postgres fixture
+description: >-
+  Nothing serves /scim/v2 on main. crates/betterlite-server/src/scim.rs is empty, routes.rs never merges a SCIM
+  router, and B064 owned the mount while depending on every route set it mounts, so none of the SCIM parts could
+  pass its HTTP oracle cases first. The Postgres fixture also cannot write the columns those cases compare: FixtureSeed
+  is deny_unknown_fields and has no created_at, members_with_roles, sso_user_id or key blocked state. This task mounts
+  the SCIM router once with a stub per route set and adds a SCIM seed, so each part only fills its own module.
+
+
+  1. Route-set stubs. Six SCIM modules already exist as empty files that lib.rs declares. Give each one the stub that
+  crates/betterlite-server/src/routes/team_lists.rs is on main, copied as it stands: the imports, the
+  `#[cfg_attr(test, mutants::skip)]` attribute, `pub(crate) fn routes(_state: &Arc<ServerState>) -> Router`, the one
+  comment line and the empty `Router::new()` body. The files are scim_user_lifecycle.rs (B1638),
+  scim_user_patch.rs (B1639), scim_group_lifecycle.rs (B1640), scim_directory_reads.rs (B1641), scim_discovery.rs
+  (B1642) and scim_placeholder_repair.rs (B1643) under crates/betterlite-server/src/. B064's PATCH
+  /scim/v2/Groups/{group_id} gets a seventh stub of the same shape in crates/betterlite-server/src/scim/group_patch.rs,
+  declared as `mod group_patch;` in scim.rs. An empty router registers nothing, so every SCIM path keeps answering
+  the existing Not Found fallback, `{"detail":"Not Found"}` with 404, until its owner fills the module.
+
+
+  2. The router. scim.rs defines `pub(crate) fn scim_router(state: &Arc<ServerState>) -> Router` that starts from
+  `Router::new()` and calls `.merge(<module>::routes(state))` once for each of the seven stubs. Each part registers
+  its full LiteLLM path (/scim/v2/Users, /scim/v2/Groups/{group_id} and so on), and B1642 registers both discovery
+  base aliases, /scim/v2 and /scim/v2/, as two routes, so the merge keeps them apart and adds no prefix. LiteLLM's
+  APIRouter adds a premium-user dependency to every SCIM route; betterlite has no paid tier, so scim_router adds no
+  license check (see deviations). The B052 credential checks still apply because the router sits behind the auth
+  layers below.
+
+
+  3. The mount. In routes.rs, import scim_router and add `.merge(scim_router(&state))` right after
+  `.merge(stub_router!(&state))` in router(), so the SCIM paths run through the same auth_route_patterns and
+  route_match stages as every other route. That is the only change to routes.rs. Add scim/tests.rs with
+  `unserved_scim_path_answers_not_found`, an rstest over GET /scim/v2/Bulk and GET /scim/v2/Me (paths LiteLLM never
+  registers, so the test stays true after the parts land): it builds router() with routes::tests::state_for and
+  routes::tests::empty_config, the way routes::tests::stub_routes_answer_not_found does, and asserts 404 with the Not
+  Found body. Building the router also proves the seven merges register no path twice. Do not assert anything about
+  a path a part will serve.
+
+
+  4. The SCIM seed. Add a `scim: Option<ScimSeed>` field to FixtureSeed, laid out the way the finops seed is: its own
+  module tools/postgres-fixture/src/scim.rs with scim/**, its `pub mod scim;` line in lib.rs, the field in seed.rs,
+  a `validate` call in validate_extensions, an error variant in error.rs wrapping the module's own error enum, the
+  seed call in seed_sql.rs seed_extensions, and `scim: None` in the FixtureSeed literals that spell every field
+  (daily_usage/tests.rs, dashboard/tests.rs and dashboard_governance/tests/support.rs). ScimSeed holds three
+  deny_unknown_fields lists that change rows the base seed already inserted, with UPDATE statements run after
+  seed_keys, the way finops's TEAM_METADATA_UPDATE does. The fields are what the SCIM parts' cases compare.
+  `users`, keyed by user_id: created_at and updated_at (chrono NaiveDateTime from serde, bound as text and cast with
+  `::text::timestamp(3)`), user_alias, sso_user_id (an empty string is a real value, B1643 refuses it), user_role
+  (the existing CallerRole), teams (the TEXT[] column) and metadata. `teams`, keyed by team_id: created_at,
+  updated_at, members_with_roles, members (the legacy TEXT[] column B1638's DELETE edits) and metadata. `keys`,
+  keyed by the raw token like finops's KeyMetadataRow: blocked (`Option<bool>`: the column is nullable and LiteLLM's block query
+  matches NULL and false as two cases) and metadata (LiteLLM marks SCIM-blocked keys with "scim_blocked": true).
+  members_with_roles is a typed list of `{user_id, user_email, role}`, LiteLLM's Member model: both ids
+  optional and role an enum of admin and user, written as a JSON array with `$n::text::jsonb`. Every metadata value is
+  `BTreeMap<String, JsonPayload>` with dashboard::payload::JsonPayload, never serde_json::Value. Compare tokens with
+  finops::model's secret_eq, widened to pub(crate), rather than a second copy. Validation refuses an overlay row whose
+  user_id, team_id or token the base seed lacks, a row that repeats an earlier one, and a user_role that disagrees
+  with a role a key row already gives that user. It does not check the user ids inside members_with_roles or the
+  team ids inside users.teams: B1641 seeds a roster member with no user row on purpose. Tests in scim/tests.rs decode
+  each refusal and seed a database, then read every overlaid column back.
+
+
+  Budget: about 90 lines for the stubs, scim.rs and routes.rs, 40 for the mount test, 230 for the seed and its
+  validation, and 260 for seed tests, within 700.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/scim.rs
+    - crates/betterlite-server/src/scim/tests.rs
+    - crates/betterlite-server/src/scim/group_patch.rs
+    - crates/betterlite-server/src/scim_user_lifecycle.rs
+    - crates/betterlite-server/src/scim_user_patch.rs
+    - crates/betterlite-server/src/scim_group_lifecycle.rs
+    - crates/betterlite-server/src/scim_directory_reads.rs
+    - crates/betterlite-server/src/scim_discovery.rs
+    - crates/betterlite-server/src/scim_placeholder_repair.rs
+    - tools/postgres-fixture/src/scim.rs
+    - tools/postgres-fixture/src/scim/**
+    - tools/postgres-fixture/src/lib.rs
+    - tools/postgres-fixture/src/seed.rs
+    - tools/postgres-fixture/src/error.rs
+    - tools/postgres-fixture/src/seed_sql.rs
+    - tools/postgres-fixture/src/finops/model.rs
+    - tools/postgres-fixture/src/daily_usage/tests.rs
+    - tools/postgres-fixture/src/dashboard/tests.rs
+    - tools/postgres-fixture/src/dashboard_governance/tests/support.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L266
+    why: The /scim/v2 prefix and the premium-user dependency the betterlite router leaves out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L281-L286
+    why: LiteLLM includes scim_router in the app once, on the first /scim request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1407-L1417
+    why: The two discovery base aliases, "" and "/" under the prefix, that the merge must keep as separate routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L991-L1058
+    why: Key blocking reads blocked as NULL, false or true and marks SCIM blocks with the scim_blocked metadata key, which the key overlay seeds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1610-L1616
+    why: User directory reads order by created_at descending, so cases need distinct seeded timestamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L19-L42
+    why: A Member has optional user_id and user_email and a role of admin or user; members_with_roles holds a list of these.
+dod:
+  - text: scim_router merges the six route-set stubs and the group-patch stub, and routes.rs merges scim_router exactly once in router() before the auth layers.
+    proof: [scim-mount, scim-mount-tests]
+  - text: The merged router builds, and a /scim/v2 path no part serves answers the Not Found fallback.
+    proof: [scim-mount-tests]
+  - text: The fixture's scim seed writes the listed user, team and key columns onto seeded rows, reads them back from Postgres, and refuses overlays that name missing or repeated rows or a conflicting role.
+    proof: [scim-seed-tests]
+checks:
+  optional: []
+  commands:
+    - id: scim-mount
+      why: routes.rs does not merge scim_router once, or a route-set stub is missing or not merged in scim.rs, so a SCIM part would have to edit scim.rs or routes.rs.
+      run: |-
+        test "$(grep -cF 'scim_router(&state)' crates/betterlite-server/src/routes.rs)" = 1 || { echo "routes.rs must merge scim_router exactly once"; exit 1; }
+        for module in scim_user_lifecycle scim_user_patch scim_group_lifecycle scim_directory_reads scim_discovery scim_placeholder_repair scim/group_patch; do
+          name=${module#scim/}
+          if ! grep -qF 'pub(crate) fn routes(' "crates/betterlite-server/src/$module.rs" || ! grep -qF "$name::routes(state)" crates/betterlite-server/src/scim.rs; then
+            echo "route set $module is not a merged stub"
+            exit 1
+          fi
+        done
+    - id: scim-mount-tests
+      why: The SCIM merge panics on a duplicate path, or an unserved SCIM path stops answering the Not Found fallback.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim::tests::/)'
+    - id: scim-seed-tests
+      why: The Postgres fixture cannot seed or refuse the SCIM user, team and key columns.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^scim::/)'
+oracle_cases: []
+deviations:
+  - what: Authenticated SCIM requests reach provisioning and discovery without a license; stock open-source LiteLLM answers them with HTTP 403 from its premium-user dependency.
+    why: The README makes every MIT feature available to every deployment and has no paid tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L266
+out_of_scope:
+  - "Every SCIM handler: B1638 user lifecycle, B1639 user PATCH, B1640 group lifecycle, B1641 directory reads, B1642 discovery, B1643 placeholder repair and B064 group PATCH. Each fills its own stub and leaves scim.rs and routes.rs as they are."
+  - "The Prisma client the oracle's LiteLLM needs to boot on a case database is B9942; the database handle betterlite routes read (shared.db) is B8610."
+  - "SCIM_MAX_PAGE_SIZE at scim_v2.py L268 is B1641's, and every handler range is listed by owner in B064's out_of_scope."
+pitfalls:
+  - Merge, never nest. The parts register full /scim/v2 paths, so `Router::nest("/scim/v2", ...)` would double the prefix and hide every route.
+  - Axum joins methods on one path only when the parameter names match; the parts must all use LiteLLM's {user_id} and {group_id}, so the stubs carry no paths that could fix a different name.
+  - A stub routes function has a one-line body because its owner replaces it; do not prefill it with paths or handlers, and keep the `mutants::skip` attribute team_lists.rs carries.
+  - The base seed inserts users and teams with default created_at, which both gateways see as different times; only the scim overlay sets them, and only through UPDATE after the base inserts.
+  - members_with_roles defaults to '{}' in the baseline schema, but LiteLLM writes a JSON array, so the overlay always writes an array, even an empty one.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security
