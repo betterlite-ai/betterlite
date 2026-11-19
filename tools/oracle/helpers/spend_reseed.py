@@ -65,7 +65,9 @@ class Row:
 
 
 def as_utc(moment: datetime) -> datetime:
-    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+    if moment.tzinfo is not None:
+        return moment
+    return moment.replace(tzinfo=UTC)
 
 
 def scripted_amount(answer: JsonValue) -> float | None:
@@ -130,7 +132,9 @@ class ScriptedMemory(InMemoryCache):
         self.values: dict[str, float] = {}
 
     def current(self, key: str) -> float | None:
-        return self.values.get(key, self.initial)
+        if key in self.values:
+            return self.values[key]
+        return self.initial
 
     @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> float | None:

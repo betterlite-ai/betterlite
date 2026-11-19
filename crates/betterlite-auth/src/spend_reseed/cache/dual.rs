@@ -67,7 +67,7 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         &self,
         counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        ready(read_memory(&self.in_memory_cache, counter_key))
+        ready(read_memory(self.in_memory_cache.as_ref(), counter_key))
     }
 
     fn memory_set(
@@ -103,10 +103,13 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
     }
 }
 
-fn read_memory<Memory: MemoryCacheOps>(
+fn read_memory<Memory>(
     cache: &Memory,
     counter_key: &str,
-) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
+) -> Result<Option<ReseedCacheValue>, ReseedCacheError>
+where
+    Memory: MemoryCacheOps,
+{
     let stored = cache
         .get_cache(counter_key)
         .map_err(ReseedCacheError::Memory)?;

@@ -75,10 +75,6 @@ async fn increment(input: &Input, counter: &Counters, cache: &FakeCache) -> Amou
         .map_err(failure)
 }
 
-fn counter_entity(input: &Input) -> CounterEntityType {
-    CounterEntityType::from_litellm_name(&input.entity).unwrap_or(CounterEntityType::Tag)
-}
-
 #[derive(Clone, Copy)]
 enum WindowOp {
     Table,
@@ -98,7 +94,8 @@ fn window_query<'input>(
 }
 
 async fn window(input: &Input, counter: &Counters, op: WindowOp) -> Amount {
-    let entity = counter_entity(input);
+    let entity =
+        CounterEntityType::from_litellm_name(&input.entity).unwrap_or(CounterEntityType::Tag);
     match op {
         WindowOp::Table => {
             let Some(duration) = input.duration.as_deref() else {
