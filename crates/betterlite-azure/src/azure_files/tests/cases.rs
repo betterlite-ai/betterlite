@@ -189,7 +189,7 @@ fn upload_logs() {
         !sync_run
             .messages
             .iter()
-            .any(|line| line.contains("Azure file create")),
+            .any(|line| line.contains(DEBUG_CREATE) || line.contains(DEBUG_RESPONSE)),
         "the sync path logs neither record"
     );
 }

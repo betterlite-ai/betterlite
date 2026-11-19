@@ -188,8 +188,7 @@ def client_step(step: Step, client: SdkClient | None, *, is_async: bool) -> Json
     if built is None:
         raise ValueError(CLIENT_MISSING)
     read: float | None = None
-    # mypy's attribute lookup on the client union treats the client classes as timeout values
-    match built.timeout:  # type: ignore[exhaustive-match]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
+    match built.timeout:
         case httpx.Timeout():
             read = built.timeout.read
         case float() | int() | None as seconds:
