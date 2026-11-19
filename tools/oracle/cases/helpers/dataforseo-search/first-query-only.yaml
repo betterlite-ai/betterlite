@@ -1,0 +1,11 @@
+kind: helper
+name: first_query_only
+call:
+  dataforseo_search:
+    calls:
+      - {kind: request, query: ["first keyword", "second keyword"], optional_params: {}}
+      - {kind: request, query: ["only"], optional_params: {}}
+      - {kind: request, query: [], optional_params: {}}
+      - {kind: request, query: plain, optional_params: {}}
+env: {}
+compare: {ignore: []}
