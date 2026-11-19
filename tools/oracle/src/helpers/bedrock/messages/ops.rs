@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::future::ready;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -107,7 +109,7 @@ fn messages_environment(
 }
 
 fn complete_url(call: &InvokeUrl) -> Result<InvokeModelUrl, Box<HelperError>> {
-    messages_complete_url(MessagesEndpoint {
+    messages_complete_url(&MessagesEndpoint {
         api_base: call.api_base.as_deref(),
         model: &call.model,
         optional_params: &call.optional_params,
@@ -151,7 +153,7 @@ fn signed_request(
     let runtime = Builder::new_current_thread().build().map_err(failure)?;
     runtime
         .block_on(sign_messages_request(request, move |_settings, _region| {
-            std::future::ready(Ok::<_, CredentialError>(credentials))
+            ready(Ok::<_, CredentialError>(credentials))
         }))
         .map_err(failure)
 }
@@ -214,15 +216,15 @@ fn event_stream(call: &EventStream) -> HelperResult {
         .iter()
         .map(|chunk| hex::decode(chunk).map_err(failure))
         .collect::<Result<Vec<_>, _>>()?;
-    let chunks =
-        futures_util::stream::iter(chunks.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed();
+    let response_chunks =
+        stream::iter(chunks.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed();
     let redactor = Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?);
     let mut stream = messages_sse_stream(
         MessagesStreamRequest {
             response_headers: call.response_headers.clone(),
             redactor,
         },
-        chunks,
+        response_chunks,
     );
     let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let answer = runtime.block_on(async {
