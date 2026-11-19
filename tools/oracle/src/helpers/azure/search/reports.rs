@@ -8,8 +8,6 @@ use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::helper::HelperResult;
-
 use super::Input;
 use super::fixtures::{FixtureMinter, settings};
 use super::scenarios::{
@@ -17,16 +15,16 @@ use super::scenarios::{
     RequestInput, RequestScenario, SettingsInput, UrlScenario,
 };
 
-pub(super) fn run(input: &Input) -> HelperResult {
+pub(super) fn run(input: &Input) -> Value {
     match input {
-        Input::Request(scenarios) => Ok(request_report(scenarios)),
-        Input::Headers(scenarios) => Ok(header_report(scenarios)),
-        Input::MaxResults(scenarios) | Input::Cap(scenarios) => Ok(pair_report(scenarios)),
-        Input::Settings(scenarios) => Ok(settings_report(scenarios)),
+        Input::Request(scenarios) => request_report(scenarios),
+        Input::Headers(scenarios) => header_report(scenarios),
+        Input::MaxResults(scenarios) | Input::Cap(scenarios) => pair_report(scenarios),
+        Input::Settings(scenarios) => settings_report(scenarios),
         Input::Citations(scenarios)
         | Input::Reply(scenarios)
         | Input::Error(scenarios)
-        | Input::Price(scenarios) => Ok(reply_report(scenarios)),
+        | Input::Price(scenarios) => reply_report(scenarios),
     }
 }
 

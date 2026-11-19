@@ -28,6 +28,6 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        reports::run(input)
+        Ok(reports::run(input))
     }
 }
