@@ -62,20 +62,6 @@ impl RowName for ModelAccessGroupBudgetRow {
 
 // Prisma's absent take means no limit, and Postgres returns the same rows for the largest row count.
 const NO_TAKE: i64 = i64::MAX;
-const NO_LIMIT: Option<i64> = None;
-
-const fn keyed_sql(
-    action: KeyAction<'_, ()>,
-    one: &'static str,
-    delete: &'static str,
-    update: &'static str,
-) -> &'static str {
-    match action {
-        KeyAction::Find => one,
-        KeyAction::Delete => delete,
-        KeyAction::Update(()) => update,
-    }
-}
 
 fn matched<'query>(
     filter: Option<&'query Vec<String>>,
@@ -84,7 +70,7 @@ fn matched<'query>(
     with_take: [&'static str; 2],
     in_list: [&'static str; 2],
 ) -> Query<'query> {
-    let take = limit.unwrap_or(&NO_TAKE);
+    let take = limit.as_ref().unwrap_or(&NO_TAKE);
     let Some(names) = filter else {
         return Query {
             sql: if with_budget {
@@ -118,7 +104,7 @@ macro_rules! budget_table {
             type Error = RowError;
 
             fn decode(&self, row: &Row) -> Result<Option<Self::Model>, Self::Error> {
-                let text = row
+                let text: String = row
                     .try_get(0)
                     .map_err(|driver| RowError::Column(DriverError { driver }))?;
                 serde_json::from_str(&text)
@@ -148,7 +134,7 @@ macro_rules! budget_table {
                 self.including(
                     IncludingQuery::Listed {
                         filter: options.filter.and_then(|filters| filters.first()),
-                        limit: &NO_LIMIT,
+                        limit: &None,
                     },
                     None,
                 )
@@ -174,7 +160,7 @@ macro_rules! budget_table {
         }
 
         impl Including for $table {
-            type Include = BudgetInclude;
+            type Include = super::BudgetInclude;
 
             fn including<'query>(
                 &'query self,
@@ -184,10 +170,14 @@ macro_rules! budget_table {
                 let with_budget = include.is_some_and(|selected| selected.litellm_budget_table);
                 match query {
                     IncludingQuery::Keyed { action, key } => Query {
-                        sql: keyed_sql(action, $one, $delete, $update),
+                        sql: match action {
+                            KeyAction::Find => $one,
+                            KeyAction::Delete => $delete,
+                            KeyAction::Update(()) => $update,
+                        },
                         parameters: vec![key.value],
                     },
-                    IncludingQuery::Listed { filter, limit } => matched(
+                    IncludingQuery::Listed { filter, limit } => super::matched(
                         filter,
                         limit,
                         with_budget,
@@ -200,8 +190,6 @@ macro_rules! budget_table {
         }
     };
 }
-
-pub(crate) use budget_table;
 
 pub mod group;
 pub mod tag;
