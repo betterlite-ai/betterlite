@@ -47,7 +47,11 @@ impl PostgresSpendReportStore {
             .query(sql, &params)
             .await
             .map_err(|source| ReportError::Database(backend(source)))?;
-        rows.iter().map(Record::try_from).collect()
+        let mut records = Vec::with_capacity(rows.len());
+        for row in &rows {
+            records.push(Record::try_from(row)?);
+        }
+        Ok(records)
     }
 }
 
@@ -97,11 +101,13 @@ fn text(row: &Row, column: &'static str) -> Result<Option<String>, ReportError> 
         .map_err(|source| ReportError::Database(backend(source)))
 }
 
-// SUM is numeric, so the query casts it to text and the row parses it into a Decimal.
+// SUM is double precision, so the query casts it to text and the row parses it into a Decimal.
 fn spend(row: &Row) -> Result<Decimal, ReportError> {
-    let column = "spend_text";
     let text: String = row
-        .try_get(column)
+        .try_get("spend_text")
         .map_err(|source| ReportError::Database(backend(source)))?;
-    Decimal::from_str(&text).map_err(|source| ReportError::Spend { column, source })
+    Decimal::from_str(&text).map_err(|source| ReportError::Spend {
+        column: "spend_text",
+        source,
+    })
 }
