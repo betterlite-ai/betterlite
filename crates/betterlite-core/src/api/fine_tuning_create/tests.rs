@@ -488,7 +488,9 @@ fn azure_settings() -> ResourceSdkSettings {
 }
 
 async fn azure_selection() {
-    let (outcome, calls) = ran(azure_settings(), &base_call("azure")).await;
+    let mut settings = azure_settings();
+    settings.organization = Some("org-azure".to_owned());
+    let (outcome, calls) = ran(settings, &base_call("azure")).await;
     outcome.expect("the provider answered");
     let target = azure_target(calls);
     assert_eq!(
@@ -497,6 +499,7 @@ async fn azure_selection() {
     );
     assert_eq!(target.api_version.as_deref(), Some("2023-05-01"));
     assert_eq!(target.api_key.as_ref().map(secret), Some("azure-settings"));
+    assert_eq!(target.organization.as_deref(), Some("org-azure"));
 }
 
 async fn azure_fallthrough() {
