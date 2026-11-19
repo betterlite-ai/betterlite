@@ -48,17 +48,14 @@ pub(super) fn url(
     complete_url(api_base, model, &invoke_params(params), globals).expect("the mantle url resolves")
 }
 
-fn region_globals(region: &str) -> MantleGlobals {
-    MantleGlobals {
-        aws_region_name: Some(region.to_owned()),
-        ..MantleGlobals::default()
-    }
-}
-
 fn base_globals(base: &str) -> MantleGlobals {
     MantleGlobals {
+        mantle_api_key: None,
         mantle_api_base: Some(base.to_owned()),
-        ..MantleGlobals::default()
+        mantle_region: None,
+        aws_bearer_token: None,
+        aws_region_name: None,
+        aws_region: None,
     }
 }
 
@@ -88,104 +85,84 @@ fn prompt_messages() -> Vec<ParamJson> {
 }
 
 pub(super) fn mantle_chat_url() {
-    chat_url_cases();
+    url_cases();
+    url_error_cases();
     chat_environment_cases();
 }
 
-fn chat_url_cases() {
-    chat_url_regions();
-    chat_url_endpoints();
-    chat_url_errors();
-}
+type UrlRow = (
+    Option<&'static str>,
+    &'static str,
+    &'static str,
+    &'static str,
+);
 
-fn chat_url_regions() {
-    let globals = MantleGlobals::default();
-    assert_eq!(
-        url(None, "claude", "{}", &globals),
-        "https://bedrock-mantle.us-west-2.api.aws/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            r#"{"aws_region_name":"eu-west-1"}"#,
-            &globals
-        ),
-        "https://bedrock-mantle.eu-west-1.api.aws/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "arn:aws:bedrock:ap-south-1:123:inference-profile/x",
-            "{}",
-            &region_globals("eu-west-1")
-        ),
-        "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(None, "claude", "{}", &region_globals("ca-central-1")),
-        "https://bedrock-mantle.ca-central-1.api.aws/anthropic/v1/messages"
-    );
-}
-
-fn chat_url_endpoints() {
-    let globals = MantleGlobals::default();
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            r#"{"aws_bedrock_runtime_endpoint":"https://runtime.test/"}"#,
-            &globals
-        ),
-        "https://runtime.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            Some("https://proxy.test"),
-            "claude",
-            r#"{"aws_bedrock_runtime_endpoint":"https://runtime.test"}"#,
-            &globals
-        ),
-        "https://proxy.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            Some("https://proxy.test/anthropic/v1/messages"),
-            "claude",
-            "{}",
-            &globals
-        ),
-        "https://proxy.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            "{}",
-            &base_globals("https://mantle.test/v1")
-        ),
-        "https://mantle.test/anthropic/v1/messages"
-    );
-}
-
-fn chat_url_errors() {
-    let globals = MantleGlobals::default();
-    let error = complete_url(
+// Both configs share B591/B690, so one table proves the region and endpoint rules for the chat surface too.
+const URL_ROWS: &[UrlRow] = &[
+    (
         None,
         "claude",
-        &invoke_params(r#"{"aws_region_name":"US WEST"}"#),
-        &globals,
-    )
-    .expect_err("the region is invalid");
-    assert_eq!(error.to_string(), "invalid AWS region format: US WEST");
-    let error = complete_url(
+        "{}",
+        "https://bedrock-mantle.us-west-2.api.aws",
+    ),
+    (
         None,
         "claude",
-        &invoke_params(r#"{"aws_region_name":5}"#),
-        &globals,
-    )
-    .expect_err("the region must be a string");
-    assert_eq!(error.to_string(), "field aws_region_name is not a string");
+        r#"{"aws_region_name":"eu-west-1"}"#,
+        "https://bedrock-mantle.eu-west-1.api.aws",
+    ),
+    (
+        None,
+        "arn:aws:bedrock:ap-south-1:123:inference-profile/x",
+        "{}",
+        "https://bedrock-mantle.ap-south-1.api.aws",
+    ),
+    (
+        None,
+        "claude",
+        r#"{"aws_bedrock_runtime_endpoint":"https://runtime.test/"}"#,
+        "https://runtime.test",
+    ),
+    (
+        Some("https://proxy.test/"),
+        "claude",
+        "{}",
+        "https://proxy.test",
+    ),
+];
+
+fn url_cases() {
+    url_rows(&MantleGlobals::default(), URL_ROWS);
+    url_rows(
+        &base_globals("https://mantle.test/v1"),
+        &[(None, "claude", "{}", "https://mantle.test")],
+    );
+}
+
+fn url_rows(globals: &MantleGlobals, rows: &[UrlRow]) {
+    for (api_base, model, params, base) in rows {
+        let expected = format!("{base}/anthropic/v1/messages");
+        assert_eq!(url(*api_base, model, params, globals), expected);
+    }
+}
+
+fn url_error_cases() {
+    let globals = MantleGlobals::default();
+    let rows = [
+        (
+            r#"{"aws_region_name":"US WEST"}"#,
+            "invalid AWS region format: US WEST",
+        ),
+        (
+            r#"{"aws_region_name":5}"#,
+            "field aws_region_name is not a string",
+        ),
+    ];
+    for (params, message) in rows {
+        let error = complete_url(None, "claude", &invoke_params(params), &globals)
+            .expect_err("the region setting is invalid");
+        assert_eq!(error.to_string(), message);
+    }
 }
 
 fn chat_environment_cases() {
@@ -257,74 +234,9 @@ fn chat_guardrail_headers(policy: &BedrockRequestPolicy) -> IndexMap<String, Str
 }
 
 pub(super) fn mantle_message_url() {
-    message_url_cases();
+    url_cases();
+    url_error_cases();
     message_environment_cases();
-}
-
-fn message_url_cases() {
-    message_url_regions();
-    message_url_endpoints();
-}
-
-fn message_url_regions() {
-    let globals = MantleGlobals::default();
-    assert_eq!(
-        url(None, "mantle/claude", "{}", &globals),
-        "https://bedrock-mantle.us-west-2.api.aws/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            r#"{"aws_region_name":"eu-west-1"}"#,
-            &globals
-        ),
-        "https://bedrock-mantle.eu-west-1.api.aws/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "arn:aws:bedrock:ap-south-1:123:inference-profile/x",
-            "{}",
-            &region_globals("eu-west-1")
-        ),
-        "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1/messages"
-    );
-}
-
-fn message_url_endpoints() {
-    let globals = MantleGlobals::default();
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            r#"{"aws_bedrock_runtime_endpoint":"https://runtime.test"}"#,
-            &globals
-        ),
-        "https://runtime.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(Some("https://proxy.test/"), "claude", "{}", &globals),
-        "https://proxy.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            Some("https://proxy.test/anthropic/v1/messages"),
-            "claude",
-            "{}",
-            &globals
-        ),
-        "https://proxy.test/anthropic/v1/messages"
-    );
-    assert_eq!(
-        url(
-            None,
-            "claude",
-            "{}",
-            &base_globals("https://mantle.test/openai/v1")
-        ),
-        "https://mantle.test/anthropic/v1/messages"
-    );
 }
 
 fn message_environment_cases() {
@@ -421,8 +333,7 @@ pub(super) fn beta_header_not_body() {
     restored_message_copy_semantics();
 }
 
-// The bedrock mapping nulls structured-outputs-2025-11-13, so the token surviving proves the transform filters
-// the list under AmazonMantleMessagesConfig's bedrock_mantle provider rather than the parent's bedrock one.
+// The bedrock mapping nulls this token, so it surviving proves the filter ran under bedrock_mantle.
 fn beta_provider_is_mantle() {
     let fixture = Fixture::new();
     let mut session = MessagesSession::new(&fixture);
@@ -450,56 +361,48 @@ fn beta_provider_is_mantle() {
 fn moved_betas_through_transform() {
     let fixture = Fixture::new();
     let mut session = MessagesSession::new(&fixture);
-    moved_tool_search_betas(&mut session);
-    moved_quiet_betas(&mut session);
-}
-
-fn moved_tool_search_betas(session: &mut MessagesSession<'_>) {
-    let mut headers = IndexMap::new();
-    headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
-    headers.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
-    let call = messages_call(
+    let (headers, body) = beta_round(
+        &mut session,
         "mantle/fixture-tool-search",
-        USER_MESSAGES,
         BETA_PARAMS,
         r#"{"anthropic-beta":"advanced-tool-use-2025-11-20"}"#,
     );
-    let body = session
-        .transform(&call, &mut headers)
-        .expect("the beta request transforms");
     assert_eq!(
         headers.get("anthropic-beta").map(String::as_str),
         Some(BETA_HEADER)
     );
+    assert_eq!(body.get("model"), Some(&js(r#""fixture-tool-search""#)));
+    let (headers, body) = beta_round(
+        &mut session,
+        "mantle/fixture-plain",
+        r#"{"max_tokens":8,"stream":false}"#,
+        "{}",
+    );
+    assert!(!headers.contains_key("anthropic-beta"));
+    assert!(!body.contains_key("stream"));
+    assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+}
+
+// A round carries the caller's lower-case and upper-case beta headers into one transform.
+fn beta_round(
+    session: &mut MessagesSession<'_>,
+    model: &str,
+    params: &str,
+    request_headers: &str,
+) -> (IndexMap<String, String>, Object) {
+    let mut headers = IndexMap::new();
+    headers.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
+    headers.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
+    let call = messages_call(model, USER_MESSAGES, params, request_headers);
+    let body = session
+        .transform(&call, &mut headers)
+        .expect("the beta request transforms");
     assert_eq!(
         headers.get("Anthropic-Beta").map(String::as_str),
         Some("upper-beta")
     );
     assert!(!body.contains_key("anthropic_beta"));
-    assert!(!body.contains_key("anthropic_version"));
-    assert_eq!(body.get("model"), Some(&js(r#""fixture-tool-search""#)));
-}
-
-fn moved_quiet_betas(session: &mut MessagesSession<'_>) {
-    let mut quiet = IndexMap::new();
-    quiet.insert("anthropic-beta".to_owned(), "caller-beta".to_owned());
-    quiet.insert("Anthropic-Beta".to_owned(), "upper-beta".to_owned());
-    let call = messages_call(
-        "mantle/fixture-plain",
-        USER_MESSAGES,
-        r#"{"max_tokens":8,"stream":false}"#,
-        "{}",
-    );
-    let body = session
-        .transform(&call, &mut quiet)
-        .expect("the plain request transforms");
-    assert!(!quiet.contains_key("anthropic-beta"));
-    assert_eq!(
-        quiet.get("Anthropic-Beta").map(String::as_str),
-        Some("upper-beta")
-    );
-    assert!(!body.contains_key("stream"));
-    assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+    (headers, body)
 }
 
 fn beta_shapes() {
@@ -592,56 +495,39 @@ pub(super) fn model_body_restoration() {
 }
 
 fn restored_model_anywhere() {
-    restored_prefixed_model();
-    restored_plain_model();
-}
-
-fn restored_prefixed_model() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
     let fetcher = MapFetcher::default();
-    let request = fixture.chat_request(
-        "fixture-mantle/plain",
-        prompt_messages(),
-        map_of(r#"{"max_tokens":64}"#),
-    );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
-        .expect("the prefixed model transforms");
-    assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
-    assert_eq!(body.get("max_tokens"), Some(&js("64")));
-    assert_eq!(
-        body.get("anthropic_version"),
-        Some(&js(r#""bedrock-2023-05-31""#))
-    );
-    assert!(!body.contains_key("stream"));
-}
-
-fn restored_plain_model() {
-    let fixture = Fixture::new();
-    let mut session = ChatSession::new(&fixture);
-    let fetcher = MapFetcher::default();
-    let request = fixture.chat_request(
-        "fixture-plain",
-        prompt_messages(),
-        map_of(r#"{"max_tokens":64}"#),
-    );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
-        .expect("the plain model transforms");
-    assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
-    let request = fixture.chat_request(
-        "fixture-plain",
-        prompt_messages(),
-        map_of(r#"{"max_tokens":64,"anthropic_version":"caller-version"}"#),
-    );
-    let body = session
-        .transform(&request, &fetcher, Mode::Sync)
-        .expect("a caller version transforms");
-    assert_eq!(
-        body.get("anthropic_version"),
-        Some(&js(r#""caller-version""#))
-    );
+    let rows = [
+        (
+            "fixture-mantle/plain",
+            r#"{"max_tokens":64}"#,
+            "bedrock-2023-05-31",
+        ),
+        (
+            "fixture-plain",
+            r#"{"max_tokens":64}"#,
+            "bedrock-2023-05-31",
+        ),
+        (
+            "fixture-plain",
+            r#"{"max_tokens":64,"anthropic_version":"caller-version"}"#,
+            "caller-version",
+        ),
+    ];
+    for (model, params, version) in rows {
+        let request = fixture.chat_request(model, prompt_messages(), map_of(params));
+        let body = session
+            .transform(&request, &fetcher, Mode::Sync)
+            .expect("the model restores");
+        assert_eq!(body.get("model"), Some(&js(r#""fixture-plain""#)));
+        assert_eq!(body.get("max_tokens"), Some(&js("64")));
+        assert_eq!(
+            body.get("anthropic_version"),
+            Some(&BodyJson::Text(version.to_owned()))
+        );
+        assert!(!body.contains_key("stream"));
+    }
 }
 
 fn restored_stream_flag() {
@@ -938,63 +824,73 @@ pub(super) const SYNC_MESSAGES: &str = r#"[{"role":"user","content":[
     {"type":"image_url","image_url":{"url":"https://example.test/pic.png"}}
 ]}]"#;
 
+const MEDIA_URLS: &[(&str, &str)] = &[
+    (
+        "http://example.test/pic.png",
+        "data:image/png;base64,iVBORw0KGgo=",
+    ),
+    (
+        "http://example.test/doc.pdf",
+        "data:application/pdf;base64,JVBERi0xLjQK",
+    ),
+];
+
 pub(super) fn remote_url_inlined() {
     let fixture = Fixture::new();
     let mut session = ChatSession::new(&fixture);
-    async_media_inlined(&fixture, &mut session);
-    sync_media_kept(&fixture, &mut session);
-}
-
-fn async_media_inlined(fixture: &Fixture, session: &mut ChatSession<'_>) {
-    let fetcher = MapFetcher::new(&[
-        (
-            "http://example.test/pic.png",
-            "data:image/png;base64,iVBORw0KGgo=",
-        ),
-        (
-            "http://example.test/doc.pdf",
-            "data:application/pdf;base64,JVBERi0xLjQK",
-        ),
-    ]);
-    let request = fixture.chat_request(
-        "fixture-plain",
-        messages_of(MEDIA_MESSAGES),
-        map_of(r#"{"max_tokens":64}"#),
+    let fetcher = MapFetcher::new(MEDIA_URLS);
+    let body = media_body(
+        &fixture,
+        &mut session,
+        &fetcher,
+        MEDIA_MESSAGES,
+        Mode::Async,
     );
-    let body = session
-        .transform(&request, &fetcher, Mode::Async)
-        .expect("the media request transforms");
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "0", "source"]),
-        &js(IMAGE_BODY)
-    );
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "1", "source"]),
-        &js(r#"{"data":"JVBERi0xLjQK","media_type":"application/pdf","type":"base64"}"#)
+    assert_sources(
+        &body,
+        [
+            IMAGE_BODY,
+            r#"{"data":"JVBERi0xLjQK","media_type":"application/pdf","type":"base64"}"#,
+        ],
     );
     assert_eq!(
         fetcher.calls(),
         vec!["http://example.test/pic.png", "http://example.test/doc.pdf"]
     );
+    let quiet = MapFetcher::default();
+    let body = media_body(&fixture, &mut session, &quiet, SYNC_MESSAGES, Mode::Sync);
+    assert!(quiet.calls().is_empty());
+    assert_sources(
+        &body,
+        [
+            r#"{"type":"url","url":"https://files.example.test/f1"}"#,
+            r#"{"type":"url","url":"https://example.test/pic.png"}"#,
+        ],
+    );
 }
 
-fn sync_media_kept(fixture: &Fixture, session: &mut ChatSession<'_>) {
-    let quiet = MapFetcher::default();
+fn media_body(
+    fixture: &Fixture,
+    session: &mut ChatSession<'_>,
+    fetcher: &MapFetcher,
+    messages: &str,
+    mode: Mode,
+) -> Object {
     let request = fixture.chat_request(
         "fixture-plain",
-        messages_of(SYNC_MESSAGES),
+        messages_of(messages),
         map_of(r#"{"max_tokens":64}"#),
     );
-    let body = session
-        .transform(&request, &quiet, Mode::Sync)
-        .expect("the sync request transforms");
-    assert!(quiet.calls().is_empty());
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "0", "source"]),
-        &js(r#"{"type":"url","url":"https://files.example.test/f1"}"#)
-    );
-    assert_eq!(
-        at(&body, &["messages", "0", "content", "1", "source"]),
-        &js(r#"{"type":"url","url":"https://example.test/pic.png"}"#)
-    );
+    session
+        .transform(&request, fetcher, mode)
+        .expect("the media request transforms")
+}
+
+// Both rounds keep the message order, so the sources sit at content 0 and 1.
+fn assert_sources(body: &Object, expected: [&str; 2]) {
+    for (index, source) in expected.iter().enumerate() {
+        let position = index.to_string();
+        let path = ["messages", "0", "content", position.as_str(), "source"];
+        assert_eq!(at(body, &path), &js(source));
+    }
 }

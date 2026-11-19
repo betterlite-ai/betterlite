@@ -73,8 +73,7 @@ const NORMALIZERS: NameNormalizers = NameNormalizers {
     mantle_region_split: split_region_prefix,
 };
 
-// The same map the sibling Bedrock tests use: a plain chat model, tool search, adaptive thinking, effort tiers and
-// native structured output, so the capability branches of the base builder stay reachable.
+// The sibling Bedrock tests' map, so the capability branches of the base builder stay reachable.
 pub(super) const MODEL_COST: &str = r#"{
   "bedrock/fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},
   "fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},

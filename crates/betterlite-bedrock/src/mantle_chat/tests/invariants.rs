@@ -106,9 +106,11 @@ const TOKEN: &str = "fixture-bearer-token";
 fn mantle_claude_secret_safe_failure() {
     let globals = MantleGlobals {
         mantle_api_key: Some(SecretString::from(SECRET)),
+        mantle_api_base: None,
+        mantle_region: None,
         aws_bearer_token: Some(SecretString::from(TOKEN)),
         aws_region_name: Some("us-west-2".to_owned()),
-        ..MantleGlobals::default()
+        aws_region: None,
     };
     let debug = format!("{globals:?}");
     assert!(!debug.contains(SECRET));
