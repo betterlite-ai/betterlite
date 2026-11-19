@@ -6,8 +6,8 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_pricing::deployment::Deployment;
 use crate::wildcard_catalog::Candidate;
 
-// The deployment a lookup selected, beside the model its litellm_params names after a wildcard substitution.
-#[derive(Clone, Debug)]
+// The deployment a lookup selected, beside the model its litellm_params names after a wildcard substitution; it derives no Debug because the spec carries credentials.
+#[derive(Clone)]
 pub struct SelectedDeployment {
     pub deployment: DeploymentSpec,
     pub model: String,
