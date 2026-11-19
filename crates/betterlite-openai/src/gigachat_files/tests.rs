@@ -391,7 +391,7 @@ async fn a_download_without_a_content_type_uses_image_jpeg() {
     assert_eq!(part.content_type.as_deref(), Some("image/jpeg"));
     assert_eq!(
         part.file_name.as_deref(),
-        Some("01234567-89ab-4def-8123-456789abcdef.jpg")
+        Some("01234567-89ab-4def-8123-456789abcdef.jpeg")
     );
 }
 
