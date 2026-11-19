@@ -190,7 +190,7 @@ async fn native_vertex_adapter() {
     assert!(
         capabilities
             .asked
-            .contains(&(MID_SYSTEM.to_owned(), super::PROVIDER.to_owned()))
+            .contains(&(MID_SYSTEM.to_owned(), "vertex_ai".to_owned()))
     );
 }
 
