@@ -52,10 +52,9 @@ impl UsageRoutingV2<'_> {
             batch.read_routing_state(&mut session, &[]).await
         };
         // combined() lays the tpm windows first, and a failed whole read leaves both sides unknown
-        let (tpm, rpm) = match results.usage.as_deref() {
-            Some(values) => (values.get(..tpm_len), values.get(tpm_len..)),
-            None => (None, None),
-        };
+        let (tpm, rpm) = results.usage.as_deref().map_or((None, None), |values| {
+            (values.get(..tpm_len), values.get(tpm_len..))
+        });
         let selection = Selection {
             group: self.group,
             deployments: self.deployments,
@@ -79,8 +78,8 @@ impl UsageRoutingV2<'_> {
         R: Rng,
     {
         let keys = CounterKeys::for_deployments(self.deployments, self.now)?;
-        let tpm = tier.map(|tier| tier.batch_get(&keys.tpm));
-        let rpm = tier.map(|tier| tier.batch_get(&keys.rpm));
+        let tpm = tier.map(|local| local.batch_get(&keys.tpm));
+        let rpm = tier.map(|local| local.batch_get(&keys.rpm));
         let selection = Selection {
             group: self.group,
             deployments: self.deployments,

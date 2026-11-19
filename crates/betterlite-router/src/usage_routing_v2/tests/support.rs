@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::pending;
 use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -211,7 +212,7 @@ impl BatchReadStore for FakeStore {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(keys.iter().map(|key| key.as_ref().to_owned()).collect());
             if self.hang {
-                std::future::pending::<()>().await;
+                pending::<()>().await;
             }
             if self.down {
                 return BatchRead {

@@ -172,7 +172,7 @@ impl Selection<'_> {
         limits.tpm.is_some_and(|limit| tokens > limit)
             || limits
                 .rpm
-                .is_some_and(|limit| requests.is_some_and(|requests| requests >= limit))
+                .is_some_and(|limit| requests.is_some_and(|count| count >= limit))
     }
 }
 
@@ -212,18 +212,15 @@ fn non_numeric(deployment: &DeploymentSpec, field: &'static str) -> LimitError {
 // tpm_values[index] if tpm_values else 0, with a value the dict holds as None staying None.
 fn current(values: Option<&[Option<RouteValue>]>, position: usize) -> Option<i64> {
     match values {
-        None => Some(0),
-        Some(values) if values.is_empty() => Some(0),
-        Some(values) => read(Some(values), position),
+        Some([]) | None => Some(0),
+        Some(list) => read(Some(list), position),
     }
 }
 
 fn read(values: Option<&[Option<RouteValue>]>, position: usize) -> Option<i64> {
-    let Some(value) = values.and_then(|values| values.get(position)) else {
-        return None;
-    };
+    let value = values.and_then(|list| list.get(position))?;
     match value {
-        Some(RouteValue::Counter(value)) => Some(*value),
+        Some(RouteValue::Counter(count)) => Some(*count),
         Some(
             RouteValue::Spend(_)
             | RouteValue::Pin(_)

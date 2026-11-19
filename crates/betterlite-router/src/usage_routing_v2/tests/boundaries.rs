@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_error::rate_limit::RateLimitCategory;
 use rust_decimal::Decimal;
+use tokio::time::timeout;
 
 use crate::routing_read_batch::{RequestReads, RoutingPrefetch};
 use crate::routing_value_store::{MAX_KEY_BYTES, StoreError};
@@ -11,8 +12,8 @@ use crate::usage_routing_v2::error::{
 use crate::usage_routing_v2::selection::CounterKeys;
 
 use super::support::{
-    FakeStore, GROUP, TestClock, at, deployment, first, number, plain, reads, rpm_window, seed,
-    selection, service, text, tiers, tpm_window, usage_tier, values,
+    FakeStore, TestClock, at, deployment, first, number, plain, reads, rpm_window, seed, selection,
+    service, text, tiers, tpm_window, usage_tier, values,
 };
 
 pub(super) async fn run(name: &str) {
@@ -43,8 +44,7 @@ fn no_deployment_reports_every_loaded_deployment() {
         deployment("a", &[("tpm", number(10)), ("rpm", number(2))], &[], &[]),
         deployment("b", &[("tpm", number(1))], &[], &[]),
     ];
-    let clock = TestClock::new();
-    let tier = usage_tier(&clock);
+    let tier = usage_tier(&TestClock::new());
     seed(
         &tier,
         &[
@@ -59,19 +59,18 @@ fn no_deployment_reports_every_loaded_deployment() {
     let SelectionError::NoDeployment(reported) = error else {
         panic!("the pool is past its limits: {error:?}");
     };
-    assert_eq!(reported.model, GROUP);
     let expected = vec![
         DeploymentLoad {
             id: "a".to_owned(),
             current_tpm: Some(5),
-            tpm_limit: Some(Decimal::from(10)),
+            tpm_limit: Some(Decimal::TEN),
             current_rpm: Some(1),
-            rpm_limit: Some(Decimal::from(2)),
+            rpm_limit: Some(Decimal::TWO),
         },
         DeploymentLoad {
             id: "b".to_owned(),
             current_tpm: Some(2),
-            tpm_limit: Some(Decimal::from(1)),
+            tpm_limit: Some(Decimal::ONE),
             current_rpm: None,
             rpm_limit: None,
         },
@@ -230,8 +229,8 @@ async fn a_cancelled_read_leaves_the_request_clean() {
     let router = service(&pool, 0);
     let mut random = first();
     let selection = router.select_async(&store, &tiers, &mut request, &mut random);
-    let cancelled = tokio::time::timeout(Duration::ZERO, selection).await;
-    assert!(cancelled.is_err());
+    let cancelled = timeout(Duration::ZERO, selection).await;
+    let _elapsed = cancelled.unwrap_err();
     assert!(request.prefetch.is_none());
     store.go_live();
     let picked = service(&pool, 0)

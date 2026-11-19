@@ -111,7 +111,7 @@ async fn the_cold_pick_leaves_the_pool_to_the_rng() {
 async fn the_request_tokens_screen_a_cold_deployment() {
     let pool = [deployment(
         "a",
-        &[("tpm", Json::Number(serde_json::Number::from(5)))],
+        &[("tpm", Json::Number(serde_json::Number::from(5_i32)))],
     )];
     let roomy = request_facts(Some(5));
     assert_eq!(pick(&pool, &roomy, &mut Fixed(0)).await.unwrap(), 0);

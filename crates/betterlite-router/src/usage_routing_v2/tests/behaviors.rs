@@ -267,7 +267,10 @@ async fn an_id_with_a_colon_keeps_its_counter() {
 
 fn a_value_of_another_kind_is_unknown() {
     let pool = [plain("a"), plain("b")];
-    let tpm = vec![Some(RouteValue::Spend(Decimal::from(3))), Some(counter(1))];
+    let tpm = vec![
+        Some(RouteValue::Spend(Decimal::from(3_i32))),
+        Some(counter(1)),
+    ];
     let rpm = values(&[None, None]);
     let picked = selection(&pool, Some(&tpm), Some(&rpm), 0)
         .choose(&mut last())
