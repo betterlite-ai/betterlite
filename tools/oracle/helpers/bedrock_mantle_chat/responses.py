@@ -1,8 +1,8 @@
 import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import JsonValue
 
-from .inputs import NativeSseCall, Object, ResponseCall
-from .views import CHAT, CHAT_PROBE, MESSAGES, LoggingStub
+from .views import CHAT, CHAT_PROBE, MESSAGES, NativeSseCall, Object, ResponseCall
 
 
 def native_sse(call: NativeSseCall) -> JsonValue:
@@ -32,7 +32,7 @@ def messages_response(call: ResponseCall) -> JsonValue:
     response = MESSAGES.transform_anthropic_messages_response(
         "claude",
         httpx.Response(call["status"], content=call["body"].encode("utf-8")),
-        LoggingStub(),
+        Logging(),
     )
     outcome: Object = {"response": response}
     return outcome

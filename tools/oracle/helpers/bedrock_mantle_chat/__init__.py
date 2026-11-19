@@ -1,9 +1,13 @@
+import litellm
 from pydantic import JsonValue
 
-from .inputs import Input
 from .responses import messages_response, native_sse
 from .transforms import chat, messages_request
 from .urls import urls
+from .views import Input
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 
 def run(input_value: Input) -> JsonValue:

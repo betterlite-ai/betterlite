@@ -6,8 +6,7 @@ from pydantic import JsonValue
 
 from bedrock_claude_invoke import Fetcher, patched_url_fetchers
 
-from .inputs import ChatCall, MessagesCall, Object
-from .views import CHAT, MESSAGES, OBJECT
+from .views import CHAT, MESSAGES, OBJECT, ChatCall, MessagesCall, Object
 
 
 def messages_request(call: MessagesCall) -> JsonValue:

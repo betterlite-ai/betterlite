@@ -3,8 +3,15 @@ from pydantic import JsonValue
 
 from bedrock_invoke_primitives.stubs import sealed_environment
 
-from .inputs import EnvironmentArgs, Object, UrlCall, UrlCases
-from .views import CHAT, MESSAGES, OBJECT
+from .views import (
+    CHAT,
+    MESSAGES,
+    OBJECT,
+    EnvironmentArgs,
+    Object,
+    UrlCall,
+    UrlCases,
+)
 
 
 def litellm_params_of(call: UrlCall) -> Object:
