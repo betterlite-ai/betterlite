@@ -8,7 +8,7 @@ mod tests;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use std::convert::Infallible;
 use std::error::Error;
 
@@ -18,9 +18,8 @@ use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_session_state::RealtimeStreaming;
 
-// Private helpers borrowing the connection state share the same local future and error type as the send interface.
 pub type SenderFuture<'sender, Output, ConfigError, CallbackError> =
-    LocalBoxFuture<'sender, Result<Output, RealtimeSenderError<ConfigError, CallbackError>>>;
+    BoxFuture<'sender, Result<Output, RealtimeSenderError<ConfigError, CallbackError>>>;
 
 // LiteLLM's socket send boundary: B1006's connection state, B1004's provider config and B2455's guardrail callbacks
 pub struct RealtimeSender<'sender, Config, CallbackError = Infallible>
@@ -33,9 +32,9 @@ where
     pub guardrails: &'sender [&'sender dyn RealtimeGuardrailCallback<Error = CallbackError>],
 }
 
-// The relays depend on this send boundary; its futures stay local because connection callbacks are not Send.
-#[async_trait(?Send)]
-pub trait RealtimeSend {
+// The relays depend on this send boundary; B1125 drives it from axum's upgrade future.
+#[async_trait]
+pub trait RealtimeSend: Send {
     type Error: Error + 'static;
 
     async fn send_to_backend(&mut self, message: &str) -> Result<bool, Self::Error>;

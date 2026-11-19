@@ -1,7 +1,7 @@
 id: B735
 milestone: M4 keys, spend and management
 title: Batch identity and permission prefetch
-status: todo
+status: done
 depends_on: [B002, B4299, B4302, B360, B4327, B4330, B4331, B171, B700, B714, B715, B720, B721, B726, B733, B856, B859, B860, B2310, B2314, B2315, B2316]
 file: tasks/B735-auth-prefetch.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2576

@@ -1,0 +1,28 @@
+kind: helper
+name: auth-prefetch-row-validation-and-stamps
+call:
+  auth_prefetch:
+    op: row_validation
+    refreshed_at: 1234.5
+    rows:
+      - row: team_row
+        value: {team_id: team-1, members: [user-1], admins: []}
+      - row: user_row
+        value: {user_id: user-1, teams: [team-1]}
+      - row: project_row
+        value: {project_id: project-1, team_id: team-1, models: []}
+      - row: membership_row
+        value: {team_id: team-1, user_id: user-1}
+      - row: organization_row
+        value:
+          organization_id: org-1
+          organization_alias: org
+          budget_id: budget-1
+          created_by: creator-1
+          updated_by: updater-1
+      - row: team_row
+        value: {team_id: 42}
+      - row: organization_row
+        value: null
+env: {}
+compare: {ignore: []}

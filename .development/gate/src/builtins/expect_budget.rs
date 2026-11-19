@@ -3,15 +3,15 @@ pub(crate) fn check(
     pin: &str,
     rust_lines: &[String],
     python_lines: &[String],
-    helper_lines: &[String],
+    caller_lines: &[String],
 ) -> Vec<String> {
     let found: Vec<&String> = rust_lines
         .iter()
         .filter(|line| line.contains("#[expect(") || line.contains("#![expect("))
         .chain(python_lines.iter().filter(|line| suppresses(line)))
-        // an oracle helper's suppression that LiteLLM forces, shown by a link at the pinned commit, is free (Max, 11-15)
+        // a suppression LiteLLM forces in the oracle code that calls it, shown by a link at the pinned commit, is free (Max, 11-15 helpers, 11-19 sdk_http)
         .chain(
-            helper_lines
+            caller_lines
                 .iter()
                 .filter(|line| suppresses(line) && !line.contains(pin)),
         )

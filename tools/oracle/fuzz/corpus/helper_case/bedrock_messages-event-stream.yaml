@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-messages-event-stream-seed
+call:
+  bedrock_messages:
+    function: event_stream
+    chunks: ["00"]
+    response_headers: {content-type: application/vnd.amazon.eventstream}
+env: {}
+compare: {ignore: []}

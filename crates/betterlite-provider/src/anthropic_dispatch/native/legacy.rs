@@ -31,7 +31,7 @@ use crate::operation::OperationError;
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
 use crate::transform_retry::TransformRetry;
 
-pub trait Transport {
+pub trait Transport: Send + Sync {
     fn send<'call>(
         &'call self,
         request: &'call PreparedRequest,
@@ -133,12 +133,15 @@ fn request_body<'call, Client>(
     source: &'call PromptSource<'_>,
     messages: &'call [Message],
     defaults: &'call OptionValues,
-) -> HandlerFuture<'call, IndexMap<String, Json>, BodyError> {
+) -> HandlerFuture<'call, IndexMap<String, Json>, BodyError>
+where
+    Client: Send + Sync,
+{
     let mut optional = call.optional_params.clone();
     let extra_body = match optional.shift_remove("extra_body") {
         None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Object(fields)) => fields,
-        Some(_) => return ready(Err(BodyError::ExtraBody)).boxed_local(),
+        Some(_) => return ready(Err(BodyError::ExtraBody)).boxed(),
     };
     transform_request(source, &call.model, messages, optional, defaults)
         .map_err(BodyError::Legacy)
@@ -149,7 +152,7 @@ fn request_body<'call, Client>(
             }
             body
         })
-        .boxed_local()
+        .boxed()
 }
 
 fn prepare<Client, ClientFailure, FileFailure>(

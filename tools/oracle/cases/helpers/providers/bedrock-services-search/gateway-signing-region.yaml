@@ -1,0 +1,78 @@
+kind: helper
+name: gateway-signing-region
+call:
+  bedrock_services_search:
+    scenario: gateway_signing_region
+    runs:
+      - api_base: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: null
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
+      - api_base: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {aws_region_name: ap-southeast-2}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: null
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
+      - api_base: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {aws_region_name: ''}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: null
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
+      - api_base: 'https://gateway-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {aws_region_name: null}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: null
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
+      - api_base: 'https://custom.example.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: 'https://custom.example.com/mcp'
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: eu-west-1
+        now: 1767225600
+      - api_base: 'https://custom.example.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: 'https://custom.example.com/mcp'
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: null
+        now: 1767225600
+      - api_base: 'https://custom.example.com/mcp'
+        headers: {Content-Type: application/json, Accept: 'application/json, text/event-stream', MCP-Protocol-Version: '2025-03-26'}
+        optional_params: {}
+        request_data: {jsonrpc: '2.0', id: 1, method: tools/call, params: {name: web-search-tool___WebSearch, arguments: {query: hello, maxResults: 10}}}
+        api_key: null
+        gateway_url: 'https://custom.example.com/mcp'
+        gateway_token: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        session_region: ''
+        now: 1767225600
+env: {}
+compare: {ignore: []}
