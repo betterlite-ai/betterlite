@@ -266,7 +266,6 @@ fn phoenix_answers_to_the_arize_phoenix_callback_name() {
     assert_eq!(PROXY_PARENT_SPAN_NAME, "litellm_proxy_request");
 }
 
-// ArizePhoenixLogger._init_tracing builds private providers and never takes the process global
 // ArizePhoenixLogger._init_otel_logger_on_litellm_proxy is empty, so the primary otel callback keeps the proxy slot
 #[test]
 fn phoenix_coexists_with_the_primary_otel_registration() {
@@ -293,6 +292,7 @@ fn phoenix_coexists_with_the_primary_otel_registration() {
     ));
 }
 
+// ArizePhoenixLogger._init_tracing builds private providers and never takes the process global
 #[test]
 fn phoenix_keeps_its_tracer_out_of_the_global_slot() {
     let rig = Rig::new();
