@@ -10,16 +10,11 @@ use crate::api::vector_store_http_write::error::{
 use super::super::config::{BufferedResponse, FileContentConfig, Headers};
 use super::BufferedReply;
 
-// httpx's dict(response.headers): lower-case names, and a repeated name joined with ", " in wire order
-pub(super) fn text_headers(headers: &HttpHeaders) -> Headers {
-    flatten_headers(headers).into_iter().collect()
-}
-
 // The response transform reads the status, the joined headers, the bytes the transport read and the URL that answered
 pub(super) fn buffered_response(reply: BufferedReply) -> BufferedResponse {
     BufferedResponse {
         status_code: reply.status,
-        headers: text_headers(&reply.headers),
+        headers: flatten_headers(&reply.headers).into_iter().collect(),
         body: reply.body,
         url: reply.url.to_string(),
     }
@@ -55,7 +50,9 @@ pub(super) fn status_error(
     headers: &HttpHeaders,
     body: &[u8],
 ) -> BaseLlmException {
-    config.error_class(&lossy_text(body), status, text_headers(headers))
+    let text = lossy_text(body);
+    let joined: Headers = flatten_headers(headers).into_iter().collect();
+    config.error_class(&text, status, joined)
 }
 
 fn json_headers(headers: &ErrorHeaders) -> Headers {
