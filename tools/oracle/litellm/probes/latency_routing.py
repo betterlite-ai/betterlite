@@ -130,12 +130,10 @@ def stored_entry(entry: StoredInput) -> dict[str, JsonValue]:
     return stored
 
 
-def select(spec: "LatencyRouting", generator: InjectedRandom) -> Output:
+def select(spec: "LatencyRouting", handler: Handler, cache: DualCache, generator: InjectedRandom) -> Output:
     shim = InjectedPick(generator)
-    cache = DualCache(in_memory_cache=InMemoryCache())
     stored: dict[str, JsonValue] = {entry.id: stored_entry(entry) for entry in spec.stored}
     cache.set_cache(key=f"{spec.model_group}_map", value=stored)
-    handler: Handler = LowestLatencyLoggingHandler(router_cache=cache, routing_args=routing_args(spec.settings))
     healthy = [deployment_entry(entry) for entry in spec.deployments]
     metadata: dict[str, object] = {}
     kwargs: dict[str, object] = {"metadata": metadata, "stream": spec.stream}
@@ -150,7 +148,6 @@ def select(spec: "LatencyRouting", generator: InjectedRandom) -> Output:
     return Output(selected=selected, valid=sorted(shim.valid), scores=scores)
 
 
-@final
 class LatencyRouting(Operation):
     model_group: str
     settings: SettingsInput
@@ -165,4 +162,8 @@ class LatencyRouting(Operation):
         # LiteLLM's routing models warn while they build; neither side compares warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return select(self, generator)
+            cache = DualCache(in_memory_cache=InMemoryCache())
+            handler: Handler = LowestLatencyLoggingHandler(
+                router_cache=cache, routing_args=routing_args(self.settings)
+            )
+            return select(self, handler, cache, generator)
