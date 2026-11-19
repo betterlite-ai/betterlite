@@ -137,10 +137,9 @@ where
     F: FnOnce(&mut StashState),
 {
     let stash = slot.get_or_create();
-    {
-        let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-        configure(&mut state);
-    };
+    let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    configure(&mut state);
+    drop(state);
     stash
 }
 
