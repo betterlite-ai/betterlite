@@ -33,20 +33,16 @@ pub fn strategy_router_dependencies(litellm_params: &JsonObject) -> Vec<Strategy
 }
 
 fn semantic_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDependency> {
-    let mut dependencies = Vec::new();
-    for (key, role) in [
-        (
-            "auto_router_default_model",
-            StrategyRouterDependencyRole::Default,
-        ),
-        (
-            "auto_router_embedding_model",
-            StrategyRouterDependencyRole::Embedding,
-        ),
-    ] {
-        dependencies.extend(named(litellm_params.get(key), role));
-    }
-    dependencies
+    named(
+        litellm_params.get("auto_router_default_model"),
+        StrategyRouterDependencyRole::Default,
+    )
+    .into_iter()
+    .chain(named(
+        litellm_params.get("auto_router_embedding_model"),
+        StrategyRouterDependencyRole::Embedding,
+    ))
+    .collect()
 }
 
 fn quality_dependencies(litellm_params: &JsonObject) -> Vec<StrategyRouterDependency> {
