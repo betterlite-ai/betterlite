@@ -13,7 +13,7 @@ use secrecy::SecretString;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{Auth, CredentialMode};
+use super::input::{Auth, CredentialMode};
 
 #[derive(Debug, Clone, Error)]
 #[error("{message}")]

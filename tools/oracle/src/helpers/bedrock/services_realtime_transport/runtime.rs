@@ -13,8 +13,8 @@ use betterlite_models::decisions::Json;
 use secrecy::ExposeSecret as _;
 
 use super::fakes::{FakeError, stream_error};
+use super::input::{Block, Run};
 use super::streams::{ScriptedStream, StreamProfile};
-use super::{Block, Run};
 
 #[derive(Clone)]
 pub(super) struct Plan {

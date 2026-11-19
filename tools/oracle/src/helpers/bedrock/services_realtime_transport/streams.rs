@@ -10,8 +10,8 @@ use betterlite_bedrock::realtime_events::stream::{
 };
 use betterlite_models::decisions::Json;
 
-use super::Block;
 use super::fakes::{FakeError, stream_error};
+use super::input::Block;
 
 #[derive(Clone)]
 pub(super) struct StreamProfile {

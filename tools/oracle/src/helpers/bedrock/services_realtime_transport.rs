@@ -16,72 +16,22 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::runtime::Builder;
 
 mod client;
 mod fakes;
+mod input;
 mod runtime;
 mod streams;
 mod tests;
 
 use client::{AcceptingQueue, FakeLogging, FakeWebSocket};
 use fakes::{FakeCredentials, FixedIds};
+use input::{Auth, Input, Run};
 use runtime::{FakeRuntime, Plan, Recorded};
 
 const TRACE_ID: &str = "trace-bedrock-transport-1";
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    runs: Vec<Run>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Run {
-    model: String,
-    pending: Option<String>,
-    frames: Vec<String>,
-    chunks: Vec<String>,
-    block: Block,
-    receive_failure: Option<usize>,
-    send_failure: Option<usize>,
-    open_error: bool,
-    client_send_failure: Option<usize>,
-    credentials: CredentialMode,
-    auth: Option<Auth>,
-    api_base: Option<String>,
-    endpoint: Option<String>,
-    region: Option<String>,
-    committed: bool,
-    failure: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Auth {
-    access_key_id: String,
-    secret_access_key: String,
-    session_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum CredentialMode {
-    Resolved,
-    Absent,
-    Error,
-}
-
-// One direction stays pending so the other is always the task that finishes first
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Block {
-    None,
-    Client,
-    Stream,
-}
 
 #[derive(Debug, Serialize)]
 struct Runs {

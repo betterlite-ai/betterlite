@@ -11,7 +11,7 @@ use betterlite_core::api::realtime_session_state::logging::{
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{Block, Run};
+use super::input::{Block, Run};
 
 struct ClientState {
     frames: Mutex<VecDeque<String>>,
