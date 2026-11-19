@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use betterlite_config::sections::key_management_settings::Settings;
+use betterlite_config::tls::VerifySetting;
 use betterlite_secret_managers::aws::client_init::validate_environment as validate_aws_secret_manager;
 use betterlite_secret_managers::aws_kms::initialization::validate_environment as validate_aws_kms;
 use betterlite_secret_managers::cyberark::{Clock, CyberArkSecretManager};
@@ -33,12 +34,20 @@ pub fn select_secret_manager(
     key_management_settings: &Settings,
     config_file_path: Option<&Path>,
     env: &BTreeMap<String, String>,
+    litellm_ssl_verify: Option<&VerifySetting>,
 ) -> Result<ManagerState, ConfigBootError> {
     let Some(name) = key_management_system else {
         return Ok(unselected_manager());
     };
     let system = parse_system(name).ok_or(ConfigBootError::InvalidKeyManagementSystem)?;
-    let Some(client) = build_client(system, key_management_settings, config_file_path, env)? else {
+    let Some(client) = build_client(
+        system,
+        key_management_settings,
+        config_file_path,
+        env,
+        litellm_ssl_verify,
+    )?
+    else {
         return Ok(unselected_manager());
     };
     Ok(ManagerState {
@@ -80,10 +89,14 @@ fn build_client(
     settings: &Settings,
     config_file_path: Option<&Path>,
     env: &BTreeMap<String, String>,
+    litellm_ssl_verify: Option<&VerifySetting>,
 ) -> Result<Option<SecretManagerClient>, ConfigBootError> {
     match system {
-        KeyManagementSystem::HashicorpVault => reader_client(ReaderManager::Vault, env),
-        KeyManagementSystem::Cyberark => reader_client(ReaderManager::Cyberark, env),
+        KeyManagementSystem::HashicorpVault => {
+            reader_client(ReaderManager::Vault, env, litellm_ssl_verify)
+        }
+        // CyberArk resolves its own CYBERARK_SSL_VERIFY, so it takes no litellm setting
+        KeyManagementSystem::Cyberark => reader_client(ReaderManager::Cyberark, env, None),
         KeyManagementSystem::AzureKeyVault => Ok(azure_client(env)),
         KeyManagementSystem::GoogleKms => validated_client(
             validate_google_kms(env),
@@ -127,6 +140,7 @@ enum ReaderManager {
 fn reader_client(
     reader: ReaderManager,
     env: &BTreeMap<String, String>,
+    litellm_ssl_verify: Option<&VerifySetting>,
 ) -> Result<Option<SecretManagerClient>, ConfigBootError> {
     let clock: Clock = Arc::new(TokioInstant::now);
     let exchange = Arc::new(ReqwestExchange::default());
@@ -134,7 +148,7 @@ fn reader_client(
         ReaderManager::Vault => {
             let transport = VaultHttpTransport {
                 exchange,
-                tls: vault_tls(env),
+                tls: vault_tls(env, litellm_ssl_verify),
             };
             let manager = HashicorpSecretManager::new(env, transport, clock)
                 .map_err(|source| step_error("initializing the Vault secret manager", source))?;
@@ -159,22 +173,41 @@ where
     }
 }
 
-// LiteLLM gives Vault the httpx client built from get_ssl_verify, which reads SSL_VERIFY
-fn vault_tls(env: &BTreeMap<String, String>) -> TlsVerification {
-    let configured = env.get("SSL_VERIFY").map_or("", String::as_str);
-    if !configured.trim().is_empty() {
-        match text_to_bool(configured) {
-            Some(true) => {}
-            Some(false) => return TlsVerification::Disabled,
-            None => return TlsVerification::CaFile(PathBuf::from(configured)),
-        }
-    }
-    if let Some(cert_file) = env.get("SSL_CERT_FILE")
-        && Path::new(cert_file).exists()
+// LiteLLM gives Vault the default httpx client, whose TLS comes from get_ssl_verify:
+// SSL_VERIFY, then litellm_settings.ssl_verify, then SSL_CERT_FILE when verification is on
+fn vault_tls(
+    env: &BTreeMap<String, String>,
+    litellm_ssl_verify: Option<&VerifySetting>,
+) -> TlsVerification {
+    if let Some(configured) = env
+        .get("SSL_VERIFY")
+        .filter(|value| !value.trim().is_empty())
     {
-        return TlsVerification::CaFile(PathBuf::from(cert_file));
+        return match text_to_bool(configured) {
+            Some(true) => ca_file(env),
+            Some(false) => TlsVerification::Disabled,
+            None => TlsVerification::CaFile(PathBuf::from(configured)),
+        };
     }
-    TlsVerification::Enabled
+    match litellm_ssl_verify {
+        Some(VerifySetting::Bool(false)) => TlsVerification::Disabled,
+        Some(VerifySetting::Bool(true)) | None => ca_file(env),
+        Some(VerifySetting::Path(path)) => match text_to_bool(path) {
+            Some(true) => ca_file(env),
+            Some(false) => TlsVerification::Disabled,
+            None => TlsVerification::CaFile(PathBuf::from(path)),
+        },
+    }
+}
+
+// get_ssl_verify reads SSL_CERT_FILE once verification is on and the file exists
+fn ca_file(env: &BTreeMap<String, String>) -> TlsVerification {
+    match env.get("SSL_CERT_FILE") {
+        Some(cert_file) if Path::new(cert_file).exists() => {
+            TlsVerification::CaFile(PathBuf::from(cert_file))
+        }
+        Some(_) | None => TlsVerification::Enabled,
+    }
 }
 
 // Without a URI LiteLLM installs no client, so secret reads stay on the environment

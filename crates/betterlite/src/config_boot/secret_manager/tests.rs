@@ -5,6 +5,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::key_management_settings::Settings as KeySettings;
+use betterlite_config::tls::VerifySetting;
 use betterlite_secret_managers::custom_interface::CustomValue;
 use betterlite_secret_managers::secret_read_dispatch::http_transport::TlsVerification;
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
@@ -74,7 +75,7 @@ fn source_text(error: &ConfigBootError) -> String {
 
 #[test]
 fn an_absent_system_selects_no_manager() {
-    let state = select_secret_manager(None, &settings(), None, &env(&[])).unwrap();
+    let state = select_secret_manager(None, &settings(), None, &env(&[]), None).unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
     assert!(state.settings.is_none());
     assert!(state.system.is_none());
@@ -108,7 +109,8 @@ fn other_system_names_do_not_parse(#[case] name: &str) {
 
 #[test]
 fn the_local_system_is_refused() {
-    let Err(error) = select_secret_manager(Some("local"), &settings(), None, &env(&[])) else {
+    let Err(error) = select_secret_manager(Some("local"), &settings(), None, &env(&[]), None)
+    else {
         panic!("the local key management system was accepted");
     };
     assert_eq!(error.to_string(), "Invalid Key Management System selected");
@@ -119,7 +121,7 @@ fn the_local_system_is_refused() {
 fn azure_without_a_uri_logs_the_install_hint() {
     let (logs, _guard) = capture_logs();
     let state =
-        select_secret_manager(Some("azure_key_vault"), &settings(), None, &env(&[])).unwrap();
+        select_secret_manager(Some("azure_key_vault"), &settings(), None, &env(&[]), None).unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
     assert!(state.settings.is_none());
     assert!(state.system.is_none());
@@ -136,6 +138,7 @@ fn azure_with_an_empty_uri_logs_the_install_hint() {
         &settings(),
         None,
         &env(&[("AZURE_KEY_VAULT_URI", "")]),
+        None,
     )
     .unwrap();
     assert!(state.system.is_none());
@@ -153,6 +156,7 @@ fn azure_with_a_uri_installs_the_client_without_logging() {
         &settings(),
         None,
         &env(&[("AZURE_KEY_VAULT_URI", "https://vault.azure.net")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.system, Some(KeyManagementSystem::AzureKeyVault));
@@ -171,6 +175,7 @@ fn vault_reaches_the_real_client() {
         &settings(),
         None,
         &env(&[("HCP_VAULT_TOKEN", "token")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "HashicorpSecretManager");
@@ -179,7 +184,8 @@ fn vault_reaches_the_real_client() {
 
 #[test]
 fn vault_without_credentials_is_refused() {
-    let Err(error) = select_secret_manager(Some("hashicorp_vault"), &settings(), None, &env(&[]))
+    let Err(error) =
+        select_secret_manager(Some("hashicorp_vault"), &settings(), None, &env(&[]), None)
     else {
         panic!("a vault without credentials was accepted");
     };
@@ -197,6 +203,7 @@ fn cyberark_reaches_the_real_client() {
         &settings(),
         None,
         &env(&[("CYBERARK_API_KEY", "key")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "CyberArkSecretManager");
@@ -205,7 +212,8 @@ fn cyberark_reaches_the_real_client() {
 
 #[test]
 fn cyberark_without_credentials_is_refused() {
-    let Err(error) = select_secret_manager(Some("cyberark"), &settings(), None, &env(&[])) else {
+    let Err(error) = select_secret_manager(Some("cyberark"), &settings(), None, &env(&[]), None)
+    else {
         panic!("cyberark without credentials was accepted");
     };
     assert_eq!(
@@ -217,7 +225,8 @@ fn cyberark_without_credentials_is_refused() {
 
 #[test]
 fn aws_kms_without_a_region_is_refused() {
-    let Err(error) = select_secret_manager(Some("aws_kms"), &settings(), None, &env(&[])) else {
+    let Err(error) = select_secret_manager(Some("aws_kms"), &settings(), None, &env(&[]), None)
+    else {
         panic!("aws kms without a region was accepted");
     };
     assert_eq!(error.to_string(), "initializing the AWS KMS client failed");
@@ -233,6 +242,7 @@ fn aws_kms_with_a_region_is_accepted() {
         &settings(),
         None,
         &env(&[("AWS_REGION_NAME", "eu-west-1")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
@@ -241,7 +251,8 @@ fn aws_kms_with_a_region_is_accepted() {
 
 #[test]
 fn google_kms_without_credentials_is_refused() {
-    let Err(error) = select_secret_manager(Some("google_kms"), &settings(), None, &env(&[])) else {
+    let Err(error) = select_secret_manager(Some("google_kms"), &settings(), None, &env(&[]), None)
+    else {
         panic!("google kms without credentials was accepted");
     };
     assert_eq!(
@@ -261,6 +272,7 @@ fn google_kms_without_a_resource_name_is_refused() {
         &settings(),
         None,
         &env(&[("GOOGLE_APPLICATION_CREDENTIALS", "/creds.json")]),
+        None,
     ) else {
         panic!("google kms without a resource name was accepted");
     };
@@ -280,6 +292,7 @@ fn google_kms_with_its_values_is_accepted() {
             ("GOOGLE_APPLICATION_CREDENTIALS", "/creds.json"),
             ("GOOGLE_KMS_RESOURCE_NAME", "projects/p/cryptoKeys/k"),
         ]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
@@ -289,8 +302,14 @@ fn google_kms_with_its_values_is_accepted() {
 #[test]
 fn aws_secret_manager_warns_without_a_region() {
     let (logs, _guard) = capture_logs();
-    let state =
-        select_secret_manager(Some("aws_secret_manager"), &settings(), None, &env(&[])).unwrap();
+    let state = select_secret_manager(
+        Some("aws_secret_manager"),
+        &settings(),
+        None,
+        &env(&[]),
+        None,
+    )
+    .unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
     assert!(logs.contents().contains(
         "No AWS region found in environment. Ensure aws_region_name is set in key_management_settings or AWS_REGION_NAME/AWS_REGION/AWS_DEFAULT_REGION is set in environment."
@@ -305,6 +324,7 @@ fn aws_secret_manager_accepts_any_region_variable() {
         &settings(),
         None,
         &env(&[("AWS_DEFAULT_REGION", "us-east-1")]),
+        None,
     )
     .unwrap();
     assert!(!logs.contents().contains("No AWS region found"));
@@ -312,9 +332,13 @@ fn aws_secret_manager_accepts_any_region_variable() {
 
 #[test]
 fn google_secret_manager_without_a_project_is_refused() {
-    let Err(error) =
-        select_secret_manager(Some("google_secret_manager"), &settings(), None, &env(&[]))
-    else {
+    let Err(error) = select_secret_manager(
+        Some("google_secret_manager"),
+        &settings(),
+        None,
+        &env(&[]),
+        None,
+    ) else {
         panic!("google secret manager without a project was accepted");
     };
     assert_eq!(
@@ -333,6 +357,7 @@ fn google_secret_manager_with_a_project_is_accepted() {
         &settings(),
         None,
         &env(&[("GOOGLE_SECRET_MANAGER_PROJECT_ID", "proj")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
@@ -341,7 +366,8 @@ fn google_secret_manager_with_a_project_is_accepted() {
 
 #[test]
 fn custom_without_a_config_path_is_refused() {
-    let Err(error) = select_secret_manager(Some("custom"), &settings(), None, &env(&[])) else {
+    let Err(error) = select_secret_manager(Some("custom"), &settings(), None, &env(&[]), None)
+    else {
         panic!("a custom manager without a config path was accepted");
     };
     assert_eq!(
@@ -357,6 +383,7 @@ fn custom_without_the_manager_field_is_refused() {
         &settings(),
         Some(Path::new("/config.yaml")),
         &env(&[]),
+        None,
     ) else {
         panic!("a custom manager without its manager field was accepted");
     };
@@ -375,6 +402,7 @@ fn custom_with_a_path_and_a_manager_is_accepted() {
         &settings,
         Some(Path::new("/config.yaml")),
         &env(&[]),
+        None,
     )
     .unwrap();
     assert_eq!(state.client.class_name(), "NoneType");
@@ -392,6 +420,7 @@ fn the_state_carries_the_key_management_settings() {
         &settings,
         None,
         &env(&[("HCP_VAULT_TOKEN", "token")]),
+        None,
     )
     .unwrap();
     assert_eq!(state.access_mode, SecretAccessMode::WriteOnly);
@@ -540,13 +569,13 @@ fn each_access_mode_has_its_litellm_name() {
 
 #[test]
 fn a_missing_ssl_verify_enables_verification() {
-    assert_eq!(vault_tls(&env(&[])), TlsVerification::Enabled);
+    assert_eq!(vault_tls(&env(&[]), None), TlsVerification::Enabled);
 }
 
 #[test]
 fn an_empty_ssl_verify_enables_verification() {
     assert_eq!(
-        vault_tls(&env(&[("SSL_VERIFY", "")])),
+        vault_tls(&env(&[("SSL_VERIFY", "")]), None),
         TlsVerification::Enabled
     );
 }
@@ -560,7 +589,7 @@ fn ssl_verify_flags_choose_the_verification(
     #[case] value: &str,
     #[case] expected: TlsVerification,
 ) {
-    assert_eq!(vault_tls(&env(&[("SSL_VERIFY", value)])), expected);
+    assert_eq!(vault_tls(&env(&[("SSL_VERIFY", value)]), None), expected);
 }
 
 #[rstest]
@@ -571,7 +600,7 @@ fn ssl_verify_flags_choose_the_verification(
 #[case("/etc/ca.pem")]
 fn other_ssl_verify_values_become_the_ca_file(#[case] value: &str) {
     assert_eq!(
-        vault_tls(&env(&[("SSL_VERIFY", value)])),
+        vault_tls(&env(&[("SSL_VERIFY", value)]), None),
         TlsVerification::CaFile(PathBuf::from(value))
     );
 }
@@ -581,14 +610,14 @@ fn an_existing_ssl_cert_file_is_used_when_verification_is_on() {
     let cert = NamedTempFile::new().unwrap();
     let path = cert.path().to_str().unwrap().to_owned();
     assert_eq!(
-        vault_tls(&env(&[("SSL_CERT_FILE", path.as_str())])),
+        vault_tls(&env(&[("SSL_CERT_FILE", path.as_str())]), None),
         TlsVerification::CaFile(PathBuf::from(&path))
     );
     assert_eq!(
-        vault_tls(&env(&[
-            ("SSL_VERIFY", "true"),
-            ("SSL_CERT_FILE", path.as_str())
-        ])),
+        vault_tls(
+            &env(&[("SSL_VERIFY", "true"), ("SSL_CERT_FILE", path.as_str())]),
+            None
+        ),
         TlsVerification::CaFile(PathBuf::from(&path))
     );
 }
@@ -596,7 +625,10 @@ fn an_existing_ssl_cert_file_is_used_when_verification_is_on() {
 #[test]
 fn a_missing_ssl_cert_file_leaves_verification_enabled() {
     assert_eq!(
-        vault_tls(&env(&[("SSL_CERT_FILE", "/nonexistent/b8590/ca.pem")])),
+        vault_tls(
+            &env(&[("SSL_CERT_FILE", "/nonexistent/b8590/ca.pem")]),
+            None
+        ),
         TlsVerification::Enabled
     );
 }
@@ -606,10 +638,105 @@ fn ssl_cert_file_is_ignored_when_verification_is_off() {
     let cert = NamedTempFile::new().unwrap();
     let path = cert.path().to_str().unwrap().to_owned();
     assert_eq!(
-        vault_tls(&env(&[
-            ("SSL_VERIFY", "false"),
-            ("SSL_CERT_FILE", path.as_str())
-        ])),
+        vault_tls(
+            &env(&[("SSL_VERIFY", "false"), ("SSL_CERT_FILE", path.as_str())]),
+            None
+        ),
         TlsVerification::Disabled
+    );
+}
+
+#[test]
+fn a_litellm_settings_false_disables_verification() {
+    assert_eq!(
+        vault_tls(&env(&[]), Some(&VerifySetting::Bool(false))),
+        TlsVerification::Disabled
+    );
+}
+
+#[test]
+fn a_litellm_settings_true_keeps_verification_on() {
+    assert_eq!(
+        vault_tls(&env(&[]), Some(&VerifySetting::Bool(true))),
+        TlsVerification::Enabled
+    );
+}
+
+#[test]
+fn a_litellm_settings_true_still_uses_the_cert_file() {
+    let cert = NamedTempFile::new().unwrap();
+    let path = cert.path().to_str().unwrap().to_owned();
+    assert_eq!(
+        vault_tls(
+            &env(&[("SSL_CERT_FILE", path.as_str())]),
+            Some(&VerifySetting::Bool(true))
+        ),
+        TlsVerification::CaFile(PathBuf::from(&path))
+    );
+}
+
+#[test]
+fn an_empty_ssl_verify_falls_through_to_the_litellm_setting() {
+    assert_eq!(
+        vault_tls(
+            &env(&[("SSL_VERIFY", "")]),
+            Some(&VerifySetting::Bool(false))
+        ),
+        TlsVerification::Disabled
+    );
+}
+
+#[test]
+fn ssl_verify_env_wins_over_the_litellm_setting() {
+    assert_eq!(
+        vault_tls(
+            &env(&[("SSL_VERIFY", "true")]),
+            Some(&VerifySetting::Bool(false))
+        ),
+        TlsVerification::Enabled
+    );
+    assert_eq!(
+        vault_tls(
+            &env(&[("SSL_VERIFY", "false")]),
+            Some(&VerifySetting::Bool(true))
+        ),
+        TlsVerification::Disabled
+    );
+}
+
+#[test]
+fn a_litellm_settings_path_becomes_the_ca_file() {
+    assert_eq!(
+        vault_tls(
+            &env(&[]),
+            Some(&VerifySetting::Path("/etc/vault-ca.pem".to_owned()))
+        ),
+        TlsVerification::CaFile(PathBuf::from("/etc/vault-ca.pem"))
+    );
+}
+
+#[test]
+fn a_litellm_settings_path_wins_over_the_cert_file() {
+    let cert = NamedTempFile::new().unwrap();
+    let path = cert.path().to_str().unwrap().to_owned();
+    assert_eq!(
+        vault_tls(
+            &env(&[("SSL_CERT_FILE", path.as_str())]),
+            Some(&VerifySetting::Path("/etc/vault-ca.pem".to_owned()))
+        ),
+        TlsVerification::CaFile(PathBuf::from("/etc/vault-ca.pem"))
+    );
+}
+
+#[rstest]
+#[case("true", TlsVerification::Enabled)]
+#[case(" FALSE ", TlsVerification::Disabled)]
+fn boolean_text_in_the_litellm_setting_is_converted(
+    #[case] value: &str,
+    #[case] expected: TlsVerification,
+) {
+    assert_eq!(
+        vault_tls(&env(&[]), Some(&VerifySetting::Path(value.to_owned()))),
+        expected
     );
 }
