@@ -111,6 +111,16 @@ fn the_error_counts_an_unread_pool_as_zero() {
             .to_string()
             .contains("'current_tpm': 0, 'tpm_limit': 0, 'current_rpm': 0, 'rpm_limit': inf")
     );
+    let empty = selection(&pool, Some(&[]), Some(&[]), 1)
+        .no_deployment()
+        .unwrap();
+    // an empty value list is falsy in the pinned `tpm_values[index] if tpm_values else 0`
+    assert!(
+        empty
+            .deployments
+            .iter()
+            .all(|load| load.current_tpm == Some(0) && load.current_rpm == Some(0))
+    );
 }
 
 fn the_error_keeps_a_missing_value_missing() {
