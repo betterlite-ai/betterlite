@@ -1,15 +1,11 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol
+from typing import Final, Literal
 
-import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.llms.base_llm.vector_store.transformation import (
-    BaseVectorStoreConfig,
-    VectorStoreEmbeddingExecutor,
-)
+from litellm.llms.base_llm.vector_store.transformation import BaseVectorStoreConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.vector_stores.transformation import OpenAIVectorStoreConfig
 from litellm.types.router import GenericLiteLLMParams
@@ -29,39 +25,7 @@ PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 SearchWork = VectorStoreSearchResponse | Coroutine[object, object, VectorStoreSearchResponse]
 
-SearchCall = Callable[
-    [
-        str,
-        Query,
-        SearchParams,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        VectorStoreEmbeddingExecutor | None,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
-    SearchWork,
-]
-
-AsyncSearchCall = Callable[
-    [
-        str,
-        Query,
-        SearchParams,
-        BaseVectorStoreConfig,
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        VectorStoreEmbeddingExecutor | None,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | httpx.Timeout | None,
-    ],
-    Coroutine[object, object, VectorStoreSearchResponse],
-]
+HANDLER: Final = BaseLLMHTTPHandler()
 
 
 class OptionalParams(BaseModel):
@@ -105,19 +69,6 @@ class TransportValue(BaseModel):
 
 class TransportEnvelope(BaseModel):
     vector_search_transport: TransportValue
-
-
-class Handlers(Protocol):
-    @property
-    def vector_store_search_handler(self) -> SearchCall: ...
-
-    @property
-    def async_vector_store_search_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> AsyncSearchCall: ...
-
-
-HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
 def logging_fixture() -> Logging:
