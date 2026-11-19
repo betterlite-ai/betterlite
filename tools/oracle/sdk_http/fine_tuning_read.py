@@ -221,6 +221,10 @@ class ReadOperation(Enum):
     ARETRIEVE = "aretrieve"
 
 
+# list and alist answer a page, retrieve and aretrieve a job
+PAGES: frozenset[ReadOperation] = frozenset({ReadOperation.LIST, ReadOperation.ALIST})
+
+
 # the openai client raises APIStatusError carrying the status and the body's error fields
 def api_failure(error: openai.APIStatusError) -> Failure:
     return Failure(
@@ -243,29 +247,26 @@ def settle(result: ModelResult) -> JsonValue:
             return JSON.validate_json(result.model_dump_json())
 
 
-# list and alist declare the provider, and a retrieve boundary is decorated into an untyped call
-def request(
-    operation: ReadOperation, values: ReadValues, provider: str | None
-) -> ModelResult:
-    result: ModelResult
-    match operation:
-        case ReadOperation.LIST:
-            result = litellm.list_fine_tuning_jobs(**values)
-        case ReadOperation.ALIST:
-            result = litellm.alist_fine_tuning_jobs(**values)
-        case ReadOperation.RETRIEVE:
-            result = litellm.retrieve_fine_tuning_job(**values, custom_llm_provider=provider)
-        case ReadOperation.ARETRIEVE:
-            result = litellm.aretrieve_fine_tuning_job(**values, custom_llm_provider=provider)
-    return result
-
-
 def read_outcome(
     step: ListStep | RetrieveStep, harness: str, operation: ReadOperation
 ) -> StepOutcome:
     values = read_values(step, harness, read_client(step, harness))
+    result: ModelResult
     try:
-        result = request(operation, values, step.call.provider)
+        # list and alist declare the provider, and retrieve takes it as a keyword
+        match operation:
+            case ReadOperation.LIST:
+                result = litellm.list_fine_tuning_jobs(**values)
+            case ReadOperation.ALIST:
+                result = litellm.alist_fine_tuning_jobs(**values)
+            case ReadOperation.RETRIEVE:
+                result = litellm.retrieve_fine_tuning_job(
+                    **values, custom_llm_provider=step.call.provider
+                )
+            case ReadOperation.ARETRIEVE:
+                result = litellm.aretrieve_fine_tuning_job(
+                    **values, custom_llm_provider=step.call.provider
+                )
         settled = settle(result)
     except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
@@ -273,11 +274,9 @@ def read_outcome(
         return StepOutcome(
             failure=Failure(cls=type(error).__name__, status=0, message=str(error))
         )
-    match operation:
-        case ReadOperation.LIST | ReadOperation.ALIST:
-            return StepOutcome(page=settled)
-        case ReadOperation.RETRIEVE | ReadOperation.ARETRIEVE:
-            return StepOutcome(job=settled)
+    if operation in PAGES:
+        return StepOutcome(page=settled)
+    return StepOutcome(job=settled)
 
 
 def run_step(step: Step, harness: str) -> StepOutcome:
