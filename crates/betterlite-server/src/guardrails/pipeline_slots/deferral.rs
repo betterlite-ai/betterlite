@@ -64,7 +64,8 @@ fn deferral_matches(
             .is_some_and(|reason| reason.contains(TAG_MARK));
         if matched_by_tag {
             tag_matched.push(policy_name.clone());
-        } else if attributed.is_none() {
+        }
+        if attributed.is_none() {
             body_selected.push(policy_name.clone());
         }
     }
