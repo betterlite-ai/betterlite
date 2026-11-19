@@ -155,10 +155,11 @@ class Probe(Handler):
     async def parse_row(self, socket: Socket, row: FrameRow, start: int) -> JsonValue:
         message = await self._parse_message(row["payload"])
         frames = [JSON.validate_json(text) for text in socket.frames[start:]]
-        if message is None:
-            return JSON.validate_python({"kind": "ignored", "message": None, "frames": frames})
-        message_view = JSON.validate_python(message)
-        return JSON.validate_python({"kind": "message", "message": message_view, "frames": frames})
+        answer: dict[str, JsonValue] = {"kind": "ignored", "message": None, "frames": frames}
+        if message is not None:
+            answer["kind"] = "message"
+            answer["message"] = JSON.validate_python(message)
+        return JSON.validate_python(answer)
 
     def ack_event(self, event: dict[str, JsonValue]) -> dict[str, JsonValue]:
         response = WARMUP_RESPONSE.validate_python(event["response"])
@@ -177,7 +178,6 @@ class Probe(Handler):
         acks: list[JsonValue] = []
         flags: list[JsonValue] = []
         sources: list[JsonValue] = []
-        ids: list[JsonValue] = []
         for frame in frames:
             start = len(socket.frames)
             await self._send_warmup_ack(frame)
@@ -185,8 +185,10 @@ class Probe(Handler):
                          for text in socket.frames[start:]])
             flags.append(self._is_warmup_frame(frame))
             sources.append(JSON.validate_python(self._warmup_source_params(frame)))
-        for one in input_value["warmup_ids"]:
-            ids.append(JSON.validate_python(self._is_warmup_response_id(one)))
+        ids: list[JsonValue] = [
+            JSON.validate_python(self._is_warmup_response_id(one))
+            for one in input_value["warmup_ids"]
+        ]
         built = [WARMUP_RESPONSE.validate_python(self._build_warmup_response(frame))
                  for frame in frames]
         responses: list[JsonValue] = [self.response_view(response) for response in built]
@@ -214,7 +216,7 @@ class Probe(Handler):
         again = self._get_history_messages(case["first"])
         applied: list[JsonValue] = []
         for row in case["applied"]:
-            kwargs = OBJECTS.validate_python({})
+            kwargs = OBJECTS.validate_json("{}")
             self._apply_history(kwargs, row["previous_response_id"],
                                 MESSAGES.validate_python(row["current"]),
                                 MESSAGES.validate_python(row["prior"]))
@@ -232,10 +234,7 @@ class Probe(Handler):
         views: dict[str, JsonValue] = {"constructor": self.constructor_view()}
         views["credentials"] = self.credentials_view(input_value["credentials"])
         views["proxy"] = self.proxy_rows(input_value["proxy"])
-        frames: list[JsonValue] = []
-        for row in input_value["frames"]:
-            frames.append(await self.frame_row(socket, row))
-        views["frames"] = frames
+        views["frames"] = [await self.frame_row(socket, row) for row in input_value["frames"]]
         views["warmup"] = await self.warmup_view(socket, input_value)
         views["messages"] = self.messages_view(input_value["case"])
         views["history"] = self.history_view(input_value["case"])
