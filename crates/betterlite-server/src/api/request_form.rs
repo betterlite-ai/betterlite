@@ -135,7 +135,7 @@ fn unquote_plus_latin1(bytes: &[u8]) -> String {
                 && bytes[index + 1].is_ascii_hexdigit()
                 && bytes[index + 2].is_ascii_hexdigit()
             {
-                escaped.push((hex_value(bytes[index + 1]) << 4) | hex_value(bytes[index + 2]));
+                escaped.push((hex_value(bytes[index + 1]) << 4) + hex_value(bytes[index + 2]));
                 index += 3;
             } else {
                 escaped.push(byte);
