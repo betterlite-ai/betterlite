@@ -59,8 +59,8 @@ enum ResponseSpec {
         #[serde(default)]
         output: Vec<Json>,
         status: Option<String>,
-        usage: Option<ResponseApiUsage>,
-        error: Option<ErrorSpec>,
+        usage: Option<Box<ResponseApiUsage>>,
+        error: Option<Box<ErrorSpec>>,
     },
     Value {
         value: Json,
@@ -215,8 +215,8 @@ fn build_attributes<'spec>(
             }) => Some(ResponseAttribute::Object(ResponseAttributes {
                 output,
                 status: status.as_deref(),
-                usage: usage.as_ref(),
-                error: error.as_ref().map(error_attribute),
+                usage: usage.as_deref(),
+                error: error.as_deref().map(error_attribute),
             })),
             Some(ResponseSpec::Value { value }) => Some(ResponseAttribute::Value(value)),
             None => None,
