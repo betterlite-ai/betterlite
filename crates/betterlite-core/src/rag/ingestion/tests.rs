@@ -792,6 +792,12 @@ async fn ocr_uses_the_configured_model() {
     );
 }
 
+#[test]
+fn ocr_document_kinds_use_their_litellm_wire_names() {
+    assert_eq!(OcrDocumentKind::ImageUrl.wire_name(), "image_url");
+    assert_eq!(OcrDocumentKind::DocumentUrl.wire_name(), "document_url");
+}
+
 #[tokio::test]
 async fn ocr_image_content_types_use_the_image_url_key() {
     let harness = Harness::default().with_ocr(FakeOcr::returning(vec!["page".to_owned()]));
