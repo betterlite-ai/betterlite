@@ -303,8 +303,8 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
 }
 
 // The overrides are typed here rather than parsed: betterlite-server builds serde_json with arbitrary_precision, and that feature's private number map cannot deserialize a fractional literal into the untagged Scalar enum.
-fn unreachable_options(port: u16) -> RedisCacheOptions {
-    let overrides = RedisOverrides {
+fn unreachable_overrides(port: u16) -> RedisOverrides {
+    RedisOverrides {
         host: Some("127.0.0.1".to_owned()),
         port: Some(IntOrText::Value(i64::from(port))),
         db: None,
@@ -335,9 +335,12 @@ fn unreachable_options(port: u16) -> RedisCacheOptions {
         aws_iam_region: None,
         aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
-    };
+    }
+}
+
+fn unreachable_options(port: u16) -> RedisCacheOptions {
     RedisCacheOptions {
-        overrides,
+        overrides: unreachable_overrides(port),
         family: RedisCacheFamily::Standalone,
         namespace: None,
         default_ttl: 60,
