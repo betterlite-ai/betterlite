@@ -29,7 +29,7 @@ impl AsyncSuccessLog {
             return;
         }
         self.logging
-            .async_success(&self.handle, &self.result, self.times)
+            .async_success(&self.handle, self.result, self.times)
             .await;
     }
 }

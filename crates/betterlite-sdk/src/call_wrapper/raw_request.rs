@@ -29,7 +29,7 @@ struct RawLogging {
 pub(super) fn raw_logging<E>(wrapper: &CallWrapper<E>, request: &RequestMap) -> Option<RawLogging> {
     let mut correlation = CorrelationContext::default();
     let next_trace_id = || wrapper.ids.next_call_id();
-    let mut clock = || wrapper.clock.monotonic();
+    let clock = || wrapper.clock.monotonic();
     let init = LoggingInit {
         model: RAW_REQUEST_MODEL.to_owned(),
         call_type: "acompletion".to_owned(),

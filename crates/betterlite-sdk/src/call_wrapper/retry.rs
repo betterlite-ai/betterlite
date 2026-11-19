@@ -1,11 +1,10 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
-use betterlite_router::cooldown_decisions::failure::FailureClass;
-use betterlite_router::retry_policy::policy::RetryPolicy;
 use indexmap::IndexMap;
 
 use super::error::{CallError, class_status, field_error};
 use super::fields::{field, object_field};
+use super::retry_policy::RetryPolicy;
 use crate::call_setup::RequestMap;
 
 // litellm.num_retries and litellm.num_retries_per_request, the module state the decorator retries from
@@ -122,8 +121,7 @@ pub fn num_retries(
     let from_request: Option<i64> = field(request, "num_retries")?;
     let mut num_retries = from_request.or(default);
     if let Some(policy) = policy_from(request)? {
-        let from_policy =
-            policy.retries_for(FailureClass::from(&error.class), class_status(&error.class));
+        let from_policy = policy.retries_for(&error.class, class_status(&error.class));
         request.insert("retry_policy".to_owned(), Json::Object(IndexMap::new()));
         if mode == RetryMode::Sync || from_policy.is_some() {
             num_retries = from_policy;

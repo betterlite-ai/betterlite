@@ -12,7 +12,7 @@ use crate::call_wrapper::retry::{
 };
 use crate::call_wrapper::steps;
 
-impl<'run, E, B> SyncRun<'run, E, B>
+impl<E, B> SyncRun<'_, E, B>
 where
     E: RuleEvaluator,
     B: BlockingBridge,

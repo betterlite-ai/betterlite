@@ -59,8 +59,8 @@ fn sync_failure_retries_with_the_request_count() {
     assert_eq!(outcome, response(value(r#"{"retried":true}"#)));
     assert_eq!(stub.retry_count(), 1);
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
-    assert_eq!(retried.get("num_retries"), Some(&count(2)));
+    let sent = retries.first().expect("the retry entry saw one request");
+    assert_eq!(sent.get("num_retries"), Some(&count(2)));
     assert!(fixture.logging.events().is_empty());
 }
 
@@ -72,10 +72,10 @@ fn sync_retry_policy_overrides_the_request_count_and_is_reset() {
     let request = chat_request(r#"{"num_retries":5,"retry_policy":{"BadRequestErrorRetries":1}}"#);
     run_sync(&mut fixture, &stub, request).expect("the retry entry answers");
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
-    assert_eq!(retried.get("num_retries"), Some(&count(1)));
+    let sent = retries.first().expect("the retry entry saw one request");
+    assert_eq!(sent.get("num_retries"), Some(&count(1)));
     assert_eq!(
-        retried.get("retry_policy"),
+        sent.get("retry_policy"),
         Some(&Json::Object(IndexMap::new()))
     );
 }
@@ -201,8 +201,8 @@ async fn async_retry_policy_overrides_the_request_count() {
         .await
         .expect("the retry entry answers");
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
-    assert_eq!(retried.get("num_retries"), Some(&count(1)));
+    let sent = retries.first().expect("the retry entry saw one request");
+    assert_eq!(sent.get("num_retries"), Some(&count(1)));
 }
 
 #[tokio::test]
@@ -219,9 +219,9 @@ async fn async_retry_stamps_exponential_for_rate_limits() {
         .await
         .expect("the retry entry answers");
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
+    let sent = retries.first().expect("the retry entry saw one request");
     assert_eq!(
-        retried.get("retry_strategy"),
+        sent.get("retry_strategy"),
         Some(&Json::Text(String::from("exponential_backoff_retry")))
     );
 }
@@ -240,9 +240,9 @@ async fn async_retry_stamps_constant_for_api_errors() {
         .await
         .expect("the retry entry answers");
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
+    let sent = retries.first().expect("the retry entry saw one request");
     assert_eq!(
-        retried.get("retry_strategy"),
+        sent.get("retry_strategy"),
         Some(&Json::Text(String::from("constant_retry")))
     );
 }
@@ -262,8 +262,8 @@ async fn async_retry_of_a_plain_error_has_no_strategy() {
         .expect("the retry entry answers");
     assert_eq!(stub.retry_count(), 1);
     let retries = stub.retries();
-    let retried = retries.first().expect("the retry entry saw one request");
-    assert_eq!(retried.get("retry_strategy"), None);
+    let sent = retries.first().expect("the retry entry saw one request");
+    assert_eq!(sent.get("retry_strategy"), None);
 }
 
 #[tokio::test]

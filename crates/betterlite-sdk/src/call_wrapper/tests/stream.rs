@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use betterlite_models::decisions::Json;
-
 use super::support::MarkingHook;
 use super::support::Stub;
 use super::support::chat_request;

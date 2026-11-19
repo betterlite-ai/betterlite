@@ -4384,7 +4384,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
- "betterlite-router",
  "betterlite-streaming",
  "chrono",
  "hex",
