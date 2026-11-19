@@ -81,29 +81,36 @@ where
                 return Err(OracleError::DatabaseFixture(error));
             }
         };
-    if !database.seed.keys.is_empty() {
-        let first_url = first.options.url.expose_secret();
-        let second_url = second.options.url.expose_secret();
-        let filled = fill_key_models(&root, first_url)
-            .and_then(|()| fill_key_models(&root, second_url))
-            .map_err(OracleError::HelperRun);
-        if let Err(operation) = filled {
-            let closed = FixtureGuard {
-                databases: Some((first, second)),
-            }
-            .close();
-            return Err(match closed {
-                Ok(()) => operation,
-                Err(cleanup) => OracleError::OperationCleanup {
-                    operation: Box::new(operation),
-                    cleanup,
-                },
-            });
-        }
-    }
-    Ok(FixtureGuard {
+    fill_seeded_key_models(&root, database, first, second)
+}
+
+// LiteLLM reads a key through a view that rejects a NULL models column, and the fixture's key seed leaves it empty
+fn fill_seeded_key_models(
+    root: &Path,
+    database: &DatabaseFixture,
+    first: PostgresFixture,
+    second: PostgresFixture,
+) -> Result<FixtureGuard, OracleError> {
+    let filled = if database.seed.keys.is_empty() {
+        Ok(())
+    } else {
+        fill_key_models(root, first.options.url.expose_secret())
+            .and_then(|()| fill_key_models(root, second.options.url.expose_secret()))
+            .map_err(OracleError::HelperRun)
+    };
+    let guard = FixtureGuard {
         databases: Some((first, second)),
-    })
+    };
+    match filled {
+        Ok(()) => Ok(guard),
+        Err(operation) => match guard.close() {
+            Ok(()) => Err(operation),
+            Err(cleanup) => Err(OracleError::OperationCleanup {
+                operation: Box::new(operation),
+                cleanup,
+            }),
+        },
+    }
 }
 
 impl FixtureGuard {
