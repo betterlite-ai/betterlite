@@ -14,13 +14,14 @@ deviations:
       three checks in the helper's TestIngestion.chunk override before calling the real chunk.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L227-L242
   - what: >-
-      The ingest options struct rejects keys it does not declare, so an ingest request
-      carrying an unknown top-level option fails with a serde error naming it. LiteLLM
-      reads the options dict by key and ignores everything else.
+      The ingest options struct and the chunking strategy reject keys they do not
+      declare, so an ingest request carrying an unknown option or strategy key fails
+      with a typed serde error naming it. LiteLLM reads both dicts by key and ignores
+      everything else.
     why: >-
-      betterlite-config's RAGIngestOptions already denies unknown fields for the same
-      record, and a misspelled option that is silently ignored is a failure the caller
-      cannot see. Keys inside vector_store and chunking_strategy stay open: providers and
+      betterlite-config's RAGIngestOptions and RAGChunkingStrategy already deny unknown
+      fields for the same records, and a misspelled option that is silently ignored is a
+      failure the caller cannot see. Keys inside vector_store stay open: providers and
       stored credentials add keys this module never names.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L47-L67
   - what: >-

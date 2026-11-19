@@ -86,6 +86,17 @@ fn chunk_config_wrong_types_are_rejected(#[case] strategy: &str) {
 }
 
 #[test]
+fn chunk_config_rejects_an_unknown_key() {
+    let parsed = serde_json::from_str(r#"{"chunking_strategy": {"chunk_size": 10, "chunk": 1}}"#)
+        .expect("the options parse");
+    let state = Harness::default().state(parsed);
+    let error = state
+        .chunk(Some("text"), None, false)
+        .expect_err("the key is rejected");
+    assert!(matches!(error, ChunkError::Strategy(_)));
+}
+
+#[test]
 fn chunk_config_is_not_validated_without_text() {
     let parsed = serde_json::from_str(r#"{"chunking_strategy": {"chunk_size": 0}}"#)
         .expect("the options parse");

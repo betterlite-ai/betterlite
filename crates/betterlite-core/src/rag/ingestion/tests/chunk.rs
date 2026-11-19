@@ -103,7 +103,8 @@ fn chunk_uses_the_configured_size_and_separators() {
     let chunks = state
         .chunk(Some("one\n\ntwo\n\nthree"), None, false)
         .expect("chunks");
-    assert_eq!(chunks, ["one", "two", "three"]);
+    // LiteLLM's splitter keeps the first split of a flushed pair as overlap, so "one" repeats
+    assert_eq!(chunks, ["one", "one\n\ntwo", "three"]);
 }
 
 #[test]

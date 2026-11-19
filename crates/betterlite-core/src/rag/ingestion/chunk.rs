@@ -1,7 +1,8 @@
 use std::str;
 
-use betterlite_config::rag::document::chunking::{DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE};
-use serde::Deserialize;
+use betterlite_config::rag::document::chunking::{
+    DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, RAGChunkingStrategy,
+};
 use serde_json::value::RawValue;
 use thiserror::Error;
 
@@ -17,7 +18,7 @@ pub enum ChunkError {
     Configuration(#[from] ChunkConfigError),
     #[error("the text could not be split")]
     Split(#[from] SplitError),
-    #[error("the chunking strategy is not valid JSON")]
+    #[error("the chunking strategy does not match its declared shape")]
     Strategy(#[source] serde_json::Error),
 }
 
@@ -28,33 +29,16 @@ pub struct ChunkPlan {
     pub separators: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ChunkingStrategyFields {
-    #[serde(default, rename = "chunk_size")]
-    size: Option<i64>,
-    #[serde(default, rename = "chunk_overlap")]
-    overlap: Option<i64>,
-    #[serde(default)]
-    separators: Option<Vec<String>>,
-}
-
 impl ChunkPlan {
     pub fn from_strategy(strategy: &RawValue) -> Result<Self, ChunkError> {
-        let fields: ChunkingStrategyFields =
+        let parsed: RAGChunkingStrategy =
             serde_json::from_str(strategy.get()).map_err(ChunkError::Strategy)?;
         Ok(Self {
-            size: fields.size.unwrap_or(DEFAULT_CHUNK_SIZE),
-            overlap: fields.overlap.unwrap_or(DEFAULT_CHUNK_OVERLAP),
-            separators: fields.separators.unwrap_or_else(default_separators),
+            size: parsed.chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
+            overlap: parsed.chunk_overlap.unwrap_or(DEFAULT_CHUNK_OVERLAP),
+            separators: parsed.separators,
         })
     }
-}
-
-fn default_separators() -> Vec<String> {
-    ["\n\n", "\n", " ", ""]
-        .into_iter()
-        .map(str::to_owned)
-        .collect()
 }
 
 pub fn split(text: &str, plan: ChunkPlan) -> Result<Vec<String>, ChunkError> {
