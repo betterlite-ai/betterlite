@@ -4,7 +4,6 @@ pub mod error;
 pub mod native;
 pub mod stream;
 
-#[cfg(test)]
 mod tests;
 
 use betterlite_config::sections::claude_platform_inputs::{PlatformEnvironment, PlatformInputs};
@@ -20,7 +19,7 @@ pub const MESSAGES_PROVIDER: &str = "anthropic";
 // LiteLLM's BedrockClaudePlatformConfig.should_strip_billing_metadata
 pub const STRIPS_BILLING_METADATA: bool = true;
 // LiteLLM's BedrockClaudePlatformMessagesConfig.should_filter_anthropic_beta_headers
-pub const SHOULD_FILTER_ANTHROPIC_BETA_HEADERS: bool = false;
+pub const FILTERS_ANTHROPIC_BETAS: bool = false;
 // The llm_provider its AuthenticationError carries
 pub const AUTHENTICATION_PROVIDER: &str = "bedrock";
 pub const WORKSPACE_HEADER: &str = "anthropic-workspace-id";

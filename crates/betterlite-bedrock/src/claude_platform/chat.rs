@@ -31,6 +31,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::claude_platform_inputs::body::PlatformWarning;
+use crate::model_routes::ParamMap;
 
 use super::convert;
 use super::error::ChatValidationError;
@@ -64,13 +65,10 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let workspace = require_workspace(
-        request.model,
-        &convert::param_map(request.optional_params),
-        request.workspace,
-    )?;
+    let contract: ParamMap = convert::mapped(request.optional_params)?;
+    let workspace = require_workspace(request.model, &contract, request.workspace)?;
     let messages = convert::prompt_messages(request.messages)?;
-    let params = convert::prompt_params(request.optional_params)?;
+    let params: IndexMap<String, PromptJson> = convert::mapped(request.optional_params)?;
     let effort_used = is_effort_used(
         Some(&optional_params_view(request.optional_params)),
         request.model,
@@ -79,12 +77,7 @@ where
         sources.catalogs,
     )
     .await;
-    let features = header_features(
-        &messages,
-        &params,
-        request.optional_params,
-        effort_used,
-    )?;
+    let features = header_features(&messages, &params, request.optional_params, effort_used)?;
     let api_key = resolve_api_key(request.api_key, request.workspace.environment);
     let user_betas = user_beta_headers(request.caller_headers.get(BETA_HEADER).map(String::as_str));
     let mut generated = get_anthropic_headers(&HeaderRequest {
@@ -104,25 +97,21 @@ where
     Ok(AnthropicHeaders { values: merged })
 }
 
-// Python reads a JSON null and an absent key the same way, so both become None.
-fn non_null<'params>(params: &'params IndexMap<String, Json>, key: &str) -> Option<&'params Json> {
-    params.get(key).filter(|value| !matches!(value, Json::Null))
-}
-
+// Python reads a JSON null and an absent key the same way, so both reads filter the null out.
 fn optional_params_view(params: &IndexMap<String, Json>) -> OptionalParams {
     OptionalParams {
-        reasoning_effort: non_null(params, "reasoning_effort").cloned(),
-        thinking: non_null(params, "thinking").cloned(),
-        output_config: non_null(params, "output_config").cloned(),
-    }
-}
-
-fn feature_params(params: &IndexMap<String, Json>) -> FeatureParams {
-    FeatureParams {
-        compaction: None,
-        container: non_null(params, "container").cloned(),
-        output_config: None,
-        reasoning_effort: None,
+        reasoning_effort: params
+            .get("reasoning_effort")
+            .filter(|value| !matches!(value, Json::Null))
+            .cloned(),
+        thinking: params
+            .get("thinking")
+            .filter(|value| !matches!(value, Json::Null))
+            .cloned(),
+        output_config: params
+            .get("output_config")
+            .filter(|value| !matches!(value, Json::Null))
+            .cloned(),
     }
 }
 
@@ -145,10 +134,7 @@ fn header_features(
     let tools = list_param(params, "tools").unwrap_or_default();
     let mut features = BTreeSet::new();
     let detected = [
-        (
-            HeaderFeature::PromptCaching,
-            is_cache_control_set(messages),
-        ),
+        (HeaderFeature::PromptCaching, is_cache_control_set(messages)),
         (HeaderFeature::Pdf, is_pdf_used(messages)),
         (HeaderFeature::FileId, is_file_id_used(messages)?),
         (
@@ -167,7 +153,15 @@ fn header_features(
         ),
         (
             HeaderFeature::Skills,
-            is_container_with_skills_used(&feature_params(contract)),
+            is_container_with_skills_used(&FeatureParams {
+                compaction: None,
+                container: contract
+                    .get("container")
+                    .filter(|value| !matches!(value, Json::Null))
+                    .cloned(),
+                output_config: None,
+                reasoning_effort: None,
+            }),
         ),
         (HeaderFeature::Effort, effort_used),
     ];
@@ -229,12 +223,12 @@ where
         &request.litellm_params,
         true,
         true,
-    );
+    )?;
     let anthropic_request = AnthropicRequest {
         model: request.model,
         custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
         messages: request.messages.clone(),
-        optional_params: convert::body_params(&filtered),
+        optional_params: convert::mapped(&filtered)?,
         litellm_params: request.litellm_params.clone(),
         headers: request.headers.clone(),
         defaults: request.defaults,
@@ -249,4 +243,3 @@ where
         .await?;
     Ok(ChatPrepared { prepared, warnings })
 }
-

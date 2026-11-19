@@ -23,6 +23,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::claude_platform_inputs::CLAUDE_PLATFORM_BEDROCK_ROUTE;
 use crate::claude_platform_inputs::body::PlatformWarning;
+use crate::model_routes::ParamMap;
 
 use super::error::{NativeHeaderError, NativeTransformError};
 use super::{
@@ -65,14 +66,11 @@ pub fn validate_environment(
     request: &NativeHeadersRequest<'_>,
 ) -> Result<NativeHeaders, NativeHeaderError> {
     let optional_params = convert::contract_params(request.optional_params);
-    let workspace = require_workspace(
-        request.model,
-        &convert::param_map(&optional_params),
-        request.workspace,
-    )?;
+    let contract: ParamMap = convert::mapped(&optional_params)?;
+    let workspace = require_workspace(request.model, &contract, request.workspace)?;
     let (filtered, _warnings) =
-        convert::filtered_params(&optional_params, request.litellm_params, false, false);
-    let filtered_params = convert::prompt_params(&filtered)?;
+        convert::filtered_params(&optional_params, request.litellm_params, false, false)?;
+    let filtered_params: IndexMap<String, PromptJson> = convert::mapped(&filtered)?;
     let mut headers = request.caller_headers.clone();
     if !headers.contains_key(ANTHROPIC_VERSION_HEADER) {
         headers.insert(
@@ -136,13 +134,9 @@ where
     Transport: ModelInfoClient,
 {
     let optional_params = convert::contract_params(&request.optional_params);
-    let (filtered, warnings) = convert::filtered_params(
-        &optional_params,
-        &request.litellm_params,
-        true,
-        true,
-    );
-    let filtered_params = convert::prompt_params(&filtered)?;
+    let (filtered, warnings) =
+        convert::filtered_params(&optional_params, &request.litellm_params, true, true)?;
+    let filtered_params: IndexMap<String, PromptJson> = convert::mapped(&filtered)?;
     let model = request
         .model
         .strip_prefix(CLAUDE_PLATFORM_BEDROCK_ROUTE)
