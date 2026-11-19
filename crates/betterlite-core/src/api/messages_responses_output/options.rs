@@ -12,8 +12,8 @@ use super::outputs::{
     StructuredOutputKind, ToolChoiceMode,
 };
 use super::records::{
-    AnthropicRequestRecord, ContextManagementRecord, OutputConfigRecord, OutputFormatRecord,
-    SettingsRecord, ThinkingRecord, ToolChoiceKind, ToolChoiceRecord, ToolRecord,
+    AnthropicRequestRecord, ContextManagementRecord, OutputConfigRecord, SettingsRecord,
+    ThinkingRecord, ToolChoiceKind, ToolChoiceRecord, ToolRecord,
 };
 
 const COMPACT_EDIT_TYPE: &str = "compact_20260112";
@@ -93,7 +93,10 @@ fn integer_value(value: &Json) -> Result<i64, MessagesResponsesOutputError> {
     match value {
         Json::Number(number) => number
             .as_i64()
-            .or_else(|| number.as_f64().and_then(|float| float.trunc().to_i64()))
+            .or_else(|| {
+                let float = number.as_f64()?;
+                float.trunc().to_i64()
+            })
             .ok_or(MessagesResponsesOutputError::ContextThreshold),
         Json::Text(text) => text
             .trim()
@@ -134,13 +137,10 @@ pub fn translate_thinking(
 fn adaptive_effort(
     output_config: Option<&OutputConfigRecord>,
 ) -> Result<ReasoningEffort, MessagesResponsesOutputError> {
-    let effort = output_config
+    output_config
         .and_then(|config| config.effort.as_deref())
-        .filter(|effort| !effort.is_empty());
-    match effort {
-        Some(effort) => requested_effort(effort),
-        None => Ok(ReasoningEffort::Medium),
-    }
+        .filter(|effort| !effort.is_empty())
+        .map_or(Ok(ReasoningEffort::Medium), requested_effort)
 }
 
 // output_config.effort is the declared Literal the pinned type accepts, so anything else is refused
@@ -173,6 +173,7 @@ const fn responses_effort(effort: BudgetEffort) -> ReasoningEffort {
     }
 }
 
+#[must_use]
 pub fn translate_output_format(request: &AnthropicRequestRecord) -> Option<ResponsesText> {
     let format = match &request.output_format {
         Some(format) => format,

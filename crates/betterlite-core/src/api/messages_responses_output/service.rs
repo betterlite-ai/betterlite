@@ -1,26 +1,13 @@
-use betterlite_prompts::arguments::json::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::messages_chat_output::output::MessageResponse;
 
-use error::MessagesResponsesOutputError;
-use outputs::ResponsesRequestRecord;
-use records::{AnthropicRequestRecord, ResponseRecord, SettingsRecord};
-use request::translate_request;
-use response::translate_response;
-
-pub mod error;
-pub mod options;
-pub mod outputs;
-pub mod records;
-pub mod request;
-pub mod response;
-
-mod tests;
-
-// RESPONSES_INCLUDE_ENCRYPTED_REASONING: reasoning items come back encrypted so the next turn can replay them
-const ENCRYPTED_REASONING_INCLUDE: &str = "reasoning.encrypted_content";
+use super::error::MessagesResponsesOutputError;
+use super::outputs::ResponsesRequestRecord;
+use super::records::{AnthropicRequestRecord, ResponseRecord, SettingsRecord};
+use super::request::translate_request;
+use super::response::translate_response;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessagesResponsesOutpuInput {
@@ -59,15 +46,4 @@ pub fn messages_responses_output(
         .map(|response| translate_response(response, limits))
         .transpose()?;
     Ok(MessagesResponsesOutpuResult { request, response })
-}
-
-// json.loads of a Responses function call's arguments, at the size the JSON boundary allows
-pub fn decode_messages_responses_out(
-    bytes: &[u8],
-    limits: &ApiLimits,
-) -> Result<Json, MessagesResponsesOutputError> {
-    limits.check(ApiBoundariesInput::Json(JsonBoundary {
-        known_bytes: bytes.len(),
-    }))?;
-    serde_json::from_slice(bytes).map_err(|source| MessagesResponsesOutputError::Json { source })
 }

@@ -1,12 +1,12 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::messages_responses_output::error::MessagesResponsesOutputError;
-use betterlite_core::api::messages_responses_output::{
+use betterlite_core::api::messages_responses_output::service::{
     MessagesResponsesOutpuInput, messages_responses_output,
 };
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-pub(crate) struct Op;
+use super::Op;
 
 // Each failure names the exception class the pinned adapter raises on the same input.
 fn failure(error: &MessagesResponsesOutputError) -> Box<HelperError> {

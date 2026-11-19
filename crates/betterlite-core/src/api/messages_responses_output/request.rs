@@ -154,7 +154,7 @@ fn user_fields(
     metadata: Option<&MetadataRecord>,
     limits: &ApiLimits,
 ) -> Result<(Option<String>, Option<String>), MessagesResponsesOutputError> {
-    let Some(user_id) = metadata.and_then(|metadata| metadata.user_id.as_deref()) else {
+    let Some(user_id) = metadata.and_then(|record| record.user_id.as_deref()) else {
         return Ok((None, None));
     };
     let user = Some(user_id.chars().take(SESSION_ID_LIMIT).collect());

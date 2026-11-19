@@ -119,12 +119,12 @@ impl Translation<'_> {
             return;
         };
         for part in parts {
-            let WireJson::Object(part) = part else {
+            let WireJson::Object(fields) = part else {
                 continue;
             };
-            match field_text(part.get("type")) {
-                Some("output_text") => self.push_text(field_text(part.get("text"))),
-                Some("refusal") => self.push_text(field_text(part.get("refusal"))),
+            match field_text(fields.get("type")) {
+                Some("output_text") => self.push_text(field_text(fields.get("text"))),
+                Some("refusal") => self.push_text(field_text(fields.get("refusal"))),
                 _ => {}
             }
         }
