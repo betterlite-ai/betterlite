@@ -1,0 +1,9 @@
+task: B3099
+deviations:
+  - what: Dates with non-ASCII digits, such as Arabic-Indic digits, answer 400 where Python's strptime accepts some of them.
+    why: The format is a calendar date in ASCII, and docs/compatibility.md covers what Python's runtime accepts beyond the declared type; no client sends these.
+    link: https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-format-codes
+  - what: A database error in any of the four statements answers with the server's generic internal error body, not Python's exception text.
+    why: The wording of an internal error cannot match Python's exception strings; the status and the uncaught path from the handler are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/analytics_endpoints.py#L55-L61
+kept_bugs: []
