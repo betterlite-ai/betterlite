@@ -12,10 +12,9 @@ use betterlite_openai::json_provider_policy::responses::{
     OpenAiLikeResponsesPolicy, ResponsesPolicy, ResponsesPolicyCache,
 };
 use betterlite_openai::response_input::ResponsesInput;
-use serde::Serialize;
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 
 use super::capabilities::NoCapabilities;
 use super::cases::{Call, Kind};
@@ -24,7 +23,7 @@ use super::{
     split_model,
 };
 
-// every case call answers one bounded question, so each handler is a single translated call
+// every case call answers one bounded question, so each handler turns the policy's own error into the case's error
 type Helper<T> = Result<T, Box<HelperError>>;
 
 pub(super) fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Helper<Value> {
@@ -61,34 +60,21 @@ fn call_credentials(call: &Call) -> MessagesCredentials<'_> {
     }
 }
 
-fn helper_result<T, E>(result: Result<T, E>) -> Helper<T>
-where
-    E: std::fmt::Display,
-{
-    result.map_err(|error| helper_error("ValueError", error.to_string()))
-}
-
-fn into_value<T>(value: &T) -> Helper<Value>
-where
-    T: Serialize,
-{
-    serde_json::to_value(value).map_err(|error| helper_error("ValueError", error.to_string()))
-}
-
 fn generic_messages_url(call: &Call) -> Helper<Value> {
-    let url = helper_result(generic_complete_url(call.api_base.as_deref()))?;
-    Ok(Value::String(url))
+    generic_complete_url(call.api_base.as_deref())
+        .or_value_error()
+        .map(Value::String)
 }
 
 fn generic_messages_headers(call: &Call) -> Helper<Value> {
-    let messages = &call.messages;
     let headers = generic_validate_environment(
         call.headers.clone(),
         call.api_key.as_ref(),
         &call.optional_params,
-        messages,
-    );
-    into_value(&helper_result(headers)?)
+        &call.messages,
+    )
+    .or_value_error()?;
+    serde_json::to_value(headers).or_value_error()
 }
 
 fn generic_messages_transform(call: &Call, model: &str) -> Helper<Value> {
@@ -96,30 +82,38 @@ fn generic_messages_transform(call: &Call, model: &str) -> Helper<Value> {
     let messages = call.messages.clone();
     let params = call.optional_params.clone();
     let future = generic_transform_request(&mut capabilities, model, messages, params);
-    into_value(&helper_result(runtime()?.block_on(future))?)
+    serde_json::to_value(runtime()?.block_on(future).or_value_error()?).or_value_error()
 }
 
 fn json_messages_url(call: &Call, descriptor: Descriptor) -> Helper<Value> {
-    let url =
-        helper_result(JsonMessagesPolicy { descriptor }.complete_url(&call_credentials(call)))?;
-    Ok(Value::String(url))
+    JsonMessagesPolicy { descriptor }
+        .complete_url(&call_credentials(call))
+        .or_value_error()
+        .map(Value::String)
 }
 
 fn json_messages_headers(call: &Call, descriptor: Descriptor) -> Helper<Value> {
     let policy = JsonMessagesPolicy { descriptor };
     let credentials = call_credentials(call);
     let params = &call.optional_params;
-    let headers =
-        policy.validate_environment(call.headers.clone(), &credentials, params, &call.messages);
-    into_value(&helper_result(headers)?)
+    let messages = &call.messages;
+    let headers = policy
+        .validate_environment(call.headers.clone(), &credentials, params, messages)
+        .or_value_error()?;
+    serde_json::to_value(headers).or_value_error()
 }
 
 fn json_messages_transform(call: &Call, descriptor: Descriptor, model: &str) -> Helper<Value> {
     let policy = JsonMessagesPolicy { descriptor };
     let mut capabilities = NoCapabilities;
-    let params = call.optional_params.clone();
-    let future = policy.transform_request(&mut capabilities, model, call.messages.clone(), params);
-    into_value(&helper_result(runtime()?.block_on(future))?)
+    let future = policy.transform_request(
+        &mut capabilities,
+        model,
+        call.messages.clone(),
+        call.optional_params.clone(),
+    );
+    let body = runtime()?.block_on(future).or_value_error()?;
+    serde_json::to_value(body).or_value_error()
 }
 
 fn responses_url(call: &Call, descriptor: Descriptor) -> Helper<Value> {
@@ -135,14 +129,14 @@ fn responses_headers(call: &Call, descriptor: Descriptor) -> Helper<Value> {
         call.api_key.as_ref(),
         &call.environment,
     );
-    into_value(&headers)
+    serde_json::to_value(headers).or_value_error()
 }
 
 fn responses_transform(call: &Call, descriptor: Descriptor, model: &str) -> Helper<Value> {
     let policy = ResponsesPolicy { descriptor };
     let input = ResponsesInput::Text(call.input.clone());
     let body = policy.transform_request(model, &input, &call.params, None);
-    into_value(&helper_result(body)?)
+    serde_json::to_value(body.or_value_error()?).or_value_error()
 }
 
 // create_responses_config_class caches by slug for the process, so the first descriptor's class answers both
@@ -176,15 +170,15 @@ fn responses_cache(call: &Call, slug: &str, provider: ProviderId) -> Helper<Valu
 
 fn openai_like_url(call: &Call) -> Helper<Value> {
     let settings = openai_like_settings(call)?;
-    let url = helper_result(
-        OpenAiLikeResponsesPolicy { settings }.complete_url(call.api_base.as_deref()),
-    )?;
-    Ok(Value::String(url))
+    OpenAiLikeResponsesPolicy { settings }
+        .complete_url(call.api_base.as_deref())
+        .or_value_error()
+        .map(Value::String)
 }
 
 fn openai_like_headers(call: &Call) -> Helper<Value> {
     let settings = openai_like_settings(call)?;
     let headers = OpenAiLikeResponsesPolicy { settings }
         .validate_environment(sorted_headers(call), call.api_key.as_ref());
-    into_value(&headers)
+    serde_json::to_value(headers).or_value_error()
 }
