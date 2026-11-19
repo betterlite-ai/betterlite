@@ -22,7 +22,7 @@ use crate::claude_platform::native::{
     NativeHeaders, NativeHeadersRequest, NativeRequest, validate_environment as validate_native,
 };
 use crate::claude_platform::stream::get_model_response_iterator;
-use crate::claude_platform::{WORKSPACE_HEADER, WorkspaceSources};
+use crate::claude_platform::{FILTERS_ANTHROPIC_BETAS, WORKSPACE_HEADER, WorkspaceSources};
 use crate::claude_platform_inputs::body::PlatformWarning;
 
 const MISSING_WORKSPACE: &str = "Missing workspace ID for Claude Platform on AWS. Pass `workspace_id` or configure the provider workspace setting.";
@@ -340,6 +340,8 @@ pub(crate) fn native_platform_headers() {
         Some("https://aws-external-anthropic.us-west-2.amazonaws.com/v1/messages".to_owned());
     case.deployment.workspace_id = Some("deployment-workspace".to_owned());
     let native = case.native_headers().expect("the native headers build");
+    // should_filter_anthropic_beta_headers stays false, so the caller's alpha survives below.
+    const { assert!(!FILTERS_ANTHROPIC_BETAS) };
     assert_eq!(
         header(&native.headers, "anthropic-version"),
         Some("2024-01-01")
