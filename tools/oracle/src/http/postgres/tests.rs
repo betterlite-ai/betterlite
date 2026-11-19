@@ -222,14 +222,14 @@ fn body(source: &str) -> serde_json::Value {
 fn independent_initial_rows() {
     let case = decode_case(
         Path::new("<bytes>"),
-        br#"name: independent-initial-rows
+        b"name: independent-initial-rows
 config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-seeded, user_role: internal_user, auto_create_key: false}}
 upstream: []
 database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-seeded}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
-"#,
+",
     )
     .unwrap();
     let options = Options {
@@ -257,14 +257,14 @@ compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
 fn first_gateway_write_not_shared() {
     let case = decode_case(
         Path::new("<bytes>"),
-        br#"name: first-gateway-write-not-shared
+        b"name: first-gateway-write-not-shared
 config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
 upstream: []
 database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
-"#,
+",
     )
     .unwrap();
     let options = Options {
@@ -287,23 +287,23 @@ compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
     assert_eq!(second.status, 200);
 }
 
-const HASHED_ADMIN_CASE: &str = r#"name: hashed-admin-creates-user
+const HASHED_ADMIN_CASE: &str = "name: hashed-admin-creates-user
 config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
 upstream: []
 database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
-"#;
+";
 
-const HASHED_INTERNAL_CASE: &str = r#"name: hashed-internal-key-denied
+const HASHED_INTERNAL_CASE: &str = "name: hashed-internal-key-denied
 config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-internal'}, body: {user_id: fixture-denied, user_role: internal_user, auto_create_key: false}}
 upstream: []
 database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
-"#;
+";
 
 #[test]
 fn hashed_fixture_keys_and_roles() {
@@ -337,14 +337,14 @@ fn hashed_fixture_keys_and_roles() {
 fn disabled_schema_update_still_checks_current_schema() {
     let case = decode_case(
         Path::new("<bytes>"),
-        br#"name: disabled-schema-update
+        b"name: disabled-schema-update
 config: 'general_settings: {master_key: oracle-master}'
 env: {}
 request: {method: GET, path: /health/liveliness, headers: {}, body: null}
 upstream: []
 database: {seed: {}}
 compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
-"#,
+",
     )
     .unwrap();
     let options = Options {
