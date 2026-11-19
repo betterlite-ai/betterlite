@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::debug_routes::DebugRoutesState;
-use crate::debug_routes::cache_memory::{CacheSnapshot, CacheSource as _};
+use crate::debug_routes::cache_memory::CacheSnapshot;
 use crate::tracing_routes::router::unauthenticated;
 
 mod tests;
@@ -34,10 +34,10 @@ pub(super) async fn handler(
     }
     let ordinary = state.user_api_key_cache.snapshot();
     let key_objects = state.user_key_object_cache.snapshot();
-    let router = match state.llm_router_cache.as_ref() {
-        Some(source) => source.snapshot(),
-        None => CacheSnapshot::default(),
-    };
+    let router = state
+        .llm_router_cache
+        .as_ref()
+        .map_or_else(CacheSnapshot::default, |source| source.snapshot());
     let logging = state.proxy_logging_cache.snapshot();
     Json(CacheItemsBody {
         user_api_key_cache: ordinary.cache_dict,

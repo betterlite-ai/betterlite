@@ -34,7 +34,7 @@ struct QueryIssuesBody {
 }
 
 impl QueryError {
-    fn body(&self) -> QueryIssuesBody {
+    const fn body(&self) -> QueryIssuesBody {
         let (kind, name, msg) = match self {
             Self::NotAnInteger { name } => ("int_parsing", *name, INTEGER_MESSAGE),
             Self::NotABoolean { name } => ("bool_parsing", *name, BOOLEAN_MESSAGE),
@@ -66,13 +66,11 @@ pub(crate) fn integer(
     values: &BTreeMap<String, String>,
     name: &'static str,
 ) -> Result<Option<i64>, QueryError> {
-    match values.get(name) {
-        None => Ok(None),
-        Some(text) => text
-            .parse::<i64>()
+    values.get(name).map_or(Ok(None), |text| {
+        text.parse::<i64>()
             .map(Some)
-            .map_err(|_parse| QueryError::NotAnInteger { name }),
-    }
+            .map_err(|_parse| QueryError::NotAnInteger { name })
+    })
 }
 
 // the shared pydantic reader recognizes the same words, with no trimming

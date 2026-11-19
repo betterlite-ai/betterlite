@@ -38,10 +38,10 @@ pub(super) async fn handler(
     if caller.is_none() {
         return unauthenticated();
     }
-    let spans = match state.spans.as_ref() {
-        Some(source) => source.finished_spans(),
-        None => Vec::new(),
-    };
+    let spans = state
+        .spans
+        .as_ref()
+        .map_or_else(Vec::new, |source| source.finished_spans());
     Json(group_spans(&spans)).into_response()
 }
 

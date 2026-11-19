@@ -8,9 +8,12 @@ use crate::debug_routes::tests::test_support;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CountsBody {
-    num_items_in_user_api_key_cache: usize,
-    num_items_in_llm_router_cache: usize,
-    num_items_in_proxy_logging_obj_cache: usize,
+    #[serde(rename = "num_items_in_user_api_key_cache")]
+    user_api_keys: usize,
+    #[serde(rename = "num_items_in_llm_router_cache")]
+    llm_router: usize,
+    #[serde(rename = "num_items_in_proxy_logging_obj_cache")]
+    proxy_logging: usize,
 }
 
 #[tokio::test]
@@ -34,9 +37,9 @@ async fn counts_cache_and_ttl_entries_of_every_component() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let counts: CountsBody = serde_json::from_str(&text).expect("a counts body");
-    assert_eq!(counts.num_items_in_user_api_key_cache, 6);
-    assert_eq!(counts.num_items_in_llm_router_cache, 1);
-    assert_eq!(counts.num_items_in_proxy_logging_obj_cache, 1);
+    assert_eq!(counts.user_api_keys, 6);
+    assert_eq!(counts.llm_router, 1);
+    assert_eq!(counts.proxy_logging, 1);
 }
 
 #[tokio::test]
@@ -51,9 +54,9 @@ async fn an_absent_router_cache_counts_zero_items() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let counts: CountsBody = serde_json::from_str(&text).expect("a counts body");
-    assert_eq!(counts.num_items_in_user_api_key_cache, 0);
-    assert_eq!(counts.num_items_in_llm_router_cache, 0);
-    assert_eq!(counts.num_items_in_proxy_logging_obj_cache, 0);
+    assert_eq!(counts.user_api_keys, 0);
+    assert_eq!(counts.llm_router, 0);
+    assert_eq!(counts.proxy_logging, 0);
 }
 
 #[tokio::test]
