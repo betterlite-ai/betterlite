@@ -40,7 +40,7 @@ fn tag(index: usize) -> String {
 }
 
 async fn drain_blocked(release: &Notify, probe: &Probe, expected: usize) {
-    for _attempt in 0..1000 {
+    for _attempt in 0_u32..1_000_u32 {
         release.notify_waiters();
         yield_now().await;
         if probe.publishes() == expected {
@@ -57,7 +57,7 @@ async fn publish_range(tasks: &PublishTasks, endpoint: &Arc<ScriptedEndpoint>, c
 }
 
 async fn wait_for_publishes(probe: &Probe, expected: usize) {
-    for _attempt in 0..1000 {
+    for _attempt in 0_u32..1_000_u32 {
         if probe.publishes() == expected {
             return;
         }

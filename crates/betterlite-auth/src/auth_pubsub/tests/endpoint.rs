@@ -14,7 +14,7 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use betterlite_redis::redis_live_client::LiveClientFactory;
 
 use crate::auth_pubsub::channel::INVALIDATION_CHANNEL;
-use crate::auth_pubsub::endpoint::{AuthPubSub, RedisAuthPubSub, TransportError};
+use crate::auth_pubsub::endpoint::{AuthPubSub as _, RedisAuthPubSub, TransportError};
 
 use super::support::runtime;
 

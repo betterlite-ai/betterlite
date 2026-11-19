@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::future::{Future, pending, ready};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -17,6 +19,7 @@ use redis::RedisError;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Notify;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
@@ -38,9 +41,9 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn scripted_failure(text: &str) -> ClientReuseError {
-    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(
-        std::io::Error::other(text.to_owned()),
-    )))
+    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(io::Error::other(
+        text.to_owned(),
+    ))))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -210,10 +213,10 @@ impl AuthPubSub for ScriptedEndpoint {
         }
     }
 
-    async fn subscribe(&self) -> Result<Self::Subscription, TransportError> {
+    fn subscribe(&self) -> impl Future<Output = Result<Self::Subscription, TransportError>> + Send {
         self.probe.record(Entry::Subscribe);
         let session = lock(&self.sessions).pop_front();
-        match session {
+        ready(match session {
             None => Err(TransportError::Connection(scripted_failure(
                 "the scripted sessions ran out",
             ))),
@@ -228,7 +231,7 @@ impl AuthPubSub for ScriptedEndpoint {
                 steps: Mutex::new(VecDeque::from(steps)),
                 close: self.close,
             }),
-        }
+        })
     }
 }
 
@@ -263,14 +266,14 @@ impl AuthPubSubSubscription for ScriptedSubscription {
                 "the scripted consume failed",
             ))),
             Some(Step::Block) | None => {
-                std::future::pending::<Result<Option<PubSubMessage>, TransportError>>().await
+                pending::<Result<Option<PubSubMessage>, TransportError>>().await
             }
         }
     }
 
-    async fn close(&mut self) -> Result<(), TransportError> {
+    fn close(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
         self.probe.record(Entry::Close);
-        match self.close {
+        ready(match self.close {
             CloseMode::Accept => Ok(()),
             CloseMode::Fail => {
                 self.probe.record(Entry::CloseFailed);
@@ -278,7 +281,7 @@ impl AuthPubSubSubscription for ScriptedSubscription {
                     "the scripted close failed",
                 )))
             }
-        }
+        })
     }
 }
 
@@ -361,14 +364,6 @@ impl FaultingMemory {
             fail_set: AtomicBool::new(false),
             fail_delete: AtomicBool::new(false),
         })
-    }
-
-    pub(crate) fn fail_set(&self) {
-        self.fail_set.store(true, Ordering::SeqCst);
-    }
-
-    pub(crate) fn fail_delete(&self) {
-        self.fail_delete.store(true, Ordering::SeqCst);
     }
 }
 
@@ -540,7 +535,7 @@ where
 {
     let events = Arc::new(Mutex::new(Vec::new()));
     let subscriber = registry().with(CaptureLayer(Arc::clone(&events)));
-    let output = tracing::subscriber::with_default(subscriber, operation);
+    let output = with_default(subscriber, operation);
     let captured = lock(&events).clone();
     (output, captured)
 }

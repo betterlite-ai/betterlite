@@ -5,7 +5,7 @@ use betterlite_cache::dual_cache::DualCache;
 use tokio::task::yield_now;
 use tokio::time::timeout;
 
-use crate::auth_pubsub::clock::{BackoffClock, TokioClock};
+use crate::auth_pubsub::clock::{BackoffClock as _, TokioClock};
 use crate::auth_pubsub::message::{Invalidation, encode};
 use crate::auth_pubsub::subscriber::{
     BACKOFF_INITIAL, BACKOFF_MAX, CacheInvalidationSubscriber, POLL_TIMEOUT,
@@ -64,7 +64,7 @@ async fn wait_until<F>(mut condition: F)
 where
     F: FnMut() -> bool,
 {
-    for _attempt in 0..1000 {
+    for _attempt in 0_u32..1_000_u32 {
         if condition() {
             return;
         }
@@ -101,8 +101,10 @@ fn start_idempotent_stop_restart() {
             );
             subscriber.start();
             subscriber.start();
+            wait_until(|| probe.count(&Entry::Subscribe) == 1).await;
             subscriber.stop().await;
             subscriber.start();
+            wait_until(|| probe.count(&Entry::Subscribe) == 2).await;
             subscriber.stop().await;
         });
     });
@@ -167,7 +169,7 @@ fn poll_timeout_and_empty() {
     let ((), captured) = capture(|| {
         runtime.block_on(async {
             subscriber.start();
-            wait_until(|| stored(&*additional, key) == Some(5.0_f64)).await;
+            wait_until(|| stored(&additional, key) == Some(5.0_f64)).await;
             subscriber.stop().await;
         });
     });
@@ -184,24 +186,53 @@ fn poll_timeout_and_empty() {
         ],
         "each read uses a one second timeout and an empty poll reads again"
     );
-    assert_eq!(expiry(&*additional, key), Some(1030.0_f64));
+    assert_eq!(expiry(&additional, key), Some(1030.0_f64));
     assert!(captured.is_empty());
+}
+
+fn reconnect_sessions() -> Vec<ScriptedSession> {
+    let mut sessions = vec![ScriptedSession::Failure; 6];
+    sessions.push(ScriptedSession::Serving(vec![Step::Fail]));
+    sessions.push(ScriptedSession::Serving(vec![Step::Block]));
+    sessions
 }
 
 #[test]
 fn reconnect_backoff_cap_reset() {
     let runtime = runtime();
     let probe = Probe::new();
-    let sessions = vec![
-        ScriptedSession::Failure,
-        ScriptedSession::Failure,
-        ScriptedSession::Failure,
-        ScriptedSession::Failure,
-        ScriptedSession::Failure,
-        ScriptedSession::Failure,
-        ScriptedSession::Serving(vec![Step::Fail]),
-        ScriptedSession::Serving(vec![Step::Block]),
-    ];
+    let sessions = reconnect_sessions();
+    let subscriber = subscriber(endpoint(&probe, sessions), &probe, &fixture(), Vec::new());
+    runtime.block_on(async {
+        subscriber.start();
+        wait_until(|| probe.count(&Entry::Subscribe) == 8).await;
+        subscriber.stop().await;
+    });
+    assert_eq!(
+        sleeps(&probe),
+        [
+            BACKOFF_INITIAL,
+            Duration::from_secs(10),
+            Duration::from_secs(20),
+            Duration::from_secs(40),
+            BACKOFF_MAX,
+            BACKOFF_MAX,
+            BACKOFF_INITIAL,
+        ],
+        "the pause doubles to sixty seconds and a successful subscribe resets it"
+    );
+    assert_eq!(
+        probe.count(&Entry::Close),
+        2,
+        "a failed subscribe has no pubsub to close"
+    );
+}
+
+#[test]
+fn reconnect_warning_backoff_seconds() {
+    let runtime = runtime();
+    let probe = Probe::new();
+    let sessions = reconnect_sessions();
     let subscriber = subscriber(endpoint(&probe, sessions), &probe, &fixture(), Vec::new());
     let ((), captured) = capture(|| {
         runtime.block_on(async {
@@ -210,22 +241,6 @@ fn reconnect_backoff_cap_reset() {
             subscriber.stop().await;
         });
     });
-    let ten = Duration::from_secs(10);
-    let twenty = Duration::from_secs(20);
-    let forty = Duration::from_secs(40);
-    assert_eq!(
-        sleeps(&probe),
-        [
-            BACKOFF_INITIAL,
-            ten,
-            twenty,
-            forty,
-            BACKOFF_MAX,
-            BACKOFF_MAX,
-            BACKOFF_INITIAL,
-        ],
-        "the pause doubles to sixty seconds and a successful subscribe resets it"
-    );
     let warned: Vec<Option<f64>> = captured
         .iter()
         .filter(|event| event.level == "warn")
@@ -241,12 +256,8 @@ fn reconnect_backoff_cap_reset() {
             Some(60.0_f64),
             Some(60.0_f64),
             Some(5.0_f64),
-        ]
-    );
-    assert_eq!(
-        probe.count(&Entry::Close),
-        2,
-        "a failed subscribe has no pubsub to close"
+        ],
+        "the warned backoff follows the pause and resets on a successful subscribe"
     );
 }
 
@@ -291,7 +302,7 @@ fn close_failure_debug() {
             subscriber.stop().await;
         });
     });
-    assert_eq!(probe.count(&Entry::CloseFailed), 1);
+    assert_eq!(probe.count(&Entry::CloseFailed), 2);
     assert_eq!(
         captured,
         [
@@ -301,6 +312,11 @@ fn close_failure_debug() {
                 backoff_seconds: None,
             },
             warning("the scripted consume failed", Some(5.0_f64)),
+            CapturedEvent {
+                level: "debug".to_owned(),
+                subject: Some("the scripted close failed".to_owned()),
+                backoff_seconds: None,
+            },
         ],
         "a close failure is debug-only and never replaces the consume failure"
     );
@@ -331,19 +347,19 @@ fn set_additional_only() {
     let ((), captured) = capture(|| {
         runtime.block_on(async {
             subscriber.start();
-            wait_until(|| stored(&*extra_two, key) == Some(7.5_f64)).await;
+            wait_until(|| stored(&extra_two, key) == Some(7.5_f64)).await;
             subscriber.stop().await;
         });
     });
     assert_eq!(
-        stored(&*fixture.ordinary, key),
+        stored(&fixture.ordinary, key),
         Some(1.0_f64),
         "a set never writes the primary user cache"
     );
-    assert_eq!(stored(&*extra_one, key), Some(7.5_f64));
-    assert_eq!(expiry(&*extra_one, key), Some(1030.0_f64));
-    assert_eq!(stored(&*extra_two, key), Some(7.5_f64));
-    assert_eq!(expiry(&*extra_two, key), Some(1030.0_f64));
+    assert_eq!(stored(&extra_one, key), Some(7.5_f64));
+    assert_eq!(expiry(&extra_one, key), Some(1030.0_f64));
+    assert_eq!(stored(&extra_two, key), Some(7.5_f64));
+    assert_eq!(expiry(&extra_two, key), Some(1030.0_f64));
     assert!(captured.is_empty());
     assert_eq!(probe.publishes(), 0, "a consumed set is not republished");
 }
@@ -371,22 +387,22 @@ fn delete_all_local_only() {
     let ((), captured) = capture(|| {
         runtime.block_on(async {
             subscriber.start();
-            wait_until(|| stored(&*extra, HEX_KEY).is_none()).await;
+            wait_until(|| stored(&extra, HEX_KEY).is_none()).await;
             subscriber.stop().await;
         });
     });
     assert_eq!(
-        stored(&*fixture.key_objects, HEX_KEY),
+        stored(&fixture.key_objects, HEX_KEY),
         None,
         "the primary cache is the partition in_memory_cache_for selects"
     );
     assert_eq!(
-        stored(&*fixture.ordinary, HEX_KEY),
+        stored(&fixture.ordinary, HEX_KEY),
         Some(3.0_f64),
         "the other primary partition keeps its entry"
     );
     assert!(
-        stored(&*extra, HEX_KEY).is_none(),
+        stored(&extra, HEX_KEY).is_none(),
         "every additional cache is cleared"
     );
     assert!(captured.is_empty());
@@ -407,7 +423,7 @@ fn nonfinite_counter_dropped() {
     let extra = FaultingMemory::new(memory());
     store(&*fixture.ordinary, key, 2.0_f64);
     store(&*extra, key, 4.0_f64);
-    let seeded_expiry = expiry(&*extra, key);
+    let seeded_expiry = expiry(&extra, key);
     let subscriber = subscriber(
         endpoint(&probe, sessions),
         &probe,
@@ -422,16 +438,16 @@ fn nonfinite_counter_dropped() {
         });
     });
     assert_eq!(
-        stored(&*extra, key),
+        stored(&extra, key),
         Some(4.0_f64),
         "a nonfinite counter never lands in an additional cache"
     );
     assert_eq!(
-        expiry(&*extra, key),
+        expiry(&extra, key),
         seeded_expiry,
         "a dropped counter leaves the stored expiry alone"
     );
-    assert_eq!(stored(&*fixture.ordinary, key), Some(2.0_f64));
+    assert_eq!(stored(&fixture.ordinary, key), Some(2.0_f64));
     assert_eq!(captured, [warning(key, None)]);
 }
 

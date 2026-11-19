@@ -12,8 +12,8 @@ fn parsed(bytes: &[u8]) -> Option<Invalidation> {
 
 fn nested_extra(brackets: usize) -> Vec<u8> {
     let prefix = "{\"cache_key\":\"k\",\"extra\":";
-    let brackets = format!("{}{}", "[".repeat(brackets), "]".repeat(brackets));
-    format!("{prefix}{brackets}}}").into_bytes()
+    let nested = format!("{}{}", "[".repeat(brackets), "]".repeat(brackets));
+    format!("{prefix}{nested}}}").into_bytes()
 }
 
 fn nested_objects(levels: usize) -> Vec<u8> {
@@ -108,11 +108,11 @@ fn utf8_replacement() {
         decode_invalidation(b"{\"cache_key\":\"k\"}\x80"),
         Err(DecodeError::Syntax)
     );
-    let valid = parsed("{\"cache_key\":\"café\"}".as_bytes());
+    let valid = parsed("{\"cache_key\":\"caf\u{e9}\"}".as_bytes());
     assert_eq!(
         valid,
         Some(Invalidation {
-            cache_key: "café".to_owned(),
+            cache_key: "caf\u{e9}".to_owned(),
             new_value: None,
             ttl: None,
         })
@@ -128,7 +128,9 @@ fn json_escapes_and_surrogates() {
     );
     assert_eq!(
         parsed(wire.as_bytes()),
-        Some(delete("q\" b\\ s/ b\x08 f\x0c n\n r\r t\t cé CÉ p😀"))
+        Some(delete(
+            "q\" b\\ s/ b\x08 f\x0c n\n r\r t\t c\u{e9} C\u{c9} p\u{1f600}"
+        ))
     );
 }
 
@@ -241,10 +243,6 @@ fn malformed_message() {
     assert_eq!(decode_invalidation(b"[]"), Err(DecodeError::NotAnObject));
     assert_eq!(decode_invalidation(b"{}"), Ok(TypedValue::new()));
     assert_eq!(read(&TypedValue::new()), None);
-    let number_key = decode_invalidation(br#"{"cache_key":3}"#);
-    assert_eq!(number_key.ok().as_ref().and_then(read), None);
-    let absent_key = decode_invalidation(br#"{"new_value":1}"#);
-    assert_eq!(absent_key.ok().as_ref().and_then(read), None);
     assert_eq!(
         decode_invalidation(br#"{"cache_key":"k",}"#),
         Err(DecodeError::Syntax)
@@ -257,6 +255,14 @@ fn malformed_message() {
         decode_invalidation(br#"{"cache_key":"k""#),
         Err(DecodeError::Syntax)
     );
+}
+
+#[test]
+fn malformed_key_values() {
+    let number_key = decode_invalidation(br#"{"cache_key":3}"#);
+    assert_eq!(number_key.ok().as_ref().and_then(read), None);
+    let absent_key = decode_invalidation(br#"{"new_value":1}"#);
+    assert_eq!(absent_key.ok().as_ref().and_then(read), None);
     assert_eq!(
         decode_invalidation(br#"{"cache_key":"unterminated}"#),
         Err(DecodeError::Syntax)
@@ -289,7 +295,13 @@ fn message_byte_limit() {
     let mut allowed = String::from("{\"cache_key\":\"k\"}");
     allowed.push_str(&" ".repeat(MAX_MESSAGE_BYTES.saturating_sub(allowed.len())));
     assert_eq!(allowed.len(), MAX_MESSAGE_BYTES);
-    assert!(decode_invalidation(allowed.as_bytes()).is_ok());
+    let at_limit = decode_invalidation(allowed.as_bytes())
+        .expect("a message exactly at the byte limit decodes");
+    assert_eq!(
+        at_limit.len(),
+        1,
+        "the whole object is read at the byte limit"
+    );
     let mut over = allowed;
     over.push(' ');
     assert_eq!(over.len(), MAX_MESSAGE_BYTES.saturating_add(1));
