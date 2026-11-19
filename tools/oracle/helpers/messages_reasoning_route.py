@@ -182,8 +182,8 @@ def normalize_answer(call: NormalizeCall) -> JsonValue:
 
 def route_answer(call: RouteCall) -> JsonValue:
     record: list[JsonValue] = []
-    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L342
-    adapter_handler.get_model_info = ModelInfoFake(script=call["model_info"], record=record)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L357
+    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L342
+    adapter_handler.get_model_info = ModelInfoFake(script=call["model_info"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L357
     kwargs = dict(call["kwargs"])
     previous = os.environ.get(ENV)
     set_environment(call["environment"])
@@ -197,7 +197,7 @@ def route_answer(call: RouteCall) -> JsonValue:
 
 def plain_answer(call: PlainCall) -> JsonValue:
     record: list[JsonValue] = []
-    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L404
+    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L404
     litellm_main.responses_api_bridge_check = BridgeFake(script=call["bridge"], record=record)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L418
     kwargs = dict(call["kwargs"])
     effort = PLAIN(kwargs, thinking=call["thinking"])

@@ -23,16 +23,11 @@ pub(super) fn normalize_answer(
     kwargs: &IndexMap<String, Json>,
     model_info: Option<&IndexMap<String, Json>>,
 ) -> HelperResult {
-    let metadata = Metadata {
-        info: model_info.map(|fields| ModelInfo {
-            fields: fields.clone(),
-        }),
-        cost: empty_cost()?,
-        recorder: Recorder::default(),
-    };
-    let mut completion = CompletionKwargs {
-        fields: kwargs.clone(),
-    };
+    let Prepared {
+        metadata,
+        mut completion,
+        ..
+    } = prepare(kwargs, model_info, None)?;
     normalize_effort(&mut completion, &metadata);
     Ok(json!({
         "kwargs": completion.fields,
@@ -47,20 +42,11 @@ pub(super) fn route_answer(
     provider: Option<&ResolvedScript>,
     settings: AutoSummary<'_>,
 ) -> HelperResult {
-    let metadata = Metadata {
-        info: model_info.map(|fields| ModelInfo {
-            fields: fields.clone(),
-        }),
-        cost: empty_cost()?,
-        recorder: Recorder::default(),
-    };
-    let resolution = Provider {
-        script: provider.cloned(),
-        recorder: Recorder::default(),
-    };
-    let mut completion = CompletionKwargs {
-        fields: kwargs.clone(),
-    };
+    let Prepared {
+        metadata,
+        resolution,
+        mut completion,
+    } = prepare(kwargs, model_info, provider)?;
     route_thinking(
         &mut completion,
         Some(thinking),
@@ -85,21 +71,14 @@ pub(super) fn plain_answer(
     provider: Option<&ResolvedScript>,
     bridge: &BridgeScript,
 ) -> HelperResult {
-    let resolution = Provider {
-        script: provider.cloned(),
-        recorder: Recorder::default(),
-    };
+    let Prepared {
+        metadata,
+        resolution,
+        completion,
+    } = prepare(kwargs, None, provider)?;
     let policy = Bridge {
         script: bridge.clone(),
         recorder: Recorder::default(),
-    };
-    let metadata = Metadata {
-        info: None,
-        cost: empty_cost()?,
-        recorder: Recorder::default(),
-    };
-    let completion = CompletionKwargs {
-        fields: kwargs.clone(),
     };
     let effort = plain_effort(
         &completion,
@@ -118,6 +97,35 @@ pub(super) fn plain_answer(
         "effort": effort,
         "seams": entries,
     }))
+}
+
+struct Prepared {
+    metadata: Metadata,
+    resolution: Provider,
+    completion: CompletionKwargs,
+}
+
+fn prepare(
+    kwargs: &IndexMap<String, Json>,
+    model_info: Option<&IndexMap<String, Json>>,
+    provider: Option<&ResolvedScript>,
+) -> Result<Prepared, Box<HelperError>> {
+    Ok(Prepared {
+        metadata: Metadata {
+            info: model_info.map(|fields| ModelInfo {
+                fields: fields.clone(),
+            }),
+            cost: empty_cost()?,
+            recorder: Recorder::default(),
+        },
+        resolution: Provider {
+            script: provider.cloned(),
+            recorder: Recorder::default(),
+        },
+        completion: CompletionKwargs {
+            fields: kwargs.clone(),
+        },
+    })
 }
 
 fn empty_cost() -> Result<ModelCostMap, Box<HelperError>> {

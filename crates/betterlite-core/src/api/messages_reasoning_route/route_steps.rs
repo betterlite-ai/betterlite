@@ -45,10 +45,12 @@ fn effort_object(
 ) -> IndexMap<String, Json> {
     let mut reasoning = IndexMap::new();
     reasoning.insert(EFFORT.to_owned(), Json::Text(effort.to_owned()));
-    if let Some(summary) = summary.filter(|value| has_content(value)) {
-        reasoning.insert(SUMMARY.to_owned(), summary.clone());
-    } else if auto_summary {
-        reasoning.insert(SUMMARY.to_owned(), Json::Text(DETAILED.to_owned()));
+    let summary = summary
+        .filter(|value| has_content(value))
+        .cloned()
+        .or_else(|| auto_summary.then(|| Json::Text(DETAILED.to_owned())));
+    if let Some(summary) = summary {
+        reasoning.insert(SUMMARY.to_owned(), summary);
     }
     reasoning
 }

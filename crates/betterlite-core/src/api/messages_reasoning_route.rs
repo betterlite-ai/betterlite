@@ -154,6 +154,6 @@ pub fn plain_effort(
 fn normalize_model(value: Option<&Json>) -> Option<&str> {
     match value {
         None => Some(""),
-        Some(value) => text_field(value),
+        Some(value) => text_field(Some(value)),
     }
 }
