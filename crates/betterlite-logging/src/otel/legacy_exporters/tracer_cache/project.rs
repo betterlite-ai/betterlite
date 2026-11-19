@@ -30,64 +30,66 @@ pub(crate) fn project_resource(base: &Resource, attributes: &BTreeMap<String, St
         .build()
 }
 
-impl DynamicTracerCache {
-    pub fn tracer_for_project(
-        &self,
-        project: &str,
-        attributes: &BTreeMap<String, String>,
-    ) -> Result<SdkTracer, LegacyExporterError> {
-        let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(cached) = projects.shift_remove(project) {
-            let tracer = cached.provider.tracer(self.tracer_name.clone());
-            projects.insert(project.to_owned(), cached);
-            return Ok(tracer);
-        }
-        drop(projects);
-        // resource detection and exporter construction can block, so they run without the cache lock
-        let fresh = CachedProvider {
-            provider: self.project_provider(attributes)?,
-            owns_exporter: !matches!(self.config.exporter, Exporter::InMemory),
-        };
-        let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(raced) = projects.shift_remove(project) {
-            let tracer = raced.provider.tracer(self.tracer_name.clone());
-            projects.insert(project.to_owned(), raced);
-            drop(projects);
-            self.dispose(fresh);
-            return Ok(tracer);
-        }
-        // LiteLLM evicts before inserting once the cache is full, so 64 providers stay
-        let evicted = if projects.len() >= MAX_PROJECT_PROVIDERS {
-            projects.shift_remove_index(0).map(|(_name, cached)| cached)
-        } else {
-            None
-        };
-        let tracer = fresh.provider.tracer(self.tracer_name.clone());
-        projects.insert(project.to_owned(), fresh);
-        drop(projects);
-        if let Some(dropped) = evicted {
-            self.dispose(dropped);
-        }
-        Ok(tracer)
+pub(crate) fn tracer_for(
+    cache: &DynamicTracerCache,
+    project: &str,
+    attributes: &BTreeMap<String, String>,
+) -> Result<SdkTracer, LegacyExporterError> {
+    let mut projects = cache
+        .projects
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(cached) = projects.shift_remove(project) {
+        let tracer = cached.provider.tracer(cache.tracer_name.clone());
+        projects.insert(project.to_owned(), cached);
+        return Ok(tracer);
     }
-
-    fn project_provider(
-        &self,
-        attributes: &BTreeMap<String, String>,
-    ) -> Result<SdkTracerProvider, LegacyExporterError> {
-        let plan = span_processor_plan(&self.config, None, None, self.callback_name.as_deref())?;
-        let processor = self.builder.span_processor(&plan)?;
-        Ok(SdkTracerProvider::builder()
-            .with_resource(project_resource(&self.resource, attributes))
+    drop(projects);
+    // resource detection and exporter construction can block, so they run without the cache lock
+    let plan = span_processor_plan(&cache.config, None, None, cache.callback_name.as_deref())?;
+    let processor = cache.builder.span_processor(&plan)?;
+    let fresh = CachedProvider {
+        provider: SdkTracerProvider::builder()
+            .with_resource(project_resource(&cache.resource, attributes))
             .with_span_processor(processor)
-            .build())
+            .build(),
+        owns_exporter: !matches!(cache.config.exporter, Exporter::InMemory),
+    };
+    let mut cached_projects = cache
+        .projects
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(raced) = cached_projects.shift_remove(project) {
+        let tracer = raced.provider.tracer(cache.tracer_name.clone());
+        cached_projects.insert(project.to_owned(), raced);
+        drop(cached_projects);
+        cache.dispose(fresh);
+        return Ok(tracer);
     }
+    // LiteLLM evicts before inserting once the cache is full, so 64 providers stay
+    let evicted = if cached_projects.len() >= MAX_PROJECT_PROVIDERS {
+        cached_projects
+            .shift_remove_index(0)
+            .map(|(_name, cached)| cached)
+    } else {
+        None
+    };
+    let tracer = fresh.provider.tracer(cache.tracer_name.clone());
+    cached_projects.insert(project.to_owned(), fresh);
+    drop(cached_projects);
+    if let Some(dropped) = evicted {
+        cache.dispose(dropped);
+    }
+    Ok(tracer)
+}
 
-    #[must_use]
-    pub fn project_names(&self) -> Vec<String> {
-        let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-        let names: Vec<String> = projects.keys().cloned().collect();
-        drop(projects);
-        names
-    }
+#[must_use]
+pub(crate) fn project_names(cache: &DynamicTracerCache) -> Vec<String> {
+    let projects = cache
+        .projects
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let names: Vec<String> = projects.keys().cloned().collect();
+    drop(projects);
+    names
 }

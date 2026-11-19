@@ -2,7 +2,9 @@ use betterlite_config::loader::EnvironmentLookup;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::arize_settings::OtlpProtocol;
-use crate::otel::config::vendor_env;
+use crate::otel::config::{
+    PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT, PHOENIX_HTTP_ENDPOINT, PHOENIX_PROJECT_NAME,
+};
 
 const DEFAULT_ENDPOINT: &str = "http://localhost:6006/v1/traces";
 const PHOENIX_CLOUD_HOST: &str = "app.phoenix.arize.com";
@@ -25,14 +27,14 @@ pub enum PhoenixSettingsError {
 impl PhoenixConfig {
     pub fn from_env(environment: &dyn EnvironmentLookup) -> Result<Self, PhoenixSettingsError> {
         let read = |name: &str| environment.lookup(name).filter(|value| !value.is_empty());
-        let collector_endpoint = read(vendor_env::PHOENIX_HTTP_ENDPOINT)
-            .or_else(|| read(vendor_env::PHOENIX_COLLECTOR_ENDPOINT));
+        let collector_endpoint =
+            read(PHOENIX_HTTP_ENDPOINT).or_else(|| read(PHOENIX_COLLECTOR_ENDPOINT));
         let (protocol, endpoint) = match collector_endpoint {
             None => (OtlpProtocol::Http, DEFAULT_ENDPOINT.to_owned()),
             Some(endpoint) if is_grpc_endpoint(&endpoint) => (OtlpProtocol::Grpc, endpoint),
             Some(endpoint) => (OtlpProtocol::Http, http_endpoint(endpoint)),
         };
-        let otlp_auth_headers = match environment.lookup(vendor_env::PHOENIX_API_KEY) {
+        let otlp_auth_headers = match environment.lookup(PHOENIX_API_KEY) {
             Some(api_key) => {
                 let secret_key = SecretString::from(api_key);
                 let header = match protocol {
@@ -53,8 +55,7 @@ impl PhoenixConfig {
             otlp_auth_headers,
             protocol,
             endpoint,
-            project_name: read(vendor_env::PHOENIX_PROJECT_NAME)
-                .unwrap_or_else(|| "default".to_owned()),
+            project_name: read(PHOENIX_PROJECT_NAME).unwrap_or_else(|| "default".to_owned()),
         })
     }
 }

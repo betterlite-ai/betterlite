@@ -1,7 +1,10 @@
 use betterlite_config::loader::EnvironmentLookup;
 use secrecy::SecretString;
 
-use crate::otel::config::vendor_env;
+use crate::otel::config::{
+    ARIZE_API_KEY, ARIZE_ENDPOINT, ARIZE_HTTP_ENDPOINT, ARIZE_PROJECT_NAME, ARIZE_SPACE_ID,
+    ARIZE_SPACE_KEY,
+};
 
 const DEFAULT_ENDPOINT: &str = "https://otlp.arize.com/v1";
 
@@ -35,21 +38,18 @@ impl ArizeConfig {
     #[must_use]
     pub fn from_env(environment: &dyn EnvironmentLookup) -> Self {
         let read = |name: &str| environment.lookup(name).filter(|value| !value.is_empty());
-        let (protocol, endpoint) = match (
-            read(vendor_env::ARIZE_ENDPOINT),
-            read(vendor_env::ARIZE_HTTP_ENDPOINT),
-        ) {
+        let (protocol, endpoint) = match (read(ARIZE_ENDPOINT), read(ARIZE_HTTP_ENDPOINT)) {
             (Some(endpoint), _) => (OtlpProtocol::Grpc, endpoint),
             (None, Some(endpoint)) => (OtlpProtocol::Http, endpoint),
             (None, None) => (OtlpProtocol::Grpc, DEFAULT_ENDPOINT.to_owned()),
         };
         Self {
-            space_id: read(vendor_env::ARIZE_SPACE_ID),
-            space_key: read(vendor_env::ARIZE_SPACE_KEY),
-            api_key: read(vendor_env::ARIZE_API_KEY).map(SecretString::from),
+            space_id: read(ARIZE_SPACE_ID),
+            space_key: read(ARIZE_SPACE_KEY),
+            api_key: read(ARIZE_API_KEY).map(SecretString::from),
             protocol,
             endpoint,
-            project_name: read(vendor_env::ARIZE_PROJECT_NAME),
+            project_name: read(ARIZE_PROJECT_NAME),
         }
     }
 }

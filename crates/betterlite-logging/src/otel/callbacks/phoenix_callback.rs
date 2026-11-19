@@ -9,8 +9,9 @@ use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracer;
 use secrecy::ExposeSecret as _;
 
-use crate::otel::config::vendor_env;
+use crate::otel::config::{ARIZE_PROJECT_NAME, PHOENIX_PROJECT_NAME};
 use crate::otel::integrations::phoenix_settings::{PhoenixConfig, PhoenixSettingsError};
+use crate::otel::legacy_exporters::tracer_cache::project::tracer_for;
 use crate::otel::legacy_lifecycle::error::LegacyLifecycleError;
 use crate::otel::legacy_lifecycle::lifecycle::{
     LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall, LifecycleEvent, litellm_params,
@@ -60,7 +61,7 @@ pub fn resolve_project_name(
     let proxy_mode = is_proxy_request(kwargs);
     ["phoenix_project_name_override", "phoenix_project_name"]
         .iter()
-        .find_map(|key| metadata_project(kwargs, *key, proxy_mode))
+        .find_map(|key| metadata_project(kwargs, key, proxy_mode))
         .or_else(|| env_project_name(environment))
         .unwrap_or_else(|| DEFAULT_PROJECT.to_owned())
 }
@@ -94,15 +95,12 @@ fn metadata_project(kwargs: &MetadataMap, key: &str, proxy_mode: bool) -> Option
 }
 
 fn env_project_name(environment: &BTreeMap<String, String>) -> Option<String> {
-    [
-        vendor_env::PHOENIX_PROJECT_NAME,
-        vendor_env::ARIZE_PROJECT_NAME,
-    ]
-    .iter()
-    .find_map(|name| {
-        let value = environment.get(*name)?.trim();
-        (!value.is_empty()).then(|| value.to_owned())
-    })
+    [PHOENIX_PROJECT_NAME, ARIZE_PROJECT_NAME]
+        .iter()
+        .find_map(|name| {
+            let value = environment.get(*name)?.trim();
+            (!value.is_empty()).then(|| value.to_owned())
+        })
 }
 
 // every span of one request goes to the tracer of its resolved project
@@ -127,9 +125,7 @@ impl TracerRouter for PhoenixProjects {
     ) -> Result<Option<SdkTracer>, LegacyLifecycleError> {
         let project = resolve_project_name(kwargs, &self.environment);
         let attributes = project_attributes(&project);
-        let tracer = lifecycle
-            .tracer_cache
-            .tracer_for_project(&project, &attributes)?;
+        let tracer = tracer_for(&lifecycle.tracer_cache, &project, &attributes)?;
         Ok(Some(tracer))
     }
 }
@@ -145,8 +141,8 @@ pub fn handle_trace(
     let parent = is_proxy_request(&kwargs)
         .then(|| proxy_parent(lifecycle, &kwargs, call))
         .transpose()?;
-    if let Some(parent) = &parent {
-        carry_parent(&mut kwargs, parent);
+    if let Some(open_parent) = &parent {
+        carry_parent(&mut kwargs, open_parent);
     }
     let traced = LifecycleCall {
         kwargs: &kwargs,
@@ -157,8 +153,8 @@ pub fn handle_trace(
         flags: call.flags,
     };
     let result = lifecycle.handle(&traced, event);
-    if let Some(parent) = parent {
-        finish_parent(lifecycle, &parent, &traced, event);
+    if let Some(open_parent) = parent {
+        finish_parent(lifecycle, &open_parent, &traced, event);
     }
     result
 }
@@ -170,7 +166,7 @@ fn strip_parent(kwargs: &mut MetadataMap) {
     };
     for bucket in ["metadata", "litellm_metadata"] {
         if let Some(OtelModelValue::Object(fields)) = params.get_mut(bucket) {
-            _ = fields.remove(PARENT_SPAN_KEY);
+            drop(fields.remove(PARENT_SPAN_KEY));
         }
     }
 }

@@ -19,7 +19,7 @@ use super::{
 use crate::otel::integrations::phoenix_settings::PhoenixSettingsError;
 use crate::otel::legacy_exporters::tracer_cache::DynamicTracerCache;
 use crate::otel::legacy_exporters::tracer_cache::project::{
-    MAX_PROJECT_PROVIDERS, project_resource,
+    MAX_PROJECT_PROVIDERS, project_names, project_resource, tracer_for,
 };
 use crate::otel::legacy_lifecycle::lifecycle::{
     DEFAULT_HANDLER_CLASS_NAME, LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
@@ -241,9 +241,7 @@ fn fill_projects(cache: &DynamicTracerCache, count: usize) -> Vec<String> {
     let mut names = Vec::with_capacity(count);
     for index in 0..count {
         let project = format!("project-{index}");
-        cache
-            .tracer_for_project(&project, &project_attributes(&project))
-            .expect("the project tracer");
+        tracer_for(cache, &project, &project_attributes(&project)).expect("the project tracer");
         names.push(project);
     }
     names
@@ -270,7 +268,7 @@ fn phoenix_routes_the_request_to_its_project_provider() {
     );
     handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).expect("the phoenix trace");
     assert_eq!(
-        lifecycle.tracer_cache.project_names(),
+        project_names(&lifecycle.tracer_cache),
         vec!["project-a".to_owned()]
     );
     assert_eq!(rig.spans().len(), 1);
@@ -284,7 +282,7 @@ fn phoenix_reuses_the_provider_of_a_project() {
     let second = base_kwargs("call-second");
     handle_trace(&lifecycle, &call(&first), LifecycleEvent::Success).expect("the first call");
     handle_trace(&lifecycle, &call(&second), LifecycleEvent::Success).expect("the second call");
-    assert_eq!(lifecycle.tracer_cache.project_names().len(), 1);
+    assert_eq!(project_names(&lifecycle.tracer_cache).len(), 1);
     assert_eq!(rig.spans().len(), 2);
 }
 
@@ -293,7 +291,7 @@ fn phoenix_keeps_the_last_sixty_four_project_providers() {
     let rig = Rig::new();
     let lifecycle = rig.phoenix();
     let names = fill_projects(&lifecycle.tracer_cache, 65);
-    let cached = lifecycle.tracer_cache.project_names();
+    let cached = project_names(&lifecycle.tracer_cache);
     assert_eq!(cached.len(), MAX_PROJECT_PROVIDERS);
     assert_eq!(
         cached.first().map(String::as_str),
@@ -313,15 +311,19 @@ fn phoenix_moves_a_hit_to_the_end_of_the_lru() {
     let lifecycle = rig.phoenix();
     let names = fill_projects(&lifecycle.tracer_cache, 64);
     let touched = names.first().expect("the first project");
-    lifecycle
-        .tracer_cache
-        .tracer_for_project(touched, &project_attributes(touched))
-        .expect("the cached tracer");
-    lifecycle
-        .tracer_cache
-        .tracer_for_project("project-new", &project_attributes("project-new"))
-        .expect("the new tracer");
-    let cached = lifecycle.tracer_cache.project_names();
+    tracer_for(
+        &lifecycle.tracer_cache,
+        touched,
+        &project_attributes(touched),
+    )
+    .expect("the cached tracer");
+    tracer_for(
+        &lifecycle.tracer_cache,
+        "project-new",
+        &project_attributes("project-new"),
+    )
+    .expect("the new tracer");
+    let cached = project_names(&lifecycle.tracer_cache);
     assert!(cached.iter().any(|name| name == touched));
     assert!(cached.iter().all(|name| name != "project-1"));
     assert!(cached.iter().any(|name| name == "project-new"));
@@ -591,7 +593,7 @@ fn phoenix_routes_the_guardrail_to_the_project_provider() {
     }
     handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).expect("the guardrail call");
     assert_eq!(
-        lifecycle.tracer_cache.project_names(),
+        project_names(&lifecycle.tracer_cache),
         vec!["guard-project".to_owned()]
     );
     assert!(names(&rig.spans()).contains(&"guardrail".to_owned()));

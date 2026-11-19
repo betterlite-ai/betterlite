@@ -78,18 +78,19 @@ impl ArizeSampling {
             .decisions
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if let Some(key) = &key
-            && let Some(cached) = decisions.get(key)
+        if let Some(cached_key) = &key
+            && let Some(cached) = decisions.get(cached_key)
         {
             return Ok(*cached);
         }
-        let sampled = rate > 0.0 && (self.draw)() <= rate;
-        if let Some(key) = key {
+        let sampled = rate > 0.0_f64 && (self.draw)() <= rate;
+        if let Some(request_id) = key {
             if decisions.len() >= MAX_TRACKED_REQUESTS {
-                _ = decisions.shift_remove_index(0);
+                drop(decisions.shift_remove_index(0));
             }
-            decisions.insert(key, sampled);
+            decisions.insert(request_id, sampled);
         }
+        drop(decisions);
         Ok(sampled)
     }
 }
@@ -120,7 +121,7 @@ fn sampling_rate(
         None | Some(OtelModelValue::Null(())) => Ok(None),
         Some(OtelModelValue::Number(number)) => Ok(number
             .as_f64()
-            .filter(|rate| rate.is_finite() && (0.0..=1.0).contains(rate))),
+            .filter(|rate| rate.is_finite() && (0.0_f64..=1.0_f64).contains(rate))),
         Some(
             OtelModelValue::Bool(_)
             | OtelModelValue::String(_)
