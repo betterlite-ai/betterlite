@@ -1,0 +1,12 @@
+kind: helper
+name: helper-speech-media-type-seed
+call:
+  speech_media_type:
+    resolve:
+      - {upstream: "audio/flac; charset=x", response_format: null}
+      - {upstream: null, response_format: wav}
+    sniff:
+      - {audio: [82, 73, 70, 70, 0, 0, 0, 0, 87, 65, 86, 69]}
+      - {audio: [255, 241, 80]}
+env: {}
+compare: {ignore: []}
