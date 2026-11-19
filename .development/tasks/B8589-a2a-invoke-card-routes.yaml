@@ -12,11 +12,17 @@ description: >-
   (4) Dispatch on the wire method. message/send: read the params with B6950 (an error answers -32602 "Invalid params: <error>" with 400), call B4814's `asend_message` with model "a2a_agent/<agent_name>", api_base agent_url, litellm_params, agent_id, metadata, proxy_server_request and the forwarding headers, run B8394's post-call success hook, and answer the converted JSON-RPC response for the served version. Order the logging as LiteLLM does (a2a_endpoints.py L865-L890): set the logging object's deferral (B5368's _defer_async_logging) before calling asend_message, then after the post-call success hook fire the deferred success log once in a finally block, so the spend log sees the guardrail results. message/stream: B4789's relay. tasks/get, tasks/list, tasks/cancel, the four tasks/pushNotificationConfig methods and agent/getAuthenticatedExtendedCard: no URL answers -32000 with 500; convert object params for the served version; for pushNotificationConfig/set, params that are not an object answer 400 "params must be an object", a pushNotificationConfig that is not an object answers 400 "pushNotificationConfig must be an object", and each non-empty url (params.url, then the config's url) must be a string (else 400 "Push notification URL must be a string") that passes validate_push_url; forward {"jsonrpc": "2.0", "id", "method", "params"} with forward_jsonrpc; for the extended card rewrite url and the first supportedInterfaces url like the card route and convert the card, otherwise convert the response; then the success hook, and answer the result as JSON. tasks/resubscribe: no URL answers -32000 with 500; convert params and relay the SSE stream through B4789. Any other method answers -32601 "Method '<method>' not found" with 400.
   (5) An HTTP error passes through. Any other error logs "Error invoking agent: %s", awaits B8395's failure hook (an error from the hook is ignored), and answers -32602 with the error message and 400 for a provider bad request error, otherwise -32603 "Internal error: <error>" with 500. Both use the body id (null when the body never parsed).
 
-  State. `A2aRouteState` takes, by constructor: the agent lookup, the access check, the request preparation, the send entry point, the forwarding client, the stream relay ports, the backend auth ports (B4788's AppAuth and HopAuth, passed to resolve_backend_auth), the custom URL value, the success hook, the failure hook and B9720's shared stream generator. Build one `A2aStreamHooks` (B9720) per message/stream and tasks/resubscribe request from that generator, the key, the request data and the request parts, because B4789's serve() takes no request context. Tests use fakes.
+  State. `A2aRouteState` takes, by constructor: the agent lookup, the access check, the request preparation, the send entry point, the forwarding client, the stream relay ports, the backend auth ports (B4788's AppAuth and HopAuth, passed to resolve_backend_auth), the custom URL value, the success hook, the failure hook and B9720's shared stream generator. Build one `A2aStreamHooks` (below) per message/stream and tasks/resubscribe request from that generator, the key, the request data and the request parts, because B4789's serve() takes no request context. Tests use fakes.
+
+  A2A stream hooks (a2a_routes/stream_hooks.rs). LiteLLM sends both A2A streams through ProxyBaseLLMRequestProcessing.async_streaming_data_generator (a2a_endpoints.py L393 and L523) with A2A serializers, so agent guardrails and the failure hook see the events. B9720 builds that generator as `SharedStreamGenerator` with a `ChunkFraming` port for the serializers; this task writes the A2A side. `A2aStreamHooks<Key, H>` implements B4789's `StreamHooks` (`serve(&self, events: JsonStream) -> HookedStream`) for one request and holds the generator, the key, the request data and the request parts. serve turns each event into a B8602 `StreamItem`: a JSON object becomes a Plain chunk with empty hidden params, a string becomes Text, any other JSON value becomes Bytes holding its JSON text, and an Err(StreamError) becomes a B8604 `StreamFailure` with its Display text, kind Other, no type, param Missing and no status. It runs them through B9720's `generate` with an A2A framing whose Out is `A2aOut`, the closed set `Event(Value)` or `Failed(String)`. frame_chunk turns a chunk back into its body object, Text into a JSON string, and Bytes into the JSON value they hold, or a string of their lossy text when they don't parse. frame_tail gives None, and frame_failure gives Failed with the exception's message, the field both A2A error serializers read. serve then maps Event to Ok, Failed to Err(StreamFailure::Failed { message }) and a StreamAbort to Err(StreamFailure::Rejected { status, detail }), B4789's two failure kinds. Tests for it start with `stream_`.
+
+  Crate wiring. B4788's forwarding helpers, B4789's relays and its StreamHooks port live in betterlite-proxy. crates/betterlite-server/Cargo.toml doesn't list that crate on main, so add it as a path dependency when it is not there yet. betterlite-proxy doesn't depend on betterlite-server, so this adds no cycle.
 scope:
   paths:
     - crates/betterlite-server/src/agent_endpoints/a2a_routes.rs
     - crates/betterlite-server/src/agent_endpoints/a2a_routes/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
     - tools/oracle/helpers/b8589.py
     - tools/oracle/helpers/b8589/**
     - tools/oracle/src/helpers/server/b8589.rs
@@ -35,6 +41,10 @@ references:
     why: The two card decorators and get_agent_card.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L635-L1032
     why: The three invoke decorators and invoke_agent_a2a with its method dispatch and error answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L348-L409
+    why: The tasks/resubscribe relay sends its events through the shared generator with a chunk serializer and an error serializer that reads the exception message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L475-L531
+    why: The message/stream relay does the same, and its error serializer falls back to "Streaming error:" only for an exception without a message.
 dod:
   - text: The two card paths and the three invoke paths exist with exactly their methods; each sits behind the key check, and B8648 proves the 401 for a missing key over HTTP.
     proof: [route-tests]
@@ -50,6 +60,8 @@ dod:
     proof: [dispatch-tests]
   - text: The handlers are tested with tower's oneshot over routes() and fake ports; B8648 mounts them and proves the HTTP answers with the oracle cases moved there.
     proof: [route-tests, card-tests, invoke-tests]
+  - text: A2aStreamHooks passes JSON objects, strings and other JSON values through the shared generator and back unchanged, turns a failure into Failed with the redacted message, and turns an HTTP failure into Rejected with its status and detail.
+    proof: [stream-hooks-tests]
 checks:
   optional: [mutants]
   commands:
@@ -65,6 +77,9 @@ checks:
     - id: dispatch-tests
       why: the method dispatch or the error answers are wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::a2a_routes::tests::dispatch_/)'
+    - id: stream-hooks-tests
+      why: the A2A stream hooks are missing, change an event on its way through the generator, or map a failure to the wrong StreamFailure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::a2a_routes::tests::stream_/)'
 oracle_cases: []
 deviations:
   - what: "A body that is not valid JSON answers -32603 with 500 and the message Internal error: followed by betterlite's parse error text."
@@ -73,12 +88,14 @@ out_of_scope:
   - "The forwarding helpers, the JSON-RPC error body and forward_jsonrpc: B4788. The SSE relay for message/stream and tasks/resubscribe: B4789. Reading message send params: B6950."
   - "The 0.3 and 1.0 conversion: B4812. asend_message: B4814. The access check: B4780. The agent read-through lookup: B8231."
   - "Request preparation: B1103. The post-call success hook: B8394. The failure hook: B8395. Mounting routes(): B8648."
+  - "The shared generator behind the A2A stream hooks (async_streaming_data_generator, its hooks, failure shaping and cleanup): B9720."
 pitfalls:
   - "The jsonrpc check runs before the agent lookup, so a wrong version for an unknown agent answers -32600, not -32000."
   - "jsonrpc_error defaults to status 400; only the not-found (404) and no-URL and internal (500) answers pass another status."
   - "The access check failure is an HTTP 403 with a detail body, not a JSON-RPC error, while an unknown agent is a JSON-RPC error with HTTP 404."
   - "metadata stays inside params when litellm params are lifted, because the A2A request carries its own metadata field."
   - "The x-a2a header prefix is matched on both the lowercased agent id and the lowercased agent name, and a header named only by the prefix is skipped."
+  - "A stream failure message goes out as the generator shaped it: ProxyException always has a message, so never add LiteLLM's 'Streaming error: ' fallback prefix."
 review_level: security
 budget:
   max_changed_lines: 1500
