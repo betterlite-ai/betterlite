@@ -119,7 +119,7 @@ fn json_messages_transform(call: &Call, descriptor: Descriptor, model: &str) -> 
 fn responses_url(call: &Call, descriptor: Descriptor) -> Helper<Value> {
     let policy = ResponsesPolicy { descriptor };
     let url = policy.complete_url(call.api_base.as_deref(), &call.environment);
-    Ok(Value::String(url))
+    serde_json::to_value(url).or_value_error()
 }
 
 fn responses_headers(call: &Call, descriptor: Descriptor) -> Helper<Value> {
