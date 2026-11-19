@@ -1,0 +1,621 @@
+#![cfg(test)]
+
+use std::future::{Future, ready};
+
+use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
+use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
+use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
+use betterlite_anthropic::credentials::AnthropicSettings;
+use betterlite_prompts::arguments::json::{Json, Object};
+use indexmap::IndexMap;
+use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
+
+use crate::api::anthropic_beta_filter::Headers;
+use crate::api::messages_native_transform::capabilities::{
+    LegacyShapes, Thinking, ThinkingCapabilities,
+};
+
+use super::deepseek;
+use super::error::HostError;
+use super::keys::{BaseSources, KeySources, resolve_key};
+use super::minimax;
+use super::request::{EnvironmentRequest, HostRequest, validate_inherited_environment};
+use super::tencent;
+
+fn secret(text: &str) -> SecretString {
+    SecretString::from(text.to_owned())
+}
+
+fn header_map(pairs: &[(&str, &str)]) -> Headers {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[rstest]
+#[case::explicit(
+    Some("explicit"),
+    Some("environment"),
+    Some("global"),
+    Some("explicit")
+)]
+#[case::empty_explicit(Some(""), Some("environment"), Some("global"), Some("environment"))]
+#[case::empty_environment(Some(""), Some(""), Some("global"), Some("global"))]
+#[case::empty_global(Some(""), Some(""), Some(""), Some(""))]
+#[case::nothing(None, None, None, None)]
+fn native_messages_hosts_keys_follow_the_python_or_chain(
+    #[case] explicit: Option<&str>,
+    #[case] environment: Option<&str>,
+    #[case] global: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let explicit = explicit.map(secret);
+    let environment = environment.map(secret);
+    let global = global.map(secret);
+    let resolved = resolve_key(KeySources {
+        explicit: explicit.as_ref(),
+        environment: environment.as_ref(),
+        global: global.as_ref(),
+    });
+    let resolved = resolved.as_ref().map(|key| key.expose_secret().as_str());
+    assert_eq!(resolved, expected);
+}
+
+#[rstest]
+#[case::default(None, None, None, "https://api.deepseek.com/anthropic/v1/messages")]
+#[case::trailing_slash(
+    Some("https://api.deepseek.com/anthropic/"),
+    None,
+    None,
+    "https://api.deepseek.com/anthropic/v1/messages"
+)]
+#[case::complete_anthropic(
+    Some("https://proxy.test/anthropic/v1/messages"),
+    None,
+    None,
+    "https://proxy.test/anthropic/v1/messages"
+)]
+#[case::anthropic_v1(
+    Some("https://proxy.test/anthropic/v1"),
+    None,
+    None,
+    "https://proxy.test/anthropic/v1/messages"
+)]
+#[case::beta_suffix(
+    Some("https://api.deepseek.com/beta"),
+    None,
+    None,
+    "https://api.deepseek.com/anthropic/v1/messages"
+)]
+#[case::beta_after_v1(
+    Some("https://api.deepseek.com/anthropic/beta/v1"),
+    None,
+    None,
+    "https://api.deepseek.com/anthropic/v1/messages"
+)]
+#[case::plain_messages(
+    Some("https://proxy.test/prefix/v1/messages"),
+    None,
+    None,
+    "https://proxy.test/prefix/anthropic/v1/messages"
+)]
+#[case::anthropic_inner_path(
+    Some("https://proxy.test/anthropic/proxy"),
+    None,
+    None,
+    "https://proxy.test/anthropic/proxy/v1/messages"
+)]
+#[case::environment(
+    Some(""),
+    Some("https://env.deepseek.test"),
+    Some("https://fallback.deepseek.test"),
+    "https://env.deepseek.test/anthropic/v1/messages"
+)]
+#[case::fallback(
+    Some(""),
+    Some(""),
+    Some("https://fallback.deepseek.test"),
+    "https://fallback.deepseek.test/anthropic/v1/messages"
+)]
+fn native_messages_hosts_deepseek_urls_follow_its_suffix_policy(
+    #[case] explicit: Option<&str>,
+    #[case] environment: Option<&str>,
+    #[case] fallback: Option<&str>,
+    #[case] expected: &str,
+) {
+    let sources = BaseSources {
+        explicit,
+        environment,
+        fallback_environment: fallback,
+    };
+    assert_eq!(deepseek::complete_url(sources), expected);
+}
+
+#[rstest]
+#[case::default(None, "https://tokenhub-intl.tencentcloudmaas.com/v1/messages")]
+#[case::complete(
+    Some("https://tokenhub.test/anthropic/v1/messages"),
+    "https://tokenhub.test/anthropic/v1/messages"
+)]
+#[case::chat_completions(
+    Some("https://tokenhub.test/v1/chat/completions"),
+    "https://tokenhub.test/v1/messages"
+)]
+#[case::chat_completions_slash(
+    Some("https://tokenhub.test/v1/chat/completions/"),
+    "https://tokenhub.test/v1/messages"
+)]
+#[case::v1(Some("https://tokenhub.test/v1"), "https://tokenhub.test/v1/messages")]
+#[case::other_version(
+    Some("https://tokenhub.test/v2"),
+    "https://tokenhub.test/v2/v1/messages"
+)]
+fn native_messages_hosts_tencent_urls_swap_the_chat_endpoint(
+    #[case] explicit: Option<&str>,
+    #[case] expected: &str,
+) {
+    let sources = BaseSources {
+        explicit,
+        environment: None,
+        fallback_environment: None,
+    };
+    assert_eq!(tencent::complete_url(sources), expected);
+}
+
+#[rstest]
+#[case::default(None, None, "https://api.minimax.io/anthropic/v1/messages")]
+#[case::complete(
+    Some("https://api.minimax.io/anthropic/v1/messages"),
+    None,
+    "https://api.minimax.io/anthropic/v1/messages"
+)]
+#[case::existing_v1(
+    Some("https://api.minimaxi.com/anthropic/v1"),
+    None,
+    "https://api.minimaxi.com/anthropic/v1/v1/messages"
+)]
+#[case::trailing_slash(
+    Some("https://api.minimaxi.com/anthropic/"),
+    None,
+    "https://api.minimaxi.com/anthropic/v1/messages"
+)]
+#[case::bare(
+    Some("https://api.minimaxi.com/anthropic"),
+    None,
+    "https://api.minimaxi.com/anthropic/v1/messages"
+)]
+#[case::environment(
+    Some(""),
+    Some("https://gateway.test/minimax/v1/"),
+    "https://gateway.test/minimax/v1/v1/messages"
+)]
+fn native_messages_hosts_minimax_urls_only_adjust_the_separator(
+    #[case] explicit: Option<&str>,
+    #[case] environment: Option<&str>,
+    #[case] expected: &str,
+) {
+    let sources = BaseSources {
+        explicit,
+        environment,
+        fallback_environment: None,
+    };
+    assert_eq!(minimax::complete_url(sources), expected);
+}
+
+#[derive(Default)]
+struct Sources {
+    explicit: Option<String>,
+    environment: Option<String>,
+    global: Option<String>,
+}
+
+fn deepseek_headers(
+    sources: &Sources,
+    input: &[(&str, &str)],
+    parameters: &IndexMap<String, Json>,
+    api_base: Option<&str>,
+) -> (Headers, Option<String>) {
+    let explicit = sources.explicit.as_deref().map(secret);
+    let environment = sources.environment.as_deref().map(secret);
+    let global = sources.global.as_deref().map(secret);
+    let messages: Vec<Json> = Vec::new();
+    let mut headers = header_map(input);
+    let request = EnvironmentRequest {
+        headers: &mut headers,
+        explicit_key: explicit.as_ref(),
+        environment_key: environment.as_ref(),
+        global_key: global.as_ref(),
+        api_base,
+        optional_params: parameters,
+        messages: &messages,
+    };
+    let returned_base =
+        deepseek::validate_environment(request).expect("deepseek permits a missing key");
+    (headers, returned_base)
+}
+
+fn inherited_headers(
+    sources: &Sources,
+    input: &[(&str, &str)],
+    parameters: &IndexMap<String, Json>,
+    settings: &AnthropicSettings,
+) -> Result<Headers, HostError> {
+    let explicit = sources.explicit.as_deref().map(secret);
+    let environment = sources.environment.as_deref().map(secret);
+    let global = sources.global.as_deref().map(secret);
+    let messages: Vec<Json> = Vec::new();
+    let mut headers = header_map(input);
+    let request = EnvironmentRequest {
+        headers: &mut headers,
+        explicit_key: explicit.as_ref(),
+        environment_key: environment.as_ref(),
+        global_key: global.as_ref(),
+        api_base: None,
+        optional_params: parameters,
+        messages: &messages,
+    };
+    validate_inherited_environment(request, settings)?;
+    Ok(headers)
+}
+
+fn empty_parameters() -> IndexMap<String, Json> {
+    IndexMap::new()
+}
+
+fn compaction_parameters() -> IndexMap<String, Json> {
+    let mut parameters = IndexMap::new();
+    parameters.insert("compaction".to_owned(), Json::Object(Object::new()));
+    parameters
+}
+
+#[test]
+fn native_messages_hosts_deepseek_permits_missing_auth_and_adds_its_headers() {
+    let sources = Sources::default();
+    let (headers, api_base) = deepseek_headers(
+        &sources,
+        &[],
+        &empty_parameters(),
+        Some("https://explicit.test"),
+    );
+    assert_eq!(headers.get("x-api-key"), None);
+    assert_eq!(
+        headers.get("anthropic-version").map(String::as_str),
+        Some("2023-06-01")
+    );
+    assert_eq!(
+        headers.get("content-type").map(String::as_str),
+        Some("application/json")
+    );
+    assert_eq!(api_base.as_deref(), Some("https://explicit.test"));
+}
+
+#[test]
+fn native_messages_hosts_deepseek_inserts_x_api_key_for_a_resolved_key() {
+    let sources = Sources {
+        explicit: Some("explicit-key".to_owned()),
+        ..Sources::default()
+    };
+    let (headers, _) = deepseek_headers(&sources, &[], &empty_parameters(), None);
+    assert_eq!(
+        headers.get("x-api-key").map(String::as_str),
+        Some("explicit-key")
+    );
+}
+
+#[test]
+fn native_messages_hosts_deepseek_checks_header_names_in_exact_lowercase() {
+    let sources = Sources {
+        explicit: Some("explicit-key".to_owned()),
+        ..Sources::default()
+    };
+    let (headers, _) = deepseek_headers(
+        &sources,
+        &[("Authorization", "Bearer supplied")],
+        &empty_parameters(),
+        None,
+    );
+    assert_eq!(
+        headers.get("x-api-key").map(String::as_str),
+        Some("explicit-key")
+    );
+
+    let (lowercase_headers, _) = deepseek_headers(
+        &sources,
+        &[("authorization", "Bearer supplied")],
+        &empty_parameters(),
+        None,
+    );
+    assert_eq!(lowercase_headers.get("x-api-key"), None);
+}
+
+#[test]
+fn native_messages_hosts_deepseek_keeps_supplied_lowercase_headers() {
+    let sources = Sources::default();
+    let (headers, _) = deepseek_headers(
+        &sources,
+        &[
+            ("anthropic-version", "2024-01-01"),
+            ("content-type", "text/plain"),
+        ],
+        &empty_parameters(),
+        None,
+    );
+    assert_eq!(
+        headers.get("anthropic-version").map(String::as_str),
+        Some("2024-01-01")
+    );
+    assert_eq!(
+        headers.get("content-type").map(String::as_str),
+        Some("text/plain")
+    );
+}
+
+#[test]
+fn native_messages_hosts_deepseek_tags_beta_synthesis_with_its_own_provider() {
+    let sources = Sources::default();
+    let (headers, _) = deepseek_headers(&sources, &[], &compaction_parameters(), None);
+    assert_eq!(headers.get("anthropic-beta"), None);
+}
+
+#[test]
+fn native_messages_hosts_inherited_hosts_tag_beta_synthesis_as_anthropic() {
+    let sources = Sources::default();
+    let headers = inherited_headers(
+        &sources,
+        &[],
+        &compaction_parameters(),
+        &settings(Some("anthropic-key"), None),
+    )
+    .expect("the anthropic key authenticates");
+    assert_eq!(
+        headers.get("anthropic-beta").map(String::as_str),
+        Some("compact-2026-09-04")
+    );
+}
+
+#[test]
+fn native_messages_hosts_inherited_hosts_accept_any_header_case() {
+    let sources = Sources::default();
+    let headers = inherited_headers(
+        &sources,
+        &[
+            ("Authorization", "Bearer supplied"),
+            ("X-Api-Key", "supplied"),
+        ],
+        &empty_parameters(),
+        &settings(None, None),
+    )
+    .expect("the authorization header authenticates");
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer supplied")
+    );
+    assert_eq!(
+        headers.get("X-Api-Key").map(String::as_str),
+        Some("supplied")
+    );
+}
+
+#[test]
+fn native_messages_hosts_inherited_hosts_report_a_missing_credential() {
+    let sources = Sources::default();
+    let error = inherited_headers(&sources, &[], &empty_parameters(), &settings(None, None))
+        .expect_err("no credential is configured");
+    assert_eq!(error.status_code(), Some(401));
+    assert_eq!(error.class_name(), "AuthenticationError");
+}
+
+#[test]
+fn native_messages_hosts_inherited_hosts_fall_back_to_the_anthropic_key() {
+    let sources = Sources::default();
+    let headers = inherited_headers(
+        &sources,
+        &[],
+        &empty_parameters(),
+        &settings(Some("anthropic-key"), None),
+    )
+    .expect("the anthropic key authenticates");
+    assert_eq!(
+        headers.get("x-api-key").map(String::as_str),
+        Some("anthropic-key")
+    );
+}
+
+#[test]
+fn native_messages_hosts_inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token() {
+    let sources = Sources {
+        explicit: Some("sk-ant-oat01-token".to_owned()),
+        ..Sources::default()
+    };
+    let headers = inherited_headers(&sources, &[], &empty_parameters(), &settings(None, None))
+        .expect("the oauth key authenticates");
+    assert_eq!(
+        headers.get("authorization").map(String::as_str),
+        Some("Bearer sk-ant-oat01-token")
+    );
+    assert_eq!(headers.get("x-api-key"), None);
+}
+
+fn settings(api_key: Option<&str>, auth_token: Option<&str>) -> AnthropicSettings {
+    AnthropicSettings {
+        api_key: api_key.map(secret),
+        auth_token: auth_token.map(secret),
+        ..AnthropicSettings::default()
+    }
+}
+
+struct Plain;
+
+impl ThinkingCapabilities for Plain {
+    fn supports(
+        &mut self,
+        _model: &str,
+        _key: &str,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn map_effort<'seam>(
+        &'seam mut self,
+        _model: &'seam str,
+        _effort: &'seam str,
+        _provider: &'seam str,
+    ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
+        ready(Ok(None))
+    }
+
+    fn validate_effort(
+        &mut self,
+        _model: &str,
+        _effort: Option<&str>,
+        _provider: &str,
+    ) -> impl Future<Output = Option<String>> + Send {
+        ready(None)
+    }
+
+    fn supports_effort_param(
+        &mut self,
+        _model: &str,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn drop_disabled_thinking(
+        &mut self,
+        _model: &str,
+        _params: &mut OptionalParams,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn translate_legacy_thinking<'seam>(
+        &'seam mut self,
+        _request: &'seam mut LegacyShapes<'seam>,
+    ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
+        ready(Ok(()))
+    }
+}
+
+fn user_message() -> Json {
+    let mut fields = Object::new();
+    fields.insert("role".to_owned(), Json::Text("user".to_owned()));
+    fields.insert("content".to_owned(), Json::Text("hi".to_owned()));
+    Json::Object(fields)
+}
+
+fn custom_tool(name: &str, keeps_type: bool) -> Json {
+    let mut fields = Object::new();
+    if keeps_type {
+        fields.insert("type".to_owned(), Json::Text("custom".to_owned()));
+    }
+    fields.insert("name".to_owned(), Json::Text(name.to_owned()));
+    Json::Object(fields)
+}
+
+fn typed_tool(kind: &str) -> Json {
+    let mut fields = Object::new();
+    fields.insert("type".to_owned(), Json::Text(kind.to_owned()));
+    Json::Object(fields)
+}
+
+fn transform_parameters(tools: Json) -> Object {
+    let mut parameters = Object::new();
+    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
+    parameters.insert("tools".to_owned(), tools);
+    parameters
+}
+
+#[tokio::test]
+async fn native_messages_hosts_deepseek_strips_only_custom_tool_types() {
+    let tools = Json::List(vec![
+        custom_tool("bash", true),
+        typed_tool("web_search_20250305"),
+        Json::Text("passthrough".to_owned()),
+    ]);
+    let request = HostRequest {
+        model: "deepseek-chat",
+        messages: vec![user_message()],
+        optional_params: transform_parameters(tools),
+    };
+    let body = deepseek::transform_request(&mut Plain, request)
+        .await
+        .expect("the request transforms");
+    let expected = Json::List(vec![
+        custom_tool("bash", false),
+        typed_tool("web_search_20250305"),
+        Json::Text("passthrough".to_owned()),
+    ]);
+    assert_eq!(body.get("tools"), Some(&expected));
+}
+
+#[tokio::test]
+async fn native_messages_hosts_deepseek_leaves_a_non_list_tools_value_alone() {
+    let request = HostRequest {
+        model: "deepseek-chat",
+        messages: vec![user_message()],
+        optional_params: transform_parameters(Json::Text("not-a-list".to_owned())),
+    };
+    let body = deepseek::transform_request(&mut Plain, request)
+        .await
+        .expect("the request transforms");
+    assert_eq!(
+        body.get("tools"),
+        Some(&Json::Text("not-a-list".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn native_messages_hosts_other_hosts_keep_custom_tool_types() {
+    let tools = Json::List(vec![custom_tool("bash", true)]);
+    let tencent_request = HostRequest {
+        model: "hunyuan-t1",
+        messages: vec![user_message()],
+        optional_params: transform_parameters(tools.clone()),
+    };
+    let body = tencent::transform_request(&mut Plain, tencent_request)
+        .await
+        .expect("the request transforms");
+    assert_eq!(body.get("tools"), Some(&tools));
+
+    let minimax_request = HostRequest {
+        model: "MiniMax-M2.1",
+        messages: vec![user_message()],
+        optional_params: transform_parameters(tools.clone()),
+    };
+    let minimax_body = minimax::transform_request(&mut Plain, minimax_request)
+        .await
+        .expect("the request transforms");
+    assert_eq!(minimax_body.get("tools"), Some(&tools));
+}
+
+#[tokio::test]
+async fn native_messages_hosts_all_hosts_strip_billing_system_metadata() {
+    let system = Json::Text("x-anthropic-billing-header: cc_version=1".to_owned());
+    for name in ["deepseek", "tencent", "minimax"] {
+        let mut parameters = Object::new();
+        parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
+        parameters.insert("system".to_owned(), system.clone());
+        let request = HostRequest {
+            model: name,
+            messages: vec![user_message()],
+            optional_params: parameters,
+        };
+        let body = match name {
+            "deepseek" => deepseek::transform_request(&mut Plain, request).await,
+            "tencent" => tencent::transform_request(&mut Plain, request).await,
+            _ => minimax::transform_request(&mut Plain, request).await,
+        }
+        .expect("the request transforms");
+        assert_eq!(
+            body.get("system"),
+            None,
+            "{name} strips the billing system block"
+        );
+    }
+}
