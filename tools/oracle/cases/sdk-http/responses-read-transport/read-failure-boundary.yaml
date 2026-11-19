@@ -1,0 +1,46 @@
+kind: sdk_http
+name: responses-read-transport-read-failure-boundary
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_read_transport:
+    runs:
+      - operation: retrieve
+        mode: sync
+        response_id: resp_a
+      - operation: retrieve
+        mode: async
+        response_id: resp_a
+      - operation: retrieve
+        mode: sync
+        response_id: resp_a
+      - operation: retrieve
+        mode: sync
+        response_id: resp_a
+      - operation: input_items
+        mode: sync
+        response_id: resp_a
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "3"}
+    body: slow down
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "3"}
+    body: slow down
+  - status: 200
+    headers: {content-type: application/json}
+    events: ["not a json body"]
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created_at: 9, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {anything: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /responses_read_transport/value/runs/0/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
+    - pointer: /responses_read_transport/value/runs/1/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
