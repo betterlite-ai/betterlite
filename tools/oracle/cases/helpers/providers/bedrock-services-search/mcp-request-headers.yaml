@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-request-headers
+call:
+  bedrock_services_search:
+    scenario: mcp_request_headers
+    runs:
+      - headers:
+          Content-Type: text/plain
+          Accept: text/html
+          MCP-Protocol-Version: '2024-11-05'
+        protocol_version: null
+      - headers:
+          content-type: text/plain
+        protocol_version: '2025-06-18'
+      - headers: {}
+        protocol_version: ''
+      - headers: {}
+        protocol_version: ' '
+      - headers:
+          x-request-id: abc
+          anthropic-version: '2023-06-01'
+        protocol_version: null
+env: {}
+compare: {ignore: []}
