@@ -393,6 +393,21 @@ async fn one_db_load_per_lock() {
 }
 
 #[tokio::test]
+async fn absent_row_answers_none_after_the_locks() {
+    let rows = Arc::new(FakeRows::default());
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let cache = FakeCache::new(false);
+    let batch = FakeBatch::new(None);
+    let outcome = counter
+        .coalesced(&cache, &batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(outcome), None);
+    assert_eq!(rows.lookups(), vec![LookupRecord::Key("t".to_owned())]);
+    assert!(cache.memory_sets().is_empty());
+    assert!(batch.recorded().is_empty());
+}
+
+#[tokio::test]
 async fn zero_warmed() {
     let rows = Arc::new(FakeRows::with_row(spend_row("0")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
