@@ -6,7 +6,7 @@ use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
 mod assemble;
-mod call;
+pub mod call;
 mod run;
 mod source;
 
