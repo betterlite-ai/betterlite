@@ -22,8 +22,8 @@ fn release(runtime: &HooksRuntime, hook: &LoadedHook) {
     runtime.host.attach(|py| {
         let loaded = hook.object.loaded.object.bind(py);
         let globals = loaded.getattr("__globals__").unwrap();
-        let globals = globals.cast_into::<PyDict>().unwrap();
-        let release = globals.get_item("release").unwrap().unwrap();
+        let entries = globals.cast_into::<PyDict>().unwrap();
+        let release = entries.get_item("release").unwrap().unwrap();
         release.call0().unwrap();
     });
 }
