@@ -59,10 +59,9 @@ def dump_member_ref(document: dict[str, JsonValue]) -> JsonValue:
 
 def dump_budget_patch(document: dict[str, JsonValue]) -> JsonValue:
     patch = teams.TeamMemberBudgetPatch.model_validate(document)
-    return {
-        "supplied_fields": _JSON.validate_python(sorted(document)),
-        "dump": dumped(patch),
-    }
+    names: list[str] = sorted(document)
+    supplied: JsonValue = _JSON.validate_python(names)
+    return {"supplied_fields": supplied, "dump": dumped(patch)}
 
 
 def entry_view(
