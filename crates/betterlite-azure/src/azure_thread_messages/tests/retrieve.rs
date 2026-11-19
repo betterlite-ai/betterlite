@@ -11,7 +11,7 @@ use super::support::{
     Auth, ERROR_BODY, Fixture, KEY, THREAD, THREAD_URL, failing_harness, harness, wire,
 };
 
-const QUOTED_ID: &str = "a/b c!$&'()*+,;=:@-._~é%";
+const QUOTED_ID: &str = "a/b c!$&'()*+,;=:@-._~\u{e9}%";
 const QUOTED_URL: &str = "https://example.test/openai/threads/a%2Fb%20c!$&'()*+,;=:@-._~%C3%A9%25?api-version=2024-02-01";
 
 pub(super) async fn check() {

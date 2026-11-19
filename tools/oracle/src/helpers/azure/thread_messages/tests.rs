@@ -45,6 +45,6 @@ fn helper_seeds_select_azure_thread_messages() {
         .collect();
     let missing = VARIANTS
         .into_iter()
-        .find(|expected| !selected.iter().any(|variant| variant.as_str() == *expected));
-    assert!(missing.is_none(), "no seed selects {missing:?}");
+        .position(|expected| !selected.iter().any(|variant| variant.as_str() == expected));
+    assert!(missing.is_none(), "no seed selects variant {missing:?}");
 }

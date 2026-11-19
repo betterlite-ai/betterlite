@@ -58,14 +58,14 @@ async fn kinds() {
             vec![wire("POST", THREADS_URL, Some("{}"), Auth::Key(KEY))],
             "{flag:?}"
         );
-        let (api, transport) = harness(200, THREAD);
-        let retrieved = api
+        let (read_api, read_transport) = harness(200, THREAD);
+        let retrieved = read_api
             .call(&request, None, flag, ThreadOperation::Retrieve("thread_1"))
             .await
             .unwrap();
         assert_eq!(retrieved.kind, kind, "{flag:?}");
         assert_eq!(
-            transport.requests(),
+            read_transport.requests(),
             vec![wire("GET", THREAD_URL, None, Auth::Key(KEY))],
             "{flag:?}"
         );
@@ -133,7 +133,7 @@ fn supplied_wire(method: &str, tail: &str, body: Option<&str>) -> Seen {
 async fn ignored_arguments() {
     let mut fixture = Fixture::new();
     fixture.azure_ad_token = Some(SecretString::from("facade-token"));
-    fixture.timeout = 1.0;
+    fixture.timeout = 1.0_f64;
     let request = fixture.request();
     let (api, transport) = harness(200, THREAD);
     api.call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
@@ -181,7 +181,7 @@ async fn static_token_wins() {
 async fn environment_token() {
     let mut fixture = Fixture::new();
     fixture.api_key = None;
-    fixture.params.timeout = Some(30.0);
+    fixture.params.timeout = Some(30.0_f64);
     fixture.environment.insert(
         String::from("AZURE_OPENAI_AD_TOKEN"),
         String::from("env-token"),

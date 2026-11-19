@@ -148,12 +148,12 @@ fn auth_headers<T>(
             sensitive(format!("Bearer {}", token.expose_secret()))?,
         );
     }
-    let key = client
+    let api_key = client
         .key
         .as_ref()
         .filter(|value| !value.expose_secret().is_empty());
     if client.token.is_none()
-        && let Some(key) = key
+        && let Some(key) = api_key
     {
         headers.insert(API_KEY, sensitive(key.expose_secret().to_owned())?);
     }
