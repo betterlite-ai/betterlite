@@ -76,8 +76,12 @@ fn normalized(
     model: Option<&str>,
     provider: &str,
 ) -> Result<ImageResponse, VariationException> {
-    let value = serde_json::to_value(mapping)
-        .map_err(|error| project(&error.to_string(), None, model, provider))?;
-    serde_json::from_value(value)
-        .map_err(|error| project(&error.to_string(), None, model, provider))
+    let value = serde_json::to_value(mapping).map_err(|error| {
+        let message = error.to_string();
+        project(&message, &message, None, model, provider)
+    })?;
+    serde_json::from_value(value).map_err(|error| {
+        let message = error.to_string();
+        project(&message, &message, None, model, provider)
+    })
 }

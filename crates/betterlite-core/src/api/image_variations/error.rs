@@ -1,7 +1,7 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_error::openai::{OpenaiExceptionInput, map_openai_exception};
 use betterlite_models::resolution::ResolutionError;
-use betterlite_openai::image_variations::error::OpenAiImageVariationError;
+use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
 use thiserror::Error;
 
 // image_variation's own failures: every message is the one its ValueError carries in LiteLLM
@@ -46,25 +46,42 @@ pub struct VariationException {
 
 impl VariationException {
     pub(crate) fn mapped(error: &ImageVariationError, model: Option<&str>, provider: &str) -> Self {
-        let (status, message) = match error {
-            ImageVariationError::Resolution(source) => (Some(400), source.to_string()),
-            ImageVariationError::OpenAi(source) => {
-                (Some(source.status_code), source.message.clone())
+        let (status, message, error_str) = match error {
+            ImageVariationError::Resolution(source) => {
+                (Some(400), source.to_string(), source.to_string())
             }
-            ImageVariationError::Topaz(source) => (source.status_code, source.message.clone()),
+            ImageVariationError::OpenAi(source) => {
+                // the handler raises its OpenAIError with the SDK exception's text, which starts
+                // "Error code: {status} - " and is what exception_type's phrase checks read
+                let text = match source.source.as_ref() {
+                    ImageVariationSource::Status { .. } => {
+                        format!("Error code: {} - {}", source.status_code, source.message)
+                    }
+                    _ => source.message.clone(),
+                };
+                (Some(source.status_code), source.message.clone(), text)
+            }
+            ImageVariationError::Topaz(source) => (
+                source.status_code,
+                source.message.clone(),
+                source.message.clone(),
+            ),
             ImageVariationError::InvalidProvider { .. }
             | ImageVariationError::UnknownModelInfo { .. }
             | ImageVariationError::MissingKey { .. }
             | ImageVariationError::MissingBase { .. }
-            | ImageVariationError::InvalidTimeout { .. } => (None, error.to_string()),
+            | ImageVariationError::InvalidTimeout { .. } => {
+                (None, error.to_string(), error.to_string())
+            }
         };
-        project(&message, status, model, provider)
+        project(&message, &error_str, status, model, provider)
     }
 }
 
 // litellm's exception_type reads no structured body off these exceptions, so only status and text reach it
 pub(crate) fn project(
     message: &str,
+    error_str: &str,
     status_code: Option<u16>,
     model: Option<&str>,
     provider: &str,
@@ -72,7 +89,7 @@ pub(crate) fn project(
     let input = OpenaiExceptionInput {
         model: model.unwrap_or_default().to_owned(),
         custom_llm_provider: provider.to_owned(),
-        error_str: message.to_owned(),
+        error_str: error_str.to_owned(),
         status_code,
         status_code_is_synthesized: false,
         message: Some(message.to_owned()),
