@@ -31,6 +31,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 
 use super::super::realtime_bridge;
+use super::dispatch_support::dispatched;
 use super::{SESSION_UPDATE, block_on, credentials};
 
 #[derive(Debug, thiserror::Error)]
@@ -353,11 +354,14 @@ fn pending_scope() -> EventScope {
 fn realtime_pending_preface() {
     let fixture = SessionFixture::new(false);
     let mut scope = pending_scope();
-    let outcome = block_on(realtime_bridge::session(
-        &fixture.runtime,
-        &fixture.resolver,
-        fixture.call(&mut scope),
-    ));
+    let outcome = dispatched!(
+        RealtimeBridge,
+        realtime_bridge::session(
+            &fixture.runtime,
+            &fixture.resolver,
+            fixture.call(&mut scope)
+        )
+    );
     assert!(
         outcome.is_ok(),
         "{:?}",
@@ -389,11 +393,14 @@ fn realtime_pending_preface() {
 fn realtime_connect_failure() {
     let fixture = SessionFixture::new(true);
     let mut scope = pending_scope();
-    let error = block_on(realtime_bridge::session(
-        &fixture.runtime,
-        &fixture.resolver,
-        fixture.call(&mut scope),
-    ))
+    let error = dispatched!(
+        RealtimeBridge,
+        realtime_bridge::session(
+            &fixture.runtime,
+            &fixture.resolver,
+            fixture.call(&mut scope)
+        )
+    )
     .unwrap_err();
     let realtime_bridge::Error::Session { source } = error else {
         panic!("expected a session failure");

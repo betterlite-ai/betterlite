@@ -49,6 +49,7 @@ use secrecy::SecretString;
 use super::error::BedrockInteractiveError;
 use super::http::{LeafReply, LeafRequest, LeafTransport};
 use super::{passthrough, responses, search, vector_retrieve};
+use dispatch_support::dispatched;
 
 const HOST: &str = "https://bedrock-runtime.us-east-1.amazonaws.com";
 const RESPONSES_HOST: &str = "https://bedrock-runtime.us-west-2.amazonaws.com";
@@ -298,7 +299,7 @@ fn responses_body() -> Object {
         chunks: Vec::new(),
     };
     let transport = RecordingTransport::new(reply);
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    let outcome = dispatched!(Responses, operation.run(&transport)).unwrap();
     let request = transport.only_request();
     assert_eq!(request.method, "POST");
     assert_eq!(request.url, format!("{RESPONSES_HOST}/openai/v1/responses"));
@@ -347,7 +348,7 @@ fn responses_rejected_reply() {
         body: b"bad \xff body".to_vec(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     match error {
         responses::Error::Rejected {
             status, message, ..
@@ -384,7 +385,7 @@ fn responses_remote_image() {
         chunks: Vec::new(),
     };
     let transport = RecordingTransport::new(reply);
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     assert!(matches!(error, responses::Error::Leaf(_)));
     assert!(transport.requests().is_empty());
 }
@@ -410,7 +411,7 @@ fn responses_unsupported_model() {
         body: Vec::new(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     match error {
         responses::Error::UnsupportedModel { model } => assert_eq!(model, "mystery.model"),
         other => panic!("expected an unsupported model, got {other}"),
@@ -594,7 +595,7 @@ fn passthrough_buffered() {
         body: br#"{"id":"native"}"#.to_vec(),
         chunks: Vec::new(),
     });
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    let outcome = dispatched!(Passthrough, operation.run(&transport)).unwrap();
     assert_buffered(&outcome);
 }
 
@@ -643,7 +644,7 @@ fn passthrough_streaming() {
     let mut logging = TestLogging::new();
     let operation = passthrough_operation(plan, url_request, signing, &mut logging);
     let transport = converse_transport();
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    let outcome = dispatched!(Passthrough, operation.run(&transport)).unwrap();
     assert_streaming(&outcome, &assembler);
 }
 
@@ -694,7 +695,7 @@ fn passthrough_missing_credentials() {
         body: Vec::new(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Passthrough, operation.run(&transport)).unwrap_err();
     match error {
         passthrough::Error::Leaf(PassthroughFailure::Signing(_)) => {}
         other => panic!("expected a signing failure, got {other}"),
@@ -759,7 +760,7 @@ fn search_case() {
         chunks: Vec::new(),
     };
     let transport = RecordingTransport::new(reply);
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    let outcome = dispatched!(Search, operation.run(&transport)).unwrap();
     let request = transport.only_request();
     assert_eq!(request.url, GATEWAY);
     assert_eq!(request.method, "POST");
@@ -788,7 +789,7 @@ fn search_leaf_failure() {
         body: SEARCH_REPLY.as_bytes().to_vec(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
     match error {
         search::Error::Leaf(SearchError::ToolName { tool_name }) => {
             assert_eq!(tool_name, "other-tool");
@@ -809,7 +810,7 @@ fn search_reply_error() {
         body: br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"bad"}}"#.to_vec(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
     match error {
         search::Error::Reply(reply) => assert_eq!(reply.status(), Some(502)),
         other => panic!("expected a reply error, got {other}"),
@@ -869,7 +870,7 @@ fn vector_case() {
         chunks: Vec::new(),
     };
     let transport = RecordingTransport::new(reply);
-    let outcome = block_on(operation.run(&transport)).unwrap();
+    let outcome = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap();
     let request = transport.only_request();
     assert_vector_request(&request);
     assert_vector_response(&from_serialized(&outcome.response));
@@ -936,7 +937,7 @@ fn vector_leaf_failure() {
         body: VECTOR_REPLY.as_bytes().to_vec(),
         chunks: Vec::new(),
     });
-    let error = block_on(operation.run(&transport)).unwrap_err();
+    let error = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap_err();
     match error {
         vector_retrieve::Error::Leaf(VectorStoreError::RetrievalConfigNotObject) => {}
         other => panic!("expected a retrieval configuration failure, got {other}"),
@@ -944,6 +945,7 @@ fn vector_leaf_failure() {
     assert!(transport.requests().is_empty());
 }
 
+mod dispatch_support;
 mod realtime_support;
 
 use realtime_support::realtime_case;
