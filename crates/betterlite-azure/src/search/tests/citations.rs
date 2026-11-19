@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::support::{envelope, expect_result, indexed, json_value, results};
 
@@ -51,21 +51,23 @@ fn snippets_follow_markers() {
     );
 }
 
-fn start_index_boundaries() {
+fn whole_text_at(index: &Value) {
     let text = "Only claim here.";
-    let whole_text = vec![expect_result("", "https://x.example", text)];
-    for index in [
-        json!(text.len()),
-        json!(text.len().saturating_add(5)),
-        json!(-1_i64),
-        json!(null),
-        json!(0_usize),
-        json_value("18446744073709551616"),
-        json_value("9223372036854775808"),
-    ] {
-        let body = indexed(text, &index);
-        assert_eq!(results(&body), whole_text);
-    }
+    assert_eq!(
+        results(&indexed(text, index)),
+        vec![expect_result("", "https://x.example", text)]
+    );
+}
+
+fn start_index_boundaries() {
+    let length = "Only claim here.".len();
+    whole_text_at(&json!(length));
+    whole_text_at(&json!(length.saturating_add(5)));
+    whole_text_at(&json!(-1_i64));
+    whole_text_at(&json!(null));
+    whole_text_at(&json!(0_usize));
+    whole_text_at(&json_value("18446744073709551616"));
+    whole_text_at(&json_value("9223372036854775808"));
     let long = format!("{}([l](https://l.example))", "y".repeat(350));
     let quoted = serde_json::to_string(&long).unwrap();
     let negative_zero = envelope(&format!(
