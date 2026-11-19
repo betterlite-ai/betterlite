@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_pyhost::blocking_work::WorkTracker;
 use betterlite_pyhost::call_error::CallError;
+use betterlite_pyhost::hook_object::HookObject;
 use betterlite_pyhost::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, HostError, PythonHost};
 use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError};
 use betterlite_pyhost::remote_module::ModuleFetcher;
@@ -14,6 +15,8 @@ use tokio::sync::OnceCell;
 use tokio::task::{JoinError, JoinSet};
 
 use self::bucket_fetcher::{BucketFetchError, BucketModuleFetcher};
+use self::load::CustomProviderItem;
+use self::slots::{HookSlot, ListKey, LoadedCallback, LoadedHook};
 
 pub mod bucket_fetcher;
 pub mod callbacks;
@@ -71,6 +74,41 @@ impl PythonHooks {
             tracker,
             loader,
         })
+    }
+
+    pub async fn load_hook(&self, slot: HookSlot, value: &str) -> Result<LoadedHook, HooksError> {
+        load::load_hook(self, slot, value).await
+    }
+
+    pub async fn load_callback(
+        &self,
+        list_key: ListKey,
+        entry: &str,
+    ) -> Result<LoadedCallback, HooksError> {
+        callbacks::load_callback(self, list_key, entry).await
+    }
+
+    pub async fn load_post_call_rules(&self, value: &str) -> Result<Vec<LoadedHook>, HooksError> {
+        load::load_post_call_rules(self, value).await
+    }
+
+    pub async fn load_custom_providers(
+        &self,
+        items: &[CustomProviderItem],
+    ) -> Result<Vec<(String, HookObject)>, HooksError> {
+        load::load_custom_providers(self, items).await
+    }
+
+    pub async fn load_custom_validate(&self, value: &str) -> Result<LoadedHook, HooksError> {
+        load::load_custom_validate(self, value).await
+    }
+
+    pub async fn run_startup_hooks(&self, specs: &[String]) -> Result<(), HooksError> {
+        load::run_startup_hooks(self, specs).await
+    }
+
+    pub async fn shutdown(&self) {
+        shutdown::shutdown(self).await;
     }
 }
 

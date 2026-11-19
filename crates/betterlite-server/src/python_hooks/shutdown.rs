@@ -1,10 +1,8 @@
 use super::PythonHooks;
 
-impl PythonHooks {
-    pub async fn shutdown(&self) {
-        if let Some(runtime) = self.inner.get() {
-            runtime.tracker.shutdown().await;
-        }
+pub(super) async fn shutdown(service: &PythonHooks) {
+    if let Some(runtime) = service.inner.get() {
+        runtime.tracker.shutdown().await;
     }
 }
 

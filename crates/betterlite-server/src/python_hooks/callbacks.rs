@@ -7,22 +7,22 @@ use super::{HooksError, PythonHooks};
 // B6030 ships the class at this path; until then nothing matches it and the callable check decides
 const LOGGER_CLASS: &str = "betterlite.integrations.custom_logger.CustomLogger";
 
-impl PythonHooks {
-    pub async fn load_callback(
-        &self,
-        list_key: ListKey,
-        entry: &str,
-    ) -> Result<LoadedCallback, HooksError> {
-        if !entry.contains('.') {
-            // LiteLLM's own callbacks are plain names like "langfuse" and never Python objects
-            return Ok(LoadedCallback::Named(entry.to_owned()));
-        }
-        let hook = self.load_hook(HookSlot::Callback(list_key), entry).await?;
-        if list_key == ListKey::Callbacks {
-            check_dispatchable(&hook, entry)?;
-        }
-        Ok(LoadedCallback::Loaded(hook))
+pub(super) async fn load_callback(
+    service: &PythonHooks,
+    list_key: ListKey,
+    entry: &str,
+) -> Result<LoadedCallback, HooksError> {
+    if !entry.contains('.') {
+        // LiteLLM's own callbacks are plain names like "langfuse" and never Python objects
+        return Ok(LoadedCallback::Named(entry.to_owned()));
     }
+    let hook = service
+        .load_hook(HookSlot::Callback(list_key), entry)
+        .await?;
+    if list_key == ListKey::Callbacks {
+        check_dispatchable(&hook, entry)?;
+    }
+    Ok(LoadedCallback::Loaded(hook))
 }
 
 fn check_dispatchable(hook: &LoadedHook, entry: &str) -> Result<(), HooksError> {

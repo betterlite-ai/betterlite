@@ -19,81 +19,96 @@ pub struct CustomProviderItem {
     pub custom_handler: String,
 }
 
-impl PythonHooks {
-    pub async fn load_hook(&self, slot: HookSlot, value: &str) -> Result<LoadedHook, HooksError> {
-        let runtime = self.inner.get_or_try_init(|| self.start_runtime()).await?;
-        let loaded = runtime
-            .loader
-            .load(&runtime.tracker, value, self.config_file_path.as_deref())
-            .await
-            .map_err(|source| HooksError::Load {
-                slot: slot.as_str(),
-                value: value.to_owned(),
-                source: Box::new(source),
-            })?;
-        Ok(LoadedHook {
-            slot,
+pub(super) async fn load_hook(
+    service: &PythonHooks,
+    slot: HookSlot,
+    value: &str,
+) -> Result<LoadedHook, HooksError> {
+    let runtime = service
+        .inner
+        .get_or_try_init(|| service.start_runtime())
+        .await?;
+    let loaded = runtime
+        .loader
+        .load(&runtime.tracker, value, service.config_file_path.as_deref())
+        .await
+        .map_err(|source| HooksError::Load {
+            slot: slot.as_str(),
             value: value.to_owned(),
-            object: HookObject { loaded },
-            host: runtime.host.clone(),
-            tracker: Arc::clone(&runtime.tracker),
-        })
-    }
+            source: Box::new(source),
+        })?;
+    Ok(LoadedHook {
+        slot,
+        value: value.to_owned(),
+        object: HookObject { loaded },
+        host: runtime.host.clone(),
+        tracker: Arc::clone(&runtime.tracker),
+    })
+}
 
-    pub async fn load_post_call_rules(&self, value: &str) -> Result<Vec<LoadedHook>, HooksError> {
-        self.load_hook(HookSlot::PostCallRules, value)
-            .await
-            .map(|hook| vec![hook])
-    }
+pub(super) async fn load_post_call_rules(
+    service: &PythonHooks,
+    value: &str,
+) -> Result<Vec<LoadedHook>, HooksError> {
+    load_hook(service, HookSlot::PostCallRules, value)
+        .await
+        .map(|hook| vec![hook])
+}
 
-    pub async fn load_custom_providers(
-        &self,
-        items: &[CustomProviderItem],
-    ) -> Result<Vec<(String, HookObject)>, HooksError> {
-        let mut providers = Vec::with_capacity(items.len());
-        for item in items {
-            let hook = self
-                .load_hook(HookSlot::CustomProvider, &item.custom_handler)
-                .await?;
-            providers.push((item.provider.clone(), hook.object));
+pub(super) async fn load_custom_providers(
+    service: &PythonHooks,
+    items: &[CustomProviderItem],
+) -> Result<Vec<(String, HookObject)>, HooksError> {
+    let mut providers = Vec::with_capacity(items.len());
+    for item in items {
+        let hook = load_hook(service, HookSlot::CustomProvider, &item.custom_handler).await?;
+        providers.push((item.provider.clone(), hook.object));
+    }
+    Ok(providers)
+}
+
+pub(super) async fn load_custom_validate(
+    service: &PythonHooks,
+    value: &str,
+) -> Result<LoadedHook, HooksError> {
+    let hook = load_hook(service, HookSlot::CustomValidate, value).await?;
+    require_literal_true_return(&hook, value)?;
+    Ok(hook)
+}
+
+pub(super) async fn run_startup_hooks(
+    service: &PythonHooks,
+    specs: &[String],
+) -> Result<(), HooksError> {
+    for spec in specs {
+        run_startup_hook(service, spec).await?;
+    }
+    Ok(())
+}
+
+async fn run_startup_hook(service: &PythonHooks, spec: &str) -> Result<(), HooksError> {
+    let Some((module_path, function_name)) = spec.rsplit_once(':') else {
+        return Err(HooksError::StartupSpec {
+            spec: spec.to_owned(),
+        });
+    };
+    let runtime = service
+        .inner
+        .get_or_try_init(|| service.start_runtime())
+        .await?;
+    match startup_call(runtime, module_path, function_name).await {
+        Ok(()) => {
+            tracing::info!("Worker startup hook '{spec}' executed successfully");
+            Ok(())
         }
-        Ok(providers)
-    }
-
-    pub async fn load_custom_validate(&self, value: &str) -> Result<LoadedHook, HooksError> {
-        let hook = self.load_hook(HookSlot::CustomValidate, value).await?;
-        require_literal_true_return(&hook, value)?;
-        Ok(hook)
-    }
-
-    pub async fn run_startup_hooks(&self, specs: &[String]) -> Result<(), HooksError> {
-        for spec in specs {
-            self.run_startup_hook(spec).await?;
-        }
-        Ok(())
-    }
-
-    async fn run_startup_hook(&self, spec: &str) -> Result<(), HooksError> {
-        let Some((module_path, function_name)) = spec.rsplit_once(':') else {
-            return Err(HooksError::StartupSpec {
+        Err(source) => {
+            let message = startup_error_text(&source);
+            tracing::error!("Worker startup hook '{spec}' failed: {message}");
+            Err(HooksError::Startup {
                 spec: spec.to_owned(),
-            });
-        };
-        let runtime = self.inner.get_or_try_init(|| self.start_runtime()).await?;
-        match startup_call(runtime, module_path, function_name).await {
-            Ok(()) => {
-                tracing::info!("Worker startup hook '{spec}' executed successfully");
-                Ok(())
-            }
-            Err(source) => {
-                let message = startup_error_text(&source);
-                tracing::error!("Worker startup hook '{spec}' failed: {message}");
-                Err(HooksError::Startup {
-                    spec: spec.to_owned(),
-                    message,
-                    source: Box::new(source),
-                })
-            }
+                message,
+                source: Box::new(source),
+            })
         }
     }
 }
