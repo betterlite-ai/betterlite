@@ -37,10 +37,10 @@ impl SessionOpener for SdkSessions {
         let module = self
             .library
             .import(&self.host, SDK_MODULE, SDK_INSTALL_HINT)
-            .map_err(open_failure)?;
+            .map_err(|source| open_failure(&source))?;
         let class = module
             .function(&self.host, SESSION_CLASS)
-            .map_err(open_failure)?;
+            .map_err(|source| open_failure(&source))?;
         let keywords = self.host.attach(|py| keywords_of(py, options))?;
         let created = class
             .call_raw(
@@ -51,9 +51,9 @@ impl SessionOpener for SdkSessions {
                 keywords,
             )
             .await
-            .map_err(|source| call_failure(SESSION_CLASS, source))?;
+            .map_err(|source| call_failure(SESSION_CLASS, &source))?;
         let manager = CallableHandle::new(&self.host, created)
-            .map_err(|source| call_failure(SESSION_CLASS, source))?;
+            .map_err(|source| call_failure(SESSION_CLASS, &source))?;
         let session = enter(&self.host, &self.tracker, self.deadline, &manager).await?;
         Ok(Box::new(SdkSession {
             host: self.host.clone(),
@@ -74,12 +74,12 @@ async fn enter(
 ) -> Result<CallableHandle, SessionError> {
     let entering = manager
         .attr(host, "__enter__")
-        .map_err(|source| call_failure("__enter__", source))?;
+        .map_err(|source| call_failure("__enter__", &source))?;
     let entered = entering
         .call_raw(host, tracker, deadline, Vec::new(), BTreeMap::new())
         .await
-        .map_err(|source| call_failure("__enter__", source))?;
-    CallableHandle::new(host, entered).map_err(|source| call_failure("__enter__", source))
+        .map_err(|source| call_failure("__enter__", &source))?;
+    CallableHandle::new(host, entered).map_err(|source| call_failure("__enter__", &source))
 }
 
 struct SdkSession {
@@ -92,17 +92,13 @@ struct SdkSession {
 }
 
 impl SdkSession {
-    async fn copy_path(
+    async fn copy_paths(
         &self,
         operation: &'static str,
-        path: &Path,
-        other: &str,
+        source: &str,
+        target: &str,
     ) -> Result<(), SessionError> {
-        let text = path.to_str().ok_or_else(|| SessionError::Call {
-            operation,
-            source: SdkFailure::from(format!("the {operation} path is not valid UTF-8")),
-        })?;
-        self.invoke(operation, &[text, other]).await?;
+        self.invoke(operation, &[source, target]).await?;
         Ok(())
     }
 
@@ -120,7 +116,7 @@ impl SdkSession {
         let handle = self
             .session
             .attr(&self.host, operation)
-            .map_err(|source| call_failure(operation, source))?;
+            .map_err(|source| call_failure(operation, &source))?;
         handle
             .call_raw(
                 &self.host,
@@ -130,14 +126,25 @@ impl SdkSession {
                 BTreeMap::new(),
             )
             .await
-            .map_err(|source| call_failure(operation, source))
+            .map_err(|source| call_failure(operation, &source))
     }
+}
+
+fn path_text<'path>(
+    operation: &'static str,
+    path: &'path Path,
+) -> Result<&'path str, SessionError> {
+    path.to_str().ok_or_else(|| SessionError::Call {
+        operation,
+        source: SdkFailure::from(format!("the {operation} path is not valid UTF-8")),
+    })
 }
 
 #[async_trait]
 impl SandboxSession for SdkSession {
     async fn copy_to_runtime(&self, local: &Path, sandbox_path: &str) -> Result<(), SessionError> {
-        self.copy_path("copy_to_runtime", local, sandbox_path).await
+        let text = path_text("copy_to_runtime", local)?;
+        self.copy_paths("copy_to_runtime", text, sandbox_path).await
     }
 
     async fn copy_from_runtime(
@@ -145,8 +152,8 @@ impl SandboxSession for SdkSession {
         source: &str,
         destination: &Path,
     ) -> Result<(), SessionError> {
-        self.copy_path("copy_from_runtime", destination, source)
-            .await
+        let text = path_text("copy_from_runtime", destination)?;
+        self.copy_paths("copy_from_runtime", source, text).await
     }
 
     async fn run(&self, code: &str) -> Result<RunResult, SessionError> {
@@ -161,7 +168,7 @@ impl SandboxSession for SdkSession {
         let handle = self
             .manager
             .attr(&self.host, "__exit__")
-            .map_err(|source| call_failure("__exit__", source))?;
+            .map_err(|source| call_failure("__exit__", &source))?;
         let arguments = self.host.attach(|py| vec![py.None(), py.None(), py.None()]);
         handle
             .call_raw(
@@ -172,7 +179,7 @@ impl SandboxSession for SdkSession {
                 BTreeMap::new(),
             )
             .await
-            .map_err(|source| call_failure("__exit__", source))?;
+            .map_err(|source| call_failure("__exit__", &source))?;
         Ok(())
     }
 }
@@ -209,8 +216,10 @@ fn keywords_of(
         .map_err(|source| start_failure(source.to_string()))?;
     keywords.insert("verbose".to_owned(), verbose);
     if let Some(image) = &options.image {
-        let image = PyString::new(py, image).into_any().unbind();
-        keywords.insert("image".to_owned(), image);
+        keywords.insert(
+            "image".to_owned(),
+            PyString::new(py, image).into_any().unbind(),
+        );
     }
     Ok(keywords)
 }
@@ -219,7 +228,7 @@ fn read_result(result: &Bound<'_, PyAny>) -> Result<RunResult, SessionError> {
     let exit_code = result
         .getattr("exit_code")
         .and_then(|value| value.extract::<i32>())
-        .map_err(|source| unreadable("exit_code", source))?;
+        .map_err(|source| unreadable("exit_code", &source))?;
     Ok(RunResult {
         exit_code,
         stdout: read_text(result, "stdout")?,
@@ -231,21 +240,21 @@ fn read_text(result: &Bound<'_, PyAny>, field: &str) -> Result<Option<String>, S
     result
         .getattr(field)
         .and_then(|value| value.extract::<Option<String>>())
-        .map_err(|source| unreadable(field, source))
+        .map_err(|source| unreadable(field, &source))
 }
 
-fn unreadable(field: &str, source: PyErr) -> SessionError {
+fn unreadable(field: &str, source: &PyErr) -> SessionError {
     SessionError::Call {
         operation: "run",
         source: SdkFailure::from(format!("the {field} field: {source}")),
     }
 }
 
-pub(super) fn open_failure(error: LibraryError) -> SessionError {
-    match error {
-        LibraryError::NotInstalled { .. } => SessionError::SdkMissing,
-        other => start_failure(other.to_string()),
+pub(super) fn open_failure(error: &LibraryError) -> SessionError {
+    if let LibraryError::NotInstalled { .. } = error {
+        return SessionError::SdkMissing;
     }
+    start_failure(error.to_string())
 }
 
 fn start_failure(message: String) -> SessionError {
@@ -254,7 +263,7 @@ fn start_failure(message: String) -> SessionError {
     }
 }
 
-fn call_failure(operation: &'static str, source: CallError) -> SessionError {
+fn call_failure(operation: &'static str, source: &CallError) -> SessionError {
     SessionError::Call {
         operation,
         source: SdkFailure::from(source.to_string()),

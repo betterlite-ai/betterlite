@@ -18,6 +18,7 @@ print(json.dumps(files))
 
 const PIP_INSTALL_HEADER: &str = "\nimport subprocess\nimport sys\nsubprocess.run(\n";
 
+#[must_use]
 pub fn pip_install_code(filename: &str) -> String {
     format!(
         "{PIP_INSTALL_HEADER}    [sys.executable, '-m', 'pip', 'install', '-r', '{filename}'],\n    check=True,\n    cwd='/sandbox',\n)\n"
@@ -25,16 +26,19 @@ pub fn pip_install_code(filename: &str) -> String {
 }
 
 const CODE_HEADER: &str =
-    "\nimport os\nos.chdir('/sandbox')\nimport sys\nsys.path.insert(0, '/sandbox')\n\n";
+    "import os\nos.chdir('/sandbox')\nimport sys\nsys.path.insert(0, '/sandbox')\n";
 
+#[must_use]
 pub fn wrapped_code(code: &str) -> String {
     format!(
         "
-{CODE_HEADER}{code}
+{CODE_HEADER}
+{code}
 "
     )
 }
 
+#[must_use]
 pub fn mime_type(filename: &str) -> &'static str {
     let extension = filename
         .rsplit('.')
