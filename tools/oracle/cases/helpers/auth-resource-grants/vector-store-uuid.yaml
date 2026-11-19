@@ -1,0 +1,16 @@
+kind: helper
+name: auth-resource-grants-vector-store-uuid
+call:
+  auth_resource_grants:
+    function: managed_rows
+    rows:
+      - id: vs-1
+        model_dump:
+          vector_store_id: vs-1
+          custom_llm_provider: openai
+          vector_store_name: One
+    rounds:
+      - [vs-1]
+env: {}
+compare:
+  ignore: []

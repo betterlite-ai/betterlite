@@ -1,0 +1,19 @@
+kind: helper
+name: management-payload-nonrecursive-malformed-env-slots
+call:
+  management_payload:
+    function: redact_env_vars
+    response:
+      env_vars: not-a-list
+      items:
+        - server_id: alpha
+          env_vars:
+            - {name: A, value: secret}
+        - server_id: beta
+          env_vars: {name: B, value: deep-secret}
+        - just-a-string
+      nested:
+        env_vars:
+          - {name: C, value: deep-secret, scope: global}
+env: {}
+compare: {ignore: []}

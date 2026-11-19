@@ -1,0 +1,41 @@
+kind: helper
+name: messages-responses-output-context-management-option
+call:
+  messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      context_management:
+        edits:
+        - type: compact_20260112
+          trigger:
+            type: input_tokens
+            value: 150000
+        - type: clear_tool_uses
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+calls:
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      context_management:
+        edits:
+        - type: compact_20260112
+          trigger:
+            type: input_tokens
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      context_management:
+        edits: []
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+env: {}
+compare: {ignore: []}

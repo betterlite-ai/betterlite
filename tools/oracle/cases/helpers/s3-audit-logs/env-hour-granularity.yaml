@@ -1,0 +1,24 @@
+kind: helper
+name: s3-audit-logs-env-hour-granularity
+call:
+  b115:
+    global_params:
+      s3_bucket_name: audit-bucket
+      s3_region_name: us-east-1
+      s3_path: logs
+    record:
+      id: req-3
+      updated_at: "2026-03-04T05:06:07Z"
+      changed_by: admin
+      changed_by_api_key: hashed-key
+      action: created
+      table_name: LiteLLM_VerificationToken
+      object_id: object-3
+      before_value: null
+      updated_values: "{}"
+    now: "2026-03-04T05:06:07+00:00"
+    settings:
+      S3_PARTITION_GRANULARITY: hour
+env:
+  S3_PARTITION_GRANULARITY: hour
+compare: {ignore: []}

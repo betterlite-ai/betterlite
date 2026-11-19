@@ -1,0 +1,23 @@
+kind: helper
+name: auth-resource-grants-row-cache-order
+call:
+  auth_resource_grants:
+    function: managed_rows
+    rows:
+      - id: vs-1
+        model_dump:
+          vector_store_id: vs-1
+          custom_llm_provider: openai
+          vector_store_name: One
+      - id: vs-2
+        model_dump:
+          vector_store_id: vs-2
+          custom_llm_provider: openai
+          vector_store_name: Two
+    rounds:
+      - [vs-1, vs-2]
+      - [vs-2, vs-2, vs-3]
+      - [vs-3]
+env: {}
+compare:
+  ignore: []
