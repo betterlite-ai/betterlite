@@ -72,7 +72,7 @@ where
         conversions,
     };
     match retrieval {
-        Retrieval::Miss => Ok(AsyncLookup::new(None, logging)),
+        Retrieval::Miss => Ok(AsyncLookup::new(Some(LookupResponse::default()), logging)),
         Retrieval::Embeddings(entries) => partial_embedding_hit(&mut pass, &entries, logging).await,
         // a cached list is never a single response, so LiteLLM hands it back as it was stored
         Retrieval::Hit(value @ CacheValue::Array(_)) => Ok(AsyncLookup::new(
