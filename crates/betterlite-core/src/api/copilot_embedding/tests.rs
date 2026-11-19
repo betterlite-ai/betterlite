@@ -222,7 +222,7 @@ async fn validate_environment_uses_the_stored_key_and_lets_caller_headers_win() 
         Some("2025-04-01")
     );
     assert!(headers.contains_key("x-request-id"));
-    assert_eq!(headers.len(), 10);
+    assert_eq!(headers.len(), 11);
 }
 
 #[rstest]
