@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_auth::agent_registry::{AgentRegistry, AgentRegistryApi as _};
 use betterlite_db::auxiliary_repository::bindings::{AgentsTable, MCPServerTable};
 use betterlite_db::auxiliary_repository::repository::{
-    PrismaClient, PrismaTableRepository, TableError,
+    PrismaClient, PrismaTableRepository, TableBinding, TableError,
 };
 use betterlite_db::database_refresh::handle::{PoolFuture, PoolTransport};
 use betterlite_db::database_replica::client::{Attribute, DatabaseClient, DatabaseLifecycle};
@@ -21,12 +21,12 @@ use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use deadpool_postgres::Pool;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
+use tokio_postgres::Row;
 
 mod tests;
 
-const MCP_SERVER_NAMES_SQL: &str = "SELECT server_id, alias, server_name FROM \"LiteLLM_MCPServerTable\" WHERE server_id = ANY($1::text[])";
-const AGENT_NAMES_SQL: &str =
-    "SELECT agent_id, agent_name FROM \"LiteLLM_AgentsTable\" WHERE agent_id = ANY($1::text[])";
+const MCP_SERVER_NAMES_SQL: &str = "SELECT server_id AS id, COALESCE(NULLIF(alias, ''), NULLIF(server_name, '')) AS label FROM \"LiteLLM_MCPServerTable\" WHERE server_id = ANY($1::text[])";
+const AGENT_NAMES_SQL: &str = "SELECT agent_id AS id, agent_name AS label FROM \"LiteLLM_AgentsTable\" WHERE agent_id = ANY($1::text[])";
 
 #[derive(Debug, Error)]
 pub enum DisplayNameError {
@@ -126,68 +126,14 @@ impl DisplayNameStore for PrismaClient<'_> {
         &self,
         ids: BTreeSet<String>,
     ) -> impl Future<Output = Result<BTreeMap<String, String>, DisplayNameError>> + Send {
-        async move {
-            let repository = PrismaTableRepository::new(
-                Some(*self),
-                redis_config_change_publisher(None),
-                MCPServerTable,
-            );
-            let session = repository.access()?.read.session().await?;
-            let requested: Vec<String> = ids.into_iter().collect();
-            let rows = session
-                .query(MCP_SERVER_NAMES_SQL, &[&requested])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            let mut names = BTreeMap::new();
-            for row in &rows {
-                let server_id: String = row
-                    .try_get("server_id")
-                    .map_err(|source| TableError::Database(backend(source)))?;
-                let alias: Option<String> = row
-                    .try_get("alias")
-                    .map_err(|source| TableError::Database(backend(source)))?;
-                let server_name: Option<String> = row
-                    .try_get("server_name")
-                    .map_err(|source| TableError::Database(backend(source)))?;
-                let label = alias
-                    .filter(|name| !name.is_empty())
-                    .or_else(|| server_name.filter(|name| !name.is_empty()));
-                if let Some(label) = label {
-                    names.insert(server_id, label);
-                }
-            }
-            Ok(names)
-        }
+        table_names(*self, MCPServerTable, MCP_SERVER_NAMES_SQL, ids)
     }
 
     fn agent_names(
         &self,
         ids: BTreeSet<String>,
     ) -> impl Future<Output = Result<BTreeMap<String, String>, DisplayNameError>> + Send {
-        async move {
-            let repository = PrismaTableRepository::new(
-                Some(*self),
-                redis_config_change_publisher(None),
-                AgentsTable,
-            );
-            let session = repository.access()?.read.session().await?;
-            let requested: Vec<String> = ids.into_iter().collect();
-            let rows = session
-                .query(AGENT_NAMES_SQL, &[&requested])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            let mut names = BTreeMap::new();
-            for row in &rows {
-                let agent_id: String = row
-                    .try_get("agent_id")
-                    .map_err(|source| TableError::Database(backend(source)))?;
-                let agent_name: String = row
-                    .try_get("agent_name")
-                    .map_err(|source| TableError::Database(backend(source)))?;
-                names.insert(agent_id, agent_name);
-            }
-            Ok(names)
-        }
+        table_names(*self, AgentsTable, AGENT_NAMES_SQL, ids)
     }
 
     fn key_names(
@@ -213,6 +159,42 @@ impl DisplayNameStore for PrismaClient<'_> {
             Ok(names)
         }
     }
+}
+
+async fn table_names<T>(
+    client: PrismaClient<'_>,
+    binding: T,
+    sql: &'static str,
+    ids: BTreeSet<String>,
+) -> Result<BTreeMap<String, String>, DisplayNameError>
+where
+    T: TableBinding,
+{
+    let repository =
+        PrismaTableRepository::new(Some(client), redis_config_change_publisher(None), binding);
+    let session = repository.access()?.read.session().await?;
+    let requested: Vec<String> = ids.into_iter().collect();
+    let rows = session
+        .query(sql, &[&requested])
+        .await
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let mut names = BTreeMap::new();
+    for row in &rows {
+        if let Some((id, found)) = row_name(row)? {
+            names.insert(id, found);
+        }
+    }
+    Ok(names)
+}
+
+fn row_name(row: &Row) -> Result<Option<(String, String)>, DisplayNameError> {
+    let id: String = row
+        .try_get("id")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let label: Option<String> = row
+        .try_get("label")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    Ok(label.map(|found| (id, found)))
 }
 
 // the token repository only reads through attribute(), so these lifecycle steps never run
