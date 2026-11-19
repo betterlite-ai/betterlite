@@ -144,7 +144,7 @@ fn run_step(
         Step::ProcessEvent { event } => {
             process_event(state, event)?;
             Ok(StepResult::ProcessEvent {
-                failed: state.stream_failed(),
+                failed: state.snapshot().stream_failed,
             })
         }
         Step::ProjectFailure { failure } => {
@@ -198,37 +198,30 @@ fn build_attributes<'spec>(
     spec: &'spec EventSpec,
     output: &'spec [OutputItem<'spec>],
 ) -> EventAttributes<'spec> {
-    let read = spec.attributes.as_ref();
-    EventAttributes {
-        event_type: read.and_then(|attributes| attributes.event_type.as_ref()),
-        item: read.and_then(|attributes| attributes.item.as_ref()),
-        item_id: read.and_then(|attributes| attributes.item_id.as_ref()),
-        delta: read.and_then(|attributes| attributes.delta.as_ref()),
-        summary_index: read.and_then(|attributes| attributes.summary_index.as_ref()),
-        response: read
-            .and_then(|attributes| attributes.response.as_ref())
-            .map(|response| response_attribute(response, output)),
+    let mut attributes = EventAttributes::default();
+    if let Some(read) = spec.attributes.as_ref() {
+        attributes.event_type = read.event_type.as_ref();
+        attributes.item = read.item.as_ref();
+        attributes.item_id = read.item_id.as_ref();
+        attributes.delta = read.delta.as_ref();
+        attributes.summary_index = read.summary_index.as_ref();
+        attributes.response = match read.response.as_ref() {
+            Some(ResponseSpec::Object {
+                status,
+                usage,
+                error,
+                ..
+            }) => Some(ResponseAttribute::Object(ResponseAttributes {
+                output,
+                status: status.as_deref(),
+                usage: usage.as_ref(),
+                error: error.as_ref().map(error_attribute),
+            })),
+            Some(ResponseSpec::Value { value }) => Some(ResponseAttribute::Value(value)),
+            None => None,
+        };
     }
-}
-
-fn response_attribute<'spec>(
-    spec: &'spec ResponseSpec,
-    output: &'spec [OutputItem<'spec>],
-) -> ResponseAttribute<'spec> {
-    match spec {
-        ResponseSpec::Object {
-            status,
-            usage,
-            error,
-            ..
-        } => ResponseAttribute::Object(ResponseAttributes {
-            output,
-            status: status.as_deref(),
-            usage: usage.as_ref(),
-            error: error.as_ref().map(error_attribute),
-        }),
-        ResponseSpec::Value { value } => ResponseAttribute::Value(value),
-    }
+    attributes
 }
 
 fn error_attribute(spec: &ErrorSpec) -> ErrorAttribute<'_> {
