@@ -1,0 +1,14 @@
+kind: helper
+name: escaping_file
+call:
+  skill_sandbox:
+    code: "open('out.txt', 'w').write('made')"
+    files:
+      main.py: "print('hello')\n"
+      ../escape.py: "print('escaped')\n"
+      /etc/passwd: "root:x:0:0\n"
+    requirements: null
+    image: ""
+    execution: {exit_code: 0, stdout: "hello\n", stderr: null}
+env: {}
+compare: {ignore: []}

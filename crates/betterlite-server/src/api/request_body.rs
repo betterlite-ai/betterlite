@@ -6,6 +6,8 @@ use betterlite_core::api::request_body::{
     classify_media_type, form_body, is_opaque_audio_request, parse_binary_body, parse_json_bytes,
     parse_json_text,
 };
+use betterlite_core::api::request_form::values::PartValue;
+use std::collections::BTreeMap;
 use std::str;
 
 mod tests;
@@ -82,7 +84,7 @@ pub fn read_request_body(
         });
     }
     match classify_media_type(content_type) {
-        MediaTypeKind::Form => decode_form_body(input),
+        MediaTypeKind::Form => decode_form_body(input, limits),
         MediaTypeKind::Binary => {
             limits.check(ApiBoundariesInput::Json(JsonBoundary {
                 known_bytes: input.body.len(),
@@ -149,9 +151,25 @@ fn parsed_result(branch: BodyKind, body: JsonObject) -> RequestBodyResult {
     }
 }
 
-fn decode_form_body(input: &RequestBodyInput) -> Result<RequestBodyResult, RequestBodyError> {
-    let Some(fields) = input.form_fields.as_ref() else {
-        return Err(RequestBodyError::UndecodedForm);
-    };
-    Ok(parsed_result(BodyKind::Form, form_body(fields)?))
+fn decode_form_body(
+    input: &RequestBodyInput,
+    limits: &ApiLimits,
+) -> Result<RequestBodyResult, RequestBodyError> {
+    if let Some(fields) = input.form_fields.as_ref() {
+        return Ok(parsed_result(BodyKind::Form, form_body(fields)?));
+    }
+    let content_type = input.headers.get("content-type").map_or("", String::as_str);
+    let parts =
+        super::request_form::decode_request_form(&input.body, content_type.as_bytes(), limits)
+            .map_err(|_error| RequestBodyError::UndecodedForm)?;
+    // LiteLLM's auth-time read takes dict(request.form()): the last value per exact key, uploads left out of the JSON shape
+    let fields = parts
+        .items
+        .into_iter()
+        .filter_map(|part| match part.value {
+            PartValue::Text(text) => Some((part.name, text)),
+            PartValue::Upload(_upload) => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(parsed_result(BodyKind::Form, form_body(&fields)?))
 }

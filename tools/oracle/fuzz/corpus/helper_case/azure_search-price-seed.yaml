@@ -1,0 +1,13 @@
+kind: helper
+name: azure-search-price-seed
+call:
+  azure_search:
+    price:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"seed claim","annotations":[{"type":"url_citation","url":"https://seed.example","title":"Seed"}]}]}]}
+env: {}
+compare:
+  ignore: []

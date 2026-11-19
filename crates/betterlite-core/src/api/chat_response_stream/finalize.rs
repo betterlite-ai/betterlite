@@ -1,10 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::event_types::{Extra, ResponseEvent};
 use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
-use betterlite_openai::api::responses_objects::ResponseOutputItem;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 use crate::api::chat_response_stream_items::error::StreamItemsError;
 use crate::api::chat_response_stream_items::progression::{
@@ -17,8 +13,9 @@ use crate::api::chat_response_stream_items::sources::EventSources;
 use crate::api::chat_response_stream_tools::final_tools::queue_final_tool_completion;
 use crate::api::chat_response_stream_tools::items::output_items_with_id;
 use crate::api::chat_response_stream_tools::state::ChatStreamState;
-use crate::api::response_id_traversal::record::{DictRecord, Record};
-use crate::api::response_id_traversal::response_id::rewrite_response_id;
+use crate::api::response_id_traversal::response_id::{
+    ResponseRewriteError, rewrite_typed_response, transcode,
+};
 use crate::api::responses_chat_output::assemble_response;
 use crate::api::responses_chat_output::records::{ChatCompletionResponse, RequestFields};
 
@@ -74,23 +71,14 @@ fn completed_event<Context>(
     let reasoning_id = state.progress.cached_reasoning_item_id.as_deref();
     let aligned = output_items_with_id(&response.output, "message", message_id);
     response.output = output_items_with_id(&aligned, "reasoning", reasoning_id);
-    // The completed event takes the managed-id rewrite a non-streaming response gets: id, encrypted items, containers
-    let mut record = json_record(transcode(&response)?);
     // A null metadata value reads as the field's default, as docs/compatibility.md says for a typed field
     let mut metadata = state.litellm_metadata.clone();
     metadata.retain(|_name, value| !matches!(value, Json::Null));
-    rewrite_response_id(
-        &mut record,
+    rewrite_typed_response(
+        &mut response,
         state.custom_llm_provider.as_deref(),
         &transcode(&metadata)?,
     )?;
-    let rewritten: RewrittenFields = transcode(&record)?;
-    response.id = rewritten.id;
-    response.output = rewritten
-        .output
-        .into_iter()
-        .map(ResponseOutputItem::Unknown)
-        .collect();
     state.progress.completed_response = Some(response.clone());
     Ok(KnownResponseEvent::ResponseCompleted(ResponseEvent {
         response,
@@ -98,36 +86,16 @@ fn completed_event<Context>(
     }))
 }
 
-// B904's rewrite changes only the id and the output items, which stay raw so a typed re-parse adds no fields
-#[derive(Deserialize)]
-struct RewrittenFields {
-    id: String,
-    output: Vec<BTreeMap<String, Json>>,
-}
-
-// serde's untagged Record decode turns a float into its private number map, so JSON converts by hand
-fn json_record(value: Json) -> Record {
-    match value {
-        Json::Object(fields) => Record::Dict(DictRecord {
-            values: fields
-                .into_iter()
-                .map(|(name, child)| (name, json_record(child)))
-                .collect(),
-        }),
-        Json::List(items) => Record::List(items.into_iter().map(json_record).collect()),
-        scalar @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => {
-            Record::Scalar(scalar)
+impl From<ResponseRewriteError> for ChatResponseStreamError {
+    fn from(error: ResponseRewriteError) -> Self {
+        match error {
+            ResponseRewriteError::Encode(source) => {
+                Self::Items(StreamItemsError::Encode { source })
+            }
+            ResponseRewriteError::Decode(source) => {
+                Self::Items(StreamItemsError::Response { source })
+            }
+            ResponseRewriteError::Traversal(source) => Self::Traversal(source),
         }
     }
-}
-
-// Every conversion here crosses JSON, so one serde pass each way and a failure names its field
-fn transcode<Source, Target>(source: &Source) -> Result<Target, StreamItemsError>
-where
-    Source: Serialize + ?Sized,
-    Target: DeserializeOwned,
-{
-    let encoded = serde_json::to_vec(source)?;
-    let mut decoder = serde_json::Deserializer::from_slice(&encoded);
-    serde_path_to_error::deserialize(&mut decoder).map_err(StreamItemsError::from)
 }

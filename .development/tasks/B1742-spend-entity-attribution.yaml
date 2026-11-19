@@ -46,6 +46,9 @@ description: >-
   layer. No settings or HTTP routes are introduced.
 scope:
   paths:
+    - "tools/oracle/src/helpers/db/spend_entities*"
+    - "tools/oracle/helpers/spend_entities*"
+    - "crates/betterlite-db"
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/spend_attribution.rs
     - crates/betterlite-db/src/spend_attribution/**

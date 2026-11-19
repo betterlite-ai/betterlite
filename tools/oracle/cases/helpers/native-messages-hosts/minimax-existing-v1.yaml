@@ -1,0 +1,22 @@
+kind: helper
+name: native-messages-hosts-minimax-existing-v1
+call:
+  native_messages_hosts:
+    calls:
+      - function: url
+        host: minimax
+        api_bases:
+          - null
+          - "https://api.minimaxi.com/anthropic/v1"
+          - "https://api.minimaxi.com/anthropic/"
+          - "https://api.minimaxi.com/anthropic"
+          - "https://api.minimaxi.com/anthropic/v1/messages"
+          - "https://gateway.test/minimax/v1/"
+        environment: {}
+      - function: url
+        host: minimax
+        api_bases: [null]
+        environment:
+          MINIMAX_API_BASE: "https://api.minimaxi.com/anthropic/v1"
+env: {}
+compare: {ignore: []}
