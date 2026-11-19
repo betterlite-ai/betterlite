@@ -2,7 +2,9 @@ use super::*;
 
 use axum::http::StatusCode;
 
-use crate::model_listing::info::create_model_info_response;
+use crate::model_listing::info::{
+    ModelInfoMetadata, ModelInfoResponse, create_model_info_response,
+};
 
 #[test]
 fn a_listed_model_reports_its_own_cost_map_entry() {
@@ -21,15 +23,16 @@ fn a_listed_model_reports_its_own_cost_map_entry() {
         create_model_info_response(&info_request("gpt-4o"), &sources).expect("the entry answers");
     assert_eq!(
         response,
-        object(vec![
-            ("id", text("gpt-4o")),
-            ("object", text("model")),
-            ("created", number(CREATED_AT)),
-            ("owned_by", text("openai")),
-            ("mode", text("chat")),
-            ("max_input_tokens", number(128_000)),
-            ("max_output_tokens", number(0x4000)),
-        ])
+        ModelInfoResponse {
+            id: "gpt-4o".to_owned(),
+            object: "model",
+            created: CREATED_AT,
+            owned_by: "openai".to_owned(),
+            mode: Some("chat".to_owned()),
+            max_input_tokens: Some(128_000),
+            max_output_tokens: Some(0x4000),
+            metadata: None,
+        }
     );
 }
 
@@ -41,7 +44,7 @@ fn the_created_time_comes_from_the_server_configuration() {
     sources.created_at = 7;
     let response =
         create_model_info_response(&info_request("gpt-4o"), &sources).expect("the entry answers");
-    assert_eq!(response.get("created"), Some(&number(7)));
+    assert_eq!(response.created, 7);
 }
 
 #[test]
@@ -54,12 +57,16 @@ fn a_cost_map_that_cannot_answer_leaves_only_the_base_fields() {
         create_model_info_response(&info_request("gpt-4o"), &sources).expect("the entry answers");
     assert_eq!(
         response,
-        object(vec![
-            ("id", text("gpt-4o")),
-            ("object", text("model")),
-            ("created", number(CREATED_AT)),
-            ("owned_by", text("openai")),
-        ])
+        ModelInfoResponse {
+            id: "gpt-4o".to_owned(),
+            object: "model",
+            created: CREATED_AT,
+            owned_by: "openai".to_owned(),
+            mode: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            metadata: None,
+        }
     );
 }
 
@@ -83,7 +90,7 @@ fn a_listing_without_cost_map_keys_resolves_the_listed_name() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(100)));
+    assert_eq!(response.max_input_tokens, Some(100));
 }
 
 #[test]
@@ -114,7 +121,7 @@ fn a_deployments_exact_entry_wins_over_a_generalized_listed_entry() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(100)));
+    assert_eq!(response.max_input_tokens, Some(100));
 }
 
 #[test]
@@ -141,7 +148,7 @@ fn a_deployment_entry_wins_over_an_exact_listed_entry() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(100)));
+    assert_eq!(response.max_input_tokens, Some(100));
 }
 
 #[test]
@@ -172,7 +179,7 @@ fn a_generalized_deployment_entry_follows_the_listed_exact_entry() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(100)));
+    assert_eq!(response.max_input_tokens, Some(100));
 }
 
 #[test]
@@ -205,8 +212,8 @@ fn a_group_reports_the_widest_limit_any_deployment_declares() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("group"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(20)));
-    assert_eq!(response.get("max_output_tokens"), Some(&number(7)));
+    assert_eq!(response.max_input_tokens, Some(20));
+    assert_eq!(response.max_output_tokens, Some(7));
 }
 
 #[test]
@@ -232,8 +239,8 @@ fn the_listing_info_limits_override_the_entries() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("group"), &sources).expect("the entry answers");
-    assert_eq!(response.get("max_input_tokens"), Some(&number(300)));
-    assert_eq!(response.get("max_output_tokens"), Some(&number(50)));
+    assert_eq!(response.max_input_tokens, Some(300));
+    assert_eq!(response.max_output_tokens, Some(50));
 }
 
 #[test]
@@ -250,7 +257,7 @@ fn the_configured_mode_overrides_the_entry_mode() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("gpt-4o"), &sources).expect("the entry answers");
-    assert_eq!(response.get("mode"), Some(&text("completion")));
+    assert_eq!(response.mode, Some("completion".to_owned()));
 }
 
 #[test]
@@ -276,8 +283,8 @@ fn an_alias_resolves_the_lookup_model_and_keeps_the_listed_id() {
     let sources = info_sources(Some(&router), &cost_map, None, &groups);
     let response =
         create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
-    assert_eq!(response.get("id"), Some(&text("public")));
-    assert_eq!(response.get("max_input_tokens"), Some(&number(42)));
+    assert_eq!(response.id, "public");
+    assert_eq!(response.max_input_tokens, Some(42));
 }
 
 fn fallback_settings() -> Settings {
@@ -308,11 +315,10 @@ fn metadata_fallbacks_use_the_general_chain_by_default() {
     request.include_metadata = true;
     let response = create_model_info_response(&request, &sources).expect("the entry answers");
     assert_eq!(
-        response.get("metadata"),
-        Some(&Json::Object(object(vec![(
-            "fallbacks",
-            Json::List(vec![text("general-backup")])
-        )])))
+        response.metadata,
+        Some(ModelInfoMetadata {
+            fallbacks: strings(&["general-backup"]),
+        })
     );
 }
 
@@ -330,11 +336,10 @@ fn metadata_fallbacks_follow_the_requested_type() {
     request.fallback_type = Some("context_window");
     let response = create_model_info_response(&request, &sources).expect("the entry answers");
     assert_eq!(
-        response.get("metadata"),
-        Some(&Json::Object(object(vec![(
-            "fallbacks",
-            Json::List(vec![text("window-backup")])
-        )])))
+        response.metadata,
+        Some(ModelInfoMetadata {
+            fallbacks: strings(&["window-backup"]),
+        })
     );
 }
 
@@ -347,11 +352,10 @@ fn metadata_without_a_configured_plan_lists_no_fallbacks() {
     request.include_metadata = true;
     let response = create_model_info_response(&request, &sources).expect("the entry answers");
     assert_eq!(
-        response.get("metadata"),
-        Some(&Json::Object(object(vec![(
-            "fallbacks",
-            Json::List(Vec::new())
-        )])))
+        response.metadata,
+        Some(ModelInfoMetadata {
+            fallbacks: Vec::new(),
+        })
     );
 }
 
@@ -380,5 +384,5 @@ fn an_unknown_fallback_type_without_metadata_still_answers() {
     let mut request = info_request("gpt-4o");
     request.fallback_type = Some("nope");
     let response = create_model_info_response(&request, &sources).expect("the entry answers");
-    assert_eq!(response.get("metadata"), None);
+    assert_eq!(response.metadata, None);
 }

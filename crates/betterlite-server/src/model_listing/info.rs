@@ -6,8 +6,7 @@ use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_models::call_helpers::token_limit::coerce_token_limit;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use indexmap::IndexMap;
-use serde_json::Number;
+use serde::Serialize;
 
 use crate::model_listing::ModelListingError;
 use crate::model_listing::access::{DeploymentListingInfo, ListingRouter};
@@ -15,8 +14,6 @@ use crate::model_listing::access::{DeploymentListingInfo, ListingRouter};
 const MAX_INPUT_TOKENS: &str = "max_input_tokens";
 const MAX_OUTPUT_TOKENS: &str = "max_output_tokens";
 const MODE: &str = "mode";
-const METADATA: &str = "metadata";
-const FALLBACKS: &str = "fallbacks";
 // LiteLLM's valid_fallback_types, in the order its 400 response lists them
 const FALLBACK_TYPES: [&str; 3] = [
     GENERAL_FALLBACK_TYPE,
@@ -56,10 +53,33 @@ pub struct ModelInfoLookupError {
     pub model: String,
 }
 
+// LiteLLM's ModelInfoMetadata: the block include_metadata attaches.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ModelInfoMetadata {
+    pub fallbacks: Vec<String>,
+}
+
+// LiteLLM's ModelInfoResponse: an OpenAI model object plus the fields a deployment declared.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ModelInfoResponse {
+    pub id: String,
+    pub object: &'static str,
+    pub created: i64,
+    pub owned_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_input_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ModelInfoMetadata>,
+}
+
 pub fn create_model_info_response(
     request: &ModelInfoRequest<'_>,
     sources: &ModelInfoSources<'_>,
-) -> Result<JsonObject, ModelListingError> {
+) -> Result<ModelInfoResponse, ModelListingError> {
     let alias_target = sources
         .router
         .and_then(|router| router.model_group_alias(request.model_id));
@@ -71,16 +91,23 @@ pub fn create_model_info_response(
     let listed_info = safe_model_info(sources.cost_map, lookup_model);
     let candidate_sets =
         listing_candidates(&cost_map_keys, lookup_model, listed_info.as_ref(), sources);
-    let mut response = base_response(request, sources.created_at);
-    insert_mode(&mut response, &candidate_sets, lookup_model, sources);
     let (max_input_tokens, max_output_tokens) =
         response_limits(&candidate_sets, listing_info.as_ref());
-    insert_limit(&mut response, MAX_INPUT_TOKENS, max_input_tokens);
-    insert_limit(&mut response, MAX_OUTPUT_TOKENS, max_output_tokens);
-    if request.include_metadata {
-        attach_metadata(&mut response, request, sources)?;
-    }
-    Ok(response)
+    let metadata = if request.include_metadata {
+        Some(metadata_block(request, sources)?)
+    } else {
+        None
+    };
+    Ok(ModelInfoResponse {
+        id: request.model_id.to_owned(),
+        object: "model",
+        created: sources.created_at,
+        owned_by: request.provider.to_owned(),
+        mode: response_mode(&candidate_sets, lookup_model, sources),
+        max_input_tokens,
+        max_output_tokens,
+        metadata,
+    })
 }
 
 // One entry per distinct model behind the listed name, and one nameless entry when the router knows none.
@@ -116,21 +143,15 @@ fn listing_candidates(
 }
 
 // the mode any candidate declares, then the one the router configures for the group
-fn insert_mode(
-    response: &mut JsonObject,
+fn response_mode(
     candidate_sets: &[Vec<JsonObject>],
     lookup_model: &str,
     sources: &ModelInfoSources<'_>,
-) {
-    if let Some(mode) = first_mode(candidate_sets) {
-        response.insert(MODE.to_owned(), Json::Text(mode));
-    }
-    if let Some(mode) = sources
+) -> Option<String> {
+    sources
         .router
         .and_then(|router| router.configured_mode(lookup_model))
-    {
-        response.insert(MODE.to_owned(), Json::Text(mode));
-    }
+        .or_else(|| first_mode(candidate_sets))
 }
 
 // _group_token_limit over both fields, overridden by what the router's listing info declares.
@@ -208,48 +229,23 @@ fn first_mode(candidate_sets: &[Vec<JsonObject>]) -> Option<String> {
         })
 }
 
-// the OpenAI model object every entry starts from
-fn base_response(request: &ModelInfoRequest<'_>, created_at: i64) -> JsonObject {
-    JsonObject::from([
-        ("id".to_owned(), Json::Text(request.model_id.to_owned())),
-        ("object".to_owned(), Json::Text("model".to_owned())),
-        ("created".to_owned(), Json::Number(Number::from(created_at))),
-        (
-            "owned_by".to_owned(),
-            Json::Text(request.provider.to_owned()),
-        ),
-    ])
-}
-
-// a limit entry exists only where a declaration did
-fn insert_limit(response: &mut JsonObject, field: &str, limit: Option<i64>) {
-    if let Some(limit) = limit {
-        response.insert(field.to_owned(), Json::Number(Number::from(limit)));
-    }
-}
-
 // the metadata block: the fallbacks the router resolves for the model, which a listing never grants
-fn attach_metadata(
-    response: &mut JsonObject,
+fn metadata_block(
     request: &ModelInfoRequest<'_>,
     sources: &ModelInfoSources<'_>,
-) -> Result<(), ModelListingError> {
+) -> Result<ModelInfoMetadata, ModelListingError> {
     let fallback_type = request.fallback_type.unwrap_or(GENERAL_FALLBACK_TYPE);
     if !FALLBACK_TYPES.contains(&fallback_type) {
         return Err(ModelListingError::InvalidFallbackType);
     }
-    let fallbacks = get_all_fallbacks(
-        request.model_id,
-        fallback_type,
-        sources.fallback_settings,
-        sources.fallback_groups,
-    );
-    let entries = Json::List(fallbacks.into_iter().map(Json::Text).collect());
-    response.insert(
-        METADATA.to_owned(),
-        Json::Object(IndexMap::from([(FALLBACKS.to_owned(), entries)])),
-    );
-    Ok(())
+    Ok(ModelInfoMetadata {
+        fallbacks: get_all_fallbacks(
+            request.model_id,
+            fallback_type,
+            sources.fallback_settings,
+            sources.fallback_groups,
+        ),
+    })
 }
 
 pub fn validate_model_access(
