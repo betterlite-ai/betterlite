@@ -3,7 +3,6 @@ use betterlite_config::sections::openai_like_settings::Settings as OpenAiLikeSet
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
 use betterlite_openai::openai_base_config::Headers as OpenAiHeaders;
-use secrecy::SecretString;
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
@@ -47,13 +46,6 @@ pub(super) fn provider_id(slug: &str) -> Result<ProviderId, Box<HelperError>> {
         .map_err(|error| helper_error("ValueError", format!("{slug}: {error}")))
 }
 
-pub(super) fn keys(call: &Call) -> (Option<SecretString>, Option<SecretString>) {
-    (
-        call.api_key.clone().map(SecretString::from),
-        call.global_api_key.clone().map(SecretString::from),
-    )
-}
-
 // the Responses policies carry the OpenAI crate's sorted header map
 pub(super) fn sorted_headers(call: &Call) -> OpenAiHeaders {
     call.headers
@@ -62,7 +54,7 @@ pub(super) fn sorted_headers(call: &Call) -> OpenAiHeaders {
         .collect()
 }
 
-pub(super) fn descriptor_for(
+pub(super) fn descriptor(
     call: &Call,
     registry: &JSONProviderRegistry,
     provider: ProviderId,

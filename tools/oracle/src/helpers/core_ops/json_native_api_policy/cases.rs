@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::json_provider_registry::ProviderConfig;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -38,9 +39,9 @@ pub(crate) struct Call {
     #[serde(default)]
     pub(super) api_base: Option<String>,
     #[serde(default)]
-    pub(super) api_key: Option<String>,
+    pub(super) api_key: Option<SecretString>,
     #[serde(default)]
-    pub(super) global_api_key: Option<String>,
+    pub(super) global_api_key: Option<SecretString>,
     #[serde(default)]
     pub(super) descriptor: Option<ProviderConfig>,
     #[serde(default)]
