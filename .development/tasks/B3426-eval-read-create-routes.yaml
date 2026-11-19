@@ -12,6 +12,10 @@ description: >-
   through `ProxyBaseLLMRequestProcessing.base_process_llm_request` on route_type `acreate_eval`, `alist_evals`, or `aget_eval`, and
   catch exceptions through `ProxyBaseLLMRequestProcessing._handle_llm_api_exception`. Response models are `Eval` and `ListEvalsResponse`
   from B3420's contracts.
+  Between the pre-call step and the SDK operation, each handler runs B9372's `EvalCallRoute::prepare` (betterlite-server
+  `api::eval_call_route`) with `EvalCallKind::CreateEval`, `ListEvals` or `GetEval`, the request data and the key's team id.
+  The route state constructor takes that `Arc<EvalCallRoute>` beside the pre-call step, and the SDK operation gets the
+  prepared data, so the call carries the api_base and api_key of the deployment the model names.
 scope:
   paths:
     - crates/betterlite-server/src/api/eval_read_create_routes.rs
@@ -92,7 +96,7 @@ deviations:
     why: "LiteLLM returns 500 Internal Server Error for malformed JSON because orjson.loads() raises an exception caught by the global exception handler. Betterlite explicitly decodes before the route handler's try block and returns 400 for malformed JSON, providing more specific error information and failing fast on parse errors."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L76-L77"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; the pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), the call path after pre-call (eval call routing and the deployment credential merge) is B9372's, the rest is B004's."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; the pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), the call path after pre-call (eval call routing and the deployment credential merge) is B9372's EvalCallRoute::prepare, the rest is B004's."
   - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; B004's."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (acreate_eval, alist_evals, aget_eval) owned by B3421 and B3422; routes only dispatch to them."
