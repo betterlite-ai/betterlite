@@ -167,6 +167,54 @@ fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
     assert_eq!(deployment.api_base, "https://api.openai.com/v1");
 }
 
+#[rstest]
+#[case::aleph_alpha_prefix_without_api_key(
+    "      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_base: https://api.aleph-alpha.com/complete\n",
+    "aleph_alpha",
+    "api_key"
+)]
+#[case::aleph_alpha_provider_without_api_base(
+    "      model: luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n",
+    "aleph_alpha",
+    "api_base"
+)]
+#[case::litellm_proxy_prefix_without_api_base(
+    "      model: litellm_proxy/gemini/gemini-1.5-pro\n      api_key: k\n",
+    "litellm_proxy",
+    "api_base"
+)]
+#[case::litellm_proxy_provider_without_api_key(
+    "      model: proxy-model\n      custom_llm_provider: litellm_proxy\n      api_base: https://proxy.example\n",
+    "litellm_proxy",
+    "api_key"
+)]
+#[case::custom_prefix_without_api_base(
+    "      model: custom/my-model\n      api_key: k\n",
+    "custom",
+    "api_base"
+)]
+fn unbuilt_chain_stops_startup(#[case] params: &str, #[case] provider: &str, #[case] field: &str) {
+    let yaml = format!("model_list:\n  - model_name: chain-model\n    litellm_params:\n{params}");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    match chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)) {
+        Err(ChatSetupError::UnbuiltChain {
+            model_name,
+            provider: named,
+            field: missing,
+        }) => {
+            assert_eq!(model_name, "chain-model");
+            assert_eq!(named, provider);
+            assert_eq!(missing, field);
+        }
+        Ok(_) => panic!("the deployment started without its own chain"),
+        Err(other) => panic!("unexpected setup error: {other}"),
+    }
+}
+
 #[tokio::test]
 async fn a_mocked_network_answers_without_opening_a_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

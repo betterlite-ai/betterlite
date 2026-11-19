@@ -17,10 +17,12 @@ use betterlite_openai::chat::deployment::{
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::aiohttp_openai_dispatch::{DEFAULT_AIOHTTP_BASE, complete_url};
+use betterlite_provider::legacy_dispatch::Legacy;
 use betterlite_provider::provider::Provider;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::rngs::StdRng;
+use secrecy::ExposeSecret as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,6 +56,14 @@ pub enum ChatSetupError {
         model_name: String,
         #[source]
         source: ParseError,
+    },
+    #[error(
+        "model_list entry {model_name} sets no {field}: LiteLLM's global key and base chain for {provider} is not built yet"
+    )]
+    UnbuiltChain {
+        model_name: String,
+        provider: &'static str,
+        field: &'static str,
     },
     #[error(
         "router_settings.routing_strategy {strategy:?} is not supported, only simple-shuffle is"
@@ -170,15 +180,44 @@ fn chat_deployments(
         let mut chat =
             ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)?;
         prefix_provider(&mut chat, custom_llm_provider);
-        if matches!(
-            Provider::from_deployment(&chat),
-            Ok(Provider::AiohttpOpenAi(_))
-        ) {
+        let provider = Provider::from_deployment(&chat);
+        if let Ok(Provider::Legacy(legacy)) = &provider {
+            refuse_unbuilt_chain(&chat, deployment, *legacy)?;
+        }
+        if matches!(provider, Ok(Provider::AiohttpOpenAi(_))) {
             apply_aiohttp_defaults(&mut chat, deployment)?;
         }
         resolved.push(chat);
     }
     Ok(resolved)
+}
+
+// B10006 adds the process-wide chains these three providers fall back to, so until then a deployment needs its own values
+fn refuse_unbuilt_chain(
+    resolved: &ChatDeployment,
+    deployment: &ModelDeployment,
+    legacy: Legacy,
+) -> Result<(), ChatSetupError> {
+    let params = &deployment.litellm_params;
+    let key_missing = params
+        .api_key
+        .as_ref()
+        .is_none_or(|key| key.expose_secret().is_empty());
+    let base_missing = params.api_base.as_deref().is_none_or(str::is_empty);
+    let missing = match legacy {
+        Legacy::AlephAlpha | Legacy::LitellmProxy if key_missing => Some("api_key"),
+        Legacy::AlephAlpha | Legacy::LitellmProxy if base_missing => Some("api_base"),
+        Legacy::Custom if base_missing => Some("api_base"),
+        Legacy::AlephAlpha | Legacy::LitellmProxy | Legacy::Custom => None,
+    };
+    match missing {
+        Some(field) => Err(ChatSetupError::UnbuiltChain {
+            model_name: resolved.model_group.clone(),
+            provider: legacy.slug(),
+            field,
+        }),
+        None => Ok(()),
+    }
 }
 
 // the resolver keeps only the model, so the provider LiteLLM took from custom_llm_provider goes back on as a prefix
