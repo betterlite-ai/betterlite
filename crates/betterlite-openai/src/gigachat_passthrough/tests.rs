@@ -188,14 +188,14 @@ fn the_url_joins_the_base_and_the_endpoint() {
 }
 
 #[test]
-fn the_url_strips_only_the_leading_slash() {
+fn every_leading_slash_is_removed() {
     let (url, _) = url_of(
         &passthrough_config(None, None),
         Some("https://api.test/v1"),
         "//chat",
         None,
     );
-    assert_eq!(url.as_str(), "https://api.test/v1//chat");
+    assert_eq!(url.as_str(), "https://api.test/v1/chat");
 }
 
 #[test]
