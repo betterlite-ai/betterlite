@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::future::{Future, ready};
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,9 +21,9 @@ use tokio::sync::Notify;
 use super::{Shared, lock};
 
 fn scripted_failure(text: &str) -> ClientReuseError {
-    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(
-        std::io::Error::other(text.to_owned()),
-    )))
+    ClientReuseError::Live(LiveClientError::Redis(RedisError::from(io::Error::other(
+        text.to_owned(),
+    ))))
 }
 
 #[derive(Clone, Copy)]
@@ -95,9 +97,9 @@ impl AuthPubSub for Endpoint {
         }
     }
 
-    async fn subscribe(&self) -> Result<Self::Subscription, TransportError> {
+    fn subscribe(&self) -> impl Future<Output = Result<Self::Subscription, TransportError>> + Send {
         lock(&self.journal).events.push("subscribe".to_owned());
-        match lock(&self.sessions).pop_front() {
+        ready(match lock(&self.sessions).pop_front() {
             Some(steps) => Ok(Subscription {
                 journal: Arc::clone(&self.journal),
                 steps: VecDeque::from(steps),
@@ -111,7 +113,7 @@ impl AuthPubSub for Endpoint {
                     "scripted subscribe failed",
                 )))
             }
-        }
+        })
     }
 }
 
@@ -144,9 +146,9 @@ impl AuthPubSubSubscription for Subscription {
         }
     }
 
-    async fn close(&mut self) -> Result<(), TransportError> {
+    fn close(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
         lock(&self.journal).events.push("close".to_owned());
-        Ok(())
+        ready(Ok(()))
     }
 }
 

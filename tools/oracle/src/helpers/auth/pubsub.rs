@@ -2,6 +2,8 @@ mod fakes;
 mod warnings;
 
 use std::collections::BTreeMap;
+use std::io;
+use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_auth::auth_cache::gateway_cache;
@@ -13,14 +15,15 @@ use betterlite_auth::auth_pubsub::subscriber::{CacheInvalidationSubscriber, Sess
 use betterlite_cache::backend::BackendError;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
-use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_context::local_ttl_cache::CacheValue;
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
+use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 
@@ -74,7 +77,7 @@ pub(crate) struct SubscriberCall {
     probe_keys: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub(crate) enum StepInput {
     Block,
@@ -91,7 +94,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         let journal = Arc::new(Mutex::new(Journal::default()));
         let subscriber = registry().with(Warnings(Arc::clone(&journal)));
-        let outcome = tracing::subscriber::with_default(subscriber, || {
+        let outcome = with_default(subscriber, || {
             runtime.block_on(run_sections(input, Arc::clone(&journal)))
         });
         outcome?;
@@ -148,24 +151,33 @@ async fn capacity_section(journal: &Shared) {
     }
 }
 
-async fn subscriber_section(
-    call: &SubscriberCall,
-    journal: &Shared,
-) -> Result<(), Box<HelperError>> {
+struct Memories {
+    ordinary: Arc<LocalMemoryOps>,
+    key_objects: Arc<LocalMemoryOps>,
+    additional: Arc<LocalMemoryOps>,
+}
+
+fn seeded_memories(keys: &[String]) -> Result<Memories, Box<HelperError>> {
     let now: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| CLOCK_NOW);
     let ordinary = Arc::new(LocalMemoryOps::new(1024, Arc::clone(&now)).or_value_error()?);
     let key_objects = Arc::new(LocalMemoryOps::new(1024, Arc::clone(&now)).or_value_error()?);
     let additional = Arc::new(LocalMemoryOps::new(1024, now).or_value_error()?);
-    let probe_keys: &[String] = call.probe_keys.as_deref().unwrap_or_default();
-    seed(&ordinary, probe_keys, 2.0_f64)?;
-    seed(&key_objects, probe_keys, 1.0_f64)?;
-    seed(&additional, probe_keys, 3.0_f64)?;
-    let sessions = call
-        .sessions
-        .iter()
-        .map(|steps| session_plan(steps))
-        .collect();
-    let subscriber = Arc::new(CacheInvalidationSubscriber {
+    seed(&ordinary, keys, 2.0_f64)?;
+    seed(&key_objects, keys, 1.0_f64)?;
+    seed(&additional, keys, 3.0_f64)?;
+    Ok(Memories {
+        ordinary,
+        key_objects,
+        additional,
+    })
+}
+
+fn scripted_subscriber(
+    journal: &Shared,
+    sessions: Vec<Vec<Step>>,
+    memories: &Memories,
+) -> Arc<CacheInvalidationSubscriber<Endpoint, Clock, DualCache<LocalMemoryOps>>> {
+    Arc::new(CacheInvalidationSubscriber {
         endpoint: Arc::new(Endpoint::new(
             Arc::clone(journal),
             sessions,
@@ -173,15 +185,29 @@ async fn subscriber_section(
         )),
         clock: Clock,
         user_cache: Arc::new(gateway_cache(
-            Arc::clone(&ordinary),
-            Arc::clone(&key_objects),
+            Arc::clone(&memories.ordinary),
+            Arc::clone(&memories.key_objects),
             None,
             SETTINGS,
             45.0_f64,
         )),
-        additional: vec![Arc::clone(&additional)],
+        additional: vec![Arc::clone(&memories.additional)],
         session: Mutex::new(Session::default()),
-    });
+    })
+}
+
+async fn subscriber_section(
+    call: &SubscriberCall,
+    journal: &Shared,
+) -> Result<(), Box<HelperError>> {
+    let probe_keys: &[String] = call.probe_keys.as_deref().unwrap_or_default();
+    let memories = seeded_memories(probe_keys)?;
+    let sessions = call
+        .sessions
+        .iter()
+        .map(|steps| session_plan(steps))
+        .collect();
+    let subscriber = scripted_subscriber(journal, sessions, &memories);
     subscriber.start();
     let expected = call
         .sessions
@@ -194,9 +220,9 @@ async fn subscriber_section(
         journal,
         probe_keys,
         [
-            ("ordinary", ordinary.as_ref()),
-            ("key_objects", key_objects.as_ref()),
-            ("additional:0", additional.as_ref()),
+            ("ordinary", memories.ordinary.as_ref()),
+            ("key_objects", memories.key_objects.as_ref()),
+            ("additional:0", memories.additional.as_ref()),
         ],
     )
 }
@@ -267,7 +293,7 @@ async fn settle(journal: &Shared, prefix: &str, expected: usize) -> Result<(), B
         }
         yield_now().await;
     }
-    Err(Box::<HelperError>::from(std::io::Error::other(
+    Err(Box::<HelperError>::from(io::Error::other(
         "the subscriber never reached the expected events",
     )))
 }
@@ -275,9 +301,9 @@ async fn settle(journal: &Shared, prefix: &str, expected: usize) -> Result<(), B
 fn journal_value(journal: &Shared) -> Value {
     let mut guard = lock(journal);
     json!({
-        "events": std::mem::take(&mut guard.events),
-        "publications": std::mem::take(&mut guard.publications),
-        "warnings": std::mem::take(&mut guard.warnings),
-        "caches": Value::Object(std::mem::take(&mut guard.caches).into_iter().collect()),
+        "events": take(&mut guard.events),
+        "publications": take(&mut guard.publications),
+        "warnings": take(&mut guard.warnings),
+        "caches": Value::Object(take(&mut guard.caches).into_iter().collect()),
     })
 }
