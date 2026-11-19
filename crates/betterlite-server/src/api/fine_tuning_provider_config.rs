@@ -36,7 +36,12 @@ impl FineTuningProviderConfig {
 
     // fine_tuning_config_for: the whole first entry whose custom_llm_provider matches
     pub fn provider(&self, provider: &str) -> Result<Option<Json>, FineTuningConfigError> {
-        let current = self.current.read().unwrap_or_else(PoisonError::into_inner);
-        fine_tuning_config_for(current.as_deref(), provider)
+        fine_tuning_config_for(
+            self.current
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .as_deref(),
+            provider,
+        )
     }
 }
