@@ -1,0 +1,17 @@
+kind: helper
+name: windowed-admission-collect-skip-tokens-seed
+call:
+  b3036:
+    function: collect
+    descriptors:
+      - key: team
+        value: seeded
+        rate_limit:
+          requests_per_unit: 4
+          tokens_per_unit: 8
+          max_parallel_requests: null
+          window_size: 15
+    skip_tpm_check: true
+    window_size: 60
+env: {}
+compare: {ignore: []}

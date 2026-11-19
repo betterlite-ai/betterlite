@@ -1,0 +1,35 @@
+kind: helper
+name: file-upload-options-creation-extraction
+call:
+  file_upload_options:
+    calls:
+      - function: extract
+        request_body: {model: " b "}
+        query_params: {model: q}
+        headers: {x-litellm-model: h}
+        target_storage_form: " azure_storage "
+      - function: extract
+        request_body: {model: " b "}
+        target_storage_form: "   "
+      - function: extract
+        request_body: {model: ""}
+        query_params: {model: q}
+        headers: {x-litellm-model: h}
+      - function: extract
+        request_body: {model: ""}
+        query_params: {model: ""}
+        headers: {x-litellm-model: h}
+      - function: extract
+        request_body: {model: ""}
+        query_params: {model: ""}
+        headers: {x-litellm-model: ""}
+      - function: extract
+        body: {model: x}
+        query_params: {model: q}
+      - function: extract
+        request_body: {model: null}
+        query_params: {model: q}
+      - function: extract
+        request_body: {model: null}
+env: {}
+compare: {ignore: []}
