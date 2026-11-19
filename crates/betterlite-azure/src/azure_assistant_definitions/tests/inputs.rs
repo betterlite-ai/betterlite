@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_openai::assistants::client::ClientKind;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::azure_assistant_definitions::client::AzureAssistantsClient;
 use crate::azure_assistant_definitions::error::DefinitionsError;
@@ -30,7 +30,7 @@ pub(super) async fn check() {
     providers().await;
     static_token_wins().await;
     provider_failures().await;
-    org_project_ignored().await;
+    sdk_header_fallbacks_ignored().await;
     deployments_base().await;
 }
 
@@ -41,10 +41,10 @@ async fn litellm_params_win() {
     fixture.api_base = Some(String::from("https://arg.test"));
     fixture.api_version = Some(String::from("2024-05-01"));
     fixture.azure_ad_token = Some(SecretString::from("method-token"));
-    fixture.timeout = 5.0;
+    fixture.timeout = 5.0_f64;
     fixture.max_retries = Some(9);
     fixture.params.azure_ad_token = Some(SecretString::from("params-token"));
-    fixture.params.timeout = Some(30.0);
+    fixture.params.timeout = Some(30.0_f64);
     fixture.params.max_retries = Some(4);
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
@@ -71,14 +71,14 @@ fn assert_param_inputs(inputs: &AzureClientInputs<'_>) {
         Some("https://arg.test")
     );
     assert_eq!(
-        inputs.api_key.as_ref().map(|key| key.expose_secret()),
+        inputs.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("arg-key")
     );
     assert_eq!(
         inputs
             .azure_ad_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("params-token")
     );
     assert!(!inputs.http_client.is_async);
@@ -87,7 +87,7 @@ fn assert_param_inputs(inputs: &AzureClientInputs<'_>) {
 async fn litellm_params_absent() {
     let mut fixture = Fixture::new();
     fixture.azure_ad_token = Some(SecretString::from("method-token"));
-    fixture.timeout = 5.0;
+    fixture.timeout = 5.0_f64;
     fixture.max_retries = Some(9);
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
@@ -210,15 +210,16 @@ async fn tokens() {
     fixture
         .environment
         .insert(String::from("AZURE_OPENAI_AD_TOKEN"), String::new());
-    let request = fixture.request();
-    let (api, transport) = harness(200, PAGE);
-    api.azure_client(&request, None, ClientKind::Sync)
+    let second_request = fixture.request();
+    let (second_api, second_transport) = harness(200, PAGE);
+    second_api
+        .azure_client(&second_request, None, ClientKind::Sync)
         .unwrap()
         .list()
         .await
         .unwrap();
     assert_eq!(
-        transport.requests(),
+        second_transport.requests(),
         vec![wire("GET", ASSISTANTS_URL, None, Auth::Bearer(""))]
     );
 }
@@ -235,18 +236,30 @@ fn missing() {
     drop(refused);
     fixture.api_key = Some(SecretString::from(KEY));
     fixture.api_base = None;
-    let request = fixture.request();
-    let (api, transport) = harness(200, PAGE);
-    let refused = api.azure_client(&request, None, ClientKind::Sync);
-    assert!(matches!(refused, Err(DefinitionsError::MissingEndpoint)));
-    assert!(transport.requests().is_empty());
+    let endpoint_request = fixture.request();
+    let (endpoint_api, endpoint_transport) = harness(200, PAGE);
+    let endpoint_refused = endpoint_api.azure_client(&endpoint_request, None, ClientKind::Sync);
+    assert!(matches!(
+        endpoint_refused,
+        Err(DefinitionsError::MissingEndpoint)
+    ));
+    assert!(endpoint_transport.requests().is_empty());
 }
 
-// The SDK's base client rejects an empty key before any token is considered.
+// The SDK's base client rejects an empty key before any token or provider is considered.
 fn empty_key() {
     let mut fixture = Fixture::new();
     fixture.api_key = Some(SecretString::from(""));
     fixture.params.azure_ad_token = Some(SecretString::from("params-token"));
+    assert_empty_key_refused(&fixture);
+    fixture.provider = Some(CallableProvider {
+        provider: Arc::new(FixedToken("provider-token")),
+        identity: 4,
+    });
+    assert_empty_key_refused(&fixture);
+}
+
+fn assert_empty_key_refused(fixture: &Fixture) {
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
     let refused = api.azure_client(&request, None, ClientKind::Sync);
@@ -256,7 +269,7 @@ fn empty_key() {
 
 fn negative_timeout() {
     let mut fixture = Fixture::new();
-    fixture.params.timeout = Some(-1.0);
+    fixture.params.timeout = Some(-1.0_f64);
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
     let refused = api.azure_client(&request, None, ClientKind::Sync);
@@ -266,13 +279,18 @@ fn negative_timeout() {
 
 // A provider without a key authenticates with its bearer alone; next to a key it sends both.
 async fn providers() {
-    let mut bare = Fixture::new();
-    bare.api_key = None;
-    bare.provider = Some(CallableProvider {
+    provider_alone().await;
+    provider_with_key().await;
+}
+
+async fn provider_alone() {
+    let mut fixture = Fixture::new();
+    fixture.api_key = None;
+    fixture.provider = Some(CallableProvider {
         provider: Arc::new(FixedToken("provider-token")),
         identity: 4,
     });
-    let request = bare.request();
+    let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
     api.azure_client(&request, None, ClientKind::Sync)
         .unwrap()
@@ -288,12 +306,15 @@ async fn providers() {
             Auth::Bearer("provider-token")
         )]
     );
-    let mut keyed = Fixture::new();
-    keyed.provider = Some(CallableProvider {
+}
+
+async fn provider_with_key() {
+    let mut fixture = Fixture::new();
+    fixture.provider = Some(CallableProvider {
         provider: Arc::new(FixedToken("provider-token")),
         identity: 1,
     });
-    let request = keyed.request();
+    let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
     api.azure_client(&request, None, ClientKind::Sync)
         .unwrap()
@@ -340,7 +361,7 @@ async fn static_token_wins() {
 async fn provider_failures() {
     let failed = provider_error(Arc::new(FailingToken)).await;
     assert!(
-        matches!(failed, DefinitionsError::Provider { ref class, .. } if class == "ClientAuthenticationError"),
+        matches!(&failed, DefinitionsError::Provider { class, .. } if class == "ClientAuthenticationError"),
         "{failed:?}"
     );
     let empty = provider_error(Arc::new(EmptyToken)).await;
@@ -368,8 +389,9 @@ async fn provider_error(provider: Arc<dyn CallableTokenProvider>) -> Definitions
     error
 }
 
-// The SDK constructor's OPENAI_ORG_ID and OPENAI_PROJECT_ID fallbacks are not read (docs/deviations/B686.yaml).
-async fn org_project_ignored() {
+// The SDK constructor's OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS fallbacks are not read
+// (docs/deviations/B686.yaml).
+async fn sdk_header_fallbacks_ignored() {
     let mut fixture = Fixture::new();
     fixture
         .environment
@@ -377,6 +399,10 @@ async fn org_project_ignored() {
     fixture
         .environment
         .insert(String::from("OPENAI_PROJECT_ID"), String::from("proj-1"));
+    fixture.environment.insert(
+        String::from("OPENAI_CUSTOM_HEADERS"),
+        String::from("X-From-Env: header-value"),
+    );
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
     api.azure_client(&request, None, ClientKind::Sync)
@@ -388,6 +414,7 @@ async fn org_project_ignored() {
     assert_eq!(seen.len(), 1);
     assert!(!seen[0].headers.contains_key("openai-organization"));
     assert!(!seen[0].headers.contains_key("openai-project"));
+    assert!(!seen[0].headers.contains_key("x-from-env"));
 }
 
 async fn deployments_base() {

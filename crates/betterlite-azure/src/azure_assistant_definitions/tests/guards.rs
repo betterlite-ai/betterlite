@@ -205,6 +205,11 @@ async fn status_reply_hides_credentials() {
 
 // A transport fault and a credential the SDK cannot turn into a header are both named, never echoed.
 async fn failure_hides_credentials() {
+    transport_failure_hides_credentials().await;
+    header_failure_hides_credentials().await;
+}
+
+async fn transport_failure_hides_credentials() {
     let mut fixture = Fixture::new();
     fixture.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
     let request = fixture.request();
@@ -225,6 +230,9 @@ async fn failure_hides_credentials() {
     for shown in transport.debug_texts() {
         assert_clean("transport request debug", &shown);
     }
+}
+
+async fn header_failure_hides_credentials() {
     let mut fixture = Fixture::new();
     fixture.api_key = Some(SecretString::from("sk-fixture\nbad"));
     let request = fixture.request();

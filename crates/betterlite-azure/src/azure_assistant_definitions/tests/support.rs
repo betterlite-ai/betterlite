@@ -2,17 +2,17 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::ready;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::assistants::records::AssistantCreate;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use http::HeaderMap;
 use secrecy::SecretString;
-use serde_json::Value;
 
 use crate::azure_assistant_definitions::operations::{AssistantsApi, ClientRequest};
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -47,11 +47,11 @@ pub(super) struct Seen {
     pub(super) url: String,
     pub(super) deadline: Duration,
     pub(super) headers: Headers,
-    pub(super) body: Option<Value>,
+    pub(super) body: Option<AssistantCreate>,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum Auth<'text> {
-    None,
     Key(&'text str),
     Bearer(&'text str),
     Both { key: &'text str, bearer: &'text str },
@@ -98,6 +98,7 @@ fn headers_of(headers: &HeaderMap) -> Headers {
         "openai-beta",
         "openai-organization",
         "openai-project",
+        "x-from-env",
     ] {
         if let Some(value) = headers.get(name) {
             kept.insert(name.to_owned(), value.to_str().unwrap().to_owned());
@@ -110,7 +111,7 @@ fn recorded(request: &OutboundRequest) -> Seen {
     let mut url = request.url.clone();
     merge_query(&mut url, &request.query);
     let body = match &request.body {
-        RequestBody::Json(bytes) => Some(serde_json::from_slice(bytes).unwrap()),
+        RequestBody::Json(bytes) => Some(serde_json::from_slice::<AssistantCreate>(bytes).unwrap()),
         RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => None,
     };
     let mut headers = headers_of(&request.headers);
@@ -137,7 +138,8 @@ impl AssistantsTransport for Recorder {
         self.shown.lock().unwrap().push(format!("{request:?}"));
         let seen = recorded(&request);
         self.seen.lock().unwrap().push(seen);
-        match self.replies.lock().unwrap().pop_front().unwrap() {
+        let reply = self.replies.lock().unwrap().pop_front().unwrap();
+        match reply {
             Ok((status, text)) => ready(Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
@@ -146,10 +148,6 @@ impl AssistantsTransport for Recorder {
             Err(error) => ready(Err(error)),
         }
     }
-}
-
-pub(super) fn parse(text: &str) -> Value {
-    serde_json::from_str(text).unwrap()
 }
 
 pub(super) fn harness(status: u16, body: &str) -> (AssistantsApi<Recorder>, Arc<Recorder>) {
@@ -182,7 +180,6 @@ pub(super) fn wire(method: &str, url: &str, body: Option<&str>, auth: Auth<'_>) 
         );
     }
     match auth {
-        Auth::None => {}
         Auth::Key(key) => {
             headers.insert(String::from("api-key"), key.to_owned());
         }
@@ -199,7 +196,7 @@ pub(super) fn wire(method: &str, url: &str, body: Option<&str>, auth: Auth<'_>) 
         url: url.to_owned(),
         deadline: Duration::from_secs(600),
         headers,
-        body: body.map(parse),
+        body: body.map(|text| serde_json::from_str::<AssistantCreate>(text).unwrap()),
     }
 }
 
@@ -241,10 +238,6 @@ impl ScriptedSources {
         self.replies.lock().unwrap().push_back(Ok(provider));
     }
 
-    pub(super) fn fail_next(&self, failure: SourceFailure) {
-        self.replies.lock().unwrap().push_back(Err(failure));
-    }
-
     pub(super) fn refresh_scopes(&self) -> Vec<String> {
         self.scopes.lock().unwrap().clone()
     }
@@ -277,8 +270,16 @@ impl CredentialSources for ScriptedSources {
         &'source self,
         scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        self.scopes.lock().unwrap().push(scope.to_owned());
-        match self.replies.lock().unwrap().pop_front() {
+        self.scopes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(scope.to_owned());
+        let reply = self
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        match reply {
             Some(Ok(provider)) => Ok(provider),
             Some(Err(failure)) => Err(failure),
             None => Err(unscripted("sdk_refresh")),

@@ -20,13 +20,15 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L51-L60
   - what: >-
-      The SDK constructor's OPENAI_ORG_ID and OPENAI_PROJECT_ID fallbacks are not read, so betterlite
-      sends neither an OpenAI-Organization nor an OpenAI-Project header on assistants requests, while
-      LiteLLM's AzureOpenAI inherits both from the SDK constructor.
+      The SDK constructor's OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS fallbacks are not
+      read: betterlite sends no OpenAI-Organization or OpenAI-Project header, and no header parsed from
+      OPENAI_CUSTOM_HEADERS, while LiteLLM's AzureOpenAI inherits all three from the SDK constructor.
     why: >-
       The environment is resolved by betterlite-config and a provider leaf may not read it, so this
-      client takes only what its caller passes. The SDK reads the variables at
-      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L235-L240 and builds
+      client takes only what its caller passes. The SDK reads the organization and project variables at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L235-L240, parses
+      OPENAI_CUSTOM_HEADERS at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L256-L263, and builds
       its default_headers from them at
       https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L541-L542.
     link: >-

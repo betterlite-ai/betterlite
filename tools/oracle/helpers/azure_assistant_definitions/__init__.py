@@ -89,7 +89,7 @@ def client_report(client: SdkClient, kind: str, source: str) -> JsonValue:
     match timeout:
         case float() | int() as seconds:
             read_seconds = float(seconds)
-        case httpx.Timeout(read=float() as read):
+        case httpx.Timeout(read=(float() | int()) as read):
             read_seconds = float(read)
         case None | httpx.Timeout():
             read_seconds = None

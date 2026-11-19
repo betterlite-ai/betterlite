@@ -157,30 +157,30 @@ impl<'data, T: AssistantsTransport> AzureAssistantsClient<'data, T> {
         })
     }
 
-    // The SDK sends a static token alone, otherwise the provider token next to a real key, otherwise only the key.
+    // The SDK sends a static token alone, the provider token next to a real key, otherwise only the key.
     fn auth_headers(&self) -> Result<HeaderMap, DefinitionsError> {
         let mut headers = HeaderMap::new();
-        let mut token = self.token.clone();
-        if token.is_none()
+        let mut bearer = self.token.clone();
+        if bearer.is_none()
             && let Some(provider) = self
                 .inputs
                 .as_ref()
                 .and_then(|inputs| inputs.token_provider.as_ref())
         {
-            token = Some(provider_token(provider)?);
+            bearer = Some(provider_token(provider)?);
         }
-        let key = self
+        let api_key = self
             .key
             .as_ref()
             .filter(|value| !value.expose_secret().is_empty());
-        if let Some(token) = token.as_ref() {
+        if let Some(token) = bearer.as_ref() {
             let mut header = HeaderValue::try_from(format!("Bearer {}", token.expose_secret()))
                 .map_err(|source| AssistantsError::Header { source })?;
             header.set_sensitive(true);
             headers.insert(AUTHORIZATION, header);
         }
         if self.token.is_none()
-            && let Some(key) = key
+            && let Some(key) = api_key
         {
             let mut header = HeaderValue::try_from(key.expose_secret())
                 .map_err(|source| AssistantsError::Header { source })?;
@@ -221,6 +221,8 @@ fn resolve_credentials(
             .lookup("AZURE_OPENAI_AD_TOKEN")
             .map(SecretString::from)
     });
+    // The SDK's base client refuses a falsy key even when a token was given (openai/_client.py#L223-L233),
+    // so an explicit empty key builds nothing, and MissingCredentials covers every absent credential.
     let empty_key = key
         .as_ref()
         .is_some_and(|value| value.expose_secret().is_empty());
@@ -251,7 +253,7 @@ fn resolve_deadline(timeout: Option<f64>) -> Result<Duration, DefinitionsError> 
     let Some(seconds) = timeout else {
         return Ok(DEFAULT_TIMEOUT);
     };
-    Duration::try_from_secs_f64(seconds).map_err(|_| DefinitionsError::Timeout { seconds })
+    Duration::try_from_secs_f64(seconds).map_err(|_source| DefinitionsError::Timeout { seconds })
 }
 
 fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, DefinitionsError> {
@@ -271,7 +273,7 @@ fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, Definiti
 fn merged_query(query: Option<&str>, api_version: &str) -> Option<String> {
     let mut pairs = first_query_values(query);
     match pairs.iter_mut().find(|(name, _)| name == "api-version") {
-        Some((_, value)) => *value = api_version.to_owned(),
+        Some((_, value)) => api_version.clone_into(value),
         None => pairs.push(("api-version".to_owned(), api_version.to_owned())),
     }
     // urlencode drops a pair whose value is empty, so an empty api-version leaves no query at all.

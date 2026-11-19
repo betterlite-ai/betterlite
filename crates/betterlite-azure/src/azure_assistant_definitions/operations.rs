@@ -30,8 +30,8 @@ pub struct ClientRequest<'data> {
     pub refresh_enabled: bool,
     pub session: SessionKind,
     pub settings: &'data Settings,
-    pub environment: &'data dyn EnvironmentLookup,
-    pub sources: &'data dyn CredentialSources,
+    pub environment: &'data (dyn EnvironmentLookup + Sync),
+    pub sources: &'data (dyn CredentialSources + Sync),
 }
 
 pub struct AssistantsApi<T> {
@@ -69,10 +69,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         supplied: Option<AzureAssistantsClient<'data, T>>,
         kind: ClientKind,
     ) -> Result<AzureAssistantsClient<'data, T>, DefinitionsError> {
-        match supplied {
-            Some(client) => Ok(client),
-            None => self.construct(request, kind),
-        }
+        supplied.map_or_else(|| self.construct(request, kind), Ok)
     }
 
     // Serves every definition facade: the flag picks the client kind and the call picks the SDK method.
