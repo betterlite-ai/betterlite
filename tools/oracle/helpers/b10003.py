@@ -83,11 +83,9 @@ def expiry_value(call: ExpiryCall) -> dict[str, JsonValue]:
 
 
 def answer(call: Input) -> dict[str, JsonValue]:
-    match call["function"]:
-        case "login":
-            return login_value(call)
-        case "expiry":
-            return expiry_value(call)
+    if call["function"] == "login":
+        return login_value(call)
+    return expiry_value(call)
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:

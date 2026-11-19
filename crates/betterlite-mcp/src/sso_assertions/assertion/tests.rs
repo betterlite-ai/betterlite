@@ -201,6 +201,20 @@ fn unusable_claims_log_the_warning_and_return_none(#[case] payload: &str) {
     assert!(captured.text().contains(UNDECODABLE_WARNING));
 }
 
+#[test]
+fn a_token_over_the_decoder_limits_logs_the_warning_and_returns_none() {
+    let oversized = jwt(&format!(r#"{{"sub":"{}"}}"#, "a".repeat(1_100_000)));
+    let mut nested = r#"{"a":"#.repeat(100);
+    nested.push('1');
+    nested.push_str(&"}".repeat(100));
+    let deeply_nested = jwt(&nested);
+    for token in [oversized, deeply_nested] {
+        let (captured, _guard) = capture();
+        assert!(assertion_from_sso_login(Some(&text_field(&token)), None).is_none());
+        assert!(captured.text().contains(UNDECODABLE_WARNING));
+    }
+}
+
 #[rstest]
 #[case::half_a_second_after_the_epoch(0.5_f64, 0, 500_000_000)]
 #[case::half_a_second_before_the_epoch(-0.5_f64, -1, 500_000_000)]
