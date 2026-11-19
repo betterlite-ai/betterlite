@@ -12,19 +12,18 @@ use super::input::{
 
 mod common;
 use common::{
-    FAILED_DEFAULT, FAILED_LOG_DEFAULT, MESSAGE_ITEM, attributed_empty_type, attributed_fallbacks,
-    attributed_null_type, completed, completed_usage, discard, drained, failed_event_redaction,
-    failure, failure_chains, failure_message_matrix, failure_redaction, failure_status_matrix,
-    json, mapped_error_types, mapping, message_start_once, non_block_items, open_message_and_tool,
-    passthrough_error_messages, process, process_attribute, projected_usage, refusal_deltas,
-    reopen_and_empty_id, silent_events, state, terminal_chunks, text, text_before_block,
-    text_deltas, usage, zero_usage,
+    FAILED_DEFAULT, FAILED_LOG_DEFAULT, MESSAGE_ITEM, assert_mapped,
+    attributed_event_type_fallback, attributed_fallbacks, completed, completed_usage, discard,
+    drained, failed_event_redaction, failure, failure_chains, failure_redaction,
+    failure_status_and_message_matrix, json, mapped_error_types, mapping, message_start_once,
+    non_block_items, open_message_and_tool, passthrough_error_messages, process, projected_usage,
+    refusal_deltas, reopen_and_empty_id, silent_events, state, terminal_chunks, text,
+    text_before_block, text_deltas, zero_usage,
 };
 
 #[test]
 fn failure_projection() {
-    failure_status_matrix();
-    failure_message_matrix();
+    failure_status_and_message_matrix();
     failure_chains();
     mapped_error_types();
     passthrough_error_messages();
@@ -63,13 +62,22 @@ fn message_start_and_item_opening() {
 fn item_attribute_precedes_dict() {
     let attribute_item = json("5");
     let attributes = EventAttributes {
+        event_type: None,
         item: Some(&attribute_item),
-        ..EventAttributes::default()
+        item_id: None,
+        delta: None,
+        summary_index: None,
+        response: None,
     };
     let fields =
         mapping(r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#);
     let mut state = state();
-    process_attributed(&mut state, attributes, &fields);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: Some(&fields),
+        })
+        .expect("the event processes");
     assert_eq!(drained(&mut state), json("[]"));
     assert!(state.snapshot().item_id_to_block_index.is_empty());
 }
@@ -80,8 +88,7 @@ fn text_and_refusal_deltas() {
     text_before_block();
     refusal_deltas();
     attributed_fallbacks();
-    attributed_null_type();
-    attributed_empty_type();
+    attributed_event_type_fallback();
     two_blocks_target_the_first();
     strange_item_ids();
 }
@@ -156,14 +163,7 @@ fn summary_delta_opens_block() {
             r#"[{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}},{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"think"}}]"#
         )
     );
-    assert_eq!(
-        state
-            .snapshot()
-            .item_id_to_block_index
-            .get("reason_a")
-            .copied(),
-        Some(0)
-    );
+    assert_mapped(&state, "reason_a", 0);
 }
 
 fn summary_delta_needs_text() {
@@ -250,11 +250,18 @@ fn summary_part_attribute_fields() {
     let summary_index = json("1");
     let attributes = EventAttributes {
         event_type: Some(&event_type),
+        item: None,
         item_id: Some(&item_id),
+        delta: None,
         summary_index: Some(&summary_index),
-        ..EventAttributes::default()
+        response: None,
     };
-    process_attribute(&mut state, &attributes);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: None,
+        })
+        .expect("the event processes");
     assert_eq!(
         drained(&mut state),
         json(
@@ -303,30 +310,19 @@ fn reasoning_redacted_block() {
             r#"[{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"litellm_encrypted_reasoning:cipher"}},{"type":"content_block_stop","index":0}]"#
         )
     );
-    assert_eq!(
-        state
-            .snapshot()
-            .item_id_to_block_index
-            .get("reason_a")
-            .copied(),
-        Some(0)
-    );
+    assert_mapped(&state, "reason_a", 0);
 }
 
+// An absent, empty or null encrypted_content yields no signature, so no redacted block opens.
 fn reasoning_without_signature() {
-    let no_signature = mapping(
-        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a"}}"#,
-    );
-    let empty_signature = mapping(
-        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a","encrypted_content":""}}"#,
-    );
-    let null_signature = mapping(
-        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a","encrypted_content":null}}"#,
-    );
     let mut state = state();
-    process(&mut state, &no_signature);
-    process(&mut state, &empty_signature);
-    process(&mut state, &null_signature);
+    for source in [
+        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a"}}"#,
+        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a","encrypted_content":""}}"#,
+        r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_a","encrypted_content":null}}"#,
+    ] {
+        process(&mut state, &mapping(source));
+    }
     assert_eq!(drained(&mut state), json("[]"));
 }
 
@@ -411,6 +407,19 @@ fn arguments_deltas() {
         drained(&mut state),
         json(
             r#"[{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"1}"}},{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}},{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"tail"}},{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"e"}}]"#
+        )
+    );
+    // The mapped block wins over the current one, which moved on to the message block.
+    let older = mapping(
+        r#"{"type":"response.function_call_arguments.delta","item_id":"item_tool","delta":"tail2"}"#,
+    );
+    process(&mut state, &mapping(MESSAGE_ITEM));
+    discard(&mut state);
+    process(&mut state, &older);
+    assert_eq!(
+        drained(&mut state),
+        json(
+            r#"[{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"tail2"}}]"#
         )
     );
 }
@@ -606,10 +615,19 @@ fn completed_missing_response() {
     let event_type = text("response.completed");
     let attributes = EventAttributes {
         event_type: Some(&event_type),
-        ..EventAttributes::default()
+        item: None,
+        item_id: None,
+        delta: None,
+        summary_index: None,
+        response: None,
     };
     let mut state = state();
-    process_attribute(&mut state, attributes);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: None,
+        })
+        .expect("the event processes");
     assert_eq!(
         drained(&mut state),
         terminal_chunks("end_turn", None, zero_usage())
@@ -696,13 +714,18 @@ fn dictionary_completed_twice() {
 }
 
 fn dictionary_completed_without_response() {
-    let empty = mapping(r#"{"type":"response.completed","response":null}"#);
     let mut state = state();
-    process(&mut state, &empty);
-    assert_eq!(
-        drained(&mut state),
-        terminal_chunks("end_turn", None, zero_usage())
-    );
+    for source in [
+        r#"{"type":"response.completed","response":null}"#,
+        r#"{"type":"response.completed","response":{"status":null,"usage":null,"output":null}}"#,
+    ] {
+        process(&mut state, &mapping(source));
+        assert_eq!(
+            drained(&mut state),
+            terminal_chunks("end_turn", None, zero_usage()),
+            "{source}"
+        );
+    }
 }
 
 #[test]
@@ -724,7 +747,6 @@ fn failed_mapping() {
         json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
     );
     assert!(snapshot.stream_failed);
-    assert!(state.stream_failed());
     assert!(!snapshot.sent_message_stop);
     assert_eq!(snapshot.logs.len(), 1);
     let log = snapshot.logs.first().expect("the failure log");
@@ -777,9 +799,10 @@ fn failed_scalar_responses() {
             matches!(result, Err(MessagesResponseEventError::FailedEvent)),
             "{source}"
         );
-        assert!(!state.stream_failed());
-        assert!(state.next_chunk().is_none());
-        assert!(state.snapshot().logs.is_empty());
+        let snapshot = state.snapshot();
+        assert!(!snapshot.stream_failed);
+        assert!(snapshot.chunks.is_empty());
+        assert!(snapshot.logs.is_empty());
     }
 }
 
@@ -789,6 +812,10 @@ fn failed_attribute() {
     let event_type = text("response.failed");
     let attributes = EventAttributes {
         event_type: Some(&event_type),
+        item: None,
+        item_id: None,
+        delta: None,
+        summary_index: None,
         response: Some(ResponseAttribute::Object(ResponseAttributes {
             output: &[],
             status: None,
@@ -799,10 +826,14 @@ fn failed_attribute() {
                 code: None,
             })),
         })),
-        ..EventAttributes::default()
     };
     let mut state = state();
-    process_attribute(&mut state, attributes);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: None,
+        })
+        .expect("the event processes");
     let snapshot = state.snapshot();
     assert_eq!(
         Json::List(snapshot.chunks),
@@ -811,42 +842,43 @@ fn failed_attribute() {
     assert!(snapshot.stream_failed);
 }
 
-fn failed_attribute_mapping_error() {
+// A dict error is read by key and a provider object by attribute; both reach the same error chunk.
+fn failed_attribute_errors() {
     let fields = mapping(r#"{"type":"rate_limit_error","message":"busy"}"#);
-    let event_type = text("response.failed");
-    let attributes = EventAttributes {
-        event_type: Some(&event_type),
-        response: Some(ResponseAttribute::Object(ResponseAttributes {
-            output: &[],
-            status: None,
-            usage: None,
-            error: Some(ErrorAttribute::Mapping(&fields)),
-        })),
-        ..EventAttributes::default()
-    };
-    let mut state = state();
-    process_attribute(&mut state, attributes);
-    assert_eq!(
-        Json::List(state.snapshot().chunks),
-        json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
-    );
-}
-
-fn failed_attribute_scalar_error() {
-    let event_type = text("response.failed");
-    let attributes = EventAttributes {
-        event_type: Some(&event_type),
-        response: Some(ResponseAttribute::Object(ResponseAttributes {
-            output: &[],
-            status: None,
-            usage: None,
-            error: Some(ErrorAttribute::Attributes(StreamErrorAttributes::default())),
-        })),
-        ..EventAttributes::default()
-    };
-    let mut state = state();
-    process_attribute(&mut state, attributes);
-    assert_eq!(Json::List(state.snapshot().chunks), json(FAILED_DEFAULT));
+    let cases = [
+        (
+            ErrorAttribute::Mapping(&fields),
+            json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#),
+        ),
+        (
+            ErrorAttribute::Attributes(StreamErrorAttributes::default()),
+            json(FAILED_DEFAULT),
+        ),
+    ];
+    for (error, expected) in cases {
+        let event_type = text("response.failed");
+        let attributes = EventAttributes {
+            event_type: Some(&event_type),
+            item: None,
+            item_id: None,
+            delta: None,
+            summary_index: None,
+            response: Some(ResponseAttribute::Object(ResponseAttributes {
+                output: &[],
+                status: None,
+                usage: None,
+                error: Some(error),
+            })),
+        };
+        let mut state = state();
+        state
+            .process_event(ParsedEvent {
+                attributes,
+                mapping: None,
+            })
+            .expect("the event processes");
+        assert_eq!(Json::List(state.snapshot().chunks), expected);
+    }
 }
 
 fn failed_after_content() {
@@ -882,8 +914,7 @@ fn failed_event_terminal() {
     failed_defaults();
     failed_scalar_responses();
     failed_attribute();
-    failed_attribute_mapping_error();
-    failed_attribute_scalar_error();
+    failed_attribute_errors();
     failed_after_content();
     failed_twice();
 }

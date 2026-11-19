@@ -7,10 +7,10 @@ use crate::api::messages_options::refusal::{OutputItem, responses_output_refusal
 use crate::api::messages_responses_input::usage::anthropic_usage;
 
 use super::MessageStreamState;
-use super::REASONING_SUMMARY_PART_SEPARATOR;
+use super::SUMMARY_PART_SEPARATOR;
 use super::chunks;
 use super::error::MessagesResponseEventError;
-use super::input::{ItemObject, ParsedEvent, is_truthy, text};
+use super::input::{ItemObject, ParsedEvent, is_present, text};
 
 const NO_OUTPUT: &[OutputItem<'static>] = &[];
 
@@ -43,10 +43,21 @@ impl MessageStreamState {
         let Some(item) = event.item() else {
             return;
         };
-        match item.truthy_field("type").and_then(text) {
+        let item_type = item
+            .fields
+            .and_then(|fields| fields.get("type"))
+            .filter(|value| is_present(value))
+            .and_then(text);
+        match item_type {
             Some("message") => {
-                let item_id = item.truthy_field("id");
-                self.open_block(item_id, chunks::text_block());
+                let item_id = item
+                    .fields
+                    .and_then(|fields| fields.get("id"))
+                    .filter(|value| is_present(value));
+                self.open_block(
+                    item_id,
+                    chunks::typed_object("text", vec![("text", Json::Text(String::new()))]),
+                );
             }
             Some("function_call") => self.open_function_call(item),
             Some(_) | None => {}
@@ -55,19 +66,38 @@ impl MessageStreamState {
 
     fn open_function_call(&mut self, item: ItemObject<'_>) {
         let call_id = item
-            .truthy_field("call_id")
+            .fields
+            .and_then(|fields| fields.get("call_id"))
+            .filter(|value| is_present(value))
             .cloned()
             .unwrap_or(Json::Text(String::new()));
         let name = item
-            .truthy_field("name")
+            .fields
+            .and_then(|fields| fields.get("name"))
+            .filter(|value| is_present(value))
             .cloned()
             .unwrap_or(Json::Text(String::new()));
-        let item_id = item.truthy_field("id");
+        let item_id = item
+            .fields
+            .and_then(|fields| fields.get("id"))
+            .filter(|value| is_present(value));
         if let Some(Json::Text(text_id)) = item_id {
             self.pending_tool_ids
                 .insert(text_id.clone(), call_id.clone());
         }
         self.open_block(item_id, chunks::tool_block(&call_id, &name));
+    }
+
+    // The block a text delta lands in: the mapped block, or a fresh text block opened for it.
+    fn text_target(&mut self, item_id: Option<&Json>) -> i64 {
+        let block_idx = self.block_index_for(item_id);
+        if block_idx >= 0 {
+            return block_idx;
+        }
+        self.open_block(
+            item_id,
+            chunks::typed_object("text", vec![("text", Json::Text(String::new()))]),
+        )
     }
 
     fn refusal_delta(&mut self, event: ParsedEvent<'_>) {
@@ -78,22 +108,17 @@ impl MessageStreamState {
             return;
         }
         self.refusal_text.push_str(delta);
-        let item_id = event.item_id();
-        let mut block_idx = self.block_index_for(item_id);
-        if block_idx < 0 {
-            block_idx = self.open_block(item_id, chunks::text_block());
-        }
-        self.push_delta(block_idx, chunks::text_delta(Json::Text(delta.to_owned())));
+        let block_idx = self.text_target(event.item_id());
+        let frame =
+            chunks::typed_object("text_delta", vec![("text", Json::Text(delta.to_owned()))]);
+        self.push_delta(block_idx, frame);
     }
 
     fn text_delta(&mut self, event: ParsedEvent<'_>) {
-        let item_id = event.item_id();
-        let mut block_idx = self.block_index_for(item_id);
-        if block_idx < 0 {
-            block_idx = self.open_block(item_id, chunks::text_block());
-        }
-        let delta = chunks::text_delta(event.delta().cloned().unwrap_or(Json::Null));
-        self.push_delta(block_idx, delta);
+        let block_idx = self.text_target(event.item_id());
+        let delta = event.delta().cloned().unwrap_or(Json::Null);
+        let frame = chunks::typed_object("text_delta", vec![("text", delta)]);
+        self.push_delta(block_idx, frame);
     }
 
     fn summary_part_added(&mut self, event: ParsedEvent<'_>) {
@@ -101,43 +126,47 @@ impl MessageStreamState {
         if part_block_idx < 0 || !qualifies_as_summary_index(event.field("summary_index")) {
             return;
         }
-        let separator = Json::Text(REASONING_SUMMARY_PART_SEPARATOR.to_owned());
-        self.push_delta(part_block_idx, chunks::thinking_delta(separator));
+        let separator = Json::Text(SUMMARY_PART_SEPARATOR.to_owned());
+        self.push_delta(
+            part_block_idx,
+            chunks::typed_object("thinking_delta", vec![("thinking", separator)]),
+        );
     }
 
     fn summary_text_delta(&mut self, event: ParsedEvent<'_>) {
         let item_id = event.item_id();
         let delta = event.delta();
-        let mut block_idx = self.block_index_for(item_id);
-        if block_idx < 0 {
-            if !delta.is_some_and(is_truthy) {
-                return;
+        let block_idx = match self.block_index_for(item_id) {
+            block_idx if block_idx >= 0 => block_idx,
+            _ if delta.is_some_and(is_present) => {
+                self.open_block(item_id, chunks::thinking_block())
             }
-            block_idx = self.open_block(item_id, chunks::thinking_block());
-        }
-        self.push_delta(
-            block_idx,
-            chunks::thinking_delta(delta.cloned().unwrap_or(Json::Null)),
-        );
+            _ => return,
+        };
+        let payload = delta.cloned().unwrap_or(Json::Null);
+        let frame = chunks::typed_object("thinking_delta", vec![("thinking", payload)]);
+        self.push_delta(block_idx, frame);
     }
 
     fn arguments_delta(&mut self, event: ParsedEvent<'_>) {
-        let block_idx = match event.item_id().filter(|value| is_truthy(value)) {
-            Some(Json::Text(item_id)) => self
-                .item_id_to_block_index
-                .get(item_id)
-                .copied()
-                .unwrap_or(self.current_block_index),
-            Some(_) | None => self.current_block_index,
-        };
-        let delta = chunks::input_json_delta(event.delta().cloned().unwrap_or(Json::Null));
-        self.push_delta(block_idx, delta);
+        let block_idx = self.arguments_block_index(event.item_id());
+        let delta = event.delta().cloned().unwrap_or(Json::Null);
+        let frame = chunks::typed_object("input_json_delta", vec![("partial_json", delta)]);
+        self.push_delta(block_idx, frame);
     }
 
     fn item_done(&mut self, event: ParsedEvent<'_>) {
         let item = event.item();
-        let item_id = item.and_then(|found| found.truthy_field("id"));
-        if item.is_some_and(|found| found.field("type").and_then(text) == Some("reasoning")) {
+        let item_id = item
+            .and_then(|item| item.fields)
+            .and_then(|fields| fields.get("id"))
+            .filter(|value| is_present(value));
+        let is_reasoning = item
+            .and_then(|item| item.fields)
+            .and_then(|fields| fields.get("type"))
+            .and_then(text)
+            == Some("reasoning");
+        if is_reasoning {
             self.close_reasoning_item(item, item_id);
             return;
         }
@@ -152,7 +181,8 @@ impl MessageStreamState {
     fn close_reasoning_item(&mut self, item: Option<ItemObject<'_>>, item_id: Option<&Json>) {
         let block_idx = self.block_index_for(item_id);
         let signature = item
-            .and_then(|item| item.field("encrypted_content"))
+            .and_then(|item| item.fields)
+            .and_then(|fields| fields.get("encrypted_content"))
             .and_then(text)
             .filter(|text| !text.is_empty())
             .map(encrypted_reasoning_signature);
@@ -186,14 +216,19 @@ impl MessageStreamState {
             .filter(|_| stop_reason == AnthropicStopReason::Refusal);
         let delta = chunks::message_delta(stop_reason, stop_details, &projected_usage)?;
         self.chunk_queue.push_back(delta);
-        self.chunk_queue.push_back(chunks::message_stop());
+        self.chunk_queue
+            .push_back(chunks::typed_object("message_stop", Vec::new()));
         self.sent_message_stop = true;
         Ok(())
     }
 
     fn push_delta(&mut self, block_idx: i64, delta: Json) {
-        self.chunk_queue
-            .push_back(chunks::content_block_delta(block_idx, delta));
+        self.chunk_queue.push_back(chunks::block_frame(
+            "content_block_delta",
+            block_idx,
+            "delta",
+            delta,
+        ));
     }
 }
 

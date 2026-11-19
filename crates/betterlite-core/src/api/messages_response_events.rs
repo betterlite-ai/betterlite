@@ -16,8 +16,8 @@ pub mod input;
 pub mod log;
 mod tests;
 
-// litellm/llms/anthropic/pass_through/responses_adapters/transformation.py's REASONING_SUMMARY_PART_SEPARATOR
-pub const REASONING_SUMMARY_PART_SEPARATOR: &str = "\n\n";
+// The "\n\n" litellm/llms/anthropic/pass_through/responses_adapters/transformation.py puts between reasoning summary parts.
+const SUMMARY_PART_SEPARATOR: &str = "\n\n";
 
 // AnthropicResponsesStreamWrapper's queue and maps, which B986 iterates and re-emits as Anthropic SSE.
 pub struct MessageStreamState {
@@ -75,16 +75,6 @@ impl MessageStreamState {
         }
     }
 
-    // B986 polls this for one Anthropic chunk at a time.
-    pub fn next_chunk(&mut self) -> Option<Json> {
-        self.chunk_queue.pop_front()
-    }
-
-    #[must_use]
-    pub const fn stream_failed(&self) -> bool {
-        self.stream_failed
-    }
-
     #[must_use]
     pub fn snapshot(&self) -> MessageStreamSnapshot {
         MessageStreamSnapshot {
@@ -112,23 +102,23 @@ impl MessageStreamState {
     // Only a truthy id is registered; a truthy nonstring id can never match a later string lookup.
     pub(super) fn open_block(&mut self, item_id: Option<&Json>, content_block: Json) -> i64 {
         let block_idx = self.next_block_index();
-        if let Some(Json::Text(text_id)) = item_id.filter(|value| input::is_truthy(value)) {
+        if let Some(Json::Text(text_id)) = item_id.filter(|value| input::is_present(value)) {
             self.item_id_to_block_index
                 .insert(text_id.clone(), block_idx);
         }
-        self.chunk_queue
-            .push_back(chunks::content_block_start(block_idx, content_block));
+        self.chunk_queue.push_back(chunks::block_frame(
+            "content_block_start",
+            block_idx,
+            "content_block",
+            content_block,
+        ));
         block_idx
     }
 
     // A truthy id selects the map entry (-1 when unknown); a falsey or absent one selects the current block.
     pub(super) fn block_index_for(&self, item_id: Option<&Json>) -> i64 {
-        match item_id.filter(|value| input::is_truthy(value)) {
-            Some(Json::Text(text_id)) => self
-                .item_id_to_block_index
-                .get(text_id)
-                .copied()
-                .unwrap_or(-1),
+        match item_id.filter(|value| input::is_present(value)) {
+            Some(Json::Text(_)) => self.mapped_block_index(item_id),
             Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => -1,
             Some(Json::Null) | None => self.current_block_index,
         }
@@ -136,14 +126,22 @@ impl MessageStreamState {
 
     // The str-keyed lookup of _close_reasoning_item and the summary-part branch, which never fall back to the current block.
     pub(super) fn mapped_block_index(&self, item_id: Option<&Json>) -> i64 {
-        match item_id.and_then(input::text) {
-            Some(text_id) => self
-                .item_id_to_block_index
-                .get(text_id)
-                .copied()
-                .unwrap_or(-1),
-            None => -1,
+        let Some(text_id) = item_id.and_then(input::text) else {
+            return -1;
+        };
+        self.item_id_to_block_index
+            .get(text_id)
+            .copied()
+            .unwrap_or(-1)
+    }
+
+    // function_call_arguments.delta defaults the map lookup to the current block, as dict.get's default does.
+    pub(super) fn arguments_block_index(&self, item_id: Option<&Json>) -> i64 {
+        let found = self.block_index_for(item_id);
+        if found >= 0 {
+            return found;
         }
+        self.current_block_index
     }
 
     fn next_block_index(&mut self) -> i64 {

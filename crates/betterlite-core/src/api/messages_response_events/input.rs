@@ -51,21 +51,19 @@ pub enum ErrorAttribute<'event> {
 
 // An output item of an event: a decoded mapping or a provider object, which _field and the truthy-or-dict reads answer alike by name.
 #[derive(Clone, Copy)]
-pub struct ItemObject<'item>(Option<&'item IndexMap<String, Json>>);
+pub struct ItemObject<'item> {
+    pub(super) fields: Option<&'item IndexMap<String, Json>>,
+}
 
 impl<'event> ParsedEvent<'event> {
     // event.type falls back to the dict only when the attribute is null; a falsey "" attribute wins over the dict.
     #[must_use]
     pub(super) fn event_type(self) -> Option<&'event str> {
         let attribute = match self.attributes.event_type {
-            Some(Json::Null) | None => None,
+            Some(Json::Null) | None => self.mapping.and_then(|fields| fields.get("type")),
             Some(value) => Some(value),
         };
-        let value = match attribute {
-            Some(value) => Some(value),
-            None => self.mapping.and_then(|fields| fields.get("type")),
-        };
-        value.and_then(text)
+        attribute.and_then(text)
     }
 
     #[must_use]
@@ -73,20 +71,24 @@ impl<'event> ParsedEvent<'event> {
         let attribute = self
             .attributes
             .item
-            .filter(|value| matches!(value, Json::Object(_)) || is_truthy(value));
+            .filter(|value| matches!(value, Json::Object(_)) || is_present(value));
         if let Some(value) = attribute {
             return Some(match value {
-                Json::Object(fields) => ItemObject(Some(fields)),
+                Json::Object(fields) => ItemObject {
+                    fields: Some(fields),
+                },
                 Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    ItemObject(None)
+                    ItemObject { fields: None }
                 }
             });
         }
         match self.mapping.and_then(|fields| fields.get("item")) {
-            Some(Json::Object(fields)) => Some(ItemObject(Some(fields))),
+            Some(Json::Object(fields)) => Some(ItemObject {
+                fields: Some(fields),
+            }),
             Some(Json::Null) | None => None,
             Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-                Some(ItemObject(None))
+                Some(ItemObject { fields: None })
             }
         }
     }
@@ -94,7 +96,7 @@ impl<'event> ParsedEvent<'event> {
     // A truthy attribute item_id wins over the dict value; a falsey one falls back to it.
     #[must_use]
     pub(super) fn item_id(self) -> Option<&'event Json> {
-        match self.attributes.item_id.filter(|value| is_truthy(value)) {
+        match self.attributes.item_id.filter(|value| is_present(value)) {
             Some(value) => Some(value),
             None => self.mapping.and_then(|fields| fields.get("item_id")),
         }
@@ -103,13 +105,9 @@ impl<'event> ParsedEvent<'event> {
     // A falsey attribute delta falls back to the dict value, and a non-dict event lands on getattr's "" default.
     #[must_use]
     pub(super) fn delta(self) -> Option<&'event Json> {
-        match self.attributes.delta.filter(|value| is_truthy(value)) {
+        match self.attributes.delta.filter(|value| is_present(value)) {
             Some(value) => Some(value),
-            None => Some(
-                self.mapping
-                    .and_then(|fields| fields.get("delta"))
-                    .unwrap_or(&EMPTY_DELTA),
-            ),
+            None => Some(self.field("delta").unwrap_or(&EMPTY_DELTA)),
         }
     }
 
@@ -172,18 +170,6 @@ fn error_object(value: &Json) -> Option<ErrorAttribute<'_>> {
 #[derive(Debug)]
 pub(super) struct InvalidFailedResponse;
 
-impl<'item> ItemObject<'item> {
-    #[must_use]
-    pub(super) fn field(self, name: &str) -> Option<&'item Json> {
-        self.0.and_then(|fields| fields.get(name))
-    }
-
-    #[must_use]
-    pub(super) fn truthy_field(self, name: &str) -> Option<&'item Json> {
-        self.field(name).filter(|value| is_truthy(value))
-    }
-}
-
 #[must_use]
 pub(super) const fn text(value: &Json) -> Option<&str> {
     match value {
@@ -192,9 +178,9 @@ pub(super) const fn text(value: &Json) -> Option<&str> {
     }
 }
 
-// Python truthiness, which the source applies to item ids, deltas and attributes before a fallback.
+// Python's notion of presence, which the source applies to item ids, deltas and attributes before a fallback.
 #[must_use]
-pub(super) fn is_truthy(value: &Json) -> bool {
+pub(super) fn is_present(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

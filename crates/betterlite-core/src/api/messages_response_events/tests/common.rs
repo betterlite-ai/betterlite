@@ -60,38 +60,27 @@ pub(super) fn process(state: &mut MessageStreamState, event: &IndexMap<String, J
         .expect("the event processes");
 }
 
-pub(super) fn process_attribute(state: &mut MessageStreamState, attributes: EventAttributes<'_>) {
-    state
-        .process_event(ParsedEvent {
-            attributes,
-            mapping: None,
-        })
-        .expect("the event processes");
-}
-
-pub(super) fn process_attributed(
-    state: &mut MessageStreamState,
-    attributes: EventAttributes<'_>,
-    fields: &IndexMap<String, Json>,
-) {
-    state
-        .process_event(ParsedEvent {
-            attributes,
-            mapping: Some(fields),
-        })
-        .expect("the event processes");
-}
-
 pub(super) fn drained(state: &mut MessageStreamState) -> Json {
     let mut chunks = Vec::new();
-    while let Some(chunk) = state.next_chunk() {
+    while let Some(chunk) = state.chunk_queue.pop_front() {
         chunks.push(chunk);
     }
     Json::List(chunks)
 }
 
 pub(super) fn discard(state: &mut MessageStreamState) {
-    while state.next_chunk().is_some() {}
+    while state.chunk_queue.pop_front().is_some() {}
+}
+
+pub(super) fn assert_mapped(state: &MessageStreamState, item_id: &str, block_idx: i64) {
+    assert_eq!(
+        state
+            .snapshot()
+            .item_id_to_block_index
+            .get(item_id)
+            .copied(),
+        Some(block_idx)
+    );
 }
 
 pub(super) fn failure(source: &str) -> FailureCause {
@@ -149,19 +138,28 @@ pub(super) fn completed(
     let kind = text(event_type);
     let attributes = EventAttributes {
         event_type: Some(&kind),
+        item: None,
+        item_id: None,
+        delta: None,
+        summary_index: None,
         response: Some(ResponseAttribute::Object(ResponseAttributes {
             output,
             status: response_status,
             usage,
             error: None,
         })),
-        ..EventAttributes::default()
     };
-    process_attribute(state, attributes);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: None,
+        })
+        .expect("the event processes");
 }
 
-pub(super) fn failure_status_matrix() {
-    let cases: &[(&str, u16)] = &[
+// A valid status needs an int in 400..=599 or a decimal string in that range; a message needs text.
+pub(super) fn failure_status_and_message_matrix() {
+    let statuses: &[(&str, u16)] = &[
         ("429", 429),
         ("\"\u{0664}\u{0662}\u{0669}\"", 429),
         ("true", 500),
@@ -175,7 +173,7 @@ pub(super) fn failure_status_matrix() {
         ("400", 400),
         ("599", 599),
     ];
-    for &(raw, expected) in cases {
+    for &(raw, expected) in statuses {
         let cause = failure(&format!(
             r#"{{"kind":"plain","text":"m","status_code":{raw}}}"#
         ));
@@ -185,10 +183,7 @@ pub(super) fn failure_status_matrix() {
             "status {raw}"
         );
     }
-}
-
-pub(super) fn failure_message_matrix() {
-    let cases: &[(&str, &str)] = &[
+    let messages: &[(&str, &str)] = &[
         ("\"busy\"", "busy"),
         ("429", "boom"),
         ("3.5", "boom"),
@@ -196,7 +191,7 @@ pub(super) fn failure_message_matrix() {
         ("\"\"", "boom"),
         ("\"x\"", "x"),
     ];
-    for &(raw, expected) in cases {
+    for &(raw, expected) in messages {
         let cause = failure(&format!(
             r#"{{"kind":"plain","text":"boom","message":{raw}}}"#
         ));
@@ -391,14 +386,7 @@ pub(super) fn reopen_and_empty_id() {
             r#"[{"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}]"#
         )
     );
-    assert_eq!(
-        state
-            .snapshot()
-            .item_id_to_block_index
-            .get("item_a")
-            .copied(),
-        Some(2)
-    );
+    assert_mapped(&state, "item_a", 2);
     process(&mut state, &empty_id);
     assert_eq!(
         drained(&mut state),
@@ -457,14 +445,7 @@ pub(super) fn text_before_block() {
             r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}]"#
         )
     );
-    assert_eq!(
-        state
-            .snapshot()
-            .item_id_to_block_index
-            .get("item_a")
-            .copied(),
-        Some(0)
-    );
+    assert_mapped(&state, "item_a", 0);
     process(&mut state, &missing);
     assert_eq!(
         drained(&mut state),
@@ -504,14 +485,22 @@ pub(super) fn attributed_fallbacks() {
     let falsey_delta = text("");
     let falsey_id = text("");
     let attributes = EventAttributes {
-        delta: Some(&falsey_delta),
+        event_type: None,
+        item: None,
         item_id: Some(&falsey_id),
-        ..EventAttributes::default()
+        delta: Some(&falsey_delta),
+        summary_index: None,
+        response: None,
     };
     let fields =
         mapping(r#"{"type":"response.output_text.delta","item_id":"item_a","delta":"fallback"}"#);
     let mut state = state();
-    process_attributed(&mut state, attributes, &fields);
+    state
+        .process_event(ParsedEvent {
+            attributes,
+            mapping: Some(&fields),
+        })
+        .expect("the event processes");
     assert_eq!(
         drained(&mut state),
         json(
@@ -520,10 +509,19 @@ pub(super) fn attributed_fallbacks() {
     );
     let truthy_delta = text("attr");
     let truthy_attributes = EventAttributes {
+        event_type: None,
+        item: None,
+        item_id: None,
         delta: Some(&truthy_delta),
-        ..EventAttributes::default()
+        summary_index: None,
+        response: None,
     };
-    process_attributed(&mut state, truthy_attributes, &fields);
+    state
+        .process_event(ParsedEvent {
+            attributes: truthy_attributes,
+            mapping: Some(&fields),
+        })
+        .expect("the event processes");
     assert_eq!(
         drained(&mut state),
         json(
@@ -532,28 +530,37 @@ pub(super) fn attributed_fallbacks() {
     );
 }
 
-pub(super) fn attributed_null_type() {
+// A null attribute type falls back to the dict's type; a falsey "" one wins and no message starts.
+pub(super) fn attributed_event_type_fallback() {
     let created = mapping(CREATED);
     let null_type = Json::Null;
-    let attributes = EventAttributes {
-        event_type: Some(&null_type),
-        ..EventAttributes::default()
-    };
-    let mut state = state();
-    process_attributed(&mut state, attributes, &created);
-    assert!(state.snapshot().sent_message_start);
-    assert_eq!(drained(&mut state), json(MESSAGE_START));
-}
-
-pub(super) fn attributed_empty_type() {
-    let created = mapping(CREATED);
     let empty_type = text("");
-    let attributes = EventAttributes {
-        event_type: Some(&empty_type),
-        ..EventAttributes::default()
-    };
-    let mut state = state();
-    process_attributed(&mut state, attributes, &created);
-    assert!(!state.snapshot().sent_message_start);
-    assert_eq!(drained(&mut state), json("[]"));
+    for (event_type, starts) in [(&null_type, true), (&empty_type, false)] {
+        let attributes = EventAttributes {
+            event_type: Some(event_type),
+            item: None,
+            item_id: None,
+            delta: None,
+            summary_index: None,
+            response: None,
+        };
+        let mut state = state();
+        state
+            .process_event(ParsedEvent {
+                attributes,
+                mapping: Some(&created),
+            })
+            .expect("the event processes");
+        assert_eq!(
+            state.snapshot().sent_message_start,
+            starts,
+            "{event_type:?}"
+        );
+        let expected = if starts {
+            json(MESSAGE_START)
+        } else {
+            json("[]")
+        };
+        assert_eq!(drained(&mut state), expected, "{event_type:?}");
+    }
 }

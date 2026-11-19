@@ -14,7 +14,7 @@ fn object(pairs: Vec<(&str, Json)>) -> Json {
     Json::Object(owned.into_iter().collect())
 }
 
-fn typed_object(kind: &str, extra: Vec<(&str, Json)>) -> Json {
+pub(super) fn typed_object(kind: &str, extra: Vec<(&str, Json)>) -> Json {
     let mut pairs = vec![("type", Json::Text(kind.to_owned()))];
     pairs.extend(extra);
     object(pairs)
@@ -40,11 +40,6 @@ pub(super) fn message_start(message_id: &str, model: &str) -> Json {
         ("usage", usage),
     ]);
     typed_object("message_start", vec![("message", message)])
-}
-
-#[must_use]
-pub(super) fn text_block() -> Json {
-    typed_object("text", vec![("text", Json::Text(String::new()))])
 }
 
 #[must_use]
@@ -78,24 +73,14 @@ pub(super) fn redacted_thinking_block(signature: &str) -> Json {
     )
 }
 
+// Both a block start and a block delta: the frame type, the block's index and one named payload.
 #[must_use]
-pub(super) fn content_block_start(index: i64, content_block: Json) -> Json {
+pub(super) fn block_frame(kind: &str, index: i64, field: &str, payload: Json) -> Json {
     typed_object(
-        "content_block_start",
+        kind,
         vec![
             ("index", Json::Number(Number::from(index))),
-            ("content_block", content_block),
-        ],
-    )
-}
-
-#[must_use]
-pub(super) fn content_block_delta(index: i64, delta: Json) -> Json {
-    typed_object(
-        "content_block_delta",
-        vec![
-            ("index", Json::Number(Number::from(index))),
-            ("delta", delta),
+            (field, payload),
         ],
     )
 }
@@ -106,21 +91,6 @@ pub(super) fn content_block_stop(index: i64) -> Json {
         "content_block_stop",
         vec![("index", Json::Number(Number::from(index)))],
     )
-}
-
-#[must_use]
-pub(super) fn text_delta(text: Json) -> Json {
-    typed_object("text_delta", vec![("text", text)])
-}
-
-#[must_use]
-pub(super) fn thinking_delta(thinking: Json) -> Json {
-    typed_object("thinking_delta", vec![("thinking", thinking)])
-}
-
-#[must_use]
-pub(super) fn input_json_delta(partial_json: Json) -> Json {
-    typed_object("input_json_delta", vec![("partial_json", partial_json)])
 }
 
 #[must_use]
@@ -149,11 +119,6 @@ pub(super) fn message_delta(
         vec![("delta", object(delta)), ("usage", json_from(usage)?)],
     );
     Ok(event)
-}
-
-#[must_use]
-pub(super) fn message_stop() -> Json {
-    typed_object("message_stop", Vec::new())
 }
 
 fn json_from<T: serde::Serialize>(value: &T) -> Result<Json, MessagesResponseEventError> {
