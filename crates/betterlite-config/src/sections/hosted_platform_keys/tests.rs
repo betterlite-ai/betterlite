@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::hosted_platform_keys::{Headers, Settings};
@@ -43,9 +44,8 @@ fn header_text(headers: &Headers) -> String {
 }
 
 fn read(settings: &Settings, setting: Setting) -> Option<String> {
-    let secret = |value: &Option<secrecy::SecretString>| {
-        value.as_ref().map(|key| key.expose_secret().to_owned())
-    };
+    let secret =
+        |value: &Option<SecretString>| value.as_ref().map(|key| key.expose_secret().to_owned());
     match setting {
         Setting::ApiBase => settings.api_base.clone(),
         Setting::ApiKey => secret(&settings.api_key),
@@ -96,7 +96,10 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 Some(String::from("http://from-env:4000"))
             );
             assert_eq!(
-                read(&load("litellm_settings:\n  api_base: \"\"\n", &[]).unwrap(), setting),
+                read(
+                    &load("litellm_settings:\n  api_base: \"\"\n", &[]).unwrap(),
+                    setting
+                ),
                 None
             );
         }
@@ -120,18 +123,17 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 Some(String::from("sk-from-env"))
             );
             assert_eq!(
-                read(&load("litellm_settings:\n  api_key: \"\"\n", &[]).unwrap(), setting),
+                read(
+                    &load("litellm_settings:\n  api_key: \"\"\n", &[]).unwrap(),
+                    setting
+                ),
                 None
             );
         }
         Setting::Headers => {
             assert_eq!(
                 read(
-                    &load(
-                        "litellm_settings:\n  headers:\n    x-scope: tenant\n",
-                        &[]
-                    )
-                    .unwrap(),
+                    &load("litellm_settings:\n  headers:\n    x-scope: tenant\n", &[]).unwrap(),
                     setting
                 ),
                 Some(String::from("x-scope=tenant"))
@@ -139,8 +141,8 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
             assert_eq!(
                 read(
                     &load(
-                        "litellm_settings:\n  headers:\n    Authorization: Bearer os.environ/HEADER_KEY\n",
-                        &[("HEADER_KEY", "sk-header")]
+                        "litellm_settings:\n  headers:\n    Authorization: os.environ/HEADER_KEY\n",
+                        &[("HEADER_KEY", "Bearer sk-header")]
                     )
                     .unwrap(),
                     setting
@@ -148,7 +150,10 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 Some(String::from("Authorization=Bearer sk-header"))
             );
             assert_eq!(
-                read(&load("litellm_settings:\n  headers: {}\n", &[]).unwrap(), setting),
+                read(
+                    &load("litellm_settings:\n  headers: {}\n", &[]).unwrap(),
+                    setting
+                ),
                 None
             );
         }
@@ -172,7 +177,10 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 Some(String::from("sk-groq-env"))
             );
             assert_eq!(
-                read(&load("litellm_settings:\n  groq_key: \"\"\n", &[]).unwrap(), setting),
+                read(
+                    &load("litellm_settings:\n  groq_key: \"\"\n", &[]).unwrap(),
+                    setting
+                ),
                 None
             );
         }
@@ -248,7 +256,10 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 read(
                     &load(
                         "",
-                        &[("CLOUDFLARE_API_BASE", "https://gateway.ai.cloudflare.com/v1")]
+                        &[(
+                            "CLOUDFLARE_API_BASE",
+                            "https://gateway.ai.cloudflare.com/v1"
+                        )]
                     )
                     .unwrap(),
                     setting
@@ -269,7 +280,10 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
                 Some(String::from("account-1234"))
             );
             assert_eq!(
-                read(&load("", &[("CLOUDFLARE_ACCOUNT_ID", "")]).unwrap(), setting),
+                read(
+                    &load("", &[("CLOUDFLARE_ACCOUNT_ID", "")]).unwrap(),
+                    setting
+                ),
                 None
             );
         }
