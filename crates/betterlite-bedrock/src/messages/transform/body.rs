@@ -98,13 +98,14 @@ where
     Ok(strip_unsupported_fields(&body)?)
 }
 
-struct Pipeline<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
+pub(crate) struct Pipeline<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    request: &'request MessagesRequest<'request>,
-    sources: &'sources mut TransformSources<'context, 'environment, Source, Transport, Lookup>,
+    pub(crate) request: &'request MessagesRequest<'request>,
+    pub(crate) sources:
+        &'sources mut TransformSources<'context, 'environment, Source, Transport, Lookup>,
 }
 
 impl<Source, Transport, Lookup> Pipeline<'_, '_, '_, '_, Source, Transport, Lookup>
@@ -185,7 +186,7 @@ where
         Ok(())
     }
 
-    async fn drop_output_config(&mut self, body: &mut Object) {
+    pub(crate) async fn drop_output_config(&mut self, body: &mut Object) {
         drop_unsupported_output_config(
             body,
             self.request,

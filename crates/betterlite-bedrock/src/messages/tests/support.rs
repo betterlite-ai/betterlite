@@ -14,7 +14,7 @@ use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_core::api::anthropic_beta_config::matrix::{BetaMatrix, BetaNode};
 use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream as _;
 use betterlite_http::error::HttpError;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
@@ -47,13 +47,14 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::agentcore_stream::transport::Chunks;
 use crate::aws_settings::sources::Credentials;
+use crate::bedrock_messages_beta::beta::INTERLEAVED_THINKING_BETA;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::credentials::error::CredentialError;
 use crate::event_frames::beta::BetaHeader;
 use crate::invoke_primitives::config::Params as InvokeParams;
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::messages::stream::{MessagesStreamError, MessagesStreamRequest, messages_sse_stream};
-use crate::messages::transform::body::drop_unsupported_output_config;
+use crate::messages::transform::body::Pipeline;
 use crate::messages::transform::{
     MessagesRequest, MessagesTransformError, TransformSources, transform_request,
 };
@@ -81,6 +82,8 @@ pub(super) const MODEL_COST: &str = r#"{
   "fixture-tool-search": {"litellm_provider": "bedrock", "supports_tool_search": true},
   "bedrock/fixture-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
   "fixture-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
+  "bedrock/fixture-legacy-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "supports_legacy_thinking": true},
+  "fixture-legacy-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "supports_legacy_thinking": true},
   "bedrock/fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
   "fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
   "bedrock/fixture-mid-system": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": true},
@@ -213,6 +216,17 @@ impl Fixture {
         }
     }
 
+    // The bundled matrix drops the interleaved-thinking beta for Bedrock; this fixture forwards it so the injection flag stays observable.
+    pub(super) fn allow_interleaved_thinking(&mut self) {
+        let Some(BetaNode::Map(bedrock)) = self.matrix.0.get_mut("bedrock") else {
+            return;
+        };
+        bedrock.insert(
+            INTERLEAVED_THINKING_BETA.to_owned(),
+            BetaNode::Text(INTERLEAVED_THINKING_BETA.to_owned()),
+        );
+    }
+
     const fn catalogs(&self) -> CatalogSources<'_> {
         CatalogSources {
             patterns: &self.patterns,
@@ -322,12 +336,21 @@ impl<'fixture> Session<'fixture> {
             model_cost: &self.fixture.model_cost,
             drop_params,
         };
-        self.runtime.block_on(drop_unsupported_output_config(
-            body,
-            &request,
-            &mut environment,
-            &catalogs,
-        ));
+        let mut sources = TransformSources {
+            environment: &mut environment,
+            catalogs: &catalogs,
+            budgets: &self.fixture.budgets,
+            matrix: &self.fixture.matrix,
+            lookup: &self.lookup,
+            packaged: self.fixture.packaged.as_ref(),
+        };
+        self.runtime.block_on(
+            Pipeline {
+                request: &request,
+                sources: &mut sources,
+            }
+            .drop_output_config(body),
+        );
     }
 }
 

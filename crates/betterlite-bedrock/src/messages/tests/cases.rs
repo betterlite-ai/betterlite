@@ -7,6 +7,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::{IndexMap, IndexSet};
 use secrecy::SecretString;
 
+use crate::bedrock_messages_beta::beta::INTERLEAVED_THINKING_BETA;
 use crate::bedrock_settings::ErrorHeaders;
 use crate::invoke_primitives::url::{InvokeEnvironment, InvokeModelUrl};
 use crate::messages::config::MessagesConfig;
@@ -39,6 +40,8 @@ const BETA_PARAMS: &str = r#"{"max_tokens":512,"tools":[{"type":"tool_search_too
 const ADAPTIVE_PARAMS: &str =
     r#"{"max_tokens":1024,"thinking":{"type":"adaptive","display":"updates"}}"#;
 const ADAPTIVE_PLAIN: &str = r#"{"max_tokens":1024,"thinking":{"type":"adaptive"}}"#;
+const LEGACY_DISPLAY_PARAMS: &str =
+    r#"{"max_tokens":1024,"thinking":{"type":"enabled","budget_tokens":1024,"display":"updates"}}"#;
 const ADAPTIVE_BODY: &str = r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":1024,"thinking":{"type":"adaptive","display":"updates"},"anthropic_version":"bedrock-2023-05-31","anthropic_beta":["thinking-display-updates-2026-08-18"]}"#;
 const THINKING_BODY: &str = r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":1024,"thinking":{"type":"adaptive"},"anthropic_version":"bedrock-2023-05-31"}"#;
 
@@ -312,6 +315,74 @@ pub(crate) fn adaptive_display_updates() {
     assert_eq!(body_json(&second), js(THINKING_BODY));
     assert_eq!(kept_warnings(&logs), Vec::<String>::new());
     clear_thinking(&mut session);
+    legacy_display_updates(&mut session);
+    clear_thinking_beta();
+}
+
+// A legacy enabled request turns adaptive in the native pass, which drops display=updates, so the requested display comes back.
+fn legacy_display_updates(session: &mut Session<'_>) {
+    let body = session
+        .transform(
+            &call(
+                "fixture-adaptive",
+                USER_MESSAGES,
+                LEGACY_DISPLAY_PARAMS,
+                "{}",
+            ),
+            false,
+        )
+        .expect("the legacy display request transforms");
+    assert_eq!(
+        body.get("thinking").cloned(),
+        Some(js(r#"{"type":"adaptive","display":"updates"}"#))
+    );
+}
+
+// The clear-thinking injection reaches the beta filter only when prepare_cache reports it; the bundled Bedrock matrix drops the interleaved beta, so this fixture forwards it.
+fn clear_thinking_beta() {
+    let mut fixture = Fixture::new(EFFORT_TIER_INFO);
+    fixture.allow_interleaved_thinking();
+    let mut session = Session::new(&fixture);
+    let converted = session
+        .transform(
+            &call(
+                "fixture-adaptive",
+                USER_MESSAGES,
+                CLEAR_THINKING_PARAMS,
+                "{}",
+            ),
+            false,
+        )
+        .expect("the converted clear-thinking request transforms");
+    let plain = session
+        .transform(
+            &call("fixture-adaptive", USER_MESSAGES, ADAPTIVE_PLAIN, "{}"),
+            false,
+        )
+        .expect("the plain adaptive request transforms");
+    let injected = session
+        .transform(
+            &call(
+                "fixture-legacy-adaptive",
+                USER_MESSAGES,
+                CLEAR_THINKING_PARAMS,
+                "{}",
+            ),
+            false,
+        )
+        .expect("the injected clear-thinking request transforms");
+    assert!(!interleaved_beta(&converted));
+    assert!(!interleaved_beta(&plain));
+    assert!(interleaved_beta(&injected));
+}
+
+fn interleaved_beta(body: &Object) -> bool {
+    let Some(Json::List(items)) = body.get("anthropic_beta") else {
+        return false;
+    };
+    items
+        .iter()
+        .any(|item| matches!(item, Json::Text(token) if token == INTERLEAVED_THINKING_BETA))
 }
 
 // The clear_thinking edit makes the Bedrock config inject adaptive thinking before the strip pass.
