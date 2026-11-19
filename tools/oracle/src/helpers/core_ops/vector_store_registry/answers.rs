@@ -22,7 +22,7 @@ use super::raised;
 use super::scripted::{
     Input, Operation, ScriptedCredentials, ScriptedDatabase, Step, decode, decode_all,
 };
-use super::values::{index_value, indexes_value, object_value, store_value, stores_value};
+use super::values::{index_value, indexes_value, store_value, stores_value};
 
 pub(super) fn drive(input: &Input) -> HelperResult {
     match input.operation {
@@ -175,9 +175,9 @@ fn tool_params_record(params: &VectorStoreToolParams) -> Value {
         .max_num_results
         .map_or(Value::Null, |results| json!(results));
     json!({
-        "filters": object_value(params.filters.as_ref()),
+        "filters": &params.filters,
         "max_num_results": results,
-        "ranking_options": object_value(params.ranking_options.as_ref()),
+        "ranking_options": &params.ranking_options,
     })
 }
 
@@ -187,10 +187,11 @@ fn named_credentials(input: &Input) -> HelperResult {
         values: input.credentials.clone(),
     });
     let registry = VectorStoreRegistry::new(stores, Arc::new(Utc::now), credentials);
-    let mut results = Vec::with_capacity(input.ids.len());
-    for id in &input.ids {
-        results.push(json!(registry.credentials_for_vector_store(id)));
-    }
+    let results = input
+        .ids
+        .iter()
+        .map(|id| json!(registry.credentials_for_vector_store(id)))
+        .collect::<Vec<Value>>();
     Ok(json!({"credentials": results}))
 }
 

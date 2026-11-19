@@ -17,8 +17,7 @@ impl Helper for Op {
     }
 }
 
-// a raised Python exception reaches the comparison with null type, param and code, so an error the
-// native side reports carries the same three fields
+// a raised Python exception reaches the comparison with null type, param and code, so a native error carries the same three fields
 fn raised(class: &str, message: String) -> HelperFailure {
     Box::new(HelperError {
         class: class.to_owned(),

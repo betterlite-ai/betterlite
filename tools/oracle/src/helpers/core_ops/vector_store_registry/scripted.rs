@@ -152,5 +152,7 @@ pub(crate) fn decode<Record>(value: &Value) -> Result<Record, HelperFailure>
 where
     Record: DeserializeOwned,
 {
-    serde_json::from_value(value.clone()).map_err(|error| raised("InvalidInput", error.to_string()))
+    let decoded = serde_json::from_value(value.clone())
+        .map_err(|error| raised("InvalidInput", error.to_string()))?;
+    Ok(decoded)
 }
