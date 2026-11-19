@@ -546,6 +546,21 @@ fn the_cache_evicts_the_oldest_entry_at_the_max_size() {
     assert_eq!(cache.cached("srv-1:1"), Some("token".to_owned()));
 }
 
+#[test]
+fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
+    let post = Arc::new(ScriptedPost::new(Vec::new()));
+    let clock = Arc::new(ManualClock::new());
+    let cache = cache_with(&post, &clock);
+    for index in 0..=super::OAUTH2_TOKEN_CACHE_MAX_LOCKS {
+        let _lock = cache.lock_for(&format!("srv-1:{index}"));
+    }
+    let locks = cache.locks.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(locks.len(), super::OAUTH2_TOKEN_CACHE_MAX_LOCKS);
+    assert!(!locks.contains_key("srv-1:0"));
+    assert!(locks.contains_key("srv-1:1"));
+    assert!(locks.contains_key(&format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_LOCKS)));
+}
+
 struct FakeError;
 
 impl std::fmt::Debug for FakeError {
