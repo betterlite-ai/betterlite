@@ -1,0 +1,23 @@
+name: cost-estimate-cache-subset-error-precedes-pricing
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list: []
+env: {}
+request:
+  method: POST
+  path: /cost/estimate
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: no-such-model-xyz
+    input_tokens: 10
+    output_tokens: 5
+    cache_read_input_tokens: 8
+    cache_creation_input_tokens: 4
+    reasoning_tokens: 6
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

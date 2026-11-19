@@ -1,14 +1,14 @@
 id: B154
 milestone: M11 distribution
 title: Terraform deployment modules for AWS and GCP
-status: todo
+status: done
 depends_on: [B8143, B8147]
 file: tasks/B154-terraform-overview-parity.yaml
 covers:
   - "terraform/litellm/README.md"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2573

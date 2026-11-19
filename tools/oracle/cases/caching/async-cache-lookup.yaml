@@ -1,0 +1,197 @@
+kind: helper
+name: caching-async-cache-lookup
+call:
+  b4305:
+    scenarios:
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+          object: chat.completion
+          created: 0
+          model: gpt-4o
+          choices:
+          - index: 0
+            message:
+              role: assistant
+              content: hello
+            finish_reason: stop
+          usage:
+            prompt_tokens: 1
+            completion_tokens: 1
+            total_tokens: 2
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+      entries:
+      - value:
+          id: chatcmpl-1
+          object: chat.completion
+          choices: []
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+        caching: false
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+        cache:
+          no-cache: true
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: miss-key
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      - embedding
+      - aembedding
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+      entries:
+      - key: case-key
+        value:
+        - detail: cached failure
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: false
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        caching: true
+      entries: []
+    - operation: async
+      model: gpt-4o
+      call_type: acompletion
+      original_function: acompletion
+      supported_call_types:
+      - completion
+      - acompletion
+      cache_configured: true
+      cache_type: local
+      kwargs:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        cache_key: case-key
+        caching: true
+      entries:
+      - key: case-key
+        value:
+          id: chatcmpl-1
+          object: chat.completion
+          created: 0
+          model: gpt-4o
+          choices:
+          - index: 0
+            message:
+              role: assistant
+              content: hello
+            finish_reason: stop
+          usage:
+            prompt_tokens: 1
+            completion_tokens: 1
+            total_tokens: 2
+env: {}
+compare:
+  ignore: []

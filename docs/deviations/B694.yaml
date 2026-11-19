@@ -1,0 +1,24 @@
+task: B694
+deviations:
+  - what: Async file debug events keep the operation's metadata and redact file bodies and credential values instead of formatting the whole create_file_data and response objects.
+    why: Repository secret-safe logging requirement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L43-L51
+  - what: An explicit empty api_key is rejected as "Unable to handle auth" before a request is sent, where LiteLLM builds an Azure client holding the empty key and every call then fails at the wire.
+    why: betterlite resolves credentials once, so a key that cannot authorize is an error when the client is built rather than a per-request 401.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
+  - what: A v1, latest or preview api_version with no api_base fails with "Must provide one of the `base_url` or `azure_endpoint` arguments, or the `AZURE_OPENAI_ENDPOINT` environment variable", where LiteLLM builds the base URL "None/openai/v1/" and the SDK rejects it with its own URL error.
+    why: betterlite names the missing endpoint; the SDK's message names no field the caller set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L545-L575
+  - what: "A delete reply body that parses as a JSON object the reply's FileDeleted shape rejects (an object with no fields, or fields of the wrong type) is replaced with {id: file_id, deleted: true, object: file}, where LiteLLM's lenient construction keeps a FileDeleted carrying whatever the object held."
+    why: The reply carries no usable deleted record, and the id the caller asked to delete is the only usable answer; the hollow record is a parse artifact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L192-L232
+  - what: A synchronous call handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and returns the reply, where LiteLLM's retrieve, list and delete hand the un-awaited SDK coroutine to a sync caller and create and content fail with AttributeError on it.
+    why: A sync call returns a value; an un-awaited coroutine is a leak no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L143-L179
+  - what: A v1, latest or preview api_version with an explicit empty api_key builds a client that sends no auth header, where LiteLLM's key chain takes the empty string as absent and the OpenAI SDK then fails at construction with its missing-credentials error.
+    why: B531's v1 projection carries the present-but-empty key as a static key; betterlite sends the request the caller configured and lets the API answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L552-L556
+  - what: A delete reply whose content type ends in json and whose body is empty or not JSON fails with the shared file decoder's error "the file reply is not a file object", where LiteLLM lets the OpenAI SDK's JSON parser ValueError escape with its own message.
+    why: The delete call still fails on the same replies, since byte decoding belongs to B516's wire records; only the error text and type differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L192-L232
+kept_bugs: []

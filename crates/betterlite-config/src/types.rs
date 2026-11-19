@@ -8,11 +8,12 @@ use crate::sections::Sections;
 use crate::sections::fallback_plans::chains::FallbackTarget;
 use crate::tls::VerifySetting;
 
+// a config snapshot travels inside async futures, so the fields nothing reads whole are boxed
 #[derive(Debug, Clone)]
 pub struct Config {
     pub model_list: Vec<ModelDeployment>,
-    pub general_settings: GeneralSettings,
-    pub router_settings: RouterSettings,
+    pub general_settings: Box<GeneralSettings>,
+    pub router_settings: Box<RouterSettings>,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
     // boxed: futures holding a loaded Config would otherwise carry all of Sections and cross clippy's 16384-byte large_futures limit

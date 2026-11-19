@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use betterlite_prompts::arguments::json::{Json, Object};
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 
 use super::error::EmbeddingCallError;
 use super::hooks::{Event, Input, replay};
@@ -49,7 +49,7 @@ pub fn execute<'run, Source, Factory, Transport>(
     dependencies: &'run Dependencies<'_, Source, Factory, Transport>,
     supplied: Option<SuppliedClient<'run, Factory::Client>>,
     log: &'run mut LogContext<'_, '_>,
-) -> LocalBoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
+) -> BoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
     Source: CredentialSource + Sync,
     Factory: ClientFactory + Sync,
@@ -83,7 +83,7 @@ fn run_batch<'run, Factory>(
     batch: &'run [Object],
     clients: &'run BatchClients<'_, Factory>,
     log: &'run mut LogContext<'_, '_>,
-) -> LocalBoxFuture<'run, Result<EmbeddingReply, EmbeddingCallError>>
+) -> BoxFuture<'run, Result<EmbeddingReply, EmbeddingCallError>>
 where
     Factory: ClientFactory + Sync,
 {
@@ -107,7 +107,7 @@ fn item_call<'run, Factory>(
     data: &'run Object,
     clients: &'run BatchClients<'_, Factory>,
     log: &'run mut LogContext<'_, '_>,
-) -> LocalBoxFuture<'run, Result<Object, EmbeddingCallError>>
+) -> BoxFuture<'run, Result<Object, EmbeddingCallError>>
 where
     Factory: ClientFactory + Sync,
 {
