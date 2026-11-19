@@ -35,7 +35,7 @@ fn the_seal_folds_the_start_tail_over_each_write() {
     assert_eq!(
         shaped,
         json!({
-            "tails": ["0a0a", "0a0a", "613a207b"],
+            "tails": ["0a0a", "317d0a0a", "613a207b"],
             "seals": [
                 "",
                 "",
@@ -67,7 +67,7 @@ fn an_empty_write_keeps_the_tail() {
     assert_eq!(
         shaped,
         json!({
-            "tails": ["0a0a", "0a0a", "0a0a", "0a0a"],
+            "tails": ["0a0a", "0a0a", "317d0a0a", "317d0a0a"],
             "seals": ["", "", "", ""],
         })
     );
