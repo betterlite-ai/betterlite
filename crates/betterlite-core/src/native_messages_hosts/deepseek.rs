@@ -50,10 +50,14 @@ pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Option<St
         global: request.global_key,
     });
     let headers = request.headers;
-    if !headers.contains_key(API_KEY_HEADER) && !headers.contains_key(AUTHORIZATION_HEADER) {
-        if let Some(key) = key {
-            headers.insert(API_KEY_HEADER.to_owned(), key.expose_secret().to_owned());
-        }
+    if !headers.contains_key(API_KEY_HEADER)
+        && !headers.contains_key(AUTHORIZATION_HEADER)
+        && let Some(resolved) = key
+    {
+        headers.insert(
+            API_KEY_HEADER.to_owned(),
+            resolved.expose_secret().to_owned(),
+        );
     }
     if !headers.contains_key(ANTHROPIC_VERSION_HEADER) {
         headers.insert(

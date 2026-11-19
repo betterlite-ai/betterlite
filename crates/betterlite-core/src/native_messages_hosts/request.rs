@@ -34,6 +34,7 @@ pub fn validate_inherited_environment(
     request: EnvironmentRequest<'_>,
     settings: &AnthropicSettings,
 ) -> Result<Option<String>, HostError> {
+    let headers = request.headers;
     let key = resolve_key(KeySources {
         explicit: request.explicit_key,
         environment: request.environment_key,
@@ -44,6 +45,6 @@ pub fn validate_inherited_environment(
         optional_params: request.optional_params,
         messages: request.messages,
     };
-    let api_base = validate_environment(request.headers, key, request.api_base, &native, settings)?;
+    let api_base = validate_environment(headers, key, request.api_base, &native, settings)?;
     Ok(api_base)
 }

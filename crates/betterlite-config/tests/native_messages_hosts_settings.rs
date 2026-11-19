@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::native_messages_hosts_settings::{HostEnvironment, Settings};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret;
 
 #[derive(Clone, Copy)]
 enum Host {
@@ -36,10 +36,6 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Settings {
         .native_messages_hosts_settings
 }
 
-fn revealed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|secret| secret.expose_secret().to_owned())
-}
-
 #[rstest]
 #[case::deepseek(Host::Deepseek)]
 #[case::tencent(Host::Tencent)]
@@ -67,7 +63,7 @@ fn read_each_alias(
     let settings = load("", environment);
     let loaded = host.of(&settings);
     assert_eq!(
-        revealed(loaded.api_key.as_ref()).as_deref(),
+        loaded.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some(expected_key)
     );
     assert_eq!(loaded.api_base.as_deref(), Some(expected_base));
@@ -97,7 +93,10 @@ fn load_the_global_key(
 ) {
     let settings = load(source, environment);
     assert_eq!(
-        revealed(settings.global_api_key.as_ref()).as_deref(),
+        settings
+            .global_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         expected
     );
 }
