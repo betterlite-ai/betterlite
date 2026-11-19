@@ -13,8 +13,7 @@ use tracing::debug;
 
 use crate::otel::legacy_exporters::build::LegacyExporterBuilder;
 use crate::otel::legacy_exporters::error::LegacyExporterError;
-use crate::otel::legacy_exporters::headers::HeadersError;
-use crate::otel::legacy_exporters::selection::{SpanProcessorPlan, span_processor_plan};
+use crate::otel::legacy_exporters::selection::span_processor_plan;
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
 
 pub mod project;
@@ -217,28 +216,14 @@ impl DynamicTracerCache {
         dynamic_headers: Option<&BTreeMap<String, String>>,
     ) -> Result<SdkTracer, LegacyExporterError> {
         let owns_exporter = !matches!(exporter, Exporter::InMemory);
-        let callback_name = self.callback_name.as_deref();
-        self.tracer_for_key(key, owns_exporter, || {
-            span_processor_plan(
+        self.cached_dynamic_tracer(key, owns_exporter, move || {
+            let plan = span_processor_plan(
                 &self.config,
                 dynamic_headers,
                 config_override,
-                callback_name,
-            )
-        })
-    }
-
-    fn tracer_for_key<F>(
-        &self,
-        key: CacheKey,
-        owns_exporter: bool,
-        plan: F,
-    ) -> Result<SdkTracer, LegacyExporterError>
-    where
-        F: FnOnce() -> Result<SpanProcessorPlan, HeadersError>,
-    {
-        self.cached_dynamic_tracer(key, owns_exporter, move || {
-            let processor = self.builder.span_processor(&plan()?)?;
+                self.callback_name.as_deref(),
+            )?;
+            let processor = self.builder.span_processor(&plan)?;
             Ok(SdkTracerProvider::builder()
                 .with_resource(self.resource.clone())
                 .with_span_processor(processor)

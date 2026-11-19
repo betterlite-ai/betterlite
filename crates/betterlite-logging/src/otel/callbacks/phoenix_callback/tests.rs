@@ -202,35 +202,34 @@ fn with_auth_project(kwargs: &mut MetadataMap, key: &str, project: &str) {
     entries.insert(key.to_owned(), OtelModelValue::String(project.to_owned()));
 }
 
-fn with_proxy(kwargs: &mut MetadataMap) {
-    let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
-        panic!("litellm_params must be an object");
+fn insert_field(kwargs: &mut MetadataMap, bucket: &str, key: &str, value: OtelModelValue) {
+    let Some(OtelModelValue::Object(fields)) = kwargs.get_mut(bucket) else {
+        panic!("{bucket} must be an object");
     };
-    params.insert(
-        "proxy_server_request".to_owned(),
-        serde_json::from_str(r#"{"headers": {}}"#).expect("the proxy request"),
-    );
+    fields.insert(key.to_owned(), value);
+}
+
+fn with_proxy(kwargs: &mut MetadataMap) {
+    let request = serde_json::from_str(r#"{"headers": {}}"#).expect("the proxy request");
+    insert_field(kwargs, "litellm_params", "proxy_server_request", request);
 }
 
 fn with_guardrail(kwargs: &mut MetadataMap, entry: &str) {
-    let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object") else {
-        panic!("standard_logging_object must be an object");
-    };
-    payload.insert(
-        "guardrail_information".to_owned(),
-        serde_json::from_str(entry).expect("guardrail entry"),
+    let value = serde_json::from_str(entry).expect("guardrail entry");
+    insert_field(
+        kwargs,
+        "standard_logging_object",
+        "guardrail_information",
+        value,
     );
 }
 
 fn with_traceparent(kwargs: &mut MetadataMap, traceparent: &str) {
-    let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
-        panic!("litellm_params must be an object");
-    };
-    let request = serde_json::from_str::<OtelModelValue>(&format!(
+    let request = serde_json::from_str(&format!(
         r#"{{"headers": {{"traceparent": "{traceparent}"}}}}"#
     ))
     .expect("the proxy request");
-    params.insert("proxy_server_request".to_owned(), request);
+    insert_field(kwargs, "litellm_params", "proxy_server_request", request);
 }
 
 fn names(spans: &[SpanData]) -> Vec<String> {
