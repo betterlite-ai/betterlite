@@ -175,6 +175,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "request_form"
+path = "fuzz_targets/request_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_event_stream"
 path = "fuzz_targets/bedrock_event_stream.rs"
 test = false
@@ -338,6 +345,20 @@ bench = false
 [[bin]]
 name = "credential_request"
 path = "fuzz_targets/credential_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "team_request_contracts"
+path = "fuzz_targets/team_request_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pass_through_config_writes"
+path = "fuzz_targets/pass_through_config_writes.rs"
 test = false
 doc = false
 bench = false

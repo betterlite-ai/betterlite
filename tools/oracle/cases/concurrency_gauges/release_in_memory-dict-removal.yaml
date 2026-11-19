@@ -1,0 +1,16 @@
+kind: helper
+name: release_in_memory-dict-removal
+call:
+  b3035:
+    function: release
+    counter_keys:
+      - "{api-key:k1}:max_parallel_requests"
+    slot_id: slot-9
+    now: 1700000000
+    cache:
+      "{api-key:k1}:max_parallel_requests":
+        slot-9: 1700000000.0
+        slot-other: 1700000400.0
+    replies: null
+env: {}
+compare: {ignore: []}
