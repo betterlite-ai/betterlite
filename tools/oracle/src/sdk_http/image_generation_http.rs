@@ -1,4 +1,166 @@
-use super::call_kind::Unbuilt;
+use std::collections::BTreeMap;
+use std::future::Future;
 
-pub type Call = Unbuilt<2450>;
-pub type Outcome = Unbuilt<2450>;
+use betterlite_models::decisions::Json;
+use betterlite_openai::api::image_contracts::records::ImageParams;
+use betterlite_provider::api::image_generation_http::ClientKind;
+use serde::{Deserialize, Serialize};
+
+use super::OracleLimits;
+use super::call_checks::validate_timeout;
+use super::call_kind::CallKind;
+use super::error::SdkHttpError;
+use super::result::kinds::SdkResult;
+
+mod native;
+mod support;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    Sync,
+    #[serde(rename = "async")]
+    Asynchronous,
+}
+
+impl Mode {
+    const fn client_kind(self) -> ClientKind {
+        match self {
+            Self::Sync => ClientKind::Sync,
+            Self::Asynchronous => ClientKind::Asynchronous,
+        }
+    }
+}
+
+// The litellm_params a caller would hand the SDK: the deployment key and its certificate override
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Params {
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub ssl_verify: Option<bool>,
+}
+
+// The handler's inputs: the prompt, both key channels, the options dict and the three accepted-but-unused overrides
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Call {
+    pub model: String,
+    pub prompt: String,
+    pub mode: Mode,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub litellm_params: Params,
+    #[serde(default)]
+    pub optional_params: ImageParams,
+    #[serde(default)]
+    pub extra_headers: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub extra_body: Option<ImageParams>,
+    #[serde(default)]
+    pub fake_stream: bool,
+    #[serde(default)]
+    pub litellm_metadata: Option<ImageParams>,
+    #[serde(default)]
+    pub multipart: bool,
+    pub timeout_seconds: u64,
+}
+
+// What validate_environment was handed: the explicit key, the options' own header dict, and both params maps
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ValidateEffect {
+    pub api_key: Option<String>,
+    pub api_base: Option<String>,
+    pub headers: ImageParams,
+    pub model: String,
+    pub messages: Vec<Json>,
+    pub optional_params: ImageParams,
+    pub litellm_params: ImageParams,
+}
+
+// What get_complete_url was handed: the deployment's api_base and key, never the explicit key
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UrlEffect {
+    pub api_base: Option<String>,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub stream: Option<bool>,
+}
+
+// What the request transform was handed: the prompt and the headers the caller's overrides already reached
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequestEffect {
+    pub model: String,
+    pub prompt: String,
+    pub headers: ImageParams,
+}
+
+// What the response transform was handed, including the encoding LiteLLM always passes as None
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResponseEffect {
+    pub model: String,
+    pub request_data: ImageParams,
+    pub encoding: Option<Json>,
+    pub api_key: Option<String>,
+    pub json_mode: Option<bool>,
+}
+
+// What logging_obj.pre_call was handed: the prompt and the empty key the handler logs
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreCallEffect {
+    pub input: String,
+    pub api_key: String,
+    pub api_base: String,
+    pub headers: ImageParams,
+    pub complete_input_dict: ImageParams,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Effects {
+    pub validation: ValidateEffect,
+    pub url: UrlEffect,
+    pub request: RequestEffect,
+    pub response: Option<ResponseEffect>,
+    pub pre_call: PreCallEffect,
+}
+
+// The exception _handle_error raises, as its callers can observe it
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Failure {
+    pub status: u16,
+    pub synthesized: bool,
+    pub message: String,
+    pub headers: BTreeMap<String, Json>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Outcome {
+    pub result: Option<Json>,
+    pub failure: Option<Failure>,
+    pub provider_headers: Option<BTreeMap<String, String>>,
+    pub effects: Effects,
+}
+
+impl CallKind for Call {
+    fn validate(&self, limits: &OracleLimits) -> Result<(), SdkHttpError> {
+        validate_timeout(self.timeout_seconds, limits)
+    }
+
+    fn send(
+        &self,
+        api_base: &str,
+        env: &BTreeMap<String, String>,
+    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
+        native::execute(self, api_base, env)
+    }
+}
