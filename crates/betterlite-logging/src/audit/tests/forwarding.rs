@@ -76,7 +76,8 @@ async fn the_azure_sentinel_logger_queues_audit_events_on_its_audit_stream() {
             tasks: None,
         },
     );
-    CallbackLogger::async_log_audit_event(&*logger, &payload())
+    logger
+        .async_log_audit_event(&payload())
         .await
         .expect("the sentinel logger accepts an audit record");
     let audit = logger

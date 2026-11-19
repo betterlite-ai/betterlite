@@ -87,7 +87,8 @@ impl CallbackLogger for S3BatchLogger {
         &self,
         audit_log: &StandardAuditLogPayload,
     ) -> Result<(), LoggerError> {
-        self.log_audit_event(audit_log, Utc::now()).await;
+        self.log_audit_event(audit_log, DateTime::<Utc>::from(self.clock.now()))
+            .await;
         Ok(())
     }
 }
