@@ -27,7 +27,7 @@ fn closed_frame() -> Result<StreamItem, StreamFailure> {
 
 #[test]
 fn error_frame_after_closed_frame() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let items = vec![closed_frame(), Err(status_failure("slow down", 429))];
     let results = drive(rig.generator.sse_data_generator(call(items), None));
     assert_eq!(results.len(), 2);
@@ -54,7 +54,7 @@ fn error_frame_after_closed_frame() {
 
 #[test]
 fn error_seals_after_torn_bytes() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let items = vec![
         Ok(text_chunk("data: {")),
         Err(status_failure("slow down", 429)),
@@ -75,7 +75,7 @@ fn error_seals_after_torn_bytes() {
 
 #[test]
 fn no_deployments_becomes_429() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let items = vec![
         closed_frame(),
         Err(status_failure(
@@ -103,7 +103,7 @@ fn no_deployments_becomes_429() {
 
 #[test]
 fn tag_routing_becomes_401() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let items = vec![
         closed_frame(),
         Err(status_failure(
@@ -172,7 +172,7 @@ fn failure_redacts_message() {
 
 #[test]
 fn generator_redacts_failure() {
-    let mut rig = Rig::new(HookConfig::default());
+    let mut rig = Rig::new(HookConfig::plain());
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
     rig.generator.redactor = Some(Arc::new(redactor));
     let failure = status_failure("Bearer abcdefghij1234567890", 400);
@@ -192,7 +192,7 @@ fn generator_redacts_failure() {
 
 #[test]
 fn http_failure_aborts_body() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let mut failure = status_failure("blocked", 400);
     failure.kind = FailureKind::Http;
     let items = vec![Ok(text_chunk("x")), Err(failure)];
@@ -210,7 +210,7 @@ fn http_failure_aborts_body() {
 
 #[test]
 fn http_failure_status_defaults() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let mut failure = other_failure("gone");
     failure.kind = FailureKind::Http;
     let results = drive(
@@ -226,7 +226,7 @@ fn http_failure_status_defaults() {
 fn hook_replacement_aborts() {
     let mut replacement = status_failure("blocked by hook", 503);
     replacement.kind = FailureKind::Http;
-    let mut config = HookConfig::default();
+    let mut config = HookConfig::plain();
     config.replacement = Some(replacement);
     let rig = Rig::new(config);
     let results = drive(

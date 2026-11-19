@@ -20,7 +20,7 @@ use crate::stream_chunks::StreamItem;
 
 #[test]
 fn sse_uses_python_json() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let item = event_chunk(&[
         ("z", Json::Null),
         ("a", Json::Bool(true)),
@@ -38,7 +38,7 @@ fn sse_uses_python_json() {
 
 #[test]
 fn sse_passes_bytes_and_text() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let items = vec![
         Ok(StreamItem::Bytes(Bytes::from_static(b"event: raw\n\n"))),
         Ok(text_chunk("plain text")),
@@ -52,7 +52,7 @@ fn sse_passes_bytes_and_text() {
 
 #[test]
 fn sse_restamps_message_start() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let item = event_chunk(&[
         ("type", Json::Text(String::from("message_start"))),
         (
@@ -77,7 +77,7 @@ fn sse_restamps_message_start() {
 
 #[test]
 fn sse_no_restamp_without_model() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let item = event_chunk(&[
         ("type", Json::Text(String::from("message_start"))),
         (
@@ -96,7 +96,7 @@ fn sse_no_restamp_without_model() {
 
 #[test]
 fn sse_holds_torn_frame() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
     let frames = texts(
         rig.generator
@@ -107,7 +107,7 @@ fn sse_holds_torn_frame() {
 
 #[test]
 fn sse_without_restamper_writes_torn() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let torn = StreamItem::Bytes(Bytes::from_static(b"data: {\"x\":"));
     let frames = texts(rig.generator.sse_data_generator(call(vec![Ok(torn)]), None));
     assert_eq!(frames, vec![String::from("data: {\"x\":")]);
@@ -134,7 +134,11 @@ fn tail_keeps_last_four_bytes() {
 
 #[test]
 fn empty_write_keeps_tail() {
-    assert_eq!(advance_sse_tail(b"abcd", b""), b"abcd".to_vec());
+    assert_eq!(advance_sse_tail(b"abcdefgh", b""), b"abcdefgh".to_vec());
+    assert_eq!(
+        advance_sse_tail(SSE_STREAM_START_TAIL, b""),
+        SSE_STREAM_START_TAIL.to_vec()
+    );
 }
 
 #[test]
@@ -266,7 +270,7 @@ async fn no_interval_means_no_pings() {
 
 #[tokio::test(start_paused = true)]
 async fn messages_stream_pings_the_gap() {
-    let rig = Rig::new(HookConfig::default());
+    let rig = Rig::new(HookConfig::plain());
     let mut body = rig.generator.messages_stream(pending_call(), None);
     let first = body.next().await.expect("ping").expect("ok");
     assert_eq!(text_of(first), ANTHROPIC_PING_CHUNK);
