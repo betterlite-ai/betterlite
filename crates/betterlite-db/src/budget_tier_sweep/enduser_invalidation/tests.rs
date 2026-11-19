@@ -183,6 +183,39 @@ async fn unlinked_customers_join_only_when_the_default_tier_expires() {
 }
 
 #[tokio::test]
+async fn the_default_tier_service_walk_reaches_unlinked_customers() {
+    let (fixture, store, client) = schema().await;
+    insert_tier(&client, "tier-a", Some("1d"), Some(past())).await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('unlinked', NULL, 10)",
+        )
+        .await
+        .unwrap();
+    let mut harness = Harness::new(
+        store.clone(),
+        TestSchedule::fixed(moment(30)),
+        RecordingCache::default(),
+        CountingReconnect::new(true),
+    );
+    harness.default_enduser_budget_id = Some(String::from("tier-a"));
+    harness.run().await;
+    let keys: Vec<String> = harness
+        .cache
+        .calls()
+        .into_iter()
+        .filter(|call| call.sink == InvalidatedCache::SpendCounter)
+        .flat_map(|call| call.keys)
+        .collect();
+    assert!(keys.contains(&String::from("spend:end_user:unlinked")));
+    assert_eq!(
+        spend_of(&client, "LiteLLM_EndUserTable", "user_id", "unlinked").await,
+        Decimal::ZERO
+    );
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
 async fn enduser_caches_drop_after_the_non_enduser_ones_and_the_commit() {
     let (fixture, store, client) = schema().await;
     insert_tier(&client, "tier-a", Some("1d"), Some(past())).await;
