@@ -79,7 +79,7 @@ pub(super) async fn process_ended<G>(
     guardrail: &G,
     context: &StreamContext<'_>,
     logging_obj: Option<&mut GuardrailLogTarget>,
-    mut request_data: Option<&mut Object>,
+    request_data: Option<&mut Object>,
 ) -> Result<(), ProcessStreamError>
 where
     G: GuardrailContract,
@@ -97,7 +97,7 @@ where
     let original_text = message.content.clone();
     let response_value: GuardrailValue = convert(chat)?;
     let mut fresh = Object::new();
-    let prepared = request_data.as_deref_mut().unwrap_or(&mut fresh);
+    let prepared = request_data.unwrap_or(&mut fresh);
     prepare_request_data(
         prepared,
         response_value.clone(),

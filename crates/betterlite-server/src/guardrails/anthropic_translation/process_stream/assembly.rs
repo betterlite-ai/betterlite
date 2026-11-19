@@ -91,7 +91,7 @@ fn raw_chunk(chunk: &SseChunk) -> Result<RawSseChunk, ProcessStreamError> {
     }
 }
 
-fn convert_failure(source: serde_json::Error) -> ConvertError<ConvertFailure> {
+const fn convert_failure(source: serde_json::Error) -> ConvertError<ConvertFailure> {
     ConvertError::Failed {
         source: ConvertFailure::Json(source),
     }

@@ -94,7 +94,7 @@ pub(super) async fn process_unended<G>(
     guardrail: &G,
     context: &StreamContext<'_>,
     logging_obj: Option<&mut GuardrailLogTarget>,
-    mut request_data: Option<&mut Object>,
+    request_data: Option<&mut Object>,
 ) -> Result<(), ProcessStreamError>
 where
     G: GuardrailContract,
@@ -103,7 +103,7 @@ where
     let responses_value = GuardrailValue::Array(responses_so_far.iter().map(chunk_value).collect());
     let inputs = text_inputs(&string_so_far);
     let mut fresh = Object::new();
-    let prepared = request_data.as_deref_mut().unwrap_or(&mut fresh);
+    let prepared = request_data.unwrap_or(&mut fresh);
     prepare_request_data(
         prepared,
         responses_value,

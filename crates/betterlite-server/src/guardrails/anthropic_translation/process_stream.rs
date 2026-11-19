@@ -7,7 +7,8 @@
     test,
     expect(
         clippy::default_numeric_fallback,
-        reason = "the tests compare provider JSON numbers with plain integer literals"
+        clippy::disallowed_methods,
+        reason = "the tests compare provider JSON numbers with plain integer literals and build it with json!, whose expansion calls Into::into"
     )
 )]
 
@@ -34,7 +35,7 @@ struct StreamContext<'ctx> {
 
 // ast-grep-ignore: no-long-names
 pub async fn process_output_streaming_response<G>(
-    responses_so_far: &mut Vec<SseChunk>,
+    responses_so_far: &mut [SseChunk],
     guardrail: &G,
     guardrail_name: Option<&str>,
     logging_obj: Option<&mut GuardrailLogTarget>,

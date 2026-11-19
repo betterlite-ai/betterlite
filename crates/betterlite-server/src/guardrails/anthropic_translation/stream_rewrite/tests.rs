@@ -106,7 +106,7 @@ fn text_rewrite_leaves_an_event_without_the_section_it_rewrites() {
     let missing: Value =
         serde_json::from_str("{\"index\": 0, \"type\": \"content_block_start\"}").unwrap();
     let mut rewriter = EventRewriter::ToolUse {
-        rewrites_by_block: [(0_i64, shape(Some("search"), "{}"))].into_iter().collect(),
+        rewrites_by_block: std::iter::once((0_i64, shape(Some("search"), "{}"))).collect(),
         arguments_sent: BTreeSet::new(),
     };
     assert_eq!(
@@ -344,7 +344,7 @@ fn replays_the_anthropic_stream_rewrite_corpus(
     let output = str::from_utf8(&rewritten).unwrap();
     assert_eq!(line_counts(decoded), line_counts(output));
     let mut tools = EventRewriter::ToolUse {
-        rewrites_by_block: [(0_i64, shape(Some("name"), "{}"))].into_iter().collect(),
+        rewrites_by_block: std::iter::once((0_i64, shape(Some("name"), "{}"))).collect(),
         arguments_sent: BTreeSet::new(),
     };
     let tool_output = rewrite_sse_events(&source, &mut tools);

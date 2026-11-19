@@ -22,8 +22,8 @@ fn chunks(parts: &[&str]) -> Vec<SseChunk> {
 
 fn request(value: Option<Value>) -> BTreeMap<String, GuardrailValue> {
     let mut data = BTreeMap::new();
-    if let Some(value) = value {
-        data.insert("model".to_owned(), serde_json::from_value(value).unwrap());
+    if let Some(model) = value {
+        data.insert("model".to_owned(), serde_json::from_value(model).unwrap());
     }
     data
 }
