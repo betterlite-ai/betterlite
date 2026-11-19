@@ -101,10 +101,29 @@ struct ScenarioView {
     client_close: Option<u16>,
     runtime_closed: bool,
     input_closed: bool,
+    #[serde(flatten)]
+    seam: SeamView,
+    #[serde(flatten)]
+    scope: ScopeView,
+    #[serde(flatten)]
+    outcome: OutcomeView,
+}
+
+// Both are set at the one seam where the frozen identity and the injected runtime meet
+#[derive(Debug, Serialize)]
+struct SeamView {
     resolver_static: bool,
     transport_injected: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ScopeView {
     committed: bool,
     failure_set: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct OutcomeView {
     success_flag: bool,
     outcome: &'static str,
     error_kind: Option<&'static str>,
@@ -264,15 +283,20 @@ fn scenario_view(
         client_close: client.close_code(),
         runtime_closed: recorded.runtime_closed(),
         input_closed: recorded.input_closed(),
-        // Both are set at the one seam where the frozen identity and the injected runtime meet
-        resolver_static: configured,
-        transport_injected: configured,
-        committed: matches!(scope.session_committed, Json::Bool(true)),
-        failure_set: !matches!(scope.committed_failure, Json::Null),
-        success_flag: logging.success_logged(),
-        outcome,
-        error_kind,
-        status_code,
+        seam: SeamView {
+            resolver_static: configured,
+            transport_injected: configured,
+        },
+        scope: ScopeView {
+            committed: matches!(scope.session_committed, Json::Bool(true)),
+            failure_set: !matches!(scope.committed_failure, Json::Null),
+        },
+        outcome: OutcomeView {
+            success_flag: logging.success_logged(),
+            outcome,
+            error_kind,
+            status_code,
+        },
     }
 }
 
