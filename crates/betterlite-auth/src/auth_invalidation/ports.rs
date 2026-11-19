@@ -11,7 +11,7 @@ use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 
 use super::error::InvalidationError;
-use crate::auth_cache::backend::AuthCacheTier;
+use crate::auth_cache::backend::AuthCacheTier as _;
 use crate::auth_cache::{AuthCache, WriteOptions, WriteTtl};
 
 // a Redis handle's identity: the usage and spend caches share one when their Arcs point at the same cache
@@ -123,10 +123,7 @@ where
     // deleting from Redis needs a live Redis cache, and without one this delete is already a no-op
     #[cfg_attr(test, mutants::skip)]
     fn delete_redis(&self, key: &str) -> Result<(), RedisAdminError> {
-        match redis_of(self.tier(key)) {
-            Some(redis) => redis.admin.delete_cache(key),
-            None => Ok(()),
-        }
+        redis_of(self.tier(key)).map_or_else(|| Ok(()), |redis| redis.admin.delete_cache(key))
     }
 }
 
@@ -211,11 +208,8 @@ where
 // a marker needs a live Redis cache, and without one this answer and None are the same
 #[cfg_attr(test, mutants::skip)]
 fn marker_of(redis: Option<Arc<RedisCache>>) -> Option<Arc<dyn RedisMarker>> {
-    match redis {
-        Some(handle) => {
-            let marker: Arc<dyn RedisMarker> = handle;
-            Some(marker)
-        }
-        None => None,
-    }
+    redis.map(|handle| {
+        let marker: Arc<dyn RedisMarker> = handle;
+        marker
+    })
 }

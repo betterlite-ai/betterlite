@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::auth_pubsub::endpoint::AuthPubSub;
 use crate::auth_pubsub::eviction::LocalEviction;
 use crate::auth_pubsub::message::Invalidation;
-use crate::auth_pubsub::publish::PublishTasks;
+use crate::auth_pubsub::publish::{PublishTasks, evict_and_broadcast, publish_invalidation};
 
 #[async_trait]
 pub trait InvalidationTransport: Send + Sync {
@@ -29,21 +29,10 @@ where
             new_value,
             ttl,
         };
-        crate::auth_pubsub::publish::publish_invalidation(
-            &self.tasks,
-            self.endpoint.as_ref(),
-            &invalidation,
-        )
-        .await;
+        publish_invalidation(&self.tasks, self.endpoint.as_ref(), &invalidation).await;
     }
 
     async fn evict_and_broadcast(&self, cache_keys: &[String], local: &dyn LocalEviction) {
-        crate::auth_pubsub::publish::evict_and_broadcast(
-            cache_keys,
-            local,
-            &self.tasks,
-            self.endpoint.as_ref(),
-        )
-        .await;
+        evict_and_broadcast(cache_keys, local, &self.tasks, self.endpoint.as_ref()).await;
     }
 }
