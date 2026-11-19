@@ -132,6 +132,10 @@ class ProviderFake:
         return (script["local"], script["provider"], None, script["api_base"])
 
 
+class BridgeError(RuntimeError):
+    pass
+
+
 class BridgeFake:
     def __init__(self, *, script: BridgeScript, record: list[JsonValue]) -> None:
         self.script = script
@@ -161,7 +165,7 @@ class BridgeFake:
             }
         )
         if self.script["fails"]:
-            raise RuntimeError("the bridge policy fails")
+            raise BridgeError("the responses bridge policy failed")
         mode = self.script["mode"]
         info: dict[str, JsonValue] = {}
         if mode is not None:
