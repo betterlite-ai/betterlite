@@ -18,7 +18,7 @@ const DELETED_ROW: &str = r#"{"team_id": "team-gone", "team_alias": "gone", "del
 
 #[test]
 fn list_live_deleted_enriched_union() {
-    let enriched = TeamListItem::from_value(&parse(ENRICHED_ROW)).unwrap();
+    let enriched = TeamListItem::try_from(&parse(ENRICHED_ROW)).unwrap();
     assert_eq!(enriched.team.fields.base.team_id, "team-live");
     assert_eq!(enriched.members_count, 3);
     assert_eq!(enriched.keys_count, 2);
@@ -122,21 +122,21 @@ fn list_live_deleted_enriched_union() {
 
 #[test]
 fn list_count_defaults() {
-    let bare = TeamListItem::from_value(&parse(r#"{"team_id": "t"}"#)).unwrap();
+    let bare = TeamListItem::try_from(&parse(r#"{"team_id": "t"}"#)).unwrap();
     assert_eq!(bare.members_count, 0);
     assert_eq!(bare.keys_count, 0);
     assert_eq!(bare.access_group_models, None);
     assert_eq!(bare.access_group_mcp_server_ids, None);
     assert_eq!(bare.access_group_agent_ids, None);
-    let explicit = TeamListItem::from_value(&parse(
+    let explicit = TeamListItem::try_from(&parse(
         r#"{"team_id": "t", "members_count": -2, "keys_count": 8, "access_group_models": null}"#,
     ))
     .unwrap();
     assert_eq!(explicit.members_count, -2);
     assert_eq!(explicit.keys_count, 8);
     assert_eq!(explicit.access_group_models, None);
-    assert!(TeamListItem::from_value(&parse(r#"{"team_alias": "t"}"#)).is_err());
-    assert!(TeamListItem::from_value(&parse(r#"{"team_id": "t", "members_count": 1.5}"#)).is_err());
+    assert!(TeamListItem::try_from(&parse(r#"{"team_alias": "t"}"#)).is_err());
+    assert!(TeamListItem::try_from(&parse(r#"{"team_id": "t", "members_count": 1.5}"#)).is_err());
 
     let boolean_count =
         TeamListEntry::from_value(&parse(r#"{"team_id": "t", "keys_count": true}"#));

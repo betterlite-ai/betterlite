@@ -28,8 +28,10 @@ struct TeamListCounts {
     access_group_agent_ids: Option<Vec<String>>,
 }
 
-impl TeamListItem {
-    pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
+impl TryFrom<&JsonData> for TeamListItem {
+    type Error = TeamContractError;
+
+    fn try_from(value: &JsonData) -> Result<Self, Self::Error> {
         let counts: TeamListCounts = decode_request(value)?;
         let team = LiteLLMTeamTable::try_from(value.clone())?;
         Ok(Self {
@@ -80,7 +82,7 @@ impl TeamListEntry {
             .filter(|key| fields.contains_key(**key))
             .count();
         match (
-            TeamListItem::from_value(value),
+            TeamListItem::try_from(value),
             LiteLLMDeletedTeamTable::try_from(value.clone()),
         ) {
             (Ok(item), Ok(row)) => {
