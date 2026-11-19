@@ -107,35 +107,35 @@ struct Recorder {
 }
 
 impl Recorder {
-    fn finish(&self, entry: Value) -> Result<(), PrePostError> {
+    fn push(&self, event: Value) {
         self.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(entry);
-        if self.failing_callback {
-            return Err(PrePostError::CallbackFailed {
-                message: "callback exploded".to_owned(),
-            });
-        }
-        Ok(())
+            .push(event);
+    }
+
+    fn finish(&self, entry: Value) -> Result<(), PrePostError> {
+        self.push(entry);
+        callback_result(self.failing_callback, "callback exploded")
     }
 
     fn log_fn(&self, details: &Json) -> Result<(), PrePostError> {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(serde_json::json!({
-                "kind": "logger_fn",
-                "log_event_type": detail(details, "log_event_type"),
-                "input": detail(details, "input"),
-            }));
-        if self.failing_logger_fn {
-            return Err(PrePostError::CallbackFailed {
-                message: "logger_fn exploded".to_owned(),
-            });
-        }
-        Ok(())
+        self.push(serde_json::json!({
+            "kind": "logger_fn",
+            "log_event_type": detail(details, "log_event_type"),
+            "input": detail(details, "input"),
+        }));
+        callback_result(self.failing_logger_fn, "logger_fn exploded")
     }
+}
+
+fn callback_result(failing: bool, message: &str) -> Result<(), PrePostError> {
+    if !failing {
+        return Ok(());
+    }
+    Err(PrePostError::CallbackFailed {
+        message: message.to_owned(),
+    })
 }
 
 fn detail(details: &Json, name: &str) -> Json {
@@ -152,14 +152,11 @@ impl LogSink for Recorder {
             LogLevel::Warning => "warning",
             LogLevel::Error => "error",
         };
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(serde_json::json!({
-                "kind": "log",
-                "level": level,
-                "message": record.message,
-            }));
+        self.push(serde_json::json!({
+            "kind": "log",
+            "level": level,
+            "message": record.message,
+        }));
     }
 }
 
