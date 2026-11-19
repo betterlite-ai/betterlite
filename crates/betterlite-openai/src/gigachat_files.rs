@@ -3,9 +3,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use base64::Engine as _;
-use base64::alphabet;
-use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -21,27 +18,20 @@ use url::Url;
 
 use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
 use crate::gigachat_chat::error::GigaChatError;
+use crate::gigachat_files::data_url::{decode_payload, extension_of, parse_data_url};
 use crate::gigachat_utils::{IdSource, get_api_base};
 
+mod data_url;
 mod tests;
 
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
-const BASE64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const DATA_URL_PREFIX: &str = "data:";
 const DEFAULT_CONTENT_TYPE: &str = "image/jpeg";
-const DEFAULT_EXTENSION: &str = "jpg";
 const FILE_FIELD: &str = "file";
 const FILES_SUFFIX: &str = "/files";
 const PURPOSE_FIELD: &str = "purpose";
 const PURPOSE_VALUE: &str = "general";
-
-// Python's b64decode keeps nonzero trailing bits and requires canonical padding, which we add
-const DATA_URL_BASE64: GeneralPurpose = GeneralPurpose::new(
-    &alphabet::STANDARD,
-    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
-);
 
 // download must skip certificate checks and follow redirects like LiteLLM's client; upload must verify certificates
 pub trait GigachatFileTransport: Send + Sync {
@@ -284,59 +274,4 @@ struct Image {
     content_type: String,
     extension: String,
     data: Vec<u8>,
-}
-
-struct DataUrl<'text> {
-    content_type: &'text str,
-    payload: &'text str,
-}
-
-fn extension_of(content_type: &str) -> String {
-    let subtype = content_type.rsplit('/').next().unwrap_or_default();
-    let extension = subtype.split(';').next().unwrap_or_default();
-    if extension.is_empty() {
-        String::from(DEFAULT_EXTENSION)
-    } else {
-        extension.to_owned()
-    }
-}
-
-fn parse_data_url(text: &str) -> Option<DataUrl<'_>> {
-    let rest = text.strip_prefix(DATA_URL_PREFIX)?;
-    let (content_type, tail) = rest.split_once(';')?;
-    if content_type.is_empty() {
-        return None;
-    }
-    let payload = tail.strip_prefix("base64,")?.split('\n').next()?;
-    if payload.is_empty() {
-        return None;
-    }
-    Some(DataUrl {
-        content_type,
-        payload,
-    })
-}
-
-// Python's b64decode discards characters outside the alphabet and accepts extra '=' padding
-fn decode_payload(payload: &str) -> Option<Vec<u8>> {
-    if !payload.is_ascii() {
-        return None;
-    }
-    let filtered: String = payload
-        .bytes()
-        .filter(|byte| BASE64_ALPHABET.contains(byte) || *byte == b'=')
-        .map(char::from)
-        .collect();
-    let (data, padded) = match filtered.split_once('=') {
-        Some((data, rest)) if rest.bytes().all(|byte| byte == b'=') => (data, true),
-        Some(_) => return None,
-        None => (filtered.as_str(), false),
-    };
-    let remainder = data.len() % 4;
-    if remainder != 0 && !padded {
-        return None;
-    }
-    let mut canonical = String::from(data);
-    canonical.push_str(&"=".repeat((4 - remainder) % 4));
-    DATA_URL_BASE64.decode(canonical).ok()
 }
