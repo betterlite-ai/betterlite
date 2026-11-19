@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -11,47 +13,39 @@ use super::support::{
     selection, service, tiers, tpm_window, usage_tier, values,
 };
 
-pub(super) async fn run(name: &str) {
-    match name {
-        "lowest_absolute_tpm_wins" => lowest_absolute_tpm_wins(),
-        "a_tie_keeps_pool_order" => a_tie_keeps_pool_order(),
-        "a_missing_counter_counts_as_zero" => a_missing_counter_counts_as_zero(),
-        "an_explicit_zero_limit_admits_no_tokens" => an_explicit_zero_limit_admits_no_tokens(),
-        "the_tpm_boundary_excludes_the_sum_past_the_limit" => {
-            the_tpm_boundary_excludes_the_sum_past_the_limit();
-        }
-        "the_rpm_boundary_rejects_the_request_that_reaches_it" => {
-            the_rpm_boundary_rejects_the_request_that_reaches_it();
-        }
-        "an_unread_rpm_counter_does_not_screen" => an_unread_rpm_counter_does_not_screen(),
-        "the_limit_folds_from_the_deployment_first" => the_limit_folds_from_the_deployment_first(),
-        "the_limit_folds_through_litellm_params" => the_limit_folds_through_litellm_params(),
-        "a_null_limit_falls_through" => a_null_limit_falls_through(),
-        "a_limit_from_model_info_is_used" => a_limit_from_model_info_is_used(),
-        "a_repeated_id_keeps_its_place_and_its_last_deployment" => {
-            a_repeated_id_keeps_its_place_and_its_last_deployment();
-        }
-        "an_id_with_a_colon_keeps_its_counter" => an_id_with_a_colon_keeps_its_counter().await,
-        "a_value_of_another_kind_is_unknown" => a_value_of_another_kind_is_unknown(),
-        "a_failed_read_answers_the_cold_pick" => a_failed_read_answers_the_cold_pick().await,
-        "the_async_facade_reads_the_pool_in_one_batch" => {
-            the_async_facade_reads_the_pool_in_one_batch().await;
-        }
-        "the_async_facade_uses_the_request_prefetch" => {
-            the_async_facade_uses_the_request_prefetch().await;
-        }
-        "the_sync_facade_reads_the_local_tier" => the_sync_facade_reads_the_local_tier(),
-        "the_sync_facade_without_a_tier_sees_no_counters" => {
-            the_sync_facade_without_a_tier_sees_no_counters();
-        }
-        "the_async_facade_without_a_usage_tier_sees_no_counters" => {
-            the_async_facade_without_a_usage_tier_sees_no_counters().await;
-        }
-        "the_counter_read_returns_after_the_local_entry_expires" => {
-            the_counter_read_returns_after_the_local_entry_expires().await;
-        }
-        other => panic!("unknown case {other}"),
-    }
+type CaseFuture = Pin<Box<dyn Future<Output = ()>>>;
+type Case = fn() -> CaseFuture;
+
+#[rustfmt::skip]
+const CASES: &[(&str, Case)] = &[
+    ("lowest_absolute_tpm_wins", || Box::pin(async { lowest_absolute_tpm_wins() })),
+    ("a_tie_keeps_pool_order", || Box::pin(async { a_tie_keeps_pool_order() })),
+    ("a_missing_counter_counts_as_zero", || Box::pin(async { a_missing_counter_counts_as_zero() })),
+    ("an_explicit_zero_limit_admits_no_tokens", || Box::pin(async { an_explicit_zero_limit_admits_no_tokens() })),
+    ("the_tpm_boundary_excludes_the_sum_past_the_limit", || Box::pin(async { the_tpm_boundary_excludes_the_sum_past_the_limit() })),
+    ("the_rpm_boundary_rejects_the_request_that_reaches_it", || Box::pin(async { the_rpm_boundary_rejects_the_request_that_reaches_it() })),
+    ("an_unread_rpm_counter_does_not_screen", || Box::pin(async { an_unread_rpm_counter_does_not_screen() })),
+    ("the_limit_folds_from_the_deployment_first", || Box::pin(async { the_limit_folds_from_the_deployment_first() })),
+    ("the_limit_folds_through_litellm_params", || Box::pin(async { the_limit_folds_through_litellm_params() })),
+    ("a_null_limit_falls_through", || Box::pin(async { a_null_limit_falls_through() })),
+    ("a_limit_from_model_info_is_used", || Box::pin(async { a_limit_from_model_info_is_used() })),
+    ("a_repeated_id_keeps_its_place_and_its_last_deployment", || Box::pin(async { a_repeated_id_keeps_its_place_and_its_last_deployment() })),
+    ("an_id_with_a_colon_keeps_its_counter", || Box::pin(an_id_with_a_colon_keeps_its_counter())),
+    ("a_value_of_another_kind_is_unknown", || Box::pin(async { a_value_of_another_kind_is_unknown() })),
+    ("a_failed_read_answers_the_cold_pick", || Box::pin(a_failed_read_answers_the_cold_pick())),
+    ("the_async_facade_reads_the_pool_in_one_batch", || Box::pin(the_async_facade_reads_the_pool_in_one_batch())),
+    ("the_async_facade_uses_the_request_prefetch", || Box::pin(the_async_facade_uses_the_request_prefetch())),
+    ("the_sync_facade_reads_the_local_tier", || Box::pin(async { the_sync_facade_reads_the_local_tier() })),
+    ("the_sync_facade_without_a_tier_sees_no_counters", || Box::pin(async { the_sync_facade_without_a_tier_sees_no_counters() })),
+    ("the_async_facade_without_a_usage_tier_sees_no_counters", || Box::pin(the_async_facade_without_a_usage_tier_sees_no_counters())),
+    ("the_counter_read_returns_after_the_local_entry_expires", || Box::pin(the_counter_read_returns_after_the_local_entry_expires())),
+];
+
+pub(super) fn run(name: &str) -> CaseFuture {
+    let Some((_, case)) = CASES.iter().find(|(case_name, _)| *case_name == name) else {
+        panic!("unknown case {name}");
+    };
+    (*case)()
 }
 
 fn lowest_absolute_tpm_wins() {
@@ -195,8 +189,9 @@ fn the_limit_folds_through_litellm_params() {
 }
 
 fn a_null_limit_falls_through() {
+    // the null falls through to the litellm_params tpm of 4, which screens a; stopping at the null keeps it
     let pool = [
-        deployment("a", &[("tpm", number(100))], &[], &[("tpm", Json::Null)]),
+        deployment("a", &[("tpm", number(4))], &[], &[("tpm", Json::Null)]),
         plain("b"),
     ];
     let tpm = values(&[Some(5), Some(9)]);
@@ -204,7 +199,7 @@ fn a_null_limit_falls_through() {
     let picked = selection(&pool, Some(&tpm), Some(&rpm), 0)
         .choose(&mut first())
         .unwrap();
-    assert_eq!(picked, Some(0));
+    assert_eq!(picked, Some(1));
 }
 
 fn a_limit_from_model_info_is_used() {
@@ -261,7 +256,7 @@ fn a_repeated_id_keeps_its_place_and_its_last_deployment() {
 async fn an_id_with_a_colon_keeps_its_counter() {
     let pool = [plain("a:b"), plain("c")];
     let store = FakeStore::new(&[
-        (tpm_window("a:b").as_str(), 9),
+        (tpm_window("a:b").as_str(), 1),
         (tpm_window("c").as_str(), 5),
     ]);
     let clock = TestClock::new();
@@ -270,7 +265,7 @@ async fn an_id_with_a_colon_keeps_its_counter() {
         .select_async(&store, &tiers(&clock), &mut request, &mut first())
         .await
         .unwrap();
-    assert_eq!(picked, 1);
+    assert_eq!(picked, 0);
     let expected = vec![vec![
         tpm_window("a:b"),
         tpm_window("c"),

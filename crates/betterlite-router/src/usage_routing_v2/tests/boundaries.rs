@@ -21,6 +21,9 @@ pub(super) async fn run(name: &str) {
         "no_deployment_reports_every_loaded_deployment" => {
             no_deployment_reports_every_loaded_deployment().await;
         }
+        "the_async_facade_reports_the_same_pool" => {
+            the_async_facade_reports_the_same_pool().await;
+        }
         "the_error_counts_an_unread_pool_as_zero" => the_error_counts_an_unread_pool_as_zero(),
         "the_error_keeps_a_missing_value_missing" => the_error_keeps_a_missing_value_missing(),
         "the_error_carries_the_throttling_shape" => the_error_carries_the_throttling_shape(),
@@ -76,11 +79,14 @@ async fn no_deployment_reports_every_loaded_deployment() {
         },
     ];
     assert_eq!(reported.deployments, expected);
-    assert_eq!(
-        reported.to_string(),
-        "No deployments available for selected model. Passed model=gpt-4o. Deployments={'a': {'current_tpm': 5, 'tpm_limit': 10, 'current_rpm': 1, 'rpm_limit': 2}, 'b': {'current_tpm': 2, 'tpm_limit': 1, 'current_rpm': None, 'rpm_limit': inf}}"
-    );
-    // the async facade reads the same counters from its store and reports the same pool
+}
+
+// the async facade reads the same counters from its store and reports the same pool, message included
+async fn the_async_facade_reports_the_same_pool() {
+    let pool = [
+        deployment("a", &[("tpm", number(10)), ("rpm", number(2))], &[], &[]),
+        deployment("b", &[("tpm", number(1))], &[], &[]),
+    ];
     let store = FakeStore::new(&[
         (tpm_window("a").as_str(), 5),
         (tpm_window("b").as_str(), 2),
@@ -92,10 +98,19 @@ async fn no_deployment_reports_every_loaded_deployment() {
         .select_async(&store, &tiers(&clock), &mut request, &mut first())
         .await
         .unwrap_err();
-    let SelectionError::NoDeployment(async_reported) = failed else {
+    let SelectionError::NoDeployment(reported) = failed else {
         panic!("the async pool is past its limits: {failed:?}");
     };
-    assert_eq!(async_reported, reported);
+    let tpm = values(&[Some(5), Some(2)]);
+    let rpm = values(&[Some(1), None]);
+    let expected = selection(&pool, Some(&tpm), Some(&rpm), 6)
+        .no_deployment()
+        .unwrap();
+    assert_eq!(reported, expected);
+    assert_eq!(
+        reported.to_string(),
+        "No deployments available for selected model. Passed model=gpt-4o. Deployments={'a': {'current_tpm': 5, 'tpm_limit': 10, 'current_rpm': 1, 'rpm_limit': 2}, 'b': {'current_tpm': 2, 'tpm_limit': 1, 'current_rpm': None, 'rpm_limit': inf}}"
+    );
 }
 
 fn the_error_counts_an_unread_pool_as_zero() {

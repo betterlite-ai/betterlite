@@ -55,6 +55,7 @@ fn usage_routing_v2_behaviors(#[case] name: &str) {
 #[case::no_deployment_reports_every_loaded_deployment(
     "no_deployment_reports_every_loaded_deployment"
 )]
+#[case::the_async_facade_reports_the_same_pool("the_async_facade_reports_the_same_pool")]
 #[case::the_error_counts_an_unread_pool_as_zero("the_error_counts_an_unread_pool_as_zero")]
 #[case::the_error_keeps_a_missing_value_missing("the_error_keeps_a_missing_value_missing")]
 #[case::the_error_carries_the_throttling_shape("the_error_carries_the_throttling_shape")]
