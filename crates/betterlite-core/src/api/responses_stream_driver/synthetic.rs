@@ -133,41 +133,11 @@ impl<'stream> SyntheticStream<'stream> {
     }
 }
 
-fn is_completed(event: &Event) -> bool {
+pub(super) fn is_completed(event: &Event) -> bool {
     match event {
         ResponsesAPIStreamingResponse::Known(known) => {
             matches!(known.as_ref(), KnownResponseEvent::ResponseCompleted(_))
         }
         ResponsesAPIStreamingResponse::Generic(record) => record.r#type == "response.completed",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Event, is_completed};
-
-    fn decode(text: &str) -> Event {
-        serde_json::from_str(text).expect("the fixture event decodes")
-    }
-
-    #[test]
-    fn a_known_completed_event_is_terminal() {
-        assert!(is_completed(&decode(
-            r#"{"type":"response.completed","response":{"id":"resp_1","created_at":1,"object":"response","output":[]}}"#
-        )));
-    }
-
-    #[test]
-    fn a_generic_completed_event_is_terminal() {
-        assert!(is_completed(&decode(
-            r#"{"type":"response.completed","response":"not a response body"}"#
-        )));
-    }
-
-    #[test]
-    fn a_created_event_is_not_terminal() {
-        assert!(!is_completed(&decode(
-            r#"{"type":"response.created","response":{"id":"resp_1","created_at":1,"object":"response","output":[]}}"#
-        )));
     }
 }

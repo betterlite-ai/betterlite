@@ -21,7 +21,7 @@ pub fn body_stream(response: StreamResponse) -> BodyStream {
         .boxed()
 }
 
-fn classify(error: HttpError) -> TransportFailure {
+pub(super) fn classify(error: HttpError) -> TransportFailure {
     match timed_out(error) {
         HttpError::Request(source) => {
             TransportFailure::new(TransportKind::ReadError, source.to_string())
@@ -112,25 +112,5 @@ impl PayloadSource for StreamingSource {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use betterlite_http::error::HttpError;
-
-    use super::{TransportKind, classify};
-
-    #[test]
-    fn a_read_timeout_is_not_a_transport_read_error() {
-        let failure = classify(HttpError::Timeout);
-        assert_eq!(failure.kind, TransportKind::HttpError);
-    }
-
-    #[test]
-    fn a_body_too_large_failure_is_not_a_transport_read_error() {
-        let failure = classify(HttpError::TooLarge { limit: 8 });
-        assert_eq!(failure.kind, TransportKind::HttpError);
-        assert_eq!(failure.message, "the response body is larger than 8 bytes");
     }
 }
