@@ -240,10 +240,8 @@ pub(super) async fn per_user_set(input: &PerUserInput) -> Result<Value, Box<Help
 
 pub(super) async fn per_user_delete(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
-    let codec = support::codec();
-    call.cache
-        .backend
-        .seed(&call.key(), &(codec.encrypt)("token-value"));
+    let seed = (support::codec().encrypt)("token-value");
+    call.cache.backend.seed(&call.key(), &seed);
     call.cache.delete(&call.user_id, &call.server_id).await;
     Ok(json!({"token_after": call.stored().await}))
 }

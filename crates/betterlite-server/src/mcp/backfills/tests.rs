@@ -573,8 +573,17 @@ async fn flow_backfill_returns_nothing_for_an_empty_table() {
     assert!(log.flow_events().is_empty());
 }
 
-#[test]
-fn tracing_log_names_every_backfill_event() {
+#[rstest]
+#[case::ambiguous_server("server is ambiguous")]
+#[case::stamped_row("stamped row")]
+#[case::flow("authorization_code")]
+#[case::rule("per_user_tokens")]
+#[case::processed("processed oauth2 server rows")]
+#[case::heal_failed("could not heal server")]
+#[case::alias("idp-alias")]
+#[case::healed("the configured endpoints apply again")]
+#[case::heal_count("healed servers")]
+fn tracing_log_names_every_backfill_event(#[case] needle: &str) {
     let captured = CapturedBytes::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -606,19 +615,7 @@ fn tracing_log_names_every_backfill_event() {
     });
     log.event(BackfillEvent::IssuerHealedCount { healed: 2 });
     let text = captured.contents();
-    for needle in [
-        "server is ambiguous",
-        "stamped row",
-        "authorization_code",
-        "per_user_tokens",
-        "processed oauth2 server rows",
-        "could not heal server",
-        "idp-alias",
-        "the configured endpoints apply again",
-        "healed servers",
-    ] {
-        assert!(text.contains(needle), "missing {needle} in {text}");
-    }
+    assert!(text.contains(needle), "missing {needle} in {text}");
 }
 
 #[test]
