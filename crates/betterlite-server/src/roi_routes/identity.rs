@@ -54,14 +54,11 @@ pub(super) async fn update_identity_map(
     if payload.email.is_some() && new_email.is_empty() {
         return Err(RoiRoutesError::InvalidIdentity);
     }
+    let identity_map = &mut settings.identity_map;
     if payload.email.is_some() {
-        settings
-            .identity_map
-            .insert(payload.github_login, new_email);
+        identity_map.insert(payload.github_login, new_email);
     } else {
-        settings
-            .identity_map
-            .shift_remove(payload.github_login.as_str());
+        identity_map.shift_remove(payload.github_login.as_str());
     }
     save_settings(repository.as_ref(), &settings, &stored).await?;
     let stored_report = load_parameter::<ROIReport, _>(
