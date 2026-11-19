@@ -31,6 +31,7 @@ pub(super) async fn check() {
     supplied_retrieve().await;
     ignored_arguments().await;
     tokens().await;
+    static_token_wins().await;
     environment_token().await;
     provider_with_key().await;
     provider_alone().await;
@@ -149,6 +150,22 @@ async fn ignored_arguments() {
 async fn tokens() {
     let mut fixture = Fixture::new();
     fixture.params.azure_ad_token = Some(SecretString::from("params-token"));
+    let request = fixture.request();
+    let (api, transport) = harness(200, THREAD);
+    api.call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        transport.requests(),
+        vec![wire("GET", THREAD_URL, None, Auth::Bearer("params-token"))]
+    );
+}
+
+// A static token wins over a provider, which is only consulted when the call carries no token.
+async fn static_token_wins() {
+    let mut fixture = Fixture::new();
+    fixture.params.azure_ad_token = Some(SecretString::from("params-token"));
+    fixture.provider = Some(provider(Arc::new(FailingToken)));
     let request = fixture.request();
     let (api, transport) = harness(200, THREAD);
     api.call(&request, None, None, ThreadOperation::Retrieve("thread_1"))
