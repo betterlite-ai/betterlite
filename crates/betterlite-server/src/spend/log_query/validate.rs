@@ -5,10 +5,7 @@ use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use serde::Serialize;
 
 use super::scalars::NumericIssue;
-use super::sql;
-use super::{
-    CACHE_HIT_FILTER_PARAM, SORT_BY_PARAM, SORT_ORDER_PARAM, SPAN_TYPE_PARAM, SpendLogQuery,
-};
+use super::{CACHE_HIT_FILTER_PARAM, SORT_BY_PARAM, SORT_ORDER_PARAM, SPAN_TYPE_PARAM};
 
 const BAD_REQUEST_TYPE: &str = "bad_request";
 const BAD_REQUEST_CODE: &str = "400";
@@ -83,7 +80,7 @@ pub enum SortColumn {
 }
 
 impl SortColumn {
-    fn parse(value: &str) -> Option<Self> {
+    pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "spend" => Some(Self::Spend),
             "total_tokens" => Some(Self::TotalTokens),
@@ -104,7 +101,7 @@ pub enum SortDirection {
 }
 
 impl SortDirection {
-    fn parse(value: &str) -> Option<Self> {
+    pub(super) fn parse(value: &str) -> Option<Self> {
         match value.to_lowercase().as_str() {
             "asc" => Some(Self::Ascending),
             "desc" => Some(Self::Descending),
@@ -120,7 +117,7 @@ pub enum CacheHitFilter {
 }
 
 impl CacheHitFilter {
-    fn parse(value: &str) -> Option<Self> {
+    pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "hit" => Some(Self::Hit),
             "miss" => Some(Self::Miss),
@@ -197,47 +194,4 @@ fn proxy_envelope(message: String, error_type: WireField, parameter: WireField) 
         },
     };
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
-}
-
-impl SpendLogQuery {
-    #[must_use]
-    pub fn framework_issues(&self) -> Option<QueryIssues> {
-        if self.issues.is_empty() {
-            return None;
-        }
-        Some(QueryIssues {
-            issues: self.issues.clone(),
-        })
-    }
-
-    pub fn choices(&self) -> Result<SpendLogChoices, ChoiceError> {
-        let sort_column = SortColumn::parse(&self.choices.sort_by)
-            .ok_or_else(|| ChoiceError::SortBy(self.choices.sort_by.clone()))?;
-        let sort_direction = match &self.choices.sort_order {
-            Some(value) => {
-                SortDirection::parse(value).ok_or_else(|| ChoiceError::SortOrder(value.clone()))?
-            }
-            None => SortDirection::Descending,
-        };
-        let cache_hit = match &self.choices.cache_hit_filter {
-            Some(value) => Some(
-                CacheHitFilter::parse(value)
-                    .ok_or_else(|| ChoiceError::CacheHitFilter(value.clone()))?,
-            ),
-            None => None,
-        };
-        let span_condition = match &self.choices.span_type {
-            Some(value) => Some(
-                sql::span_type_sql_condition(Some(value.as_str()))
-                    .ok_or_else(|| ChoiceError::SpanType(value.clone()))?,
-            ),
-            None => None,
-        };
-        Ok(SpendLogChoices {
-            sort_column,
-            sort_direction,
-            cache_hit,
-            span_condition,
-        })
-    }
 }

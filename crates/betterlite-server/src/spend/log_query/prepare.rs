@@ -3,7 +3,11 @@ use chrono::{DateTime, Utc};
 
 use super::dates::{DateFormatError, DateFormats, parse_date};
 use super::filters::{EqualityColumn, EqualityFilter, MetadataFilter, SpendBounds};
-use super::validate::{proxy_bad_request, proxy_converted_http_error};
+use super::sql;
+use super::validate::{
+    CacheHitFilter, ChoiceError, QueryIssues, SortColumn, SortDirection, SpendLogChoices,
+    proxy_bad_request, proxy_converted_http_error,
+};
 use super::{DateWindowQuery, ScalarFilters, SpendLogQuery};
 
 const MISSING_DATES_MESSAGE: &str = "Start date and end date are required";
@@ -88,6 +92,45 @@ impl SpendLogQuery {
             equality: equality_filters(&self.filters),
             metadata: metadata_filters(&self.filters),
             spend: self.spend.clone(),
+        })
+    }
+
+    #[must_use]
+    pub fn framework_issues(&self) -> Option<QueryIssues> {
+        if self.issues.issues.is_empty() {
+            return None;
+        }
+        Some(self.issues.clone())
+    }
+
+    pub fn choices(&self) -> Result<SpendLogChoices, ChoiceError> {
+        let sort_column = SortColumn::parse(&self.choices.sort_by)
+            .ok_or_else(|| ChoiceError::SortBy(self.choices.sort_by.clone()))?;
+        let sort_direction = match &self.choices.sort_order {
+            Some(value) => {
+                SortDirection::parse(value).ok_or_else(|| ChoiceError::SortOrder(value.clone()))?
+            }
+            None => SortDirection::Descending,
+        };
+        let cache_hit = match &self.choices.cache_hit_filter {
+            Some(value) => Some(
+                CacheHitFilter::parse(value)
+                    .ok_or_else(|| ChoiceError::CacheHitFilter(value.clone()))?,
+            ),
+            None => None,
+        };
+        let span_condition = match &self.choices.span_type {
+            Some(value) => Some(
+                sql::span_type_sql_condition(Some(value.as_str()))
+                    .ok_or_else(|| ChoiceError::SpanType(value.clone()))?,
+            ),
+            None => None,
+        };
+        Ok(SpendLogChoices {
+            sort_column,
+            sort_direction,
+            cache_hit,
+            span_condition,
         })
     }
 }

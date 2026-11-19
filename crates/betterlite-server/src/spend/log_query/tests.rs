@@ -772,7 +772,8 @@ fn prepare_keeps_spend_bounds_inclusive() {
 
 #[rstest]
 fn replays_the_spend_log_query_corpus(#[files("fuzz/corpus/spend_log_query/*")] path: PathBuf) {
-    let raw = from_utf8(&fs::read(path).unwrap()).unwrap();
+    let bytes = fs::read(path).unwrap();
+    let raw = from_utf8(&bytes).unwrap();
     let query = decode(raw);
     drop(query.choices());
     drop(query.prepare(SpendLogRoute::Ui));

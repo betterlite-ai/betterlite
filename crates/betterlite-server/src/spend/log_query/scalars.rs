@@ -46,22 +46,33 @@ pub(crate) fn integer(text: &str) -> IntegerText {
         Some((whole, fraction)) => (whole, Some(fraction)),
         None => (unsigned, None),
     };
-    if let Some(fraction) = fraction
-        && (fraction.is_empty() || !fraction.bytes().all(|byte| byte == b'0'))
+    if let Some(fraction_digits) = fraction
+        && (fraction_digits.is_empty() || !fraction_digits.bytes().all(|byte| byte == b'0'))
     {
         return IntegerText::NotAnInteger;
     }
     let Some((magnitude, overflow)) = accumulate(whole) else {
         return IntegerText::NotAnInteger;
     };
-    signed_value(negative, magnitude, overflow)
+    if overflow {
+        return if negative {
+            IntegerText::Value(i64::MIN)
+        } else {
+            IntegerText::AboveSignedRange
+        };
+    }
+    IntegerText::Value(if negative {
+        0_i64.saturating_sub(magnitude)
+    } else {
+        magnitude
+    })
 }
 
 fn strip_sign(text: &str) -> (bool, &str) {
-    match text.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    if let Some(rest) = text.strip_prefix('-') {
+        return (true, rest);
     }
+    (false, text.strip_prefix('+').unwrap_or(text))
 }
 
 fn accumulate(digits: &str) -> Option<(i64, bool)> {
@@ -88,21 +99,6 @@ fn accumulate(digits: &str) -> Option<(i64, bool)> {
     after_digit.then_some((magnitude, overflow))
 }
 
-fn signed_value(negative: bool, magnitude: i64, overflow: bool) -> IntegerText {
-    if overflow {
-        return if negative {
-            IntegerText::Value(i64::MIN)
-        } else {
-            IntegerText::AboveSignedRange
-        };
-    }
-    if negative {
-        IntegerText::Value(0_i64.saturating_sub(magnitude))
-    } else {
-        IntegerText::Value(magnitude)
-    }
-}
-
 pub(crate) fn money(text: &str) -> Result<Decimal, NumericIssue> {
     let normalized = normalized_number(text)?;
     let value: f64 = normalized
@@ -125,9 +121,7 @@ fn normalized_number(text: &str) -> Result<String, NumericIssue> {
     while let Some(character) = characters.next() {
         if character == '_' {
             let between_digits = previous.is_some_and(|earlier| earlier.is_ascii_digit())
-                && characters
-                    .peek()
-                    .is_some_and(|later| later.is_ascii_digit());
+                && characters.peek().is_some_and(char::is_ascii_digit);
             if !between_digits {
                 return Err(NumericIssue::NotANumber);
             }

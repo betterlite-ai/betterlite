@@ -16,7 +16,7 @@ mod tests;
 
 use self::filters::SpendBounds;
 use self::scalars::{IntegerText, NumericIssue};
-use self::validate::QueryIssue;
+use self::validate::{QueryIssue, QueryIssues};
 
 const API_KEY_PARAM: &str = "api_key";
 const USER_ID_PARAM: &str = "user_id";
@@ -66,7 +66,7 @@ pub struct SpendLogQuery {
     pub spend: SpendBounds,
     pub choices: ChoiceQuery,
     pub flags: QueryFlags,
-    issues: Vec<QueryIssue>,
+    pub issues: QueryIssues,
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +132,7 @@ pub fn decode_spend_log_query(raw_query: Option<&str>) -> SpendLogQuery {
         spend,
         choices: decode_choices(&values),
         flags,
-        issues,
+        issues: QueryIssues { issues },
     }
 }
 
@@ -163,12 +163,11 @@ fn decode_dates(values: &BTreeMap<String, String>) -> DateWindowQuery {
 }
 
 fn decode_choices(values: &BTreeMap<String, String>) -> ChoiceQuery {
-    let sort_by = match values.get(SORT_BY_PARAM) {
-        Some(value) => value.clone(),
-        None => SORT_BY_DEFAULT.to_owned(),
-    };
     ChoiceQuery {
-        sort_by,
+        sort_by: values
+            .get(SORT_BY_PARAM)
+            .cloned()
+            .unwrap_or_else(|| SORT_BY_DEFAULT.to_owned()),
         sort_order: values.get(SORT_ORDER_PARAM).cloned(),
         cache_hit_filter: values.get(CACHE_HIT_FILTER_PARAM).cloned(),
         span_type: values.get(SPAN_TYPE_PARAM).cloned(),
@@ -241,10 +240,10 @@ fn decode_bounded_integer(
     let value = match scalars::integer(text) {
         IntegerText::Value(value) => value,
         IntegerText::AboveSignedRange => {
-            let issue = match bound.maximum {
-                Some(maximum) => QueryIssue::above_maximum(bound.name, maximum),
-                None => QueryIssue::parsing(bound.name, NumericIssue::NotAnInteger),
-            };
+            let issue = bound.maximum.map_or_else(
+                || QueryIssue::parsing(bound.name, NumericIssue::NotAnInteger),
+                |maximum| QueryIssue::above_maximum(bound.name, maximum),
+            );
             issues.push(issue);
             return bound.fallback;
         }
