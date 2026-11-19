@@ -439,6 +439,25 @@ fn native_messages_hosts_inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token(
     assert_eq!(headers.get("x-api-key"), None);
 }
 
+#[test]
+fn native_messages_hosts_inherited_hosts_keep_the_requested_api_base() {
+    let parameters = empty_parameters();
+    let messages: Vec<Json> = Vec::new();
+    let mut headers = header_map(&[]);
+    let request = EnvironmentRequest {
+        headers: &mut headers,
+        explicit_key: None,
+        environment_key: None,
+        global_key: None,
+        api_base: Some("https://tokenhub.test/v1"),
+        optional_params: &parameters,
+        messages: &messages,
+    };
+    let api_base = validate_inherited_environment(request, &settings(Some("anthropic-key"), None))
+        .expect("the anthropic key authenticates");
+    assert_eq!(api_base.as_deref(), Some("https://tokenhub.test/v1"));
+}
+
 fn settings(api_key: Option<&str>, auth_token: Option<&str>) -> AnthropicSettings {
     AnthropicSettings {
         api_key: api_key.map(secret),
