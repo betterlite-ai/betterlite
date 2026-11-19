@@ -15,7 +15,7 @@ pub struct Config {
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
-    pub sections: Sections,
+    pub sections: Box<Sections>,
 }
 
 #[derive(Debug, Clone)]
