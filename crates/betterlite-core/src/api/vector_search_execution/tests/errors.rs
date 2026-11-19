@@ -22,6 +22,8 @@ pub(super) enum ErrorCase {
     SyncTimeout,
     AsyncTimeout,
     Status,
+    BadRequest,
+    WrongType,
     Transport,
     Transform,
 }
@@ -36,7 +38,9 @@ pub(super) async fn errors_case(case: ErrorCase) {
     match case {
         ErrorCase::SyncTimeout => timeout_case(ClientKind::Sync).await,
         ErrorCase::AsyncTimeout => timeout_case(ClientKind::Asynchronous).await,
-        ErrorCase::Status => status_case().await,
+        ErrorCase::Status => status_case(429, "slow").await,
+        ErrorCase::BadRequest => status_case(400, "slow").await,
+        ErrorCase::WrongType => wrong_type_case().await,
         ErrorCase::Transport => provider_failure_case(FailureKind::Transport).await,
         ErrorCase::Transform => provider_failure_case(FailureKind::Transform).await,
     }
@@ -92,10 +96,10 @@ async fn timeout_case(mode: ClientKind) {
     assert!(std::error::Error::source(&error).is_none());
 }
 
-async fn status_case() {
+async fn status_case(status: u16, body: &str) {
     let events = Events::new();
     let wire = Wire::replying(
-        Reply::json(429, "slow")
+        Reply::json(status, body)
             .with_header("retry-after", "3")
             .with_header("content-type", "text/plain"),
         &events,
@@ -115,16 +119,16 @@ async fn status_case() {
         .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
         .await
     else {
-        panic!("a 429 is a provider error");
+        panic!("a non-2xx reply is a provider error");
     };
-    assert_masked_headers(&error);
+    assert_masked_headers(&error, status, body);
     assert_eq!(wire.requests().len(), 1);
 }
 
-fn assert_masked_headers(error: &BaseLlmException) {
-    assert_eq!(error.status_code, 429);
+fn assert_masked_headers(error: &BaseLlmException, status: u16, body: &str) {
+    assert_eq!(error.status_code, status);
     assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, "slow");
+    assert_eq!(error.message, body);
     assert_eq!(
         error.headers.get("retry-after"),
         Some(&Json::Text("3".to_owned()))
@@ -135,8 +139,34 @@ fn assert_masked_headers(error: &BaseLlmException) {
     );
     assert_eq!(
         error.headers.get("content-length"),
-        Some(&Json::Text("4".to_owned()))
+        Some(&Json::Text(body.len().to_string()))
     );
+}
+
+async fn wrong_type_case() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
+    let source = Source::new(wire.clone());
+    let deps = SearchDeps {
+        config: Arc::new(openai_search_config()),
+        source: &source,
+        supplied: None,
+    };
+    let litellm_params = params(r#"{"api_base":"http://mock.test/v1"}"#);
+    let query = SearchQuery::Text("a".to_owned());
+    let optional_params = params(r#"{"max_num_results":"2"}"#);
+    let call = error_call(&query, &optional_params, &litellm_params);
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    let Err(SearchError::Field { field, expected }) = fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
+        .await
+    else {
+        panic!("a string where an integer belongs fails the field");
+    };
+    assert_eq!(field, "max_num_results");
+    assert_eq!(expected, "an integer");
+    assert!(events.recorded().is_empty());
+    assert!(wire.requests().is_empty());
 }
 
 async fn provider_failure_case(kind: FailureKind) {
@@ -167,7 +197,10 @@ async fn provider_failure_case(kind: FailureKind) {
 fn wire_for(kind: FailureKind, events: &Events) -> Wire {
     match kind {
         FailureKind::Transport => Wire::failing(TransportError::Closed, events),
-        FailureKind::Transform => Wire::replying(Reply::json(200, "\"slow\""), events),
+        FailureKind::Transform => Wire::replying(
+            Reply::json(200, "\"slow\"").with_header("x-request-id", "req-1"),
+            events,
+        ),
     }
 }
 
@@ -189,6 +222,10 @@ fn assert_provider_failure(error: &BaseLlmException, kind: FailureKind) {
             assert_eq!(error.status_code, 200);
             assert!(!error.status_code_is_synthesized);
             assert!(error.message.contains("invalid type"));
+            assert_eq!(
+                error.headers.get("x-request-id"),
+                Some(&Json::Text("req-1".to_owned()))
+            );
         }
     }
 }

@@ -17,6 +17,7 @@ use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 pub(super) enum HeaderCase {
     CallerHeaders,
     BetaHeader,
+    GlobalKey,
     SuppliedClient,
     SuppliedMismatch,
     NullVerify,
@@ -31,6 +32,7 @@ pub(super) enum HeaderCase {
 #[rstest]
 #[case::caller_headers(HeaderCase::CallerHeaders)]
 #[case::beta_header(HeaderCase::BetaHeader)]
+#[case::global_key(HeaderCase::GlobalKey)]
 #[case::supplied_client(HeaderCase::SuppliedClient)]
 #[case::supplied_mismatch(HeaderCase::SuppliedMismatch)]
 #[case::null_verify(HeaderCase::NullVerify)]
@@ -49,6 +51,7 @@ async fn header_case(case: HeaderCase) {
     match case {
         HeaderCase::CallerHeaders => caller_headers_overwritten().await,
         HeaderCase::BetaHeader => beta_header_added().await,
+        HeaderCase::GlobalKey => global_key_used().await,
         HeaderCase::SuppliedClient => supplied_client_used().await,
         HeaderCase::SuppliedMismatch => supplied_mismatch().await,
         HeaderCase::NullVerify => null_verify_absent().await,
@@ -157,6 +160,32 @@ async fn beta_header_added() {
         .expect("the search succeeds");
     let sent = wire.requests();
     assert_eq!(sent_header(&sent[0], "openai-beta"), Some("assistants=v2"));
+}
+
+async fn global_key_used() {
+    let query = SearchQuery::Text("a".to_owned());
+    let optional_params = params("{}");
+    let litellm_params = params(r#"{"api_base":"http://mock.test/v1"}"#);
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
+    let source = Source::new(wire.clone());
+    let deps = SearchDeps {
+        config: Arc::new(openai_search_config()),
+        source: &source,
+        supplied: None,
+    };
+    let call = search_call(&query, &optional_params, &litellm_params, None);
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
+        .await
+        .expect("the search succeeds");
+    let sent = wire.requests();
+    assert_eq!(
+        sent_header(&sent[0], "authorization"),
+        Some("Bearer sk-global")
+    );
+    assert_pre_call_logged(&fixture, &events);
 }
 
 async fn supplied_client_used() {

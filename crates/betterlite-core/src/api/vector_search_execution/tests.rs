@@ -27,7 +27,12 @@ fn to_json<T: serde::Serialize>(value: &T) -> Json {
 fn openai_search_config() -> OpenAiSearchConfig {
     OpenAiSearchConfig::new(
         OpenAiCredentialsSettings::default(),
-        LiteLlmGlobals::default(),
+        LiteLlmGlobals {
+            api_base: None,
+            api_key: Some(SecretString::from("sk-global")),
+            openai_key: None,
+            organization: None,
+        },
         Some(SecretString::from("sk-env")),
         None,
     )
@@ -80,6 +85,8 @@ async fn direct_search_bypasses_http(#[case] case: direct::DirectCase) {
 #[case::sync_timeout(errors::ErrorCase::SyncTimeout)]
 #[case::async_timeout(errors::ErrorCase::AsyncTimeout)]
 #[case::status(errors::ErrorCase::Status)]
+#[case::bad_request(errors::ErrorCase::BadRequest)]
+#[case::wrong_type(errors::ErrorCase::WrongType)]
 #[case::transport(errors::ErrorCase::Transport)]
 #[case::transform(errors::ErrorCase::Transform)]
 #[tokio::test]

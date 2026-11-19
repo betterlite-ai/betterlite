@@ -507,13 +507,6 @@ impl QueryEmbeddingConfig for RecordingConfig {
     ) -> Result<PreparedSearch, SearchError> {
         Ok(self.record_query(&request))
     }
-
-    async fn atransform_query_search(
-        &self,
-        request: QuerySearchRequest<'_>,
-    ) -> Result<PreparedSearch, SearchError> {
-        Ok(self.record_query(&request))
-    }
 }
 
 impl RecordingConfig {
@@ -630,13 +623,6 @@ impl DirectStore {
 #[async_trait]
 impl DirectSearchConfig for DirectStore {
     fn execute_search_request(
-        &self,
-        request: DirectSearchRequest<'_>,
-    ) -> Result<VectorStoreSearchResponse, DirectFailure> {
-        self.answer(&request)
-    }
-
-    async fn aexecute_search_request(
         &self,
         request: DirectSearchRequest<'_>,
     ) -> Result<VectorStoreSearchResponse, DirectFailure> {
