@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 // The caller's own credential for the request; a non-empty one wins over everything the gateway holds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum McpAuthOverride {
     Text(SecretString),
     Headers(BTreeMap<String, SecretString>),
@@ -19,7 +19,7 @@ impl McpAuthOverride {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum McpAuthValue {
     Text(SecretString),
     Headers(BTreeMap<String, SecretString>),

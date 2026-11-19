@@ -12,11 +12,14 @@ use super::{
 
 type ClassifiedRow<'row> = (&'row FlowCandidateRow, FlowClassification);
 
-pub async fn backfill_null_oauth2_flows<T: FlowBackfillTable>(
+pub async fn backfill_null_oauth2_flows<T>(
     table: &T,
     cipher: &DbCipher,
     log: &dyn BackfillLog,
-) -> Result<BTreeMap<BackfillRule, usize>, T::Error> {
+) -> Result<BTreeMap<BackfillRule, usize>, T::Error>
+where
+    T: FlowBackfillTable,
+{
     let null_rows = table.null_flow_rows().await?;
     if null_rows.is_empty() {
         return Ok(BTreeMap::new());
@@ -33,11 +36,14 @@ pub async fn backfill_null_oauth2_flows<T: FlowBackfillTable>(
 }
 
 // Only an interactive sign-in mints a per-user token, so a readable oauth2 credential proves the interactive flow.
-async fn interactive_server_ids<T: FlowBackfillTable>(
+async fn interactive_server_ids<T>(
     table: &T,
     server_ids: &[String],
     cipher: &DbCipher,
-) -> Result<BTreeSet<String>, T::Error> {
+) -> Result<BTreeSet<String>, T::Error>
+where
+    T: FlowBackfillTable,
+{
     let token_rows = table.user_credentials(server_ids).await?;
     Ok(token_rows
         .iter()
@@ -66,7 +72,8 @@ fn classify_rows<'row>(
             token_url: row.token_url.as_deref(),
             credentials: credentials.as_ref(),
         });
-        *counts.entry(classification.rule).or_insert(0) += 1;
+        let count = counts.entry(classification.rule).or_insert(0);
+        *count = count.saturating_add(1);
         log.event(match classification.flow {
             Some(flow) => BackfillEvent::FlowStamped {
                 server_id: row.server_id.as_str(),
@@ -83,10 +90,10 @@ fn classify_rows<'row>(
 }
 
 // All rows of one flow are stamped in one batch, as LiteLLM's update_many does.
-async fn stamp_rows<T: FlowBackfillTable>(
-    table: &T,
-    classified: &[ClassifiedRow<'_>],
-) -> Result<(), T::Error> {
+async fn stamp_rows<T>(table: &T, classified: &[ClassifiedRow<'_>]) -> Result<(), T::Error>
+where
+    T: FlowBackfillTable,
+{
     let mut stamped_flows: Vec<OAuth2Flow> = Vec::new();
     for (_row, classification) in classified {
         if let Some(flow) = classification.flow

@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use async_trait::async_trait;
 
 use crate::mcp::outbound_credentials::{OAuthToken, PER_USER_TOKEN_KEY_PREFIX};
@@ -7,7 +9,7 @@ use super::MCPPerUserTokenCache;
 // The shared cache layer this store writes through; delete is the evict-and-broadcast path every peer worker observes.
 #[async_trait]
 pub trait PerUserTokenBackend: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     async fn get(&self, key: &str) -> Result<Option<String>, Self::Error>;
 

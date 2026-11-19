@@ -14,6 +14,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::mcp::outbound_credentials::WallClock;
 use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
@@ -39,7 +40,7 @@ pub struct MCPOAuth2TokenCache {
     poster: Arc<dyn M2mTokenEndpointPost>,
     clock: Arc<dyn WallClock>,
     entries: Mutex<IndexMap<String, (String, DateTime<Utc>)>>,
-    locks: Mutex<IndexMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    locks: Mutex<IndexMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 impl MCPOAuth2TokenCache {
@@ -151,7 +152,8 @@ impl MCPOAuth2TokenCache {
             .ok_or_else(|| OAuthCacheError::MissingAccessToken {
                 server_id: server_id.to_owned(),
             })?;
-        let ttl = (expires_in_seconds(body.expires_in.as_ref()) - OAUTH2_TOKEN_TTL_BUFFER)
+        let ttl = expires_in_seconds(body.expires_in.as_ref())
+            .saturating_sub(OAUTH2_TOKEN_TTL_BUFFER)
             .max(OAUTH2_TOKEN_CACHE_MIN_TTL);
         Ok((access_token.to_owned(), ttl))
     }
@@ -186,7 +188,7 @@ impl MCPOAuth2TokenCache {
     }
 
     // The lock map is capped, so a stream of distinct configs cannot grow it without bound.
-    fn lock_for(&self, identity: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn lock_for(&self, identity: &str) -> Arc<AsyncMutex<()>> {
         let mut locks = self.locks.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(existing) = locks.get(identity) {
             return Arc::clone(existing);
@@ -194,7 +196,7 @@ impl MCPOAuth2TokenCache {
         if locks.len() >= OAUTH2_TOKEN_CACHE_MAX_LOCKS {
             drop(locks.shift_remove_index(0));
         }
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let lock = Arc::new(AsyncMutex::new(()));
         drop(locks.insert(identity.to_owned(), Arc::clone(&lock)));
         lock
     }
@@ -207,7 +209,7 @@ pub struct MCPPerUserTokenCache<B: PerUserTokenBackend> {
 
 #[must_use]
 pub fn compute_per_user_token_ttl(server: &MCPServer, expires_in: Option<i64>) -> i64 {
-    let lifetime = expires_in.map(|value| value - PER_USER_TTL_BUFFER);
+    let lifetime = expires_in.map(|value| value.saturating_sub(PER_USER_TTL_BUFFER));
     match (server.fields.token_storage_ttl_seconds, lifetime) {
         (Some(configured), Some(bound)) => configured.min(bound).max(1),
         (Some(configured), None) => configured.max(1),
@@ -240,10 +242,10 @@ pub async fn resolve_mcp_auth(
 }
 
 #[must_use]
-pub fn resolved_token_header(
-    server: &MCPServer,
+pub fn resolved_token_header<'server>(
+    server: &'server MCPServer,
     mcp_auth_header: Option<&McpAuthOverride>,
-) -> Option<&str> {
+) -> Option<&'server str> {
     match mcp_auth_header {
         Some(header) if !header.is_empty() => None,
         Some(_) | None => server.fields.upstream_token_header.as_deref(),
@@ -255,5 +257,5 @@ fn client_secret(server: &MCPServer) -> Option<&str> {
         .fields
         .client_secret
         .as_ref()
-        .map(|credential| credential.0.0.expose_secret().as_str())
+        .map(|credential| credential.0.0.expose_secret())
 }

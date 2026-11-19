@@ -2,10 +2,10 @@ use super::log::{BackfillEvent, BackfillLog};
 use super::{IssuerBackfillTable, IssuerCandidateRow, is_stamped_issuer_row};
 
 // Per-row best effort: a row whose write fails is logged and retried at the next boot.
-pub async fn heal_stamped_issuers<T: IssuerBackfillTable>(
-    table: &T,
-    log: &dyn BackfillLog,
-) -> Result<usize, T::Error> {
+pub async fn heal_stamped_issuers<T>(table: &T, log: &dyn BackfillLog) -> Result<usize, T::Error>
+where
+    T: IssuerBackfillTable,
+{
     let candidates = table.discovery_stamped_rows().await?;
     let stamped: Vec<&IssuerCandidateRow> = candidates
         .iter()
@@ -18,7 +18,7 @@ pub async fn heal_stamped_issuers<T: IssuerBackfillTable>(
     for row in stamped {
         match table.clear_issuer(&row.server_id).await {
             Ok(()) => {
-                healed += 1;
+                healed = healed.saturating_add(1);
                 log.event(BackfillEvent::IssuerHealed {
                     server_id: row.server_id.as_str(),
                     issuer: row.issuer.as_deref().unwrap_or_default(),

@@ -3,6 +3,8 @@ pub mod issuer;
 pub mod log;
 mod tests;
 
+use std::error::Error;
+
 use async_trait::async_trait;
 use betterlite_db::mcp_server_encoding::credentials::{
     CredentialBlob, credentials_blob_to_dict, decrypt_credentials,
@@ -191,7 +193,7 @@ pub fn origin(url: &str) -> Option<String> {
 
 #[async_trait]
 pub trait FlowBackfillTable: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     async fn null_flow_rows(&self) -> Result<Vec<FlowCandidateRow>, Self::Error>;
 
@@ -206,7 +208,7 @@ pub trait FlowBackfillTable: Send + Sync {
 
 #[async_trait]
 pub trait IssuerBackfillTable: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     async fn discovery_stamped_rows(&self) -> Result<Vec<IssuerCandidateRow>, Self::Error>;
 

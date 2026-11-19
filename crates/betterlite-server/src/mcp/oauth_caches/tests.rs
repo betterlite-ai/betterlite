@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -8,6 +8,8 @@ use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTokenEndpointAuthMethod};
 use betterlite_mcp::server_record::{MCPServer, OAuth2Flow, SecretCredential};
 use chrono::{DateTime, TimeDelta, Utc};
+use futures_util::future::join_all;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::auth::{McpAuthOverride, McpAuthValue};
@@ -129,7 +131,9 @@ fn success(body: &str) -> TokenEndpointOutcome {
 }
 
 fn cache_with(post: &Arc<ScriptedPost>, clock: &Arc<ManualClock>) -> MCPOAuth2TokenCache {
-    MCPOAuth2TokenCache::new(Arc::clone(post), Arc::clone(clock))
+    let poster: Arc<dyn M2mTokenEndpointPost> = Arc::<ScriptedPost>::clone(post);
+    let wall_clock: Arc<dyn WallClock> = Arc::<ManualClock>::clone(clock);
+    MCPOAuth2TokenCache::new(poster, wall_clock)
 }
 
 #[test]
@@ -314,8 +318,7 @@ async fn async_get_token_fetches_once_for_concurrent_callers() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     let server = client_server();
-    let results =
-        futures_util::future::join_all((0..8).map(|_index| cache.async_get_token(&server))).await;
+    let results = join_all((0..8).map(|_index| cache.async_get_token(&server))).await;
     assert_eq!(post.calls().len(), 1);
     let tokens = results
         .into_iter()
@@ -438,7 +441,7 @@ async fn fetch_token_names_an_unusable_access_token() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     let server = client_server();
-    let errors = futures_util::future::join_all((0..3).map(|_index| cache.fetch_token(&server)))
+    let errors = join_all((0..3).map(|_index| cache.fetch_token(&server)))
         .await
         .into_iter()
         .map(|result| result.expect_err("the response has no usable access token"))
@@ -622,11 +625,16 @@ fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
 #[error("the fake backend failed")]
 struct FakeError;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Failure {
+    Get,
+    Set,
+    Delete,
+}
+
 struct FakeBackend {
     entries: Mutex<BTreeMap<String, String>>,
-    fail_get: bool,
-    fail_set: bool,
-    fail_delete: bool,
+    failures: BTreeSet<Failure>,
     set_calls: Mutex<Vec<(String, i64)>>,
     delete_calls: Mutex<Vec<String>>,
 }
@@ -635,9 +643,7 @@ impl FakeBackend {
     fn new() -> Self {
         Self {
             entries: Mutex::new(BTreeMap::new()),
-            fail_get: false,
-            fail_set: false,
-            fail_delete: false,
+            failures: BTreeSet::new(),
             set_calls: Mutex::new(Vec::new()),
             delete_calls: Mutex::new(Vec::new()),
         }
@@ -653,23 +659,9 @@ impl FakeBackend {
         backend
     }
 
-    fn failing_set() -> Self {
+    fn failing(failure: Failure) -> Self {
         Self {
-            fail_set: true,
-            ..Self::new()
-        }
-    }
-
-    fn failing_delete() -> Self {
-        Self {
-            fail_delete: true,
-            ..Self::new()
-        }
-    }
-
-    fn failing_get() -> Self {
-        Self {
-            fail_get: true,
+            failures: BTreeSet::from([failure]),
             ..Self::new()
         }
     }
@@ -688,14 +680,14 @@ impl PerUserTokenBackend for FakeBackend {
     type Error = FakeError;
 
     async fn get(&self, key: &str) -> Result<Option<String>, FakeError> {
-        if self.fail_get {
+        if self.failures.contains(&Failure::Get) {
             return Err(FakeError);
         }
         Ok(self.value(key))
     }
 
     async fn set(&self, key: &str, value: &str, ttl: i64) -> Result<(), FakeError> {
-        if self.fail_set {
+        if self.failures.contains(&Failure::Set) {
             return Err(FakeError);
         }
         self.set_calls
@@ -712,7 +704,7 @@ impl PerUserTokenBackend for FakeBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), FakeError> {
-        if self.fail_delete {
+        if self.failures.contains(&Failure::Delete) {
             return Err(FakeError);
         }
         self.delete_calls
@@ -794,7 +786,7 @@ async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
 #[tokio::test]
 async fn per_user_set_swallows_a_backend_failure() {
     let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::failing_set(),
+        backend: FakeBackend::failing(Failure::Set),
         codec: codec(),
     };
     cache.set("user-1", "srv-1", "tok", 60, None).await;
@@ -814,7 +806,7 @@ async fn per_user_get_token_reads_an_undecryptable_value_as_a_miss() {
 #[tokio::test]
 async fn per_user_get_token_swallows_a_backend_failure() {
     let cache = MCPPerUserTokenCache {
-        backend: FakeBackend::failing_get(),
+        backend: FakeBackend::failing(Failure::Get),
         codec: codec(),
     };
     assert_eq!(cache.get_token("user-1", "srv-1").await, None);
@@ -839,7 +831,7 @@ async fn per_user_delete_evicts_the_key_and_swallows_failures() {
         &["mcp:per_user_token:user-1:srv-1".to_owned()]
     );
     let failing = MCPPerUserTokenCache {
-        backend: FakeBackend::failing_delete(),
+        backend: FakeBackend::failing(Failure::Delete),
         codec: codec(),
     };
     failing.delete("user-1", "srv-1").await;
@@ -911,8 +903,8 @@ async fn resolve_mcp_auth_returns_a_header_map_override() {
             assert_eq!(
                 values
                     .get("x-api-key")
-                    .map(|value| value.expose_secret().as_str()),
-                Some("caller-key")
+                    .map(|value| value.expose_secret().to_owned()),
+                Some("caller-key".to_owned())
             );
         }
         Some(McpAuthValue::Text(_)) | None => panic!("the header override is returned as headers"),

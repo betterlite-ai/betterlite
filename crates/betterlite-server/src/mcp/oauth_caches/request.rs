@@ -96,8 +96,8 @@ pub(super) fn expires_in_seconds(raw: Option<&ExpiresIn>) -> i64 {
         Some(ExpiresIn::Flag(flag)) => i64::from(*flag),
         Some(ExpiresIn::Number(number)) => number
             .as_i64()
-            .or_else(|| number.as_f64().and_then(|value| i64::try_from(value).ok()))
+            .or_else(|| number.as_f64().and_then(num_traits::cast::<f64, i64>))
             .unwrap_or(OAUTH2_TOKEN_CACHE_DEFAULT_TTL),
-        Some(raw) => parse_expires_in(Some(raw)).unwrap_or(OAUTH2_TOKEN_CACHE_DEFAULT_TTL),
+        Some(other) => parse_expires_in(Some(other)).unwrap_or(OAUTH2_TOKEN_CACHE_DEFAULT_TTL),
     }
 }
