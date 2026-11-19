@@ -578,7 +578,7 @@ fn phoenix_proxy_mode_ignores_an_empty_proxy_request() {
     };
     params.insert(
         "proxy_server_request".to_owned(),
-        serde_json::from_str(r#"{}"#).expect("the empty proxy request"),
+        serde_json::from_str("{}").expect("the empty proxy request"),
     );
     assert!(!is_proxy_request(&kwargs));
 }
