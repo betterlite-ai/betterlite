@@ -417,7 +417,7 @@ async fn agent_stored_names_win_and_blank_rows_keep_their_empty_label() {
     let registry = config_registry(&["alpha", "beta", "gamma"]);
     let agents = registry.get_agent_list(None);
     let alpha = agents.first().unwrap();
-    let beta = agents.get(1).unwrap();
+    let beta = &agents[1];
     let stable_alpha = alpha.agent_id.clone();
     let stable_beta = beta.agent_id.clone();
     let legacy_alpha = registry

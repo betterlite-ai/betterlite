@@ -133,9 +133,9 @@ impl DisplayNameStore for PrismaClient<'_> {
                 MCPServerTable,
             );
             let session = repository.access()?.read.session().await?;
-            let ids: Vec<String> = ids.into_iter().collect();
+            let requested: Vec<String> = ids.into_iter().collect();
             let rows = session
-                .query(MCP_SERVER_NAMES_SQL, &[&ids])
+                .query(MCP_SERVER_NAMES_SQL, &[&requested])
                 .await
                 .map_err(|source| TableError::Database(backend(source)))?;
             let mut names = BTreeMap::new();
@@ -171,9 +171,9 @@ impl DisplayNameStore for PrismaClient<'_> {
                 AgentsTable,
             );
             let session = repository.access()?.read.session().await?;
-            let ids: Vec<String> = ids.into_iter().collect();
+            let requested: Vec<String> = ids.into_iter().collect();
             let rows = session
-                .query(AGENT_NAMES_SQL, &[&ids])
+                .query(AGENT_NAMES_SQL, &[&requested])
                 .await
                 .map_err(|source| TableError::Database(backend(source)))?;
             let mut names = BTreeMap::new();
