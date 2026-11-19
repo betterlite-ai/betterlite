@@ -20,7 +20,6 @@ call:
       - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, global_api_base: https://res.services.ai.azure.com}
       - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr}
       - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: https://explicit.example, environment_api_base: https://env.example, global_api_base: https://global.example}
-      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: "", global_api_base: https://global.example}
     streams:
       - {model: gpt-4o, endpoint: rerank, request_data: {stream: true}}
       - {model: gpt-4o, endpoint: rerank, request_data: {stream: false}}

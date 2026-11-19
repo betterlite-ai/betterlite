@@ -198,7 +198,7 @@ def azure_env(values: dict[str, str]) -> Generator[None]:
 
 
 @contextmanager
-def litellm_globals(api_base: str | None, refresh_enabled: bool) -> Generator[None]:
+def litellm_globals(api_base: str | None, *, refresh_enabled: bool) -> Generator[None]:
     saved_base = litellm.api_base
     saved_refresh = litellm.enable_azure_ad_token_refresh
     litellm.api_base = api_base
@@ -210,7 +210,7 @@ def litellm_globals(api_base: str | None, refresh_enabled: bool) -> Generator[No
         litellm.enable_azure_ad_token_refresh = saved_refresh
 
 
-def make_logging(model: str, stream: bool) -> Logging:
+def make_logging(model: str, *, stream: bool) -> Logging:
     return Logging(
         model=model,
         messages=None,
@@ -277,7 +277,7 @@ def base_outcome(call: BaseCall) -> JsonValue:
     params = call.get("litellm_params")
     if params is None:
         params = {}
-    with azure_env(values), litellm_globals(call.get("global_api_base"), True):
+    with azure_env(values), litellm_globals(call.get("global_api_base"), refresh_enabled=True):
         try:
             url, root = CONFIG.get_complete_url(
                 api_base=call.get("api_base"),
@@ -302,7 +302,7 @@ def validation_outcome(call: ValidationCall) -> JsonValue:
     headers = call.get("headers")
     if headers is None:
         headers = {}
-    with azure_env(values), litellm_globals(None, False):
+    with azure_env(values), litellm_globals(None, refresh_enabled=False):
         try:
             answer = CONFIG.validate_environment(
                 headers=headers,
@@ -325,7 +325,7 @@ def nonstream_outcome(call: NonStreamCall) -> JsonValue:
     if ocr_call is not None:
         stub = OcrStub(ocr_call)
         config = AzureAIPassthroughConfig(passthrough_ocr=stub)
-    logging_obj = make_logging(call["model"], False)
+    logging_obj = make_logging(call["model"], stream=False)
     response = make_response(call)
     recorder = WarningRecorder()
     logger = logging.getLogger("LiteLLM")
@@ -374,7 +374,7 @@ def collected_outcome(call: CollectedCall) -> JsonValue:
     request_data = call.get("request_data")
     if request_data is None:
         request_data = {}
-    logging_obj = make_logging(call["model"], True)
+    logging_obj = make_logging(call["model"], stream=True)
     answer = CONFIG.handle_logging_collected_chunks(
         all_chunks=chunks,
         litellm_logging_obj=logging_obj,
