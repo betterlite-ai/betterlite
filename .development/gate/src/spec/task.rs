@@ -121,7 +121,7 @@ pub(crate) struct Budget {
     )]
     pub(crate) max_changed_lines: usize,
     #[schemars(
-        description = "New #[expect(...)] attributes plus new Python lines with a cast, type: ignore, pyright: ignore or noqa the task may add. A line in tools/oracle/helpers that links LiteLLM at the commit litellm.yaml pins is free."
+        description = "New #[expect(...)] attributes plus new Python lines with a cast, type: ignore, pyright: ignore or noqa the task may add. A line in tools/oracle/helpers or tools/oracle/sdk_http that links LiteLLM at the commit litellm.yaml pins is free."
     )]
     pub(crate) max_new_expects: usize,
 }

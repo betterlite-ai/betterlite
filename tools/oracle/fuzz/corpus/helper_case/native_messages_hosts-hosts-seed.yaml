@@ -1,0 +1,75 @@
+kind: helper
+name: native-messages-hosts-hosts-seed
+call:
+  native_messages_hosts:
+    calls:
+      - function: url
+        host: deepseek
+        api_bases: [null, "https://api.deepseek.com/beta"]
+        environment: {}
+      - function: url
+        host: tencent
+        api_bases: [null, "https://tokenhub.test/v1/chat/completions"]
+        environment: {}
+      - function: url
+        host: minimax
+        api_bases: [null, "https://api.minimaxi.com/anthropic/v1"]
+        environment: {}
+      - function: environment
+        host: deepseek
+        api_base: null
+        headers: {}
+        optional_params: {}
+        messages: []
+        explicit_api_key: "seed-key"
+        global_api_key: null
+        environment: {}
+      - function: environment
+        host: tencent
+        api_base: null
+        headers: {}
+        optional_params: {}
+        messages: []
+        explicit_api_key: "seed-key"
+        global_api_key: null
+        environment: {}
+      - function: environment
+        host: minimax
+        api_base: null
+        headers: {}
+        optional_params: {}
+        messages: []
+        explicit_api_key: "seed-key"
+        global_api_key: null
+        environment: {}
+      - function: transform
+        host: deepseek
+        model: deepseek-chat
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 16
+        system: null
+        tools:
+          - type: custom
+            name: run
+      - function: transform
+        host: tencent
+        model: hunyuan-t1
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 16
+        system: null
+        tools: null
+      - function: transform
+        host: minimax
+        model: MiniMax-M2.1
+        messages:
+          - role: user
+            content: hi
+        max_tokens: 16
+        system: null
+        tools: null
+env: {}
+compare: {ignore: []}

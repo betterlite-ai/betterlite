@@ -1,4 +1,4 @@
-mod assembly;
+pub(crate) mod assembly;
 pub mod constants;
 pub mod error;
 pub mod legacy;

@@ -14,7 +14,7 @@ description: >-
   and /end_user, /agent) register GET `{prefix}/daily/activity/aggregated` and GET
   `{prefix}/daily/activity/aggregated/search`. That makes 14 routes. /end_user is an alias of /customer that
   LiteLLM leaves out of /openapi.json; keep it out of the schema too, register it once, and answer exactly like
-  /customer. Each route is authenticated by B052 (the route-level dependency runs first, then the handler's own),
+  /customer. Each route sits behind the server's authentication middleware (the route-level dependency runs first, then the handler's own),
   carries the resolver's `tags` and the operation name from `operation_names` (`aggregated` and `search`;
   B3094's `OperationNames`), and each handler runs inside B865's management completion wrapper, like
   `@management_endpoint_wrapper`. The route functions are named after those operation names. Expose one public
@@ -37,7 +37,7 @@ description: >-
   order (`search`, then `limit`).
 
   Order inside every handler. First the dependencies run: the route-level authentication, the entity query, the
-  caller (B052), the daily activity repository, the database handle. A missing database stops there with HTTP 500
+  caller (B2314's UserAPIKeyAuth), the daily activity repository, the database handle. A missing database stops there with HTTP 500
   and detail `{"error": <CommonProxyErrors.db_not_connected_error text>}` (litellm/proxy/_types.py L4391-L4395),
   before any 422 is reported for any parameter. Then `resolved_scope` runs with the `user_aggregated` flag B3096
   built. The aggregated route passes `true` for the user entity and `false` for the other five. The search route

@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-messages-error-header-projection
+call:
+  bedrock_messages:
+    function: error_class
+    message: 'validationException {"message": "bad input"}'
+    status_code: 400
+    headers: {x-amzn-requestid: req-1}
+env: {}
+compare: {ignore: []}

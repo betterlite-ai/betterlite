@@ -1,0 +1,17 @@
+kind: helper
+name: budget_patch_fields_and_response
+call:
+  team_request_contracts:
+    operation: budget_patch
+    document: {"user_id": "u"}
+calls:
+  - team_request_contracts: {operation: budget_patch, document: {"user_email": "e@x", "max_budget_in_team": null, "tpm_limit": null, "rpm_limit": null, "budget_duration": null, "allowed_models": null}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "max_budget_in_team": 0.0, "tpm_limit": 0, "rpm_limit": 0, "allowed_models": []}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "max_budget_in_team": 2.5, "allowed_models": ["a", "b"], "budget_duration": "1d"}}
+  - team_request_contracts: {operation: budget_update_result, document: {"success": true}}
+  - team_request_contracts: {operation: budget_update_result, document: {"user_id": "u", "success": false, "error": "e", "budget_id": "b", "max_budget": 1.5, "max_budget_source": "member", "tpm_limit": 1, "rpm_limit": 2, "budget_duration": "1d", "allowed_models": ["m"]}}
+  - team_request_contracts: {operation: budget_update_result, document: {"success": true, "max_budget_source": "other"}}
+  - team_request_contracts: {operation: delete_result, document: {"success": true}}
+  - team_request_contracts: {operation: delete_result, document: {"user_id": "u", "user_email": "e@x", "success": false, "error": "e"}}
+env: {}
+compare: {ignore: []}

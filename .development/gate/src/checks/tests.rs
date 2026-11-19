@@ -370,3 +370,55 @@ fn the_lint_lane_names_the_clippy_check_and_that_check_calls_the_lane() {
             .all(|command| command.run.contains(".development/flow/lint-lane.sh"))
     );
 }
+
+#[test]
+fn every_check_the_dispatcher_runs_before_the_review_is_in_the_catalog() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let catalog: Catalog = read_yaml(&source.join("checks.yaml")).unwrap();
+    let known: Vec<&str> = catalog
+        .base
+        .builtin
+        .iter()
+        .map(|check| <&str>::from(check.id))
+        .chain(
+            catalog
+                .base
+                .commands
+                .iter()
+                .map(|command| command.id.as_str()),
+        )
+        .collect();
+    let unbuilt = selection::unbuilt();
+    let unknown: Vec<&String> = unbuilt
+        .only
+        .iter()
+        .filter(|id| !known.contains(&id.as_str()))
+        .collect();
+    assert!(unknown.is_empty(), "{unknown:?}");
+}
+
+#[test]
+fn oracle_helpers_and_sdk_http_lines_are_litellm_callers_and_other_python_is_not() {
+    let (folder, _, _) = fixture();
+    let root = folder.path();
+    for path in ["tools/oracle/helpers", "tools/oracle/sdk_http", "scripts"] {
+        fs::create_dir_all(root.join(path)).unwrap();
+    }
+    fs::write(
+        root.join("tools/oracle/helpers/b1.py"),
+        "helper = cast(A, b)\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("tools/oracle/sdk_http/b2.py"),
+        "caller = cast(A, b)\n",
+    )
+    .unwrap();
+    fs::write(root.join("scripts/b3.py"), "other = cast(A, b)\n").unwrap();
+    let facts = Facts::collect(root).unwrap();
+    assert_eq!(
+        facts.added_litellm_caller_lines,
+        ["helper = cast(A, b)", "caller = cast(A, b)"]
+    );
+    assert_eq!(facts.added_python_lines, ["other = cast(A, b)"]);
+}

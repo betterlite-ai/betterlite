@@ -1,0 +1,24 @@
+task: B3067
+deviations:
+  - what: The scheduler picks the first entry of a non-generic store of VantageExportLogger trait objects, so every registered implementor is selectable regardless of its concrete type. LiteLLM's get_custom_loggers_for_type matches the VantageLogger class and its subclasses with isinstance, while the FocusLogger job registration filters its own candidates down to the exact FocusLogger type.
+    why: Rust has no subclass identity and the server shares one non-generic store between the startup scheduler, settings deletion and the export routes, so the trait is that store's element type; the Focus job keeps its exact-type exclusion through its own registry tag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L117-L119
+  - what: The per-list registration key of a stored VantageLogger is built from B189's CallbackIdentity over the resolved Focus settings (provider, export_format, frequency, cron_offset_minute, interval_seconds, prefix). LiteLLM's _get_custom_logger_key walks the instance's public str, bool and int attributes instead, so an unset interval_seconds is absent from its key where betterlite keys the resolved 60, and CustomLogger's message_logging flags sit in its key where betterlite's logger has no such fields. The duplicate notice a full list logs is B189's registry wording rather than LiteLLM's "Custom logger of type ... already exists in ..., not adding again.." text.
+    why: betterlite loggers hold typed, already resolved settings rather than a Python instance dict, so the key names the values a caller configures; the two message_logging flags belong to the callback layer B189 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L314-L329
+  - what: The five VANTAGE_* settings are resolved from typed constructor parameters and betterlite-config's EnvironmentLookup instead of os.getenv calls inside __init__, and an empty environment value counts as unset, so an empty VANTAGE_EXPORT_INTERVAL_SECONDS skips the invalid-value warning LiteLLM logs for it.
+    why: All external configuration in betterlite comes through the config crate, and docs/compatibility.md treats an empty env string as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L46-L60
+  - what: The pod lock manager, the clock and the scheduler arrive as FocusLoggerDeps and VantageScheduler parameters instead of being read from litellm.proxy.proxy_server.proxy_logging_obj and the global scheduler.
+    why: betterlite has no module-level state; the composition root supplies the pod lock manager, the clock and the scheduler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L92-L101
+  - what: The scheduled run releases the Vantage lease from a task on the TaskTracker the server drains at shutdown when the export future is cancelled or dropped; the ordinary path awaits the release before returning.
+    why: Rust drops a future at its await point without running the code after it, so LiteLLM's try/finally release would never run on cancellation; the tracked task keeps the release alive and shutdown waits for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L105-L108
+  - what: The scheduler trigger is a typed ScheduleTrigger and registration goes through the VantageScheduler port, and failures are typed VantageExportError and VantageInitError values wrapping the focus schedule and export errors instead of ValueError or a re-raised exception.
+    why: betterlite passes typed values between its own modules and reports failures as typed errors callers can match, keeping LiteLLM's message wording where it has one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L124-L129
+  - what: Logging goes through tracing with the same debug messages LiteLLM writes through verbose_logger, the masked integration token included, instead of the litellm logger.
+    why: betterlite uses structured logging rather than console output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L80-L83
+kept_bugs: []
