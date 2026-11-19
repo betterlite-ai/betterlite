@@ -41,8 +41,8 @@ pub(super) fn extract_custom_pricing(
     })
 }
 
-fn json_price(value: Option<&Json>) -> Option<Decimal> {
-    let Json::Number(number) = value? else {
+fn json_price(value: &Json) -> Option<Decimal> {
+    let Json::Number(number) = value else {
         return None;
     };
     parse_decimal_lexeme(&number.to_string()).ok()
