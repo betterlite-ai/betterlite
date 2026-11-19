@@ -1,0 +1,12 @@
+task: B3699
+deviations:
+  - what: Tool call arguments holding NaN or Infinity go through the whole-string text filter, where LiteLLM parses them as numbers and filters each value.
+    why: serde_json rejects the non-standard JSON constants that Python's json.loads accepts, so the arguments cannot be parsed as a tree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1853
+  - what: An image description response with no choices fails with a reported completion error, where LiteLLM reads choices[0] and raises IndexError.
+    why: The empty list is an upstream response the guardrail cannot describe, and naming it beats an unhandled index error in the request path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1518
+  - what: A failing image description call is reported only after every concurrent call has finished, and the error is the first failure in image order; LiteLLM's asyncio.gather raises the first failure to complete and leaves the other calls running.
+    why: join_all drives every description to completion in one future, so no call is left detached and the reported error is deterministic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1487
+kept_bugs: []
