@@ -91,5 +91,5 @@ fn check_over_limit(call: &OverLimitInput) -> HelperResult {
         call.read_only,
     )
     .map_err(|error| over_limit_error(&error))?;
-    Ok(json!({ "response": response_json(&response) }))
+    Ok(response_json(&response))
 }
