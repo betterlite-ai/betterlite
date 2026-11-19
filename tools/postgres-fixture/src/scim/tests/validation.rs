@@ -3,10 +3,35 @@ use secrecy::ExposeSecret as _;
 
 use crate::dashboard::payload::JsonPayload;
 use crate::error::FixtureError;
-use crate::scim::model::{MemberRole, ScimMember};
+use crate::scim::model::{MemberRole, ScimKeyRow, ScimMember};
 use crate::seed::{CallerRole, DatabaseFixture};
 
 use super::support::{SAMPLE, decode};
+
+#[test]
+fn key_rows_compare_token_blocked_and_metadata() {
+    let base = decode_key(r#"{"token":"sk-a","blocked":true,"metadata":{"scim_blocked":true}}"#);
+    assert_eq!(
+        base,
+        decode_key(r#"{"token":"sk-a","blocked":true,"metadata":{"scim_blocked":true}}"#)
+    );
+    assert_ne!(
+        base,
+        decode_key(r#"{"token":"sk-b","blocked":true,"metadata":{"scim_blocked":true}}"#)
+    );
+    assert_ne!(
+        base,
+        decode_key(r#"{"token":"sk-a","blocked":false,"metadata":{"scim_blocked":true}}"#)
+    );
+    assert_ne!(
+        base,
+        decode_key(r#"{"token":"sk-a","blocked":true,"metadata":{"scim_blocked":false}}"#)
+    );
+}
+
+fn decode_key(document: &str) -> ScimKeyRow {
+    serde_json::from_str(document).expect("the key case decodes")
+}
 
 #[test]
 fn decodes_the_scim_seed_typed_fields() {
