@@ -15,6 +15,7 @@ pub struct ProviderLookup<'lookup> {
 }
 
 // get_llm_provider's four return values, less the dynamic key this path never reads
+#[derive(Clone)]
 pub struct ResolvedTarget {
     pub model: String,
     pub provider: String,

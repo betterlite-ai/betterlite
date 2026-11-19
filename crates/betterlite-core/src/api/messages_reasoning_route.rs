@@ -41,6 +41,7 @@ pub struct CompletionKwargs {
 }
 
 // is_reasoning_auto_summary_enabled's two sources: the setting and the environment string
+#[derive(Clone, Copy)]
 pub struct AutoSummary<'settings> {
     pub global: bool,
     pub environment: Option<&'settings str>,
@@ -51,7 +52,11 @@ pub fn normalize_effort(kwargs: &mut CompletionKwargs, metadata: &dyn ModelMetad
     let Some(reasoning) = kwargs.fields.get(REASONING_EFFORT).cloned() else {
         return;
     };
-    let model = normalize_model(kwargs.fields.get(MODEL));
+    // an absent model reads as "", and null stays the None get_model_info raises on
+    let model = kwargs
+        .fields
+        .get(MODEL)
+        .map_or(Some(""), |inner| text_field(Some(inner)));
     let provider = text_field(kwargs.fields.get(CUSTOM_LLM_PROVIDER));
     match reasoning {
         Json::Text(effort) => {
@@ -62,16 +67,16 @@ pub fn normalize_effort(kwargs: &mut CompletionKwargs, metadata: &dyn ModelMetad
                     .insert(REASONING_EFFORT.to_owned(), Json::Text(normalized));
             }
         }
-        Json::Object(mut reasoning) => {
-            let Some(Json::Text(effort)) = reasoning.get(EFFORT).cloned() else {
+        Json::Object(mut object) => {
+            let Some(Json::Text(effort)) = object.get(EFFORT).cloned() else {
                 return;
             };
             let normalized = normalized_effort(&effort, model, provider, metadata);
             if normalized != effort {
-                reasoning.insert(EFFORT.to_owned(), Json::Text(normalized));
+                object.insert(EFFORT.to_owned(), Json::Text(normalized));
                 kwargs
                     .fields
-                    .insert(REASONING_EFFORT.to_owned(), Json::Object(reasoning));
+                    .insert(REASONING_EFFORT.to_owned(), Json::Object(object));
             }
         }
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {}
@@ -89,10 +94,10 @@ pub fn route_thinking(
     else {
         return;
     };
-    let Some(thinking) = thinking.and_then(object) else {
+    let Some(thinking_object) = thinking.and_then(object) else {
         return;
     };
-    if !matches!(thinking.get(THINKING_TYPE), Some(Json::Text(kind)) if kind == ENABLED) {
+    if !matches!(thinking_object.get(THINKING_TYPE), Some(Json::Text(kind)) if kind == ENABLED) {
         return;
     }
     let refused = seams
@@ -107,7 +112,7 @@ pub fn route_thinking(
     }
     rewrite_model(kwargs, &provider);
     let auto_summary = auto_summary_enabled(settings.global, settings.environment);
-    convert_effort(kwargs, thinking, auto_summary);
+    convert_effort(kwargs, thinking_object, auto_summary);
 }
 
 // _plain_effort_for_chat_target: the effort a chat target keeps once the bridge policy says it stays on chat
@@ -148,12 +153,4 @@ pub fn plain_effort(
         return Ok(None);
     }
     Ok(Some(effort.to_owned()))
-}
-
-// normalize reads the model with its empty default for an absent key, and null stays the None get_model_info raises on
-fn normalize_model(value: Option<&Json>) -> Option<&str> {
-    match value {
-        None => Some(""),
-        Some(value) => text_field(Some(value)),
-    }
 }

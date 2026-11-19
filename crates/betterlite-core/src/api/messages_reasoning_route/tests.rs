@@ -91,7 +91,10 @@ fn seams(script: &Script) -> ReasoningSeams<'_> {
     }
 }
 
-fn locked<T: Clone>(slot: &Mutex<Vec<T>>) -> Vec<T> {
+fn locked<T>(slot: &Mutex<Vec<T>>) -> Vec<T>
+where
+    T: Clone,
+{
     slot.lock().expect("the lock is free").clone()
 }
 

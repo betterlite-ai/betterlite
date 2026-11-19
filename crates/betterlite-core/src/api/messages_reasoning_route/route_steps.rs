@@ -20,10 +20,10 @@ pub(super) fn convert_effort(
     let summary = thinking.get(SUMMARY).cloned();
     match kwargs.fields.get(REASONING_EFFORT).cloned() {
         Some(Json::Text(effort)) if !effort.is_empty() => {
-            let effort = effort_object(&effort, summary.as_ref(), auto_summary);
+            let converted = effort_object(&effort, summary.as_ref(), auto_summary);
             kwargs
                 .fields
-                .insert(REASONING_EFFORT.to_owned(), Json::Object(effort));
+                .insert(REASONING_EFFORT.to_owned(), Json::Object(converted));
         }
         Some(Json::Object(reasoning)) => {
             if let Some(updated) = summary_object(reasoning, summary.as_ref(), auto_summary) {
@@ -45,12 +45,12 @@ fn effort_object(
 ) -> IndexMap<String, Json> {
     let mut reasoning = IndexMap::new();
     reasoning.insert(EFFORT.to_owned(), Json::Text(effort.to_owned()));
-    let summary = summary
+    let fallback = summary
         .filter(|value| has_content(value))
         .cloned()
         .or_else(|| auto_summary.then(|| Json::Text(DETAILED.to_owned())));
-    if let Some(summary) = summary {
-        reasoning.insert(SUMMARY.to_owned(), summary);
+    if let Some(chosen) = fallback {
+        reasoning.insert(SUMMARY.to_owned(), chosen);
     }
     reasoning
 }

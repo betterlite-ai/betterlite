@@ -1,5 +1,5 @@
 import os
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Literal, Protocol, TypeAlias, TypeVar, TypedDict, cast
 
 import litellm
 from litellm import main as litellm_main
@@ -76,6 +76,19 @@ ROUTE: Final = cast(Router, MessagesHandler._route_openai_thinking_to_responses_
 PLAIN: Final = cast(PlainTarget, MessagesHandler._plain_effort_for_chat_target)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L388
 
 
+ScriptT = TypeVar("ScriptT")
+
+
+def provided(script: ScriptT | None, failure: str) -> ScriptT:
+    if script is None:
+        raise RuntimeError(failure)
+    return script
+
+
+def record_call(record: list[JsonValue], seam: str, args: dict[str, JsonValue]) -> None:
+    record.append({"seam": seam, "args": args})
+
+
 class ModelInfoFake:
     def __init__(
         self, *, script: dict[str, JsonValue] | None, record: list[JsonValue]
@@ -86,16 +99,12 @@ class ModelInfoFake:
     def __call__(
         self, *, model: str | None, custom_llm_provider: str | None = None
     ) -> dict[str, JsonValue]:
-        self.record.append(
-            {
-                "seam": "model_info",
-                "args": {"model": model, "custom_llm_provider": custom_llm_provider},
-            }
+        record_call(
+            self.record,
+            "model_info",
+            {"model": model, "custom_llm_provider": custom_llm_provider},
         )
-        script = self.script
-        if script is None:
-            raise RuntimeError("the model lookup fails")
-        return script
+        return provided(self.script, "the model lookup fails")
 
 
 class ProviderFake:
@@ -111,20 +120,17 @@ class ProviderFake:
         api_base: str | None = None,
         api_key: str | None = None,
     ) -> tuple[str, str, str | None, str | None]:
-        self.record.append(
+        record_call(
+            self.record,
+            "provider",
             {
-                "seam": "provider",
-                "args": {
-                    "model": model,
-                    "custom_llm_provider": custom_llm_provider,
-                    "api_base": api_base,
-                    "api_key": api_key,
-                },
-            }
+                "model": model,
+                "custom_llm_provider": custom_llm_provider,
+                "api_base": api_base,
+                "api_key": api_key,
+            },
         )
-        script = self.script
-        if script is None:
-            raise RuntimeError("the provider lookup fails")
+        script = provided(self.script, "the provider lookup fails")
         return (script["local"], script["provider"], None, script["api_base"])
 
 
@@ -182,8 +188,8 @@ def normalize_answer(call: NormalizeCall) -> JsonValue:
 
 def route_answer(call: RouteCall) -> JsonValue:
     record: list[JsonValue] = []
-    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L342
-    adapter_handler.get_model_info = ModelInfoFake(script=call["model_info"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L357
+    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L342
+    adapter_handler.get_model_info = ModelInfoFake(script=call["model_info"], record=record)  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L357
     kwargs = dict(call["kwargs"])
     previous = os.environ.get(ENV)
     set_environment(call["environment"])
@@ -197,7 +203,7 @@ def route_answer(call: RouteCall) -> JsonValue:
 
 def plain_answer(call: PlainCall) -> JsonValue:
     record: list[JsonValue] = []
-    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L404
+    litellm_utils.get_llm_provider = ProviderFake(script=call["provider"], record=record)  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L404
     litellm_main.responses_api_bridge_check = BridgeFake(script=call["bridge"], record=record)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L418
     kwargs = dict(call["kwargs"])
     effort = PLAIN(kwargs, thinking=call["thinking"])

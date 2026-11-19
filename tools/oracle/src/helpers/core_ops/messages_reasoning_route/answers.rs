@@ -42,26 +42,25 @@ pub(super) fn route_answer(
     provider: Option<&ResolvedScript>,
     settings: AutoSummary<'_>,
 ) -> HelperResult {
-    let Prepared {
-        metadata,
-        resolution,
-        mut completion,
-    } = prepare(kwargs, model_info, provider)?;
+    let mut prepared = prepare(kwargs, model_info, provider)?;
     route_thinking(
-        &mut completion,
+        &mut prepared.completion,
         Some(thinking),
         settings,
         &ReasoningSeams {
-            provider: &resolution,
-            metadata: &metadata,
+            provider: &prepared.resolution,
+            metadata: &prepared.metadata,
             bridge: &NoBridge,
         },
     );
-    let mut entries = resolution.recorder.into_entries();
-    entries.extend(metadata.recorder.into_entries());
+    let recorders = [prepared.resolution.recorder, prepared.metadata.recorder];
+    let seams: Vec<Value> = recorders
+        .into_iter()
+        .flat_map(Recorder::into_entries)
+        .collect();
     Ok(json!({
-        "kwargs": completion.fields,
-        "seams": entries,
+        "kwargs": prepared.completion.fields,
+        "seams": seams,
     }))
 }
 
