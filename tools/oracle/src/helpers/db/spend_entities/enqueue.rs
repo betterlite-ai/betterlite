@@ -3,8 +3,8 @@ use std::sync::Mutex;
 
 use betterlite_db::spend_attribution::access_groups::ServedDeployments;
 use betterlite_db::spend_attribution::enqueue::{
-    EnqueueFuture, EntitySpendQueue, update_agent_db, update_model_access_group_db, update_org_db,
-    update_project_db, update_tag_db, update_team_db,
+    EnqueueFuture, EntitySpendQueue, OwnerKind, RowKind, update_model_access_group_db,
+    update_owner_db, update_row_db, update_tag_db,
 };
 use betterlite_db::spend_attribution::tags::RequestTags;
 use betterlite_db::spend_queues::SpendQueueError;
@@ -100,30 +100,38 @@ pub(super) fn enqueue_value(step: &Step) -> Result<Value, Box<HelperError>> {
         .map_err(failure)?;
     let raised = match step.entity.as_deref().unwrap_or_default() {
         "team" => runtime
-            .block_on(update_team_db(
+            .block_on(update_owner_db(
                 database,
                 cost,
                 step.team_id.as_deref(),
                 step.user_id.as_deref(),
+                OwnerKind::Team,
             ))
             .is_err(),
         "org" => runtime
-            .block_on(update_org_db(
+            .block_on(update_owner_db(
                 database,
                 cost,
                 step.org_id.as_deref(),
                 step.user_id.as_deref(),
+                OwnerKind::Organization,
             ))
             .is_err(),
         "project" => runtime
-            .block_on(update_project_db(
+            .block_on(update_row_db(
                 database,
                 cost,
                 step.project_id.as_deref(),
+                RowKind::Project,
             ))
             .is_err(),
         "agent" => runtime
-            .block_on(update_agent_db(database, cost, step.agent_id.as_deref()))
+            .block_on(update_row_db(
+                database,
+                cost,
+                step.agent_id.as_deref(),
+                RowKind::Agent,
+            ))
             .is_err(),
         "tag" => {
             let tags = step.request_tags.as_deref().map(RequestTags::Serialized);

@@ -1,4 +1,4 @@
-use betterlite_db::autorouter_facts::turn::{TurnPayload, build_autorouter_turn_transaction};
+use betterlite_db::autorouter_facts::turn::{TurnPayload, turn_transaction};
 use betterlite_db::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnTime};
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
@@ -53,7 +53,7 @@ pub(super) fn turn_value(
         None | Some(Value::Null) => Decimal::ZERO,
         Some(value) => serde_json::from_value::<Decimal>(value.clone()).map_err(failure)?,
     };
-    let record = build_autorouter_turn_transaction(&payload, &metadata, saved_spend)
+    let record = turn_transaction(&payload, &metadata, saved_spend)
         .map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(TurnAnswer {
         record: record.map(turn_view),
@@ -70,9 +70,9 @@ fn turn_view(record: AutoRouterTurnTransaction) -> TurnView {
         model: record.model,
         turn_at: turn_at_text(record.turn_at),
         total_tokens: record.total_tokens,
-        spend: money(record.spend),
-        saved_spend: money(record.saved_spend),
-        classifier_cost: money(record.classifier_cost),
+        spend: format!("{:.10}", record.spend),
+        saved_spend: format!("{:.10}", record.saved_spend),
+        classifier_cost: format!("{:.10}", record.classifier_cost),
         covered: record.covered.0,
         cache_hit: record.cache_hit.0,
         cache_ttl_seconds: record.cache_ttl_seconds,
@@ -80,14 +80,10 @@ fn turn_view(record: AutoRouterTurnTransaction) -> TurnView {
         tier: record.tier,
         baseline_model: record.baseline_model,
         savings_estimated_turns: record.savings_estimated_turns,
-        savings_estimated_actual_spend: money(record.savings_estimated_actual_spend),
-        savings_estimated_saved_spend: money(record.savings_estimated_saved_spend),
+        savings_estimated_actual_spend: format!("{:.10}", record.savings_estimated_actual_spend),
+        savings_estimated_saved_spend: format!("{:.10}", record.savings_estimated_saved_spend),
         user_id: record.user_id,
     }
-}
-
-fn money(value: Decimal) -> String {
-    format!("{value:.10}")
 }
 
 // The naive UTC datetime as the source's ``datetime.isoformat()`` spells it.

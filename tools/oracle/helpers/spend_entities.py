@@ -1,9 +1,9 @@
 import asyncio
+from collections.abc import Mapping
 from typing import Final, Literal, Required, TypedDict
 
 from litellm.proxy._types import (
     Litellm_EntityType,
-    SpendLogsPayload,
     SpendUpdateQueueItem,
 )
 from litellm.proxy.db.autorouter_session_rollup import (
@@ -40,7 +40,7 @@ class Deployment(TypedDict, total=False):
 
 class Step(TypedDict, total=False):
     kind: Required[Literal["turn", "enqueue"]]
-    payload: SpendLogsPayload
+    payload: dict[str, JsonValue]
     metadata: dict[str, JsonValue]
     saved_spend: float
     entity: EntityKind
@@ -109,7 +109,6 @@ class QueueUnavailableError(Exception):
 
 class RecordingQueue(SpendUpdateQueue):
     def __init__(self, fail_at: int | None) -> None:
-        super().__init__()
         self.items: list[SpendUpdateQueueItem] = []
         self.fail_at = fail_at
 
@@ -124,8 +123,14 @@ class DeploymentRouter:
     def __init__(self, deployments: dict[str, Deployment]) -> None:
         self.deployments = deployments
 
-    def get_model_info(self, deployment_id: str) -> Deployment | None:
-        return self.deployments.get(deployment_id)
+    def get_model_info(self, id: str) -> Mapping[str, object] | None:  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L408-L409
+        if id not in self.deployments:
+            return None
+        return dict(self.deployments[id])
+
+
+class FakeClient(PrismaClient):
+    def __init__(self) -> None: ...
 
 
 class CaseWriter(DBSpendUpdateWriter):
@@ -217,7 +222,7 @@ def turn_answer(step: Step) -> TurnAnswer:
     metadata = step.get("metadata")
     saved_spend = step.get("saved_spend")
     record = build_autorouter_turn_transaction(
-        payload,
+        payload,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4219-L4253
         {} if metadata is None else metadata,
         0.0 if saved_spend is None else saved_spend,
     )
@@ -240,7 +245,7 @@ def enqueue_answer(step: Step) -> EnqueueAnswer:
     writer = CaseWriter(queue)
     deployments = step.get("deployments")
     router = None if deployments is None else DeploymentRouter(deployments)
-    client = None if step.get("database") is False else PrismaClient.__new__(PrismaClient)
+    client = None if step.get("database") is False else FakeClient()
     raised = False
     try:
         asyncio.run(writer.run_step(step, step.get("response_cost"), client, router))
