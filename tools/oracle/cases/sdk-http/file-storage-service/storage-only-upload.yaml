@@ -1,0 +1,23 @@
+kind: sdk_http
+name: storage-only-upload
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+call:
+  file_storage_service:
+    operation: upload
+    file_content: [97, 98, 99]
+    filename: file
+    content_type: application/octet-stream
+    target_storage: azure_storage
+    target_model_names: []
+    uuid: 12345678-1234-5678-1234-567812345678
+upstream:
+  - {status: 201, headers: {}, body: ""}
+  - {status: 202, headers: {}, body: ""}
+  - {status: 200, headers: {}, body: ""}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [x-ms-version, authorization]
+  ignore: []

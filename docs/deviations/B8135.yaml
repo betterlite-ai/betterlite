@@ -1,0 +1,18 @@
+task: B8135
+deviations:
+  - what: The gateway prefix list in the ingress is a hand copy of LiteLLM's data-plane list in gateway/routes/allowlist.py, with betterlite's extra routes added by hand when a route task registers one.
+    why: The chart is rendered by Helm and cannot read crates/betterlite-routes; B4470 owns the list and a mismatch is a chart bug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147
+  - what: The ingress routes the gateway-only exact path /api/event_logging/batch and has no broad /api/event_logging Prefix, so other /api/event_logging/* paths fall to the backend; LiteLLM's chart sends the whole prefix to the gateway.
+    why: betterlite's gateway allowlist keeps only the batch path on the gateway, so a Prefix would hand the gateway requests it drops at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/ingress.yaml#L64
+  - what: The ingress cannot express the /{provider}/ path template of the gateway allowlist, so a provider prefix that only the template matches reaches the backend catch-all instead of the gateway.
+    why: An Ingress path is a literal string for both controllers, and LiteLLM's chart omits the template for the same reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L118
+  - what: The ServiceMonitor scrapes the gateway http Service port when gateway.metricsServer.enabled is false; LiteLLM's component chart fails the render instead.
+    why: betterlite's gateway http Service carries the same selector labels as the metrics Service, so an install without the metrics sidecar can still be scraped; failing the render would block that install (B8132 made the same choice for the standalone chart).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/servicemonitor.yaml#L1-L4
+kept_bugs:
+  - what: The HPA cpu, memory, requests-per-second and tokens-per-second targets go through Go template truthiness, so an explicit 0 renders as if the key were absent.
+    why: LiteLLM's templates test them the same way, and Kubernetes rejects a zero utilization target, so no working setup can use 0 there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/hpa.yaml#L17-L60
