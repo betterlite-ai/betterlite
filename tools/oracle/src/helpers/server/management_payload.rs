@@ -68,8 +68,8 @@ impl Helper for Op {
                 Ok(json!({"response": redacted, "result": result}))
             }
             Input::RedactMapping { record } => {
-                let record = Json::Object(record.clone());
-                Ok(json!({"record": redact_record_env_vars(&record)}))
+                let record_json = Json::Object(record.clone());
+                Ok(json!({"record": redact_record_env_vars(&record_json)}))
             }
             Input::RedactModel {
                 server_id,

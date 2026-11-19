@@ -82,11 +82,11 @@ async fn unknown_actor_defaults(
     let sent =
         send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), &key).await;
     assert!(sent.is_ok());
-    let sent = transport.alerts.entries();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].created_by_user_id, expected_id);
-    assert_eq!(sent[0].created_by_user_role, "Unknown");
-    assert_eq!(sent[0].created_by_key_alias.as_deref(), expected_alias);
+    let alerts = transport.alerts.entries();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].created_by_user_id, expected_id);
+    assert_eq!(alerts[0].created_by_user_role, "Unknown");
+    assert_eq!(alerts[0].created_by_key_alias.as_deref(), expected_alias);
 }
 
 #[tokio::test]
@@ -103,9 +103,9 @@ async fn alert_kwargs_and_alias_preserved() {
         send_management_endpoint_alert(Some(&transport), "update_key_fn", kwargs.clone(), &key)
             .await;
     assert!(sent.is_ok());
-    let sent = transport.alerts.entries();
-    assert_eq!(sent.len(), 1);
-    let alert = &sent[0];
+    let alerts = transport.alerts.entries();
+    assert_eq!(alerts.len(), 1);
+    let alert = &alerts[0];
     assert_eq!(alert.created_by_user_id, "admin");
     assert_eq!(alert.created_by_user_role, "proxy_admin");
     assert_eq!(alert.created_by_key_alias.as_deref(), Some("ops-key"));

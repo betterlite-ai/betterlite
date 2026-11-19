@@ -130,7 +130,7 @@ pub async fn send_management_endpoint_alert<Transport>(
 where
     Transport: ManagementAlertTransport,
 {
-    let Some(transport) = transport else {
+    let Some(alert_transport) = transport else {
         return Ok(());
     };
     let Some(alert_type) = management_event_alert(function_name) else {
@@ -142,7 +142,7 @@ where
         serde_json::from_value(key_fields).map_err(ManagementAlertError::Actor)?;
     let event_name = displayed_event_name(alert_type);
     let key_event = key_event(&actor, request_kwargs);
-    transport
+    alert_transport
         .send_management_event_alert(&key_event, alert_type, &event_name)
         .await
         .map_err(ManagementAlertError::Alert)
