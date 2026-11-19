@@ -53,42 +53,19 @@ fn snippets_follow_markers() {
 
 fn start_index_boundaries() {
     let text = "Only claim here.";
-    let length = text.len();
-    let at_end = indexed(text, &json!(length));
-    assert_eq!(
-        results(&at_end),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let past_end = indexed(text, &json!(length.saturating_add(5)));
-    assert_eq!(
-        results(&past_end),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let negative = indexed(text, &json!(-1_i64));
-    assert_eq!(
-        results(&negative),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let missing = indexed(text, &json!(null));
-    assert_eq!(
-        results(&missing),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let at_zero = indexed(text, &json!(0_usize));
-    assert_eq!(
-        results(&at_zero),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let past_u64 = indexed(text, &json_value("18446744073709551616"));
-    assert_eq!(
-        results(&past_u64),
-        vec![expect_result("", "https://x.example", text)]
-    );
-    let above_i64 = indexed(text, &json_value("9223372036854775808"));
-    assert_eq!(
-        results(&above_i64),
-        vec![expect_result("", "https://x.example", text)]
-    );
+    let whole_text = vec![expect_result("", "https://x.example", text)];
+    for index in [
+        json!(text.len()),
+        json!(text.len().saturating_add(5)),
+        json!(-1_i64),
+        json!(null),
+        json!(0_usize),
+        json_value("18446744073709551616"),
+        json_value("9223372036854775808"),
+    ] {
+        let body = indexed(text, &index);
+        assert_eq!(results(&body), whole_text);
+    }
     let long = format!("{}([l](https://l.example))", "y".repeat(350));
     let quoted = serde_json::to_string(&long).unwrap();
     let negative_zero = envelope(&format!(

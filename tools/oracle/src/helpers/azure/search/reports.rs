@@ -50,14 +50,17 @@ fn request_report(input: &RequestInput) -> Value {
 
 fn request_outcome(scenario: &RequestScenario) -> Value {
     let resolved = settings(&scenario.environment);
-    match no_minter(&resolved).transform_search_request(&scenario.query, &scenario.optional_params)
-    {
-        Ok(request) => json!({
-            "ok": true,
-            "body": serde_json::to_value(&request).unwrap_or(Value::Null),
-        }),
-        Err(_) => json!({"ok": false, "status": Value::Null}),
-    }
+    no_minter(&resolved)
+        .transform_search_request(&scenario.query, &scenario.optional_params)
+        .map_or_else(
+            |_| json!({"ok": false, "status": Value::Null}),
+            |request| {
+                json!({
+                    "ok": true,
+                    "body": serde_json::to_value(&request).unwrap_or(Value::Null),
+                })
+            },
+        )
 }
 
 fn header_report(input: &HeaderInput) -> Value {
@@ -77,18 +80,24 @@ fn header_outcome(scenario: &HeaderScenario) -> Value {
     let headers = header_pairs(&scenario.headers)
         .into_iter()
         .collect::<Headers>();
-    match config.validate_environment(headers, api_key.as_ref(), scenario.api_base.as_deref()) {
-        Ok(merged) => json!({
-            "ok": true,
-            "headers": merged,
-            "calls": minter.calls.load(Ordering::SeqCst),
-        }),
-        Err(_) => json!({
-            "ok": false,
-            "status": Value::Null,
-            "calls": minter.calls.load(Ordering::SeqCst),
-        }),
-    }
+    config
+        .validate_environment(headers, api_key.as_ref(), scenario.api_base.as_deref())
+        .map_or_else(
+            |_| {
+                json!({
+                    "ok": false,
+                    "status": Value::Null,
+                    "calls": minter.calls.load(Ordering::SeqCst),
+                })
+            },
+            |merged| {
+                json!({
+                    "ok": true,
+                    "headers": merged,
+                    "calls": minter.calls.load(Ordering::SeqCst),
+                })
+            },
+        )
 }
 
 fn reply_report(input: &ReplyInput) -> Value {
@@ -106,14 +115,18 @@ fn reply_outcome(scenario: &ReplyScenario) -> Value {
         body: scenario.body.as_bytes(),
     };
     let config = no_minter(&resolved);
-    match config.transform_search_response(&reply, scenario.optional_params.as_ref()) {
-        Ok(response) => json!({
-            "ok": true,
-            "body": serde_json::to_value(&response).unwrap_or(Value::Null),
-            "hidden": serde_json::to_value(&response.hidden_params).unwrap_or(Value::Null),
-        }),
-        Err(error) => json!({"ok": false, "status": error.status_code()}),
-    }
+    config
+        .transform_search_response(&reply, scenario.optional_params.as_ref())
+        .map_or_else(
+            |error| json!({"ok": false, "status": error.status_code()}),
+            |response| {
+                json!({
+                    "ok": true,
+                    "body": serde_json::to_value(&response).unwrap_or(Value::Null),
+                    "hidden": serde_json::to_value(&response.hidden_params).unwrap_or(Value::Null),
+                })
+            },
+        )
 }
 
 fn pair_report(input: &MaxResultsInput) -> Value {
