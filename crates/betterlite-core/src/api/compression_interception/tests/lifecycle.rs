@@ -131,35 +131,33 @@ async fn the_success_log_names_the_call_id_counts_and_keys() {
     assert_eq!(event.cached_keys, Some(2));
 }
 
+#[rstest]
+#[case::null(Json::Null, "null")]
+#[case::boolean(Json::Bool(true), "true")]
+#[case::text(text("not a number"), "not a number")]
+#[case::list(list(Vec::new()), "list")]
+#[case::object(object(Vec::new()), "object")]
 #[tokio::test]
-async fn the_success_log_renders_any_token_count() {
+async fn the_success_log_renders_any_token_count(#[case] count: Json, #[case] rendered: &str) {
     let (captured, _guard) = capture();
-    let counts = [
-        (Json::Null, "null"),
-        (Json::Bool(true), "true"),
-        (text("not a number"), "not a number"),
-        (list(Vec::new()), "list"),
-        (object(Vec::new()), "object"),
-    ];
-    for (count, rendered) in counts {
-        let harness = harness(
-            Settings::default(),
-            fixed_clock(NOW),
-            vec![Ok(output(
-                Vec::new(),
-                Vec::new(),
-                count.clone(),
-                count,
-                content(&[("key", "value")]),
-            ))],
-        );
-        let mut body = request();
-        applied(&harness, &mut body).await;
-        let events = captured.events();
-        let event = events.last().expect("the hook logs the compression");
-        assert_eq!(event.original.as_deref(), Some(rendered));
-        assert_eq!(event.compressed.as_deref(), Some(rendered));
-    }
+    let harness = harness(
+        Settings::default(),
+        fixed_clock(NOW),
+        vec![Ok(output(
+            Vec::new(),
+            Vec::new(),
+            count.clone(),
+            count,
+            content(&[("key", "value")]),
+        ))],
+    );
+    let mut body = request();
+    applied(&harness, &mut body).await;
+    let events = captured.events();
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert_eq!(event.original.as_deref(), Some(rendered));
+    assert_eq!(event.compressed.as_deref(), Some(rendered));
 }
 
 #[tokio::test]
