@@ -11,8 +11,10 @@ use crate::runner::run_group_with_url;
 use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use betterlite_postgres_fixture::error::FixtureError;
 use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 use std::collections::BTreeMap;
-use std::{fs, path::Path};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn legacy_case_without_database() {
@@ -213,4 +215,207 @@ fn response(status: u16, body: serde_json::Value) -> Response {
 
 fn body(source: &str) -> serde_json::Value {
     serde_json::from_str(source).unwrap()
+}
+
+// LiteLLM reads a key through the project view, so these cases take the fixture's verified chain, not the 2025-03 baseline a plain seed applies
+#[test]
+fn independent_initial_rows() {
+    let case = decode_case(
+        Path::new("<bytes>"),
+        b"name: independent-initial-rows
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-seeded, user_role: internal_user, auto_create_key: false}}
+upstream: []
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-seeded}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+",
+    )
+    .unwrap();
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let root = unique_root("independent-initial-rows");
+    let url = postgres_url();
+    let results = run_group_with_url(
+        &options,
+        &root,
+        &[case],
+        Some(&url),
+        &mut RandomDatabaseName,
+    )
+    .unwrap();
+    assert_eq!(results, [false]);
+    let (first, second) = capture_pair(&root, "independent-initial-rows");
+    assert!(!(200..300).contains(&first.status));
+    assert_eq!(second.status, first.status);
+    assert_eq!(second.body, first.body);
+}
+
+#[test]
+fn first_gateway_write_not_shared() {
+    let case = decode_case(
+        Path::new("<bytes>"),
+        b"name: first-gateway-write-not-shared
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
+upstream: []
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}]}}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+",
+    )
+    .unwrap();
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let root = unique_root("first-gateway-write-not-shared");
+    let url = postgres_url();
+    let results = run_group_with_url(
+        &options,
+        &root,
+        &[case],
+        Some(&url),
+        &mut RandomDatabaseName,
+    )
+    .unwrap();
+    assert_eq!(results, [false]);
+    let (first, second) = capture_pair(&root, "first-gateway-write-not-shared");
+    assert_eq!(first.status, 200);
+    assert_eq!(second.status, 200);
+}
+
+const HASHED_ADMIN_CASE: &str = "name: hashed-admin-creates-user
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-admin'}, body: {user_id: fixture-created, user_role: internal_user, auto_create_key: false}}
+upstream: []
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+";
+
+const HASHED_INTERNAL_CASE: &str = "name: hashed-internal-key-denied
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: POST, path: /user/new, headers: {Authorization: 'Bearer sk-fixture-internal'}, body: {user_id: fixture-denied, user_role: internal_user, auto_create_key: false}}
+upstream: []
+database: {seed: {dashboard: {logs: []}, users: [{user_id: fixture-admin}, {user_id: fixture-internal}], keys: [{token: sk-fixture-admin, user_id: fixture-admin, role: proxy_admin}, {token: sk-fixture-internal, user_id: fixture-internal, role: internal_user}]}}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+";
+
+#[test]
+fn hashed_fixture_keys_and_roles() {
+    let admin = decode_case(Path::new("<bytes>"), HASHED_ADMIN_CASE.as_bytes()).unwrap();
+    let internal = decode_case(Path::new("<bytes>"), HASHED_INTERNAL_CASE.as_bytes()).unwrap();
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let root = unique_root("hashed-fixture-keys-and-roles");
+    let url = postgres_url();
+    let results = run_group_with_url(
+        &options,
+        &root,
+        &[admin, internal],
+        Some(&url),
+        &mut RandomDatabaseName,
+    )
+    .unwrap();
+    assert_eq!(results, [false, false]);
+    let (admin_first, admin_second) = capture_pair(&root, "hashed-admin-creates-user");
+    assert_eq!(admin_first.status, 200);
+    assert_eq!(admin_second.status, 200);
+    let (internal_first, internal_second) = capture_pair(&root, "hashed-internal-key-denied");
+    assert!(!(200..300).contains(&internal_first.status));
+    assert_eq!(internal_second.status, internal_first.status);
+    assert_eq!(internal_second.body, internal_first.body);
+}
+
+#[test]
+fn disabled_schema_update_still_checks_current_schema() {
+    let case = decode_case(
+        Path::new("<bytes>"),
+        b"name: disabled-schema-update
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+database: {seed: {}}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+",
+    )
+    .unwrap();
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let root = unique_root("disabled-schema-update");
+    let url = postgres_url();
+    let results = run_group_with_url(
+        &options,
+        &root,
+        &[case],
+        Some(&url),
+        &mut RandomDatabaseName,
+    )
+    .unwrap();
+    assert_eq!(results, [false]);
+    let (first, second) = capture_pair(&root, "disabled-schema-update");
+    assert_eq!(first.status, 200);
+    assert_eq!(second.status, 200);
+    let log = group_log(&root);
+    let failed_diff = log.contains("Failed to generate migration diff");
+    let changed_schema = log.contains("Changes to DB Schema detected");
+    // the pinned CLI prints "Failed to generate migration diff", because tools/oracle/litellm has no ./schema.prisma
+    assert!(
+        failed_diff && !changed_schema,
+        "Failed to generate migration diff={failed_diff}, Changes to DB Schema detected={changed_schema}"
+    );
+}
+
+fn postgres_url() -> SecretString {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
+            .expect("database environment parses");
+    environment
+        .postgres_test_url
+        .expect("POSTGRES_TEST_URL is set for this test")
+}
+
+fn unique_root(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/oracle")
+        .join(name)
+        .join(unique_id().unwrap())
+}
+
+fn capture_pair(root: &Path, case_name: &str) -> (Response, Response) {
+    let captures = fs::read_dir(root.join(case_name))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(captures.len(), 1);
+    let directory = captures.first().unwrap().path();
+    let first: Response =
+        serde_json::from_slice(&fs::read(directory.join("client-litellm.json")).unwrap()).unwrap();
+    let second: Response =
+        serde_json::from_slice(&fs::read(directory.join("client-betterlite.json")).unwrap())
+            .unwrap();
+    (first, second)
+}
+
+fn group_log(root: &Path) -> String {
+    let group = fs::read_dir(root)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("group-"))
+        })
+        .expect("the run writes one group folder");
+    fs::read_to_string(group.join("litellm.log")).unwrap()
 }

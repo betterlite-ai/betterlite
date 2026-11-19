@@ -1,0 +1,128 @@
+id: B9999
+title: Guardrail request snapshot capture
+description: >-
+  Port LiteLLM's guardrail snapshot check, shadow_eval_logger.py L305-L362: the test for whether a guardrail that may rewrite the outbound request ran, the fingerprint of that guardrail history, and `GuardrailRequestSnapshot.capture`. The proxy's pre-call step (B1105) captures a snapshot of the request body right after the guardrails ran, and the shadow eval logger later replays a guardrail-rewritten request only from a snapshot whose guardrail history still matches (B4082's post_guardrail_kwargs, called from B118). Code goes in the new module `crates/betterlite-logging/src/guardrail_snapshot.rs` and its folder, with tests in `guardrail_snapshot/tests.rs`. It adds no config key and no environment variable, and the logging crate already has every crate it needs (serde_json, sha2, hex, indexmap, betterlite-models).
+
+
+  `GuardrailRequestSnapshot` already exists on main in `betterlite_logging::callback_logger::event` (B8740): `body: IndexMap<String, Json>` and `fingerprint: String`, with `Json` from `betterlite_models::decisions`. LoggerEvent and SuccessRequest already carry it. Don't define a second struct and don't edit event.rs. Write `impl GuardrailRequestSnapshot { pub fn capture(...) }` in the new module; Rust allows an inherent impl in any module of the crate that defines the type.
+
+
+  The request metadata comes in as `&serde_json::Map<String, Value>`, the shape the pre-call request data and the shadow logger's call details have. A guardrail entry is an object in the array under `standard_logging_guardrail_information`. A missing key or any value that is not an array gives no entries, and array items that are not objects are skipped.
+
+
+  `NON_MUTATING_GUARDRAIL_MODES` is the six modes whose hooks never rewrite the outbound request: during_call, post_call, logging_only, during_mcp_call, post_mcp_call and realtime_input_transcription. `guardrail_is_non_mutating(entry, allowed)` reads the entry's `guardrail_mode` as one value or as an array of values, and is true only when every value is a string in `allowed`. So a missing key, null, a number, or an array that holds one non-string makes it false, and an empty array makes it true. `request_mutating_guardrail_ran(metadata) -> bool` is true when any entry is not non-mutating under the six modes; pre_call, pre_mcp_call and any mode LiteLLM adds later count as mutating, so the check fails closed.
+
+
+  `request_guardrail_fingerprint(metadata) -> Option<String>` keeps, in their order, the entries that are not non-mutating under the six modes minus logging_only, serializes that list as JSON with the object keys sorted at every depth, and returns the SHA-256 digest as lowercase hex. A list with nothing left serializes as `[]` and still gets a digest, so a request with no guardrail entries has a fingerprint. Sort the keys by building the value through `BTreeMap`, not by trusting serde_json's map order. LiteLLM returns None when json.dumps raises; a serde_json value always has a JSON form, so None is left only for an error from serde_json itself.
+
+
+  `GuardrailRequestSnapshot::capture(body: &Map<String, Value>, metadata: &Map<String, Value>) -> Option<Self>` returns None when request_mutating_guardrail_ran is false, or when the fingerprint is None. Otherwise it returns the fingerprint and the body converted with `serde_json::from_value` into `IndexMap<String, Json>`; a conversion error gives None the same way. LiteLLM copies the body with B2204's `independent_snapshot` so that later edits to the request never reach the snapshot. Here the snapshot owns its copy, which gives the same guarantee, so don't call into betterlite-context. A JSON body holds no live span, so the copy keeps `metadata.litellm_parent_otel_span` and `litellm_metadata.litellm_parent_otel_span` as sent, which is where LiteLLM's placeholder swap ends up too.
+
+
+  Public items are `request_mutating_guardrail_ran` (B118 calls it), `request_guardrail_fingerprint` (B4082's post_guardrail_kwargs compares against it) and `capture` (B1105 calls it); the mode set and guardrail_is_non_mutating stay private to the module. No caller sees a failure from this module, so it has no error enum. No `unwrap`, no `expect`.
+
+
+  Tests in `guardrail_snapshot/tests.rs` have names starting with `modes_`, `fingerprint_` and `capture_`. The oracle adapter is operation b9999, with the input tagged by `function`. `{"function": "mutating_ran", "metadata": {...}}` answers `{"result": <bool>}`. `{"function": "fingerprints_match", "first": {...}, "second": {...}}` answers `{"result": <bool>}`, true when the two metadata values give the same fingerprint. `{"function": "capture", "body": {...}, "metadata": {...}}` answers `{"result": null}` or `{"result": {"body": {...}, "fingerprint_matches": <bool>}}`, where fingerprint_matches compares the snapshot's fingerprint with request_guardrail_fingerprint of the same metadata. No answer carries a digest, because the digest text differs from LiteLLM's (see deviations). The Python side calls `_request_mutating_guardrail_ran`, `request_guardrail_fingerprint` and `GuardrailRequestSnapshot.capture` from `litellm.integrations.shadow_eval_logger` and turns the MappingProxyType body back into a dict for its answer.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/guardrail_snapshot.rs
+    - crates/betterlite-logging/src/guardrail_snapshot/**
+    - tools/oracle/src/helpers/logging/b9999.rs
+    - tools/oracle/src/helpers/logging/b9999/**
+    - tools/oracle/helpers/b9999.py
+    - tools/oracle/helpers/b9999/**
+    - tools/oracle/cases/helpers/guardrail-snapshot/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L305-L318
+    why: The six non-mutating modes and _guardrail_is_non_mutating, with the one-value-or-list read of guardrail_mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L321-L344
+    why: _request_mutating_guardrail_ran and request_guardrail_fingerprint, with the narrower replay-safe set that drops logging_only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L347-L362
+    why: The frozen GuardrailRequestSnapshot dataclass and capture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L365-L373
+    why: The start of _post_guardrail_kwargs (B4082), which drops a snapshot whose fingerprint no longer matches the current metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L976-L985
+    why: The logger (B118) asks _request_mutating_guardrail_ran before it needs a snapshot at all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1951-L1990
+    why: The only capture call, in refresh_proxy_server_request_body_snapshot (B1105), and the body and metadata it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L566-L617
+    why: independent_snapshot and its litellm_parent_otel_span placeholder swap, which an owned copy of a JSON body already matches.
+
+dod:
+  - text: >-
+      request_mutating_guardrail_ran is false with no entries, with a non-array guardrail information value, and when every
+      entry's modes are among the six (given as one string, as an array, or as an empty array), skipping non-object items;
+      it is true for pre_call, pre_mcp_call, an unknown mode, a missing guardrail_mode, null, and an array with a non-string.
+    proof: [mode-tests, oracle, helper-python]
+  - text: >-
+      request_guardrail_fingerprint is 64 lowercase hex characters, the same for two metadata values whose kept entries
+      differ only in object key order, unchanged by a post_call entry, changed by a logging_only entry, by a change inside a
+      pre_call entry and by a different entry order, and the same for a missing and a non-array guardrail information value.
+    proof: [fingerprint-tests, oracle, helper-python]
+  - text: >-
+      capture returns None when no request-mutating guardrail ran, and otherwise a snapshot whose fingerprint equals
+      request_guardrail_fingerprint of the same metadata and whose body equals the given body, span keys included; editing
+      the source map after capture leaves the snapshot unchanged.
+    proof: [capture-tests, oracle, helper-python]
+  - text: The oracle cases run the same metadata and bodies through LiteLLM and betterlite and agree.
+    proof: [oracle, helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: mode-tests
+      why: the guardrail mode tests are missing or a mode, a missing mode or a skipped entry is judged differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^guardrail_snapshot::tests::modes_/)'
+    - id: fingerprint-tests
+      why: the fingerprint tests are missing or the kept entries, the key sorting or the digest form differ
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^guardrail_snapshot::tests::fingerprint_/)'
+    - id: capture-tests
+      why: the capture tests are missing or capture keeps a snapshot it should drop, loses the body or ties it to the wrong fingerprint
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^guardrail_snapshot::tests::capture_/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9999.py tools/oracle/helpers/b9999)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-snapshot/mutating-guardrail-detected.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/non-mutating-guardrail-modes.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/missing-mode-is-mutating.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/non-string-mode-is-mutating.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/guardrail-information-not-a-list.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/fingerprint-key-order.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/fingerprint-ignores-post-call.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/fingerprint-logging-only-counts.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/fingerprint-entry-change.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/capture-without-mutating-guardrail.yaml
+  - tools/oracle/cases/helpers/guardrail-snapshot/capture-keeps-body.yaml
+
+deviations:
+  - what: The fingerprint is the SHA-256 of serde_json's compact text with sorted keys, so its hex differs from LiteLLM's digest of json.dumps text (spaces after separators, ASCII escapes, default=str).
+    why: The fingerprint is only compared with another fingerprint built in the same process and is never stored, logged or shown, and docs/compatibility.md leaves json.dumps formatting out of the contract; the oracle cases compare whether two fingerprints match, never their text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L331-L344
+
+out_of_scope:
+  - "_post_guardrail_kwargs (L365-L388) and the rest of request normalization: the shape adapters, the three chat_request functions, _SurfaceOps and its rows, the unforwarded keys, the hosted web search check, _judgeable_sample and _SURFACE_OPS (L72-L168, L280-L303, L391-L450): B4082."
+  - "Calling capture after the guardrails ran, clearing the logging object's snapshot first and storing the result on it (litellm_pre_call_utils.py L1970-L1990): B1105, which also adds the snapshot field to B247's LoggingState."
+  - "The ShadowEvalLogger constructor, _sampled_jobs, async_log_success_event and the slot release (L819-L849, L905-L1038): B118. Handing the stored snapshot to SuccessRequest.guardrail_snapshot for proxied calls: B069."
+  - "Response text, costs, failure text, routing decision readers and result records (L171-L277, L491-L531, L671-L689, L704-L731): B4081."
+  - "sample_hits, the spend counters, direction and scope admission, ActiveShadowEvalJob, canonical_group, the jobs cache, _record_attempt and the default prisma provider (L55, L483-L488, L581-L620, L692-L701, L734-L816, L851-L903, L1218-L1264, L1374-L1382): B4083."
+  - "The judge prompt and budgets, PairwiseVerdict, _unmask_preference, the tool text, _forwarded_team_id, _call_router_shadow and _call_judge (L60-L70, L452-L480, L534-L578, L663-L668, L1266-L1371): B4084."
+  - "_key_or_team_is_over_budget, _run_shadow_eval and _run_shadow_arm (L623-L660, L1042-L1216): B4085."
+  - "independent_snapshot (core_helpers.py L566-L617): B2204; not called here, since the owned copy already matches it."
+
+pitfalls:
+  - 'An entry with no `guardrail_mode` key reads as the single value null, so it counts as mutating; only `guardrail_mode: []` passes with no modes at all.'
+  - 'The fingerprint drops a narrower set than the mutating check: a `logging_only` entry never makes request_mutating_guardrail_ran true, but it stays in the fingerprint, so a logging_only guardrail that runs after capture makes the snapshot stale.'
+  - 'capture asks request_mutating_guardrail_ran first, so a request whose only entries are during_call or post_call gets no snapshot even though its fingerprint exists.'
+  - 'Only object keys are sorted before hashing; the entry list keeps its order, so the same two pre_call entries in swapped order give a different fingerprint.'
+  - 'A string under `standard_logging_guardrail_information` is a Python Sequence, so LiteLLM walks its characters and skips each one as a non-mapping; reading any non-array value as no entries gives the same answers.'
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
