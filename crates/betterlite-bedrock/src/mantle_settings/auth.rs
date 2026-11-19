@@ -54,70 +54,65 @@ where
         request.globals.aws_bearer_token.as_ref(),
     )
     .filter(|token| !token.expose_secret().is_empty());
-    if let Some(token) = bearer {
-        return bearer_request(request, &token, resolve_credentials).await;
-    }
-    sigv4_request(request, resolve_credentials).await
-}
-
-async fn bearer_request<Resolve, Fut>(
-    request: SignRequest<'_>,
-    token: &SecretString,
-    resolve_credentials: Resolve,
-) -> Result<AwsSignedRequest, MantleSettingsError>
-where
-    Resolve: FnOnce(&AwsSettings, &str) -> Fut,
-    Fut: Future<Output = Result<Credentials, CredentialError>>,
-{
-    let params = raw_params(request.optional_params)?;
-    sign_service_request(
-        ServiceRequest {
-            service: ServiceName::Bedrock,
-            headers: request.headers,
-            optional_params: &params,
-            request_data: request.request_data,
-            api_base: request.api_base,
-            model: request.model,
-            api_key: Some(token),
-            configured_bearer: None,
-            region_inputs: RegionInputs::default(),
-            now: request.now,
-        },
+    let (params, filtered, token) = match bearer {
+        Some(token) => (raw_params(request.optional_params)?, None, Some(token)),
+        None => (
+            sigv4_params(request)?,
+            Some(without_authorization(request.headers)),
+            None,
+        ),
+    };
+    let headers = filtered.as_deref().unwrap_or(request.headers);
+    sign(
+        request,
+        &params,
+        headers,
+        token.as_ref(),
         resolve_credentials,
     )
     .await
-    .map_err(classify)
 }
 
-async fn sigv4_request<Resolve, Fut>(
+fn sigv4_params(
     request: SignRequest<'_>,
-    resolve_credentials: Resolve,
-) -> Result<AwsSignedRequest, MantleSettingsError>
-where
-    Resolve: FnOnce(&AwsSettings, &str) -> Fut,
-    Fut: Future<Output = Result<Credentials, CredentialError>>,
-{
+) -> Result<BTreeMap<String, Box<RawValue>>, MantleSettingsError> {
     let region = signing_region(request.optional_params, request.api_base, request.globals)?;
     let mut params = raw_params(request.optional_params)?;
     params.insert(
         REGION_PARAM.to_owned(),
         to_raw_value(&region).map_err(MantleSettingsError::Encode)?,
     );
-    let headers: Vec<(String, Option<String>)> = request
-        .headers
+    Ok(params)
+}
+
+fn without_authorization(headers: &[(String, Option<String>)]) -> Vec<(String, Option<String>)> {
+    headers
         .iter()
         .filter(|(name, _)| !name.eq_ignore_ascii_case(AUTHORIZATION))
         .cloned()
-        .collect();
+        .collect()
+}
+
+async fn sign<Resolve, Fut>(
+    request: SignRequest<'_>,
+    params: &BTreeMap<String, Box<RawValue>>,
+    headers: &[(String, Option<String>)],
+    api_key: Option<&SecretString>,
+    resolve_credentials: Resolve,
+) -> Result<AwsSignedRequest, MantleSettingsError>
+where
+    Resolve: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
     sign_service_request(
         ServiceRequest {
             service: ServiceName::Bedrock,
-            headers: &headers,
-            optional_params: &params,
+            headers,
+            optional_params: params,
             request_data: request.request_data,
             api_base: request.api_base,
             model: request.model,
-            api_key: None,
+            api_key,
             configured_bearer: None,
             region_inputs: RegionInputs::default(),
             now: request.now,
