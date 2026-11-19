@@ -1,0 +1,12 @@
+kind: helper
+name: auth-pubsub-spend-floor-message
+call:
+  auth_pubsub:
+    subscriber:
+      sessions:
+        - - {kind: message, message: '{"cache_key": "spend:team:1", "new_value": 2500.0}'}
+          - {kind: message, message: '{"cache_key": "spend:team:1:floor", "new_value": 125.0, "ttl": 30.0}'}
+          - {kind: block}
+      probe_keys: [spend:team:1, spend:team:1:floor]
+env: {}
+compare: {ignore: []}

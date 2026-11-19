@@ -1,0 +1,18 @@
+kind: helper
+name: messages_suffix
+call:
+  copilot_auxiliary:
+    action: messages
+    model: claude-sonnet-4
+    headers: {}
+    optional_params: {}
+    messages:
+      - {role: user, content: hi}
+    copilot_key: session-token
+    cached_base: https://session.test/v1/messages/
+    caller_api_base: https://attacker.test/v1/messages
+env: {}
+compare:
+  ignore:
+    - pointer: /value/headers/x-request-id
+      why: LiteLLM draws a random request id for every call
