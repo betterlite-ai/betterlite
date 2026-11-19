@@ -20,6 +20,7 @@ PROBE_MODEL: Final = "openai/probe"
 SCORES: Final[TypeAdapter[dict[str, float]]] = TypeAdapter(dict[str, float])
 MODEL_INFO: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 IDENTIFIER: Final[TypeAdapter[str]] = TypeAdapter(str)
+SAMPLES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 
 class SettingsInput(Strict):
@@ -120,8 +121,8 @@ def deployment_entry(entry: DeploymentInput) -> dict[str, JsonValue]:
 
 
 def stored_entry(entry: StoredInput) -> dict[str, JsonValue]:
-    latency: list[JsonValue] = [sample for sample in entry.latency]
-    ttft: list[JsonValue] = [sample for sample in entry.time_to_first_token_seconds]
+    latency = SAMPLES.validate_python(entry.latency)
+    ttft = SAMPLES.validate_python(entry.time_to_first_token_seconds)
     stored: dict[str, JsonValue] = {"latency": latency, "time_to_first_token_seconds": ttft}
     for minute, usage in entry.minutes.items():
         window: dict[str, JsonValue] = {"tpm": usage.tpm, "rpm": usage.rpm}
