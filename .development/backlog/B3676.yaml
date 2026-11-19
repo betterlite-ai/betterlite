@@ -1,14 +1,14 @@
 id: B3676
 milestone: M6 guardrails
 title: Anthropic guardrail streaming and block continuation
-status: todo
+status: done
 depends_on: [B3661, B3670, B3673, B3631, B3246, B5471]
 file: tasks/B3676-anthropic-guardrail-streaming.yaml
 covers:
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2486
