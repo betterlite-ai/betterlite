@@ -3,7 +3,10 @@ from typing import Literal
 
 import litellm
 import openai
-from litellm.types.llms.openai import OpenAICreateThreadParamsToolResources, Thread
+from litellm.types.llms.openai import (
+    OpenAICreateThreadParamsToolResources as ThreadToolResources,
+    Thread,
+)
 from openai.types.beta.thread_create_params import Message
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
@@ -49,7 +52,7 @@ class AssistantThreadsCall(BaseModel):
     thread_id: str | None = None
     messages: list[Message] | None = None
     metadata: dict[str, Json] | None = None
-    tool_resources: OpenAICreateThreadParamsToolResources | None = None
+    tool_resources: ThreadToolResources | None = None
     kwargs: dict[str, Json] = Field(default_factory=dict)
 
 
