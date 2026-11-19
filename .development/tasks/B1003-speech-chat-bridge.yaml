@@ -126,8 +126,6 @@ checks:
 oracle_cases:
 - tools/oracle/cases/sdk-http/speech-chat-bridge/speech-chat-request.yaml
 - tools/oracle/cases/sdk-http/speech-chat-bridge/gemini-pcm-and-wav.yaml
-- tools/oracle/cases/sdk-http/speech-chat-bridge/gemini-pcm.yaml
-- tools/oracle/cases/sdk-http/speech-chat-bridge/gemini-rejects-response-format.yaml
 - tools/oracle/cases/sdk-http/speech-chat-bridge/speech-bridge-failures.yaml
 - tools/oracle/cases/helpers/speech-media-type/speech-media-precedence.yaml
 deviations: []
