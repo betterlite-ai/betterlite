@@ -1,0 +1,16 @@
+kind: helper
+name: file-upload-options-managed-upload-errors
+call:
+  file_upload_options:
+    calls:
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: true}
+      - {function: managed_upload, target_model_names: [a], model: m, require_managed_files: true}
+      - {function: managed_upload, target_model_names: [a], model: "", require_managed_files: true}
+      - {function: managed_upload, target_model_names: [a], model: null, require_managed_files: true}
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: false}
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: null}
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: 0}
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: 1}
+      - {function: managed_upload, target_model_names: [], model: m, require_managed_files: "true"}
+env: {}
+compare: {ignore: []}

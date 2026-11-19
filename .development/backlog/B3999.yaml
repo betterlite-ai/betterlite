@@ -1,7 +1,7 @@
 id: B3999
 milestone: M7 observability
 title: Publish standard and legacy spend logs to Google PubSub
-status: todo
+status: blocked
 depends_on: [B002, B256, B173, B1303, B1304, B1716, B8741]
 file: tasks/B3999-gcs-pubsub-logging.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B115
 split_from: B115
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): niche, Google PubSub spend log sink"
 pr: null

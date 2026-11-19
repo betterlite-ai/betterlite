@@ -1,0 +1,29 @@
+kind: helper
+name: file-upload-options-simple-targets
+call:
+  file_upload_options:
+    calls:
+      - function: extract
+        request_body: {}
+        target_model_names_form: ' a, b,,a '
+      - function: extract
+        request_body: {}
+        target_model_names_form: '["a","b"]'
+      - function: extract
+        request_body: {}
+        target_model_names_form: null
+      - function: extract
+        request_body: {}
+        target_model_names_form: ""
+      - function: extract
+        request_body: {}
+        target_model_names_form: " b "
+        form_parts:
+          - {kind: text, name: target_model_names, text: from_form}
+      - function: extract
+        request_body: {}
+        target_model_names_form: " "
+        form_parts:
+          - {kind: text, name: target_model_names, text: from_form}
+env: {}
+compare: {ignore: []}
