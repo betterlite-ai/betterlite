@@ -9,7 +9,12 @@ use crate::budget_tier_sweep::tests::support::{CountingReconnect, RecordingCache
 
 #[test]
 fn a_full_page_moves_the_cursor_after_its_last_row() {
-    let walk = EndUserWalk::start().after_page(Some("u2"), 2, 2);
+    let walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    }
+    .after_page(Some("u2"), 2, 2);
     assert_eq!(
         walk,
         EndUserWalk {
@@ -22,7 +27,12 @@ fn a_full_page_moves_the_cursor_after_its_last_row() {
 
 #[test]
 fn a_page_over_the_batch_keeps_the_cursor() {
-    let walk = EndUserWalk::start().after_page(Some("u9"), 3, 2);
+    let walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    }
+    .after_page(Some("u9"), 3, 2);
     assert_eq!(
         walk,
         EndUserWalk {
@@ -35,9 +45,13 @@ fn a_page_over_the_batch_keeps_the_cursor() {
 
 #[test]
 fn a_short_page_ends_the_walk() {
-    let walk = EndUserWalk::start()
-        .after_page(Some("u2"), 2, 2)
-        .after_page(Some("u5"), 1, 2);
+    let walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    }
+    .after_page(Some("u2"), 2, 2)
+    .after_page(Some("u5"), 1, 2);
     assert_eq!(
         walk,
         EndUserWalk {
@@ -50,9 +64,13 @@ fn a_short_page_ends_the_walk() {
 
 #[test]
 fn an_empty_page_ends_the_walk_with_the_reached_count() {
-    let walk = EndUserWalk::start()
-        .after_page(Some("u2"), 2, 2)
-        .after_page(None, 0, 2);
+    let walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    }
+    .after_page(Some("u2"), 2, 2)
+    .after_page(None, 0, 2);
     assert_eq!(
         walk,
         EndUserWalk {
@@ -65,9 +83,13 @@ fn an_empty_page_ends_the_walk_with_the_reached_count() {
 
 #[test]
 fn a_failed_page_drops_the_cursor_and_marks_the_walk_truncated() {
-    let walk = EndUserWalk::start()
-        .after_page(Some("u2"), 2, 2)
-        .truncated_at();
+    let walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    }
+    .after_page(Some("u2"), 2, 2)
+    .truncated_at();
     assert_eq!(
         walk,
         EndUserWalk {

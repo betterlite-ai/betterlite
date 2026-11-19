@@ -1,7 +1,7 @@
 use tokio_postgres::Row;
 
 use crate::budget_cascade::enduser_invalidation::enduser_invalidation_match;
-use crate::budget_cascade::linked_rows::{EndUserRow, LinkedKeys};
+use crate::budget_cascade::linked_rows::{EndUserRow, LinkedKeys as _};
 use crate::budget_reset_policy::cache_invalidation::{ResetCache, invalidate_caches};
 use crate::budget_reset_policy::retry::RetryMode;
 use crate::database_faults::DbError;
@@ -45,7 +45,11 @@ where
     Reconnect: DbReconnect + Send,
 {
     if request.budget_ids.is_empty() {
-        return EndUserWalk::done();
+        return EndUserWalk {
+            cursor: None,
+            invalidated: 0,
+            truncated: false,
+        };
     }
     let matched = enduser_invalidation_match(request.budget_ids, request.default_enduser_budget_id);
     let sql = if matched.include_unlinked {
@@ -53,7 +57,11 @@ where
     } else {
         LINKED_ENDUSER_PAGE_SQL
     };
-    let mut walk = EndUserWalk::start();
+    let mut walk = EndUserWalk {
+        cursor: Some(String::new()),
+        invalidated: 0,
+        truncated: false,
+    };
     while let Some(cursor) = walk.cursor.clone() {
         let page = EndUserPage {
             sql,
@@ -61,28 +69,43 @@ where
             cursor: &cursor,
             limit: request.batch_size,
         };
-        let read = read_enduser_page(store, &page, reconnect.as_deref_mut()).await;
-        match read {
-            Ok(rows) => {
-                let last_user_id = rows.last().map(|row| row.user_id.as_str());
-                let counter_keys: Vec<String> = rows.iter().map(EndUserRow::counter_key).collect();
-                let cache_keys: Vec<String> =
-                    rows.iter().flat_map(EndUserRow::cache_keys).collect();
-                invalidate_caches(cache, &counter_keys, &cache_keys).await;
-                walk = walk.after_page(last_user_id, rows.len(), request.batch_size);
-            }
-            Err(error) => {
-                tracing::warn!(
-                    customers = walk.invalidated,
-                    cursor = %cursor,
-                    error = %error,
-                    "Failed to read a customer page for cache invalidation; the customers past it keep their cached spend until it expires"
-                );
-                walk = walk.truncated_at();
-            }
-        }
+        let next =
+            invalidate_enduser_page(store, cache, &page, &walk, reconnect.as_deref_mut()).await;
+        walk = next;
     }
     walk
+}
+
+// _invalidate_enduser_page: one page's read and cache drops, or the failure branch that drops the cursor past the customers it reached.
+async fn invalidate_enduser_page<Cache, Reconnect>(
+    store: &PostgresStore,
+    cache: &Cache,
+    page: &EndUserPage<'_>,
+    walk: &EndUserWalk,
+    reconnect: Option<&mut Reconnect>,
+) -> EndUserWalk
+where
+    Cache: ResetCache,
+    Reconnect: DbReconnect + Send,
+{
+    match read_enduser_page(store, page, reconnect).await {
+        Ok(rows) => {
+            let last_user_id = rows.last().map(|row| row.user_id.as_str());
+            let counter_keys: Vec<String> = rows.iter().map(EndUserRow::counter_key).collect();
+            let cache_keys: Vec<String> = rows.iter().flat_map(EndUserRow::cache_keys).collect();
+            invalidate_caches(cache, &counter_keys, &cache_keys).await;
+            walk.after_page(last_user_id, rows.len(), page.limit)
+        }
+        Err(error) => {
+            tracing::warn!(
+                customers = walk.invalidated,
+                cursor = %page.cursor,
+                error = %error,
+                "Failed to read a customer page for cache invalidation; the customers past it keep their cached spend until it expires"
+            );
+            walk.truncated_at()
+        }
+    }
 }
 
 async fn read_enduser_page<Reconnect>(

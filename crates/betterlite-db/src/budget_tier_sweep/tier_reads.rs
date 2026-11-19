@@ -8,7 +8,7 @@ use crate::database_faults::reconnect::{DbReconnect, call_with_db_reconnect_retr
 use crate::identity_budget_reset::faults::{describe, read_fault};
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
-use crate::table_ops::rows::RowDecoder;
+use crate::table_ops::rows::RowDecoder as _;
 
 use super::tier_null_reset::DUE_TIERS_SQL;
 
