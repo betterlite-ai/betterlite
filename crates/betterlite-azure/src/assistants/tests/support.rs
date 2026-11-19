@@ -124,7 +124,7 @@ impl Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .ok_or(TransportError::Closed)
+            .unwrap_or(Err(TransportError::Closed))
     }
 
     fn reply(&self, request: &OutboundRequest) -> Queued {

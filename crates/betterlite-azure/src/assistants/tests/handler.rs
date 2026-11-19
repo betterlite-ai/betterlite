@@ -27,7 +27,7 @@ pub(super) async fn check() {
 async fn passes_the_handler_through() {
     let recorder = Recorder::start();
     let fixture = Fixture::new();
-    let handler = support::RecordingHandler::start();
+    let handler = RecordingHandler::start();
     let expected: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(&handler);
     let manager = support::streamed(
         &recorder,
@@ -54,7 +54,7 @@ async fn delivers_events_before_ending() {
     let recorder = Recorder::start();
     recorder.queue(200, STREAM_BODY);
     let fixture = Fixture::new();
-    let handler = support::RecordingHandler::start();
+    let handler = RecordingHandler::start();
     let attached: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(&handler);
     let manager = support::streamed(
         &recorder,
