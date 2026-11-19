@@ -185,13 +185,13 @@ impl ResponseTokens for Tokens {
     }
 }
 
-pub(crate) fn scenario_services<'a>(
-    scenario: &Scenario,
-    cache: Option<&'a CacheSource<'a, Silent, Silent>>,
-    context: &'a ResolutionContext<'a>,
-    worker: &'a LoggingWorker<CacheHitSuccessJob>,
-    tokens: &'a Tokens,
-) -> Result<LookupServices<'a, Silent, Silent>, Box<HelperError>> {
+pub(crate) fn scenario_services<'svc>(
+    scenario: &'svc Scenario,
+    cache: Option<&'svc CacheSource<'svc, Silent, Silent>>,
+    context: &'svc ResolutionContext<'svc>,
+    worker: &'svc LoggingWorker<CacheHitSuccessJob>,
+    tokens: &'svc Tokens,
+) -> Result<LookupServices<'svc, Silent, Silent>, Box<HelperError>> {
     Ok(LookupServices {
         cache,
         cache_type: scenario.cache_type,

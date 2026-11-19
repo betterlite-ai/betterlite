@@ -123,7 +123,7 @@ pub(crate) fn cache_fixture(
     scenario: &Scenario,
 ) -> Result<ResponseCache<Silent, Silent>, Box<HelperError>> {
     let backend = Arc::new(SeededBackend::default());
-    let stored: Arc<dyn EnvelopeBackend> = Arc::clone(&backend);
+    let stored: Arc<dyn EnvelopeBackend> = Arc::<SeededBackend>::clone(&backend);
     let cache = ResponseCache {
         backend: stored,
         key_settings: CacheKeySettings {

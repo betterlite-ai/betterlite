@@ -33,12 +33,14 @@ fn cached_report(result: Option<&Replayed<HelperResponse>>) -> Result<Cached, Bo
             cache_hit: None,
             cache_key: None,
         },
-        Some(Replayed::Response(_, converted))
-        | Some(Replayed::Transcription(converted))
-        | Some(Replayed::Responses(converted))
-        | Some(Replayed::Stream(converted))
-        | Some(Replayed::ResponsesStream(converted))
-        | Some(Replayed::MessagesStream(converted)) => Cached {
+        Some(
+            Replayed::Response(_, converted)
+            | Replayed::Transcription(converted)
+            | Replayed::Responses(converted)
+            | Replayed::Stream(converted)
+            | Replayed::ResponsesStream(converted)
+            | Replayed::MessagesStream(converted),
+        ) => Cached {
             rendered: "converted",
             raw: Value::Null,
             cache_hit: Some(converted.cache_hit),
