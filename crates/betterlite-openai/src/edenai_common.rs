@@ -15,7 +15,6 @@ use crate::openai_base_config::{Headers, Object};
 
 mod number;
 mod tests;
-
 pub const EDENAI_API_BASE: &str = "https://api.edenai.run/v3";
 pub const EDENAI_COST_HEADER: &str = "x-edenai-cost";
 pub const MISSING_KEY_MESSAGE: &str = "Missing Eden AI API key: set EDENAI_API_KEY or pass api_key";

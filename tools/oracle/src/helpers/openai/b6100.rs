@@ -1,6 +1,8 @@
+mod calls;
 mod fixture;
 mod input;
 mod ops;
+mod replies;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
