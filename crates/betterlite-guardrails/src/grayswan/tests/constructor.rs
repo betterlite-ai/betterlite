@@ -62,7 +62,9 @@ fn grayswan_constructor_uses_litellm_defaults() {
 
 #[test]
 fn grayswan_constructor_reads_the_environment() {
-    let settings = build(args(), &constructor_env()).settings;
+    let mut guardrail_args = args();
+    guardrail_args.api_key = None;
+    let settings = build(guardrail_args, &constructor_env()).settings;
     assert_eq!(settings.api_key.expose_secret(), "env-key");
     assert_eq!(settings.api_base, "https://env.example");
     assert!((settings.violation_threshold - 0.7).abs() < f64::EPSILON);

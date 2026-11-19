@@ -62,9 +62,11 @@ fn base() -> GuardrailBase {
 }
 
 fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
+    let mut guardrail_base = base();
+    guardrail_base.settings.guardrail_name = Some("safety".to_owned());
     GraySwanGuardrail {
         settings: configured("http://example", action, true),
-        base: base(),
+        base: guardrail_base,
         client: reqwest::Client::default(),
     }
 }
