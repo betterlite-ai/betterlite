@@ -21,7 +21,6 @@ pub struct ModelGardenTargetInput<'input> {
     pub resolved_project: &'input str,
 }
 
-#[must_use]
 pub fn model_garden_target(
     input: &ModelGardenTargetInput<'_>,
 ) -> Result<ModelGardenTarget, VertexUrlError> {
@@ -45,7 +44,6 @@ pub fn model_garden_target(
 }
 
 // a publisher model id travels in the JSON body on the shared OpenAPI route; a deployed endpoint id travels in the path
-#[must_use]
 pub fn get_model_garden_url(
     location: &str,
     project: &str,
