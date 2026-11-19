@@ -443,7 +443,8 @@ fn encrypted_reasoning_response(#[case] source: &str, #[case] expected: &str) {
 fn arguments_over_the_json_limit_are_refused() {
     let limits = ApiLimits {
         max_json_bytes: 4,
-        ..ApiLimits::default()
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
     };
     let error = decode_messages_responses_out(b"{\"a\":1}", &limits)
         .expect_err("the arguments exceed the JSON boundary");
