@@ -5,7 +5,7 @@ use betterlite_core::caching::lookup::async_lookup::{AsyncLookup, async_get_cach
 use betterlite_core::caching::lookup::services::LookupServices;
 use betterlite_core::caching::lookup::sync_lookup::sync_get_cache;
 use betterlite_logging::worker::LoggingWorker;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::Value;
 
 use super::fixtures::{
@@ -32,8 +32,8 @@ async fn scenario_report(scenario: &Scenario) -> Result<Value, Box<HelperError>>
         .cache_configured
         .then(|| cache_fixture(scenario))
         .transpose()?;
-    let source = cache.as_ref().map(|cache| CacheSource {
-        cache,
+    let source = cache.as_ref().map(|fixture| CacheSource {
+        cache: fixture,
         async_support: read_support(scenario.operation),
     });
     let services = scenario_services(scenario, source.as_ref(), &context, &worker, &tokens)?;
@@ -60,7 +60,7 @@ async fn run_scenario(
             .or_value_error()?;
             services.worker.flush().await;
             let AsyncLookup { response, logging } = outcome;
-            let view = logged_from(snapshots, logging.as_ref().map(|logging| &logging.state))?;
+            let view = logged_from(snapshots, logging.as_ref().map(|hit| &hit.state))?;
             lookup_report(response.as_ref(), response.is_some(), &view)
         }
         Operation::Sync => {

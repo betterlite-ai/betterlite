@@ -1,6 +1,6 @@
 use betterlite_cache::handler::retrieve::AsyncSupport;
 use betterlite_core::caching::lookup::request::CacheLookup;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use chrono::DateTime;
 
 use super::handlers::FIXED_TIME;

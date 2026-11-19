@@ -6,7 +6,7 @@ use betterlite_cache::types::embedding::EmbeddingPayload;
 use betterlite_core::caching::lookup::json::{cache_value_json, key_value_json};
 use betterlite_core::caching::lookup::response::LookupResponse;
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
@@ -44,7 +44,7 @@ fn cached_report(result: Option<&Replayed<HelperResponse>>) -> Result<Cached, Bo
             rendered: "converted",
             raw: Value::Null,
             cache_hit: Some(converted.cache_hit),
-            cache_key: converted.stamp.clone().flatten(),
+            cache_key: converted.stamp.clone(),
         },
     })
 }
@@ -54,15 +54,14 @@ pub(crate) fn lookup_report(
     returned: bool,
     logged: &Logged,
 ) -> Result<Value, Box<HelperError>> {
-    let cached = cached_report(response.and_then(|response| response.cached_result.as_ref()))?;
+    let cached = cached_report(response.and_then(|lookup| lookup.cached_result.as_ref()))?;
     let embedding = response
-        .and_then(|response| response.final_embedding_response.as_ref())
+        .and_then(|lookup| lookup.final_embedding_response.as_ref())
         .map_or(Value::Null, embedding_report);
-    let all_cached = response.is_some_and(|response| response.all_embeddings_cached);
-    let mut uncached = Value::Null;
-    if let Some(items) = response.and_then(|response| response.embedding_uncached_input.as_ref()) {
-        uncached = uncached_report(items)?;
-    }
+    let all_cached = response.is_some_and(|lookup| lookup.all_embeddings_cached);
+    let uncached = response
+        .and_then(|lookup| lookup.embedding_uncached_input.as_ref())
+        .map_or(Ok(Value::Null), uncached_report)?;
     Ok(json!({
         "returned": returned,
         "cached": cached.rendered,
@@ -89,7 +88,7 @@ fn embedding_report(response: &CachedEmbeddingResponse) -> Value {
     json!({
         "reply": {
             "model": response.model,
-            "data": response.data.iter().map(embedding_item).collect::<Vec<_>>(),
+            "data": response.data.iter().map(|slot| embedding_item(slot.as_ref())).collect::<Vec<_>>(),
             "usage": response.usage.as_ref().map(usage_report),
         },
         "cache_hit": bool_field(&response.hidden_params, "cache_hit"),
@@ -97,7 +96,7 @@ fn embedding_report(response: &CachedEmbeddingResponse) -> Value {
     })
 }
 
-fn embedding_item(slot: &Option<Embedding>) -> Value {
+fn embedding_item(slot: Option<&Embedding>) -> Value {
     let Some(item) = slot else {
         return Value::Null;
     };

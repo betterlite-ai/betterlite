@@ -1,6 +1,6 @@
 mod fixtures;
 mod scenario;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
 

@@ -46,9 +46,12 @@ pub(crate) fn logged_from(
     snapshots: &Mutex<Vec<Logged>>,
     fallback: Option<&LoggingState>,
 ) -> Result<Logged, Box<HelperError>> {
-    let recorded = snapshots.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(snapshot) = recorded.last() {
-        return Ok(snapshot.clone());
+    let recorded = {
+        let held = snapshots.lock().unwrap_or_else(PoisonError::into_inner);
+        held.last().cloned()
+    };
+    if let Some(snapshot) = recorded {
+        return Ok(snapshot);
     }
     fallback.map_or_else(
         || {
@@ -107,7 +110,7 @@ impl SuccessClock for FixedClock {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct HelperResponse {
     pub(crate) cache_hit: bool,
-    pub(crate) stamp: Option<Option<String>>,
+    pub(crate) stamp: Option<String>,
 }
 
 impl CacheHitMetadata for HelperResponse {
@@ -118,7 +121,7 @@ impl CacheHitMetadata for HelperResponse {
 
 impl HitResponse for HelperResponse {
     fn stamp_cache_key(&mut self, cache_key: Option<&str>) {
-        self.stamp = Some(cache_key.map(str::to_owned));
+        self.stamp = cache_key.map(str::to_owned);
     }
 
     fn success_result(&self) -> SuccessResult {

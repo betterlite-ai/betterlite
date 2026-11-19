@@ -14,7 +14,7 @@ use betterlite_cache::types::cache_type::CacheMode;
 use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 
