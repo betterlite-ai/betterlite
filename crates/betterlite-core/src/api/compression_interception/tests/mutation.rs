@@ -103,6 +103,28 @@ async fn compressed_tools_are_appended_to_existing_tools() {
 }
 
 #[tokio::test]
+async fn a_null_tools_field_is_treated_as_no_tools() {
+    let retrieve = object(vec![
+        ("type", text("custom")),
+        ("name", text("litellm_content_retrieve")),
+    ]);
+    let harness = harness(
+        Settings::default(),
+        fixed_clock(NOW),
+        vec![Ok(output(
+            vec![object(vec![("role", text("user"))])],
+            vec![retrieve.clone()],
+            number(100),
+            number(40),
+            content(&[("key", "value")]),
+        ))],
+    );
+    let mut body = request_with_tools(Json::Null);
+    applied(&harness, &mut body).await;
+    assert_eq!(body.get("tools"), Some(&list(vec![retrieve])));
+}
+
+#[tokio::test]
 async fn a_non_list_tools_field_is_an_error() {
     let harness = harness(
         Settings::default(),

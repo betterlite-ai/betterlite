@@ -29,7 +29,7 @@ fn pruning_keeps_a_younger_entry() {
     let (clock, now) = manual_clock(100.0);
     let cache = CompressionCache::with_clock(clock);
     cache.store(CALL_ID.to_owned(), content(&[("key", "value")]));
-    *now.lock().expect("the clock lock") = 1099.0_f64;
+    *now.lock().expect("the clock lock") = 999.0_f64;
     cache.prune();
     assert!(cache.entry(CALL_ID).is_some());
 }
