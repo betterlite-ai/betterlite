@@ -43,16 +43,21 @@ fn seed_covers_each_host() {
         !seeds.is_empty(),
         "the native_messages_hosts seed is present"
     );
-    let mut hosts = BTreeSet::new();
-    for path in &seeds {
-        let case = parse_case(path);
-        assert_eq!(case.call.operation, OPERATION, "{}", path.display());
-        let input: Input =
-            serde_json::from_value(case.call.input.clone()).expect("the seed names a typed input");
-        for step in &input.calls {
-            hosts.insert(host_name(step_host(step)));
-        }
-    }
+    let inputs: Vec<Input> = seeds
+        .iter()
+        .map(|path| {
+            let case = parse_case(path);
+            assert_eq!(case.call.operation, OPERATION, "{}", path.display());
+            serde_json::from_value::<Input>(case.call.input.clone())
+                .expect("the seed names a typed input")
+        })
+        .collect();
+    let hosts: BTreeSet<&str> = inputs
+        .iter()
+        .flat_map(|input| &input.calls)
+        .map(step_host)
+        .map(host_name)
+        .collect();
     let expected: BTreeSet<&str> = ["deepseek", "minimax", "tencent"].into_iter().collect();
     assert_eq!(hosts, expected);
 }

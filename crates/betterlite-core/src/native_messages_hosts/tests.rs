@@ -5,7 +5,8 @@ use std::future::{Future, ready};
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
 use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
-use betterlite_anthropic::credentials::AnthropicSettings;
+use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
+use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -293,7 +294,8 @@ fn deepseek_permits_missing_auth_and_adds_its_headers() {
 fn deepseek_inserts_x_api_key_for_a_resolved_key() {
     let sources = Sources {
         explicit: Some("explicit-key".to_owned()),
-        ..Sources::default()
+        environment: None,
+        global: None,
     };
     let (headers, _) = deepseek_headers(&sources, &[], &empty_parameters(), None);
     assert_eq!(
@@ -306,7 +308,8 @@ fn deepseek_inserts_x_api_key_for_a_resolved_key() {
 fn deepseek_checks_header_names_in_exact_lowercase() {
     let sources = Sources {
         explicit: Some("explicit-key".to_owned()),
-        ..Sources::default()
+        environment: None,
+        global: None,
     };
     let (headers, _) = deepseek_headers(
         &sources,
@@ -425,7 +428,8 @@ fn inherited_hosts_fall_back_to_the_anthropic_key() {
 fn inherited_hosts_rewrite_an_oauth_key_as_a_bearer_token() {
     let sources = Sources {
         explicit: Some("sk-ant-oat01-token".to_owned()),
-        ..Sources::default()
+        environment: None,
+        global: None,
     };
     let headers = inherited_headers(&sources, &[], &empty_parameters(), &settings(None, None))
         .expect("the oauth key authenticates");
@@ -459,7 +463,9 @@ fn settings(api_key: Option<&str>, auth_token: Option<&str>) -> AnthropicSetting
     AnthropicSettings {
         api_key: api_key.map(secret),
         auth_token: auth_token.map(secret),
-        ..AnthropicSettings::default()
+        api_base: DEFAULT_API_BASE.to_owned(),
+        use_bearer_for_custom_base: false,
+        anthropic_version: ANTHROPIC_VERSION.to_owned(),
     }
 }
 
@@ -610,28 +616,42 @@ async fn other_hosts_keep_custom_tool_types() {
     assert_eq!(minimax_body.get("tools"), Some(&tools));
 }
 
+async fn transform_with_system(model: &str, system: Json) -> Object {
+    let mut parameters = Object::new();
+    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
+    parameters.insert("system".to_owned(), system);
+    let request = HostRequest {
+        model,
+        messages: vec![user_message()],
+        optional_params: parameters,
+    };
+    match model {
+        "tencent" => tencent::transform_request(&mut Plain, request).await,
+        "minimax" => minimax::transform_request(&mut Plain, request).await,
+        _ => deepseek::transform_request(&mut Plain, request).await,
+    }
+    .expect("the request transforms")
+}
+
 #[tokio::test]
 async fn all_hosts_strip_billing_system_metadata() {
     let system = Json::Text("x-anthropic-billing-header: cc_version=1".to_owned());
-    for name in ["deepseek", "tencent", "minimax"] {
-        let mut parameters = Object::new();
-        parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
-        parameters.insert("system".to_owned(), system.clone());
-        let request = HostRequest {
-            model: name,
-            messages: vec![user_message()],
-            optional_params: parameters,
-        };
-        let body = match name {
-            "deepseek" => deepseek::transform_request(&mut Plain, request).await,
-            "tencent" => tencent::transform_request(&mut Plain, request).await,
-            _ => minimax::transform_request(&mut Plain, request).await,
-        }
-        .expect("the request transforms");
-        assert_eq!(
-            body.get("system"),
-            None,
-            "{name} strips the billing system block"
-        );
-    }
+    let deepseek_body = transform_with_system("deepseek", system.clone()).await;
+    let tencent_body = transform_with_system("tencent", system.clone()).await;
+    let minimax_body = transform_with_system("minimax", system).await;
+    assert_eq!(
+        deepseek_body.get("system"),
+        None,
+        "deepseek strips the billing system block"
+    );
+    assert_eq!(
+        tencent_body.get("system"),
+        None,
+        "tencent strips the billing system block"
+    );
+    assert_eq!(
+        minimax_body.get("system"),
+        None,
+        "minimax strips the billing system block"
+    );
 }

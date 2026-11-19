@@ -40,15 +40,17 @@ fn revealed(key: Option<&SecretString>) -> Option<String> {
     key.map(|secret| secret.expose_secret().to_owned())
 }
 
-#[test]
-fn default_to_nothing() {
+#[rstest]
+#[case::deepseek(Host::Deepseek)]
+#[case::tencent(Host::Tencent)]
+#[case::minimax(Host::Minimax)]
+fn default_to_nothing(#[case] host: Host) {
     let settings = load("", &[]);
+    let loaded = host.of(&settings);
     assert!(settings.global_api_key.is_none());
-    for host in [&settings.deepseek, &settings.tencent, &settings.minimax] {
-        assert!(host.api_key.is_none());
-        assert!(host.api_base.is_none());
-        assert!(host.fallback_api_base.is_none());
-    }
+    assert!(loaded.api_key.is_none());
+    assert!(loaded.api_base.is_none());
+    assert!(loaded.fallback_api_base.is_none());
 }
 
 #[rstest]
