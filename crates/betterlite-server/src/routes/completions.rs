@@ -19,7 +19,6 @@ use betterlite_core::operation::text_completion::{
 };
 use betterlite_core::operation::text_stream::TextStreamAnswer;
 use betterlite_core::operation::{CallResult, Operation};
-use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::completion_chat_bridge::answer::text_answer_body;
@@ -29,7 +28,6 @@ use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRe
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-use crate::route_read_through::route_with_read_through;
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::answer_chat;
 use crate::state::ServerState;
@@ -185,31 +183,11 @@ async fn completions(
     };
     let model = path_model
         .map(|Path(model)| model)
-        .or_else(|| request.model.clone());
-    let model_text = model.as_deref().unwrap_or("None");
-    let route = route_endpoint("atext_completion").unwrap_or("atext_completion");
-    let attempt = || async {
-        pick_deployment(&state.state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
-    };
-    let read_through = state.state.model_read_through.read_through.as_deref();
-    let deployment = match route_with_read_through(model.as_deref(), read_through, attempt).await {
-        Ok(deployment) => deployment,
-        Err(error) => {
-            let message = state
-                .state
-                .executor
-                .redactor
-                .redact_internal_details(&error.detail.error);
-            let answer = FailureAnswer {
-                status: ProxyModelNotFoundError::STATUS.as_u16(),
-                error_type: Some(String::from("invalid_request_error")),
-                param: None,
-                message: message.clone(),
-                provider_specific_fields: Some(message),
-            };
-            return render(&answer, &call_id, state.include_call_id);
-        }
+        .or_else(|| request.model.clone())
+        .unwrap_or_else(|| String::from("None"));
+    let Ok(deployment) = pick_deployment(&state.state.executor, &model) else {
+        let missing = DispatchError::MissingDeployment { model_id: model };
+        return render(&failure_answer(missing), &call_id, state.include_call_id);
     };
     execute(&state, request, deployment, &call_id, started).await
 }

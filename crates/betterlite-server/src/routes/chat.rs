@@ -6,7 +6,7 @@ use streaming::{ChatCalls, render_stream};
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Path, State};
 use axum::http::header::{CONTENT_TYPE, HeaderValue};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
@@ -22,7 +22,6 @@ use betterlite_core::operation::chat::{
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::normalize::{ErrorFacts, Normalizer, class::Class, provider::provider_facts};
-use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError};
@@ -32,10 +31,8 @@ use std::time::{Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
-use crate::route_read_through::route_with_read_through;
 use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::{FailureShape, failure, plain_failure};
-use crate::state::ServerState;
+use crate::server::{failure, plain_failure};
 
 use headers::success_headers;
 
@@ -136,7 +133,6 @@ pub(crate) struct CallContext<'id> {
 async fn chat_completion(
     State(state): State<ChatRouteState>,
     path_model: Option<Path<String>>,
-    server: Option<Extension<Arc<ServerState>>>,
     request_headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -157,49 +153,30 @@ async fn chat_completion(
                 call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
             }
             let error = ChatError::from(source);
-            log_unrouted_failure(&error.to_string(), &call);
+            log_unrouted_failure(&error, &call);
             return failure(&error, &call, None);
         }
     };
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    let model_text = model.as_deref().unwrap_or("None");
-    let read_through =
-        server.and_then(|Extension(server)| server.model_read_through.read_through.clone());
-    let route = route_endpoint("acompletion").unwrap_or("acompletion");
-    let attempt = || async {
-        pick_deployment(&state.executor, model_text)
-            .map_err(|_error| ProxyModelNotFoundError::new(route, model_text, true))
+    let deployment = match pick_deployment(&state.executor, model.as_deref().unwrap_or("None")) {
+        Ok(deployment) => deployment,
+        Err(error) => {
+            log_unrouted_failure(&error, &call);
+            return failure(&error, &call, None);
+        }
     };
-    let deployment =
-        match route_with_read_through(model.as_deref(), read_through.as_deref(), attempt).await {
-            Ok(deployment) => deployment,
-            Err(error) => {
-                log_unrouted_failure(&error.to_string(), &call);
-                return plain_failure(
-                    &call,
-                    None,
-                    FailureShape {
-                        status: ProxyModelNotFoundError::STATUS,
-                        error_type: "invalid_request_error",
-                        param: None,
-                        message: call
-                            .errors
-                            .redactor
-                            .redact_internal_details(&error.detail.error),
-                        repeat_message: true,
-                    },
-                );
-            }
-        };
     let has_content = first_message_has_content(&body);
     execute_chat(&state, &request, has_content, deployment, &call).await
 }
 
 // only the dispatch's own terminal record covers a routed call; this covers one that never got there
-fn log_unrouted_failure(message: &str, call: &CallContext<'_>) {
-    let message = call.errors.redactor.redact_internal_details(message);
+fn log_unrouted_failure(error: &ChatError, call: &CallContext<'_>) {
+    let message = call
+        .errors
+        .redactor
+        .redact_internal_details(&error.to_string());
     tracing::warn!(error = %message, "chat request failed before dispatch");
 }
 
@@ -270,13 +247,9 @@ fn dispatch_failure(
         } => plain_failure(
             call,
             deployment,
-            FailureShape {
-                status: StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                error_type: &error_type,
-                param,
-                message,
-                repeat_message: false,
-            },
+            StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            (&error_type, param),
+            message,
         ),
         DispatchError::Embedding { .. }
         | DispatchError::NotBuilt { .. }
@@ -297,16 +270,13 @@ fn chat_failure(
     }
     if let ChatFailure::InvalidControl { source } = chat_error {
         let param = Some(source.param().to_owned());
+        let kind = ("invalid_request_error", param);
         return plain_failure(
             call,
             deployment,
-            FailureShape {
-                status: StatusCode::BAD_REQUEST,
-                error_type: "invalid_request_error",
-                param,
-                message: source.to_string(),
-                repeat_message: false,
-            },
+            StatusCode::BAD_REQUEST,
+            kind,
+            source.to_string(),
         );
     }
     internal_failure(&chat_error.to_string(), call, deployment)
@@ -321,13 +291,9 @@ fn internal_failure(
     plain_failure(
         call,
         deployment,
-        FailureShape {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            error_type: "internal_server_error",
-            param: None,
-            message: redacted,
-            repeat_message: false,
-        },
+        StatusCode::INTERNAL_SERVER_ERROR,
+        ("internal_server_error", None),
+        redacted,
     )
 }
 
