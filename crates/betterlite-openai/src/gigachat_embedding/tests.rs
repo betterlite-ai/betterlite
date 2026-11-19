@@ -94,6 +94,10 @@ fn body_text(request: &EmbeddingRequest) -> serde_json::Value {
     serde_json::to_value(&request.body).unwrap()
 }
 
+fn value_of(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap()
+}
+
 #[tokio::test]
 async fn the_url_joins_the_api_base_with_the_embeddings_path() {
     let value = EmbeddingInput::Text(String::from("hi"));
@@ -139,7 +143,7 @@ async fn a_text_input_becomes_a_one_item_list() {
         .unwrap();
     assert_eq!(
         body_text(&request),
-        json!({"model": "Embeddings", "input": ["hi"]})
+        value_of(r#"{"model": "Embeddings", "input": ["hi"]}"#)
     );
 }
 
@@ -153,7 +157,7 @@ async fn a_texts_input_stays_a_list() {
         .unwrap();
     assert_eq!(
         body_text(&request),
-        json!({"model": "Embeddings", "input": ["hi", "there"]})
+        value_of(r#"{"model": "Embeddings", "input": ["hi", "there"]}"#)
     );
 }
 
@@ -167,7 +171,7 @@ async fn a_tokens_input_stays_a_list() {
         .unwrap();
     assert_eq!(
         body_text(&request),
-        json!({"model": "Embeddings", "input": [1, 2]})
+        value_of(r#"{"model": "Embeddings", "input": [1, 2]}"#)
     );
 }
 
@@ -181,7 +185,7 @@ async fn a_token_lists_input_stays_nested() {
         .unwrap();
     assert_eq!(
         body_text(&request),
-        json!({"model": "Embeddings", "input": [[1, 2], [3]]})
+        value_of(r#"{"model": "Embeddings", "input": [[1, 2], [3]]}"#)
     );
 }
 
@@ -336,10 +340,9 @@ fn the_item_usage_is_summed_into_the_response_usage() {
     assert_eq!(response.usage.completion_tokens, 0);
     assert_eq!(
         serde_json::to_value(&response.data).unwrap(),
-        json!([
-            {"object": "embedding", "embedding": [1, 2], "index": 0},
-            {"object": "embedding", "embedding": [3], "index": 1}
-        ])
+        value_of(
+            r#"[{"object": "embedding", "embedding": [1, 2], "index": 0}, {"object": "embedding", "embedding": [3], "index": 1}]"#
+        )
     );
 }
 

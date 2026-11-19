@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -19,7 +19,7 @@ use super::{
     DOWNLOAD_TIMEOUT, GigachatFileTransport, GigachatFileUploader, GigachatFilesConfig,
     UPLOAD_TIMEOUT,
 };
-use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
+use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader as _};
 use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_utils::IdSource;
 
@@ -90,7 +90,7 @@ impl GigachatBearer for ScriptedBearer {
                     source: None,
                 })
             },
-            |token| Ok(SecretString::from(token)),
+            |issued| Ok(SecretString::from(issued)),
         )
     }
 }
@@ -191,8 +191,11 @@ fn record<T>(queue: &Mutex<Vec<T>>, entry: T) {
 }
 
 fn scripted(replies: &Mutex<VecDeque<Scripted>>) -> Result<UpstreamResponse, TransportError> {
-    let mut queue = replies.lock().unwrap();
-    queue.pop_front().expect("a scripted reply").into_result()
+    let mut queue = replies.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some(reply) = queue.pop_front() else {
+        return Err(TransportError::BodyTooLarge { limit: 0 });
+    };
+    reply.into_result()
 }
 
 impl GigachatFileTransport for Fake {
@@ -213,6 +216,7 @@ impl GigachatFileTransport for Fake {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Setup {
     capacity: usize,
     api_base: Option<&'static str>,
@@ -239,11 +243,12 @@ struct Fixture {
 
 fn fixture(given: Setup) -> Fixture {
     let state = Arc::new(FakeState::default());
-    let bearer = Arc::new(match given.token {
-        Some(token) => ScriptedBearer::issuing(token),
-        None => ScriptedBearer::failing(401),
-    });
-    let shared: Arc<dyn GigachatBearer> = bearer.clone();
+    let bearer = Arc::new(
+        given
+            .token
+            .map_or_else(|| ScriptedBearer::failing(401), ScriptedBearer::issuing),
+    );
+    let shared: Arc<dyn GigachatBearer> = Arc::clone(&bearer);
     let config = GigachatFilesConfig {
         bearer: shared,
         ids: Arc::new(FixedIds),
@@ -731,7 +736,10 @@ async fn a_data_url_with_an_empty_mime_is_downloaded() {
 async fn a_data_url_with_a_non_ascii_payload_returns_none() {
     let fixture = fixture(setup());
     assert_eq!(
-        fixture.uploader.upload("data:image/png;base64,QUJDé").await,
+        fixture
+            .uploader
+            .upload("data:image/png;base64,QUJD\u{e9}")
+            .await,
         None
     );
     assert!(fixture.uploads().is_empty());

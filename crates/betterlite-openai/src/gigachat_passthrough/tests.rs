@@ -14,7 +14,7 @@ use crate::gigachat_chat::config::GigachatBearer;
 use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_utils::GIGACHAT_BASE_URL;
 use crate::openai_base_config::{Headers, Object};
-use crate::passthrough::transformation::BasePassthroughConfig;
+use crate::passthrough::transformation::BasePassthroughConfig as _;
 use crate::passthrough::transformation::types::{
     PassthroughLogging, PassthroughTarget, PassthroughUrlRequest, RelayCallType, RelayedResponse,
 };
@@ -85,10 +85,6 @@ fn passthrough_config(
         api_base_env: api_base_env.map(str::to_owned),
         api_key_env: api_key_env.map(SecretString::from),
     }
-}
-
-fn key_text(key: Option<&SecretString>) -> Option<String> {
-    key.map(|value| value.expose_secret().to_owned())
 }
 
 fn url_of(
@@ -237,7 +233,9 @@ fn the_api_key_wins_over_the_environment_key() {
     let api_key = SecretString::from("api-key");
     let config = passthrough_config(None, Some("env-key"));
     assert_eq!(
-        key_text(config.get_api_key(Some(&api_key))),
+        config
+            .get_api_key(Some(&api_key))
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("api-key"))
     );
 }
@@ -246,7 +244,9 @@ fn the_api_key_wins_over_the_environment_key() {
 fn the_environment_key_is_used_without_one() {
     let config = passthrough_config(None, Some("env-key"));
     assert_eq!(
-        key_text(config.get_api_key(None)),
+        config
+            .get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("env-key"))
     );
 }
@@ -256,7 +256,9 @@ fn an_empty_api_key_falls_back_to_the_environment_key() {
     let api_key = SecretString::from("");
     let config = passthrough_config(None, Some("env-key"));
     assert_eq!(
-        key_text(config.get_api_key(Some(&api_key))),
+        config
+            .get_api_key(Some(&api_key))
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("env-key"))
     );
 }
@@ -264,13 +266,20 @@ fn an_empty_api_key_falls_back_to_the_environment_key() {
 #[test]
 fn an_empty_environment_key_counts_as_unset() {
     let config = passthrough_config(None, Some(""));
-    assert_eq!(key_text(config.get_api_key(None)), None);
+    assert_eq!(
+        config
+            .get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
+        None
+    );
 }
 
 #[test]
 fn no_key_is_none() {
     assert_eq!(
-        key_text(passthrough_config(None, None).get_api_key(None)),
+        passthrough_config(None, None)
+            .get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         None
     );
 }
@@ -315,7 +324,10 @@ async fn a_failed_token_keeps_its_status() {
         .unwrap_err();
     match error {
         GigachatPassthroughError::Token(source) => assert_eq!(source.status_code, 401),
-        other => panic!("expected a token error, got {other:?}"),
+        other @ (GigachatPassthroughError::Passthrough(_)
+        | GigachatPassthroughError::Provider(_)) => {
+            panic!("expected a token error, got {other:?}")
+        }
     }
 }
 
@@ -518,10 +530,10 @@ fn a_chunk_keeps_its_usage() {
             r#"data: {"choices":[{"index":0,"delta":{"content":"x"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
         ],
     );
-    let Some(GigachatPassthroughLogged::Chunks(chunks)) = chunks else {
+    let Some(GigachatPassthroughLogged::Chunks(parsed)) = chunks else {
         panic!("expected collected chunks");
     };
-    let chunk = chunks.first().expect("one chunk");
+    let chunk = parsed.first().expect("one chunk");
     assert!(chunk.is_finished);
     assert_eq!(chunk.finish_reason, "stop");
     let usage = chunk.usage.as_ref().expect("a usage");
@@ -536,10 +548,10 @@ fn a_usage_only_chunk_has_no_usage() {
         &passthrough_config(None, None),
         &[r#"data: {"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#],
     );
-    let Some(GigachatPassthroughLogged::Chunks(chunks)) = chunks else {
+    let Some(GigachatPassthroughLogged::Chunks(parsed)) = chunks else {
         panic!("expected collected chunks");
     };
-    let chunk = chunks.first().expect("one chunk");
+    let chunk = parsed.first().expect("one chunk");
     assert!(chunk.usage.is_none());
     assert!(!chunk.is_finished);
     assert_eq!(chunk.text, "");
