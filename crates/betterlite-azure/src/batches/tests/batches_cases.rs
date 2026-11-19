@@ -339,6 +339,25 @@ fn params_reach_the_client() {
     assert_eq!(untouched.seen[0].ad_token, None);
 }
 
+// A reply the batch decoder refuses carries the shared decoder's error, the class LiteLLM's pydantic check stands for
+#[test]
+fn a_reply_that_is_not_a_batch_is_refused() {
+    let step = Step {
+        answer: Answer::Value(r#"{"id":"batch_1"}"#.to_owned()),
+        ..creating(CREATE_DATA)
+    };
+    let seen = observe(&step);
+    assert!(matches!(
+        &seen.raised,
+        Some(Raised::Invalid(message)) if message.starts_with("the SDK answer is not a batch: ")
+    ));
+    assert_eq!(seen.reply, None);
+    assert_eq!(
+        seen.calls,
+        vec![Recorded::Create(create_request(CREATE_DATA))]
+    );
+}
+
 #[rstest]
 #[case::batch_create(case_1_batch_create)]
 #[case::batch_retrieve_cancel_list(case_2_batch_retrieve_cancel_list)]
