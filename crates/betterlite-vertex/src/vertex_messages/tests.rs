@@ -209,6 +209,7 @@ fn compact_and_clear(#[case] optional: &str, #[case] tokens: &[&str]) {
 #[rstest]
 #[case::empty_object(r#"{"safeguards":{}}"#, &[DANGEROUS_TOOL_USE_BETA])]
 #[case::true_flag(r#"{"safeguards":true}"#, &[DANGEROUS_TOOL_USE_BETA])]
+#[case::false_flag(r#"{"safeguards":false}"#, &[DANGEROUS_TOOL_USE_BETA])]
 #[case::absent("{}", &[])]
 #[case::null_flag(r#"{"safeguards":null}"#, &[])]
 fn safeguards_empty(#[case] optional: &str, #[case] tokens: &[&str]) {
@@ -255,6 +256,10 @@ fn per_turn_output(#[case] message: &str, #[case] tokens: &[&str]) {
 )]
 #[case::non_object_tools_are_skipped(
     r#"{"tools":[{"type":"web_search_20250305"},7]}"#,
+    &["web-search-2025-03-05"]
+)]
+#[case::non_string_types_are_skipped(
+    r#"{"tools":[{"type":7},{"type":"web_search_20250305"}]}"#,
     &["web-search-2025-03-05"]
 )]
 fn hosted_tool_betas(#[case] optional: &str, #[case] tokens: &[&str]) {
