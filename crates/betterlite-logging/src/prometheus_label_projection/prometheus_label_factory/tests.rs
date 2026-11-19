@@ -265,6 +265,31 @@ fn tag_labels_are_merged_on_both_paths() {
 }
 
 #[test]
+fn tag_labels_win_over_custom_metadata_with_the_same_name() {
+    let mut values = test_support::values(&[("user", "u1")]);
+    values.tags = texts(&["prod"]);
+    values.custom_metadata_labels = BTreeMap::from([("tag_prod".to_owned(), "custom".to_owned())]);
+    let settings = test_support::settings(&["prod"]);
+    let supported = ["user", "tag_prod"];
+    let raw = prometheus_label_factory(
+        &texts(&supported),
+        &values,
+        LabelSource::Values {
+            settings: &settings,
+            end_user_settings: EndUserCostTrackingSettings::default(),
+        },
+    )
+    .expect("the raw labels");
+    let context = context_for(&values, &settings, Resolution::Missing);
+    let from_context =
+        prometheus_label_factory(&texts(&supported), &values, LabelSource::Context(&context))
+            .expect("the context labels");
+    let expected = map_of(&[("tag_prod", Some("true")), ("user", Some("u1"))]);
+    assert_eq!(raw, expected);
+    assert_eq!(from_context, expected);
+}
+
+#[test]
 fn tags_outside_the_supported_set_are_skipped() {
     let mut values = test_support::values(&[("user", "u1")]);
     values.tags = texts(&["prod"]);
