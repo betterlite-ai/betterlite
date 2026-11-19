@@ -2,7 +2,7 @@ id: B9733
 milestone: M10 admin ui
 title: Enable MIT organization pages and verify their form requests
 status: todo
-depends_on: [B9090, B9091, B860, B5076, B1644, B826, B827, B828, B1212, B2342, B804]
+depends_on: [B9090, B9091, B860, B9942, B1644, B826, B827, B828, B1212, B2342, B804]
 file: tasks/B9733-dashboard-organization-requests.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/organizations/**"

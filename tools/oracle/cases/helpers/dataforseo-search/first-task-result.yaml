@@ -1,0 +1,15 @@
+kind: helper
+name: first_task_result
+call:
+  dataforseo_search:
+    calls:
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "first", "url": "https://first.test", "description": "one"}, {"type": "news", "title": "skipped"}, {"type": "organic"}]}, {"items": [{"type": "organic", "title": "second result"}]}]}, {"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "second task"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000.0, "result": [{"items": [{"type": "organic", "title": "float status"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": "20000", "result": [{"items": [{"type": "organic", "title": "text status"}]}]}]}'
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": [{"items": [{"type": 5, "title": "numeric type"}, {"type": null, "title": "null type"}, {"type": "organic", "title": "last", "description": "last description"}]}]}]}'
+env: {}
+compare: {ignore: []}

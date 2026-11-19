@@ -1,0 +1,24 @@
+kind: probe
+name: unique-lowest-count
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      least_busy:
+        model_group: gpt
+        shared: true
+        deployments:
+          - {id: a}
+          - {id: b}
+          - {id: c}
+        steps:
+          - {kind: pre_call, call_id: 1, deployment: a}
+          - {kind: pre_call, call_id: 2, deployment: a}
+          - {kind: pre_call, call_id: 3, deployment: b}
+          - {kind: pre_call, call_id: 4, deployment: c}
+          - {kind: pre_call, call_id: 5, deployment: c}
+          - {kind: pre_call, call_id: 6, deployment: c}
+          - {kind: select}
+          - {kind: shared}
+compare:
+  ignore: []
