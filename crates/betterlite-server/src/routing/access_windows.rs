@@ -1,36 +1,13 @@
 use betterlite_config::sections::access_windows as config;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::access_windows::reservation::reserved_deployments;
 use betterlite_router::access_windows::window::{
     ModelAccessWindow, WindowError, parse_access_windows,
 };
-use betterlite_router::deployment_catalog::error::CatalogLookupError;
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use thiserror::Error;
 
 mod tests;
-
-// The injected clock and zone database the reservation filter reads, resolved once per request.
-#[derive(Clone, Copy)]
-pub struct Windows<'context> {
-    pub now: DateTime<Utc>,
-    pub database: &'context TimeZoneDatabase,
-}
-
-impl Windows<'_> {
-    // Router._filter_reserved_deployments: the pool after its active reservations, or the refusal naming the blocking window.
-    pub fn reserved(
-        &self,
-        model: &str,
-        deployments: Vec<DeploymentSpec>,
-        team_id: Option<&str>,
-    ) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
-        reserved_deployments(model, deployments, team_id, self.now, self.database)
-    }
-}
 
 // The access_windows each model_list entry configures, validated at load so a bad window stops startup instead of every request.
 pub fn deployment_windows(
@@ -43,16 +20,15 @@ pub fn deployment_windows(
             deployments.push(None);
             continue;
         };
-        let parsed = parse_access_windows(&model_info(windows), database)
+        let configured = JsonObject::from_iter([(
+            "access_windows".to_owned(),
+            Json::List(windows.iter().map(window_json).collect()),
+        )]);
+        let parsed = parse_access_windows(&configured, database)
             .map_err(|source| AccessWindowsError { index, source })?;
         deployments.push(Some(parsed));
     }
     Ok(deployments)
-}
-
-fn model_info(windows: &[config::WindowConfig]) -> JsonObject {
-    let configured: Vec<Json> = windows.iter().map(window_json).collect();
-    JsonObject::from_iter([("access_windows".to_owned(), Json::List(configured))])
 }
 
 fn window_json(window: &config::WindowConfig) -> Json {

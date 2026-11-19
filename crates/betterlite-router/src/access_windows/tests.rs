@@ -150,7 +150,7 @@ fn an_active_window_keeps_the_calling_team() {
     assert!(kept.blocking_window.is_none());
 }
 
-fn an_active_window_blocks_another_team() {
+fn a_window_blocks_other_teams_only_while_active() {
     let deployments = [spec(
         "gpt",
         "d",
@@ -171,17 +171,6 @@ fn an_active_window_blocks_another_team() {
         blocked.blocking_window.map(|window| window.timezone),
         Some(String::from("UTC"))
     );
-}
-
-fn an_inactive_window_blocks_nothing() {
-    let deployments = [spec(
-        "gpt",
-        "d",
-        &[(
-            "access_windows",
-            Json::List(vec![window("09:00", "17:00", "UTC", &["mine"])]),
-        )],
-    )];
     let kept = filter_reserved_deployments(
         &deployments,
         Some("other"),
@@ -265,6 +254,20 @@ fn an_empty_team_id_counts_as_no_team() {
     )
     .unwrap();
     assert_eq!(ids(&kept), ["a"]);
+    let blank_owner = [
+        spec("gpt", "blank", &[("team_id", text(""))]),
+        spec("gpt", "owned", &[("team_id", text("t1"))]),
+    ];
+    let kept_blank = filter_team_based_models(
+        blank_owner.to_vec(),
+        Authority {
+            team_id: Some(""),
+            proxy_admin: false,
+        },
+        "gpt",
+    )
+    .unwrap();
+    assert!(kept_blank.is_empty());
 }
 
 // a same-day window is start-inclusive and end-exclusive, to the millisecond
@@ -562,24 +565,7 @@ fn a_pool_with_one_blocked_deployment_keeps_the_rest() {
     assert_eq!(ids(&kept), ["open"]);
 }
 
-fn an_empty_owner_team_is_no_team() {
-    let deployments = [
-        spec("gpt", "blank", &[("team_id", text(""))]),
-        spec("gpt", "owned", &[("team_id", text("t1"))]),
-    ];
-    let kept = filter_team_based_models(
-        deployments.to_vec(),
-        Authority {
-            team_id: Some(""),
-            proxy_admin: false,
-        },
-        "gpt",
-    )
-    .unwrap();
-    assert!(kept.is_empty());
-}
-
-fn an_admin_with_a_team_still_serves_that_team() {
+fn an_admin_pool_keeps_only_authorized_teams() {
     let deployments = vec![
         spec(
             "shared",
@@ -608,13 +594,10 @@ fn an_admin_with_a_team_still_serves_that_team() {
     )
     .unwrap();
     assert_eq!(ids(&kept), ["a"]);
-}
-
-fn an_admin_pool_with_a_shared_deployment_loses_its_team_models() {
-    let deployments = vec![
+    let mixed = vec![
         spec(
             "shared",
-            "a",
+            "c",
             &[
                 ("team_id", text("t1")),
                 ("team_public_model_name", text("shared")),
@@ -622,8 +605,8 @@ fn an_admin_pool_with_a_shared_deployment_loses_its_team_models() {
         ),
         spec("shared", "open", &[]),
     ];
-    let kept = filter_team_based_models(
-        deployments,
+    let kept_mixed = filter_team_based_models(
+        mixed,
         Authority {
             team_id: None,
             proxy_admin: true,
@@ -631,7 +614,7 @@ fn an_admin_pool_with_a_shared_deployment_loses_its_team_models() {
         "shared",
     )
     .unwrap();
-    assert_eq!(ids(&kept), ["open"]);
+    assert_eq!(ids(&kept_mixed), ["open"]);
 }
 
 fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
@@ -657,8 +640,9 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
 #[case::config_error_is_none_for_valid_values(config_error_is_none_for_valid_values)]
 #[case::config_error_names_the_first_invalid_field(config_error_names_the_first_invalid_field)]
 #[case::an_active_window_keeps_the_calling_team(an_active_window_keeps_the_calling_team)]
-#[case::an_active_window_blocks_another_team(an_active_window_blocks_another_team)]
-#[case::an_inactive_window_blocks_nothing(an_inactive_window_blocks_nothing)]
+#[case::a_window_blocks_other_teams_only_while_active(
+    a_window_blocks_other_teams_only_while_active
+)]
 #[case::a_shared_deployment_survives_any_team(a_shared_deployment_survives_any_team)]
 #[case::the_team_filter_drops_other_teams(the_team_filter_drops_other_teams)]
 #[case::an_admin_sees_one_team_pool_unchanged(an_admin_sees_one_team_pool_unchanged)]
@@ -666,11 +650,7 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
     a_non_admin_without_a_team_sees_only_shared_deployments
 )]
 #[case::an_empty_team_id_counts_as_no_team(an_empty_team_id_counts_as_no_team)]
-#[case::an_empty_owner_team_is_no_team(an_empty_owner_team_is_no_team)]
-#[case::an_admin_with_a_team_still_serves_that_team(an_admin_with_a_team_still_serves_that_team)]
-#[case::an_admin_pool_with_a_shared_deployment_loses_its_team_models(
-    an_admin_pool_with_a_shared_deployment_loses_its_team_models
-)]
+#[case::an_admin_pool_keeps_only_authorized_teams(an_admin_pool_keeps_only_authorized_teams)]
 #[case::an_admin_pool_unnamed_by_the_request_is_only_filtered(
     an_admin_pool_unnamed_by_the_request_is_only_filtered
 )]

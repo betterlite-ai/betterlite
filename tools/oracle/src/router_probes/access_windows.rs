@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::access_windows::reservation::reserved_deployments;
 use betterlite_router::access_windows::team::filter_team_based_models;
+use betterlite_router::deployment_catalog::error::CatalogLookupError;
 use betterlite_router::deployment_catalog::types::Authority;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, Utc};
@@ -69,62 +70,57 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let output = match input.mode {
-        Mode::Team => team(input)?,
-        Mode::Reserved => reserved(input)?,
+    let deployments = input
+        .deployments
+        .iter()
+        .map(spec)
+        .collect::<Result<Vec<_>, OperationError>>()?;
+    let result = filtered(input, deployments)?;
+    let output = match result {
+        Ok(kept) => Output {
+            kept: kept
+                .iter()
+                .map(|deployment| deployment.id().unwrap_or_default().to_owned())
+                .collect(),
+            error: None,
+        },
+        Err(error) => Output {
+            kept: Vec::new(),
+            error: Some(error.to_string()),
+        },
     };
     Ok(ProbeOutput::AccessWindows(output))
 }
 
-fn team(input: &Input) -> Result<Output, OperationError> {
-    let authority = Authority {
-        team_id: input.team_id.as_deref(),
-        proxy_admin: input.proxy_admin,
-    };
-    match filter_team_based_models(specs(input)?, authority, &input.model) {
-        Ok(kept) => Ok(kept_output(&kept)),
-        Err(error) => Ok(refusal(&error.to_string())),
+fn filtered(
+    input: &Input,
+    deployments: Vec<DeploymentSpec>,
+) -> Result<Result<Vec<DeploymentSpec>, CatalogLookupError>, OperationError> {
+    match input.mode {
+        Mode::Team => filter_team_based_models(
+            deployments,
+            Authority {
+                team_id: input.team_id.as_deref(),
+                proxy_admin: input.proxy_admin,
+            },
+            &input.model,
+        ),
+        Mode::Reserved => {
+            let millis = input
+                .now_unix_millis
+                .ok_or_else(|| invalid("the reserved mode needs now_unix_millis"))?;
+            let now = DateTime::<Utc>::from_timestamp_millis(millis)
+                .ok_or_else(|| invalid("now_unix_millis is out of range"))?;
+            let database = TimeZoneDatabase::from_env();
+            reserved_deployments(
+                &input.model,
+                deployments,
+                input.team_id.as_deref(),
+                now,
+                &database,
+            )
+        }
     }
-}
-
-fn reserved(input: &Input) -> Result<Output, OperationError> {
-    let millis = input
-        .now_unix_millis
-        .ok_or_else(|| invalid("the reserved mode needs now_unix_millis"))?;
-    let now = DateTime::<Utc>::from_timestamp_millis(millis)
-        .ok_or_else(|| invalid("now_unix_millis is out of range"))?;
-    let database = TimeZoneDatabase::from_env();
-    match reserved_deployments(
-        &input.model,
-        specs(input)?,
-        input.team_id.as_deref(),
-        now,
-        &database,
-    ) {
-        Ok(kept) => Ok(kept_output(&kept)),
-        Err(error) => Ok(refusal(&error.to_string())),
-    }
-}
-
-fn kept_output(deployments: &[DeploymentSpec]) -> Output {
-    Output {
-        kept: deployments
-            .iter()
-            .map(|deployment| deployment.id().unwrap_or_default().to_owned())
-            .collect(),
-        error: None,
-    }
-}
-
-fn refusal(message: &str) -> Output {
-    Output {
-        kept: Vec::new(),
-        error: Some(message.to_owned()),
-    }
-}
-
-fn specs(input: &Input) -> Result<Vec<DeploymentSpec>, OperationError> {
-    input.deployments.iter().map(spec).collect()
 }
 
 fn spec(deployment: &Deployment) -> Result<DeploymentSpec, OperationError> {
