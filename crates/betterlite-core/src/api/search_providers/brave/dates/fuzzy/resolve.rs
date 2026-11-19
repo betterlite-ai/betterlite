@@ -46,7 +46,7 @@ impl Fields {
 
     pub(super) fn push(&mut self, value: i64, label: Option<Label>, long: bool) -> Option<()> {
         self.century |= long;
-        let named = label.or(long.then_some(Label::Year));
+        let named = label.or_else(|| long.then_some(Label::Year));
         if named.is_some_and(|chosen| self.index(chosen).is_some()) {
             return None;
         }
@@ -72,8 +72,8 @@ pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
     if known == items.len() || (items.len() == 3 && known == 2) {
         let missing =
             (0..items.len()).find(|index| slots.iter().flatten().all(|slot| slot != index));
-        if let (Some(missing), Some(free)) = (missing, slots.iter().position(Option::is_none)) {
-            *slots.get_mut(free)? = Some(missing);
+        if let (Some(unlabeled), Some(free)) = (missing, slots.iter().position(Option::is_none)) {
+            *slots.get_mut(free)? = Some(unlabeled);
         }
         let value = |slot: Option<usize>| {
             slot.and_then(|index| items.get(index))

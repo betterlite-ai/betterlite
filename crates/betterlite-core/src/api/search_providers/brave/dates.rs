@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike as _, NaiveDate, Utc};
 use num_traits::cast::cast;
 
 mod fuzzy;
@@ -70,7 +70,7 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
         DateValue::Text(text) => text_date(text, today, flags)?,
         // the source reads a float through str(), and an infinity has no timestamp
         DateValue::Decimal(number) => {
-            if *number == 0.0 || !number.is_finite() {
+            if *number == 0.0_f64 || !number.is_finite() {
                 return None;
             }
             unix_date(&format!("{number}"))?
@@ -126,11 +126,15 @@ fn is_iso_ymd(text: &str) -> bool {
     })
 }
 
+// a magnitude above this is milliseconds in the source, and the float is the instant it reads
+const MILLISECOND_THRESHOLD: f64 = 1e11_f64;
+const MILLISECONDS_PER_SECOND: f64 = 1_000.0_f64;
+
 fn unix_date(text: &str) -> Option<NaiveDate> {
     let value: f64 = text.replace(',', ".").parse().ok()?;
-    // above 1e11 the source divides by 1000.0, and the float is the instant it then reads
-    let seconds = if value > 1e11 || value < -1e11 {
-        value / 1000.0
+    // the source scales milliseconds down and keeps only the whole second, rounded down
+    let seconds = if value.abs() > MILLISECOND_THRESHOLD {
+        value.div_euclid(MILLISECONDS_PER_SECOND)
     } else {
         value
     };

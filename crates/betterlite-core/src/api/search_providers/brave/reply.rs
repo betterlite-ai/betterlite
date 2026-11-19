@@ -125,7 +125,7 @@ fn project(raw: &RawValue, today: NaiveDate) -> Result<SearchResult, BraveSearch
         .map(|member| member.map(|item| DateValue::from_literal(item.get())));
     let date = page_age
         .filter(DateValue::is_filled)
-        .or(age.filter(DateValue::is_filled))
+        .or_else(|| age.filter(DateValue::is_filled))
         .and_then(|value| dates::to_yyyy_mm_dd(&value, today, DateFlags::default()));
     let last_updated = result
         .get("fetched_content_timestamp")

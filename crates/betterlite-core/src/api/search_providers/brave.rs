@@ -188,8 +188,8 @@ impl SearchProvider for BraveSearchConfig {
 
 fn now_date() -> NaiveDate {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok();
-    let seconds = elapsed.and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok());
-    let moment = seconds.and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
+    let seconds = elapsed.and_then(|duration| i64::try_from(duration.as_secs()).ok());
+    let moment = seconds.and_then(|whole| DateTime::<Utc>::from_timestamp(whole, 0));
     moment.map_or_else(NaiveDate::default, |fixed| fixed.date_naive())
 }
 

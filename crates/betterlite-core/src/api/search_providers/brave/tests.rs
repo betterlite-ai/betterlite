@@ -14,7 +14,7 @@ use betterlite_openai::search::provider::{
 use betterlite_openai::search::records::SearchResponse;
 use chrono::NaiveDate;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::dates::{self, DateFlags, DateValue};
 use super::{BRAVE_API_BASE, BraveSearchConfig, BraveSearchError};
@@ -85,10 +85,8 @@ fn answer(
     params: &Object,
     body: &str,
 ) -> Result<SearchResponse, BraveSearchError> {
-    let request = config
-        .transform_search_request(&query(value), params)
-        .unwrap();
-    let _url = config.complete_url(None, params, Some(&request)).unwrap();
+    let request = config.transform_search_request(&query(value), params)?;
+    let _url = config.complete_url(None, params, Some(&request))?;
     let headers = Headers::new();
     config.transform_search_response(&ProviderResponse {
         status_code: 200,
@@ -121,7 +119,7 @@ fn brave_search_settings_read_the_environment() {
     ]);
 
     assert_eq!(
-        config.api_key.as_ref().map(|key| key.expose_secret()),
+        config.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("server-key")
     );
     assert_eq!(config.api_base, "https://proxy.test/res/v1/web/search");
@@ -310,7 +308,7 @@ fn brave_search_request_copies_an_explicit_count_only_once() {
 
     let body = request_body(&config, "q", &params);
 
-    assert_eq!(body["_brave_params"]["count"], 5);
+    assert_eq!(body["_brave_params"]["count"], 5_i32);
 }
 
 #[rstest]
@@ -507,10 +505,9 @@ fn brave_search_reply_clamps_the_count_across_sections(
     #[case] expected: usize,
 ) {
     let config = config(&[]);
-    let params = match max_results {
-        Some(value) => options(&[("max_results", number(value))]),
-        None => Object::new(),
-    };
+    let params = max_results.map_or_else(Object::new, |value| {
+        options(&[("max_results", number(value))])
+    });
     let body = format!(
         "{{{}, {}}}",
         section("web", "w", 21),

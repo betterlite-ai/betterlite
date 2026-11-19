@@ -68,10 +68,11 @@ impl Parser<'_> {
     // the clock time only says how far into the day the moment is, and the caller reads the day
     fn skip_time(&mut self, index: usize) -> usize {
         self.saw = true;
-        let mut last = index.saturating_add(2);
-        if self.tokens.get(index.saturating_add(3)) == Some(&Token::Punct(':')) {
-            last = index.saturating_add(4);
-        }
+        let mut last = if self.tokens.get(index.saturating_add(3)) == Some(&Token::Punct(':')) {
+            index.saturating_add(4)
+        } else {
+            index.saturating_add(2)
+        };
         // a fraction of a second trails the last member as ".5"
         if self.tokens.get(last.saturating_add(1)) == Some(&Token::Punct('.'))
             && matches!(

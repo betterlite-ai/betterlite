@@ -25,7 +25,7 @@ pub enum BraveParam {
     Text(String),
     Number(i64),
     Bool(bool),
-    Many(Vec<BraveParam>),
+    Many(Vec<Self>),
 }
 
 impl BraveParam {
@@ -52,8 +52,7 @@ pub(super) fn build(
     params.insert(QUERY_PARAM.to_owned(), BraveParam::Text(joined));
     let metadata = optional_params
         .get(METADATA_PARAM)
-        .and_then(|value| value.as_bool())
-        != Some(false);
+        .is_none_or(|value| value.as_bool() != Some(false));
     params.insert(METADATA_PARAM.to_owned(), BraveParam::Bool(metadata));
     if let Some(count) = count_param(optional_params)? {
         params.insert(COUNT_PARAM.to_owned(), count);
