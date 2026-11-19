@@ -175,7 +175,7 @@ betterlite reads `LITELLM_PGBOUNCER_ENABLED` and `LITELLM_PGBOUNCER_MAX_DB_CONNE
 
 `redis_transit_encryption` defaults to `false`, which creates the Memorystore instance with `transit_encryption_mode = DISABLED` and gives the service plain `REDIS_HOST` and `REDIS_PORT`. AUTH stays on either way, so an instance inside the private services range is not open to every client that can reach it.
 
-Setting it to `true` switches the instance to `SERVER_AUTHENTICATION` and adds `REDIS_SSL=true` to the service, but Memorystore then presents a self-signed server certificate and betterlite has no way to be given its CA, so the connection cannot complete the handshake. Leave the variable off until betterlite reads a server CA file; the module's variable description says the same.
+Setting it to `true` switches the instance to `SERVER_AUTHENTICATION` and adds `REDIS_SSL=true` to the service. Memorystore then presents a self-signed server certificate, and nothing passes its CA to the service, so the client cannot validate it and the connection fails the handshake. Leave the variable off until betterlite can be given the instance's CA file; the module's variable description says the same.
 
 ## Not built compared with LiteLLM
 
