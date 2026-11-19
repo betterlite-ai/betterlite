@@ -53,6 +53,7 @@ impl SpendCache for DerivedCache {
     }
 }
 
+#[path = "tests/fallbacks.rs"]
 mod fallbacks;
 
 struct Catalog {
