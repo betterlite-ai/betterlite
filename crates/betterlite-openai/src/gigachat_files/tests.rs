@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, pending, ready};
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, TcpListener as StdListener};
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -303,7 +303,7 @@ fn uploader_config(
 }
 
 fn download_listener() -> (TcpListener, u16) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("the listener binds");
+    let listener = StdListener::bind("127.0.0.1:0").expect("the listener binds");
     listener
         .set_nonblocking(true)
         .expect("the listener is nonblocking");
@@ -991,8 +991,8 @@ async fn a_redirected_download_checks_the_next_hop(#[case] location: &str, #[cas
 #[tokio::test(start_paused = true)]
 async fn a_stalled_download_gives_up_at_the_download_timeout() {
     let mut given = setup();
-    given.connect_timeout = Duration::from_secs(1200);
-    given.read_timeout = Duration::from_secs(1200);
+    given.connect_timeout = Duration::from_mins(20);
+    given.read_timeout = Duration::from_mins(20);
     let fixture = fixture(given);
     fixture.script_download(Scripted::Stall);
     let error = fixture.uploader.try_upload(IMAGE_URL).await.unwrap_err();
