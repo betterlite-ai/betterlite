@@ -151,12 +151,11 @@ impl TryRng for FixedDraw {
 
 pub(super) fn check(case: Case) {
     let (deployments, samples) = build(case.specs);
-    let router = LatencyRouting {
-        args: RoutingArgs {
-            lowest_latency_buffer: case.buffer,
-            ttft_percentile: case.percentile,
-        },
+    let args = RoutingArgs {
+        lowest_latency_buffer: case.buffer,
+        ttft_percentile: case.percentile,
     };
+    let router = LatencyRouting { args };
     let selection = Selection {
         deployments: &deployments,
         samples: &samples,
@@ -171,19 +170,16 @@ pub(super) fn check(case: Case) {
             scores,
             candidates,
             valid,
-            selected: expected,
+            selected,
         } => {
             let ranking = ranked.expect("the fixture limits are numbers");
             assert_scores(&ranking, scores);
             assert_eq!(ids(&deployments, &ranking.candidates), candidates);
             assert_eq!(ids(&deployments, &ranking.valid), valid);
-            let picked: Vec<&str> = ranking
+            let picked = ranking
                 .choose(&mut random)
-                .and_then(|position| deployment_id(&deployments, position))
-                .into_iter()
-                .collect();
-            let expected: Vec<&str> = expected.into_iter().collect();
-            assert_eq!(picked, expected);
+                .and_then(|position| deployment_id(&deployments, position));
+            assert_eq!(picked, selected);
         }
         Outcome::Rejected { field } => {
             let error = ranked.expect_err("the fixture limit is no number");
@@ -227,8 +223,8 @@ fn build(specs: Vec<Spec>) -> (Vec<DeploymentSpec>, ModelGroupSamples) {
 
 fn assert_scores(ranking: &Ranking, expected: &[f64]) {
     let scores: Vec<u64> = ranking.scores.iter().map(|score| score.to_bits()).collect();
-    let expected: Vec<u64> = expected.iter().map(|score| score.to_bits()).collect();
-    assert_eq!(scores, expected);
+    let wanted: Vec<u64> = expected.iter().map(|score| score.to_bits()).collect();
+    assert_eq!(scores, wanted);
 }
 
 fn ids<'deployments>(

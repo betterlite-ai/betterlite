@@ -85,7 +85,7 @@ async fn latency_routing_arm_picks_from_the_pool() {
 #[tokio::test]
 async fn latency_routing_arm_skips_a_rate_limited_deployment() {
     let deployments = [
-        deployment("fast", Some(Json::Number(Number::from(0)))),
+        deployment("fast", Some(Json::Number(Number::from(0_i64)))),
         deployment("slow", None),
     ];
     let selected = run(&deployments, &tokens(5), LatencyArgs::default(), 7)
@@ -97,7 +97,7 @@ async fn latency_routing_arm_skips_a_rate_limited_deployment() {
 // an index past the pool is how the pipeline reaches its no-deployment error
 #[tokio::test]
 async fn latency_routing_arm_answers_no_deployment_when_none_fit() {
-    let deployments = [deployment("full", Some(Json::Number(Number::from(0))))];
+    let deployments = [deployment("full", Some(Json::Number(Number::from(0_i64))))];
     let selected = run(&deployments, &tokens(5), LatencyArgs::default(), 7)
         .await
         .expect("the fixture limits are numbers");
