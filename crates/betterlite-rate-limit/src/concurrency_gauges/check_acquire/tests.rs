@@ -145,6 +145,23 @@ async fn redis_success_mirrors_text_counts() {
 }
 
 #[tokio::test]
+async fn a_success_reply_count_that_is_not_whole_is_an_error() {
+    let cache = RecordingCache::new();
+    let (gauges, _script) = acquire_gauges(
+        Arc::clone(&cache),
+        vec![ReplyPlan::Values(vec![
+            CacheCounterValue::Int(0),
+            CacheCounterValue::Text("soon".to_owned()),
+        ])],
+    );
+    let error = check_acquire(&gauges, &[gauge("g1", 5)], &key_list(&["g1"]), "slot-a")
+        .await
+        .expect_err("a success count that is not a number");
+    assert!(matches!(error, GaugeError::NotWholeNumber { .. }));
+    assert!(cache.writes().is_empty());
+}
+
+#[tokio::test]
 async fn redis_success_mirrors_a_negative_count_as_given() {
     let cache = RecordingCache::new();
     let (gauges, _script) = acquire_gauges(Arc::clone(&cache), vec![int_values(&[0, -1])]);

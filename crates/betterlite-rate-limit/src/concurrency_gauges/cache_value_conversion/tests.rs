@@ -75,6 +75,7 @@ fn a_whole_number_value_reads_as_itself(#[case] value: CacheCounterValue, #[case
 
 #[rstest]
 #[case::text(CacheCounterValue::Text("soon".to_owned()))]
+#[case::underscored_text(CacheCounterValue::Text("1_000".to_owned()))]
 #[case::float_nan(CacheCounterValue::Float(f64::NAN))]
 #[case::float_beyond_range(CacheCounterValue::Float(1e30))]
 #[case::bytes_that_are_not_utf8(CacheCounterValue::Bytes(vec![0xFF]))]
