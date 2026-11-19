@@ -11,12 +11,12 @@ use crate::budget_tier_sweep::tests::support::{
 #[tokio::test]
 async fn phase_stops_at_the_chunk_cap() {
     let (fixture, store, client) = schema().await;
-    insert_tier(&client, "t1", Some("1d"), Some(past())).await;
-    insert_tier(&client, "t2", Some("1d"), Some(past())).await;
-    insert_tier(&client, "t3", Some("1d"), Some(past())).await;
-    insert_tier(&client, "t4", Some("1d"), Some(past())).await;
-    insert_tier(&client, "t5", Some("1d"), Some(past())).await;
-    insert_tier(&client, "t6", Some("1d"), Some(past())).await;
+    insert_tier(&client, "t1", Some("1d"), None).await;
+    insert_tier(&client, "t2", Some("1d"), None).await;
+    insert_tier(&client, "t3", Some("1d"), None).await;
+    insert_tier(&client, "t4", Some("1d"), None).await;
+    insert_tier(&client, "t5", Some("1d"), None).await;
+    insert_tier(&client, "t6", Some("1d"), None).await;
     let mut harness = Harness::new(
         store.clone(),
         TestSchedule::fixed(moment(30)),
