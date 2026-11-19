@@ -136,12 +136,7 @@ def projection(
         "generated_content": iterator._generated_content,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L316-L324
         "generated_tool_arguments": iterator._generated_tool_arguments,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L316-L324
     }
-    return {
-        "events": events,
-        "error": error,
-        "state": state,
-        "records": records,
-    }
+    return {"events": events, "error": error, "state": state, "records": records}
 
 
 def run(input_value: Input) -> JsonValue:

@@ -96,7 +96,7 @@ impl UsageTokenization for Probe {
         if request.count_response_tokens {
             return Ok(i64::try_from(request.text.map_or(0, str::len)).unwrap_or(i64::MAX));
         }
-        Ok(1000 + i64::try_from(request.model.len()).unwrap_or(i64::MAX))
+        Ok(1000_i64.saturating_add(i64::try_from(request.model.len()).unwrap_or(i64::MAX)))
     }
 }
 

@@ -24,7 +24,7 @@ pub(crate) struct Probe {
 }
 
 impl Probe {
-    pub(crate) fn new(input: &Input, clock: DateTime<FixedOffset>) -> Self {
+    pub(crate) const fn new(input: &Input, clock: DateTime<FixedOffset>) -> Self {
         Self {
             cost: input.cost,
             records: Mutex::new(Vec::new()),
