@@ -4,9 +4,12 @@ use rust_decimal::Decimal;
 
 use crate::budget_reset_policy::rollover::RolloverPolicy;
 use crate::budget_tier_sweep::tests::support::{
-    CountingReconnect, Harness, RecordingCache, TestSchedule, finish, insert_tier, moment, naive,
-    past, reset_at_of, schema, spend_of,
+    CountingReconnect, Harness, RecordingCache, TestSchedule, close_store, finish, insert_tier,
+    moment, naive, past, reset_at_of, schema, serial_pool, spend_of,
 };
+use crate::budget_tier_sweep::tier_cascade::{TierCascadeRequest, run_tier_cascade};
+use crate::budget_tier_sweep::tier_reads::read_due_tiers;
+use crate::postgres_store::session::PostgresStore;
 
 #[tokio::test]
 async fn cascade_advances_the_tier_through_the_schedule() {
@@ -31,6 +34,46 @@ async fn cascade_advances_the_tier_through_the_schedule() {
         spend_of(&client, "LiteLLM_TeamMembership", "user_id", "user-a").await,
         Decimal::ZERO
     );
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn cascade_commit_retries_a_pool_timeout_after_reconnecting() {
+    let (fixture, store, client) = schema().await;
+    insert_tier(&client, "tier-a", Some("30d"), Some(past())).await;
+    let budgets = read_due_tiers(&store, moment(0), 500, None::<&mut CountingReconnect>)
+        .await
+        .unwrap();
+    let serial = PostgresStore {
+        pool: Some(serial_pool(&fixture.options.url)),
+    };
+    let held = serial.session().await.unwrap();
+    let schedule = TestSchedule::fixed(moment(30));
+    let request = TierCascadeRequest {
+        budgets: &budgets,
+        rollover: RolloverPolicy::default(),
+        schedule: &schedule,
+        default_enduser_budget_id: None,
+    };
+    let mut reconnect = CountingReconnect::releasing(held);
+    let Ok(cascade) = run_tier_cascade(
+        &serial,
+        &RecordingCache::default(),
+        request,
+        Some(&mut reconnect),
+    )
+    .await
+    else {
+        panic!("the cascade should commit after reconnecting");
+    };
+    assert_eq!(cascade.budgets.len(), 1);
+    assert_eq!(reset_at_of(&client, "tier-a").await, Some(naive(30)));
+    assert_eq!(reconnect.attempts(), 1);
+    assert_eq!(
+        reconnect.reasons(),
+        vec![String::from("reset_budget_write_budget_cascade_failure")]
+    );
+    close_store(serial);
     finish(fixture, store, client).await;
 }
 
