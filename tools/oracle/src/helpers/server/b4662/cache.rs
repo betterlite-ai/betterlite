@@ -3,10 +3,10 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use betterlite_mcp::server_record::MCPServer;
 use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_server::mcp::oauth_caches::{
-    MCPOAuth2TokenCache, MCPPerUserTokenCache, compute_per_user_token_ttl,
-};
+use betterlite_server::mcp::oauth_caches::{MCPOAuth2TokenCache, MCPPerUserTokenCache};
+use betterlite_server::mcp::outbound_credentials::PER_USER_TOKEN_KEY_PREFIX;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::M2mTokenEndpointPost;
 
 use super::support::{
@@ -65,8 +65,8 @@ pub(super) struct PerUserDeleteInput {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct PerUserTtlInput {
-    server: ServerSpec,
-    expires_in: Option<i64>,
+    pub(super) server: ServerSpec,
+    pub(super) expires_in: Option<i64>,
 }
 
 type PerUserCache = MCPPerUserTokenCache<FakeBackend>;
@@ -85,25 +85,27 @@ fn oauth2_cache(
 pub(super) fn identity(input: &ServersInput) -> Result<Value, Box<HelperError>> {
     let mut identities = Vec::with_capacity(input.servers.len());
     for spec in &input.servers {
-        identities.push(MCPOAuth2TokenCache::token_identity(&support::server(spec)?));
+        let server: MCPServer = serde_json::from_value(spec.0.clone())
+            .map_err(|error| support::value_error(error.to_string()))?;
+        identities.push(MCPOAuth2TokenCache::token_identity(&server));
     }
     Ok(json!({"identities": identities}))
 }
 
 pub(super) async fn get_token(input: &GetTokenInput) -> Result<Value, Box<HelperError>> {
-    let server = support::server(&input.server)?;
+    let server: MCPServer = serde_json::from_value(input.server.0.clone())
+        .map_err(|error| support::value_error(error.to_string()))?;
     let (scripted, cache) = oauth2_cache(&input.outcomes)?;
+    let futures = (0..input.calls).map(|_call| cache.async_get_token(&server));
     let mut tokens = Vec::with_capacity(input.calls);
     if input.concurrent {
-        let futures = (0..input.calls).map(|_call| cache.async_get_token(&server));
         for result in futures_util::future::join_all(futures).await {
             tokens.push(result.map_err(|error| support::value_error(error.to_string()))?);
         }
     } else {
-        for _call in 0..input.calls {
+        for result in futures {
             tokens.push(
-                cache
-                    .async_get_token(&server)
+                result
                     .await
                     .map_err(|error| support::value_error(error.to_string()))?,
             );
@@ -113,7 +115,8 @@ pub(super) async fn get_token(input: &GetTokenInput) -> Result<Value, Box<Helper
 }
 
 pub(super) async fn fetch(input: &FetchInput) -> Result<Value, Box<HelperError>> {
-    let server = support::server(&input.server)?;
+    let server: MCPServer = serde_json::from_value(input.server.0.clone())
+        .map_err(|error| support::value_error(error.to_string()))?;
     let (scripted, cache) = oauth2_cache(&input.outcomes)?;
     let (token, ttl) = cache
         .fetch_token(&server)
@@ -133,7 +136,8 @@ pub(super) async fn fetch(input: &FetchInput) -> Result<Value, Box<HelperError>>
 }
 
 pub(super) async fn invalidate(input: &InvalidateInput) -> Result<Value, Box<HelperError>> {
-    let server = support::server(&input.server)?;
+    let server: MCPServer = serde_json::from_value(input.server.0.clone())
+        .map_err(|error| support::value_error(error.to_string()))?;
     let (scripted, cache) = oauth2_cache(&input.outcomes)?;
     let first = cache
         .async_get_token(&server)
@@ -148,11 +152,14 @@ pub(super) async fn invalidate(input: &InvalidateInput) -> Result<Value, Box<Hel
 }
 
 pub(super) async fn per_user_get(input: &PerUserGetInput) -> Result<Value, Box<HelperError>> {
-    let cache = PerUserCache::new(
-        FakeBackend::new(input.fail_get, false, false),
-        support::codec(),
+    let cache = PerUserCache {
+        backend: FakeBackend::new(input.fail_get, false, false),
+        codec: support::codec(),
+    };
+    let key = format!(
+        "{PER_USER_TOKEN_KEY_PREFIX}{}:{}",
+        input.user_id, input.server_id
     );
-    let key = PerUserCache::cache_key(&input.user_id, &input.server_id);
     if let Some(seed) = &input.seed {
         cache
             .set(&input.user_id, &input.server_id, seed, 300, None)
@@ -169,10 +176,10 @@ pub(super) async fn per_user_get(input: &PerUserGetInput) -> Result<Value, Box<H
 }
 
 pub(super) async fn per_user_set(input: &PerUserSetInput) -> Result<Value, Box<HelperError>> {
-    let cache = PerUserCache::new(
-        FakeBackend::new(false, input.fail_set, false),
-        support::codec(),
-    );
+    let cache = PerUserCache {
+        backend: FakeBackend::new(false, input.fail_set, false),
+        codec: support::codec(),
+    };
     cache
         .set(
             &input.user_id,
@@ -182,7 +189,10 @@ pub(super) async fn per_user_set(input: &PerUserSetInput) -> Result<Value, Box<H
             input.identity_binding_proof.as_deref(),
         )
         .await;
-    let key = PerUserCache::cache_key(&input.user_id, &input.server_id);
+    let key = format!(
+        "{PER_USER_TOKEN_KEY_PREFIX}{}:{}",
+        input.user_id, input.server_id
+    );
     let stored = cache.backend.entry(&key);
     let token = cache
         .get_token(&input.user_id, &input.server_id)
@@ -196,10 +206,10 @@ pub(super) async fn per_user_set(input: &PerUserSetInput) -> Result<Value, Box<H
 }
 
 pub(super) async fn per_user_delete(input: &PerUserDeleteInput) -> Result<Value, Box<HelperError>> {
-    let cache = PerUserCache::new(
-        FakeBackend::new(false, false, input.fail_delete),
-        support::codec(),
-    );
+    let cache = PerUserCache {
+        backend: FakeBackend::new(false, false, input.fail_delete),
+        codec: support::codec(),
+    };
     cache
         .set(&input.user_id, &input.server_id, "token-value", 300, None)
         .await;
@@ -209,9 +219,4 @@ pub(super) async fn per_user_delete(input: &PerUserDeleteInput) -> Result<Value,
         .await
         .map(|token| token.access_token);
     Ok(json!({"token_after": token}))
-}
-
-pub(super) fn per_user_ttl(input: &PerUserTtlInput) -> Result<Value, Box<HelperError>> {
-    let server = support::server(&input.server)?;
-    Ok(json!({"ttl": compute_per_user_token_ttl(&server, input.expires_in)}))
 }

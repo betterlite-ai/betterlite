@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::fmt::{self, Display, Formatter};
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_mcp::server_record::MCPServer;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
+use betterlite_server::mcp::backfills::log::{
+    FlowBackfillEvent, FlowBackfillLog, IssuerBackfillEvent, IssuerBackfillLog,
+};
 use betterlite_server::mcp::oauth_caches::per_user::PerUserTokenBackend;
 use betterlite_server::mcp::outbound_credentials::WallClock;
 use betterlite_server::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
@@ -31,11 +32,7 @@ pub(super) struct ServersInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
-pub(super) struct ServerSpec(Value);
-
-pub(super) fn server(spec: &ServerSpec) -> Result<MCPServer, Box<HelperError>> {
-    serde_json::from_value(spec.0.clone()).map_err(|error| value_error(error.to_string()))
-}
+pub(super) struct ServerSpec(pub(super) Value);
 
 pub(super) fn value_error(message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -193,16 +190,9 @@ pub(super) fn codec() -> OAuthTokenCacheCodec {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 pub(super) struct FakeError(pub(super) &'static str);
-
-impl Display for FakeError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
-    }
-}
-
-impl std::error::Error for FakeError {}
 
 pub(super) struct FakeBackend {
     pub(super) entries: Mutex<BTreeMap<String, String>>,
@@ -290,8 +280,12 @@ pub(super) fn authorization(headers: &[(String, String)]) -> Option<String> {
         .map(|(_name, value)| value.clone())
 }
 
-pub(super) fn sorted_ids(ids: impl IntoIterator<Item = String>) -> Vec<String> {
-    let mut ids: Vec<String> = ids.into_iter().collect();
-    ids.sort();
-    ids
+pub(super) struct SilentLog;
+
+impl FlowBackfillLog for SilentLog {
+    fn flow_event(&self, _event: FlowBackfillEvent<'_>) {}
+}
+
+impl IssuerBackfillLog for SilentLog {
+    fn issuer_event(&self, _event: IssuerBackfillEvent<'_>) {}
 }

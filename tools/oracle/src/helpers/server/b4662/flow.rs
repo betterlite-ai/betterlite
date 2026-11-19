@@ -2,37 +2,20 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
-use betterlite_db::mcp_stored_contracts::{JsonValue, MCPAuth};
+use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::server_record::OAuth2Flow;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_server::mcp::backfills::flow::backfill_null_oauth2_flows;
-use betterlite_server::mcp::backfills::issuer::backfill_discovery_stamped_issuers;
-use betterlite_server::mcp::backfills::log::{
-    FlowBackfillEvent, FlowBackfillLog, IssuerBackfillEvent, IssuerBackfillLog,
-};
 use betterlite_server::mcp::backfills::{
-    DISCOVERY_ACTOR, FLOW_BACKFILL_ACTOR, FlowBackfillTable, FlowCandidateRow, FlowSignals,
-    ISSUER_STAMP_BACKFILL_ACTOR, IssuerBackfillTable, IssuerCandidateRow, UserCredentialRow,
+    FLOW_BACKFILL_ACTOR, FlowBackfillTable, FlowCandidateRow, FlowSignals, UserCredentialRow,
     classify_null_flow_row, flow_name,
 };
 
-use super::support::{self, FakeError};
-
-struct SilentLog;
-
-impl FlowBackfillLog for SilentLog {
-    fn flow_event(&self, _event: FlowBackfillEvent<'_>) {}
-}
-
-impl IssuerBackfillLog for SilentLog {
-    fn issuer_event(&self, _event: IssuerBackfillEvent<'_>) {}
-}
+use super::support::{self, FakeError, SilentLog};
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ClassifyInput {
@@ -67,15 +50,7 @@ pub(super) struct FlowRowSpec {
 #[derive(Debug, Deserialize)]
 pub(super) struct CredentialSpec {
     server_id: String,
-    kind: CredentialKind,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum CredentialKind {
-    Oauth2,
-    Key,
-    Garbage,
+    credential_b64: String,
 }
 
 struct FlowState {
@@ -146,11 +121,13 @@ impl FakeFlowTable {
 
     fn ambiguous(&self) -> Vec<String> {
         let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        support::sorted_ids(
-            rows.iter()
-                .filter(|state| state.flow.is_none())
-                .map(|state| state.row.server_id.clone()),
-        )
+        let mut ids: Vec<String> = rows
+            .iter()
+            .filter(|state| state.flow.is_none())
+            .map(|state| state.row.server_id.clone())
+            .collect();
+        ids.sort();
+        ids
     }
 }
 
@@ -199,138 +176,6 @@ impl FlowBackfillTable for FakeFlowTable {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct IssuerBackfillInput {
-    issuer_rows: Vec<IssuerRowSpec>,
-    #[serde(default)]
-    fail_server_ids: Vec<String>,
-    runs: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct IssuerRowSpec {
-    server_id: String,
-    alias: Option<String>,
-    server_name: Option<String>,
-    auth_type: Option<MCPAuth>,
-    issuer: Option<String>,
-    authorization_url: Option<String>,
-    token_url: Option<String>,
-    registration_url: Option<String>,
-    updated_by: Option<String>,
-}
-
-pub(super) struct FakeIssuerTable {
-    rows: Mutex<Vec<IssuerCandidateRow>>,
-    fail: Vec<String>,
-    attempted: Mutex<Vec<String>>,
-    updated: Mutex<Vec<String>>,
-}
-
-impl FakeIssuerTable {
-    fn new(rows: &[IssuerRowSpec], fail: &[String]) -> Self {
-        let rows = rows
-            .iter()
-            .map(|spec| IssuerCandidateRow {
-                server_id: spec.server_id.clone(),
-                alias: spec.alias.clone(),
-                server_name: spec.server_name.clone(),
-                auth_type: spec.auth_type,
-                issuer: spec.issuer.clone(),
-                authorization_url: spec.authorization_url.clone(),
-                token_url: spec.token_url.clone(),
-                registration_url: spec.registration_url.clone(),
-                updated_by: spec.updated_by.clone(),
-            })
-            .collect();
-        Self {
-            rows: Mutex::new(rows),
-            fail: fail.to_vec(),
-            attempted: Mutex::new(Vec::new()),
-            updated: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn row_views(&self) -> Vec<Value> {
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        rows.sort_by(|left, right| left.server_id.cmp(&right.server_id));
-        rows.iter()
-            .map(|row| {
-                json!({
-                    "server_id": row.server_id,
-                    "issuer": row.issuer,
-                    "updated_by": row.updated_by,
-                })
-            })
-            .collect()
-    }
-
-    fn updated(&self) -> Vec<String> {
-        support::sorted_ids(
-            self.updated
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .iter()
-                .cloned(),
-        )
-    }
-
-    fn failed(&self) -> Vec<String> {
-        let attempted = self
-            .attempted
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let updated = self.updated.lock().unwrap_or_else(PoisonError::into_inner);
-        support::sorted_ids(
-            attempted
-                .iter()
-                .filter(|server_id| !updated.contains(*server_id))
-                .cloned(),
-        )
-    }
-}
-
-#[async_trait]
-impl IssuerBackfillTable for FakeIssuerTable {
-    type Error = FakeError;
-
-    async fn discovery_stamped_rows(&self) -> Result<Vec<IssuerCandidateRow>, Self::Error> {
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(rows
-            .iter()
-            .filter(|row| row.updated_by.as_deref() == Some(DISCOVERY_ACTOR))
-            .filter(|row| {
-                matches!(
-                    row.auth_type,
-                    Some(MCPAuth::Oauth2 | MCPAuth::TruePassthrough | MCPAuth::OauthDelegate)
-                )
-            })
-            .cloned()
-            .collect())
-    }
-
-    async fn clear_issuer(&self, server_id: &str) -> Result<(), Self::Error> {
-        self.attempted
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(server_id.to_owned());
-        if self.fail.iter().any(|failed| failed.as_str() == server_id) {
-            return Err(FakeError("the fake issuer write failed"));
-        }
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        for row in rows.iter_mut().filter(|row| row.server_id == server_id) {
-            row.issuer = None;
-            row.updated_by = Some(ISSUER_STAMP_BACKFILL_ACTOR.to_owned());
-        }
-        drop(rows);
-        self.updated
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(server_id.to_owned());
-        Ok(())
-    }
-}
-
 pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>> {
     let results = input
         .signals
@@ -369,38 +214,12 @@ pub(super) async fn flow_backfill(input: &FlowBackfillInput) -> Result<Value, Bo
     }))
 }
 
-pub(super) async fn issuer_backfill(
-    input: &IssuerBackfillInput,
-) -> Result<Value, Box<HelperError>> {
-    let table = FakeIssuerTable::new(&input.issuer_rows, &input.fail_server_ids);
-    let mut healed = 0;
-    for _run in 0..input.runs {
-        healed += backfill_discovery_stamped_issuers(&table, &SilentLog)
-            .await
-            .map_err(|error| support::value_error(error.to_string()))?;
-    }
-    Ok(json!({
-        "healed": healed,
-        "rows": table.row_views(),
-        "updated": table.updated(),
-        "failed": table.failed(),
-    }))
-}
-
 fn credential_rows(specs: &[CredentialSpec]) -> Vec<UserCredentialRow> {
     specs
         .iter()
         .map(|spec| UserCredentialRow {
             server_id: spec.server_id.clone(),
-            credential_b64: credential_blob(spec.kind),
+            credential_b64: spec.credential_b64.clone(),
         })
         .collect()
-}
-
-fn credential_blob(kind: CredentialKind) -> String {
-    match kind {
-        CredentialKind::Oauth2 => STANDARD.encode(r#"{"type":"oauth2","access_token":"tok"}"#),
-        CredentialKind::Key => STANDARD.encode("a-plain-api-key"),
-        CredentialKind::Garbage => "!!!not-base64!!!".to_owned(),
-    }
 }
