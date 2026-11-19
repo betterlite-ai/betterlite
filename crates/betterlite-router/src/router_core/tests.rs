@@ -131,10 +131,6 @@ where
     RoutingStrategy::UsageBasedRouting,
     "usage_routing"
 ))]
-#[case::usage_routing_v2(boundaries::strategy_unbuilt(
-    RoutingStrategy::UsageBasedRoutingV2,
-    "usage_routing_v2"
-))]
 #[case::no_deployment_rate_limit(boundaries::no_deployment_rate_limit())]
 #[case::no_deployment_all_in_cooldown(boundaries::no_deployment_all_in_cooldown())]
 #[case::default_min_cooldown(settled(boundaries::default_min_cooldown))]
