@@ -1,6 +1,7 @@
 mod fixtures;
 
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
+use betterlite_core::api::messages_chat_tools_schema::tools::ToolNameMapping;
 use betterlite_core::api::messages_chat_transform::adapter::AnthropicAdapter;
 use betterlite_core::api::messages_chat_transform::compose::translate_anthropic_to_openai;
 use betterlite_core::api::messages_chat_transform::error::TransformError;
@@ -38,13 +39,11 @@ pub(crate) enum Input {
     Response {
         response: Box<ResponseRecord>,
         #[serde(default)]
-        tool_name_mapping: Option<Box<Objectless>>,
+        tool_name_mapping: Option<Box<ToolNameMapping>>,
         #[serde(default)]
         polyfill_result: Option<Box<PolyfillInput>>,
     },
 }
-
-pub(crate) type Objectless = indexmap::IndexMap<String, String>;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -72,14 +71,14 @@ impl PolyfillInput {
 #[derive(Serialize)]
 struct WrappedAnswer {
     request: Object,
-    tool_name_mapping: Option<Objectless>,
+    tool_name_mapping: Option<ToolNameMapping>,
     kwargs: Object,
 }
 
 #[derive(Serialize)]
 struct ComposeAnswer {
     request: Object,
-    tool_name_mapping: Objectless,
+    tool_name_mapping: ToolNameMapping,
     anthropic_request: Object,
 }
 
@@ -207,7 +206,7 @@ fn compose_answer(
 
 fn response_answer(
     response: &ResponseRecord,
-    tool_name_mapping: Option<&Objectless>,
+    tool_name_mapping: Option<&ToolNameMapping>,
     polyfill_result: Option<&PolyfillInput>,
 ) -> Result<serde_json::Value, Box<HelperError>> {
     let polyfill = polyfill_result.map(PolyfillInput::result);
