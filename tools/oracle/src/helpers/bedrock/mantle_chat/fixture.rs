@@ -9,11 +9,10 @@ use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_bedrock::claude_invoke::error::ClaudeInvokeError;
 use betterlite_bedrock::claude_invoke::request::{ClaudeInvokeRequest, TransformSources};
 use betterlite_bedrock::event_frames::beta::BetaHeader;
+use betterlite_bedrock::mantle_chat::async_request::async_transform_request as async_mantle_request;
 use betterlite_bedrock::mantle_chat::error::MantleMessagesError;
 use betterlite_bedrock::mantle_chat::messages::transform_request as transform_messages_request;
-use betterlite_bedrock::mantle_chat::request::{
-    async_transform_request as async_mantle_request, transform_request as transform_mantle_request,
-};
+use betterlite_bedrock::mantle_chat::request::transform_request as transform_mantle_request;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_bedrock::messages::transform::{
     MessagesRequest, TransformSources as MessagesSources,

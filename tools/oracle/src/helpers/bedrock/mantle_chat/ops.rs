@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use betterlite_bedrock::invoke_events::{DecoderClock, InvokeChunk};
+use betterlite_bedrock::invoke_primitives::config::Params as InvokeParams;
 use betterlite_bedrock::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use betterlite_bedrock::mantle_chat::environment::{chat_headers, messages_headers};
 use betterlite_bedrock::mantle_chat::response::transform_response;
@@ -77,57 +78,54 @@ fn policy(call: &UrlCall) -> Option<BedrockRequestPolicy> {
     (!fields.is_empty()).then(|| BedrockRequestPolicy { fields })
 }
 
-fn chat_url(call: &UrlCall) -> HelperResult {
+#[derive(Clone, Copy)]
+enum UrlKind {
+    Chat,
+    Message,
+}
+
+// The chat and Messages configs read the same B591/B690 URL; only the header merge and the resolved api_base differ.
+fn url(call: &UrlCall, kind: UrlKind) -> HelperResult {
     let mut params = call.invoke_params().map_err(failure)?;
-    let headers = chat_headers(
-        &call.headers,
-        &mut params,
-        &metadata_params(call),
-        policy(call).as_ref(),
-    )
-    .map_err(failure)?;
-    let url = complete_url(
-        call.api_base.as_deref(),
-        &call.model,
-        &params,
-        &globals(&call.environment),
-    )
-    .map_err(failure)?;
-    Ok(json!({"url": url, "headers": headers}))
-}
-
-fn message_url(call: &UrlCall) -> HelperResult {
-    let params = call.invoke_params().map_err(failure)?;
-    let (headers, api_base) = messages_headers(
-        &call.headers,
-        &metadata_params(call),
-        policy(call).as_ref(),
-        call.api_base.as_deref(),
-        None,
-    )
-    .map_err(failure)?;
-    let url = complete_url(
-        call.api_base.as_deref(),
-        &call.model,
-        &params,
-        &globals(&call.environment),
-    )
-    .map_err(failure)?;
-    Ok(json!({"url": url, "headers": headers, "api_base": api_base}))
-}
-
-fn chat_urls(argument: &UrlCases) -> HelperResult {
-    let mut answers = Vec::with_capacity(argument.calls.len());
-    for entry in &argument.calls {
-        answers.push(chat_url(entry)?);
+    match kind {
+        UrlKind::Chat => {
+            let headers = chat_headers(
+                &call.headers,
+                &mut params,
+                &metadata_params(call),
+                policy(call).as_ref(),
+            )
+            .map_err(failure)?;
+            Ok(json!({"url": url_of(call, &params)?, "headers": headers}))
+        }
+        UrlKind::Message => {
+            let (headers, api_base) = messages_headers(
+                &call.headers,
+                &metadata_params(call),
+                policy(call).as_ref(),
+                call.api_base.as_deref(),
+                None,
+            )
+            .map_err(failure)?;
+            Ok(json!({"url": url_of(call, &params)?, "headers": headers, "api_base": api_base}))
+        }
     }
-    Ok(json!({"calls": answers}))
 }
 
-fn message_urls(argument: &UrlCases) -> HelperResult {
+fn url_of(call: &UrlCall, params: &InvokeParams) -> Result<String, Box<HelperError>> {
+    complete_url(
+        call.api_base.as_deref(),
+        &call.model,
+        params,
+        &globals(&call.environment),
+    )
+    .map_err(failure)
+}
+
+fn urls(argument: &UrlCases, kind: UrlKind) -> HelperResult {
     let mut answers = Vec::with_capacity(argument.calls.len());
     for entry in &argument.calls {
-        answers.push(message_url(entry)?);
+        answers.push(url(entry, kind)?);
     }
     Ok(json!({"calls": answers}))
 }
@@ -195,8 +193,8 @@ const fn fixed_now() -> i64 {
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::ChatUrl(call) => chat_urls(call),
-        Input::MessageUrl(call) => message_urls(call),
+        Input::ChatUrl(call) => urls(call, UrlKind::Chat),
+        Input::MessageUrl(call) => urls(call, UrlKind::Message),
         Input::MessagesRequest(call) => messages_request(call),
         Input::ChatRequest(call) => chat(call, false),
         Input::NativeSse(call) => native_sse(call),
