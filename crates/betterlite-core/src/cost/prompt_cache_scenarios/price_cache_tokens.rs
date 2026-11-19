@@ -83,7 +83,7 @@ fn cost_usage(request: &PriceRequest<'_>) -> CostUsage {
     }
 }
 
-fn prompt_extras(tokens: &CacheTokenBuckets) -> PromptExtras {
+const fn prompt_extras(tokens: &CacheTokenBuckets) -> PromptExtras {
     let five_minute = tokens.cache_creation_5m_input_tokens;
     let one_hour = tokens.cache_creation_1h_input_tokens;
     PromptExtras {
