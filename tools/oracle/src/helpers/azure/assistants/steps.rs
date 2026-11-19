@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::mem;
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_azure::assistants::operations::{
@@ -75,7 +76,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
         },
     )) {
         Ok(RunInvocation::Polled(kind, reply)) => Ok(json!({
-            "requests": harness.recorder.take_seen(),
+            "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
             "calls": calls,
             "kind": reports::kind_name(kind),
             "result": reply,
@@ -84,7 +85,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
             consumed(runtime, &harness, *manager, handler.as_ref())
         }
         Err(error) => Ok(json!({
-            "requests": harness.recorder.take_seen(),
+            "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
             "calls": calls,
             "error": reports::failure(&error)?,
         })),
@@ -101,7 +102,7 @@ fn consumed(
     let outcome = runtime.block_on(manager.consume());
     let calls = recording.map_or_else(Vec::new, |handler| handler.calls());
     let mut output = json!({
-        "requests": harness.recorder.take_seen(),
+        "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
         "calls": calls,
     });
     match outcome {
