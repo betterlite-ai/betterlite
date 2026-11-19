@@ -40,7 +40,11 @@ pub fn filter_team_based_models(
 fn named_by_team(deployments: &[DeploymentSpec], requested_model: &str) -> bool {
     !deployments.is_empty()
         && deployments.iter().all(|deployment| {
-            deployment.model_info.get("team_id").is_some()
+            // Python reads an explicit null team_id as no owner too
+            deployment
+                .model_info
+                .get("team_id")
+                .is_some_and(|team| !matches!(team, Json::Null))
                 && (deployment.model_name == requested_model
                     || matches!(
                         deployment.model_info.get("team_public_model_name"),

@@ -512,6 +512,24 @@ fn a_blocked_pool_is_refused_with_the_window_end() {
     );
 }
 
+// model_info.team_id: null reads as no owner, so the admin arm leaves it out and the shared deployment stays.
+fn an_admin_pool_with_a_null_owner_is_only_filtered() {
+    let deployments = [
+        spec("shared", "shared", &[("team_id", Json::Null)]),
+        spec("shared", "owned", &[("team_id", text("t1"))]),
+    ];
+    let kept = filter_team_based_models(
+        deployments.to_vec(),
+        Authority {
+            team_id: None,
+            proxy_admin: true,
+        },
+        "shared",
+    )
+    .unwrap();
+    assert_eq!(ids(&kept), ["shared"]);
+}
+
 fn an_admin_pool_named_by_two_teams_is_refused() {
     let deployments = vec![
         spec(
@@ -705,6 +723,9 @@ fn access_windows_behaviors(#[case] run: fn()) {
 )]
 #[case::a_pool_with_one_blocked_deployment_keeps_the_rest(
     a_pool_with_one_blocked_deployment_keeps_the_rest
+)]
+#[case::an_admin_pool_with_a_null_owner_is_only_filtered(
+    an_admin_pool_with_a_null_owner_is_only_filtered
 )]
 #[case::an_admin_pool_named_by_two_teams_is_refused(an_admin_pool_named_by_two_teams_is_refused)]
 #[case::kept_deployments_keep_catalog_order(kept_deployments_keep_catalog_order)]
