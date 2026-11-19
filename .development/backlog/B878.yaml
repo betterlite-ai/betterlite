@@ -1,14 +1,14 @@
 id: B878
 milestone: M4 keys, spend and management
 title: Publish and consume auth cache invalidations
-status: todo
+status: done
 depends_on: [B4325, B733, B856, B8377]
 file: tasks/B878-auth-pubsub.yaml
 covers:
   - "litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2492
