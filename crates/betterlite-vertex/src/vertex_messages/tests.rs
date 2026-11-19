@@ -324,6 +324,37 @@ fn an_empty_existing_header_adds_nothing() {
     assert!(betas.is_empty());
 }
 
+#[test]
+fn existing_tokens_union_the_added_betas() {
+    let headers = AnthropicHeaders {
+        values: IndexMap::from([(BETA.to_owned(), "one,,two".to_owned())]),
+    };
+    let optional = object(r#"{"tools":[{"type":"web_search_20250305"}],"safeguards":{}}"#);
+    let betas = beta_tokens(&headers, &[], &optional).expect("the beta set builds");
+    // the caller's tokens, the empty one included, survive the feature betas the override adds
+    assert_eq!(
+        betas,
+        expected(&[
+            "",
+            "one",
+            "two",
+            "web-search-2025-03-05",
+            DANGEROUS_TOOL_USE_BETA,
+        ])
+    );
+    let outcome = validated(
+        &headers,
+        &optional,
+        &VertexSettings::default(),
+        deployment(),
+        None,
+    );
+    assert_eq!(
+        header(&outcome.headers, BETA),
+        Some(",dangerous-tool-use-2026-09-03,one,two,web-search-2025-03-05")
+    );
+}
+
 #[rstest]
 #[case::context_management_not_object(r#"{"context_management":"compact"}"#)]
 #[case::edits_not_a_list(r#"{"context_management":{"edits":{}}}"#)]

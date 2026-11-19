@@ -10,6 +10,7 @@ call:
         content: hi
     optional_params:
       max_tokens: 16
+      safeguards: {}
     headers:
       x-custom: keep
       Authorization: Bearer stale
