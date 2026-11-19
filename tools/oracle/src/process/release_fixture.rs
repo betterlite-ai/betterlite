@@ -33,14 +33,14 @@ pub(crate) enum PreparedCase<'text> {
 }
 
 impl PreparedCase<'_> {
-    pub(crate) fn text(&self) -> &str {
+    pub(crate) const fn text(&self) -> &str {
         match self {
-            Self::Plain(text) => text,
-            Self::Fixture { text, .. } => text,
+            Self::Plain(text) => *text,
+            Self::Fixture { text, .. } => text.as_str(),
         }
     }
 
-    pub(crate) fn fixture(&self) -> Option<ReleaseFixture> {
+    pub(crate) const fn fixture(&self) -> Option<ReleaseFixture> {
         match self {
             Self::Plain(_) => None,
             Self::Fixture { fixture, .. } => Some(*fixture),
@@ -68,13 +68,13 @@ impl ReleaseFixture {
         case.config.push_str(&section);
     }
 
-    fn destination(self) -> &'static str {
+    const fn destination(self) -> &'static str {
         match self {
             Self::Upstream => "{{upstream}}",
         }
     }
 
-    fn startup_hook(self) -> &'static str {
+    const fn startup_hook(self) -> &'static str {
         match self {
             Self::Upstream => STARTUP_HOOK,
         }
@@ -106,10 +106,10 @@ pub(crate) fn prepare<'text>(
     let Some(object) = document.as_object_mut() else {
         return Ok(PreparedCase::Plain(text));
     };
-    let Some(fixture) = object.remove(RELEASE_FIXTURE_KEY) else {
+    let Some(value) = object.remove(RELEASE_FIXTURE_KEY) else {
         return Ok(PreparedCase::Plain(text));
     };
-    let fixture: ReleaseFixture = serde_json::from_value(fixture)
+    let fixture: ReleaseFixture = serde_json::from_value(value)
         .map_err(|source| invalid(path, &format!("{RELEASE_FIXTURE_KEY}: {source}")))?;
     let host: FixtureHost = serde_json::from_value(document.clone()).map_err(|source| {
         invalid(
@@ -118,8 +118,11 @@ pub(crate) fn prepare<'text>(
         )
     })?;
     validate(path, &host)?;
-    let text = serde_json::to_string(&document).map_err(OracleError::Json)?;
-    Ok(PreparedCase::Fixture { text, fixture })
+    let serialized = serde_json::to_string(&document).map_err(OracleError::Json)?;
+    Ok(PreparedCase::Fixture {
+        text: serialized,
+        fixture,
+    })
 }
 
 fn validate(path: &Path, host: &FixtureHost) -> Result<(), OracleError> {
@@ -145,9 +148,8 @@ fn validate(path: &Path, host: &FixtureHost) -> Result<(), OracleError> {
 }
 
 fn invalid(path: &Path, message: &str) -> OracleError {
-    let message = message.to_owned();
     OracleError::CaseInvalid {
         path: path.to_owned(),
-        message,
+        message: message.to_owned(),
     }
 }

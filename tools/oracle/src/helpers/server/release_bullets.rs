@@ -1,4 +1,5 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_server::release_info::bullets::count_release_bullets;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -13,7 +14,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let counts = betterlite_server::release_info::bullets::count_release_bullets(&input.body);
+        let counts = count_release_bullets(&input.body);
         Ok(serde_json::json!({
             "new_features": counts.new_features,
             "bug_fixes": counts.bug_fixes,
