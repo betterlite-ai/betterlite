@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Write as _};
+use std::fmt::Debug;
 use std::future::{Future, pending, ready};
 use std::sync::{Arc, Mutex};
 
@@ -364,7 +364,8 @@ struct MessageText<'buffer> {
 impl Visit for MessageText<'_> {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
-            write!(self.message, "{value:?}").unwrap_or(());
+            let rendered = format!("{value:?}");
+            self.message.push_str(&rendered);
         }
     }
 }
