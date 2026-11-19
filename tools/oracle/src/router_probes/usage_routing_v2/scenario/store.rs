@@ -82,10 +82,10 @@ impl ScenarioStore {
         let (_, minute) = raw.rsplit_once(':')?;
         self.pairs.iter().find_map(|(id, model)| {
             let counter = self.counters.get(id)?;
-            [("tpm", counter.tpm), ("rpm", counter.rpm)]
+            let (_, value) = [("tpm", counter.tpm), ("rpm", counter.rpm)]
                 .into_iter()
-                .find(|(field, _)| format!("{id}:{model}:{field}:{minute}") == raw)
-                .and_then(|(_, value)| value)
+                .find(|(field, _)| format!("{id}:{model}:{field}:{minute}") == raw)?;
+            value
         })
     }
 }
