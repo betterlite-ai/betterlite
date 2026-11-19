@@ -1,0 +1,10 @@
+kind: helper
+name: team_admin_fields_verdict_seed
+call:
+  team_admin_fields:
+    function: key_verdict
+    request: {"key": "sk-1", "max_budget": 10.0}
+    existing: {"token": "sk-1", "max_budget": 5.0}
+    enabled: true
+env: {}
+compare: {ignore: []}
