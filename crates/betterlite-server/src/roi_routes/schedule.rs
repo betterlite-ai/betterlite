@@ -7,12 +7,12 @@ use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
 
 use crate::roi_settings::deployments::router_estimator_models;
+use crate::roi_settings::error::RoiSettingsError;
 use crate::roi_settings::public::public_settings;
-use crate::roi_settings::store::load_settings;
+use crate::roi_settings::store::{REPORT_KEY, load_parameter, load_settings};
 
 use super::error::RoiRoutesError;
 use super::ports::RouteSyncRun;
-use super::reports::load_report;
 use super::state::RoiRouteState;
 
 const MICROS_PER_MINUTE: i64 = 60_000_000;
@@ -77,7 +77,12 @@ pub async fn run_scheduled_sync(state: &RoiRouteState) -> Result<(), RoiRoutesEr
         .read_status()
         .await?
         .unwrap_or_else(|| state.manager.current_status());
-    let report = load_report(repository.as_ref()).await?;
+    let report = load_parameter::<ROIReport, _>(
+        repository.as_ref(),
+        REPORT_KEY,
+        RoiSettingsError::StoredReport,
+    )
+    .await?;
     let Some(next) = next_update(&settings, &status, report.as_ref())? else {
         return Ok(());
     };

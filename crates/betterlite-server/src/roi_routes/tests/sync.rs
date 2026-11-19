@@ -23,7 +23,7 @@ async fn sync_coordinator_answers_the_store_lease_calls() {
     assert!(coordinator.heartbeat("owner", &idle_status()).await);
     assert!(coordinator.finish("owner", &idle_status(), None).await);
     harness.store.refuse_acquire();
-    harness.store.fail_heartbeat();
+    harness.store.refuse_heartbeat();
     harness.store.fail_finish();
     assert!(!coordinator.acquire("owner", &idle_status(), 2.0_f64).await);
     assert!(!coordinator.heartbeat("owner", &idle_status()).await);

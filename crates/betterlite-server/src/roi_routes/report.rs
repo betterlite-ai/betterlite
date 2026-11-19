@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::{Extension, Query, State};
+use betterlite_roi::records::ROIReport;
 use betterlite_roi::sample::sample_report;
 use betterlite_roi::summary::models::ROIReportResponse;
 use betterlite_roi::summary::summarize;
@@ -8,10 +9,10 @@ use serde::Deserialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::roi_connections::access::{READ_FORBIDDEN, READ_ROLES, ensure_admin};
-use crate::roi_settings::store::load_settings;
+use crate::roi_settings::error::RoiSettingsError;
+use crate::roi_settings::store::{REPORT_KEY, load_parameter, load_settings};
 
 use super::error::{MODE_LITERAL, RoiRoutesError, issue};
-use super::reports::load_report;
 use super::state::RoiRouteState;
 
 #[derive(Deserialize)]
@@ -38,7 +39,13 @@ pub(super) async fn read_report(
             }))
         }
         "live" => {
-            let Some(report) = load_report(repository).await? else {
+            let report = load_parameter::<ROIReport, _>(
+                repository,
+                REPORT_KEY,
+                RoiSettingsError::StoredReport,
+            )
+            .await?;
+            let Some(report) = report else {
                 return Ok(Json(ROIReportResponse { report: None }));
             };
             let settings = load_settings(repository, state.cipher.as_ref()).await?;

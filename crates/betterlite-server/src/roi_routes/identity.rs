@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
+use betterlite_roi::records::ROIReport;
 use betterlite_roi::settings::{normalize_email, normalize_login};
 use betterlite_roi::summary::identity_map::ROIIdentityMapResponse;
 use betterlite_roi::summary::summarize;
@@ -8,11 +9,11 @@ use serde::Deserialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::roi_connections::access::{WRITE_FORBIDDEN, WRITE_ROLES, ensure_admin};
-use crate::roi_settings::store::load_settings;
+use crate::roi_settings::error::RoiSettingsError;
+use crate::roi_settings::store::{REPORT_KEY, load_parameter, load_settings};
 
 use super::decode::decode_body;
 use super::error::{RoiRoutesError, issue};
-use super::reports::load_report;
 use super::state::RoiRouteState;
 use super::stored::{load_ciphertexts, save_settings};
 
@@ -56,7 +57,12 @@ pub(super) async fn update_identity_map(
         settings.identity_map.shift_remove(login.as_str());
     }
     save_settings(repository.as_ref(), &settings, &stored).await?;
-    let stored_report = load_report(repository.as_ref()).await?;
+    let stored_report = load_parameter::<ROIReport, _>(
+        repository.as_ref(),
+        REPORT_KEY,
+        RoiSettingsError::StoredReport,
+    )
+    .await?;
     let summary = stored_report
         .as_ref()
         .map(|report| summarize(report, &settings.identity_map))

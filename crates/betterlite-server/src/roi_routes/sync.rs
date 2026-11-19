@@ -2,19 +2,19 @@ use axum::Json;
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use betterlite_db::search_tools::convert::isoformat;
-use betterlite_roi::records::ROISyncStatus;
+use betterlite_roi::records::{ROIReport, ROISyncStatus};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::roi_connections::access::{
     READ_FORBIDDEN, READ_ROLES, WRITE_FORBIDDEN, WRITE_ROLES, ensure_admin,
 };
 use crate::roi_settings::deployments::router_estimator_models;
+use crate::roi_settings::error::RoiSettingsError;
 use crate::roi_settings::public::public_settings;
-use crate::roi_settings::store::load_settings;
+use crate::roi_settings::store::{REPORT_KEY, load_parameter, load_settings};
 
 use super::error::{ALREADY_RUNNING, NOT_READY, RoiRoutesError};
 use super::ports::RouteSyncRun;
-use super::reports::load_report;
 use super::schedule::next_update;
 use super::state::RoiRouteState;
 
@@ -28,12 +28,12 @@ pub(super) async fn read_sync(
         return Err(RoiRoutesError::DbNotConnected);
     };
     let store = state.sync_store.store().await?;
-    let status = store
-        .read_status()
-        .await?
-        .unwrap_or_else(|| state.manager.current_status());
+    let stored = store.read_status().await?;
+    let status = stored.unwrap_or_else(|| state.manager.current_status());
     let settings = load_settings(repository, state.cipher.as_ref()).await?;
-    let report = load_report(repository).await?;
+    let report =
+        load_parameter::<ROIReport, _>(repository, REPORT_KEY, RoiSettingsError::StoredReport)
+            .await?;
     let next = next_update(&settings, &status, report.as_ref())?;
     Ok(Json(ROISyncStatus {
         next_update: next.map(isoformat),

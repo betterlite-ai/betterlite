@@ -117,19 +117,15 @@ impl MemoryRepository {
 #[async_trait]
 impl SettingsRepository for MemoryRepository {
     async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Err(ConfigError::Table(TableError::MissingRow));
+        }
         self.calls
             .lock()
             .expect("calls lock")
             .push(format!("repo.param:{name}"));
-        if self.fail_reads.load(Ordering::SeqCst) {
-            return Err(ConfigError::Table(TableError::MissingRow));
-        }
-        Ok(self
-            .params
-            .lock()
-            .expect("repository lock")
-            .get(name)
-            .cloned())
+        let params = self.params.lock().expect("repository lock");
+        Ok(params.get(name).cloned())
     }
 
     async fn set_param(&self, name: &str, value: JsonData) -> Result<(), ConfigError> {
@@ -137,7 +133,8 @@ impl SettingsRepository for MemoryRepository {
             .lock()
             .expect("calls lock")
             .push(format!("repo.set:{name}"));
-        if self.fail_writes.load(Ordering::SeqCst) {
+        let failed = self.fail_writes.load(Ordering::SeqCst);
+        if failed {
             return Err(ConfigError::Table(TableError::MissingRow));
         }
         self.params
@@ -207,7 +204,7 @@ pub(crate) struct FakeStore {
     fail_status: AtomicBool,
     fail_clear: AtomicBool,
     fail_finish: AtomicBool,
-    fail_heartbeat: AtomicBool,
+    refuse_heartbeat: AtomicBool,
     acquire_owner: Mutex<Option<String>>,
     acquire_status: Mutex<Option<ROISyncStatus>>,
     acquire_interval: Mutex<Option<f64>>,
@@ -216,23 +213,6 @@ pub(crate) struct FakeStore {
 }
 
 impl FakeStore {
-    fn new(calls: Calls) -> Self {
-        Self {
-            calls,
-            status: Mutex::new(None),
-            acquire_result: AtomicBool::new(true),
-            fail_status: AtomicBool::new(false),
-            fail_clear: AtomicBool::new(false),
-            fail_finish: AtomicBool::new(false),
-            fail_heartbeat: AtomicBool::new(false),
-            acquire_owner: Mutex::new(None),
-            acquire_status: Mutex::new(None),
-            acquire_interval: Mutex::new(None),
-            finished: Mutex::new(None),
-            cleared: AtomicBool::new(false),
-        }
-    }
-
     pub(crate) fn set_status(&self, status: ROISyncStatus) {
         *self.status.lock().expect("store status lock") = Some(status);
     }
@@ -253,8 +233,8 @@ impl FakeStore {
         self.fail_finish.store(true, Ordering::SeqCst);
     }
 
-    pub(crate) fn fail_heartbeat(&self) {
-        self.fail_heartbeat.store(true, Ordering::SeqCst);
+    pub(crate) fn refuse_heartbeat(&self) {
+        self.refuse_heartbeat.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn acquired_owner(&self) -> Option<String> {
@@ -324,10 +304,7 @@ impl SyncStorePort for FakeStore {
             .lock()
             .expect("calls lock")
             .push("store.heartbeat".to_owned());
-        if self.fail_heartbeat.load(Ordering::SeqCst) {
-            return Err(RoiRoutesError::Store(DbError::NoDbConnected));
-        }
-        Ok(true)
+        Ok(!self.refuse_heartbeat.load(Ordering::SeqCst))
     }
 
     async fn finish_claim(
@@ -336,10 +313,8 @@ impl SyncStorePort for FakeStore {
         status: &ROISyncStatus,
         _report: Option<&ROIReport>,
     ) -> Result<bool, RoiRoutesError> {
-        self.calls
-            .lock()
-            .expect("calls lock")
-            .push("store.finish".to_owned());
+        let call = "store.finish".to_owned();
+        self.calls.lock().expect("calls lock").push(call);
         *self.finished.lock().expect("finished lock") = Some(status.clone());
         if self.fail_finish.load(Ordering::SeqCst) {
             return Err(RoiRoutesError::Store(DbError::NoDbConnected));
@@ -372,6 +347,7 @@ impl SyncStoreSource for Arc<FakeStore> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct RecordedRun {
     pub(crate) model: String,
     pub(crate) interval: f64,
@@ -388,16 +364,6 @@ pub(crate) struct FakeManager {
 }
 
 impl FakeManager {
-    fn new(calls: Calls) -> Self {
-        Self {
-            calls,
-            status: Mutex::new(idle_status()),
-            start_result: AtomicBool::new(false),
-            status_after_start: Mutex::new(None),
-            runs: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn set_status(&self, status: ROISyncStatus) {
         *self.status.lock().expect("manager status lock") = status;
     }
@@ -409,14 +375,7 @@ impl FakeManager {
 
     pub(crate) fn runs(&self) -> Vec<RecordedRun> {
         let runs = self.runs.lock().expect("runs lock");
-        runs.iter()
-            .map(|run| RecordedRun {
-                model: run.model.clone(),
-                interval: run.interval,
-                coordinated: run.coordinated,
-                repos: run.repos.clone(),
-            })
-            .collect()
+        runs.clone()
     }
 }
 
@@ -486,12 +445,11 @@ pub(crate) fn finished_status(finished_at: &str) -> ROISyncStatus {
 }
 
 pub(crate) fn running_status() -> ROISyncStatus {
-    ROISyncStatus {
-        running: true,
-        phase: ROISyncPhase::Spend,
-        stage: "Reading gateway spend".to_owned(),
-        ..idle_status()
-    }
+    let mut status = idle_status();
+    status.running = true;
+    status.phase = ROISyncPhase::Spend;
+    status.stage = "Reading gateway spend".to_owned();
+    status
 }
 
 pub(crate) fn fixed_now() -> DateTime<Utc> {
@@ -592,11 +550,32 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn new() -> Self {
         let calls: Calls = Arc::new(Mutex::new(Vec::new()));
+        let store = FakeStore {
+            calls: Arc::clone(&calls),
+            status: Mutex::new(None),
+            acquire_result: AtomicBool::new(true),
+            fail_status: AtomicBool::new(false),
+            fail_clear: AtomicBool::new(false),
+            fail_finish: AtomicBool::new(false),
+            refuse_heartbeat: AtomicBool::new(false),
+            acquire_owner: Mutex::new(None),
+            acquire_status: Mutex::new(None),
+            acquire_interval: Mutex::new(None),
+            finished: Mutex::new(None),
+            cleared: AtomicBool::new(false),
+        };
+        let manager = FakeManager {
+            calls: Arc::clone(&calls),
+            status: Mutex::new(idle_status()),
+            start_result: AtomicBool::new(false),
+            status_after_start: Mutex::new(None),
+            runs: Mutex::new(Vec::new()),
+        };
         Self {
             repository: Arc::new(MemoryRepository::new(Arc::clone(&calls))),
             catalog: Arc::new(catalog_with(&["gpt-4o"])),
-            store: Arc::new(FakeStore::new(Arc::clone(&calls))),
-            manager: Arc::new(FakeManager::new(Arc::clone(&calls))),
+            store: Arc::new(store),
+            manager: Arc::new(manager),
             calls,
             repository_present: true,
             now: fixed_now(),
