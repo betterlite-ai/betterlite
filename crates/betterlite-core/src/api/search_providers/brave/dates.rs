@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use chrono::{DateTime, NaiveDate, Utc};
 
 mod fuzzy;
@@ -25,20 +23,19 @@ impl DateValue {
     // a JSON string, a number literal, or a value to_yyyy_mm_dd answers null for
     #[must_use]
     pub fn from_literal(literal: &str) -> Self {
-        let literal = literal.trim();
-        match literal.as_bytes().first() {
-            Some(b'"') => serde_json::from_str(literal).map_or(Self::Ignored(false), Self::Text),
+        let trimmed = literal.trim();
+        match trimmed.as_bytes().first() {
+            Some(b'"') => serde_json::from_str(trimmed).map_or(Self::Ignored(false), Self::Text),
             Some(b't') => Self::Ignored(true),
             Some(b'[' | b'{') => {
-                let end = literal.len().saturating_sub(1);
-                let filled = literal
+                let end = trimmed.len().saturating_sub(1);
+                let filled = trimmed
                     .get(1..end)
                     .is_some_and(|inner| !inner.trim().is_empty());
                 Self::Ignored(filled)
             }
-            Some(b'f' | b'n') => Self::Ignored(false),
-            Some(_) => number_value(literal),
-            None => Self::Ignored(false),
+            None | Some(b'f' | b'n') => Self::Ignored(false),
+            Some(_) => number_value(trimmed),
         }
     }
 
@@ -73,29 +70,27 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
         DateValue::Ignored(_) => return None,
         DateValue::Text(text) => text_date(text, today, flags)?,
         DateValue::Integer(text) => unix_date(text)?,
-        DateValue::Decimal(number) => decimal_date(*number)?,
+        // the source reads a float through str(), and an infinity has no timestamp
+        DateValue::Decimal(number) => {
+            if *number == 0.0 || !number.is_finite() {
+                return None;
+            }
+            unix_date(&format!("{number}"))?
+        }
     };
     Some(date.format("%Y-%m-%d").to_string())
 }
 
-fn decimal_date(number: f64) -> Option<NaiveDate> {
-    // the source reads a float through str(), and an infinity has no timestamp
-    if number == 0.0 || !number.is_finite() {
-        return None;
-    }
-    unix_date(&format!("{number}"))
-}
-
 fn text_date(text: &str, today: NaiveDate, flags: DateFlags) -> Option<NaiveDate> {
-    let text = text.trim();
-    if text.is_empty() {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
         return None;
     }
-    if is_unix_timestamp(text) {
-        return unix_date(text);
+    if is_unix_timestamp(trimmed) {
+        return unix_date(trimmed);
     }
     // a bare YYYY-M-D always reads year first, whatever the caller's flags say
-    let flags = if is_iso_ymd(text) {
+    let effective = if is_iso_ymd(trimmed) {
         DateFlags {
             dayfirst: false,
             yearfirst: true,
@@ -103,16 +98,14 @@ fn text_date(text: &str, today: NaiveDate, flags: DateFlags) -> Option<NaiveDate
     } else {
         flags
     };
-    fuzzy::parse_date(text, today, flags)
+    fuzzy::parse_date(trimmed, today, effective)
 }
 
 fn is_unix_timestamp(text: &str) -> bool {
     let body = text.strip_prefix('-').unwrap_or(text);
     let (integer, fraction) = split_decimal(body);
-    !integer.is_empty()
-        && integer.bytes().all(|byte| byte.is_ascii_digit())
-        && fraction
-            .is_none_or(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    digits(integer) && fraction.is_none_or(digits)
 }
 
 fn split_decimal(text: &str) -> (&str, Option<&str>) {
@@ -136,21 +129,19 @@ fn is_iso_ymd(text: &str) -> bool {
 }
 
 fn unix_date(text: &str) -> Option<NaiveDate> {
-    let (negative, body) = match text.strip_prefix('-') {
-        Some(body) => (true, body),
-        None => (false, text),
-    };
-    let (integer, fraction) = split_decimal(body);
-    let integer = integer.trim_start_matches('0');
-    let fraction = fraction.unwrap_or_default();
-    if integer.len() > 30 {
+    let negative = text.starts_with('-');
+    let body = text.strip_prefix('-').unwrap_or(text);
+    let (integer_part, fraction_part) = split_decimal(body);
+    let digits = integer_part.trim_start_matches('0');
+    let fraction = fraction_part.unwrap_or_default();
+    if digits.len() > 30 {
         return None;
     }
-    let (integer, fraction) = to_seconds(integer, fraction)?;
+    let (whole_digits, fraction_digits) = to_seconds(digits, fraction)?;
     // the 30-digit guard keeps every value inside i128, and an empty run reads as zero
-    let whole: i128 = integer.parse().unwrap_or_default();
-    let fractional = fraction.bytes().any(|byte| byte != b'0');
-    let seconds = match (negative, fractional) {
+    let whole: i128 = whole_digits.parse().unwrap_or_default();
+    let fraction_nonzero = fraction_digits.bytes().any(|byte| byte != b'0');
+    let seconds = match (negative, fraction_nonzero) {
         (true, true) => whole.checked_add(1)?.checked_neg()?,
         (true, false) => whole.checked_neg()?,
         (false, _) => whole,
@@ -162,13 +153,9 @@ fn unix_date(text: &str) -> Option<NaiveDate> {
 // above 1e11 the value is milliseconds; the source's /1000.0 shift keeps every digit
 fn to_seconds(integer: &str, fraction: &str) -> Option<(String, String)> {
     const LIMIT: &str = "100000000000";
-    let above = match integer.len().cmp(&LIMIT.len()) {
-        Ordering::Greater => true,
-        Ordering::Less => false,
-        Ordering::Equal => {
-            integer >= LIMIT && (integer > LIMIT || fraction.bytes().any(|b| b != b'0'))
-        }
-    };
+    let above = integer.len() > LIMIT.len()
+        || (integer.len() == LIMIT.len()
+            && (integer > LIMIT || fraction.bytes().any(|byte| byte != b'0')));
     if !above {
         return Some((integer.to_owned(), fraction.to_owned()));
     }

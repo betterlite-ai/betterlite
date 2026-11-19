@@ -4,8 +4,8 @@ use super::super::DateFlags;
 use super::resolve::{self, Fields, Label};
 use super::tokens::{MONTHS, Token, WEEKDAYS, is_jump, lookup};
 
-pub(super) struct Parser<'a> {
-    pub(super) tokens: &'a [Token],
+pub(super) struct Parser<'tokens> {
+    pub(super) tokens: &'tokens [Token],
     pub(super) today: NaiveDate,
     pub(super) flags: DateFlags,
     pub(super) fields: Fields,
@@ -13,8 +13,8 @@ pub(super) struct Parser<'a> {
     pub(super) saw: bool,
 }
 
-impl<'a> Parser<'a> {
-    pub(super) fn new(tokens: &'a [Token], today: NaiveDate, flags: DateFlags) -> Self {
+impl<'tokens> Parser<'tokens> {
+    pub(super) fn new(tokens: &'tokens [Token], today: NaiveDate, flags: DateFlags) -> Self {
         Self {
             tokens,
             today,
@@ -86,7 +86,7 @@ impl<'a> Parser<'a> {
 
     fn word_token(&mut self, index: usize) -> Option<usize> {
         let token = self.tokens.get(index)?.clone();
-        if let Some(month) = lookup(&token, &MONTHS).map(|index| index.saturating_add(1)) {
+        if let Some(month) = lookup(&token, &MONTHS).map(|position| position.saturating_add(1)) {
             self.fields
                 .push_text(&month.to_string(), Some(Label::Month))?;
             return self.month_member(index);
@@ -100,9 +100,9 @@ impl<'a> Parser<'a> {
 
     // "Jan-05-2024" joins a month name to one or two more members with the same separator
     fn month_member(&mut self, index: usize) -> Option<usize> {
-        let separator = match self.tokens.get(index.saturating_add(1)) {
-            Some(Token::Punct(separator @ ('-' | '/'))) => *separator,
-            _ => return Some(index),
+        let next = index.saturating_add(1);
+        let Some(&Token::Punct(separator @ ('-' | '/'))) = self.tokens.get(next) else {
+            return Some(index);
         };
         let member = self.tokens.get(index.saturating_add(2))?.clone();
         self.push_member(&member)?;
@@ -130,7 +130,8 @@ impl<'a> Parser<'a> {
     }
 
     fn number_token(&mut self, index: usize) -> Option<usize> {
-        let Token::Number(text) = self.tokens.get(index)? else {
+        let tokens = self.tokens;
+        let Token::Number(text) = tokens.get(index)? else {
             return None;
         };
         let members = self.fields.items.len();
@@ -153,7 +154,8 @@ impl<'a> Parser<'a> {
     }
 
     fn number_tail(&mut self, index: usize, value: i64) -> Option<usize> {
-        let following = self.tokens.get(index.saturating_add(1));
+        let tokens = self.tokens;
+        let following = tokens.get(index.saturating_add(1));
         if following.is_some_and(|token| matches!(token, Token::Punct('-' | '/' | '.'))) {
             return self.separator_group(index);
         }

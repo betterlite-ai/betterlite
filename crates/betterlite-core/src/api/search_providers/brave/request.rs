@@ -45,7 +45,11 @@ pub(super) fn build(
     optional_params: &Object,
 ) -> Result<BraveBody, BraveSearchError> {
     let mut params = IndexMap::new();
-    params.insert(QUERY_PARAM.to_owned(), BraveParam::Text(join_query(query)));
+    let joined = match query {
+        SearchQuery::Single(text) => text.clone(),
+        SearchQuery::Multiple(items) => items.join(" "),
+    };
+    params.insert(QUERY_PARAM.to_owned(), BraveParam::Text(joined));
     let metadata = optional_params
         .get(METADATA_PARAM)
         .and_then(|value| value.as_bool())
@@ -119,11 +123,9 @@ fn apply_passthrough(
         {
             continue;
         }
-        let param: BraveParam = serde_json::from_value(value.clone()).map_err(|_error| {
-            BraveSearchError::OptionType {
-                field: name.clone(),
-            }
-        })?;
+        let field = name.clone();
+        let param: BraveParam = serde_json::from_value(value.clone())
+            .map_err(|_error| BraveSearchError::OptionType { field })?;
         params.insert(name.clone(), param);
     }
     Ok(())

@@ -1,3 +1,5 @@
+use std::mem::take;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Token {
     Number(String),
@@ -47,7 +49,7 @@ fn push_run(tokens: &mut Vec<Token>, run: &mut String, number: bool) {
     if run.is_empty() {
         return;
     }
-    let text = std::mem::take(run);
+    let text = take(run);
     tokens.push(if number {
         Token::Number(text)
     } else {

@@ -44,13 +44,16 @@ impl Fields {
         self.push(text.parse().ok()?, label, long)
     }
 
-    fn push(&mut self, value: i64, label: Option<Label>, long: bool) -> Option<()> {
+    pub(super) fn push(&mut self, value: i64, label: Option<Label>, long: bool) -> Option<()> {
         self.century |= long;
-        let label = label.or(long.then_some(Label::Year));
-        if label.is_some_and(|label| self.index(label).is_some()) {
+        let named = label.or(long.then_some(Label::Year));
+        if named.is_some_and(|chosen| self.index(chosen).is_some()) {
             return None;
         }
-        self.items.push(Field { value, label });
+        self.items.push(Field {
+            value,
+            label: named,
+        });
         Some(())
     }
 }
@@ -72,7 +75,7 @@ pub(super) fn resolve(fields: &Fields, flags: DateFlags) -> Option<Resolved> {
         if let (Some(missing), Some(free)) = (missing, slots.iter().position(Option::is_none)) {
             *slots.get_mut(free)? = Some(missing);
         }
-        let value = |slot| {
+        let value = |slot: Option<usize>| {
             slot.and_then(|index| items.get(index))
                 .map(|field| field.value)
         };
@@ -176,14 +179,11 @@ fn numeric_shape(values: &[i64], fields: &Fields, flags: DateFlags) -> Option<[u
     Some([2, 0, 1])
 }
 
-pub(super) fn convert_year(year: i64, century: bool, current_year: i64) -> i64 {
+pub(super) const fn convert_year(year: i64, century: bool, current_year: i64) -> i64 {
     if year >= 100 || century {
         return year;
     }
-    let base = current_year
-        .checked_div(100)
-        .unwrap_or(0)
-        .saturating_mul(100);
+    let base = current_year.div_euclid(100).saturating_mul(100);
     let converted = year.saturating_add(base);
     if converted >= current_year.saturating_add(50) {
         converted.saturating_sub(100)

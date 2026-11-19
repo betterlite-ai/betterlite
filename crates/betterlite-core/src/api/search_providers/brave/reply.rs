@@ -20,23 +20,16 @@ const COUNT_LIMIT: i64 = 20;
 // the sections the source reads by name, and only the member each one's results live in
 #[derive(Debug, Deserialize)]
 struct BraveReply {
-    #[serde(default)]
     web: Option<SectionBody>,
-    #[serde(default)]
     discussions: Option<SectionBody>,
-    #[serde(default)]
     faqs: Option<SectionBody>,
-    #[serde(default)]
     faq: Option<SectionBody>,
-    #[serde(default)]
     news: Option<SectionBody>,
-    #[serde(default)]
     videos: Option<SectionBody>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SectionBody {
-    #[serde(default)]
     results: Option<Vec<Box<RawValue>>>,
 }
 
@@ -85,14 +78,12 @@ fn section_results<'reply>(
 
 // an unsupported or empty filter selects every section, in the source's own order
 fn sections(url: Option<&str>) -> Vec<&'static str> {
-    let mut selected = Vec::new();
-    if let Some((_, raw)) = query_parameter(url, RESULT_FILTER) {
-        selected.extend(
-            raw.split(',')
-                .map(|part| part.trim().to_ascii_lowercase())
-                .filter_map(|name| SECTIONS.iter().copied().find(|section| *section == name)),
-        );
-    }
+    let raw = query_parameter(url, RESULT_FILTER).1.unwrap_or_default();
+    let selected: Vec<&'static str> = raw
+        .split(',')
+        .map(|part| part.trim().to_ascii_lowercase())
+        .filter_map(|name| SECTIONS.iter().copied().find(|section| *section == name))
+        .collect();
     if selected.is_empty() {
         SECTIONS.to_vec()
     } else {
@@ -105,12 +96,12 @@ fn query_parameter(url: Option<&str>, name: &str) -> (Option<String>, Option<Str
     let mut first = None;
     let mut last = None;
     if let Some(query) = url
-        .and_then(|url| url.split_once('?'))
+        .and_then(|text| text.split_once('?'))
         .map(|(_, query)| query)
     {
         for (key, value) in form_urlencoded::parse(query.as_bytes()) {
             if key == name {
-                first = first.or_else(|| Some(value.to_string()));
+                first = first.or_else(|| Some(value.as_ref().to_owned()));
                 last = Some(value.into_owned());
             }
         }
@@ -134,15 +125,19 @@ fn project(raw: &RawValue, today: NaiveDate) -> Result<SearchResult, BraveSearch
     // the source reads each member by name, so a map keeps every member it might ask for
     let result: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(raw.get()).map_err(BraveSearchError::ReplyDecode)?;
-    let title = text_field(result.get("title").map(AsRef::as_ref), "title")?;
-    let url = text_field(result.get("url").map(AsRef::as_ref), "url")?;
-    let snippet = text_field(result.get("description").map(AsRef::as_ref), "description")?;
-    let sources = [result.get("page_age"), result.get("age")]
-        .map(|member| member.map(|raw| DateValue::from_literal(raw.get())));
-    let date = projected_date(sources, today);
+    let title = text_field(result.get("title").map(Box::as_ref), "title")?;
+    let url = text_field(result.get("url").map(Box::as_ref), "url")?;
+    let snippet = text_field(result.get("description").map(Box::as_ref), "description")?;
+    // the source's `page_age or age` takes the first member JSON truthiness keeps
+    let [page_age, age] = [result.get("page_age"), result.get("age")]
+        .map(|member| member.map(|item| DateValue::from_literal(item.get())));
+    let date = page_age
+        .filter(DateValue::is_filled)
+        .or(age.filter(DateValue::is_filled))
+        .and_then(|value| dates::to_yyyy_mm_dd(&value, today, DateFlags::default()));
     let last_updated = result
         .get("fetched_content_timestamp")
-        .map(|raw| DateValue::from_literal(raw.get()))
+        .map(|item| DateValue::from_literal(item.get()))
         .and_then(|value| dates::to_yyyy_mm_dd(&value, today, DateFlags::default()));
     Ok(SearchResult {
         title,
@@ -152,15 +147,6 @@ fn project(raw: &RawValue, today: NaiveDate) -> Result<SearchResult, BraveSearch
         last_updated,
         extra: Object::new(),
     })
-}
-
-// the source's `page_age or age` takes the first member JSON truthiness keeps
-fn projected_date(sources: [Option<DateValue>; 2], today: NaiveDate) -> Option<String> {
-    let [page_age, age] = sources;
-    let value = page_age
-        .filter(DateValue::is_filled)
-        .or(age.filter(DateValue::is_filled))?;
-    dates::to_yyyy_mm_dd(&value, today, DateFlags::default())
 }
 
 fn text_field(member: Option<&RawValue>, field: &'static str) -> Result<String, BraveSearchError> {

@@ -47,7 +47,6 @@ pub enum BraveSearchError {
     #[error("the Brave search reply field `{field}` is not text")]
     ReplyText {
         field: &'static str,
-        #[source]
         source: serde_json::Error,
     },
     #[error("the Brave search request count `{value}` is not an integer")]
@@ -87,10 +86,8 @@ impl BraveSearchConfig {
         let Some(resolved) = CREDENTIAL.resolve(api_key.cloned(), api_base, self)? else {
             return Err(BraveSearchError::MissingApiKey);
         };
-        headers.insert(
-            SUBSCRIPTION_HEADER.to_owned(),
-            resolved.expose_secret().to_owned(),
-        );
+        let token = resolved.expose_secret().to_owned();
+        headers.insert(SUBSCRIPTION_HEADER.to_owned(), token);
         headers.insert(ACCEPT_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
         headers.insert(ACCEPT_ENCODING_HEADER.to_owned(), "gzip".to_owned());
         headers.insert(CONTENT_TYPE_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
@@ -159,11 +156,11 @@ impl SearchProvider for BraveSearchConfig {
         let base = api_base
             .filter(|base| !base.is_empty())
             .unwrap_or(&self.api_base);
-        let Some(body) = body else {
+        let Some(payload) = body else {
             self.remember_url(base);
             return Ok(base.to_owned());
         };
-        let url = format!("{base}?{}", request::query_string(&body.params)?);
+        let url = format!("{base}?{}", request::query_string(&payload.params)?);
         self.remember_url(&url);
         Ok(url)
     }
@@ -195,7 +192,7 @@ fn now_date() -> NaiveDate {
         .ok()
         .and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok());
     let moment = elapsed.and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
-    moment.map_or_else(NaiveDate::default, |moment| moment.date_naive())
+    moment.map_or_else(NaiveDate::default, |fixed| fixed.date_naive())
 }
 
 mod tests;
