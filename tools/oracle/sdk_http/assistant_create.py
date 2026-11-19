@@ -54,7 +54,8 @@ class Call(BaseModel):
     api_version: str | None = None
     organization: str | None = None
     max_retries: int | None = None
-    timeout: int | float | str | Phases | None = None
+    timeout: float | str | None = None
+    timeout_phases: Phases | None = None
     request_timeout: int | float | None = None
     azure_ad_token: str | None = None
     tenant_id: str | None = None
@@ -149,25 +150,10 @@ class AssistantCreateRequest(BaseModel):
 ASSISTANT_FIELDS: Final = TypeAdapter(AssistantView)
 
 
-def to_timeout(
-    timeout: int | float | str | Phases | None,
-) -> float | str | httpx.Timeout | None:
-    match timeout:
-        case None:
-            return None
-        case int() as whole:
-            return float(whole)
-        case float() as seconds:
-            return seconds
-        case str() as text:
-            return text
-        case Phases() as phases:
-            return httpx.Timeout(**phases.given())
-
-
-def create_options(
-    call: Call, api_base: str, timeout: float | str | httpx.Timeout | None
-) -> CreateOptions:
+def create_options(call: Call, api_base: str) -> CreateOptions:
+    timeout: float | str | httpx.Timeout | None = call.timeout
+    if call.timeout_phases is not None:
+        timeout = httpx.Timeout(**call.timeout_phases.given())
     return CreateOptions(
         model=call.model,
         name=call.name,
@@ -237,8 +223,7 @@ FACADE: CreateFacade = litellm
 def run(call: Call, api_base: str) -> Outcome:
     if call.client is not None:
         raise ScriptedClientError(call.client)
-    timeout = to_timeout(call.timeout)
-    options = create_options(call, api_base, timeout)
+    options = create_options(call, api_base)
     try:
         if call.entry == "sync":
             answer = FACADE.create_assistants(call.provider, **options)
