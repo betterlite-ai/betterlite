@@ -83,6 +83,14 @@ fn translated(source: &str) -> Json {
     r#"{"request":{"model":"claude","messages":[],"thinking":{"type":"adaptive"},"output_config":{"effort":""}}}"#,
     r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"medium"}}}"#
 )]
+#[case::adaptive_low_effort(
+    r#"{"request":{"model":"claude","messages":[],"thinking":{"type":"adaptive"},"output_config":{"effort":"low"}}}"#,
+    r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"low"}}}"#
+)]
+#[case::adaptive_medium_effort(
+    r#"{"request":{"model":"claude","messages":[],"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}}"#,
+    r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"medium"}}}"#
+)]
 #[case::adaptive_xhigh_effort(
     r#"{"request":{"model":"claude","messages":[],"thinking":{"type":"adaptive"},"output_config":{"effort":"xhigh"}}}"#,
     r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"xhigh"}}}"#
