@@ -18,6 +18,7 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
@@ -301,12 +302,15 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
     )
 }
 
+// The overrides are typed here rather than parsed: betterlite-server builds serde_json with arbitrary_precision, and that feature's private number map cannot deserialize a fractional literal into the untagged Scalar enum.
 fn unreachable_options(port: u16) -> RedisCacheOptions {
-    let wire = format!(
-        r#"{{"host":"127.0.0.1","port":{port},"socket_timeout":0.05,"socket_connect_timeout":0.05}}"#
-    );
-    let overrides: RedisOverrides =
-        serde_json::from_str(&wire).expect("the unreachable overrides parse");
+    let overrides = RedisOverrides {
+        host: Some("127.0.0.1".to_owned()),
+        port: Some(IntOrText::Value(i64::from(port))),
+        socket_timeout: Some(FloatOrText::Value(0.05_f64)),
+        socket_connect_timeout: Some(FloatOrText::Value(0.05_f64)),
+        ..RedisOverrides::default()
+    };
     RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
