@@ -726,6 +726,7 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::clock_attached("Mar 5, 2024 at 3PM", Some("2024-03-05"))]
 #[case::clock_label_spaced("Mar 5, 2024 3 h", Some("2024-03-05"))]
 #[case::clock_label_attached("Mar 5, 2024 3h", Some("2024-03-05"))]
+#[case::hour_label_only("3h", Some("2024-03-05"))]
 #[case::clock_label_above_the_hour("Mar 5 25 h", Some("2024-03-05"))]
 #[case::minute_behind_label("Mar 5, 2024 12h5", Some("2024-03-05"))]
 #[case::minute_behind_spaced_label("Mar 5, 2024 12h 5", Some("2024-03-05"))]

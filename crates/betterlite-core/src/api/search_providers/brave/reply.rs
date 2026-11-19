@@ -93,9 +93,7 @@ fn sections(url: Option<&str>) -> Vec<&'static str> {
 
 // httpx reads both dict(query_params) and QueryParams.get as the first value of a repeated name
 fn query_parameter(url: Option<&str>, name: &str) -> Option<String> {
-    let query = url
-        .and_then(|text| text.split_once('?'))
-        .map(|(_, query)| query)?;
+    let (_, query) = url?.split_once('?')?;
     form_urlencoded::parse(query.as_bytes())
         .find(|(key, _)| key.as_ref() == name)
         .map(|(_, value)| value.into_owned())

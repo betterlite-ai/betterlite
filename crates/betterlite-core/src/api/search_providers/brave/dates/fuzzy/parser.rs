@@ -48,12 +48,7 @@ impl Parser<'_> {
             return None;
         };
         // the source reads a compact date run before it looks for an h/m/s label
-        let compact = match text.len() {
-            6 => self.fields.items.is_empty(),
-            8 | 12 | 14 => true,
-            _ => false,
-        };
-        if compact {
+        if matches!(text.len(), 8 | 12 | 14) || (text.len() == 6 && self.fields.items.is_empty()) {
             return None;
         }
         let next = index.saturating_add(1);

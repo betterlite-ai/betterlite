@@ -69,12 +69,8 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
         DateValue::Ignored(_) => return None,
         DateValue::Text(text) => text_date(text, today, flags)?,
         // the source reads a float through str(), and an infinity has no timestamp
-        DateValue::Decimal(number) => {
-            if *number == 0.0_f64 || !number.is_finite() {
-                return None;
-            }
-            unix_date(&format!("{number}"))?
-        }
+        DateValue::Decimal(number) if *number == 0.0_f64 || !number.is_finite() => return None,
+        DateValue::Decimal(number) => unix_date(&format!("{number}"))?,
     };
     Some(date.format("%Y-%m-%d").to_string())
 }
