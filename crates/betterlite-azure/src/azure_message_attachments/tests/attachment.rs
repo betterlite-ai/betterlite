@@ -10,8 +10,8 @@ fn object(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-fn mapped(non_default: &str, optional: &str, drop_params: bool) -> Result<Object, ParamsError> {
-    let mut optional = object(optional);
+fn mapped(non_default: &str, existing: &str, drop_params: bool) -> Result<Object, ParamsError> {
+    let mut optional = object(existing);
     map_create_message_params(&object(non_default), &mut optional, drop_params)?;
     Ok(optional)
 }

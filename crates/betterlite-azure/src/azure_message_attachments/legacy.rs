@@ -19,6 +19,7 @@ pub enum ParamsError {
 
 impl ParamsError {
     // B184 owns the 400 UnsupportedParamsError; a malformed entry keeps Python's no-status containment failure.
+    #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::ContentNotString | Self::UnsupportedAttachment | Self::AttachmentsNotList => {
@@ -47,7 +48,9 @@ pub fn map_create_message_params(
                 Json::Text(text) => {
                     optional.insert(param.clone(), Json::Text(text.clone()));
                 }
-                _ => return Err(ParamsError::ContentNotString),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    return Err(ParamsError::ContentNotString);
+                }
             },
             "attachments" => map_attachments(value, drop_params)?,
             _ => {}

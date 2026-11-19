@@ -19,12 +19,12 @@ use super::support::{
 
 pub(super) async fn check() {
     litellm_params_win().await;
-    async_client_inputs().await;
+    async_client_inputs();
     supplied_client_kept().await;
     environment_key_and_endpoint().await;
     providers().await;
-    missing().await;
-    empty_key().await;
+    missing();
+    empty_key();
 }
 
 // Values inside litellm_params reach the initializer; the facade's own arguments never do.
@@ -63,6 +63,10 @@ async fn litellm_params_win() {
         panic!("append returns a message");
     };
     assert!(message.status.is_some());
+    assert_params_request(&transport);
+}
+
+fn assert_params_request(transport: &Recorder) {
     let mut expected = wire(
         "POST",
         "https://arg.test/openai/threads/thread_1/messages?api-version=2024-05-01",
@@ -95,7 +99,7 @@ fn assert_param_inputs(inputs: &AzureClientInputs<'_>) {
     assert!(!inputs.http_client.is_async);
 }
 
-async fn async_client_inputs() {
+fn async_client_inputs() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let (api, _transport) = harness(200, MESSAGE);
@@ -284,7 +288,7 @@ fn provider(token: Arc<dyn CallableTokenProvider>) -> CallableProvider {
 }
 
 // Both missing inputs refuse before any request, each with its own error.
-async fn missing() {
+fn missing() {
     let mut fixture = Fixture::new();
     fixture.api_key = None;
     let request = fixture.request();
@@ -298,15 +302,19 @@ async fn missing() {
     endpointless.api_base = None;
     let endpoint_request = endpointless.request();
     let (endpoint_api, endpoint_transport) = harness(200, MESSAGE);
-    let refused = endpoint_api
-        .assistants
-        .azure_client(&endpoint_request, None, ClientKind::Sync);
-    assert!(matches!(refused, Err(DefinitionsError::MissingEndpoint)));
+    let endpointless_refused =
+        endpoint_api
+            .assistants
+            .azure_client(&endpoint_request, None, ClientKind::Sync);
+    assert!(matches!(
+        endpointless_refused,
+        Err(DefinitionsError::MissingEndpoint)
+    ));
     assert!(endpoint_transport.requests().is_empty());
 }
 
 // The SDK's base client rejects an empty key before any token or provider is considered.
-async fn empty_key() {
+fn empty_key() {
     let mut fixture = Fixture::new();
     fixture.api_key = Some(SecretString::from(""));
     fixture.params.azure_ad_token = Some(SecretString::from("params-token"));

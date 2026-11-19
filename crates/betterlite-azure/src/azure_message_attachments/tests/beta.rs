@@ -15,37 +15,43 @@ pub(super) async fn check() {
 }
 
 async fn default_version() {
+    let url = default_version_append().await;
+    default_version_list(&url).await;
+}
+
+async fn default_version_append() -> String {
     let mut fixture = Fixture::new();
     fixture.api_version = None;
     let request = fixture.request();
     let data = data(MESSAGE_DATA);
-    let (append_api, append_transport) = harness(200, MESSAGE);
-    append_api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "thread_1",
-                data: &data,
-            },
-        )
-        .await
-        .unwrap();
-    let append_url = format!(
+    let (api, transport) = harness(200, MESSAGE);
+    api.call(
+        &request,
+        None,
+        None,
+        MessageCall::Append {
+            thread_id: "thread_1",
+            data: &data,
+        },
+    )
+    .await
+    .unwrap();
+    let url = format!(
         "https://example.test/openai/threads/thread_1/messages?api-version={DEFAULT_VERSION}"
     );
     assert_eq!(
-        append_transport.requests(),
-        vec![wire(
-            "POST",
-            &append_url,
-            Some(MESSAGE_DATA),
-            Auth::Key(KEY)
-        )]
+        transport.requests(),
+        vec![wire("POST", &url, Some(MESSAGE_DATA), Auth::Key(KEY))]
     );
-    let (list_api, list_transport) = harness(200, PAGE);
-    let reply = list_api
+    url
+}
+
+async fn default_version_list(url: &str) {
+    let mut fixture = Fixture::new();
+    fixture.api_version = None;
+    let request = fixture.request();
+    let (api, transport) = harness(200, PAGE);
+    let reply = api
         .call(&request, None, None, MessageCall::List("thread_1"))
         .await
         .unwrap();
@@ -54,11 +60,11 @@ async fn default_version() {
     };
     assert!(page.data.is_empty());
     assert_eq!(
-        list_transport.requests(),
-        vec![wire("GET", &append_url, None, Auth::Key(KEY))]
+        transport.requests(),
+        vec![wire("GET", url, None, Auth::Key(KEY))]
     );
     assert_eq!(
-        list_transport.requests()[0]
+        transport.requests()[0]
             .headers
             .get("openai-beta")
             .map(String::as_str),
