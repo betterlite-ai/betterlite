@@ -1,0 +1,9 @@
+kind: helper
+name: json_with_base64_file
+call:
+  b3462:
+    mode: json
+    body: '{"ingest_options": {"vector_store": {}}, "file": {"filename": "doc.txt", "content": "aGVsbG8="}}'
+env: {}
+compare:
+  ignore: []
