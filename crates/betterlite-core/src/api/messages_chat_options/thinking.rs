@@ -61,19 +61,6 @@ pub(super) fn thinking_effort(
     Ok(effort)
 }
 
-fn declared_effort(output_config: Option<&Json>) -> Result<Option<&str>, OptionsError> {
-    let Some(fields) = output_config.and_then(Json::as_object) else {
-        return Ok(None);
-    };
-    match fields.get("effort") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(effort)) => Ok((!effort.is_empty()).then_some(effort.as_str())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(OptionsError::EffortNotText)
-        }
-    }
-}
-
 // The adaptive tier is the only one a caller can set directly, so an effort without adaptive thinking stays behind.
 fn adaptive_effort<'request>(
     thinking: &Json,
@@ -87,7 +74,16 @@ fn adaptive_effort<'request>(
     if !adaptive {
         return Ok(None);
     }
-    declared_effort(output_config)
+    let Some(fields) = output_config.and_then(Json::as_object) else {
+        return Ok(None);
+    };
+    match fields.get("effort") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(effort)) => Ok((!effort.is_empty()).then_some(effort.as_str())),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(OptionsError::EffortNotText)
+        }
+    }
 }
 
 // Disabled thinking stays a plain string: there is no trace to summarize, and some providers reject the wrapped dict.
