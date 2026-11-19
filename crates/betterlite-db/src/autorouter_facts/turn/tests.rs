@@ -305,6 +305,8 @@ fn the_router_type_defaults_to_unknown() {
     assert_eq!(record(SUCCESS, empty).router_type, "unknown");
     let named = r#"{"routing_decision":{"router_model_name":"smart","router_type":"heuristic"}}"#;
     assert_eq!(record(SUCCESS, named).router_type, "heuristic");
+    let numeric = r#"{"routing_decision":{"router_model_name":"smart","router_type":5}}"#;
+    assert_eq!(record(SUCCESS, numeric).router_type, "unknown");
 }
 
 #[test]

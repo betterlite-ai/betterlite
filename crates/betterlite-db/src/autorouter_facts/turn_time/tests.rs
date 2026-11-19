@@ -92,6 +92,7 @@ fn a_timestamp_without_seconds_or_a_date_reads_the_minute_or_midnight() {
 #[case::hour_twenty_four("2024-01-02T24:00:00")]
 #[case::offset_past_a_day("2024-01-02T03:04:05+25:00")]
 #[case::slashes("2024/01/02 03:04:05")]
+#[case::compact_iso("20240102T030405")]
 fn an_unparsable_timestamp_reads_none(#[case] text: &str) {
     assert_eq!(turn_time_utc(text), None);
 }
