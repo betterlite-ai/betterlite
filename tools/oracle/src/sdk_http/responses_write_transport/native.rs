@@ -125,6 +125,10 @@ fn cancelled_value(typed: &TypedReply) -> Json {
         Json::Number(Number::from(typed.response.created_at)),
     );
     fields.insert(
+        String::from("object"),
+        optional_text(&typed.response.object),
+    );
+    fields.insert(
         String::from("status"),
         optional_text(&typed.response.status),
     );
