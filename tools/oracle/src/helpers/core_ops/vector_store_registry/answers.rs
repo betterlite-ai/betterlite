@@ -3,14 +3,13 @@ use std::sync::Arc;
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_config::api::vector_store_registry::RegistryEntry;
 use betterlite_core::api::vector_store_registry::index::VectorStoreIndexRegistry;
-use betterlite_core::api::vector_store_registry::repository::{
-    indexes_from_database, stores_from_database,
-};
+use betterlite_core::api::vector_store_registry::repository::rows_from_database;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_core::api::vector_store_registry::tools::{
     VectorStoreToolParams, extract_tool_params, ids_to_run,
 };
 use betterlite_models::model_registration::JsonObject;
+use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::Utc;
@@ -125,8 +124,10 @@ fn database_rows(input: &Input) -> HelperResult {
         .map(ScriptedDatabase::new)
         .transpose()?;
     let runtime = runtime()?;
-    let stores = runtime.block_on(stores_from_database(database.as_ref()));
-    let indexes = runtime.block_on(indexes_from_database(database.as_ref()));
+    let stores: Result<Vec<LiteLlmManagedVectorStore>, _> =
+        runtime.block_on(rows_from_database(database.as_ref()));
+    let indexes: Result<Vec<LiteLlmManagedVectorStoreIndex>, _> =
+        runtime.block_on(rows_from_database(database.as_ref()));
     let stores_failed = stores.is_err();
     let indexes_failed = indexes.is_err();
     let store_rows = match stores {

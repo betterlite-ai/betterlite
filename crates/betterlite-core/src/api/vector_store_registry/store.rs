@@ -12,7 +12,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 
 use super::diagnostics;
 use super::error::VectorStoreRegistryError;
-use super::repository::{VectorStoreDatabase, stores_from_database};
+use super::repository::{VectorStoreDatabase, rows_from_database};
 
 pub type RegistryClock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
@@ -93,8 +93,7 @@ impl VectorStoreRegistry {
         if let Some(store) = self.store_by_id(vector_store_id) {
             return Some(store.clone());
         }
-        let source = database?;
-        let stores = match stores_from_database(Some(source)).await {
+        let stores: Vec<LiteLlmManagedVectorStore> = match rows_from_database(database).await {
             Ok(stores) => stores,
             Err(error) => {
                 tracing::debug!("Error fetching vector store from database: {error}");

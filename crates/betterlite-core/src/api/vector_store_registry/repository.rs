@@ -32,30 +32,41 @@ pub trait VectorStoreDatabase: Send + Sync {
     ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>> + Send;
 }
 
-// _get_vector_stores_from_db: a missing client loads nothing rather than reaching the database
-pub async fn stores_from_database<D>(
-    database: Option<&D>,
-) -> Result<Vec<LiteLlmManagedVectorStore>, TableError>
-where
-    D: VectorStoreDatabase,
-{
-    match database {
-        Some(source) => source.stores().await,
-        None => Ok(Vec::new()),
+// the row type names the table a load reads, so both database reads share one rule
+pub trait TableRow: Sized {
+    fn load<D>(database: &D) -> impl Future<Output = Result<Vec<Self>, TableError>> + Send
+    where
+        D: VectorStoreDatabase;
+}
+
+impl TableRow for LiteLlmManagedVectorStore {
+    fn load<D>(database: &D) -> impl Future<Output = Result<Vec<Self>, TableError>> + Send
+    where
+        D: VectorStoreDatabase,
+    {
+        database.stores()
     }
 }
 
-// _get_vector_store_indexes_from_db: the same missing-client answer for the index table
-pub async fn indexes_from_database<D>(
-    database: Option<&D>,
-) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>
+impl TableRow for LiteLlmManagedVectorStoreIndex {
+    fn load<D>(database: &D) -> impl Future<Output = Result<Vec<Self>, TableError>> + Send
+    where
+        D: VectorStoreDatabase,
+    {
+        database.indexes()
+    }
+}
+
+// _get_vector_stores_from_db and _get_vector_store_indexes_from_db: a missing client loads nothing
+pub async fn rows_from_database<Row, D>(database: Option<&D>) -> Result<Vec<Row>, TableError>
 where
+    Row: TableRow,
     D: VectorStoreDatabase,
 {
-    let Some(client) = database else {
+    let Some(source) = database else {
         return Ok(Vec::new());
     };
-    client.indexes().await
+    Row::load(source).await
 }
 
 fn decode_row<T>(row: &Row) -> Result<T, TableError>

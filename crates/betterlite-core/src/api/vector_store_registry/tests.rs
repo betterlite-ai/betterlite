@@ -11,6 +11,7 @@ use betterlite_config::api::vector_store_registry::RegistryEntry;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use chrono::SecondsFormat;
 
@@ -23,7 +24,7 @@ use support::{
 use super::diagnostics;
 use super::error::VectorStoreRegistryError;
 use super::index::VectorStoreIndexRegistry;
-use super::repository::{indexes_from_database, stores_from_database};
+use super::repository::rows_from_database;
 use super::store::{VectorStoreCredentials, VectorStoreRegistry};
 use super::tools::{VectorStoreToolParams, extract_tool_params, ids_to_run};
 
@@ -441,13 +442,13 @@ async fn database_failure_is_logged_and_loads_nothing() {
 
 async fn missing_database_reads_no_rows() {
     assert!(
-        stores_from_database(None::<&ScriptedDatabase>)
+        rows_from_database::<LiteLlmManagedVectorStore, ScriptedDatabase>(None)
             .await
             .unwrap()
             .is_empty()
     );
     assert!(
-        indexes_from_database(None::<&ScriptedDatabase>)
+        rows_from_database::<LiteLlmManagedVectorStoreIndex, ScriptedDatabase>(None)
             .await
             .unwrap()
             .is_empty()
@@ -457,7 +458,9 @@ async fn missing_database_reads_no_rows() {
 async fn store_rows_keep_the_database_order() {
     let rows =
         ScriptedDatabase::with_stores(vec![database_store("vs_new"), database_store("vs_old")]);
-    let loaded_stores = stores_from_database(Some(&rows)).await.unwrap();
+    let loaded_stores = rows_from_database::<LiteLlmManagedVectorStore, _>(Some(&rows))
+        .await
+        .unwrap();
     assert_eq!(loaded_stores.len(), 2);
     assert_eq!(
         loaded_stores.first().unwrap().vector_store_id.as_deref(),
@@ -476,9 +479,10 @@ async fn store_rows_keep_the_database_order() {
 async fn index_rows_keep_the_database_order() {
     let scripted_indexes =
         ScriptedDatabase::with_indexes(vec![index("i1", "notes"), index("i2", "archive")]);
-    let loaded_indexes = indexes_from_database(Some(&scripted_indexes))
-        .await
-        .unwrap();
+    let loaded_indexes =
+        rows_from_database::<LiteLlmManagedVectorStoreIndex, _>(Some(&scripted_indexes))
+            .await
+            .unwrap();
     assert_eq!(loaded_indexes.first().unwrap().index_name, "notes");
     assert_eq!(
         loaded_indexes
@@ -491,9 +495,13 @@ async fn index_rows_keep_the_database_order() {
 
 async fn row_read_errors_keep_their_table_error() {
     let failing = ScriptedDatabase::failing();
-    let stores_error = stores_from_database(Some(&failing)).await.unwrap_err();
+    let stores_error = rows_from_database::<LiteLlmManagedVectorStore, _>(Some(&failing))
+        .await
+        .unwrap_err();
     assert!(matches!(stores_error, TableError::Publish { .. }));
-    let indexes_error = indexes_from_database(Some(&failing)).await.unwrap_err();
+    let indexes_error = rows_from_database::<LiteLlmManagedVectorStoreIndex, _>(Some(&failing))
+        .await
+        .unwrap_err();
     assert!(matches!(indexes_error, TableError::Publish { .. }));
 }
 
