@@ -49,11 +49,11 @@ pub(super) fn keep_original_response(
             }
             GuardrailFailure::ModifyResponse(response)
         }
-        other @ GuardrailFailure::GuardrailRaised { .. }
-        | other @ GuardrailFailure::BlockedPii { .. }
-        | other @ GuardrailFailure::SensitiveDataRoute(_)
-        | other @ GuardrailFailure::Http { .. }
-        | other @ GuardrailFailure::HttpObject { .. }
-        | other @ GuardrailFailure::Other(_) => other,
+        other @ (GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => other,
     }
 }
