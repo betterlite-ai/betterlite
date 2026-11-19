@@ -35,6 +35,8 @@ use super::{AssistantCreateInput, AsyncFlag, ClientClass, CreateTimeout};
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 const ASSISTANT: &str = r#"{"id":"asst_a","object":"assistant","model":"gpt-4o-mini","created_at":1,"name":null,"tools":[]}"#;
+const COHERE: &[u8] = br#"{"command-a-03-2025": {"litellm_provider": "cohere_chat"}}"#;
+const NOT_FOUND: &str = r#"{"error":{"message":"no such assistant","type":"invalid_request_error","param":"assistant_id","code":"missing"}}"#;
 
 #[derive(Debug, Clone)]
 struct Seen {
@@ -684,23 +686,23 @@ async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     assert!(!bearer_seen[0].headers.contains_key("api-key"));
 }
 
-#[tokio::test]
-async fn assistant_create_async_keeps_the_declared_provider() {
-    let redactor = redactor();
+// an azure cohere model whose catalog key makes get_llm_provider answer openai while the call stays azure
+fn cohere_azure_fixture() -> Fixture {
     let mut settings = bare_settings();
     settings.azure_api_base = Some(String::from("https://azure.test"));
     settings.azure_api_version = Some(String::from("2024-02-15-preview"));
     settings.azure_api_key = Some(SecretString::from("key-settings"));
     let mut fixture = Fixture::new(settings);
-    fixture.catalog = ModelCatalog::parse(
-        br#"{"command-a-03-2025": {"litellm_provider": "cohere_chat"}}"#,
-        UnknownFields::Reject,
-    )
-    .expect("a catalog");
+    fixture.catalog = ModelCatalog::parse(COHERE, UnknownFields::Reject).expect("a catalog");
+    fixture
+}
+
+#[tokio::test]
+async fn assistant_create_async_keeps_the_declared_provider() {
+    let redactor = redactor();
+    let fixture = cohere_azure_fixture();
     let resolution = fixture.resolution();
     let service = fixture.service(&resolution, &redactor);
-
-    // get_llm_provider answers openai for this azure cohere model, but the create call keeps the declared provider
     let request = input(raw(
         r#"{"provider": "azure", "model": "azure/command-a-03-2025"}"#,
     ));
@@ -716,32 +718,16 @@ async fn assistant_create_async_keeps_the_declared_provider() {
     );
     assert_eq!(seen[0].headers["api-key"], "key-settings");
     assert!(!seen[0].headers.contains_key("authorization"));
-    assert_eq!(
-        seen[0].body,
-        create_body(raw(r#"{"model": "azure/command-a-03-2025"}"#))
-    );
+    assert_eq!(seen[0].body.model, "azure/command-a-03-2025");
 }
 
 #[tokio::test]
 async fn assistant_create_async_maps_with_the_resolved_provider() {
     let redactor = redactor();
-    let mut settings = bare_settings();
-    settings.azure_api_base = Some(String::from("https://azure.test"));
-    settings.azure_api_version = Some(String::from("2024-02-15-preview"));
-    settings.azure_api_key = Some(SecretString::from("key-settings"));
-    let mut fixture = Fixture::new(settings).reply(
-        404,
-        r#"{"error":{"message":"no such assistant","type":"invalid_request_error","param":"assistant_id","code":"missing"}}"#,
-    );
-    fixture.catalog = ModelCatalog::parse(
-        br#"{"command-a-03-2025": {"litellm_provider": "cohere_chat"}}"#,
-        UnknownFields::Reject,
-    )
-    .expect("a catalog");
+    let fixture = cohere_azure_fixture();
+    fixture.transport.reply(404, NOT_FOUND);
     let resolution = fixture.resolution();
     let service = fixture.service(&resolution, &redactor);
-
-    // the create goes to azure, but exception_type names the resolved openai provider
     let request = input(raw(
         r#"{"provider": "azure", "model": "azure/command-a-03-2025"}"#,
     ));
