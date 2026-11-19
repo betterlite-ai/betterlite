@@ -74,7 +74,7 @@ def provider_for(model: str, descriptor: JsonObject | None) -> SimpleProviderCon
 
 
 def messages_environment(config: NativeMessagesConfig, call: Call) -> JsonValue:
-    merged, _ = config.validate_anthropic_messages_environment(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L35-L64
+    merged, _ = config.validate_anthropic_messages_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L34-L64
         headers=dict(call["headers"]), model=call["model"].split("/", 1)[1],
         messages=call["messages"], optional_params=dict(call["optional_params"]),
         litellm_params=EMPTY, api_key=call.get("api_key"), api_base=call.get("api_base"),
@@ -95,7 +95,7 @@ def json_messages_headers(call: Call) -> JsonValue:
 
 def generic_messages_url(call: Call) -> JsonValue:
     config = NativeMessagesConfig()
-    return config.get_complete_url(
+    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
         optional_params=EMPTY, litellm_params=EMPTY,
@@ -104,7 +104,7 @@ def generic_messages_url(call: Call) -> JsonValue:
 
 def json_messages_url(call: Call) -> JsonValue:
     config = JSON_MESSAGES(provider_for(call["model"], call.get("descriptor")))
-    return config.get_complete_url(
+    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L104-L110
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
         optional_params=EMPTY, litellm_params=EMPTY,
@@ -112,7 +112,7 @@ def json_messages_url(call: Call) -> JsonValue:
 
 
 def generic_messages_transform(call: Call) -> JsonValue:
-    body = cast(JsonObject, NativeMessagesConfig().transform_anthropic_messages_request(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
+    body = cast(JsonObject, NativeMessagesConfig().transform_anthropic_messages_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
         model=call["model"].split("/", 1)[1], messages=call["messages"],
         anthropic_messages_optional_request_params=dict(call["optional_params"]),
         litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
@@ -122,7 +122,7 @@ def generic_messages_transform(call: Call) -> JsonValue:
 
 def json_messages_transform(call: Call) -> JsonValue:
     provider = provider_for(call["model"], call.get("descriptor"))
-    body = cast(JsonObject, JSON_MESSAGES(provider).transform_anthropic_messages_request(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
+    body = cast(JsonObject, JSON_MESSAGES(provider).transform_anthropic_messages_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
         model=call["model"].split("/", 1)[1], messages=call["messages"],
         anthropic_messages_optional_request_params=dict(call["optional_params"]),
         litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
@@ -137,11 +137,11 @@ def responses_config(call: Call) -> OpenAILikeResponsesConfig:
 
 def responses_url(call: Call) -> JsonValue:
     config = responses_config(call)
-    return config.get_complete_url(api_base=call.get("api_base"), litellm_params=EMPTY)
+    return config.get_complete_url(api_base=call.get("api_base"), litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
 
 
 def responses_headers(call: Call) -> JsonValue:
-    merged = cast(JsonObject, responses_config(call).validate_environment(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
+    merged = cast(JsonObject, responses_config(call).validate_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
         headers=dict(call["headers"]),
         model=call["model"].split("/", 1)[1],
         litellm_params=GenericLiteLLMParams(api_key=call.get("api_key")),
@@ -150,7 +150,7 @@ def responses_headers(call: Call) -> JsonValue:
 
 
 def responses_transform(call: Call) -> JsonValue:
-    body = cast(JsonObject, responses_config(call).transform_responses_api_request(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L228-L244
+    body = cast(JsonObject, responses_config(call).transform_responses_api_request(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L228-L244
         model=call["model"].split("/", 1)[1], input=call["input"],
         response_api_optional_request_params=dict(call["params"]),
         litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),
@@ -162,20 +162,20 @@ def responses_cache(call: Call) -> JsonObject:
     slug = call["model"].split("/", 1)[0]
     first = create_responses_config_class(SimpleProviderConfig(slug=slug, data=call["first"]))
     second = create_responses_config_class(SimpleProviderConfig(slug=slug, data=call["second"]))
-    first_url = first().get_complete_url(api_base=None, litellm_params=EMPTY)
-    second_url = second().get_complete_url(api_base=None, litellm_params=EMPTY)
+    first_url = first().get_complete_url(api_base=None, litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
+    second_url = second().get_complete_url(api_base=None, litellm_params=EMPTY)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L226
     return {"first": first_url, "second": second_url, "cached": first is second}
 
 
 def generic_responses_url(call: Call) -> JsonValue:
     config = GENERIC_RESPONSES()
-    return config.get_complete_url(
+    return config.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
         api_base=call.get("api_base"), litellm_params=EMPTY
     )
 
 
 def generic_responses_headers(call: Call) -> JsonValue:
-    merged = cast(JsonObject, GENERIC_RESPONSES().validate_environment(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L42-L51
+    merged = cast(JsonObject, GENERIC_RESPONSES().validate_environment(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L40
         headers=dict(call["headers"]),
         model=call["model"].split("/", 1)[1],
         litellm_params=GenericLiteLLMParams(api_key=call.get("api_key")),

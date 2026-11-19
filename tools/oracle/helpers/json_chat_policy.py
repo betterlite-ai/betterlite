@@ -2,11 +2,11 @@ import os
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
-from litellm.llms.openai_like.dynamic_config import create_config_class
-from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
     handle_messages_with_content_list_to_str_conversion as collapse_messages,
 )
+from litellm.llms.openai_like.dynamic_config import create_config_class
+from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
@@ -21,6 +21,7 @@ class ChatConfig(Protocol):
         non_default_params: JsonObject,
         optional_params: JsonObject,
         model: str,
+        *,
         drop_params: bool,
     ) -> JsonObject: ...
 
@@ -31,7 +32,6 @@ class ChatConfig(Protocol):
         model: str,
         optional_params: JsonObject,
         litellm_params: JsonObject,
-        stream: bool | None = None,
     ) -> str: ...
 
 
