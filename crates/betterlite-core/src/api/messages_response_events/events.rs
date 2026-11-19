@@ -10,7 +10,7 @@ use super::MessageStreamState;
 use super::REASONING_SUMMARY_PART_SEPARATOR;
 use super::chunks;
 use super::error::MessagesResponseEventError;
-use super::input::{ItemObject, ParsedEvent, ResponseAttribute, is_truthy, text};
+use super::input::{ItemObject, ParsedEvent, is_truthy, text};
 
 const NO_OUTPUT: &[OutputItem<'static>] = &[];
 
@@ -175,10 +175,8 @@ impl MessageStreamState {
 
     fn completed(&mut self, event: ParsedEvent<'_>) -> Result<(), MessagesResponseEventError> {
         let (output, status, usage) = match event.response() {
-            Some(ResponseAttribute::Object(attributes)) => {
-                (attributes.output, attributes.status, attributes.usage)
-            }
-            Some(ResponseAttribute::Value(_)) | None => (NO_OUTPUT, None, None),
+            Some(attributes) => (attributes.output, attributes.status, attributes.usage),
+            None => (NO_OUTPUT, None, None),
         };
         let refusal_text = final_refusal_text(output, &self.refusal_text);
         let stop_reason = stop_reason(status, refusal_text.as_deref(), output);

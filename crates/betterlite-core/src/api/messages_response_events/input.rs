@@ -126,18 +126,13 @@ impl<'event> ParsedEvent<'event> {
         }
     }
 
+    // The completed branch reads output, status and usage by attribute only, so a dict, scalar or absent response exposes no fields.
     #[must_use]
-    pub(super) fn response(self) -> Option<ResponseAttribute<'event>> {
+    pub(super) fn response(self) -> Option<ResponseAttributes<'event>> {
         match self.attributes.response {
-            Some(attribute @ ResponseAttribute::Object(_)) => return Some(attribute),
-            Some(attribute @ ResponseAttribute::Value(value)) if is_truthy(value) => {
-                return Some(attribute);
-            }
-            Some(ResponseAttribute::Value(_)) | None => {}
+            Some(ResponseAttribute::Object(attributes)) => Some(attributes),
+            Some(ResponseAttribute::Value(_)) | None => None,
         }
-        self.mapping
-            .and_then(|fields| fields.get("response"))
-            .map(ResponseAttribute::Value)
     }
 
     // _FailedResponseEvent.model_validate reads a dict event's response key and a provider object's attribute.

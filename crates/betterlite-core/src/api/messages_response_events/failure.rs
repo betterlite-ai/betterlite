@@ -88,20 +88,16 @@ pub fn anthropic_error_chunk(
         status_code,
         &raw_message,
         None,
-        wire_limits(limits),
+        WireDecodeLimits {
+            max_json_bytes: limits.max_json_bytes,
+            max_event_bytes: limits.max_event_bytes,
+            max_items: limits.max_items,
+        },
     )
     .map_err(MessagesResponseEventError::ErrorEnvelope)?;
     serde_json::to_value(&record)
         .and_then(serde_json::from_value::<Json>)
         .map_err(MessagesResponseEventError::Json)
-}
-
-const fn wire_limits(limits: ApiLimits) -> WireDecodeLimits {
-    WireDecodeLimits {
-        max_json_bytes: limits.max_json_bytes,
-        max_event_bytes: limits.max_event_bytes,
-        max_items: limits.max_items,
-    }
 }
 
 impl MessageStreamState {

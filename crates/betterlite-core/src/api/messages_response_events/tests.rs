@@ -30,6 +30,23 @@ fn failure_projection() {
     passthrough_error_messages();
     failure_redaction();
     failed_event_redaction();
+    exception_path_failure();
+}
+
+// The exception path of __anext__ projects the failure chain into the terminal error chunk without a wrapper log.
+fn exception_path_failure() {
+    let cause = failure(
+        r#"{"kind":"mid_stream_fallback","text":"outer","status_code":502,"original_exception":{"kind":"plain","text":"boom","status_code":429,"message":"busy"}}"#,
+    );
+    let mut state = state();
+    state.fail_with(&cause).expect("the failure maps");
+    let snapshot = state.snapshot();
+    assert!(snapshot.stream_failed);
+    assert_eq!(
+        Json::List(snapshot.chunks),
+        json(r#"[{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}]"#)
+    );
+    assert!(snapshot.logs.is_empty());
 }
 
 #[test]
@@ -39,6 +56,22 @@ fn message_start_and_item_opening() {
     open_message_and_tool();
     reopen_and_empty_id();
     non_block_items();
+    item_attribute_precedes_dict();
+}
+
+// getattr(event, "item") is truthy here, so the dict item is never read and no block opens.
+fn item_attribute_precedes_dict() {
+    let attribute_item = json("5");
+    let attributes = EventAttributes {
+        item: Some(&attribute_item),
+        ..EventAttributes::default()
+    };
+    let fields =
+        mapping(r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#);
+    let mut state = state();
+    process_attributed(&mut state, attributes, &fields);
+    assert_eq!(drained(&mut state), json("[]"));
+    assert!(state.snapshot().item_id_to_block_index.is_empty());
 }
 
 #[test]
@@ -49,6 +82,66 @@ fn text_and_refusal_deltas() {
     attributed_fallbacks();
     attributed_null_type();
     attributed_empty_type();
+    two_blocks_target_the_first();
+    strange_item_ids();
+}
+
+// item_a stays mapped at 0 while the current block is the tool block at 1.
+fn two_blocks_target_the_first() {
+    let function_item = mapping(
+        r#"{"type":"response.output_item.added","item":{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}}"#,
+    );
+    let delta = mapping(r#"{"type":"response.output_text.delta","item_id":"item_a","delta":"hi"}"#);
+    let done =
+        mapping(r#"{"type":"response.output_item.done","item":{"type":"message","id":"item_a"}}"#);
+    let mut state = state();
+    process(&mut state, &mapping(MESSAGE_ITEM));
+    process(&mut state, &function_item);
+    discard(&mut state);
+    process(&mut state, &delta);
+    assert_eq!(
+        drained(&mut state),
+        json(
+            r#"[{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}]"#
+        )
+    );
+    process(&mut state, &done);
+    assert_eq!(
+        drained(&mut state),
+        json(r#"[{"type":"content_block_stop","index":0}]"#)
+    );
+}
+
+// A truthy nonstring item id selects no entry, while an empty list or object is falsey and keeps the current block.
+fn strange_item_ids() {
+    for raw in ["5", "[]", "{}"] {
+        let mut state = state();
+        process(&mut state, &mapping(MESSAGE_ITEM));
+        discard(&mut state);
+        let event = mapping(&format!(
+            r#"{{"type":"response.output_text.delta","item_id":{raw},"delta":"d"}}"#
+        ));
+        process(&mut state, &event);
+        let expected = if raw == "5" {
+            json(
+                r#"[{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}},{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"d"}}]"#,
+            )
+        } else {
+            json(
+                r#"[{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"d"}}]"#,
+            )
+        };
+        assert_eq!(drained(&mut state), expected, "item_id {raw}");
+        assert_eq!(
+            state
+                .snapshot()
+                .item_id_to_block_index
+                .get("item_a")
+                .copied(),
+            Some(0),
+            "item_id {raw}"
+        );
+    }
 }
 
 fn summary_delta_opens_block() {
@@ -100,7 +193,7 @@ fn summary_part_indexes() {
     let mut state = state();
     process(&mut state, &delta);
     discard(&mut state);
-    for index in ["-1", "true", "false", "0", "1.5", "\"1\""] {
+    for index in ["-1", "-0", "true", "false", "0", "1.5", "\"1\""] {
         let part = mapping(&format!(
             r#"{{"type":"response.reasoning_summary_part.added","item_id":"reason_a","summary_index":{index}}}"#
         ));
@@ -125,11 +218,31 @@ fn summary_part_indexes() {
     assert_eq!(drained(&mut state), json("[]"));
 }
 
+// Only a string item id reaches the map; a missing or nonstring one never falls back to the current block.
+fn summary_part_without_string_id() {
+    let mut state = state();
+    process(
+        &mut state,
+        &mapping(
+            r#"{"type":"response.reasoning_summary_text.delta","item_id":"reason_a","delta":"think"}"#,
+        ),
+    );
+    discard(&mut state);
+    for source in [
+        r#"{"type":"response.reasoning_summary_part.added","summary_index":1}"#,
+        r#"{"type":"response.reasoning_summary_part.added","item_id":5,"summary_index":1}"#,
+    ] {
+        process(&mut state, &mapping(source));
+        assert_eq!(drained(&mut state), json("[]"), "{source}");
+    }
+}
+
 #[test]
 fn reasoning_summary_boundaries() {
     summary_delta_opens_block();
     summary_delta_needs_text();
     summary_part_indexes();
+    summary_part_without_string_id();
 }
 
 fn reasoning_signature_mapped() {
