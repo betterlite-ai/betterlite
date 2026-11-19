@@ -25,6 +25,37 @@ fn chat_object(params: &Object) -> ChatObject {
         .expect("the params convert")
 }
 
+#[tokio::test]
+async fn groq_and_cloudflare_return_the_handler_error_without_logging_it() {
+    let redactor = redactor();
+    let (mut state, prepost) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &prepost,
+    };
+    let mut fixture = Fixture::new();
+    fixture.provider = String::from("groq");
+    let handler = Recorder::failing(429);
+    let outcome = dispatch_chat(ChatConfigTag::GroqChat, &fixture, &handler, &mut log).await;
+    assert!(matches!(
+        outcome,
+        Err(DispatchError::Handler(HandlerError::Upstream {
+            status_code: 429
+        }))
+    ));
+    assert_eq!(state.model_call_details.get("original_response"), None);
+    let fixture = cloudflare_fixture();
+    let handler = Recorder::failing(500);
+    let outcome = dispatch_chat(ChatConfigTag::CloudflareChat, &fixture, &handler, &mut log).await;
+    assert!(matches!(
+        outcome,
+        Err(DispatchError::Handler(HandlerError::Upstream {
+            status_code: 500
+        }))
+    ));
+    assert_eq!(state.model_call_details.get("original_response"), None);
+}
+
 #[test]
 fn handler_errors_report_their_status_code() {
     assert_eq!(
