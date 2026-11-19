@@ -1,0 +1,19 @@
+kind: helper
+name: embedding_optional_override
+call:
+  copilot_auxiliary:
+    action: embedding
+    model: github_copilot/text-embedding-3-small
+    input: hello
+    non_default_params: {timeout: 30, dimensions: 64, encoding_format: float, user: u, drop_me: true}
+    optional_params: {model: override, input: [given]}
+    headers: {}
+    copilot_key: stored-key
+    api_base: null
+    cached_base: https://cached.test/
+    env_base: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/headers/x-request-id
+      why: LiteLLM draws a random request id for every call
