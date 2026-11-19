@@ -1,15 +1,9 @@
-from typing import Final, NotRequired, Protocol, TypedDict, Unpack, cast
+from typing import Final, NotRequired, Protocol, TypedDict, Unpack
 
-import litellm
 from litellm.exceptions import AuthenticationError
-from litellm.llms.bedrock.claude_platform.messages_transformation import (
-    BedrockClaudePlatformMessagesConfig,
-)
-from litellm.llms.bedrock.claude_platform.transformation import BedrockClaudePlatformConfig
+from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from pydantic import JsonValue as Json
-
-litellm.suppress_debug_info = True
 
 BETA_HEADER: Final = "anthropic-beta"
 WORKSPACE_HEADER: Final = "anthropic-workspace-id"
@@ -134,16 +128,12 @@ class IteratorFactory(Protocol):
     def __call__(self, **kwargs: Unpack[IteratorArguments]) -> "SyncSource": ...
 
 
-class HasDump(Protocol):
-    def model_dump_json(self) -> str: ...
-
-
 class SyncSource(Protocol):
     response_id: str
 
     def __iter__(self) -> "SyncSource": ...
 
-    def __next__(self) -> HasDump: ...
+    def __next__(self) -> ModelResponse: ...
 
 
 class SystemBlock(TypedDict):
@@ -176,21 +166,3 @@ class Failure(BaseModel):
 
 SYSTEM_BLOCKS: Final[TypeAdapter[list[SystemBlock]]] = TypeAdapter(list[SystemBlock])
 CHUNK_VIEW: Final[TypeAdapter[ChunkView]] = TypeAdapter(ChunkView)
-
-CHAT_CONFIG: Final = BedrockClaudePlatformConfig()
-NATIVE_CONFIG: Final = BedrockClaudePlatformMessagesConfig()
-CHAT_VALIDATE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L27
-    ChatValidator, CHAT_CONFIG.validate_environment
-)
-NATIVE_VALIDATE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/messages_transformation.py#L23
-    NativeValidator, NATIVE_CONFIG.validate_anthropic_messages_environment
-)
-CHAT_TRANSFORM: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L73
-    ChatTransformer, CHAT_CONFIG.transform_request
-)
-NATIVE_TRANSFORM: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/messages_transformation.py#L69
-    NativeTransformer, NATIVE_CONFIG.transform_anthropic_messages_request
-)
-STREAM_ITERATOR: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L92
-    IteratorFactory, CHAT_CONFIG.get_model_response_iterator
-)

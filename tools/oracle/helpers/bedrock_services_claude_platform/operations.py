@@ -1,22 +1,24 @@
-from typing import Literal
+from typing import Final, Literal, cast
 
+from litellm.llms.bedrock.claude_platform.messages_transformation import (
+    BedrockClaudePlatformMessagesConfig,
+)
+from litellm.llms.bedrock.claude_platform.transformation import BedrockClaudePlatformConfig
 from pydantic import JsonValue as Json
 
 from .types import (
     AUTHENTICATION_ERROR,
-    CHAT_TRANSFORM,
-    CHAT_VALIDATE,
-    CHUNK_VIEW,
     EMPTY_MESSAGES,
     EMPTY_PARAMS,
     EMPTY_STRINGS,
-    NATIVE_TRANSFORM,
-    NATIVE_VALIDATE,
-    STREAM_ITERATOR,
     BodyInput,
-    HasDump,
+    ChatTransformer,
+    ChatValidator,
     HeaderInput,
     Input,
+    IteratorFactory,
+    NativeTransformer,
+    NativeValidator,
     StreamInput,
     WorkspaceFields,
     WorkspaceInput,
@@ -25,11 +27,30 @@ from .views import (
     apply_environment,
     body_view,
     captured_warnings,
+    chunk_view,
     failure_view,
     merged_params,
     params_of,
     project_headers,
     workspace_view,
+)
+
+CHAT_CONFIG: Final = BedrockClaudePlatformConfig()
+NATIVE_CONFIG: Final = BedrockClaudePlatformMessagesConfig()
+CHAT_VALIDATE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L27
+    ChatValidator, CHAT_CONFIG.validate_environment
+)
+NATIVE_VALIDATE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/messages_transformation.py#L23
+    NativeValidator, NATIVE_CONFIG.validate_anthropic_messages_environment
+)
+CHAT_TRANSFORM: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L73
+    ChatTransformer, CHAT_CONFIG.transform_request
+)
+NATIVE_TRANSFORM: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/messages_transformation.py#L69
+    NativeTransformer, NATIVE_CONFIG.transform_anthropic_messages_request
+)
+STREAM_ITERATOR: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/transformation.py#L92
+    IteratorFactory, CHAT_CONFIG.get_model_response_iterator
 )
 
 
@@ -155,22 +176,6 @@ def native_body(input_value: BodyInput) -> Json:
             working_headers,
         )
     return body_view(body, entries, working_headers)
-
-
-def chunk_view(item: HasDump) -> Json:
-    view = CHUNK_VIEW.validate_json(item.model_dump_json())
-    model = view["model"] if view["model"] is not None else ""
-    choices = view["choices"]
-    if not choices:
-        return {"id": view["id"], "model": model, "content": "", "finish_reason": None}
-    choice = choices[0]
-    content = choice["delta"]["content"] if choice["delta"]["content"] is not None else ""
-    return {
-        "id": view["id"],
-        "model": model,
-        "content": content,
-        "finish_reason": choice["finish_reason"],
-    }
 
 
 class LineChunks:

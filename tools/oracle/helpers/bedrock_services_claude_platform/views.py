@@ -4,6 +4,7 @@ import os
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 
+from litellm.types.utils import ModelResponse
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
@@ -11,6 +12,7 @@ from .types import (
     AUTHENTICATION_PREFIX,
     BETA_HEADER,
     BILLING_MARKER,
+    CHUNK_VIEW,
     DROP_MARKER,
     EMPTY_PARAMS,
     IGNORE_MARKER,
@@ -128,6 +130,22 @@ def system_texts(system: Json) -> list[Json]:
         if text is not None:
             texts.append(text)
     return texts
+
+
+def chunk_view(item: ModelResponse) -> Json:
+    view = CHUNK_VIEW.validate_json(item.model_dump_json())
+    model = view["model"] if view["model"] is not None else ""
+    choices = view["choices"]
+    if not choices:
+        return {"id": view["id"], "model": model, "content": "", "finish_reason": None}
+    choice = choices[0]
+    content = choice["delta"]["content"] if choice["delta"]["content"] is not None else ""
+    return {
+        "id": view["id"],
+        "model": model,
+        "content": content,
+        "finish_reason": choice["finish_reason"],
+    }
 
 
 def body_view(
