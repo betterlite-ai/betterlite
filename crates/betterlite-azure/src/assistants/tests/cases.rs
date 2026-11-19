@@ -18,14 +18,14 @@ enum Scenario {
 
 // One case per oracle file, each driving the run facade over the fake SDK transport.
 #[rstest]
-#[case::case_1_run_poll(Scenario::RunPoll)]
-#[case::case_2_run_stream(Scenario::RunStream)]
-#[case::case_3_run_instructions_tools(Scenario::RunInstructionsTools)]
-#[case::case_4_run_failure(Scenario::RunFailure)]
-#[case::case_5_run_dispatch(Scenario::RunDispatch)]
-#[case::case_6_instructions_tools_overrides(Scenario::InstructionsToolsOverrides)]
-#[case::case_7_stream_event_handler(Scenario::StreamEventHandler)]
-#[case::case_8_assistants_beta_default(Scenario::AssistantsBetaDefault)]
+#[case::run_poll(Scenario::RunPoll)]
+#[case::run_stream(Scenario::RunStream)]
+#[case::run_instructions_tools(Scenario::RunInstructionsTools)]
+#[case::run_failure(Scenario::RunFailure)]
+#[case::run_dispatch(Scenario::RunDispatch)]
+#[case::instructions_tools_overrides(Scenario::InstructionsToolsOverrides)]
+#[case::stream_event_handler(Scenario::StreamEventHandler)]
+#[case::assistants_beta_default(Scenario::AssistantsBetaDefault)]
 #[tokio::test(start_paused = true)]
 async fn assistants_cases(#[case] scenario: Scenario) {
     match scenario {
