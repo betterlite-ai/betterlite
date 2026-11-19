@@ -89,14 +89,17 @@ async fn cache_read_error_propagates() {
 }
 
 #[tokio::test]
-async fn undecodable_payload_propagates() {
+async fn undecodable_payload_refetched() {
     let raw = Json::Text("not a tag".to_owned());
-    let cache = RecordingCache::new(TTL).with_registry("tag:tag-a", raw);
+    let cache = RecordingCache::new(TTL)
+        .with_registry("tag:tag-a", raw)
+        .with_registry(TAG_REGISTRY_KEY, registry_names(&["tag-a"]));
     let rows = RecordingRows::new(vec![tag(TAG_A)], Vec::new());
-    let error = batch(&cache, &rows, &["tag-a"])
+    let found = batch(&cache, &rows, &["tag-a"])
         .await
-        .expect_err("the undecodable payload reaches the caller");
-    assert!(matches!(error, TagBudgetError::TagPayload(_)));
+        .expect("an undecodable payload is a miss, not a failure");
+    assert_eq!(found.len(), 1);
+    assert_eq!(rows.tag_queries(), vec![vec!["tag-a"]]);
 }
 
 #[tokio::test]

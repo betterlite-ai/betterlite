@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::keys::CacheKey;
-use crate::auth_cache::payload::PayloadError;
+use crate::auth_cache::payload::{self, PayloadError};
 use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::rows::RowError;
 use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
@@ -108,11 +108,11 @@ pub(super) fn decode_failure() -> TagBudgetRowsFailure {
     }
 }
 
-// The cached value for one write, as the json the read side would decode.
+// The cached value for one write, encoded as AuthCache::async_set encodes it.
 fn stored(value: CachedValue<'_>) -> Json {
     match value {
-        CachedValue::Tag(tag) => serde_json::to_value(tag).expect("the tag serializes"),
-        CachedValue::Group(group) => serde_json::to_value(group).expect("the group serializes"),
+        CachedValue::Tag(tag) => payload::encode(tag).expect("the tag encodes"),
+        CachedValue::Group(group) => payload::encode(group).expect("the group encodes"),
         CachedValue::Registry(answer) => answer.clone(),
     }
 }
@@ -281,13 +281,13 @@ impl RecordingCache {
     }
 }
 
-fn decoded<Value: DeserializeOwned>(value: Option<Json>) -> Result<Option<Value>, PayloadError> {
-    match value {
-        None => Ok(None),
-        Some(value) => serde_json::from_value(value)
-            .map(Some)
-            .map_err(PayloadError::Json),
-    }
+// The cache decodes a stored payload the way AuthCache's typed read does: a payload the
+// model cannot read is a miss, never an error.
+fn decoded<Value>(value: Option<Json>) -> Result<Option<Value>, PayloadError>
+where
+    Value: DeserializeOwned,
+{
+    value.map_or(Ok(None), |value| payload::decode(&value))
 }
 
 #[async_trait]
@@ -333,14 +333,20 @@ pub(super) enum Failure {
     Decode,
 }
 
-fn matching<Row: Clone>(rows: &[Row], names: &[String], name: fn(&Row) -> &str) -> Vec<Row> {
+fn matching<Row>(rows: &[Row], names: &[String], name: fn(&Row) -> &str) -> Vec<Row>
+where
+    Row: Clone,
+{
     rows.iter()
         .filter(|row| names.iter().any(|wanted| wanted.as_str() == name(row)))
         .cloned()
         .collect()
 }
 
-fn limited<Row: Clone>(rows: &[Row], take: i64) -> Vec<Row> {
+fn limited<Row>(rows: &[Row], take: i64) -> Vec<Row>
+where
+    Row: Clone,
+{
     rows.iter().take(take_of(take)).cloned().collect()
 }
 

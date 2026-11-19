@@ -95,14 +95,15 @@ async fn cache_read_error_propagates() {
 }
 
 #[tokio::test]
-async fn undecodable_payload_propagates() {
+async fn undecodable_payload_refetched() {
     let raw = Json::Text("not a budget".to_owned());
     let cache = RecordingCache::new(TTL).with_registry("model_access_group:group-a", raw);
     let rows = RecordingRows::new(Vec::new(), vec![group_row(GROUP_A)]);
-    let error = batch(&cache, &rows, &["group-a"])
+    let found = batch(&cache, &rows, &["group-a"])
         .await
-        .expect_err("the undecodable payload reaches the caller");
-    assert!(matches!(error, TagBudgetError::GroupPayload(_)));
+        .expect("an undecodable payload is a miss, not a failure");
+    assert_eq!(found.len(), 1);
+    assert_eq!(rows.group_queries(), vec![vec!["group-a"]]);
 }
 
 #[tokio::test]
