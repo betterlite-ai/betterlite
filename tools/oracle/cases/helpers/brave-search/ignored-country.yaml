@@ -1,0 +1,32 @@
+kind: helper
+name: brave-search-ignored-country
+call:
+  brave_search:
+    environment: {BRAVE_API_KEY: server-key}
+    calls:
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: country
+        optional_params: {country: US, search_lang: en, max_tokens_per_page: 5}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: domains
+        optional_params: {search_domain_filter: [a.test, b.test], country: DE}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: empty domains
+        optional_params: {search_domain_filter: [], country: GB}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: extra
+        optional_params: {safesearch: strict, text_decorations: false, count: 7}
+env: {}
+compare: {ignore: []}

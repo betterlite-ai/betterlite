@@ -1,0 +1,36 @@
+kind: helper
+name: brave-search-fuzzy-calendar-date
+call:
+  brave_search:
+    environment: {}
+    calls:
+      - kind: date
+        value: "2024-03-05"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Mar 5, 2024"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "5 January 2024"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Tue, 05 Mar 2024 23:30:00 +0000"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "2024/03/05"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "05/03/2024"
+        dayfirst: true
+        yearfirst: false
+      - kind: date
+        value: "March 5th, 2024 at 10:30 AM"
+        dayfirst: false
+        yearfirst: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: brave-search-metadata-false
+call:
+  brave_search:
+    environment: {BRAVE_API_KEY: server-key}
+    calls:
+      - kind: request
+        headers: {X-Caller: "1"}
+        api_key: null
+        api_base: null
+        query: literal
+        optional_params: {include_fetch_metadata: false, max_results: 3}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: [two, words]
+        optional_params: {include_fetch_metadata: true}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: absent
+        optional_params: {}
+      - kind: request
+        headers: {}
+        api_key: null
+        api_base: null
+        query: not boolean
+        optional_params: {include_fetch_metadata: "false"}
+env: {}
+compare: {ignore: []}

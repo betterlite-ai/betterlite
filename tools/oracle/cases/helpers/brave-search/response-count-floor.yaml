@@ -1,0 +1,24 @@
+kind: helper
+name: brave-search-response-count-floor
+call:
+  brave_search:
+    environment: {BRAVE_API_KEY: server-key}
+    calls:
+      - kind: reply
+        query: zero
+        optional_params: {count: 0}
+        body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}, {"title": "w2", "url": "https://w2.test", "description": "two"}]}, "news": {"results": [{"title": "n1", "url": "https://n1.test", "description": "news"}]}}'
+      - kind: reply
+        query: negative
+        optional_params: {count: -5}
+        body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}, {"title": "w2", "url": "https://w2.test", "description": "two"}]}}'
+      - kind: reply
+        query: above the limit
+        optional_params: {count: 99}
+        body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}, {"title": "w2", "url": "https://w2.test", "description": "two"}]}, "faqs": {"results": [{"title": "f1", "url": "https://f1.test", "description": "faq"}]}}'
+      - kind: reply
+        query: absent
+        optional_params: {}
+        body: '{"web": {"results": [{"title": "w1", "url": "https://w1.test", "description": "one"}]}}'
+env: {}
+compare: {ignore: []}

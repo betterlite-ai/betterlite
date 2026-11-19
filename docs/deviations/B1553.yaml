@@ -1,0 +1,6 @@
+task: B1553
+deviations:
+  - {what: "The fuzzy date grammar is ported into Rust instead of calling python-dateutil through B165.", why: "to_yyyy_mm_dd runs inside the synchronous SearchProvider reply hook, while B165's call seam is async and reaches only betterlite-server; the port follows dateutil's own token grammar rather than substituting dateparser's format set.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L28-L60"}
+  - {what: "A clock time after a date is skipped rather than validated, so an impossible time such as 25:00:00 still yields its calendar day where dateutil raises, and a comma inside a digit run reads as a separator.", why: "The reply carries only a calendar day, so the time of day cannot change the answer; a full time model would exist for a value the caller never sees.", link: ""}
+kept_bugs:
+  - {what: "A result_filter that names a section twice returns that section's entries twice, up to the shared count.", why: "The source iterates the requested section names instead of a set, and a caller relying on the duplicate order keeps it after the switch.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L258-L282"}

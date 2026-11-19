@@ -1,0 +1,36 @@
+kind: helper
+name: brave-search-timestamp-threshold
+call:
+  brave_search:
+    environment: {}
+    calls:
+      - kind: date
+        value: 1700000000
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: 100000000000
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: 100000000001
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: 99999999999
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: -100000000001
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: -1.5
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "1700000000.25"
+        dayfirst: false
+        yearfirst: false
+env: {}
+compare: {ignore: []}
