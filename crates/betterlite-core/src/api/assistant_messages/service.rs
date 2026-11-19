@@ -4,11 +4,17 @@ use betterlite_openai::threads::records::{ThreadMessage, ThreadMessagePage};
 use super::connection::{MessageParams, PrepareInput, prepare};
 use super::error::{MessageError, MessageFailure, failure};
 use super::options::MessageData;
-use super::provider::{self, MessageContext, ProviderCall, ProviderReply};
+use super::provider::{self, MessageContext, ProviderCall};
 
 // add_message's unsupported-provider message names create_thread, not add_message (main.py#L1000-L1008)
 const APPEND_OPERATION: &str = "create_thread";
 const LIST_OPERATION: &str = "get_messages";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Operation {
+    Append,
+    List,
+}
 
 // add_message's and get_messages's positional arguments plus the keyword arguments they read
 pub struct MessageRequest<'request> {
@@ -25,115 +31,51 @@ pub enum Reply {
     Page(Box<ThreadMessagePage>),
 }
 
-// litellm.add_message: the provider exception reaches the caller unchanged (main.py#L892-L1011)
-pub async fn add_message<T>(
+// the operation picks the wrapper and the mode the provider client (main.py#L841-L1161)
+pub async fn message_call<T>(
     request: &MessageRequest<'_>,
     context: &MessageContext<'_, T>,
-) -> Result<Reply, MessageError>
-where
-    T: AssistantsTransport,
-{
-    append(request, context, false).await
-}
-
-// litellm.a_add_message: the flag picks the async client and exception_type maps the failure (main.py#L841-L889)
-pub async fn a_add_message<T>(
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, T>,
-) -> Result<Reply, MessageFailure>
-where
-    T: AssistantsTransport,
-{
-    append(request, context, true)
-        .await
-        .map_err(|error| failure(error, request.provider, context.redactor))
-}
-
-// litellm.get_messages: the provider exception reaches the caller unchanged (main.py#L1057-L1161)
-pub async fn get_messages<T>(
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, T>,
-) -> Result<Reply, MessageError>
-where
-    T: AssistantsTransport,
-{
-    list(request, context, false).await
-}
-
-// litellm.aget_messages: the flag picks the async client and exception_type maps the failure (main.py#L1014-L1054)
-pub async fn aget_messages<T>(
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, T>,
-) -> Result<Reply, MessageFailure>
-where
-    T: AssistantsTransport,
-{
-    list(request, context, true)
-        .await
-        .map_err(|error| failure(error, request.provider, context.redactor))
-}
-
-async fn append<T>(
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, T>,
+    operation: Operation,
     asynchronous: bool,
-) -> Result<Reply, MessageError>
+) -> Result<Reply, MessageFailure>
 where
     T: AssistantsTransport,
 {
-    let prepared = prepare(&PrepareInput {
-        provider: request.provider,
-        operation: APPEND_OPERATION,
-        data: request.data,
-        params: request.params,
-        settings: context.settings,
-        drop_params: request.drop_params,
-        asynchronous,
-    })?;
-    let data = prepared
-        .data
-        .as_ref()
-        .ok_or(MessageError::UnexpectedReply {
-            operation: APPEND_OPERATION,
+    async {
+        let prepared = prepare(&PrepareInput {
+            provider: request.provider,
+            operation: operation_name(operation),
+            data: request.data,
+            params: request.params,
+            settings: context.settings,
+            drop_params: request.drop_params,
+            asynchronous,
         })?;
-    match provider::send(
-        &prepared,
-        context,
-        ProviderCall::Append {
-            thread_id: request.thread_id,
-            data,
-        },
-    )
-    .await?
-    {
-        ProviderReply::Message(message) => Ok(Reply::Message(message)),
-        ProviderReply::Page(_) => Err(MessageError::UnexpectedReply {
-            operation: APPEND_OPERATION,
-        }),
+        let data = prepared.data.as_ref();
+        let call = match operation {
+            Operation::Append => ProviderCall::Append {
+                thread_id: request.thread_id,
+                data: data.ok_or(MessageError::UnexpectedReply {
+                    operation: APPEND_OPERATION,
+                })?,
+            },
+            Operation::List => ProviderCall::List(request.thread_id),
+        };
+        match (operation, provider::send(&prepared, context, call).await?) {
+            (Operation::Append, Reply::Message(message)) => Ok(Reply::Message(message)),
+            (Operation::List, Reply::Page(page)) => Ok(Reply::Page(page)),
+            (operation, _) => Err(MessageError::UnexpectedReply {
+                operation: operation_name(operation),
+            }),
+        }
     }
+    .await
+    .map_err(|error| failure(error, request.provider, context.redactor))
 }
 
-async fn list<T>(
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, T>,
-    asynchronous: bool,
-) -> Result<Reply, MessageError>
-where
-    T: AssistantsTransport,
-{
-    let prepared = prepare(&PrepareInput {
-        provider: request.provider,
-        operation: LIST_OPERATION,
-        data: request.data,
-        params: request.params,
-        settings: context.settings,
-        drop_params: request.drop_params,
-        asynchronous,
-    })?;
-    match provider::send(&prepared, context, ProviderCall::List(request.thread_id)).await? {
-        ProviderReply::Page(page) => Ok(Reply::Page(page)),
-        ProviderReply::Message(_) => Err(MessageError::UnexpectedReply {
-            operation: LIST_OPERATION,
-        }),
+const fn operation_name(operation: Operation) -> &'static str {
+    match operation {
+        Operation::Append => APPEND_OPERATION,
+        Operation::List => LIST_OPERATION,
     }
 }

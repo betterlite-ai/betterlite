@@ -7,7 +7,7 @@ deviations:
     why: "betterlite has one deadline for a provider call rather than per-phase transport timeouts, and the read phase governs how long a response may take; the scalar and string timeout forms keep LiteLLM's resolution exactly."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L904-L916
   - what: "Provider failures and a malformed attachment entry carry betterlite's own message text: LiteLLM writes \"Error code: {status} - {repr(parsed body)}\", \"litellm.{Class}: ...\", and Python's own TypeError wording for an entry that is not an attachment."
-    why: "The class, status and the body-derived type, param and code fields match LiteLLM; the message is Python's repr and runtime wording, which the typed error surface does not reproduce, and the oracle cases ignore only this pointer."
+    why: "The class, status and the body-derived type, param and code fields match LiteLLM; the message is Python's repr and runtime wording, which the typed error surface does not reproduce, so the sdk oracle case ignores the message pointer of each failing run."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2144-L2186
   - what: "There is no caller-supplied SDK client: LiteLLM's add_message and get_messages accept client= and hand it to the provider call, where betterlite always builds its client from the resolved credentials."
     why: "betterlite has no Python client objects to inject, and the credentials, base URL and timeout it resolves are the ones the call uses; the oracle case schema refuses a client field for the same reason."

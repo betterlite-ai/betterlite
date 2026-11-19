@@ -1,7 +1,8 @@
 use betterlite_core::api::assistant_messages::error::{MessageError, MessageFailure, SetupError};
+use betterlite_core::api::assistant_messages::options::OptionError;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::{Failure, Nullable};
@@ -9,7 +10,7 @@ use crate::sdk_http::result::{Failure, Nullable};
 use super::RunOutcome;
 
 // the raw openai SDK exception the sync wrappers let through
-pub(super) fn sync(error: &MessageError) -> Result<RunOutcome, SdkHttpError> {
+pub(super) fn sync(error: &MessageError) -> Result<Failure, SdkHttpError> {
     match error {
         MessageError::Setup(setup) => setup_failure(setup),
         MessageError::OpenAi(_) | MessageError::Azure(_) => provider_failure(error),
@@ -19,44 +20,48 @@ pub(super) fn sync(error: &MessageError) -> Result<RunOutcome, SdkHttpError> {
     }
 }
 
-fn provider_failure(error: &MessageError) -> Result<RunOutcome, SdkHttpError> {
-    let Some(status) = error.status() else {
+fn provider_failure(error: &MessageError) -> Result<Failure, SdkHttpError> {
+    let Some((status, body)) = error.provider_answer() else {
         return Err(SdkHttpError::Invalid(format!(
             "the message call failed without a provider status: {error}"
         )));
     };
-    let body = error.body();
     let (kind, param, code) = body_fields(body);
-    Ok(failed(Failure {
+    Ok(Failure {
         class: status_class(status).to_owned(),
         status,
         kind,
         param,
         code,
-        message: format!("Error code: {status} - {}", body_text(body)),
-    }))
+        message: format!(
+            "Error code: {status} - {}",
+            std::str::from_utf8(body).unwrap_or("")
+        ),
+    })
 }
 
 // the selector's own exception reaches the caller before any provider client exists
-fn setup_failure(setup: &SetupError) -> Result<RunOutcome, SdkHttpError> {
+fn setup_failure(setup: &SetupError) -> Result<Failure, SdkHttpError> {
     match setup {
-        SetupError::Options(options) if options.is_unsupported_params() => Ok(failed(Failure {
-            class: options.python_class().to_owned(),
-            status: options.status().map_or(400, |status| status),
-            // litellm.UnsupportedParamsError never reaches openai.APIError.__init__, so type stays unset
-            kind: None,
-            param: Some(None),
-            code: Some(None),
-            message: options.python_message(),
-        })),
-        SetupError::UnsupportedProvider { .. } => Ok(failed(Failure {
+        SetupError::Options(options) if !matches!(options, OptionError::MalformedAttachment) => {
+            Ok(Failure {
+                class: options.exception_name().to_owned(),
+                status: options.status().map_or(400, |status| status),
+                // litellm.UnsupportedParamsError never reaches openai.APIError.__init__, so type stays unset
+                kind: None,
+                param: Some(None),
+                code: Some(None),
+                message: options.litellm_message(),
+            })
+        }
+        SetupError::UnsupportedProvider { .. } => Ok(Failure {
             class: "BadRequestError".to_owned(),
             status: 400,
             kind: Some(None),
             param: Some(None),
             code: Some(None),
             message: format!("litellm.BadRequestError: {setup}"),
-        })),
+        }),
         SetupError::Options(_)
         | SetupError::Timeout(_)
         | SetupError::Data { .. }
@@ -67,21 +72,21 @@ fn setup_failure(setup: &SetupError) -> Result<RunOutcome, SdkHttpError> {
 }
 
 // exception_type(model="", custom_llm_provider=..., original_exception=...)
-pub(super) fn mapped(failure: &MessageFailure) -> Result<RunOutcome, SdkHttpError> {
+pub(super) fn mapped(failure: &MessageFailure) -> Failure {
     let metadata = failure.class.metadata();
-    Ok(failed(Failure {
+    Failure {
         class: class_name(&failure.class).to_owned(),
         status: metadata.status_code,
         kind: nullable(metadata.error_type),
         param: nullable(metadata.param),
         code: Some(metadata.openai_code),
         message: failure_message(&failure.error),
-    }))
+    }
 }
 
 fn failure_message(error: &MessageError) -> String {
     match error {
-        MessageError::Setup(SetupError::Options(options)) => options.python_message(),
+        MessageError::Setup(SetupError::Options(options)) => options.litellm_message(),
         MessageError::Setup(SetupError::UnsupportedProvider { .. }) => {
             format!("litellm.BadRequestError: {error}")
         }
@@ -99,13 +104,6 @@ fn nullable(field: WireField) -> Nullable {
         WireField::Missing(_) => None,
         WireField::Null => Some(None),
         WireField::Text(text) => Some(Some(text)),
-    }
-}
-
-fn failed(failure: Failure) -> RunOutcome {
-    RunOutcome {
-        value: None,
-        failure: Some(failure),
     }
 }
 
@@ -151,30 +149,31 @@ const fn class_name(class: &ErrorClass) -> &'static str {
     }
 }
 
-fn body_text(body: Option<&[u8]>) -> &str {
-    body.map_or("", |bytes| std::str::from_utf8(bytes).unwrap_or(""))
-}
-
-// body["error"] when it is an object, otherwise the body itself (openai._exceptions.APIError.__init__)
-fn body_fields(body: Option<&[u8]>) -> (Nullable, Nullable, Nullable) {
-    let Some(bytes) = body else {
+// openai.APIError.__init__ reads type/param/code off the top level of the parsed body
+fn body_fields(body: &[u8]) -> (Nullable, Nullable, Nullable) {
+    let Ok(Value::Object(fields)) = serde_json::from_slice::<Value>(body) else {
         return (Some(None), Some(None), Some(None));
     };
-    let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(bytes) else {
-        return (Some(None), Some(None), Some(None));
-    };
-    let flat = match fields.remove("error") {
-        Some(Value::Object(inner)) => inner,
-        Some(_) => return (Some(None), Some(None), Some(None)),
-        None => fields,
-    };
-    (
-        text_of(&flat, "type"),
-        text_of(&flat, "param"),
-        text_of(&flat, "code"),
-    )
+    let kind = fields
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let param = fields
+        .get("param")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let code = fields
+        .get("code")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    (Some(kind), Some(param), Some(code))
 }
 
-fn text_of(fields: &Map<String, Value>, name: &str) -> Nullable {
-    Some(fields.get(name).and_then(Value::as_str).map(str::to_owned))
+impl From<Failure> for RunOutcome {
+    fn from(failure: Failure) -> Self {
+        Self {
+            value: None,
+            failure: Some(failure),
+        }
+    }
 }

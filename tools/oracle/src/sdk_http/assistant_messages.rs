@@ -88,7 +88,12 @@ pub struct RunOutcome {
 
 impl CallKind for Call {
     fn validate(&self, _limits: &OracleLimits) -> Result<(), SdkHttpError> {
-        validate(self)
+        if self.runs.is_empty() {
+            return Err(SdkHttpError::Invalid(
+                "the assistant messages call carries no runs".to_owned(),
+            ));
+        }
+        self.runs.iter().try_for_each(validate_run)
     }
 
     fn send(
@@ -100,27 +105,10 @@ impl CallKind for Call {
     }
 }
 
-fn validate(call: &Call) -> Result<(), SdkHttpError> {
-    if call.runs.is_empty() {
-        return Err(SdkHttpError::Invalid(
-            "the assistant messages call carries no runs".to_owned(),
-        ));
-    }
-    for run in &call.runs {
-        validate_run(run)?;
-    }
-    Ok(())
-}
-
 fn validate_run(run: &Run) -> Result<(), SdkHttpError> {
-    if run.provider.is_empty() || run.thread_id.is_empty() {
+    if run.provider.is_empty() || run.thread_id.is_empty() || run.client.is_some() {
         return Err(SdkHttpError::Invalid(
-            "a message run needs a provider and a thread_id".to_owned(),
-        ));
-    }
-    if run.client.is_some() {
-        return Err(SdkHttpError::Invalid(
-            "a message run supplies no client; the case api_base builds it".to_owned(),
+            "a message run needs a provider and a thread_id and no client".to_owned(),
         ));
     }
     let data = run.role.is_some()

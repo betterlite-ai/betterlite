@@ -13,7 +13,6 @@ use crate::api::resource_sdk_settings::timeout::TimeoutError;
 
 use super::options::OptionError;
 
-// everything the wrapper resolves before it reaches a provider client
 #[derive(Debug, Error)]
 pub enum SetupError {
     #[error(transparent)]
@@ -51,25 +50,16 @@ pub enum MessageError {
 }
 
 impl MessageError {
-    // the HTTP status a provider answer carried, which the raw SDK exception reports as-is
+    // the status and body a provider answer carried, which the raw SDK exception reports as-is
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
+    pub fn provider_answer(&self) -> Option<(u16, &[u8])> {
         match self {
-            Self::OpenAi(ThreadsError::Status { status, .. })
-            | Self::Azure(MessagesError::Threads(ThreadsError::Status { status, .. })) => {
-                Some(*status)
+            Self::OpenAi(ThreadsError::Status { status, body, .. }) => {
+                Some((*status, body.as_slice()))
             }
-            Self::Setup(_) | Self::OpenAi(_) | Self::Azure(_) | Self::UnexpectedReply { .. } => {
-                None
+            Self::Azure(MessagesError::Threads(ThreadsError::Status { status, body, .. })) => {
+                Some((*status, body.as_slice()))
             }
-        }
-    }
-
-    #[must_use]
-    pub fn body(&self) -> Option<&[u8]> {
-        match self {
-            Self::OpenAi(ThreadsError::Status { body, .. })
-            | Self::Azure(MessagesError::Threads(ThreadsError::Status { body, .. })) => Some(body),
             Self::Setup(_) | Self::OpenAi(_) | Self::Azure(_) | Self::UnexpectedReply { .. } => {
                 None
             }
@@ -104,8 +94,11 @@ pub fn failure(error: MessageError, provider: &str, redactor: &Redactor) -> Mess
 // the selector's own classes never reach the provider, so they map straight from its error
 fn setup_class(error: &SetupError, provider: &str) -> ErrorClass {
     match error {
-        SetupError::Options(options) if options.is_unsupported_params() => {
-            ErrorClass::UnsupportedParams(Box::new(context(options.python_message(), provider)))
+        SetupError::Options(OptionError::MalformedAttachment) => {
+            ErrorClass::Unclassified(Box::new(context(error.to_string(), provider)))
+        }
+        SetupError::Options(options) => {
+            ErrorClass::UnsupportedParams(Box::new(context(options.litellm_message(), provider)))
         }
         SetupError::UnsupportedProvider { .. } => {
             let details = ErrorContext {
@@ -114,10 +107,7 @@ fn setup_class(error: &SetupError, provider: &str) -> ErrorClass {
             };
             ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(details, None)))
         }
-        SetupError::Options(_)
-        | SetupError::Timeout(_)
-        | SetupError::Data { .. }
-        | SetupError::Deadline { .. } => {
+        SetupError::Timeout(_) | SetupError::Data { .. } | SetupError::Deadline { .. } => {
             ErrorClass::Unclassified(Box::new(context(error.to_string(), provider)))
         }
     }
@@ -138,8 +128,9 @@ fn context(message: String, provider: &str) -> ErrorContext {
 
 // the openai SDK's APIStatusError: str(e) is "Error code: {status} - {body}" and e.body is the error object
 fn exception(error: &MessageError, provider: &str) -> RawException {
-    let status = error.status();
-    let body = error.body();
+    let answer = error.provider_answer();
+    let status = answer.map(|(status, _body)| status);
+    let body = answer.map(|(_status, body)| body);
     let error_str = status.map_or_else(
         || error.to_string(),
         |status| {

@@ -14,15 +14,15 @@ use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::operations::AssistantsApi as OpenAiAssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::operations::{ClientSetup, ThreadCall, ThreadReply, ThreadsApi};
-use betterlite_openai::threads::records::{ThreadMessage, ThreadMessageData, ThreadMessagePage};
+use betterlite_openai::threads::records::ThreadMessageData;
 use betterlite_redact::secret::Redactor;
 
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 
-use super::connection::{AzureCredentials, OpenAiCredentials, Prepared, Route};
+use super::connection::{AzureCredentials, Prepared, Route};
 use super::error::MessageError;
+use super::service::Reply;
 
-// what a message call needs from the process that owns it
 pub struct MessageContext<'context, T> {
     pub settings: &'context ResourceSdkSettings,
     pub azure: &'context AzureSettings,
@@ -40,61 +40,49 @@ pub enum ProviderCall<'call> {
     List(&'call str),
 }
 
-pub enum ProviderReply {
-    Message(Box<ThreadMessage>),
-    Page(Box<ThreadMessagePage>),
-}
-
 pub async fn send<T>(
     prepared: &Prepared,
     context: &MessageContext<'_, T>,
     call: ProviderCall<'_>,
-) -> Result<ProviderReply, MessageError>
+) -> Result<Reply, MessageError>
 where
     T: AssistantsTransport,
 {
     match &prepared.route {
+        // the openai facade: get_openai_client then beta.threads.messages.create or .list (openai.py#L2622-L2730)
         Route::OpenAi(credentials) => {
-            openai_call(prepared, credentials, Arc::clone(&context.transport), call).await
+            let threads = ThreadsApi {
+                assistants: OpenAiAssistantsApi {
+                    transport: Arc::clone(&context.transport),
+                },
+            };
+            let setup = ClientSetup {
+                options: ClientOptions {
+                    api_key: credentials.api_key.clone(),
+                    api_base: Some(credentials.api_base.clone()),
+                    timeout: Some(prepared.deadline),
+                    max_retries: prepared.max_retries,
+                    organization: credentials.organization.clone(),
+                },
+                supplied: None,
+                async_requested: prepared.asynchronous,
+            };
+            match threads.call(setup, thread_call(call)).await? {
+                ThreadReply::Message(message) => Ok(Reply::Message(message)),
+                ThreadReply::Page(page) => Ok(Reply::Page(Box::new(page))),
+                ThreadReply::Thread(_) => Err(MessageError::UnexpectedReply {
+                    operation: "messages",
+                }),
+            }
         }
         Route::Azure(credentials) => azure_call(prepared, credentials, context, call).await,
     }
 }
 
-// the openai facade: get_openai_client then beta.threads.messages.create or .list (openai.py#L2622-L2730)
-async fn openai_call<T>(
-    prepared: &Prepared,
-    credentials: &OpenAiCredentials,
-    transport: Arc<T>,
-    call: ProviderCall<'_>,
-) -> Result<ProviderReply, MessageError>
-where
-    T: AssistantsTransport,
-{
-    let threads = ThreadsApi {
-        assistants: OpenAiAssistantsApi { transport },
-    };
-    let setup = ClientSetup {
-        options: ClientOptions {
-            api_key: credentials.api_key.clone(),
-            api_base: Some(credentials.api_base.clone()),
-            timeout: Some(prepared.deadline),
-            max_retries: prepared.max_retries,
-            organization: credentials.organization.clone(),
-        },
-        supplied: None,
-        async_requested: prepared.asynchronous,
-    };
-    let request = match call {
+fn thread_call(call: ProviderCall<'_>) -> ThreadCall<'_> {
+    match call {
         ProviderCall::Append { thread_id, data } => ThreadCall::AddMessage { thread_id, data },
         ProviderCall::List(thread_id) => ThreadCall::ListMessages(thread_id),
-    };
-    match threads.call(setup, request).await? {
-        ThreadReply::Message(message) => Ok(ProviderReply::Message(message)),
-        ThreadReply::Page(page) => Ok(ProviderReply::Page(Box::new(page))),
-        ThreadReply::Thread(_) => Err(MessageError::UnexpectedReply {
-            operation: "messages",
-        }),
     }
 }
 
@@ -104,7 +92,7 @@ async fn azure_call<T>(
     credentials: &AzureCredentials,
     context: &MessageContext<'_, T>,
     call: ProviderCall<'_>,
-) -> Result<ProviderReply, MessageError>
+) -> Result<Reply, MessageError>
 where
     T: AssistantsTransport,
 {
@@ -128,15 +116,24 @@ where
         environment: context.environment,
         sources: context.sources,
     };
-    let message = match call {
+    match messages
+        .call(
+            &request,
+            None,
+            Some(prepared.asynchronous),
+            message_call(call),
+        )
+        .await?
+        .reply
+    {
+        MessageReply::Message(message) => Ok(Reply::Message(message)),
+        MessageReply::Page(page) => Ok(Reply::Page(page)),
+    }
+}
+
+fn message_call(call: ProviderCall<'_>) -> MessageCall<'_> {
+    match call {
         ProviderCall::Append { thread_id, data } => MessageCall::Append { thread_id, data },
         ProviderCall::List(thread_id) => MessageCall::List(thread_id),
-    };
-    let reply = messages
-        .call(&request, None, Some(prepared.asynchronous), message)
-        .await?;
-    match reply.reply {
-        MessageReply::Message(message) => Ok(ProviderReply::Message(message)),
-        MessageReply::Page(page) => Ok(ProviderReply::Page(page)),
     }
 }

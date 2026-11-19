@@ -4,9 +4,6 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// LiteLLM's default_params: a value equal to None is never selected (utils.py#L24-L28).
-pub const STANDARD_MESSAGE_PARAMS: [&str; 4] = ["role", "content", "attachments", "metadata"];
-
 // The TypedDict add_message builds from its named arguments; role is not narrowed to a literal here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,24 +28,12 @@ pub struct MessageOptions {
     pub attachments: Option<Json>,
     #[serde(default)]
     pub metadata: Option<Json>,
+    #[serde(rename = "custom_llm_provider", alias = "provider")]
     pub provider: String,
     #[serde(default)]
+    pub drop_params: bool,
+    #[serde(default)]
     pub kwargs: Object,
-}
-
-impl MessageOptions {
-    // The wrapper passes the four named arguments and no extra keywords to the selector (main.py#L885-L891).
-    #[must_use]
-    pub fn from_data(provider: &str, data: &MessageData) -> Self {
-        Self {
-            role: Some(Json::Text(data.role.clone())),
-            content: Some(data.content.clone()),
-            attachments: data.attachments.clone(),
-            metadata: data.metadata.clone(),
-            provider: provider.to_owned(),
-            kwargs: Object::new(),
-        }
-    }
 }
 
 // The mapper's messages carry the offending value, which B697's error enum does not keep (azure.py#L87-L106).
@@ -76,102 +61,86 @@ impl OptionError {
             Self::ContentNotString
             | Self::UnsupportedAttachment { .. }
             | Self::AttachmentsNotList { .. } => Some(400),
-            Self::MalformedAttachment { .. } => None,
+            Self::MalformedAttachment => None,
         }
     }
 
+    // str(exception) with the prefix LiteLLM's own exception classes add
     #[must_use]
-    pub const fn is_unsupported_params(&self) -> bool {
-        !matches!(self, Self::MalformedAttachment { .. })
-    }
-
-    // str(exception), which is the prefixed message LiteLLM's UnsupportedParamsError carries.
-    #[must_use]
-    pub fn python_message(&self) -> String {
-        if self.is_unsupported_params() {
-            return format!("litellm.UnsupportedParamsError: {self}");
+    pub fn litellm_message(&self) -> String {
+        if matches!(self, Self::MalformedAttachment) {
+            return self.to_string();
         }
-        self.to_string()
+        format!("litellm.UnsupportedParamsError: {self}")
     }
 
     #[must_use]
-    pub const fn python_class(&self) -> &'static str {
-        if self.is_unsupported_params() {
-            "UnsupportedParamsError"
-        } else {
-            "TypeError"
+    pub const fn exception_name(&self) -> &'static str {
+        match self {
+            Self::ContentNotString
+            | Self::UnsupportedAttachment { .. }
+            | Self::AttachmentsNotList { .. } => "UnsupportedParamsError",
+            Self::MalformedAttachment => "TypeError",
         }
     }
 }
 
 // get_optional_params_add_message: non-null standard values, the provider mapper, then every extra keyword.
-pub fn get_optional_params_add_message(
-    options: &MessageOptions,
-    drop_params: bool,
-) -> Result<Object, OptionError> {
-    let mut passed = Object::new();
-    insert_passed(&mut passed, "role", &options.role);
-    insert_passed(&mut passed, "content", &options.content);
-    insert_passed(&mut passed, "attachments", &options.attachments);
-    insert_passed(&mut passed, "metadata", &options.metadata);
-    for (key, value) in &options.kwargs {
-        passed.insert(key.clone(), value.clone());
-    }
+pub fn select_message_params(options: &MessageOptions) -> Result<Object, OptionError> {
     let mut non_default = Object::new();
-    for (key, value) in &passed {
-        if STANDARD_MESSAGE_PARAMS.contains(&key.as_str()) && !matches!(value, Json::Null) {
-            non_default.insert(key.clone(), value.clone());
+    for (key, value) in [
+        ("role", &options.role),
+        ("content", &options.content),
+        ("attachments", &options.attachments),
+        ("metadata", &options.metadata),
+    ] {
+        if let Some(value) = value
+            && !matches!(value, Json::Null)
+        {
+            non_default.insert(key.to_owned(), value.clone());
         }
     }
     let mut optional = Object::new();
     match options.provider.as_str() {
         "openai" => optional.clone_from(&non_default),
-        "azure" => map_create_message_params(&non_default, &mut optional, drop_params)
+        "azure" => map_create_message_params(&non_default, &mut optional, options.drop_params)
             .map_err(|error| params_error(error, non_default.get("attachments")))?,
         _ => {}
     }
-    for (key, value) in &passed {
-        if !STANDARD_MESSAGE_PARAMS.contains(&key.as_str()) {
-            optional.insert(key.clone(), value.clone());
-        }
+    for (key, value) in &options.kwargs {
+        optional.insert(key.clone(), value.clone());
     }
     Ok(optional)
-}
-
-fn insert_passed(passed: &mut Object, key: &str, value: &Option<Json>) {
-    if let Some(value) = value {
-        passed.insert(key.to_owned(), value.clone());
-    }
 }
 
 fn params_error(error: ParamsError, attachments: Option<&Json>) -> OptionError {
     match error {
         ParamsError::ContentNotString => OptionError::ContentNotString,
         ParamsError::UnsupportedAttachment => OptionError::UnsupportedAttachment {
-            attachments: attachments.map_or_else(String::new, python_str),
+            attachments: attachments.map_or_else(String::new, rendered_text),
         },
         ParamsError::AttachmentsNotList => OptionError::AttachmentsNotList {
-            kind: attachments.map_or_else(|| "<class 'NoneType'>".to_owned(), python_type_name),
-            raw: attachments.map_or_else(String::new, python_str),
+            kind: attachments.map_or_else(
+                || "<class 'NoneType'>".to_owned(),
+                |value| format!("<class '{}'>", type_name(value)),
+            ),
+            raw: attachments.map_or_else(String::new, rendered_text),
         },
         ParamsError::MalformedAttachment => OptionError::MalformedAttachment,
     }
 }
 
 // the pinned mapper's f-strings render a string bare and every other value through repr
-fn python_str(value: &Json) -> String {
+fn rendered_text(value: &Json) -> String {
     match value {
         Json::Text(text) => text.clone(),
-        _ => python_repr(value),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            python::repr(value).unwrap_or_default()
+        }
     }
 }
 
-// The formatter writes into a Vec, so its io error branch is unreachable.
-fn python_repr(value: &Json) -> String {
-    python::repr(value).unwrap_or_default()
-}
-
-fn python_type(value: &Json) -> &'static str {
+fn type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
@@ -181,8 +150,4 @@ fn python_type(value: &Json) -> &'static str {
         Json::List(_) => "list",
         Json::Object(_) => "dict",
     }
-}
-
-fn python_type_name(value: &Json) -> String {
-    format!("<class '{}'>", python_type(value))
 }

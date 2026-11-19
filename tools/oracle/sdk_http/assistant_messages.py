@@ -1,10 +1,13 @@
 import asyncio
-from typing import Final, Literal, NotRequired, TypedDict
+from collections.abc import Coroutine
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, cast
 
 import litellm
 import openai
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import JsonValue as Json
+
 from openai_chat import Failure, project_failure
-from pydantic import BaseModel, ConfigDict, JsonValue as Json, TypeAdapter
 
 JSON_DICT: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 
@@ -54,13 +57,39 @@ class AssistantMessagesRequest(BaseModel):
         ).decode()
 
 
+class MessageCall(Protocol):
+    def __call__(self, **params: Json) -> BaseModel: ...
+
+
+class AsyncMessageCall(Protocol):
+    def __call__(self, **params: Json) -> Coroutine[None, None, BaseModel]: ...
+
+
+ADD_MESSAGE: MessageCall = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L1013
+    MessageCall,
+    litellm.add_message,
+)
+A_ADD_MESSAGE: AsyncMessageCall = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L841-L890
+    AsyncMessageCall,
+    litellm.a_add_message,
+)
+GET_MESSAGES: MessageCall = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1057-L1161
+    MessageCall,
+    litellm.get_messages,
+)
+A_GET_MESSAGES: AsyncMessageCall = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1014-L1056
+    AsyncMessageCall,
+    litellm.aget_messages,
+)
+
+
 def apply_settings(run: Run) -> None:
     litellm.drop_params = run["drop_params"]
     litellm.api_key = run["settings"].get("api_key")
     litellm.api_version = run["settings"].get("api_version")
 
 
-# the wrapper keywords are absent when the case left them out, and only extra_body tells absent from null
+# the wrapper keywords are absent when the case left them out, except extra_body
 def request_values(run: Run, api_base: str) -> dict[str, Json]:
     values: dict[str, Json] = {"api_base": api_base}
     params = run.get("params")
@@ -71,41 +100,27 @@ def request_values(run: Run, api_base: str) -> dict[str, Json]:
     return values
 
 
-def append_value(run: Run, api_base: str) -> dict[str, Json]:
+def call_value(run: Run, api_base: str) -> dict[str, Json]:
     apply_settings(run)
     values = request_values(run, api_base)
-    values["role"] = run["role"]
-    values["content"] = run["content"]
-    values["attachments"] = run["attachments"]
-    values["metadata"] = run["metadata"]
+    append = run["operation"] == "append"
+    if append:
+        values["role"] = run["role"]
+        values["content"] = run["content"]
+        values["attachments"] = run["attachments"]
+        values["metadata"] = run["metadata"]
     if run["mode"] == "async":
-        message = asyncio.run(litellm.a_add_message(**values))
+        reply = asyncio.run(A_ADD_MESSAGE(**values) if append else A_GET_MESSAGES(**values))
     else:
-        message = litellm.add_message(**values)
-    return JSON_DICT.validate_json(message.model_dump_json())
-
-
-def list_value(run: Run, api_base: str) -> dict[str, Json]:
-    apply_settings(run)
-    values = request_values(run, api_base)
-    if run["mode"] == "async":
-        page = asyncio.run(litellm.aget_messages(**values))
-    else:
-        page = litellm.get_messages(**values)
-    return JSON_DICT.validate_json(page.model_dump_json())
-
-
-def failure_of(error: openai.APIError) -> Failure:
-    failure = project_failure(error).failure
-    if failure is None:
-        raise ValueError("the SDK error projection carries no failure")
-    return failure
+        reply = ADD_MESSAGE(**values) if append else GET_MESSAGES(**values)
+    return JSON_DICT.validate_json(reply.model_dump_json())
 
 
 def run_outcome(run: Run, api_base: str) -> RunOutcome:
     try:
-        if run["operation"] == "list":
-            return {"value": list_value(run, api_base)}
-        return {"value": append_value(run, api_base)}
+        return {"value": call_value(run, api_base)}
     except openai.APIError as error:
-        return {"failure": failure_of(error)}
+        failure = project_failure(error).failure
+        if failure is None:
+            raise ValueError("the SDK error projection carries no failure")
+        return {"failure": failure}

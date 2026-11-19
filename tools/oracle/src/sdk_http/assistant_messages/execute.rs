@@ -7,7 +7,9 @@ use betterlite_config::sections::resource_sdk_settings::{Raw, RawSettings};
 use betterlite_core::api::assistant_messages::connection::MessageParams;
 use betterlite_core::api::assistant_messages::options::MessageData;
 use betterlite_core::api::assistant_messages::provider::MessageContext;
-use betterlite_core::api::assistant_messages::service::{self, MessageRequest, Reply};
+use betterlite_core::api::assistant_messages::service::{
+    self, MessageRequest, Operation as ServiceOperation, Reply,
+};
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::ProxiedClient;
@@ -20,7 +22,7 @@ use crate::sdk_http::result::kinds::SdkResult;
 use crate::sdk_http::vector_query_embedding::outbound_client;
 
 use super::failure;
-use super::{Call, Mode, Operation, Outcome, Run, RunOutcome, Settings};
+use super::{Call, Mode, Operation, Run, Settings};
 
 // every run answers through the mock origin the harness owns, so api_base replaces the case's own
 pub(super) async fn send(
@@ -33,7 +35,7 @@ pub(super) async fn send(
         runs.push(run_once(run, api_base, env).await?);
     }
     Ok(SdkResult::AssistantMessages {
-        value: Box::new(Outcome { runs }),
+        value: Box::new(super::Outcome { runs }),
     })
 }
 
@@ -41,7 +43,7 @@ async fn run_once(
     run: &Run,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<RunOutcome, SdkHttpError> {
+) -> Result<super::RunOutcome, SdkHttpError> {
     let settings = resource_settings(&run.settings, env)?;
     let params = message_params(run.params.as_ref(), api_base)?;
     let data = message_data(run)?;
@@ -63,65 +65,36 @@ async fn run_once(
         params: &params,
         drop_params: run.drop_params,
     };
-    match run.mode {
-        Mode::Sync => sync_reply(run.operation, &request, &context).await,
-        Mode::Async => async_reply(run.operation, &request, &context).await,
-    }
-}
-
-// add_message and get_messages hand the provider exception to the caller unchanged
-async fn sync_reply(
-    operation: Operation,
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, ProxiedClient>,
-) -> Result<RunOutcome, SdkHttpError> {
-    let reply = match operation {
-        Operation::Append => service::add_message(request, context).await,
-        Operation::List => service::get_messages(request, context).await,
+    let operation = match run.operation {
+        Operation::Append => ServiceOperation::Append,
+        Operation::List => ServiceOperation::List,
     };
-    match reply {
-        Ok(reply) => reply_value(reply),
-        Err(error) => failure::sync(&error),
+    match service::message_call(&request, &context, operation, run.mode == Mode::Async).await {
+        Ok(reply) => {
+            let encoded = match reply {
+                Reply::Message(message) => serde_json::to_value(&message),
+                Reply::Page(page) => serde_json::to_value(&page),
+            }
+            .map_err(SdkHttpError::Serialize)?;
+            Ok(super::RunOutcome {
+                value: Some(encoded),
+                failure: None,
+            })
+        }
+        Err(failure) => match run.mode {
+            Mode::Sync => failure::sync(&failure.error).map(super::RunOutcome::from),
+            Mode::Async => Ok(super::RunOutcome::from(failure::mapped(&failure))),
+        },
     }
-}
-
-// a_add_message and aget_messages map the failure through exception_type
-async fn async_reply(
-    operation: Operation,
-    request: &MessageRequest<'_>,
-    context: &MessageContext<'_, ProxiedClient>,
-) -> Result<RunOutcome, SdkHttpError> {
-    let reply = match operation {
-        Operation::Append => service::a_add_message(request, context).await,
-        Operation::List => service::aget_messages(request, context).await,
-    };
-    match reply {
-        Ok(reply) => reply_value(reply),
-        Err(failure) => failure::mapped(&failure),
-    }
-}
-
-fn reply_value(reply: Reply) -> Result<RunOutcome, SdkHttpError> {
-    let encoded = match reply {
-        Reply::Message(message) => serde_json::to_value(&message),
-        Reply::Page(page) => serde_json::to_value(&page),
-    }
-    .map_err(SdkHttpError::Serialize)?;
-    Ok(RunOutcome {
-        value: Some(encoded),
-        failure: None,
-    })
 }
 
 fn message_data(run: &Run) -> Result<Option<MessageData>, SdkHttpError> {
     if matches!(run.operation, Operation::List) {
         return Ok(None);
     }
-    let (Some(role), Some(content)) = (run.role.as_ref(), run.content.as_ref()) else {
-        return Err(SdkHttpError::Invalid(
-            "an append run needs a role and a content".to_owned(),
-        ));
-    };
+    let (role, content) = run.role.as_ref().zip(run.content.as_ref()).ok_or_else(|| {
+        SdkHttpError::Invalid("an append run needs a role and a content".to_owned())
+    })?;
     Ok(Some(MessageData {
         role: role.clone(),
         content: content.clone(),
@@ -153,9 +126,14 @@ fn resource_settings(
 ) -> Result<ResourceSdkSettings, SdkHttpError> {
     let raw = Raw {
         settings: RawSettings {
-            api_key: settings.api_key.clone().map(SecretString::from),
+            api_base: None,
             api_version: settings.api_version.clone(),
-            ..RawSettings::default()
+            api_key: settings.api_key.clone().map(SecretString::from),
+            openai_key: None,
+            azure_key: None,
+            organization: None,
+            vertex_project: None,
+            vertex_location: None,
         },
     };
     let converted = raw

@@ -16,7 +16,7 @@ use crate::api::resource_sdk_settings::timeout::{
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
 use super::error::SetupError;
-use super::options::{MessageData, MessageOptions, get_optional_params_add_message};
+use super::options::{MessageData, MessageOptions, select_message_params};
 
 // the kwargs the message wrappers read through GenericLiteLLMParams and get_litellm_params
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -48,18 +48,15 @@ pub enum MessageTimeout {
     Structured(StructuredTimeout),
 }
 
-// everything the wrapper computes before it reaches a provider client
 #[derive(Debug, Clone)]
 pub struct Prepared {
     pub route: Route,
-    // the selected message data, absent for a list call that selects nothing
     pub data: Option<ThreadMessageData>,
     pub deadline: Duration,
     pub asynchronous: bool,
     pub max_retries: Option<u32>,
 }
 
-// the provider and the credentials the wrapper resolved for it
 #[derive(Debug, Clone)]
 pub enum Route {
     OpenAi(OpenAiCredentials),
@@ -83,7 +80,6 @@ pub struct AzureCredentials {
     pub params: LiteLlmParams,
 }
 
-// the wrapper's arguments after its named parameters are checked
 pub struct PrepareInput<'request> {
     pub provider: &'request str,
     pub operation: &'static str,
@@ -97,22 +93,34 @@ pub struct PrepareInput<'request> {
 
 pub fn prepare(input: &PrepareInput<'_>) -> Result<Prepared, SetupError> {
     let selected = match input.data {
-        Some(data) => Some(get_optional_params_add_message(
-            &MessageOptions::from_data(input.provider, data),
-            input.drop_params,
-        )?),
+        Some(data) => Some(select_message_params(&MessageOptions {
+            role: Some(Json::Text(data.role.clone())),
+            content: Some(data.content.clone()),
+            attachments: data.attachments.clone(),
+            metadata: data.metadata.clone(),
+            provider: input.provider.to_owned(),
+            drop_params: input.drop_params,
+            kwargs: Object::new(),
+        })?),
         None => None,
     };
     let timeout = resolve_timeout(input.params, input.provider)?;
     let deadline = deadline_of(&timeout)?;
-    let request_options = ResourceSdkRequestOptions::from(input.params);
+    let settings = input.settings;
+    let options = &ResourceSdkRequestOptions::from(input.params);
     let route = match input.provider {
-        "openai" => Route::OpenAi(openai_credentials(input.settings, &request_options)),
-        "azure" => Route::Azure(azure_credentials(
-            input.settings,
-            &request_options,
-            input.params,
-        )),
+        "openai" => Route::OpenAi(OpenAiCredentials {
+            api_base: settings.openai_base(options),
+            api_key: settings.openai_api_key(options).cloned(),
+            organization: settings.openai_organization(options).map(str::to_owned),
+        }),
+        "azure" => Route::Azure(AzureCredentials {
+            api_base: settings.azure_base(options).map(str::to_owned),
+            api_version: settings.azure_version(options).map(str::to_owned),
+            api_key: settings.azure_api_key(options).cloned(),
+            facade_ad_token: facade_ad_token(input.params, settings),
+            params: azure_params(input.params),
+        }),
         other => {
             return Err(SetupError::UnsupportedProvider {
                 provider: other.to_owned(),
@@ -190,31 +198,6 @@ fn selected_data(selected: &Object) -> Result<ThreadMessageData, SetupError> {
     serde_json::from_value(value).map_err(|source| SetupError::Data { source })
 }
 
-fn openai_credentials(
-    settings: &ResourceSdkSettings,
-    options: &ResourceSdkRequestOptions,
-) -> OpenAiCredentials {
-    OpenAiCredentials {
-        api_base: settings.openai_base(options),
-        api_key: settings.openai_api_key(options).cloned(),
-        organization: settings.openai_organization(options).map(str::to_owned),
-    }
-}
-
-fn azure_credentials(
-    settings: &ResourceSdkSettings,
-    options: &ResourceSdkRequestOptions,
-    params: &MessageParams,
-) -> AzureCredentials {
-    AzureCredentials {
-        api_base: settings.azure_base(options).map(str::to_owned),
-        api_version: settings.azure_version(options).map(str::to_owned),
-        api_key: settings.azure_api_key(options).cloned(),
-        facade_ad_token: facade_ad_token(params, settings),
-        params: azure_params(params),
-    }
-}
-
 // extra_body.pop("azure_ad_token") only when the mapping is not null; a null one reads AZURE_AD_TOKEN instead (main.py#L985-L991).
 fn facade_ad_token(params: &MessageParams, settings: &ResourceSdkSettings) -> Option<SecretString> {
     match &params.extra_body {
@@ -231,16 +214,17 @@ fn facade_ad_token(params: &MessageParams, settings: &ResourceSdkSettings) -> Op
 }
 
 fn azure_params(params: &MessageParams) -> LiteLlmParams {
+    let auth = AuthParams {
+        tenant_id: params.tenant_id.clone(),
+        client_id: params.client_id.clone(),
+        client_secret: params.client_secret.clone(),
+        azure_username: params.azure_username.clone(),
+        azure_password: params.azure_password.clone(),
+        azure_scope: params.azure_scope.clone(),
+    };
     LiteLlmParams {
         azure_ad_token: params.azure_ad_token.clone(),
-        auth: AuthParams {
-            tenant_id: params.tenant_id.clone(),
-            client_id: params.client_id.clone(),
-            client_secret: params.client_secret.clone(),
-            azure_username: params.azure_username.clone(),
-            azure_password: params.azure_password.clone(),
-            azure_scope: params.azure_scope.clone(),
-        },
+        auth,
         max_retries: params.max_retries,
         timeout: raw_timeout(params.timeout.as_ref()),
     }

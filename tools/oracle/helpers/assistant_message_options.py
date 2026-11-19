@@ -1,8 +1,9 @@
-from typing import Final, NotRequired, TypedDict
+from typing import Final, NotRequired, Protocol, TypedDict, cast
 
 import litellm
-from litellm.assistants.utils import get_optional_params_add_message
-from pydantic import JsonValue as Json, TypeAdapter
+from litellm.assistants.utils import get_optional_params_add_message as select_params
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 JSON_MAP: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 
@@ -17,25 +18,25 @@ class Input(TypedDict):
     kwargs: NotRequired[dict[str, Json]]
 
 
+class Selector(Protocol):
+    def __call__(self, **params: Json) -> dict[str, Json]: ...
+
+
+SELECT: Selector = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L10-L66
+    Selector,
+    select_params,
+)
+
+
 def run(input_value: Input) -> dict[str, Json]:
     litellm.drop_params = input_value["drop_params"]
-    arguments: dict[str, Json] = {
-        "custom_llm_provider": input_value["custom_llm_provider"]
-    }
-    role = input_value.get("role")
-    if role is not None:
-        arguments["role"] = role
-    content = input_value.get("content")
-    if content is not None:
-        arguments["content"] = content
-    attachments = input_value.get("attachments")
-    if attachments is not None:
-        arguments["attachments"] = attachments
-    metadata = input_value.get("metadata")
-    if metadata is not None:
-        arguments["metadata"] = metadata
-    extras = input_value.get("kwargs")
-    if extras is not None:
-        arguments.update(extras)
-    selected = get_optional_params_add_message(**arguments)
+    extras: dict[str, Json] = input_value["kwargs"] if "kwargs" in input_value else {}
+    selected = SELECT(
+        role=input_value.get("role"),
+        content=input_value.get("content"),
+        attachments=input_value.get("attachments"),
+        metadata=input_value.get("metadata"),
+        custom_llm_provider=input_value["custom_llm_provider"],
+        **extras,
+    )
     return JSON_MAP.validate_python(selected)
