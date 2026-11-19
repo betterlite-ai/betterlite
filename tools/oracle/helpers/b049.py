@@ -151,7 +151,7 @@ def request_case(case: RequestProbe) -> JsonValue:
         litellm_params=params,
         headers=EMPTY,
     )
-    return {"model": body["model"]}
+    return body
 
 
 def run(input_value: Input) -> JsonValue:

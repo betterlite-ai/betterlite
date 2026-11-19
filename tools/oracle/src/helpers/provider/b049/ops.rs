@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -121,7 +120,7 @@ pub(super) fn probes(
 }
 
 pub(super) fn requests(
-    environment: &Environment,
+    _environment: &Environment,
     _sdk: &Sdk,
     cases: &[RequestCase],
 ) -> HelperResult {
@@ -136,11 +135,12 @@ pub(super) fn requests(
             messages: &case.messages,
             optional_params: &case.options,
             litellm_params: &params,
-            environment,
-            downloads: &RefuseDownloads,
         })
         .map_err(|source| helper_error("RequestTransform", source.to_string()))?;
-        found.push(json!({"model": body.get("model")}));
+        found.push(
+            serde_json::to_value(&body)
+                .map_err(|source| helper_error("RequestTransform", source.to_string()))?,
+        );
     }
     Ok(json!({"probes": found}))
 }

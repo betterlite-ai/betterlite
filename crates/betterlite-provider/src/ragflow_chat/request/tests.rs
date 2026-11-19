@@ -1,8 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
-use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 
@@ -11,14 +8,11 @@ use crate::ragflow_chat::error::RagflowError;
 use crate::ragflow_chat::tests::support::{messages, object};
 
 fn body(model: &str, messages: &[Message], options: &Object, params: &Object) -> Object {
-    let environment: BTreeMap<String, String> = BTreeMap::new();
     transform_request(&RequestInput {
         model,
         messages,
         optional_params: options,
         litellm_params: params,
-        environment: &environment,
-        downloads: &RefuseDownloads,
     })
     .expect("the fixture request builds")
 }
@@ -79,14 +73,11 @@ fn a_model_that_does_not_parse_goes_through_whole() {
 fn a_non_string_stored_model_is_refused() {
     let messages = messages(r#"[{"role":"user","content":"hi"}]"#);
     let params = object(r#"{"_ragflow_actual_model": 5}"#);
-    let environment: BTreeMap<String, String> = BTreeMap::new();
     let error = transform_request(&RequestInput {
         model: "ragflow/chat/abc/m",
         messages: &messages,
         optional_params: &object("{}"),
         litellm_params: &params,
-        environment: &environment,
-        downloads: &RefuseDownloads,
     })
     .expect_err("a non-string stored model is refused");
     assert!(matches!(error, RagflowError::FieldType { .. }));
@@ -97,33 +88,39 @@ fn a_non_string_stored_model_is_refused() {
 }
 
 #[test]
-fn the_optional_params_are_copied_except_the_openai_parents_removals() {
+fn the_body_is_the_optional_params_with_the_model_and_messages() {
     let messages = messages(r#"[{"role":"user","content":"hi"}]"#);
     let options = object(r#"{"stream": true, "max_retries": 3, "tool_choice": "auto"}"#);
-    let body = body("ragflow/chat/abc/m", &messages, &options, &object("{}"));
-    assert_eq!(body.get("stream"), Some(&Json::Bool(true)));
-    assert_eq!(body.get("max_retries"), None);
-    assert_eq!(body.get("tool_choice"), None);
+    let body = body(
+        "ragflow/chat/abc/openai/gpt-4o",
+        &messages,
+        &options,
+        &object("{}"),
+    );
+    assert_eq!(
+        Json::Object(body),
+        Json::Object(object(
+            r#"{"stream": true, "max_retries": 3, "tool_choice": "auto", "model": "openai/gpt-4o",
+                "messages": [{"role": "user", "content": "hi"}]}"#
+        ))
+    );
 }
 
 #[test]
-fn cache_control_is_stripped_from_the_messages() {
-    let messages = messages(
-        r#"[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]}]"#,
-    );
+fn the_messages_are_sent_unchanged() {
+    let wire = r#"[
+        {"role": "user", "content": [{"type": "text", "text": "a", "cache_control": {"type": "ephemeral"}}]},
+        {"role": "tool", "tool_call_id": "call-1", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/cat.png", "format": "png"}}]}
+    ]"#;
+    let messages = messages(wire);
     let body = body(
         "ragflow/chat/abc/m",
         &messages,
         &object("{}"),
         &object("{}"),
     );
-    let message = only_message(&body);
-    let Some(Json::List(parts)) = message.get("content") else {
-        panic!("the user message holds a content list");
-    };
-    let Some(Json::Object(part)) = parts.first() else {
-        panic!("the content list holds a text part");
-    };
-    assert_eq!(part.get("text"), Some(&text("a")));
-    assert_eq!(part.get("cache_control"), None);
+    assert_eq!(
+        body.get("messages"),
+        Some(&serde_json::from_str::<Json>(wire).expect("the fixture messages are JSON"))
+    );
 }

@@ -1,5 +1,4 @@
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat_content::ChatContentError;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
 
@@ -33,8 +32,6 @@ pub enum RagflowError {
         #[source]
         source: serde_json::Error,
     },
-    #[error(transparent)]
-    Content(#[from] ChatContentError),
     #[error("the {field} value must be a string")]
     FieldType { field: &'static str },
 }
