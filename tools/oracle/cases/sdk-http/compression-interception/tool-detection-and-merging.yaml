@@ -1,0 +1,68 @@
+kind: sdk_http
+name: compression-interception-tool-detection-and-merging
+env: {}
+call:
+  compression_interception:
+    steps:
+      - settings: {litellm_settings: {}, callback_settings: {}}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: no tools}]
+        now: 0
+        compress:
+          messages: [{role: user, content: compressed no tools}]
+          tools: [{type: custom, name: litellm_content_retrieve, description: Retrieve content}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-1: original one}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: existing tools}]
+          tools:
+            - {type: function, function: {name: get_weather, description: Weather}}
+            - {type: custom, name: get_time}
+        now: 10
+        compress:
+          messages: [{role: user, content: compressed existing tools}]
+          tools: [{type: custom, name: litellm_content_retrieve, description: Retrieve content}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-2: original two}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: function retrieval tool}]
+          tools: [{type: function, function: {name: litellm_content_retrieve}}]
+        now: 20
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: custom retrieval tool}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+        now: 30
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: empty tools}]
+          tools: []
+        now: 40
+        compress:
+          messages: [{role: user, content: compressed empty tools}]
+          tools: [{type: custom, name: litellm_content_retrieve, description: Retrieve content}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-3: original three}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: other tool name}]
+          tools: [{type: function, function: {name: content_retrieve}}]
+        now: 50
+        compress:
+          messages: [{role: user, content: compressed other tool name}]
+          tools: [{type: custom, name: litellm_content_retrieve, description: Retrieve content}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-4: original four}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

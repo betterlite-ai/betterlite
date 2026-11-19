@@ -1,0 +1,5 @@
+callback_settings:
+  compression_interception:
+    enabled: off
+    compression_trigger: not-a-number
+    compression_target: -1

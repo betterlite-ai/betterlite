@@ -1,0 +1,97 @@
+kind: sdk_http
+name: compression-interception-compression-cache-lifecycle
+env: {}
+call:
+  compression_interception:
+    steps:
+      - settings: {litellm_settings: {}, callback_settings: {}}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: first}]
+          litellm_call_id: call-a
+        now: 1000
+        lookup: call-a
+        compress:
+          messages: [{role: user, content: compressed first}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {a: original a}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: second}]
+          litellm_call_id: call-b
+        now: 1900
+        lookup: call-a
+        compress:
+          messages: [{role: user, content: compressed second}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {b: original b}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: third}]
+          litellm_call_id: call-c
+        now: 1901.5
+        lookup: call-a
+        compress:
+          messages: [{role: user, content: compressed third}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {c: original c}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: fourth}]
+          litellm_call_id: call-d
+        now: 1902
+        lookup: call-b
+        compress:
+          messages: [{role: user, content: compressed fourth}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {d: original d}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: fifth}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+        now: 1903
+        lookup: call-unknown
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: sixth}]
+          _agentic_loop_depth: 1
+        now: 1904
+        lookup: null
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: seventh}]
+          litellm_call_id: call-e
+        now: 2800
+        lookup: call-b
+        compress:
+          messages: [{role: user, content: compressed seventh}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {e: original e}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: eighth}]
+          litellm_call_id: call-f
+        now: 2801
+        lookup: call-c
+        compress:
+          messages: [{role: user, content: compressed eighth}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {f: original f}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
