@@ -83,27 +83,16 @@ impl Harness {
     }
 }
 
-pub(crate) fn call<'call>(data: Option<&'call ManagementData<'call>>) -> ManagementCall<'call> {
-    ManagementCall {
-        function_name: "generate_key_fn",
-        request_kwargs: JsonObject::new(),
-        data,
-        user_api_key_dict: None,
-        parent_otel_span: None,
-        http_request: None,
-    }
-}
-
-pub(crate) fn call_with<'call>(
+pub(crate) fn call<'call>(
     data: Option<&'call ManagementData<'call>>,
-    auth: &'call UserAPIKeyAuth,
+    auth: Option<&'call UserAPIKeyAuth>,
     parent: Option<&'call LiveSpan>,
 ) -> ManagementCall<'call> {
     ManagementCall {
         function_name: "generate_key_fn",
         request_kwargs: JsonObject::new(),
         data,
-        user_api_key_dict: Some(auth),
+        user_api_key_dict: auth,
         parent_otel_span: parent,
         http_request: None,
     }

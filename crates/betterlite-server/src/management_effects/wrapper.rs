@@ -12,10 +12,7 @@ use serde::Serialize;
 
 use crate::failure_hook::ports::Clock;
 use crate::management_effects::data::ManagementData;
-use crate::management_effects::eviction::{
-    ManagementCacheEviction, delete_api_key_from_cache, delete_customer_id_from_cache,
-    delete_team_id_from_cache, delete_user_id_from_cache,
-};
+use crate::management_effects::eviction::{ManagementCacheEviction, delete_cached_keys};
 use crate::management_payload::alerts::{
     ManagementAlertError, ManagementAlertTransport, send_management_endpoint_alert,
 };
@@ -118,10 +115,7 @@ where
             .await
             .map_err(EffectError::Span)?;
         }
-        delete_api_key_from_cache(self.cache, call.data).map_err(EffectError::Cache)?;
-        delete_user_id_from_cache(self.cache, call.data).map_err(EffectError::Cache)?;
-        delete_team_id_from_cache(self.cache, call.data).map_err(EffectError::Cache)?;
-        delete_customer_id_from_cache(self.cache, call.data).map_err(EffectError::Cache)?;
+        delete_cached_keys(self.cache, call.data).map_err(EffectError::Cache)?;
         Ok(())
     }
 

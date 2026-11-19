@@ -16,16 +16,12 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::data::ManagementData;
-use super::eviction::{
-    delete_api_key_from_cache, delete_customer_id_from_cache, delete_team_id_from_cache,
-    delete_user_id_from_cache,
-};
+use super::eviction::delete_cached_keys;
 use super::fixtures::auth_cache::memory_auth_cache;
 use super::fixtures::cache::FakeCacheError;
 use super::fixtures::clock::{end_instant, start_instant};
 use super::fixtures::harness::{
-    CreatedKey, Harness, actor_auth, call, call_with, created_key, exception, http_request,
-    parent_span,
+    CreatedKey, Harness, actor_auth, call, created_key, exception, http_request, parent_span,
 };
 use super::fixtures::journal::{Effect, Journal};
 use super::fixtures::transports::SpanHook;
@@ -84,7 +80,7 @@ async fn wall_clock_brackets_handler() {
         seen.record(clock.samples.entries().len());
         Ok(created_key())
     };
-    let outcome = run(&harness, call_with(None, &auth, Some(&parent)), handler).await;
+    let outcome = run(&harness, call(None, Some(&auth), Some(&parent)), handler).await;
     assert_eq!(
         outcome.expect("the handler result comes back"),
         created_key()
@@ -100,7 +96,7 @@ async fn default_auth_when_missing() {
     let harness = Harness::default();
     let parent = parent_span();
     let data = ManagementData::UpdateKey("k");
-    let mut request = call(Some(&data));
+    let mut request = call(Some(&data), None, None);
     request.parent_otel_span = Some(&parent);
     let outcome = run(&harness, request, ready(Ok(created_key()))).await;
     assert!(outcome.is_ok());
@@ -121,7 +117,7 @@ async fn success_alert_span_eviction_order() {
     let auth = actor_auth();
     let parent = parent_span();
     let data = ManagementData::UpdateKey("k");
-    let mut request = call_with(Some(&data), &auth, Some(&parent));
+    let mut request = call(Some(&data), Some(&auth), Some(&parent));
     request.http_request = Some(http_request("/key/generate"));
     let outcome = run(&harness, request, ready(Ok(created_key()))).await;
     assert_eq!(
@@ -155,7 +151,7 @@ async fn absent_parent_skips_span() {
     let data = ManagementData::UpdateKey("k");
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, None),
+        call(Some(&data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -177,7 +173,7 @@ async fn alert_failure_stops_later_effects() {
     let parent = parent_span();
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, Some(&parent)),
+        call(Some(&data), Some(&auth), Some(&parent)),
         ready(Ok(created_key())),
     )
     .await;
@@ -200,7 +196,7 @@ async fn success_span_error_skips_cache() {
     let parent = parent_span();
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, Some(&parent)),
+        call(Some(&data), Some(&auth), Some(&parent)),
         ready(Ok(created_key())),
     )
     .await;
@@ -219,7 +215,7 @@ async fn cache_error_stops_remaining_deletes() {
     let parent = parent_span();
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, Some(&parent)),
+        call(Some(&data), Some(&auth), Some(&parent)),
         ready(Ok(created_key())),
     )
     .await;
@@ -245,7 +241,12 @@ async fn debug_not_warning() {
     let mut harness = Harness::default();
     harness.cache.failing = Some("k".to_owned());
     let data = ManagementData::UpdateKey("k");
-    let outcome = run(&harness, call(Some(&data)), ready(Ok(created_key()))).await;
+    let outcome = run(
+        &harness,
+        call(Some(&data), None, None),
+        ready(Ok(created_key())),
+    )
+    .await;
     assert!(outcome.is_ok());
     let written = fs::read_to_string(log.path()).unwrap();
     assert!(written.contains("DEBUG"));
@@ -267,7 +268,7 @@ async fn unchanged_result_after_effect_failure() {
     let parent = parent_span();
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, Some(&parent)),
+        call(Some(&data), Some(&auth), Some(&parent)),
         ready(Ok(created_key())),
     )
     .await;
@@ -291,7 +292,7 @@ async fn handler_error_no_alert_or_eviction() {
     };
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, Some(&parent)),
+        call(Some(&data), Some(&auth), Some(&parent)),
         ready(Err(failure)),
     )
     .await;
@@ -314,7 +315,7 @@ async fn failure_span_keeps_original_exception() {
     };
     let outcome = run(
         &harness,
-        call_with(None, &auth, Some(&parent)),
+        call(None, Some(&auth), Some(&parent)),
         ready(Err(failure)),
     )
     .await;
@@ -345,14 +346,19 @@ async fn kwargs_data_only() {
         "data".to_owned(),
         Json::List(vec![Json::Text("k".to_owned())]),
     )]);
-    let mut request = call_with(None, &auth, None);
+    let mut request = call(None, Some(&auth), None);
     request.request_kwargs = kwargs.clone();
     let outcome = run(&harness, request, ready(Ok(created_key()))).await;
     assert!(outcome.is_ok());
     assert!(harness.cache.deletes.entries().is_empty());
     assert_eq!(harness.alert.sent.entries()[0].request_kwargs, kwargs);
     let data = ManagementData::UpdateKey("k");
-    let second = run(&harness, call(Some(&data)), ready(Ok(created_key()))).await;
+    let second = run(
+        &harness,
+        call(Some(&data), None, None),
+        ready(Ok(created_key())),
+    )
+    .await;
     assert!(second.is_ok());
     assert_eq!(harness.cache.deletes.entries(), keys(&["k"]));
 }
@@ -406,7 +412,7 @@ async fn typed_request_dispatch(
     let data = kind.data(&ids);
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, None),
+        call(Some(&data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -422,7 +428,7 @@ async fn raw_keys_no_prefix_or_hash() {
     let team_data = ManagementData::DeleteTeams(&teams);
     let outcome = run(
         &harness,
-        call_with(Some(&team_data), &auth, None),
+        call(Some(&team_data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -432,7 +438,7 @@ async fn raw_keys_no_prefix_or_hash() {
     let user_data = ManagementData::DeleteUsers(&users);
     let second = run(
         &harness,
-        call_with(Some(&user_data), &auth, None),
+        call(Some(&user_data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -451,7 +457,7 @@ async fn duplicates_keep_order() {
     let data = ManagementData::DeleteKeys(&ids);
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, None),
+        call(Some(&data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -467,27 +473,26 @@ async fn null_data_and_other_types_noop() {
     let empty_data = ManagementData::DeleteKeys(&empty);
     let outcome = run(
         &harness,
-        call_with(Some(&empty_data), &auth, None),
+        call(Some(&empty_data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
     assert!(outcome.is_ok());
     let second = run(
         &harness,
-        call_with(None, &auth, None),
+        call(None, Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
     assert!(second.is_ok());
     assert!(harness.cache.deletes.entries().is_empty());
-    let data = ManagementData::UpdateCustomer("c");
-    delete_api_key_from_cache(&harness.cache, Some(&data)).expect("another type is skipped");
-    delete_user_id_from_cache(&harness.cache, Some(&data)).expect("another type is skipped");
-    delete_team_id_from_cache(&harness.cache, Some(&data)).expect("another type is skipped");
-    assert!(harness.cache.deletes.entries().is_empty());
-    delete_customer_id_from_cache(&harness.cache, Some(&data))
-        .expect("the customer helper deletes");
-    assert_eq!(harness.cache.deletes.entries(), keys(&["c"]));
+    let key_data = ManagementData::UpdateKey("k1");
+    delete_cached_keys(&harness.cache, Some(&key_data)).expect("the key class deletes its one id");
+    let deleted = keys(&["c1"]);
+    let customer = ManagementData::DeleteCustomers(&deleted);
+    delete_cached_keys(&harness.cache, Some(&customer))
+        .expect("the customer class deletes its ids");
+    assert_eq!(harness.cache.deletes.entries(), keys(&["k1", "c1"]));
 }
 
 #[test]
@@ -495,7 +500,7 @@ fn direct_eviction_error_propagates() {
     let mut harness = Harness::default();
     harness.cache.failing = Some("t1".to_owned());
     let data = ManagementData::UpdateTeam("t1");
-    let error = delete_team_id_from_cache(&harness.cache, Some(&data))
+    let error = delete_cached_keys(&harness.cache, Some(&data))
         .expect_err("the cache error reaches the caller");
     assert_eq!(
         error,
@@ -521,7 +526,7 @@ fn auth_cache_tier_delete_evicts() {
         )
         .expect("the memory tier stores the value");
     assert!(cache.get("sk-live", true).is_some());
-    delete_api_key_from_cache(&cache, Some(&ManagementData::UpdateKey("sk-live")))
+    delete_cached_keys(&cache, Some(&ManagementData::UpdateKey("sk-live")))
         .expect("the delete reaches the tier");
     assert!(cache.get("sk-live", true).is_none());
 }
@@ -533,7 +538,7 @@ async fn success_evicts() {
     let data = ManagementData::UpdateUser("u1");
     let outcome = run(
         &harness,
-        call_with(Some(&data), &auth, None),
+        call(Some(&data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -556,7 +561,7 @@ async fn handler_failure_preserved() {
             detail: "denied".to_owned(),
         },
     };
-    let outcome = run(&harness, call(None), ready(Err(failure))).await;
+    let outcome = run(&harness, call(None, None, None), ready(Err(failure))).await;
     assert_eq!(
         outcome.expect_err("the handler error comes back"),
         FakeHandlerError::Rejected {
@@ -581,7 +586,7 @@ async fn span_failure_original_error() {
     };
     let outcome = run(
         &harness,
-        call_with(None, &auth, Some(&parent)),
+        call(None, Some(&auth), Some(&parent)),
         ready(Err(failure)),
     )
     .await;
@@ -605,7 +610,7 @@ async fn customer_cache_eviction() {
     let updated = ManagementData::UpdateCustomer("c1");
     let outcome = run(
         &harness,
-        call_with(Some(&updated), &auth, None),
+        call(Some(&updated), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
@@ -614,7 +619,7 @@ async fn customer_cache_eviction() {
     let data = ManagementData::DeleteCustomers(&deleted);
     let second = run(
         &harness,
-        call_with(Some(&data), &auth, None),
+        call(Some(&data), Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
