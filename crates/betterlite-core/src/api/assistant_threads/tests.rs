@@ -619,6 +619,7 @@ async fn azure_gets_litellm_params_and_the_shared_settings() {
 
 #[rstest]
 #[case::absent("", "")]
+#[case::empty_body("{}", "")]
 #[case::null_body("null", "env-token")]
 #[case::body_token(r#"{"azure_ad_token":"body-token"}"#, "body-token")]
 #[tokio::test]
