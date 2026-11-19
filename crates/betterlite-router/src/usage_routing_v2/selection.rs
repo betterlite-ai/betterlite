@@ -192,14 +192,17 @@ fn amount(
     value: &Json,
     field: &'static str,
 ) -> Result<Decimal, LimitError> {
-    let non_numeric = || LimitError::NonNumeric {
+    let Json::Number(number) = value else {
+        return Err(non_numeric(deployment, field));
+    };
+    parse_decimal_lexeme(&number.to_string()).map_err(|_source| non_numeric(deployment, field))
+}
+
+fn non_numeric(deployment: &DeploymentSpec, field: &'static str) -> LimitError {
+    LimitError::NonNumeric {
         deployment: deployment.id().unwrap_or_default().to_owned(),
         field,
-    };
-    let Json::Number(number) = value else {
-        return Err(non_numeric());
-    };
-    parse_decimal_lexeme(&number.to_string()).map_err(|_source| non_numeric())
+    }
 }
 
 // tpm_values[index] if tpm_values else 0, with a value the dict holds as None staying None.
