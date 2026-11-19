@@ -1,0 +1,76 @@
+task: B8178
+deviations:
+  - what: >-
+      An embedding reply that is not JSON, has a field of the wrong type, or misses a field the shared
+      EmbeddingResponse declares (model, and an item's object, embedding and index) fails with a typed
+      GigaChatEmbeddingError carrying status 500, where LiteLLM lets the raw Python exception escape or, for a
+      missing model, answers model null.
+    why: >-
+      betterlite decodes the reply into typed records, so a shape LiteLLM only fails on at attribute access is
+      refused where it is read; 500 is the status LiteLLM's own handler gives an unclassified exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L142-L168
+  - what: >-
+      An item usage prompt_tokens that is negative is refused with status 500, and a summed total above u32::MAX
+      stays at that value; LiteLLM keeps the unbounded Python integer it computed.
+    why: >-
+      EmbeddingUsage counts are u32 in the shared response type, and a negative or that large a count only comes
+      from a corrupt reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L152-L166
+  - what: >-
+      The image id cache is a bounded map owned by the uploader value, with the capacity a constructor argument and
+      the oldest entry leaving first, instead of LiteLLM's process-wide unbounded dict.
+    why: >-
+      A global unbounded cache grows without limit and leaks between requests and tests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L25-L27
+  - what: >-
+      The upload is sent over a certificate-verifying client; LiteLLM disables TLS verification for the upload as
+      well as for the image download.
+    why: >-
+      The skipped checks are only needed to fetch the caller's image, and the upload carries the bearer token, so
+      verifying it is a security fix no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L131-L139
+  - what: >-
+      An upload reply whose id is absent, empty or not a string returns none and is not cached, where LiteLLM
+      returns and caches whatever the reply's id field holds.
+    why: >-
+      The uploader answers with a file id string, and a value of another type or an empty one cannot be sent back
+      to GigaChat.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L140-L147
+  - what: >-
+      A pass-through chat reply without a created value logs created 0, where LiteLLM's chat transform fills in
+      int(time.time()).
+    why: >-
+      The logging parse has no clock, and a fabricated current time is not a fact of the reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L486
+  - what: >-
+      The streaming pass-through logging hands the cost layer the parsed chunks in order, where LiteLLM hands it
+      the ModelResponse that stream_chunk_builder merges from them.
+    why: >-
+      B3570's pass-through contract logs the parsed chunks and owns the merge; the per-chunk parse is what this
+      task ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L135-L192
+  - what: >-
+      A collected chunk that is JSON but not an object, or that the GigaChat chunk parser cannot decode, is
+      skipped; LiteLLM raises on it after the client has already received the stream.
+    why: >-
+      Spend logging must not fail the request on one malformed chunk of a stream that was already relayed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L158-L183
+kept_bugs:
+  - what: >-
+      Any upload failure is logged and reported as no attachment instead of failing the chat call, keeping
+      LiteLLM's error swallowing.
+    why: >-
+      A working setup depends on the message going out without the image when the upload fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L149-L151
+  - what: >-
+      The embedding reply's own usage is replaced by the per-item prompt_tokens sum, dropping precached tokens the
+      provider reported at the top level, exactly as LiteLLM does.
+    why: >-
+      Callers and LiteLLM's cost accounting depend on the rebuilt total, so a working setup relies on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L152-L166
+  - what: >-
+      The pass-through key reads api_key or GIGACHAT_API_KEY only, never GIGACHAT_CREDENTIALS, so a deployment
+      configured with credentials alone sends no api_key through the pass-through.
+    why: >-
+      Working deployments configure GIGACHAT_API_KEY for the pass-through, and the task names this key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L198-L202
