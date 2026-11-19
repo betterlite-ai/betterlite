@@ -54,8 +54,11 @@ impl FileCreationParams {
         let storage = target_storage.filter(|storage| !storage.is_empty());
         let names = target_model_names
             .unwrap_or_default()
-            .into_iter()
-            .filter_map(normalized_name)
+            .iter()
+            .map(String::as_str)
+            .map(strip_space)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
             .collect();
         Self {
             target_storage: storage.unwrap_or_else(|| DEFAULT_TARGET_STORAGE.to_owned()),
@@ -96,11 +99,6 @@ fn strip_space(text: &str) -> &str {
     text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     })
-}
-
-fn normalized_name(name: String) -> Option<String> {
-    let trimmed = strip_space(&name);
-    (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }
 
 fn extract_target_storage_simple(target_storage_form: Option<&str>) -> String {

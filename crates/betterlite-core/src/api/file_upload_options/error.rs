@@ -1,5 +1,3 @@
-use std::fmt::{self, Display, Formatter};
-
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,13 +7,14 @@ pub enum ResourceKind {
     FineTuningJob,
 }
 
-impl Display for ResourceKind {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+impl ResourceKind {
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
             Self::File => "file",
             Self::Batch => "batch",
             Self::FineTuningJob => "fine-tuning job",
-        })
+        }
     }
 }
 
@@ -31,12 +30,15 @@ pub enum FileUploadOptionsError {
     )]
     ModelNotAllowed,
     #[error(
-        "Raw provider {kind} ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed {kind} id returned when the {kind} was created."
+        "Raw provider {} ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed {} id returned when the {} was created.",
+        .kind.text(),
+        .kind.text(),
+        .kind.text()
     )]
     RawProviderId { kind: ResourceKind },
     #[error("Managed resource ownership validation is unavailable.")]
     OwnershipCheckUnavailable,
-    #[error("The caller does not have access to this managed {kind} id.")]
+    #[error("The caller does not have access to this managed {} id.", .kind.text())]
     AccessDenied { kind: ResourceKind },
     #[error("'model' must be a string")]
     ModelNotText,

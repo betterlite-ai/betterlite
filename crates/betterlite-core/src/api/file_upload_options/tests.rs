@@ -158,24 +158,21 @@ struct RecordingChecker {
     object_id: Cell<Option<String>>,
 }
 
-#[async_trait]
-impl ManagedResourceAccessChecker for RecordingChecker {
-    async fn can_call_unified_file_id(
-        &self,
-        unified_file_id: &str,
-        _principal: &Principal,
-    ) -> bool {
-        self.file_id.set(Some(unified_file_id.to_owned()));
+impl RecordingChecker {
+    fn record(&self, target: &Cell<Option<String>>, id: &str) -> bool {
+        target.set(Some(id.to_owned()));
         self.allowed
     }
+}
 
-    async fn can_call_unified_object_id(
-        &self,
-        unified_object_id: &str,
-        _principal: &Principal,
-    ) -> bool {
-        self.object_id.set(Some(unified_object_id.to_owned()));
-        self.allowed
+#[async_trait]
+impl ManagedResourceAccessChecker for RecordingChecker {
+    async fn can_call_unified_file_id(&self, id: &str, _principal: &Principal) -> bool {
+        self.record(&self.file_id, id)
+    }
+
+    async fn can_call_unified_object_id(&self, id: &str, _principal: &Principal) -> bool {
+        self.record(&self.object_id, id)
     }
 }
 
