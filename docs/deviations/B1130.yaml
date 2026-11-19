@@ -3,6 +3,15 @@ deviations:
   - what: An async entry the caller gave a synchronous client runs that client's request and answers the page or deleted object, where LiteLLM awaits the returned value and raises TypeError.
     why: Awaiting a synchronous client's return value is a crash, not a response a working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L374-L412
+  - what: A structured timeout reaches the OpenAI client as its read phase alone, where LiteLLM hands the SDK the whole httpx.Timeout so every phase applies.
+    why: B519's client timeout is one second count, so the facade keeps the read phase, the one that bounds a listening request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L88-L101
+  - what: The Azure client's litellm_params timeout is rebuilt as nothing for a structured timeout and as seconds for numeric text, where LiteLLM puts the raw value in litellm_params and initialize_azure_sdk_client hands it to AzureOpenAI.
+    why: B686's litellm_params carries a number, so a raw httpx.Timeout has no field to land in and raw text would reach the SDK as text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L628-L687
+  - what: A supplied AzureOpenAI or AsyncAzureOpenAI client under provider openai is rebuilt as B519's OpenAI client, which sends the OpenAI list or delete request where LiteLLM keeps the Azure client and it sends its own Azure path and api-version.
+    why: LiteLLM's OpenAI branch passes the client through unchanged (llms/openai/openai.py#L2254-L2277), and B519's client carries one base and no Azure endpoint or api-version.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L126-L134
 kept_bugs:
   - what: "An azure_ad_token from extra_body, or from AZURE_AD_TOKEN when extra_body is null, is resolved and then dropped: unless it arrives as the top-level azure_ad_token kwarg, the Azure request carries api-key and no bearer token."
     why: LiteLLM's initialize_azure_sdk_client builds the client from litellm_params alone, and B686 keeps that.
