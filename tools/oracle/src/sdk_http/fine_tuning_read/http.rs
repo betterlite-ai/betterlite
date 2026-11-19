@@ -206,11 +206,11 @@ fn paging(operation: ReadOperation<'_>) -> Vec<(String, String)> {
         return Vec::new();
     };
     let mut query = Vec::new();
-    if let Some(after) = after.filter(|value| !value.is_empty()) {
-        query.push(("after".to_owned(), after.to_owned()));
+    if let Some(cursor) = after.filter(|value| !value.is_empty()) {
+        query.push(("after".to_owned(), cursor.to_owned()));
     }
-    if let Some(limit) = limit {
-        query.push(("limit".to_owned(), limit.to_string()));
+    if let Some(page_size) = limit {
+        query.push(("limit".to_owned(), page_size.to_string()));
     }
     query
 }
