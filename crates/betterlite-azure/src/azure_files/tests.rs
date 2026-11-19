@@ -53,7 +53,7 @@ const DEBUG_RESPONSE: &str = "message=create_file_response";
 
 const FILE_JSON: &str = r#"{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}"#;
 const PAGE_JSON: &str = r#"{"object":"list","data":[{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}],"has_more":false}"#;
-const STATUS_ERROR: &str = r#"{"error":{"message":"no such file","type":"invalid_request_error","param":"file_id","code":"not_found"}}"#;
+const STATUS_ERROR: &str = r#"{"error":{"code":"not_found","message":"no such file","param":"file_id","type":"invalid_request_error"}}"#;
 
 type Calls = Arc<Mutex<Vec<OutboundRequest>>>;
 type Seen = Arc<Mutex<Vec<ClientKind>>>;
@@ -530,13 +530,13 @@ struct Fixtures {
     sources: TestSources,
 }
 
-fn connect<'roots>(
+fn connect<'borrow, 'sources>(
     step: &Step,
-    fixtures: &'roots Fixtures,
-    cache: &'roots mut TestCache,
-    refresh: &'roots mut RefreshProviderCache<'roots>,
-    materializer: &'roots Materializer,
-) -> Connection<'roots, 'roots, Materializer> {
+    fixtures: &'sources Fixtures,
+    cache: &'borrow mut TestCache,
+    refresh: &'borrow mut RefreshProviderCache<'sources>,
+    materializer: &'borrow Materializer,
+) -> Connection<'borrow, 'sources, Materializer> {
     Connection {
         settings: step.settings.clone(),
         params: step.params.clone(),
@@ -557,15 +557,6 @@ fn connect<'roots>(
 fn run(step: &Step) -> Observation {
     let calls: Calls = Arc::default();
     let seen: Seen = Arc::default();
-    let transport = Fake {
-        planned: step.reply.clone(),
-        calls: Arc::clone(&calls),
-        fail: step.fail,
-    };
-    let materializer = Materializer {
-        mode: step.builder,
-        seen: Arc::clone(&seen),
-    };
     let fixtures = Fixtures {
         endpoints: EndpointSettings::default(),
         environment: BTreeMap::new(),
@@ -575,14 +566,22 @@ fn run(step: &Step) -> Observation {
         hit: step.cache_hit,
     };
     let mut refresh = RefreshProviderCache::new(&fixtures.sources);
-    let connection = connect(step, &fixtures, &mut cache, &mut refresh, &materializer);
     let runtime = Builder::new_current_thread()
         .build()
         .expect("a test runtime builds");
-    let (outcome, messages) =
-        capture(|| runtime.block_on(perform(connection.open(), step, &transport)));
-    drop(transport);
-    drop(materializer);
+    let (outcome, messages) = {
+        let transport = Fake {
+            planned: step.reply.clone(),
+            calls: Arc::clone(&calls),
+            fail: step.fail,
+        };
+        let materializer = Materializer {
+            mode: step.builder,
+            seen: Arc::clone(&seen),
+        };
+        let connection = connect(step, &fixtures, &mut cache, &mut refresh, &materializer);
+        capture(|| runtime.block_on(perform(connection.open(), step, &transport)))
+    };
     observation(outcome, calls, messages, seen)
 }
 

@@ -2,6 +2,8 @@ pub mod client;
 pub mod error;
 mod patched;
 
+use std::sync::{Mutex, PoisonError};
+
 use betterlite_openai::files::FilesApi;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{
@@ -10,11 +12,12 @@ use betterlite_openai::files::records::{
 };
 use betterlite_openai::files::transport::FileTransport;
 use indexmap::IndexMap;
+use serde_json::error::Category;
 use uuid::Uuid;
 
 use client::{Opened, SelectedClient};
 use error::AzureFilesError;
-use patched::Patched;
+use patched::{Patched, Recording};
 
 fn api<'client, T>(
     client: &'client SelectedClient,
@@ -125,18 +128,49 @@ async fn delete<T>(
 where
     T: FileTransport,
 {
-    let record = api(client, transport, None)
-        .delete_file(&client.files, file_id)
-        .await;
-    Ok(Reply::Deleted(deleted_record(file_id, record)?))
+    let observed = Mutex::new(None);
+    let calls = FilesApi {
+        transport: Recording {
+            inner: Patched {
+                client,
+                inner: transport,
+                extra_headers: None,
+            },
+            content_type: &observed,
+        },
+        boundaries: Uuid::new_v4,
+    };
+    let reply = calls.delete_file(&client.files, file_id).await;
+    let content_type = observed
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    Ok(Reply::Deleted(deleted_record(
+        file_id,
+        reply,
+        content_type.as_deref(),
+    )?))
 }
 
+// The SDK parses a reply as JSON only when its content type ends in json, and raises when that parse fails
 fn deleted_record(
     file_id: &str,
-    record: Result<FileDeleted, FilesError>,
+    reply: Result<FileDeleted, FilesError>,
+    content_type: Option<&str>,
 ) -> Result<FileDeleted, AzureFilesError> {
-    match record {
+    match reply {
         Ok(record) => Ok(record),
+        Err(FilesError::Decode { source })
+            if matches!(source.classify(), Category::Syntax | Category::Eof)
+                && content_type.is_some_and(|value| {
+                    value
+                        .split(';')
+                        .next()
+                        .is_some_and(|kind| kind.ends_with("json"))
+                }) =>
+        {
+            Err(AzureFilesError::from(FilesError::Decode { source }))
+        }
         Err(FilesError::Decode { .. }) => Ok(FileDeleted {
             id: file_id.to_owned(),
             object: FileKind::File,

@@ -408,6 +408,14 @@ fn delete_step(body: &str) -> Step {
     }
 }
 
+fn plain_delete_step(body: &str) -> Step {
+    Step {
+        file_id: Some("file-1".to_owned()),
+        reply: Some(reply(200, body)),
+        ..step(Action::Delete)
+    }
+}
+
 fn synthesized() -> FileDeleted {
     FileDeleted {
         id: "file-1".to_owned(),
@@ -441,19 +449,38 @@ fn file_delete_keeps_a_real_record() {
     );
 }
 
-fn file_delete_replaces_everything_else() {
-    for body in ["{}", "", "not json"] {
+// a body that parses as JSON but is not a valid FileDeleted, or any body without a json content type, is replaced
+fn file_delete_replaces_unusable_bodies() {
+    let empty_object = run(&delete_step("{}"));
+    assert_eq!(empty_object.outcome, Outcome::Deleted(synthesized()));
+    let text_empty = run(&plain_delete_step(""));
+    assert_eq!(text_empty.outcome, Outcome::Deleted(synthesized()));
+    let text_body = run(&plain_delete_step("not json"));
+    assert_eq!(text_body.outcome, Outcome::Deleted(synthesized()));
+}
+
+// the SDK parses JSON only for a json content type, and raises when that body is not JSON
+fn file_delete_surfaces_a_json_parse_failure() {
+    for body in ["", "not json"] {
         let observation = run(&delete_step(body));
-        assert_eq!(
-            observation.outcome,
-            Outcome::Deleted(synthesized()),
-            "the body {body:?} is not a FileDeleted"
+        let Outcome::Raised(raised) = observation.outcome else {
+            panic!("an unparseable json body raises");
+        };
+        assert_eq!(raised.class, "ValidationError");
+        assert!(
+            raised.message.is_none(),
+            "the parse error carries no model message"
         );
     }
 }
 
 fn file_delete_status_error() {
-    let observation = run(&delete_step(STATUS_ERROR));
+    let failing = Step {
+        file_id: Some("file-1".to_owned()),
+        reply: Some(reply(404, STATUS_ERROR)),
+        ..step(Action::Delete)
+    };
+    let observation = run(&failing);
     let Outcome::Raised(raised) = observation.outcome else {
         panic!("a 404 reply raises");
     };
@@ -496,7 +523,8 @@ fn file_list_forms() {
 #[test]
 fn file_delete_forms() {
     file_delete_keeps_a_real_record();
-    file_delete_replaces_everything_else();
+    file_delete_replaces_unusable_bodies();
+    file_delete_surfaces_a_json_parse_failure();
     file_delete_status_error();
     file_delete_organization_is_unused();
 }

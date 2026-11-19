@@ -9,8 +9,8 @@ deviations:
   - what: A v1, latest or preview api_version with no api_base fails with "Must provide one of the `base_url` or `azure_endpoint` arguments, or the `AZURE_OPENAI_ENDPOINT` environment variable", where LiteLLM builds the base URL "None/openai/v1/" and the SDK rejects it with its own URL error.
     why: betterlite names the missing endpoint; the SDK's message names no field the caller set.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L545-L575
-  - what: "A delete reply body of {} is an invalid FileDeleted, so it is replaced with {id: file_id, deleted: true, object: file}, where LiteLLM's lenient construction keeps a FileDeleted whose id, object and deleted are null."
-    why: The reply carries no deleted record, and the id the caller asked to delete is the only usable answer; the null record is a parse artifact.
+  - what: "A delete reply body that parses as a JSON object the reply's FileDeleted shape rejects (an object with no fields, or fields of the wrong type) is replaced with {id: file_id, deleted: true, object: file}, where LiteLLM's lenient construction keeps a FileDeleted carrying whatever the object held."
+    why: The reply carries no usable deleted record, and the id the caller asked to delete is the only usable answer; the hollow record is a parse artifact.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L192-L232
   - what: A synchronous call handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and returns the reply, where LiteLLM's retrieve, list and delete hand the un-awaited SDK coroutine to a sync caller and create and content fail with AttributeError on it.
     why: A sync call returns a value; an un-awaited coroutine is a leak no working setup relies on.

@@ -229,7 +229,7 @@ impl SelectedClient {
 }
 
 // B531 picked the v1 key in LiteLLM's order: api_key, then the provider, then the ad token
-fn v1_auth(key: Option<&V1Key>) -> Result<FileAuth, AzureFilesError> {
+fn v1_auth(key: Option<&V1Key<'_>>) -> Result<FileAuth, AzureFilesError> {
     match key {
         Some(V1Key::Static(secret)) if !secret.expose_secret().is_empty() => {
             Ok(FileAuth::Bearer(secret.clone()))
