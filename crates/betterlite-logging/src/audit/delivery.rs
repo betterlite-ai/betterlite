@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use crate::callback_logger::CallbackLogger;
@@ -28,8 +27,8 @@ impl Callback for AuditCallbackJob {
         self.callback.callback_name()
     }
 
-    fn call(self) -> impl Future<Output = Result<(), LoggerError>> + Send + 'static {
-        async move { self.callback.async_log_audit_log_event(&self.payload).await }
+    async fn call(self) -> Result<(), LoggerError> {
+        self.callback.async_log_audit_log_event(&self.payload).await
     }
 }
 

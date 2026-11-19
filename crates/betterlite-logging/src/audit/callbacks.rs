@@ -37,9 +37,9 @@ pub struct CatalogAuditLoggerBuilder {
 impl DedicatedAuditLoggerBuilder for CatalogAuditLoggerBuilder {
     fn build(&self, params: &JsonValue) -> Result<Arc<dyn CallbackLogger>, AuditLoggerBuildError> {
         let source: Source<()> = serde_json::from_value(params.clone())
-            .map_err(|source| AuditLoggerBuildError::Parameters { source })?;
+            .map_err(|error| AuditLoggerBuildError::Parameters { source: error })?;
         let logger = build_audit_logger(&self.inputs, &source)
-            .map_err(|source| AuditLoggerBuildError::Build { source })?;
+            .map_err(|error| AuditLoggerBuildError::Build { source: error })?;
         Ok(logger)
     }
 }
