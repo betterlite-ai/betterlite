@@ -2344,6 +2344,7 @@ dependencies = [
  "aws-smithy-async",
  "axum",
  "base64 0.23.1",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
  "betterlite-env",
@@ -2388,11 +2389,13 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",
  "secrecy",
+ "serde_json",
 ]
 
 [[package]]
@@ -3271,6 +3274,7 @@ dependencies = [
 name = "betterlite-oracle-mcp"
 version = "0.1.0"
 dependencies = [
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
  "betterlite-http",
