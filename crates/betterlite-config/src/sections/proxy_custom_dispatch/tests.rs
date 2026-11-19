@@ -145,6 +145,62 @@ fn an_empty_spelling_falls_through_to_the_next_source() {
 }
 
 #[test]
+fn an_empty_source_leaves_the_next_one_to_answer() {
+    // an empty litellm_settings.aleph_alpha_key is skipped like every other source
+    let settings = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  aleph_alpha_key: \"\"\n")
+    .expect("settings load")
+    .sections
+    .proxy_custom_dispatch;
+    let global = SecretString::from("global-key");
+    assert_eq!(
+        key(settings
+            .resolve_aleph_alpha_key(None, Some(&global))
+            .as_ref()
+            .expect("the global key answers after the empty yaml key")),
+        "global-key"
+    );
+
+    // the second environment spelling is skipped too
+    let settings = empty_config(BTreeMap::from([(
+        "ALEPHALPHA_API_KEY".to_owned(),
+        String::new(),
+    )]));
+    assert_eq!(
+        key(settings
+            .resolve_aleph_alpha_key(None, Some(&global))
+            .as_ref()
+            .expect("the global key answers after the empty spelling")),
+        "global-key"
+    );
+
+    // an empty global key is no key at all
+    let settings = empty_config(BTreeMap::new());
+    let empty = SecretString::from("");
+    assert!(
+        settings
+            .resolve_aleph_alpha_key(None, Some(&empty))
+            .is_none()
+    );
+
+    // an empty global base and an empty environment base both leave the provider host to answer
+    assert_eq!(
+        Settings::default().resolve_aleph_alpha_base(None, Some("")),
+        DEFAULT_ALEPH_ALPHA_BASE
+    );
+    let settings = empty_config(BTreeMap::from([(
+        "ALEPH_ALPHA_API_BASE".to_owned(),
+        String::new(),
+    )]));
+    assert_eq!(
+        settings.resolve_aleph_alpha_base(None, None),
+        DEFAULT_ALEPH_ALPHA_BASE
+    );
+}
+
+#[test]
 fn the_base_falls_back_to_the_provider_host() {
     let settings = Settings::default();
     assert_eq!(

@@ -1,11 +1,14 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::ChatRequest;
@@ -440,6 +443,39 @@ fn the_aleph_prompt_joins_messages_without_labels_for_other_models() {
 }
 
 #[test]
+fn the_aleph_body_carries_the_call_parameters() {
+    let request = chat_operation(
+        br#"{"messages":[{"role":"user","content":"hi"}],"max_completion_tokens":32,"temperature":0.5,"top_p":0.8,"top_k":7}"#,
+        false,
+    );
+    let deployment = deployment(
+        "luminous-base",
+        "https://api.aleph-alpha.com/complete",
+        Some("aleph-key"),
+    );
+    let call = aleph::prepare(&request, &deployment).unwrap();
+    let body = &call.request.body;
+    // LiteLLM forwards max_completion_tokens as max_tokens for a provider without that parameter
+    assert_eq!(
+        body.get("max_tokens").and_then(|value| value.as_u64()),
+        Some(32_u64)
+    );
+    assert!(body.get("max_completion_tokens").is_none());
+    assert_eq!(
+        body.get("temperature").and_then(|value| value.as_f64()),
+        Some(0.5_f64)
+    );
+    assert_eq!(
+        body.get("top_p").and_then(|value| value.as_f64()),
+        Some(0.8_f64)
+    );
+    assert_eq!(
+        body.get("top_k").and_then(|value| value.as_u64()),
+        Some(7_u64)
+    );
+}
+
+#[test]
 fn the_aleph_reply_becomes_the_synthetic_chat_completion() {
     let request = chat_operation(
         br#"{"model":"client-alias","messages":[{"role":"user","content":"The capital of France is"}]}"#,
@@ -731,6 +767,30 @@ fn a_custom_stream_is_refused() {
     };
     assert_eq!(provider, "custom");
     assert_eq!(operation, "stream");
+}
+
+#[tokio::test]
+async fn a_legacy_call_that_cannot_connect_is_a_transport_error() {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
+    let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
+    let bases = [
+        (Legacy::LitellmProxy, "http://127.0.0.1:9"),
+        (Legacy::AlephAlpha, "http://127.0.0.1:9/complete"),
+        (Legacy::Custom, "http://127.0.0.1:9/generate"),
+    ];
+    for (legacy, base) in bases {
+        let deployment = deployment("model-name", base, Some("test-key"));
+        let prepared = legacy.prepare(&request, &deployment, &catalog()).unwrap();
+        let refused = match legacy.execute(&client, &prepared, &deployment).await {
+            Ok(_) => panic!("a closed port answered"),
+            Err(error) => error,
+        };
+        assert!(
+            matches!(refused, OperationError::Http { .. }),
+            "{legacy:?} answered {refused}"
+        );
+    }
 }
 
 #[test]

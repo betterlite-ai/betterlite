@@ -215,6 +215,28 @@ fn unbuilt_chain_stops_startup(#[case] params: &str, #[case] provider: &str, #[c
     }
 }
 
+#[rstest]
+#[case::aleph_alpha(
+    "      model: aleph_alpha/luminous-base-control\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n"
+)]
+#[case::litellm_proxy(
+    "      model: litellm_proxy/gemini/gemini-1.5-pro\n      api_key: k\n      api_base: https://proxy.example\n"
+)]
+#[case::custom(
+    "      model: custom/my-model\n      api_key: k\n      api_base: https://custom.example/generate\n"
+)]
+fn a_legacy_deployment_with_its_own_chain_starts(#[case] params: &str) {
+    let yaml = format!("model_list:\n  - model_name: chain-model\n    litellm_params:\n{params}");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1))
+        .expect("the deployment sets its own key and base");
+    assert_eq!(chat.deployments.len(), 1_usize);
+}
+
 #[tokio::test]
 async fn a_mocked_network_answers_without_opening_a_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
