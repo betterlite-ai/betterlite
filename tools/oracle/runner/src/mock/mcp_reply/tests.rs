@@ -91,6 +91,12 @@ fn no_marker() {
     let mut reply = answered(answer_body("99", r#""result": {}"#));
     correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(reply.body, Some(answer_body("99", r#""result": {}"#)));
+    let mut literal = answered(answer_body(r#""99""#, r#""result": {}"#));
+    correlate(&mut literal, &request_correlation).unwrap();
+    assert_eq!(
+        literal.body,
+        Some(answer_body(r#""99""#, r#""result": {}"#))
+    );
 }
 
 #[test]
