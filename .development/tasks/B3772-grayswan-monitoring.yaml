@@ -30,6 +30,8 @@ scope:
   paths:
     - "crates/betterlite-guardrails/src/agent_365_tokens.rs"
     - crates/betterlite-guardrails/src/grayswan.rs
+    - tools/oracle/src/helpers/guardrails/b3771.rs
+    - tools/oracle/src/helpers/guardrails/b3771/**
     - crates/betterlite-guardrails/src/grayswan/**
     - tools/oracle/cases/grayswan/**
   lint_tables: false
