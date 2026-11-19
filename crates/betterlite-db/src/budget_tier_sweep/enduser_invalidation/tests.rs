@@ -8,9 +8,10 @@ use crate::budget_tier_sweep::enduser_invalidation::{
 };
 use crate::budget_tier_sweep::enduser_page_truncation::EndUserWalk;
 use crate::budget_tier_sweep::tests::support::{
-    CountingReconnect, Harness, RecordingCache, TestSchedule, finish, insert_tier, moment, past,
-    schema, spend_of,
+    CountingReconnect, Harness, RecordingCache, TestSchedule, close_store, finish, insert_tier,
+    moment, past, schema, serial_pool, spend_of,
 };
+use crate::postgres_store::session::PostgresStore;
 
 #[tokio::test]
 async fn walk_drops_each_full_page_before_reading_the_next() {
@@ -100,6 +101,38 @@ async fn an_empty_selection_reads_no_customer_and_drops_nothing() {
         }
     );
     assert!(cache.calls().is_empty());
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn a_page_read_retries_after_reconnecting() {
+    let (fixture, store, client) = schema().await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('u1', 'tier-a', 10)",
+        )
+        .await
+        .unwrap();
+    let serial = PostgresStore {
+        pool: Some(serial_pool(&fixture.options.url)),
+    };
+    let held = serial.session().await.unwrap();
+    let cache = RecordingCache::default();
+    let budget_ids = vec![String::from("tier-a")];
+    let request = EndUserWalkRequest {
+        budget_ids: &budget_ids,
+        default_enduser_budget_id: None,
+        batch_size: 2,
+    };
+    let mut reconnect = CountingReconnect::releasing(held);
+    let walk = invalidate_enduser_caches(&serial, &cache, request, Some(&mut reconnect)).await;
+    assert_eq!(walk.invalidated, 1);
+    assert_eq!(reconnect.attempts(), 1);
+    assert_eq!(
+        reconnect.reasons(),
+        vec![String::from("reset_budget_read_endusers_failure")]
+    );
+    close_store(serial);
     finish(fixture, store, client).await;
 }
 
