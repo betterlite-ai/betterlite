@@ -5,6 +5,8 @@ use std::path::Path;
 use crate::error::GateError;
 use crate::git::git;
 
+mod tests;
+
 pub(crate) struct Facts {
     pub(crate) base: String,
     pub(crate) tree: Tree,
@@ -13,10 +15,10 @@ pub(crate) struct Facts {
     pub(crate) numstat: Vec<NumStat>,
     pub(crate) added_rust_lines: Vec<String>,
     pub(crate) added_python_lines: Vec<String>,
-    pub(crate) added_helper_lines: Vec<String>,
+    pub(crate) added_litellm_caller_lines: Vec<String>,
 }
 
-const ORACLE_HELPERS: &str = "tools/oracle/helpers/*.py";
+const LITELLM_CALLERS: [&str; 2] = ["tools/oracle/helpers/*.py", "tools/oracle/sdk_http/*.py"];
 
 pub(crate) struct Tree {
     pub(crate) head: String,
@@ -64,11 +66,13 @@ impl Facts {
                 Some(NumStat { lines, path })
             })
             .collect();
-        let outside_helpers = format!(":(exclude){ORACLE_HELPERS}");
+        let excludes = LITELLM_CALLERS.map(|path| format!(":(exclude){path}"));
+        let mut python = vec!["*.py"];
+        python.extend(excludes.iter().map(String::as_str));
         Ok(Self {
             added_rust_lines: added_lines(root, &base, &["*.rs"])?,
-            added_python_lines: added_lines(root, &base, &["*.py", &outside_helpers])?,
-            added_helper_lines: added_lines(root, &base, &[ORACLE_HELPERS])?,
+            added_python_lines: added_lines(root, &base, &python)?,
+            added_litellm_caller_lines: added_lines(root, &base, &LITELLM_CALLERS)?,
             base,
             tree,
             changed,
