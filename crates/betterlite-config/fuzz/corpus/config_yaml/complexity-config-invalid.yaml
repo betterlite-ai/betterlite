@@ -1,0 +1,7 @@
+model_list:
+  - model_name: bounded-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        escalation_keywords: not-a-list
+        hybrid_boundary_margin: not-a-number
