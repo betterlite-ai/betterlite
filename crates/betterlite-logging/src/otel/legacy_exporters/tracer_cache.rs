@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::hash::Hash;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Mutex, PoisonError};
 use std::thread::Builder;
@@ -94,8 +95,8 @@ fn exporter_text(exporter: &Exporter) -> String {
     }
 }
 
-fn evicted(
-    entries: &mut IndexMap<CacheKey, CachedProvider>,
+fn evicted<K>(
+    entries: &mut IndexMap<K, CachedProvider>,
     max_providers: usize,
 ) -> Option<CachedProvider> {
     if entries.len() <= max_providers {
@@ -111,6 +112,49 @@ fn shut_down(dropped: &CachedProvider, shut_down_count: &mut usize) {
         debug!(error = %error, "otel: a dropped dynamic tracer provider failed to shut down");
     }
     *shut_down_count = shut_down_count.saturating_add(1);
+}
+
+// One double-checked provider cache over any entry map: the dynamic config keys and the Phoenix projects share it
+fn cached_provider<K, F>(
+    cache: &DynamicTracerCache,
+    providers: &Mutex<IndexMap<K, CachedProvider>>,
+    key: K,
+    max_providers: usize,
+    owns_exporter: bool,
+    build: F,
+) -> Result<SdkTracer, LegacyExporterError>
+where
+    K: Eq + Hash,
+    F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>,
+{
+    let mut entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(cached) = entries.shift_remove(&key) {
+        let tracer = cached.provider.tracer(cache.tracer_name.clone());
+        entries.insert(key, cached);
+        return Ok(tracer);
+    }
+    drop(entries);
+    // Exporter construction can block on DNS or TLS, so it runs without the cache lock.
+    let fresh = CachedProvider {
+        provider: build()?,
+        owns_exporter,
+    };
+    let mut cache_entries = providers.lock().unwrap_or_else(PoisonError::into_inner);
+    let racing = cache_entries.shift_remove(&key);
+    let (tracer, dropped) = if let Some(raced) = racing {
+        let tracer = raced.provider.tracer(cache.tracer_name.clone());
+        cache_entries.insert(key, raced);
+        (tracer, Some(fresh))
+    } else {
+        let tracer = fresh.provider.tracer(cache.tracer_name.clone());
+        cache_entries.insert(key, fresh);
+        (tracer, evicted(&mut cache_entries, max_providers))
+    };
+    drop(cache_entries);
+    if let Some(provider) = dropped {
+        cache.dispose(provider);
+    }
+    Ok(tracer)
 }
 
 fn start_shutdown_worker(receiver: Receiver<ShutdownJob>) {
@@ -215,34 +259,14 @@ impl DynamicTracerCache {
     where
         F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>,
     {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(cached) = entries.shift_remove(&key) {
-            let tracer = cached.provider.tracer(self.tracer_name.clone());
-            entries.insert(key, cached);
-            return Ok(tracer);
-        }
-        drop(entries);
-        // Exporter construction can block on DNS or TLS, so it runs without the cache lock.
-        let fresh = CachedProvider {
-            provider: build()?,
+        cached_provider(
+            self,
+            &self.entries,
+            key,
+            self.max_providers,
             owns_exporter,
-        };
-        let mut cache_entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        let racing = cache_entries.shift_remove(&key);
-        let (tracer, dropped) = if let Some(raced) = racing {
-            let tracer = raced.provider.tracer(self.tracer_name.clone());
-            cache_entries.insert(key, raced);
-            (tracer, Some(fresh))
-        } else {
-            let tracer = fresh.provider.tracer(self.tracer_name.clone());
-            cache_entries.insert(key, fresh);
-            (tracer, evicted(&mut cache_entries, self.max_providers))
-        };
-        drop(cache_entries);
-        if let Some(provider) = dropped {
-            self.dispose(provider);
-        }
-        Ok(tracer)
+            build,
+        )
     }
 
     fn dispose(&self, dropped: CachedProvider) {

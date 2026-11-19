@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::PoisonError;
 
 use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider as _;
@@ -10,7 +9,7 @@ use crate::otel::legacy_exporters::error::LegacyExporterError;
 use crate::otel::legacy_exporters::selection::span_processor_plan;
 use crate::otel::legacy_policy::config::Exporter;
 
-use super::{CachedProvider, DynamicTracerCache};
+use super::{DynamicTracerCache, cached_provider};
 
 // Arize Phoenix's _MAX_PROJECT_PROVIDERS
 pub const MAX_PROJECT_PROVIDERS: usize = 64;
@@ -35,47 +34,16 @@ pub(crate) fn tracer_for(
     project: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SdkTracer, LegacyExporterError> {
-    let mut projects = cache
-        .projects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(cached) = projects.shift_remove(project) {
-        let tracer = cached.provider.tracer(cache.tracer_name.clone());
-        projects.insert(project.to_owned(), cached);
-        return Ok(tracer);
-    }
-    drop(projects);
-    // resource detection and exporter construction can block, so they run without the cache lock
-    let fresh = CachedProvider {
-        provider: project_provider(cache, attributes)?,
-        owns_exporter: !matches!(cache.config.exporter, Exporter::InMemory),
-    };
-    let mut cached_projects = cache
-        .projects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(raced) = cached_projects.shift_remove(project) {
-        let tracer = raced.provider.tracer(cache.tracer_name.clone());
-        cached_projects.insert(project.to_owned(), raced);
-        drop(cached_projects);
-        cache.dispose(fresh);
-        return Ok(tracer);
-    }
-    // LiteLLM evicts before inserting once the cache is full, so 64 providers stay
-    let evicted = if cached_projects.len() >= MAX_PROJECT_PROVIDERS {
-        cached_projects
-            .shift_remove_index(0)
-            .map(|(_name, cached)| cached)
-    } else {
-        None
-    };
-    let tracer = fresh.provider.tracer(cache.tracer_name.clone());
-    cached_projects.insert(project.to_owned(), fresh);
-    drop(cached_projects);
-    if let Some(dropped) = evicted {
-        cache.dispose(dropped);
-    }
-    Ok(tracer)
+    let owns_exporter = !matches!(cache.config.exporter, Exporter::InMemory);
+    // LiteLLM keeps 64 project providers, evicting the least recently used one
+    cached_provider(
+        cache,
+        &cache.projects,
+        project.to_owned(),
+        MAX_PROJECT_PROVIDERS,
+        owns_exporter,
+        || project_provider(cache, attributes),
+    )
 }
 
 fn project_provider(
