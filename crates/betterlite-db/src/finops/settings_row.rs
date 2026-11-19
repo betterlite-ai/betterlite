@@ -68,11 +68,10 @@ pub async fn read_settings_row(
     client: Option<PrismaClient<'_>>,
     param: &'static str,
 ) -> Result<Option<BTreeMap<String, JsonData>>, SettingsRowError> {
-    let read_error = |source| SettingsRowError::Read { param, source };
     let stored = ConfigRepository::new(client, false)
         .get_param(param)
         .await
-        .map_err(read_error)?;
+        .map_err(|source| SettingsRowError::Read { param, source })?;
     let Some(config) = stored else {
         return Ok(None);
     };
