@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistant-definitions-seed-delete-assistant
+call: {azure_assistant_definitions: {delete_assistant: [{api_key: sk-seed, api_base: 'https://example.test', api_version: '2024-02-01', assistant_id: asst_1}]}}
+env: {}
+compare: {ignore: []}
