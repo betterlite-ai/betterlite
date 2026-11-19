@@ -103,10 +103,17 @@ async fn answers(
     socket: &Socket,
     input: &Input,
 ) -> HelperResult {
+    let mut proxy = Vec::with_capacity(input.proxy.len());
+    for row in &input.proxy {
+        let mut kwargs = row.clone();
+        update_proxy_request(&mut kwargs, &handler.model)
+            .map_err(|error| helper_error("TypeError", error.to_string()))?;
+        proxy.push(json!(kwargs));
+    }
     Ok(json!({
         "constructor": constructor_view(handler),
         "credentials": credentials_view(handler, &input.credentials)?,
-        "proxy": proxy_view(handler, &input.proxy)?,
+        "proxy": proxy,
         "frames": frames_view(handler, socket, &input.frames).await?,
         "warmup": warmup_view(handler, socket, &input.warmup, &input.warmup_ids).await?,
         "messages": messages_view(&input.case)?,
@@ -147,20 +154,6 @@ fn credentials_view(
             "same": handler.same_provider(row.model.as_deref()),
             "kwargs": kwargs,
         }));
-    }
-    Ok(Value::Array(answers))
-}
-
-fn proxy_view(
-    handler: &ManagedResponsesWebSocket<Socket>,
-    rows: &[IndexMap<String, Json>],
-) -> Result<Value, Box<HelperError>> {
-    let mut answers = Vec::with_capacity(rows.len());
-    for row in rows {
-        let mut kwargs = row.clone();
-        update_proxy_request(&mut kwargs, &handler.model)
-            .map_err(|error| helper_error("TypeError", error.to_string()))?;
-        answers.push(json!(kwargs));
     }
     Ok(Value::Array(answers))
 }
