@@ -35,14 +35,14 @@ async fn region_selection() {
     region_falls_back_through_the_model_arn().await;
 }
 
-async fn config_for(fixture: &mut Fixture, options: Options<'_>) -> RecordedConfig {
+async fn config_for(fixture: &Fixture, options: Options<'_>) -> RecordedConfig {
     let result = fixture.run(options).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     fixture.last_config()
 }
 
 async fn committed_scope_rejects_before_preparation() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture
         .run(Options {
             model: MODEL,
@@ -78,16 +78,16 @@ async fn committed_scope_rejects_before_preparation() {
 }
 
 async fn explicit_region_is_retained() {
-    let mut fixture = Fixture::new();
-    let explicit = config_for(&mut fixture, region_options("eu-west-1")).await;
+    let fixture = Fixture::new();
+    let explicit = config_for(&fixture, region_options("eu-west-1")).await;
     assert_eq!(explicit.region, "eu-west-1");
     assert_eq!(
         explicit.endpoint_uri,
         "https://bedrock-runtime.eu-west-1.amazonaws.com"
     );
 
-    let mut invalid = Fixture::new();
-    let retained = config_for(&mut invalid, region_options("BAD_REGION")).await;
+    let invalid = Fixture::new();
+    let retained = config_for(&invalid, region_options("BAD_REGION")).await;
     assert_eq!(
         retained.region, "BAD_REGION",
         "an explicit region is never validated"
@@ -95,8 +95,8 @@ async fn explicit_region_is_retained() {
 }
 
 async fn an_empty_explicit_region_is_retained() {
-    let mut fixture = Fixture::new();
-    let blank = config_for(&mut fixture, region_options("")).await;
+    let fixture = Fixture::new();
+    let blank = config_for(&fixture, region_options("")).await;
     assert_eq!(blank.region, "", "an empty explicit region is retained");
     assert_eq!(
         blank.endpoint_uri, "https://bedrock-runtime..amazonaws.com",
@@ -149,9 +149,9 @@ fn environment_cases() -> [(RegionInputs<'static>, &'static str); 5] {
 
 async fn region_falls_back_through_the_environment() {
     for (inputs, expected) in environment_cases() {
-        let mut fixture = Fixture::new();
+        let fixture = Fixture::new();
         let config = config_for(
-            &mut fixture,
+            &fixture,
             Options {
                 model: MODEL,
                 pending: None,
@@ -172,7 +172,7 @@ async fn region_falls_back_through_the_environment() {
 }
 
 async fn an_invalid_environment_region_is_rejected() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture
         .run(Options {
             model: MODEL,
@@ -195,9 +195,9 @@ async fn an_invalid_environment_region_is_rejected() {
 
 async fn region_falls_back_through_the_model_arn() {
     let model = "arn:aws:bedrock:eu-central-1:123456789012:async-invoke/fixture";
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let config = config_for(
-        &mut fixture,
+        &fixture,
         Options {
             model,
             pending: None,
@@ -235,9 +235,9 @@ async fn endpoint_precedence() {
         ),
     ];
     for (api_base, endpoint, expected) in cases {
-        let mut fixture = Fixture::new();
+        let fixture = Fixture::new();
         let config = config_for(
-            &mut fixture,
+            &fixture,
             Options {
                 model: MODEL,
                 pending: None,
@@ -257,8 +257,8 @@ async fn endpoint_precedence() {
 }
 
 async fn default_endpoint_is_regional() {
-    let mut fixture = Fixture::new();
-    let config = config_for(&mut fixture, region_options(REGION)).await;
+    let fixture = Fixture::new();
+    let config = config_for(&fixture, region_options(REGION)).await;
     assert_eq!(
         config.endpoint_uri,
         "https://bedrock-runtime.us-east-1.amazonaws.com"
@@ -270,9 +270,9 @@ async fn model_id_is_passed_through() {
         "us.amazon.nova-sonic-v1:0",
         "bedrock/amazon.nova-sonic-v1:0",
     ] {
-        let mut fixture = Fixture::new();
+        let fixture = Fixture::new();
         let _config = config_for(
-            &mut fixture,
+            &fixture,
             Options {
                 model,
                 pending: None,
@@ -295,12 +295,12 @@ pub(super) async fn initial_session_configuration() {
     created_event_when_nothing_is_pending().await;
     pending_update_suppresses_the_created_event().await;
     empty_pending_still_suppresses_the_created_event().await;
-    fresh_transformation_state().await;
+    fresh_transformation_state();
     initial_failures_escape_and_close().await;
 }
 
 async fn created_event_when_nothing_is_pending() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let events = fixture.client.sent_events();
@@ -327,7 +327,7 @@ async fn created_event_when_nothing_is_pending() {
 }
 
 async fn pending_update_suppresses_the_created_event() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture
         .run(Options {
             model: MODEL,
@@ -366,7 +366,7 @@ async fn pending_update_suppresses_the_created_event() {
 }
 
 async fn empty_pending_still_suppresses_the_created_event() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture
         .run(Options {
             model: MODEL,
@@ -390,7 +390,7 @@ async fn empty_pending_still_suppresses_the_created_event() {
     assert_eq!(result.scope.session_committed, Json::Null);
 }
 
-async fn fresh_transformation_state() {
+fn fresh_transformation_state() {
     let state = initial_state();
     assert!(state.session_configuration_request.is_none());
     assert!(state.current_output_item_id.is_none());
@@ -455,7 +455,7 @@ fn auth_options(auth: AuthParams) -> Options<'static> {
 }
 
 async fn auth_params_reach_the_resolver() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture.run(auth_options(full_auth())).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert_resolved_auth(&fixture);
@@ -489,7 +489,7 @@ fn assert_resolved_auth(fixture: &Fixture) {
 }
 
 async fn resolved_credentials_reach_the_sdk() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture.run(auth_options(full_auth())).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     let config = fixture.last_config();
@@ -587,7 +587,7 @@ async fn rejected_enqueue_leaves_the_flag_unset() {
 }
 
 async fn no_logged_events_leave_no_flag() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert!(fixture.logging.dispatched().is_empty());
@@ -679,7 +679,7 @@ async fn a_connect_failure_has_nothing_to_close() {
 }
 
 async fn close_after_success() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let result = fixture.run(Options::default()).await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
     assert_eq!(fixture.runtime.closes(), 1);

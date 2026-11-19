@@ -248,7 +248,7 @@ where
 
 // _run_session opens every attempt with no transformation state, whatever the previous attempt left
 #[must_use]
-pub(crate) fn initial_state() -> RealtimeResponseTransformInput {
+pub(crate) const fn initial_state() -> RealtimeResponseTransformInput {
     RealtimeResponseTransformInput {
         session_configuration_request: None,
         current_output_item_id: None,

@@ -61,7 +61,7 @@ where
 {
     // The status an HTTP layer answers with; a local failure has none
     #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Committed(error) => Some(error.status_code),
             Self::NoCredentials { status_code, .. } => Some(*status_code),

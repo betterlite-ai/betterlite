@@ -2,7 +2,7 @@ pub mod error;
 pub mod stream;
 
 use std::error::Error as StdError;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -93,14 +93,17 @@ impl SdkRuntime {
 impl RealtimeRuntime for SdkRuntime {
     type Error = SdkStreamError;
 
-    async fn connect(
+    fn connect(
         &self,
         config: RuntimeConfig,
-    ) -> Result<Box<dyn RealtimeClient<Error = SdkStreamError>>, StreamError<SdkStreamError>> {
-        let client = Client::from_conf(self.config(&config));
-        Ok(Box::new(SdkRuntimeClient {
-            client: Mutex::new(Some(client)),
-        }))
+    ) -> impl Future<
+        Output = Result<Box<dyn RealtimeClient<Error = Self::Error>>, StreamError<Self::Error>>,
+    > + Send {
+        let sdk = Client::from_conf(self.config(&config));
+        let client: Box<dyn RealtimeClient<Error = SdkStreamError>> = Box::new(SdkRuntimeClient {
+            client: Mutex::new(Some(sdk)),
+        });
+        ready(Ok(client))
     }
 }
 

@@ -56,6 +56,7 @@ where
     S: StdError + Send + Sync + 'static,
 {
     // Both directions run in this future; whichever finishes first cancels the other and then both are joined
+    #[must_use]
     pub async fn run(self) -> BridgeRuns<S> {
         let cancel = CancellationToken::new();
         let mut logged = RecordedEvents::default();

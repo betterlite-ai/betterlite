@@ -22,12 +22,12 @@ use crate::signing::target::RegionInputs;
 
 pub(super) async fn python_sdk_boundary() {
     the_prepared_config_reaches_the_seam().await;
-    the_sdk_client_keeps_the_injected_connector().await;
+    the_sdk_client_keeps_the_injected_connector();
     the_sdk_request_is_signed_once().await;
 }
 
 async fn the_prepared_config_reaches_the_seam() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let model = "us.amazon.nova-sonic-v1:0";
     let result = fixture
         .run(Options {
@@ -124,7 +124,7 @@ fn header_value<'headers>(
         .map(|(_, value)| value.as_str())
 }
 
-async fn the_sdk_client_keeps_the_injected_connector() {
+fn the_sdk_client_keeps_the_injected_connector() {
     let boundary = boundary();
     let sdk_config = boundary.runtime.config(&signed_config());
     assert_eq!(

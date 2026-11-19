@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::future::pending;
+use std::future::{Future, pending, ready};
 use std::io;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -276,11 +276,11 @@ impl FakeCredentials {
 }
 
 impl RealtimeCredentials for FakeCredentials {
-    async fn resolve(
+    fn resolve(
         &self,
         settings: &AwsSettings,
         region: &str,
-    ) -> Result<Option<Credentials>, CredentialError> {
+    ) -> impl Future<Output = Result<Option<Credentials>, CredentialError>> + Send {
         self.state
             .calls
             .lock()
@@ -291,7 +291,7 @@ impl RealtimeCredentials for FakeCredentials {
             .mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        match &mut *mode {
+        ready(match &mut *mode {
             ResolveMode::Fixed(outcome) => {
                 mem::replace(outcome, Err(CredentialError::MissingCredentials))
             }
@@ -303,7 +303,7 @@ impl RealtimeCredentials for FakeCredentials {
                 })),
                 _ => Ok(None),
             },
-        }
+        })
     }
 }
 
@@ -331,16 +331,19 @@ impl StreamPlan {
         }
     }
 
+    #[must_use]
     pub(super) fn failing_receive(mut self, index: usize) -> Self {
         self.receive_failure = Some(index);
         self
     }
 
+    #[must_use]
     pub(super) fn failing_send(mut self, index: usize) -> Self {
         self.send_failures.push(index);
         self
     }
 
+    #[must_use]
     pub(super) fn blocking(mut self) -> Self {
         self.block_receive = true;
         self
@@ -384,21 +387,25 @@ pub(super) struct FakeRuntime {
 }
 
 impl FakeRuntime {
+    #[must_use]
     pub(super) fn with_plan(mut self, plan: StreamPlan) -> Self {
         self.state_mut().plan = Mutex::new(plan);
         self
     }
 
+    #[must_use]
     pub(super) fn failing_connect(mut self, error: StreamError<FakeError>) -> Self {
         self.state_mut().connect_failure = Mutex::new(Some(error));
         self
     }
 
+    #[must_use]
     pub(super) fn failing_invoke(mut self, error: StreamError<FakeError>) -> Self {
         self.state_mut().invoke_failure = Mutex::new(Some(error));
         self
     }
 
+    #[must_use]
     pub(super) fn failing_close(mut self) -> Self {
         self.state_mut().close_failure = AtomicBool::new(true);
         self
@@ -442,10 +449,12 @@ impl FakeRuntime {
 impl RealtimeRuntime for FakeRuntime {
     type Error = FakeError;
 
-    async fn connect(
+    fn connect(
         &self,
         config: RuntimeConfig,
-    ) -> Result<Box<dyn RealtimeClient<Error = FakeError>>, StreamError<FakeError>> {
+    ) -> impl Future<
+        Output = Result<Box<dyn RealtimeClient<Error = Self::Error>>, StreamError<Self::Error>>,
+    > + Send {
         let recorded = RecordedConfig {
             endpoint_uri: config.endpoint_uri.clone(),
             region: config.region.clone(),
@@ -469,11 +478,12 @@ impl RealtimeRuntime for FakeRuntime {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         if let Some(error) = failure {
-            return Err(error);
+            return ready(Err(error));
         }
-        Ok(Box::new(FakeRuntimeClient {
+        let client: Box<dyn RealtimeClient<Error = FakeError>> = Box::new(FakeRuntimeClient {
             state: Arc::clone(&self.state),
-        }))
+        });
+        ready(Ok(client))
     }
 }
 
@@ -712,6 +722,7 @@ impl ScriptedClient {
         client
     }
 
+    #[must_use]
     pub(super) fn failing_send(mut self, index: usize) -> Self {
         Arc::get_mut(&mut self.state)
             .expect("the only client state reference")
@@ -864,7 +875,7 @@ impl Fixture {
         }
     }
 
-    pub(super) async fn run(&mut self, options: Options<'_>) -> RunResult {
+    pub(super) async fn run(&self, options: Options<'_>) -> RunResult {
         let mut scope = EventScope {
             pending_session_update: options
                 .pending
