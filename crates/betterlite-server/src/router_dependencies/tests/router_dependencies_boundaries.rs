@@ -290,6 +290,8 @@ fn a_config_write_names_the_failing_location(#[case] config: &str, #[case] expec
     "tiers.SIMPLE.1"
 )]
 #[case::tier_pool_entry_list(r#"{"tiers":{"SIMPLE":[["x"]]}}"#, "tiers.SIMPLE.0")]
+#[case::tier_pool_entry_boolean(r#"{"tiers":{"SIMPLE":[true]}}"#, "tiers.SIMPLE.0")]
+#[case::tier_pool_entry_null(r#"{"tiers":{"SIMPLE":[null]}}"#, "tiers.SIMPLE.0")]
 #[case::tier_pool_entry_number(r#"{"tiers":{"SIMPLE":["x",1]}}"#, "tiers.SIMPLE.1")]
 #[case::tier_pool_entry_params_type(
     r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":"nope"}]}}"#,
