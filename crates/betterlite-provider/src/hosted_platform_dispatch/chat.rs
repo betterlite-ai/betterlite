@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_openai::cloudflare_chat;
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
-use betterlite_openai::fireworks_ai_text_completion::extra_body::map_extra_body_params;
+use betterlite_openai::fireworks_ai_chat_params::extra_body::map_extra_body_params;
 use betterlite_openai::groq_chat;
 use betterlite_openai::openai_base_config::Object as ChatObject;
 use betterlite_prompts::arguments::json::Object;

@@ -46,12 +46,9 @@ async fn fireworks_maps_extra_body_params_only_for_its_chat_config() {
     assert_eq!(call.provider_config, Some(ChatConfigTag::FireworksAi));
     let mapped = chat_object(&call.optional_params);
     assert_eq!(mapped.get("temperature"), Some(&json!(1)));
-    assert_eq!(
-        mapped.get("extra_body"),
-        Some(&json!({"reasoning_effort": 64}))
-    );
+    assert_eq!(mapped.get("reasoning_effort"), Some(&json!(64)));
     assert_eq!(mapped.get("chat_template_kwargs"), None);
-    assert_eq!(mapped.get("reasoning_effort"), None);
+    assert_eq!(mapped.get("extra_body"), None);
 }
 
 #[tokio::test]
