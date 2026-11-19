@@ -1,0 +1,54 @@
+kind: helper
+name: sail-wire-chat-request-rewrite
+call:
+  b6411:
+    function: chat_request
+    model: llama-3-70b
+    steps:
+      - request: {model: m, messages: [], service_tier: default}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], service_tier: AUTO}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], service_tier: flash}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], service_tier: flash}
+        drop_params: true
+        global_drop_params: false
+      - request: {model: m, messages: [], metadata: {completion_window: asap}}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], metadata: {completion_window: asap, trace: t-1}, service_tier: flex}
+        drop_params: true
+        global_drop_params: false
+      - request: {model: m, messages: [], metadata: null, service_tier: balanced}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], metadata: {}}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], metadata: [1, 2]}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], extra_body: {metadata: {a: 1}, temperature: 1}}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], extra_body: text}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], extra_body: {}}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], extra_body: {service_tier: flex}}
+        drop_params: false
+        global_drop_params: false
+      - request: {model: m, messages: [], extra_body: {service_tier: flex}}
+        drop_params: false
+        global_drop_params: true
+      - request: {model: m, messages: [{role: user, content: hi}], temperature: 0.2, top_k: 3}
+        drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}

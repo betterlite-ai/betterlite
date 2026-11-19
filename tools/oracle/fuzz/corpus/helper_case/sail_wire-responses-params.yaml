@@ -1,0 +1,11 @@
+kind: helper
+name: sail-wire-responses-params-seed
+call:
+  b6411:
+    function: responses_params
+    model: sail-seed
+    steps:
+      - {params: {service_tier: default, metadata: {completion_window: standard}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: unknown-window}}, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}

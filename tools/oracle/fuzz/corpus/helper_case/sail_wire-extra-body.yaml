@@ -1,0 +1,11 @@
+kind: helper
+name: sail-wire-extra-body-seed
+call:
+  b6411:
+    function: extra_body
+    model: sail-seed
+    steps:
+      - {extra_body: {metadata: {seed: 1}}, request_metadata: {other: 2}, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: raw}, request_metadata: null, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: sail-wire-supported-seed
+call:
+  b6411:
+    function: supported
+    steps:
+      - {model: seed-model, chat_models: [seed-model], text_models: []}
+      - {model: responses/seed-model, chat_models: [], text_models: [seed-model]}
+env: {}
+compare: {ignore: []}

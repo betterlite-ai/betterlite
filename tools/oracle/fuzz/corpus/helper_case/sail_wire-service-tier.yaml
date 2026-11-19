@@ -1,0 +1,11 @@
+kind: helper
+name: sail-wire-service-tier-seed
+call:
+  b6411:
+    function: window
+    model: sail-seed
+    steps:
+      - {service_tier: flex, drop_params: false, global_drop_params: false}
+      - {service_tier: seed-tier, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}
