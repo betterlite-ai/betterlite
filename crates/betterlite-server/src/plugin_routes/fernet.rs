@@ -172,5 +172,4 @@ fn body_and_iv(after_timestamp: &[u8]) -> Result<(&[u8], [u8; IV_BYTES]), Fernet
     Ok((ciphertext, iv))
 }
 
-#[cfg(test)]
 mod tests;

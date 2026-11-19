@@ -112,5 +112,4 @@ fn plugin_key(salt: &str, plugin_name: &str) -> Result<FernetKey, PluginError> {
     Ok(FernetKey::from_material(material))
 }
 
-#[cfg(test)]
 mod tests;

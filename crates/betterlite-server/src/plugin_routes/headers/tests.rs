@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use axum::http::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 

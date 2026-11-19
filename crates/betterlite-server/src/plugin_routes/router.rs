@@ -32,5 +32,4 @@ pub fn router(state: PluginState) -> Router {
         .with_state(state)
 }
 
-#[cfg(test)]
 mod tests;

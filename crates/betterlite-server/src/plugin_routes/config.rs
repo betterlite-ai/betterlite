@@ -38,5 +38,4 @@ impl PluginRegistry {
     }
 }
 
-#[cfg(test)]
 mod tests;

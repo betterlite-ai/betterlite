@@ -194,5 +194,4 @@ fn json_detail(status: StatusCode, detail: String) -> Response {
     (status, payload).into_response()
 }
 
-#[cfg(test)]
 mod tests;

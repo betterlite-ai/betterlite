@@ -124,5 +124,4 @@ pub fn response_headers(raw: &HeaderMap) -> HeaderMap {
     safe
 }
 
-#[cfg(test)]
 mod tests;

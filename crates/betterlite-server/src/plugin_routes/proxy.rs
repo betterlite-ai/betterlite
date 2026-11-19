@@ -275,5 +275,4 @@ fn plain_response(status: StatusCode, body: String) -> Response {
     response
 }
 
-#[cfg(test)]
 mod tests;
