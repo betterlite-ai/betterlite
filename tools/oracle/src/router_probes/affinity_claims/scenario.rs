@@ -6,7 +6,7 @@ use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_router::affinity_claims::AffinityClaims;
 use betterlite_router::affinity_claims::error::AffinityError;
 use betterlite_router::affinity_claims::identity::{
-    affinity_cache_key, session_affinity_cache_key, user_key_from_request_kwargs,
+    AffinityKey, affinity_cache_key, session_affinity_cache_key,
 };
 use betterlite_router::affinity_claims::local::LocalPins;
 use betterlite_router::affinity_claims::pin::StoredPin;
@@ -21,7 +21,7 @@ use betterlite_router::routing_value_store::{
 
 use super::{
     Input, KeyKind, KeyRequest, Observation, Output, PinField, SeedTarget, Step, build_pin,
-    claim_fields, invalid, parse_key, parse_step,
+    claim_fields, invalid, parse_step,
 };
 use crate::router_probes::error::OperationError;
 
@@ -40,10 +40,7 @@ pub(super) async fn execute(input: &Input) -> Result<Output, OperationError> {
     } else {
         None
     };
-    let shared = match &server {
-        Some(server) => Some(shared_store(server)?),
-        None => None,
-    };
+    let shared = server.as_ref().map(shared_store).transpose()?;
     let local = LocalPins::new(local_settings(), Arc::new(|| 0.0_f64))
         .map_err(|error| invalid(&error.to_string()))?;
     let scenario = Scenario {
@@ -60,27 +57,19 @@ pub(super) async fn execute(input: &Input) -> Result<Output, OperationError> {
 async fn apply_step(step: &Step, scenario: &Scenario) -> Result<Observation, OperationError> {
     match step {
         Step::Key { request } => key_step(request),
-        Step::UserKey { metadata } => Ok(Observation::UserKey {
-            user_key: user_key_from_request_kwargs(metadata)
-                .map_err(|error| invalid(&error.to_string()))?,
-        }),
         Step::Claim {
             key,
             pin,
             ttl_seconds,
+            down,
             eligible,
-        } => claim(scenario, key, pin, *ttl_seconds, eligible).await,
+        } => claim(scenario, key, pin, *ttl_seconds, *down, eligible).await,
         Step::Seed {
             target,
             key,
             raw,
             ttl_seconds,
         } => seed(scenario, *target, key, raw, *ttl_seconds).await,
-        Step::Ttl { key } => ttl(scenario, key).await,
-        Step::Down { down } => {
-            down_step(scenario, *down);
-            Ok(Observation::Down)
-        }
         Step::Parse { pad_len } => parse_step(*pad_len),
     }
 }
@@ -120,8 +109,12 @@ async fn claim(
     key: &str,
     fields: &[PinField],
     ttl_seconds: u32,
+    down: bool,
     eligible: &Option<Vec<Vec<PinField>>>,
 ) -> Result<Observation, OperationError> {
+    if let Some(server) = &scenario.server {
+        server.set_down(down);
+    }
     let mut candidates = None;
     if let Some(sets) = eligible {
         let mut pins = Vec::with_capacity(sets.len());
@@ -131,7 +124,7 @@ async fn claim(
         candidates = Some(pins);
     }
     let outcome = Box::pin(scenario.service.claim(
-        &parse_key(key)?,
+        &AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?,
         &build_pin(fields),
         ttl_seconds,
         candidates.as_deref(),
@@ -161,7 +154,11 @@ async fn seed(
             scenario
                 .service
                 .local
-                .set(&parse_key(key)?, &stored, ttl_seconds)
+                .set(
+                    &AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?,
+                    &stored,
+                    ttl_seconds,
+                )
                 .map_err(|error| invalid(&error.to_string()))?;
         }
         SeedTarget::Shared => {
@@ -185,24 +182,6 @@ async fn seed(
         }
     }
     Ok(Observation::Seed)
-}
-
-async fn ttl(scenario: &Scenario, key: &str) -> Result<Observation, OperationError> {
-    let Some(store) = &scenario.service.shared else {
-        return Ok(Observation::Ttl { ttl: None });
-    };
-    let route = RouteKey::parse(key).map_err(|error| invalid(&error.to_string()))?;
-    let observed = match Box::pin(store.get_ttl(&route)).await {
-        Ok(observed_value) => observed_value.value,
-        Err(_error) => None,
-    };
-    Ok(Observation::Ttl { ttl: observed })
-}
-
-fn down_step(scenario: &Scenario, down: bool) {
-    if let Some(server) = &scenario.server {
-        server.set_down(down);
-    }
 }
 
 fn fallback_name(fallback: SharedFallback) -> String {

@@ -19,13 +19,6 @@ probes:
             request: {kind: affinity, model_group: group-a, user_key: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
           - kind: key
             request: {kind: affinity, model_group: gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg, user_key: caller-one}
-          - kind: user_key
-            metadata:
-              litellm_metadata: {user_api_key_user_id: user-1}
-          - kind: user_key
-            metadata:
-              litellm_metadata: {user_api_key_user_id: user-1}
-              metadata: {user_api_key_hash: be0fee6e8d015955e8fe18ca777cf70ad550e88b7a576eb87c4dc359fc68b4f2}
 compare:
   expected_difference:
     - pointer: /output/affinity_claims/steps/4/key

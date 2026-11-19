@@ -9,7 +9,7 @@ from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
 from litellm.router_utils.pre_call_checks.deployment_affinity_check import DeploymentAffinityCheck
-from pydantic import Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 from typing_extensions import TypedDict, override
 
@@ -48,16 +48,12 @@ class KeyStep(Strict):
     request: KeyRequest
 
 
-class UserKeyStep(Strict):
-    kind: Literal["user_key"] = "user_key"
-    metadata: dict[str, JsonValue]
-
-
 class ClaimStep(Strict):
     kind: Literal["claim"] = "claim"
     key: str
     pin: list[PinField]
     ttl_seconds: int
+    down: bool = False
     eligible: list[list[PinField]] | None = None
 
 
@@ -69,23 +65,13 @@ class SeedStep(Strict):
     ttl_seconds: int
 
 
-class TtlStep(Strict):
-    kind: Literal["ttl"] = "ttl"
-    key: str
-
-
-class DownStep(Strict):
-    kind: Literal["down"] = "down"
-    down: bool
-
-
 class ParseStep(Strict):
     kind: Literal["parse"] = "parse"
     pad_len: int
 
 
 Step = Annotated[
-    KeyStep | UserKeyStep | ClaimStep | SeedStep | TtlStep | DownStep | ParseStep,
+    KeyStep | ClaimStep | SeedStep | ParseStep,
     Field(discriminator="kind"),
 ]
 
@@ -93,11 +79,6 @@ Step = Annotated[
 class KeyOutput(Strict):
     kind: Literal["key"] = "key"
     key: str | None
-
-
-class UserKeyOutput(Strict):
-    kind: Literal["user_key"] = "user_key"
-    user_key: str | None
 
 
 class ClaimOutput(Strict):
@@ -112,15 +93,6 @@ class SeedOutput(Strict):
     kind: Literal["seed"] = "seed"
 
 
-class TtlOutput(Strict):
-    kind: Literal["ttl"] = "ttl"
-    ttl: int | None
-
-
-class DownOutput(Strict):
-    kind: Literal["down"] = "down"
-
-
 class ParseOutput(Strict):
     kind: Literal["parse"] = "parse"
     shape: str
@@ -129,7 +101,7 @@ class ParseOutput(Strict):
 
 
 Observation = Annotated[
-    KeyOutput | UserKeyOutput | ClaimOutput | SeedOutput | TtlOutput | DownOutput | ParseOutput,
+    KeyOutput | ClaimOutput | SeedOutput | ParseOutput,
     Field(discriminator="kind"),
 ]
 
@@ -141,7 +113,6 @@ class Output(Strict):
 @dataclass
 class FakeStore(RedisCache):
     values: dict[str, str]
-    ttls: dict[str, int]
     down: bool
     failed: bool
 
@@ -155,22 +126,16 @@ class FakeStore(RedisCache):
             raise RedisConnectionError("connection down")
         key = keys[0]
         pin_json = str(args[0])
-        ttl = int(args[1])
         current = self.values.get(key)
         if current is None:
             self.values[key] = pin_json
-            self.ttls[key] = ttl
             return pin_json
         eligible_text = str(args[ELIGIBLE_ARGUMENT]) if len(args) > ELIGIBLE_ARGUMENT else None
         if eligible_text is not None and self.matches(current, eligible_text):
-            self.ttls[key] = ttl
             return current
         if eligible_text is not None:
             self.values[key] = pin_json
-            self.ttls[key] = ttl
             return pin_json
-        if current == pin_json:
-            self.ttls[key] = ttl
         return current
 
     def matches(self, current: str, eligible_text: str) -> bool:
@@ -180,12 +145,6 @@ class FakeStore(RedisCache):
             return False
         candidates = ELIGIBLE.validate_json(eligible_text)
         return any(stored == candidate for candidate in candidates)
-
-    @override
-    async def async_get_ttl(self, key: str) -> int | None:
-        if self.down:
-            raise RedisConnectionError("connection down")
-        return self.ttls.get(key)
 
 
 @dataclass
@@ -199,12 +158,6 @@ def pin_value(fields: list[PinField]) -> dict[str, str]:
     return {field.name: field.value for field in fields}
 
 
-def eligible_values(fields: list[list[PinField]] | None) -> tuple[dict[str, str], ...] | None:
-    if fields is None:
-        return None
-    return tuple(pin_value(entry) for entry in fields)
-
-
 def claim_summary(winner: object) -> tuple[str, str | None, str | None]:
     if isinstance(winner, str):
         return ("text", None, winner)
@@ -212,16 +165,6 @@ def claim_summary(winner: object) -> tuple[str, str | None, str | None]:
         fields = PIN_MAP.validate_python(winner)
         return ("pin", fields.get("model_id"), None)
     return ("other", None, None)
-
-
-def decode_summary(winner: object) -> tuple[str, int, str | None]:
-    if isinstance(winner, str):
-        return ("text", len(winner.encode("utf-8")), None)
-    if isinstance(winner, dict):
-        fields = PIN_MAP.validate_python(winner)
-        model_id = fields.get("model_id")
-        return ("pin", 0 if model_id is None else len(model_id.encode("utf-8")), None)
-    return ("other", 0, None)
 
 
 def key_step(step: KeyStep) -> KeyOutput:
@@ -241,18 +184,16 @@ def key_step(step: KeyStep) -> KeyOutput:
     )
 
 
-def user_key_step(step: UserKeyStep) -> UserKeyOutput:
-    return UserKeyOutput(user_key=DeploymentAffinityCheck.get_user_key_from_request_kwargs(step.metadata))
-
-
 async def claim_step(step: ClaimStep, context: Context) -> ClaimOutput:
+    context.store.down = step.down
     context.store.failed = False
+    eligible = None if step.eligible is None else tuple(pin_value(entry) for entry in step.eligible)
     winner = await claim_affinity_pin(
         context.cache,
         step.key,
         pin_value(step.pin),
         step.ttl_seconds,
-        eligible_values=eligible_values(step.eligible),
+        eligible_values=eligible,
     )
     fallback = "unavailable" if context.store.failed else None
     pin_kind, model_id, text = claim_summary(winner)
@@ -266,58 +207,41 @@ def seed_step(step: SeedStep, context: Context) -> SeedOutput:
     if not context.shared:
         raise ProbeError("invalid_request", "the shared store is not configured")
     context.store.values[step.key] = step.raw
-    context.store.ttls[step.key] = step.ttl_seconds
     return SeedOutput()
-
-
-def down_step(step: DownStep, context: Context) -> DownOutput:
-    context.store.down = step.down
-    return DownOutput()
-
-
-async def ttl_step(step: TtlStep, context: Context) -> TtlOutput:
-    if not context.shared:
-        return TtlOutput(ttl=None)
-    try:
-        ttl = await context.store.async_get_ttl(step.key)
-    except RedisConnectionError:
-        return TtlOutput(ttl=None)
-    return TtlOutput(ttl=ttl)
 
 
 async def parse_step(step: ParseStep) -> ParseOutput:
     if step.pad_len < 0 or step.pad_len > MAX_PARSE_PAD:
         raise ProbeError("invalid_request", "the parse pad is past the 2097152-byte build limit")
     text = f'{{"model_id":"{"a" * step.pad_len}"}}'
-    store = FakeStore(values={PARSE_KEY: text}, ttls={}, down=False, failed=False)
+    store = FakeStore(values={PARSE_KEY: text}, down=False, failed=False)
     cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=store)
     winner = await claim_affinity_pin(cache, PARSE_KEY, {"model_id": "__probe__"}, PROBE_TTL)
-    shape, byte_count, reason = decode_summary(winner)
-    return ParseOutput(shape=shape, byte_count=byte_count, reason=reason)
-
-
-async def apply_shared_step(step: ClaimStep | TtlStep | ParseStep, context: Context) -> Observation:
-    if isinstance(step, ClaimStep):
-        return await claim_step(step, context)
-    if isinstance(step, TtlStep):
-        return await ttl_step(step, context)
-    return await parse_step(step)
+    if isinstance(winner, str):
+        return ParseOutput(shape="text", byte_count=len(winner.encode("utf-8")), reason=None)
+    if isinstance(winner, dict):
+        fields = PIN_MAP.validate_python(winner)
+        model_id = fields.get("model_id")
+        return ParseOutput(
+            shape="pin",
+            byte_count=0 if model_id is None else len(model_id.encode("utf-8")),
+            reason=None,
+        )
+    return ParseOutput(shape="other", byte_count=0, reason=None)
 
 
 async def apply_step(step: Step, context: Context) -> Observation:
     if isinstance(step, KeyStep):
         return key_step(step)
-    if isinstance(step, UserKeyStep):
-        return user_key_step(step)
     if isinstance(step, SeedStep):
         return seed_step(step, context)
-    if isinstance(step, DownStep):
-        return down_step(step, context)
-    return await apply_shared_step(step, context)
+    if isinstance(step, ClaimStep):
+        return await claim_step(step, context)
+    return await parse_step(step)
 
 
 async def run_scenario(operation: AffinityClaims) -> Output:
-    store = FakeStore(values={}, ttls={}, down=False, failed=False)
+    store = FakeStore(values={}, down=False, failed=False)
     cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=store if operation.shared else None)
     context = Context(cache=cache, store=store, shared=operation.shared)
     return Output(steps=[await apply_step(step, context) for step in operation.steps])

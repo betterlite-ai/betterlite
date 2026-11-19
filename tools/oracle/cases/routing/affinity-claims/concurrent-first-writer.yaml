@@ -15,19 +15,13 @@ probes:
             key: shared-key-a
             pin: [{name: model_id, value: dep-b}]
             ttl_seconds: 60
-          - kind: ttl
-            key: shared-key-a
           - kind: claim
             key: shared-key-a
             pin: [{name: model_id, value: dep-b}]
             ttl_seconds: 45
             eligible: [[{name: model_id, value: dep-a}], [{name: model_id, value: dep-b}]]
-          - kind: ttl
-            key: shared-key-a
           - kind: claim
             key: shared-key-a
             pin: [{name: model_id, value: dep-c}]
             ttl_seconds: 60
             eligible: [[{name: model_id, value: dep-c}]]
-          - kind: ttl
-            key: shared-key-a

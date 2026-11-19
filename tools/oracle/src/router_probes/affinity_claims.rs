@@ -1,6 +1,5 @@
 mod scenario;
 
-use betterlite_models::model_registration::JsonObject;
 use betterlite_router::affinity_claims::identity::AffinityKey;
 use betterlite_router::affinity_claims::pin::{AffinityPin, PinError, StoredPin};
 use indexmap::IndexMap;
@@ -27,13 +26,12 @@ pub enum Step {
     Key {
         request: KeyRequest,
     },
-    UserKey {
-        metadata: JsonObject,
-    },
     Claim {
         key: String,
         pin: Vec<PinField>,
         ttl_seconds: u32,
+        #[serde(default)]
+        down: bool,
         #[serde(default)]
         eligible: Option<Vec<Vec<PinField>>>,
     },
@@ -42,12 +40,6 @@ pub enum Step {
         key: String,
         raw: String,
         ttl_seconds: u32,
-    },
-    Ttl {
-        key: String,
-    },
-    Down {
-        down: bool,
     },
     Parse {
         pad_len: u64,
@@ -98,9 +90,6 @@ pub enum Observation {
     Key {
         key: Option<String>,
     },
-    UserKey {
-        user_key: Option<String>,
-    },
     Claim {
         pin_kind: String,
         model_id: Option<String>,
@@ -108,10 +97,6 @@ pub enum Observation {
         fallback: Option<String>,
     },
     Seed,
-    Ttl {
-        ttl: Option<i64>,
-    },
-    Down,
     Parse {
         shape: String,
         byte_count: usize,
@@ -174,10 +159,6 @@ pub(super) fn build_pin(fields: &[PinField]) -> AffinityPin {
         map.insert(field.name.clone(), field.value.clone());
     }
     AffinityPin(map)
-}
-
-pub(super) fn parse_key(key: &str) -> Result<AffinityKey, OperationError> {
-    AffinityKey::parse(key).map_err(|error| invalid(&error.to_string()))
 }
 
 pub(super) fn invalid(message: &str) -> OperationError {

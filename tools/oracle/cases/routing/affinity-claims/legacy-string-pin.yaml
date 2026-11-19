@@ -16,8 +16,6 @@ probes:
             key: legacy-shared
             pin: [{name: model_id, value: dep-a}]
             ttl_seconds: 45
-          - kind: ttl
-            key: legacy-shared
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:

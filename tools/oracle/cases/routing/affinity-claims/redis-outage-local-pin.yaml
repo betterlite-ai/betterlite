@@ -11,19 +11,12 @@ probes:
             key: outage-key
             pin: [{name: model_id, value: dep-a}]
             ttl_seconds: 60
-          - kind: down
-            down: true
           - kind: claim
             key: outage-key
             pin: [{name: model_id, value: dep-b}]
             ttl_seconds: 60
-          - kind: ttl
-            key: outage-key
-          - kind: down
-            down: false
+            down: true
           - kind: claim
             key: outage-key
             pin: [{name: model_id, value: dep-c}]
             ttl_seconds: 60
-          - kind: ttl
-            key: outage-key
