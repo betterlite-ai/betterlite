@@ -1,4 +1,3 @@
-// a run of digits, a run of letters, or one separator, as the source's lexer splits its input
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Token {
     Number(String),
@@ -6,9 +5,78 @@ pub(super) enum Token {
     Punct(char),
 }
 
-const JUMPS: [&str; 11] = [
-    "at", "on", "and", "ad", "m", "t", "of", "st", "nd", "rd", "th",
+// the words the source skips; an ordinal suffix needs no entry because any unknown word is skipped
+const JUMPS: [&str; 7] = ["at", "on", "and", "ad", "m", "t", "of"];
+
+pub(super) const MONTH_NAMES: [(&str, i64); 24] = [
+    ("jan", 1),
+    ("january", 1),
+    ("feb", 2),
+    ("february", 2),
+    ("mar", 3),
+    ("march", 3),
+    ("apr", 4),
+    ("april", 4),
+    ("may", 5),
+    ("jun", 6),
+    ("june", 6),
+    ("jul", 7),
+    ("july", 7),
+    ("aug", 8),
+    ("august", 8),
+    ("sep", 9),
+    ("sept", 9),
+    ("september", 9),
+    ("oct", 10),
+    ("october", 10),
+    ("nov", 11),
+    ("november", 11),
+    ("dec", 12),
+    ("december", 12),
 ];
+
+pub(super) const WEEKDAY_NAMES: [(&str, i64); 17] = [
+    ("mon", 0),
+    ("monday", 0),
+    ("tue", 1),
+    ("tues", 1),
+    ("tuesday", 1),
+    ("wed", 2),
+    ("wednesday", 2),
+    ("thu", 3),
+    ("thur", 3),
+    ("thurs", 3),
+    ("thursday", 3),
+    ("fri", 4),
+    ("friday", 4),
+    ("sat", 5),
+    ("saturday", 5),
+    ("sun", 6),
+    ("sunday", 6),
+];
+
+pub(super) const HMS_NAMES: [(&str, i64); 9] = [
+    ("h", 0),
+    ("hour", 0),
+    ("hours", 0),
+    ("m", 1),
+    ("minute", 1),
+    ("minutes", 1),
+    ("s", 2),
+    ("second", 2),
+    ("seconds", 2),
+];
+
+pub(super) fn lookup(token: &Token, names: &[(&str, i64)]) -> Option<i64> {
+    let Token::Word(word) = token else {
+        return None;
+    };
+    let lowered = word.to_ascii_lowercase();
+    names
+        .iter()
+        .find(|(name, _)| *name == lowered.as_str())
+        .map(|(_, value)| *value)
+}
 
 pub(super) fn tokenize(text: &str) -> Vec<Token> {
     let chars: Vec<char> = text.chars().collect();
@@ -22,7 +90,8 @@ pub(super) fn tokenize(text: &str) -> Vec<Token> {
             while chars.get(index).is_some_and(|c| c.is_ascii_alphabetic()) {
                 index = index.saturating_add(1);
             }
-            tokens.push(Token::Word(collect(&chars, start, index)));
+            let word: String = chars.get(start..index).unwrap_or_default().iter().collect();
+            tokens.push(Token::Word(word));
         } else if first.is_whitespace() {
             tokens.push(Token::Punct(' '));
             index = index.saturating_add(1);
@@ -53,7 +122,12 @@ fn number_run(chars: &[char], start: usize, tokens: &mut Vec<Token>) -> usize {
         _ => false,
     };
     if !joins {
-        tokens.push(Token::Number(collect(chars, start, digits_end)));
+        let digits: String = chars
+            .get(start..digits_end)
+            .unwrap_or_default()
+            .iter()
+            .collect();
+        tokens.push(Token::Number(digits));
         return digits_end;
     }
     let mut end = digits_end;
@@ -63,17 +137,13 @@ fn number_run(chars: &[char], start: usize, tokens: &mut Vec<Token>) -> usize {
     {
         end = end.saturating_add(1);
     }
-    let run = collect(chars, start, end);
+    let run: String = chars.get(start..end).unwrap_or_default().iter().collect();
     if run.matches('.').count() > 1 || run.ends_with(['.', ',']) {
         split_run(&run, tokens);
     } else {
         tokens.push(Token::Number(run.replace(',', ".")));
     }
     end
-}
-
-fn collect(chars: &[char], start: usize, end: usize) -> String {
-    chars.get(start..end).unwrap_or_default().iter().collect()
 }
 
 fn split_run(run: &str, tokens: &mut Vec<Token>) {
@@ -101,60 +171,11 @@ pub(super) fn is_jump(token: &Token) -> bool {
     }
 }
 
-pub(super) fn month_of(token: &Token) -> Option<i64> {
-    let Token::Word(word) = token else {
-        return None;
-    };
-    Some(match word.to_ascii_lowercase().as_str() {
-        "jan" | "january" => 1,
-        "feb" | "february" => 2,
-        "mar" | "march" => 3,
-        "apr" | "april" => 4,
-        "may" => 5,
-        "jun" | "june" => 6,
-        "jul" | "july" => 7,
-        "aug" | "august" => 8,
-        "sep" | "sept" | "september" => 9,
-        "oct" | "october" => 10,
-        "nov" | "november" => 11,
-        "dec" | "december" => 12,
-        _ => return None,
-    })
-}
-
-pub(super) fn weekday_of(token: &Token) -> Option<u32> {
-    let Token::Word(word) = token else {
-        return None;
-    };
-    Some(match word.to_ascii_lowercase().as_str() {
-        "mon" | "monday" => 0,
-        "tue" | "tues" | "tuesday" => 1,
-        "wed" | "wednesday" => 2,
-        "thu" | "thur" | "thurs" | "thursday" => 3,
-        "fri" | "friday" => 4,
-        "sat" | "saturday" => 5,
-        "sun" | "sunday" => 6,
-        _ => return None,
-    })
-}
-
 pub(super) fn ampm_of(token: &Token) -> bool {
     let Token::Word(word) = token else {
         return false;
     };
     matches!(word.to_ascii_lowercase().as_str(), "am" | "a" | "pm" | "p")
-}
-
-pub(super) fn hms_of(token: &Token) -> Option<u8> {
-    let Token::Word(word) = token else {
-        return None;
-    };
-    Some(match word.to_ascii_lowercase().as_str() {
-        "h" | "hour" | "hours" => 0,
-        "m" | "minute" | "minutes" => 1,
-        "s" | "second" | "seconds" => 2,
-        _ => return None,
-    })
 }
 
 pub(super) fn adjust_hour(hour: i64, ampm: &str) -> i64 {
@@ -169,6 +190,8 @@ pub(super) fn adjust_hour(hour: i64, ampm: &str) -> i64 {
 }
 
 pub(super) fn int_value(text: &str) -> Option<i64> {
-    let head = text.split_once('.').map_or(text, |(head, _)| head);
-    head.parse().ok()
+    match text.split_once('.') {
+        Some((head, _)) => head.parse().ok(),
+        None => text.parse().ok(),
+    }
 }

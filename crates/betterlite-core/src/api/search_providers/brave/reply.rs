@@ -13,7 +13,7 @@ pub const REPLY_MAX_BYTES: usize = 0x0100_0000;
 const SECTIONS: [&str; 6] = ["web", "discussions", "faqs", "faq", "news", "videos"];
 const RESULT_FILTER: &str = "result_filter";
 const COUNT: &str = "count";
-const DEFAULT_COUNT: i64 = 20;
+const DEFAULT_COUNT: usize = 20;
 const COUNT_FLOOR: i64 = 1;
 const COUNT_LIMIT: i64 = 20;
 
@@ -151,14 +151,14 @@ fn query_parameter(url: Option<&str>, name: &str, occurrence: Occurrence) -> Opt
 
 fn result_limit(url: Option<&str>) -> Result<usize, BraveSearchError> {
     let Some(raw) = query_parameter(url, COUNT, Occurrence::First) else {
-        return Ok(usize::try_from(DEFAULT_COUNT).unwrap_or(20));
+        return Ok(DEFAULT_COUNT);
     };
     let count = raw
         .trim()
         .parse::<i64>()
         .map_err(|_error| BraveSearchError::CountNotInteger { value: raw.clone() })?;
-    let clamped = count.min(COUNT_LIMIT).max(COUNT_FLOOR);
-    usize::try_from(clamped).map_err(|_error| BraveSearchError::CountNotInteger { value: raw })
+    usize::try_from(count.clamp(COUNT_FLOOR, COUNT_LIMIT))
+        .map_err(|_error| BraveSearchError::CountNotInteger { value: raw })
 }
 
 fn project(raw: &RawValue, today: NaiveDate) -> Result<SearchResult, BraveSearchError> {

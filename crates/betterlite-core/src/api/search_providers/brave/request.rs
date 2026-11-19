@@ -51,7 +51,9 @@ pub(super) fn build(
         .and_then(|value| value.as_bool())
         != Some(false);
     params.insert(METADATA_PARAM.to_owned(), BraveParam::Bool(metadata));
-    apply_count(&mut params, optional_params)?;
+    if let Some(count) = count_param(optional_params)? {
+        params.insert(COUNT_PARAM.to_owned(), count);
+    }
     apply_domains(&mut params, optional_params)?;
     apply_passthrough(&mut params, optional_params)?;
     Ok(BraveBody { params })
@@ -73,24 +75,16 @@ fn join_query(query: &SearchQuery) -> String {
 }
 
 // the source caps max_results above only; a zero or negative count reaches the API as given
-fn apply_count(
-    params: &mut IndexMap<String, BraveParam>,
-    optional_params: &Object,
-) -> Result<(), BraveSearchError> {
-    let Some(value) = optional_params
-        .get(MAX_RESULTS_PARAM)
-        .filter(|value| !value.is_null())
-    else {
-        return Ok(());
-    };
-    let count = value.as_i64().ok_or_else(|| BraveSearchError::OptionType {
-        field: MAX_RESULTS_PARAM.to_owned(),
-    })?;
-    params.insert(
-        COUNT_PARAM.to_owned(),
-        BraveParam::Number(count.min(COUNT_LIMIT)),
-    );
-    Ok(())
+fn count_param(optional_params: &Object) -> Result<Option<BraveParam>, BraveSearchError> {
+    match optional_params.get(MAX_RESULTS_PARAM) {
+        Some(value) if !value.is_null() => {
+            let count = value.as_i64().ok_or_else(|| BraveSearchError::OptionType {
+                field: MAX_RESULTS_PARAM.to_owned(),
+            })?;
+            Ok(Some(BraveParam::Number(count.min(COUNT_LIMIT))))
+        }
+        Some(_) | None => Ok(None),
+    }
 }
 
 fn apply_domains(

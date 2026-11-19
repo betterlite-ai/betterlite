@@ -457,3 +457,10 @@ path = "fuzz_targets/duckduckgo_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "brave_search"
+path = "fuzz_targets/brave_search.rs"
+test = false
+doc = false
+bench = false

@@ -15,7 +15,7 @@ pub(super) fn parse_date(text: &str, today: NaiveDate, flags: DateFlags) -> Opti
 
 // the source fills an incomplete date from the day it parses on, then reads its weekday
 fn build(parser: &parser::Parser<'_>) -> Option<NaiveDate> {
-    if !parser.saw && parser.fields.is_empty() {
+    if !parser.saw && parser.fields.items.is_empty() {
         return None;
     }
     let (year, month, day) = resolve::resolve(&parser.fields, parser.flags)?;
@@ -42,9 +42,8 @@ fn build(parser: &parser::Parser<'_>) -> Option<NaiveDate> {
 }
 
 // a weekday without a day names that weekday in the week of the date, today included
-fn shift_to_weekday(date: NaiveDate, weekday: u32) -> Option<NaiveDate> {
-    let current = date.weekday().num_days_from_monday();
-    let offset = i64::from(weekday).checked_sub(i64::from(current))?;
-    let days = u64::try_from(offset.rem_euclid(7)).ok()?;
+fn shift_to_weekday(date: NaiveDate, weekday: i64) -> Option<NaiveDate> {
+    let current = i64::from(date.weekday().num_days_from_monday());
+    let days = u64::try_from(weekday.checked_sub(current)?.rem_euclid(7)).ok()?;
     date.checked_add_days(Days::new(days))
 }

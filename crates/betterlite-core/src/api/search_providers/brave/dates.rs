@@ -50,12 +50,15 @@ impl DateValue {
 
 fn number_value(literal: &str) -> DateValue {
     if literal.contains(['.', 'e', 'E']) {
-        literal
+        return literal
             .parse::<f64>()
-            .map_or(DateValue::Ignored(false), DateValue::Decimal)
-    } else {
-        DateValue::Integer(literal.to_owned())
+            .map_or(DateValue::Ignored(false), DateValue::Decimal);
     }
+    // a numeric zero is falsey, while the string "0" reaches the timestamp branch
+    if literal.bytes().all(|byte| byte == b'0' || byte == b'-') {
+        return DateValue::Ignored(false);
+    }
+    DateValue::Integer(literal.to_owned())
 }
 
 fn has_members(literal: &str) -> bool {
@@ -73,12 +76,12 @@ pub fn to_yyyy_mm_dd(value: &DateValue, today: NaiveDate, flags: DateFlags) -> O
         DateValue::Integer(text) => unix_date(text)?,
         DateValue::Decimal(number) => decimal_date(*number)?,
     };
-    Some(iso_date(date))
-}
-
-#[must_use]
-pub fn iso_date(date: NaiveDate) -> String {
-    format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day())
+    Some(format!(
+        "{:04}-{:02}-{:02}",
+        date.year(),
+        date.month(),
+        date.day()
+    ))
 }
 
 fn decimal_date(number: f64) -> Option<NaiveDate> {
@@ -129,14 +132,12 @@ fn is_iso_ymd(text: &str) -> bool {
     let [year, month, day] = parts.as_slice() else {
         return false;
     };
-    year.len() == 4
-        && year.bytes().all(|byte| byte.is_ascii_digit())
-        && is_short_number(month)
-        && is_short_number(day)
-}
-
-fn is_short_number(text: &str) -> bool {
-    (1..=2).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_digit())
+    if year.len() != 4 || !year.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    [month, day].into_iter().all(|part| {
+        !part.is_empty() && part.len() <= 2 && part.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn unix_date(text: &str) -> Option<NaiveDate> {

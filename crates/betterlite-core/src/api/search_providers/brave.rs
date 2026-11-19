@@ -68,20 +68,15 @@ pub struct BraveSearchConfig {
 }
 
 impl BraveSearchConfig {
+    // the day is injected by tests and the oracle, and read from the clock otherwise
     #[must_use]
-    pub fn load(lookup: &dyn EnvironmentLookup) -> Self {
-        Self::load_at(lookup, current_date())
-    }
-
-    // tests and the oracle inject the day an incomplete date is filled from
-    #[must_use]
-    pub fn load_at(lookup: &dyn EnvironmentLookup, today: NaiveDate) -> Self {
+    pub fn load(lookup: &dyn EnvironmentLookup, today: Option<NaiveDate>) -> Self {
         let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
         Self {
             api_key: present(API_KEY_VARIABLE).map(SecretString::from),
             api_base: present(API_BASE_VARIABLE).unwrap_or_else(|| BRAVE_API_BASE.to_owned()),
             request_url: Mutex::new(None),
-            today,
+            today: today.unwrap_or_else(now_date),
         }
     }
 
@@ -202,14 +197,13 @@ impl SearchProvider for BraveSearchConfig {
     }
 }
 
-fn current_date() -> NaiveDate {
-    let seconds = SystemTime::now()
+fn now_date() -> NaiveDate {
+    let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    i64::try_from(seconds)
         .ok()
-        .and_then(|value| DateTime::<Utc>::from_timestamp(value, 0))
-        .map_or_else(NaiveDate::default, |moment| moment.date_naive())
+        .and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok());
+    let moment = elapsed.and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
+    moment.map_or_else(NaiveDate::default, |moment| moment.date_naive())
 }
 
 mod tests;

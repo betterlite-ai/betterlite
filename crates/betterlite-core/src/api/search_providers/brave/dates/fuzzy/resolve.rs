@@ -21,22 +21,10 @@ pub(super) struct Fields {
 }
 
 impl Fields {
-    pub(super) fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub(super) fn len(&self) -> usize {
-        self.items.len()
-    }
-
     pub(super) fn index(&self, label: Label) -> Option<usize> {
         self.items
             .iter()
             .position(|field| field.label == Some(label))
-    }
-
-    pub(super) fn has(&self, label: Label) -> bool {
-        self.index(label).is_some()
     }
 
     // a run of digits read as text; more than two digits make it the year
@@ -71,7 +59,7 @@ impl Fields {
 
     fn claim(&mut self, label: Option<Label>) -> Option<()> {
         match label {
-            Some(label) if self.has(label) => None,
+            Some(label) if self.index(label).is_some() => None,
             Some(_) | None => Some(()),
         }
     }
@@ -109,9 +97,9 @@ fn labeled_resolution(
     labeled: [Option<usize>; 3],
 ) -> (Option<i64>, Option<i64>, Option<i64>) {
     let mut slots = labeled;
-    if slots.iter().flatten().count() < fields.len() {
+    if slots.iter().flatten().count() < fields.items.len() {
         let used: Vec<usize> = slots.iter().flatten().copied().collect();
-        let missing = (0..fields.len()).find(|index| !used.contains(index));
+        let missing = (0..fields.items.len()).find(|index| !used.contains(index));
         let free = slots.iter().position(Option::is_none);
         if let (Some(missing), Some(free)) = (missing, free) {
             slots[free] = Some(missing);
@@ -243,12 +231,9 @@ pub(super) fn days_in_month(year: i64, month: i64) -> Option<u32> {
     const DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let index = usize::try_from(month.checked_sub(1)?).ok()?;
     let days = *DAYS.get(index)?;
-    if month == 2 && is_leap(year) {
+    let leap = year.rem_euclid(4) == 0 && (year.rem_euclid(100) != 0 || year.rem_euclid(400) == 0);
+    if month == 2 && leap {
         return Some(29);
     }
     Some(days)
-}
-
-fn is_leap(year: i64) -> bool {
-    year.rem_euclid(4) == 0 && (year.rem_euclid(100) != 0 || year.rem_euclid(400) == 0)
 }
