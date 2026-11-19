@@ -10,9 +10,11 @@ mod tests;
 const ACCESS_TTL_VARIABLE: &str = "DEFAULT_ACCESS_GROUP_CACHE_TTL";
 const DEFAULT_ACCESS_TTL_SECONDS: f64 = 600.0_f64;
 
-// every value is read from the environment, so this section owns no YAML key
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (), // the section reads only the environment, so it owns no YAML key
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
