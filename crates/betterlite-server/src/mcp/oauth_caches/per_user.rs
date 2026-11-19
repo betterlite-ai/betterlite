@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use crate::mcp::outbound_credentials::{OAuthToken, PER_USER_TOKEN_KEY_PREFIX};
 
 use super::MCPPerUserTokenCache;
@@ -18,16 +17,6 @@ pub trait PerUserTokenBackend: Send + Sync {
 }
 
 impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
-    #[must_use]
-    pub fn new(backend: B, codec: OAuthTokenCacheCodec) -> Self {
-        Self { backend, codec }
-    }
-
-    #[must_use]
-    pub fn cache_key(user_id: &str, server_id: &str) -> String {
-        format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}")
-    }
-
     pub async fn get(&self, user_id: &str, server_id: &str) -> Option<String> {
         self.get_token(user_id, server_id)
             .await
@@ -36,7 +25,7 @@ impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
 
     // LiteLLM reads a cache or decrypt failure as a miss and debug-logs it, so an unavailable cache never fails a request.
     pub async fn get_token(&self, user_id: &str, server_id: &str) -> Option<OAuthToken> {
-        let key = Self::cache_key(user_id, server_id);
+        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
         let encrypted = match self.backend.get(&key).await {
             Ok(value) => value,
             Err(error) => {
@@ -60,7 +49,7 @@ impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
         ttl: i64,
         identity_binding_proof: Option<&str>,
     ) {
-        let key = Self::cache_key(user_id, server_id);
+        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
         let token = OAuthToken {
             access_token: access_token.to_owned(),
             expires_at: None,
@@ -92,7 +81,7 @@ impl<B: PerUserTokenBackend> MCPPerUserTokenCache<B> {
     }
 
     pub async fn delete(&self, user_id: &str, server_id: &str) {
-        let key = Self::cache_key(user_id, server_id);
+        let key = format!("{PER_USER_TOKEN_KEY_PREFIX}{user_id}:{server_id}");
         if let Err(error) = self.backend.delete(&key).await {
             tracing::debug!(
                 user_id,

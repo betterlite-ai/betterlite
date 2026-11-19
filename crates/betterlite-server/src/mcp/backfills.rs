@@ -215,11 +215,10 @@ pub trait IssuerBackfillTable: Send + Sync {
 
 fn has_client_credentials(credentials: Option<&CredentialBlob>) -> bool {
     credentials.is_some_and(|blob| {
-        blob.get("client_id").is_some_and(is_non_empty_text)
-            && blob.get("client_secret").is_some_and(is_non_empty_text)
+        blob.get("client_id")
+            .is_some_and(|value| matches!(value, JsonValue::String(text) if !text.is_empty()))
+            && blob
+                .get("client_secret")
+                .is_some_and(|value| matches!(value, JsonValue::String(text) if !text.is_empty()))
     })
-}
-
-fn is_non_empty_text(value: &JsonValue) -> bool {
-    matches!(value, JsonValue::String(text) if !text.is_empty())
 }

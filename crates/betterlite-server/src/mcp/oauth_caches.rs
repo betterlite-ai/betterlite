@@ -29,9 +29,9 @@ pub const OAUTH2_TOKEN_CACHE_MAX_SIZE: usize = 200;
 pub const OAUTH2_TOKEN_CACHE_MAX_LOCKS: usize = 1024;
 pub const OAUTH2_TOKEN_CACHE_DEFAULT_TTL: i64 = 3600;
 pub const OAUTH2_TOKEN_CACHE_MIN_TTL: i64 = 10;
-pub const OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS: i64 = 60;
+pub const OAUTH2_TOKEN_TTL_BUFFER: i64 = 60;
 pub const PER_USER_TOKEN_DEFAULT_TTL: i64 = 43_200;
-pub const PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS: i64 = 60;
+pub const PER_USER_TTL_BUFFER: i64 = 60;
 // The identity material is \x00-joined exactly as LiteLLM joins it, so both sides hash the same bytes.
 const TOKEN_IDENTITY_SEPARATOR: &str = "\u{0}";
 
@@ -76,7 +76,11 @@ impl MCPOAuth2TokenCache {
                 .to_owned(),
         ]
         .join(TOKEN_IDENTITY_SEPARATOR);
-        format!("{}:{}", server.fields.server_id, sha256_hex(&material))
+        format!(
+            "{}:{}",
+            server.fields.server_id,
+            hex::encode(Sha256::digest(material.as_bytes()))
+        )
     }
 
     #[must_use]
@@ -147,8 +151,7 @@ impl MCPOAuth2TokenCache {
             .ok_or_else(|| OAuthCacheError::MissingAccessToken {
                 server_id: server_id.to_owned(),
             })?;
-        let ttl = (expires_in_seconds(body.expires_in.as_ref())
-            - OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS)
+        let ttl = (expires_in_seconds(body.expires_in.as_ref()) - OAUTH2_TOKEN_TTL_BUFFER)
             .max(OAUTH2_TOKEN_CACHE_MIN_TTL);
         Ok((access_token.to_owned(), ttl))
     }
@@ -204,7 +207,7 @@ pub struct MCPPerUserTokenCache<B: PerUserTokenBackend> {
 
 #[must_use]
 pub fn compute_per_user_token_ttl(server: &MCPServer, expires_in: Option<i64>) -> i64 {
-    let lifetime = expires_in.map(|value| value - PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS);
+    let lifetime = expires_in.map(|value| value - PER_USER_TTL_BUFFER);
     match (server.fields.token_storage_ttl_seconds, lifetime) {
         (Some(configured), Some(bound)) => configured.min(bound).max(1),
         (Some(configured), None) => configured.max(1),
@@ -253,8 +256,4 @@ fn client_secret(server: &MCPServer) -> Option<&str> {
         .client_secret
         .as_ref()
         .map(|credential| credential.0.0.expose_secret().as_str())
-}
-
-fn sha256_hex(material: &str) -> String {
-    hex::encode(Sha256::digest(material.as_bytes()))
 }

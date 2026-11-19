@@ -2,7 +2,7 @@ use super::log::{IssuerBackfillEvent, IssuerBackfillLog};
 use super::{IssuerBackfillTable, IssuerCandidateRow, is_stamped_issuer_row};
 
 // Per-row best effort: a row whose write fails is logged and retried at the next boot.
-pub async fn backfill_discovery_stamped_issuers<T: IssuerBackfillTable>(
+pub async fn heal_stamped_issuers<T: IssuerBackfillTable>(
     table: &T,
     log: &dyn IssuerBackfillLog,
 ) -> Result<usize, T::Error> {
