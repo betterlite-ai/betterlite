@@ -1,0 +1,32 @@
+kind: sdk_http
+name: sdk-http-speech-http-missing-body
+env: {}
+call:
+  speech_http:
+    steps:
+      - mode: sync
+        input: hello
+        transformed: {}
+      - mode: sync
+        input: hello
+        transformed: {text_body: hello}
+      - mode: sync
+        input: hello
+        transformed: {binary_body: abc}
+      - mode: sync
+        input: hello
+        transformed: {dict_body: {input: hello}}
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body: slow
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore:
+    - {pointer: /speech_http/value/steps/0/failure/message, why: betterlite writes its own missing-body text}
+    - {pointer: /speech_http/value/steps/1/failure/message, why: betterlite writes its own missing-body text}
+    - {pointer: /speech_http/value/steps/2/failure/message, why: betterlite writes its own missing-body text}
+    - {pointer: /speech_http/value/steps/3/failure/message, why: LiteLLM masks the provider text and betterlite keeps it}
+    - {pointer: /speech_http/value/steps/3/failure/headers/date, why: each mock stamps its own date header}
