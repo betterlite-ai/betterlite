@@ -45,6 +45,21 @@ const ENVIRONMENT: &[(&str, &str)] = &[
 ];
 
 #[rstest]
+#[case::explicit_wins(ENVIRONMENT, Some("http://explicit/v1"), Some("http://explicit/v1"))]
+#[case::environment(&[("OPENAI_LIKE_API_BASE", "http://env/v1")], None, Some("http://env/v1"))]
+#[case::absent(&[], None, None)]
+#[case::empty_explicit_without_environment(&[], Some(""), None)]
+fn responses_base_required(
+    #[case] environment: &[(&str, &str)],
+    #[case] explicit_base: Option<&str>,
+    #[case] base: Option<&str>,
+) {
+    let loaded = settings(environment);
+    let required = loaded.responses_base_required(explicit_base);
+    assert_eq!(required.as_deref(), base);
+}
+
+#[rstest]
 #[case::explicit_wins(
     ENVIRONMENT,
     Some("http://explicit/v1"),
