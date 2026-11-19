@@ -70,25 +70,28 @@ fn supported_subset_and_duplicates() {
         "rpm_limit".to_owned(),
         "tpm_limit".to_owned(),
     ];
-    let (budgets, _) = resolved(source, &[MEMBER_KEY_BUDGETS_PERMISSION]);
+    let (budgets, budgets_log) = resolved(source, &[MEMBER_KEY_BUDGETS_PERMISSION]);
     assert_eq!(budgets.fields, names(&[MEMBER_KEY_BUDGETS_PERMISSION]));
+    assert!(budgets.warnings.is_empty());
+    assert_eq!(budgets_log, "");
+    let (projects, projects_log) = resolved(source, &[PROJECTS_PERMISSION]);
+    assert!(projects.fields.is_empty());
+    assert!(projects.warnings.is_empty());
+    assert_eq!(projects_log, "");
+    let unknown = "general_settings:\n  team_admin_editable_team_fields:\n    - max_budget\n    - member_key_budgets\n    - bogus\n";
+    let (subset, _) = resolved(unknown, &[MEMBER_KEY_BUDGETS_PERMISSION]);
+    assert_eq!(subset.fields, names(&[MEMBER_KEY_BUDGETS_PERMISSION]));
     let [
         SettingWarning::Unsupported {
             names: rejected,
             supported,
         },
-    ] = budgets.warnings.as_slice()
+    ] = subset.warnings.as_slice()
     else {
-        panic!("the team fields are unsupported for the member-key subset");
+        panic!("only the unknown name is unsupported");
     };
-    assert_eq!(
-        rejected,
-        &vec!["max_budget".to_owned(), "rpm_limit".to_owned()]
-    );
+    assert_eq!(rejected, &vec!["bogus".to_owned()]);
     assert_eq!(supported, &expected);
-    let (projects, _) = resolved(source, &[PROJECTS_PERMISSION]);
-    assert!(projects.fields.is_empty());
-    assert_eq!(projects.warnings.len(), 1);
     let team_only = "general_settings:\n  team_admin_editable_team_fields:\n    - rpm_limit\n";
     assert!(!may_edit_member_key_budgets(loaded(team_only).as_ref()));
 }

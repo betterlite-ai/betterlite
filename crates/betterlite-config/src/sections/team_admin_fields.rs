@@ -126,6 +126,7 @@ fn unsupported_names(configured: &BTreeSet<String>, supported: &[&str]) -> Vec<S
         .iter()
         .filter(|name| {
             !supported.contains(&name.as_str())
+                && !SUPPORTED_TEAM_FIELDS.contains(&name.as_str())
                 && !matches!(
                     name.as_str(),
                     PROJECTS_PERMISSION | MEMBER_KEY_BUDGETS_PERMISSION
@@ -139,6 +140,7 @@ fn unsupported_warning(names: Vec<String>, supported: &[&str]) -> SettingWarning
     let accepted: BTreeSet<&str> = supported
         .iter()
         .copied()
+        .chain(SUPPORTED_TEAM_FIELDS)
         .chain([PROJECTS_PERMISSION, MEMBER_KEY_BUDGETS_PERMISSION])
         .collect();
     let warning = SettingWarning::Unsupported {
