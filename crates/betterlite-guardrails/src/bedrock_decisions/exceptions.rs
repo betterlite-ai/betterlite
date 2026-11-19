@@ -82,7 +82,7 @@ pub struct BlockedGuardrail<'name> {
 
 // LiteLLM's _get_http_exception_for_blocked_guardrail
 #[must_use]
-pub fn http_exception_for_blocked_guardrail(
+pub fn blocked_guardrail_failure(
     response: &Response,
     request_data: &BTreeMap<String, GuardrailValue>,
     guardrail: &BlockedGuardrail<'_>,

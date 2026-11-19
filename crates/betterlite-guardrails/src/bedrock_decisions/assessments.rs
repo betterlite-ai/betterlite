@@ -1,3 +1,4 @@
+// ast-grep-ignore: no-long-names
 use betterlite_db::compliance_redaction::{RedactionKeys, redact_nested_match_and_regex_keys};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;

@@ -5,8 +5,8 @@ use betterlite_guardrails::bedrock_decisions::assessments::{
     blocked_assessments, should_raise_blocked, violation_category_names,
 };
 use betterlite_guardrails::bedrock_decisions::exceptions::{
-    BlockedGuardrail, body_has_exception, http_exception_for_blocked_guardrail,
-    payload_has_exception, response_status,
+    BlockedGuardrail, blocked_guardrail_failure, body_has_exception, payload_has_exception,
+    response_status,
 };
 use betterlite_guardrails::bedrock_decisions::logging::{
     AttemptLog, CallLog, log_attempt, log_failure, log_success,
@@ -87,7 +87,7 @@ fn http_exception_view(args: &HttpExceptionArgs) -> HelperResult {
         name: args.guardrail.name.as_deref(),
         disable_exception_on_block: args.guardrail.disable_exception_on_block,
     };
-    match http_exception_for_blocked_guardrail(&args.response, &args.request_data, &guardrail) {
+    match blocked_guardrail_failure(&args.response, &args.request_data, &guardrail) {
         GuardrailFailure::HttpObject { status, detail } => {
             encode(FailureView::Http { status, detail })
         }
@@ -196,7 +196,10 @@ fn encode<T>(value: T) -> HelperResult
 where
     T: Serialize,
 {
-    to_value(value).map_err(|error| failure("SerializationError", error.to_string()))
+    match to_value(value) {
+        Ok(encoded) => Ok(encoded),
+        Err(error) => Err(failure("SerializationError", error.to_string())),
+    }
 }
 
 fn unexpected_failure() -> Box<HelperError> {

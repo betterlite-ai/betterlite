@@ -11,7 +11,7 @@ use crate::bedrock_decisions::assessments::{
     blocked_assessments, should_raise_blocked, violation_category_names,
 };
 use crate::bedrock_decisions::exceptions::{
-    BlockedGuardrail, http_exception_for_blocked_guardrail, response_status,
+    BlockedGuardrail, blocked_guardrail_failure, response_status,
 };
 use crate::bedrock_decisions::logging::{AttemptLog, log_attempt, log_failure, log_success};
 use crate::bedrock_decisions::tracing::{Pricing, tracing_detail};
@@ -249,7 +249,7 @@ fn http_exception_reports_output_text_and_redacted_assessments() {
         name: Some("gr-name"),
         disable_exception_on_block: false,
     };
-    let failure = http_exception_for_blocked_guardrail(&merged, &request_data, &guardrail);
+    let failure = blocked_guardrail_failure(&merged, &request_data, &guardrail);
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
@@ -270,7 +270,7 @@ fn http_exception_omits_unknown_and_empty_guardrail_identity() {
         name: None,
         disable_exception_on_block: false,
     };
-    let failure = http_exception_for_blocked_guardrail(&merged, &request_data, &missing);
+    let failure = blocked_guardrail_failure(&merged, &request_data, &missing);
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
@@ -285,7 +285,7 @@ fn http_exception_omits_unknown_and_empty_guardrail_identity() {
         name: Some("gr-name"),
         disable_exception_on_block: false,
     };
-    let empty_failure = http_exception_for_blocked_guardrail(&merged, &request_data, &empty);
+    let empty_failure = blocked_guardrail_failure(&merged, &request_data, &empty);
     let GuardrailFailure::HttpObject {
         detail: empty_detail,
         ..
@@ -309,7 +309,7 @@ fn modify_response_exception_carries_the_request() {
         name: Some("gr-name"),
         disable_exception_on_block: true,
     };
-    let failure = http_exception_for_blocked_guardrail(&merged, &request_data, &guardrail);
+    let failure = blocked_guardrail_failure(&merged, &request_data, &guardrail);
     let expected = GuardrailFailure::ModifyResponse(Box::new(ModifyResponseFailure {
         message: "blocked".to_owned(),
         model: "bedrock/claude".to_owned(),
@@ -330,7 +330,7 @@ fn modify_response_exception_defaults_the_model_name() {
         name: None,
         disable_exception_on_block: true,
     };
-    let failure = http_exception_for_blocked_guardrail(&merged, &empty_request_data(), &guardrail);
+    let failure = blocked_guardrail_failure(&merged, &empty_request_data(), &guardrail);
     let GuardrailFailure::ModifyResponse(found) = failure else {
         panic!("disable_exception_on_block is a modify response failure");
     };

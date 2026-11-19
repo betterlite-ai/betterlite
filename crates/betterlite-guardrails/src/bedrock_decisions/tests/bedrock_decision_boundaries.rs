@@ -6,8 +6,8 @@ use rstest::rstest;
 use super::{DiscardSink, base, call_log, catalog, context, empty_request_data, json, response};
 use crate::bedrock_decisions::error::BedrockDecisionError;
 use crate::bedrock_decisions::exceptions::{
-    BlockedGuardrail, body_has_exception, http_exception_for_blocked_guardrail,
-    merged_response_status, payload_has_exception, response_has_exception, response_status,
+    BlockedGuardrail, blocked_guardrail_failure, body_has_exception, merged_response_status,
+    payload_has_exception, response_has_exception, response_status,
 };
 use crate::bedrock_decisions::logging::log_failure;
 use crate::bedrock_decisions::value::json_to_value;
@@ -137,7 +137,7 @@ fn http_exception_omits_assessments_without_a_blocked_action() {
         name: None,
         disable_exception_on_block: false,
     };
-    let failure = http_exception_for_blocked_guardrail(&merged, &empty_request_data(), &guardrail);
+    let failure = blocked_guardrail_failure(&merged, &empty_request_data(), &guardrail);
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("a blocked guardrail without disable_exception_on_block is an HTTP object failure");
     };
