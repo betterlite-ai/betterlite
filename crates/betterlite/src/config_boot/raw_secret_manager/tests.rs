@@ -238,6 +238,53 @@ fn selection_error_keeps_settings() {
 }
 
 #[test]
+fn settings_without_a_mapping_are_retained() {
+    let environment = env(&[("AWS_REGION_NAME", "us-east-1")]);
+    let mut state = RawSecretManager::new(secret_lookup(None));
+    let with_settings = project(
+        "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings:\n    primary_secret_name: primary\n",
+        &environment,
+    );
+    state
+        .initialize(&with_settings, None, &environment, None)
+        .unwrap();
+    let absent = project(
+        "general_settings:\n  key_management_system: aws_secret_manager\n",
+        &environment,
+    );
+    state.initialize(&absent, None, &environment, None).unwrap();
+    assert_eq!(
+        state
+            .settings
+            .as_ref()
+            .unwrap()
+            .primary_secret_name
+            .as_deref(),
+        Some("primary")
+    );
+    let not_a_mapping = project(
+        "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings: bogus\n",
+        &environment,
+    );
+    state
+        .initialize(&not_a_mapping, None, &environment, None)
+        .unwrap();
+    assert_eq!(
+        state
+            .settings
+            .as_ref()
+            .unwrap()
+            .primary_secret_name
+            .as_deref(),
+        Some("primary")
+    );
+    assert_eq!(
+        state.lookup.manager.as_ref().unwrap().system,
+        Some(KeyManagementSystem::AwsSecretManager)
+    );
+}
+
+#[test]
 fn missing_azure_uri_can_retry() {
     let (logs, _guard) = capture_logs();
     let projection = project(
