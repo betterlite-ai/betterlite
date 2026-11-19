@@ -496,7 +496,7 @@ async fn missing_permission_db_only_403() {
         panic!("the database-only miss raises");
     };
     assert_eq!(error.to_string(), MISSING_PERMISSION_MESSAGE);
-    assert_eq!(error.status_code(), Some(MISSING_PERMISSION_STATUS));
+    assert!(matches!(error, PermissionError::MissingInDatabaseOnly));
     assert_eq!(MISSING_PERMISSION_STATUS, 403);
     assert!(cache.sets().is_empty());
 }

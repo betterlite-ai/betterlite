@@ -75,11 +75,6 @@ pub enum PermissionError {
     Validation(#[source] serde_json::Error),
 }
 impl PermissionError {
-    // only the database-only 403 carries a status; every other failure reaches its own handler
-    #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
-        matches!(self, Self::MissingInDatabaseOnly).then_some(MISSING_PERMISSION_STATUS)
-    }
     // B715's decorator records a DB failure only for the faults it can name, so pass it those
     #[must_use]
     pub fn database_fault(&self) -> Option<DbError> {

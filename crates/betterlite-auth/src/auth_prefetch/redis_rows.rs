@@ -119,5 +119,4 @@ fn value_json(value: Option<CachedValue>) -> Json {
         }
     }
 }
-#[cfg(test)]
 mod tests;
