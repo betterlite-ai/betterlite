@@ -1,0 +1,8 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+router_settings:
+  routing_strategy: usage-based-routing
+  routing_strategy_args:
+    ttl: 90

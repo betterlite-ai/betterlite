@@ -1,0 +1,13 @@
+id: B9941
+milestone: M4 keys, spend and management
+title: Mount the SCIM router once and seed SCIM rows in the Postgres fixture
+status: todo
+depends_on: [B1100, B860, B9260, B9740]
+file: tasks/B9941-scim-router-mount.yaml
+covers: []
+parent: B064
+split_from: B064
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

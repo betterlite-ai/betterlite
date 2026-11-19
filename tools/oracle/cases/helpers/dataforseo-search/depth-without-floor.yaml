@@ -1,0 +1,13 @@
+kind: helper
+name: depth_without_floor
+call:
+  dataforseo_search:
+    calls:
+      - {kind: request, query: q, optional_params: {max_results: 1}}
+      - {kind: request, query: q, optional_params: {max_results: -3}}
+      - {kind: request, query: q, optional_params: {max_results: 0}}
+      - {kind: request, query: q, optional_params: {max_results: 700}}
+      - {kind: request, query: q, optional_params: {max_results: 701}}
+      - {kind: request, query: q, optional_params: {max_results: null}}
+env: {}
+compare: {ignore: []}

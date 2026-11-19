@@ -2,7 +2,7 @@ id: B9731
 milestone: M10 admin ui
 title: Verify team pages, membership edits and CSV requests against the proxy
 status: todo
-depends_on: [B9090, B9091, B9730, B860, B5076, B1644, B804, B806, B808, B809, B810, B811, B812, B813, B1207, B1208, B067, B829, B1657]
+depends_on: [B9090, B9091, B9730, B860, B9942, B1644, B804, B806, B808, B809, B810, B811, B812, B813, B1207, B1208, B067, B829, B1657]
 file: tasks/B9731-dashboard-team-requests.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/teams/**"
