@@ -1,0 +1,32 @@
+kind: helper
+name: vertex-messages-cache-scope-removed
+call:
+  vertex_messages:
+    access_token: fixed-token
+    credential_project: credential-project
+    model: claude-sonnet-4-6
+    messages:
+      - role: system
+        content:
+          - type: text
+            text: "x-anthropic-billing-header: abc"
+          - type: text
+            text: keep
+            cache_control:
+              type: ephemeral
+              scope: global
+      - role: user
+        content:
+          - type: text
+            text: hi
+            cache_control:
+              type: ephemeral
+              scope: global
+    optional_params:
+      max_tokens: 16
+    headers: {}
+    vertex_project: deployment-project
+    vertex_location: null
+    api_base: null
+env: {}
+compare: {ignore: []}
