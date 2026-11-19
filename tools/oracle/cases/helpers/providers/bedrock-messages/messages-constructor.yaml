@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-messages-constructor
+call:
+  bedrock_messages:
+    function: constructor
+    kwargs: {model: fixture-plain}
+calls:
+  - bedrock_messages:
+      function: constructor
+      kwargs: {}
+env: {}
+compare: {ignore: []}

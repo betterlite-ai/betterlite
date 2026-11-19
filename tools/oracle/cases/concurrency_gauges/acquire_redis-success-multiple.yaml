@@ -1,0 +1,29 @@
+kind: helper
+name: acquire_redis-success-multiple
+call:
+  b3035:
+    function: gauge_check
+    descriptors:
+      - key: api-key
+        value: k1
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 3
+          window_size: null
+      - key: api-key
+        value: k2
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          max_parallel_requests: 5
+          window_size: null
+    slot_id: slot-7
+    read_only: false
+    fail_closed: false
+    now: 1700000000
+    cache: {}
+    replies:
+      - values: [0, 2, 1]
+env: {}
+compare: {ignore: []}

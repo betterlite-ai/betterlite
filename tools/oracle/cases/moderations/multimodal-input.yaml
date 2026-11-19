@@ -1,0 +1,34 @@
+name: moderations-multimodal-input
+config: |
+  model_list:
+    - model_name: guard
+      litellm_params: {model: openai/omni-moderation-latest, api_base: "{{upstream}}/v1", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/moderations
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-moderation-multimodal}
+  body:
+    model: guard
+    input:
+      - type: image_url
+        image_url: {url: "https://example.test/image.png"}
+      - type: text
+        text: hello
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: modr-3
+      model: omni-moderation-latest
+      results:
+        - categories: {harassment: false, harassment/threatening: false, hate: false, hate/threatening: false, illicit: false, illicit/violent: false, self-harm: true, self-harm/instructions: false, self-harm/intent: false, sexual: false, sexual/minors: false, violence: true, violence/graphic: false}
+          category_applied_input_types: {harassment: [text], harassment/threatening: [text], hate: [text], hate/threatening: [text], illicit: [text], illicit/violent: [text], self-harm: [text, image], self-harm/instructions: [text, image], self-harm/intent: [text, image], sexual: [text, image], sexual/minors: [text], violence: [text, image], violence/graphic: [text, image]}
+          category_scores: {harassment: 0.0001, harassment/threatening: 0.25, hate: 0.5, hate/threatening: 0.5, illicit: 0.5, illicit/violent: 0.5, self-harm: 0.75, self-harm/instructions: 0.5, self-harm/intent: 0.5, sexual: 0.5, sexual/minors: 0.5, violence: 0.75, violence/graphic: 0.5}
+          flagged: true
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: [x-litellm-response-duration-ms, x-litellm-callback-duration-ms]
+  upstream_headers: [authorization, content-type]
+  ignore: []

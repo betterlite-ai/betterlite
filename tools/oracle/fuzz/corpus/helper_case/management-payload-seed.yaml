@@ -1,0 +1,11 @@
+kind: helper
+name: management-payload-seed
+call:
+  management_payload:
+    function: redact_mapping
+    record:
+      server_id: seed
+      env_vars:
+        - {name: SEED, value: seed-secret, scope: global}
+env: {}
+compare: {ignore: []}

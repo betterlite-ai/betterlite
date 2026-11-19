@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-messages-unsupported-output-config-warn-drop
+call:
+  bedrock_messages:
+    function: transform
+    model_cost:
+      bedrock/fixture-plain: {litellm_provider: bedrock, mode: chat}
+      fixture-plain: {litellm_provider: bedrock, mode: chat}
+      bedrock/fixture-effort-tier:
+        litellm_provider: bedrock
+        supports_xhigh_reasoning_effort: true
+        bedrock_output_config_effort_ceiling: high
+      fixture-effort-tier:
+        litellm_provider: bedrock
+        supports_xhigh_reasoning_effort: true
+        bedrock_output_config_effort_ceiling: high
+    calls:
+      - model: fixture-plain
+        messages: [{role: user, content: hi}]
+        optional_params:
+          max_tokens: 256
+          output_config: {effort: high}
+      - model: fixture-effort-tier
+        messages: [{role: user, content: hi}]
+        optional_params:
+          max_tokens: 256
+          output_config: {effort: xhigh}
+    model_info:
+      fixture-effort-tier: {bedrock_output_config_effort_ceiling: high}
+    drop_params: true
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}
