@@ -78,6 +78,8 @@ scope:
   - crates/betterlite-provider/src/compatible_embedding_call/**
   - crates/betterlite-provider/src/anthropic_dispatch.rs
   - crates/betterlite-provider/src/anthropic_dispatch/**
+  - crates/betterlite-provider/src/model_garden_call.rs
+  - crates/betterlite-provider/src/model_garden_call/**
   - crates/betterlite-foundry/src/anthropic/**
   - crates/betterlite-openai/src/chat_content/media.rs
   - crates/betterlite-bedrock/src/invoke_stream.rs
