@@ -1,0 +1,17 @@
+kind: probe
+name: usage-routing-v2-batched-counter-read
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      usage_routing_v2:
+        model_group: gpt-4o
+        deployments:
+          - {id: a, model: gpt-4o, params_tpm: 100, info_rpm: 50}
+          - {id: b, model: gpt-4o, tpm: 100000, rpm: 100000}
+        counters:
+          a: {tpm: 5, rpm: 1}
+          b: {tpm: 2, rpm: 3}
+        steps:
+          - {kind: select_async, now_millis: 1795003200000}
+compare: {ignore: []}

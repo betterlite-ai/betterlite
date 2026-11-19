@@ -1,0 +1,5 @@
+kind: helper
+name: azure-thread-messages-seed-assistants-beta-default
+call: {azure_thread_messages: {assistants_beta_default: [{api_key: sk-seed, api_base: 'https://example.test', api_version: '2024-02-01'}, {api_key: sk-seed, api_base: 'https://example.test', api_version: '2024-02-01', thread_id: thread_1}]}}
+env: {}
+compare: {ignore: []}
