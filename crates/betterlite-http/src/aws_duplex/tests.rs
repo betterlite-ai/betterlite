@@ -22,6 +22,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 
 use super::AwsDuplexClient;
 use super::body::RequestBody;
@@ -103,13 +104,13 @@ async fn next_chunk(body: &mut SdkBody) -> Bytes {
 fn request_body_keeps_the_inner_length_and_end() {
     let sized = RequestBody {
         body: SdkBody::from("hello"),
-        _io: tokio_util::task::TaskTracker::new().token(),
+        _io: TaskTracker::new().token(),
     };
     assert!(!sized.is_end_stream(), "a non-empty body is not ended");
     assert_eq!(sized.size_hint().exact(), Some(5));
     let empty = RequestBody {
         body: SdkBody::empty(),
-        _io: tokio_util::task::TaskTracker::new().token(),
+        _io: TaskTracker::new().token(),
     };
     assert!(empty.is_end_stream(), "an empty body is ended");
     assert_eq!(empty.size_hint().exact(), Some(0));
