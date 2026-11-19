@@ -66,12 +66,37 @@ from betterlite.types.llms.openai.chat import (
     WebSearchCallSearchingEvent,
 )
 from betterlite.types.llms.openai.chat.chat_request import ChatCompletionRequest
+from betterlite.types.llms.openai.chat.chat_response import ChatCompletionAssistantContentValue
 from betterlite.types.llms.openai.chat.event_types import ResponsesAPIStreamEvents
 from betterlite.types.llms.openai.chat.fine_tuning import FineTuningJobCreate, Hyperparameters
+from betterlite.types.llms.openai.chat.lifecycle_events import ResponsesTerminalEvent
 from betterlite.types.llms.openai.chat.mcp_events import MCPCallFailedEvent, MCPListToolsFailedEvent
-from betterlite.types.llms.openai.chat.responses_request import PromptObject, ShellToolParam
-from betterlite.types.llms.openai.chat.streaming import GenericEvent
+from betterlite.types.llms.openai.chat.optional_params import (
+    AllEmbeddingInputValues,
+    OpenAIAudioTranscriptionOptionalParams,
+    OpenAIImageEditOptionalParams,
+    OpenAIImageGenerationOptionalParams,
+    OpenAIImageVariationOptionalParams,
+)
+from betterlite.types.llms.openai.chat.responses_request import (
+    ALL_RESPONSES_API_TOOL_PARAMS,
+    PromptObject,
+    ShellToolParam,
+)
+from betterlite.types.llms.openai.chat.streaming import GenericEvent, ResponsesAPIStreamingResponse
+from betterlite.types.llms.openai.chat.streaming_events import PART_UNION_TYPES
+from betterlite.types.llms.openai.chat.tool_choice import (
+    ChatCompletionToolChoiceStringValues,
+    ChatCompletionToolChoiceValues,
+)
+from betterlite.types.llms.openai.core.aliases import (
+    AllPromptValues,
+    EmbeddingInput,
+    FileContent,
+    FileTypes,
+)
 from betterlite.types.llms.openai.core.batches import (
+    BatchJobStatus,
     CancelBatchRequest,
     CreateBatchRequest,
     ListBatchRequest,
@@ -106,6 +131,8 @@ from betterlite.types.llms.openai.core.chat_blocks import (
     DocumentObject,
     FileSearchTool,
     OpenAIChatCompletionTextObject,
+    OpenAIMessageContent,
+    OpenAIMessageContentListBlock,
     PromptCacheBreakpoint,
     PromptCacheOptions,
     WebSearchOptions,
@@ -114,15 +141,19 @@ from betterlite.types.llms.openai.core.chat_blocks import (
 )
 from betterlite.types.llms.openai.core.files import (
     BATCH_GUARDRAIL_RESPONSE_FIELD,
+    CREATE_FILE_REQUESTS_PURPOSE,
     BatchGuardrailRecord,
     BatchGuardrailReport,
     CreateFileRequest,
     FileContentRequest,
     FileExpiresAfter,
     FileListPage,
+    OpenAICreateFileRequestOptionalParams,
     OpenAIFileObject,
+    OpenAIFilesPurpose,
 )
 from betterlite.types.llms.openai.core.messages import (
+    AllMessageValues,
     ChatCompletionAssistantMessage,
     ChatCompletionDeveloperMessage,
     ChatCompletionFunctionMessage,
@@ -136,13 +167,18 @@ from betterlite.types.llms.openai.core.messages import (
     OpenAIChatCompletionSystemMessage,
     OpenAIChatCompletionUserMessage,
     OpenAITextCompletionUserMessage,
+    ToolMessageContentPart,
     ValidAssistantMessageContentTypes,
+    ValidAssistantMessageContentTypesLiteral,
     ValidChatCompletionMessageContentTypes,
+    ValidChatCompletionMessageContentTypesLiteral,
     ValidUserMessageContentTypes,
+    ValidUserMessageContentTypesLiteral,
 )
 from betterlite.types.llms.openai.core.not_given import NOT_GIVEN, NotGiven
 from betterlite.types.llms.openai.core.threads import (
     Attachment,
+    AttachmentTool,
     CodeInterpreterToolParam,
     FileSearchToolParam,
     ImageFileObject,
@@ -206,38 +242,52 @@ from betterlite.types.llms.openai.realtime import (
     OpenAIWebSearchUserLocation,
     OpenAIWebSearchUserLocationApproximate,
 )
-from betterlite.types.llms.openai.realtime.chat import OpenAIBatchResponse, OpenAIBatchResult
-from betterlite.types.llms.openai.realtime.events import OpenAIRealtimeEventTypes
+from betterlite.types.llms.openai.realtime.chat import (
+    OpenAIBatchResponse,
+    OpenAIBatchResult,
+    OpenAIChatCompletionFinishReason,
+)
+from betterlite.types.llms.openai.realtime.events import (
+    OpenAIRealtimeEvents,
+    OpenAIRealtimeEventTypes,
+    OpenAIRealtimeStreamList,
+)
 from betterlite.types.llms.openai.realtime.mcp import OpenAIMcpServerTool
+from betterlite.types.llms.openai.realtime.session import REASONING_EFFORT
 from betterlite.types.llms.openai.realtime.video import CreateVideoRequest, OpenAIVideoObject
 from betterlite.types.responses import ResponseAPIUsage, ResponsesToolUsage, WebSearchToolUsage
-from betterlite.types.responses.api_response import ResponsesAPIResponse
+from betterlite.types.responses.api_response import ResponsesAPIResponse, ResponsesAPIStatus
 
 __all__ = [
-    "BATCH_GUARDRAIL_RESPONSE_FIELD", "NOT_GIVEN", "Attachment", "BaseLiteLLMOpenAIResponseObject",
-    "BatchGuardrailRecord", "BatchGuardrailReport", "BinaryResponseSummary", "CachedTokensDetails",
+    "ALL_RESPONSES_API_TOOL_PARAMS", "BATCH_GUARDRAIL_RESPONSE_FIELD",
+    "CREATE_FILE_REQUESTS_PURPOSE", "NOT_GIVEN", "PART_UNION_TYPES", "REASONING_EFFORT",
+    "AllEmbeddingInputValues", "AllMessageValues", "AllPromptValues", "Attachment",
+    "AttachmentTool", "BaseLiteLLMOpenAIResponseObject", "BatchGuardrailRecord",
+    "BatchGuardrailReport", "BatchJobStatus", "BinaryResponseSummary", "CachedTokensDetails",
     "CancelBatchRequest", "ChatCompletionAnnotation", "ChatCompletionAnnotationURLCitation",
-    "ChatCompletionAssistantMessage", "ChatCompletionAssistantToolCall", "ChatCompletionAudioDelta",
-    "ChatCompletionAudioObject", "ChatCompletionCachedContent", "ChatCompletionDeltaChunk",
-    "ChatCompletionDeltaToolCallChunk", "ChatCompletionDeveloperMessage",
-    "ChatCompletionDocumentObject", "ChatCompletionFileObject", "ChatCompletionFileObjectFile",
-    "ChatCompletionFunctionMessage", "ChatCompletionImageObject", "ChatCompletionImageUrlObject",
-    "ChatCompletionNamedToolChoiceParam", "ChatCompletionReasoningItem",
-    "ChatCompletionReasoningSummaryTextBlock", "ChatCompletionRedactedThinkingBlock",
-    "ChatCompletionRequest", "ChatCompletionResponseMessage", "ChatCompletionSystemMessage",
-    "ChatCompletionTextObject", "ChatCompletionThinkingBlock", "ChatCompletionToolCallChunk",
-    "ChatCompletionToolCallFunctionChunk", "ChatCompletionToolChoiceFunctionParam",
-    "ChatCompletionToolChoiceObjectParam", "ChatCompletionToolMessage", "ChatCompletionToolParam",
-    "ChatCompletionToolParamFunctionChunk", "ChatCompletionToolReferenceObject",
-    "ChatCompletionUsageBlock", "ChatCompletionUserMessage", "ChatCompletionVideoObject",
-    "ChatCompletionVideoUrlObject", "CitationsObject", "CodeInterpreterToolParam",
-    "ComputerToolParam", "ContentPartAddedEvent", "ContentPartDoneEvent",
-    "ContentPartDonePartOutputText", "ContentPartDonePartReasoningText",
+    "ChatCompletionAssistantContentValue", "ChatCompletionAssistantMessage",
+    "ChatCompletionAssistantToolCall", "ChatCompletionAudioDelta", "ChatCompletionAudioObject",
+    "ChatCompletionCachedContent", "ChatCompletionDeltaChunk", "ChatCompletionDeltaToolCallChunk",
+    "ChatCompletionDeveloperMessage", "ChatCompletionDocumentObject", "ChatCompletionFileObject",
+    "ChatCompletionFileObjectFile", "ChatCompletionFunctionMessage", "ChatCompletionImageObject",
+    "ChatCompletionImageUrlObject", "ChatCompletionNamedToolChoiceParam",
+    "ChatCompletionReasoningItem", "ChatCompletionReasoningSummaryTextBlock",
+    "ChatCompletionRedactedThinkingBlock", "ChatCompletionRequest", "ChatCompletionResponseMessage",
+    "ChatCompletionSystemMessage", "ChatCompletionTextObject", "ChatCompletionThinkingBlock",
+    "ChatCompletionToolCallChunk", "ChatCompletionToolCallFunctionChunk",
+    "ChatCompletionToolChoiceFunctionParam", "ChatCompletionToolChoiceObjectParam",
+    "ChatCompletionToolChoiceStringValues", "ChatCompletionToolChoiceValues",
+    "ChatCompletionToolMessage", "ChatCompletionToolParam", "ChatCompletionToolParamFunctionChunk",
+    "ChatCompletionToolReferenceObject", "ChatCompletionUsageBlock", "ChatCompletionUserMessage",
+    "ChatCompletionVideoObject", "ChatCompletionVideoUrlObject", "CitationsObject",
+    "CodeInterpreterToolParam", "ComputerToolParam", "ContentPartAddedEvent",
+    "ContentPartDoneEvent", "ContentPartDonePartOutputText", "ContentPartDonePartReasoningText",
     "ContentPartDonePartRefusal", "ContextManagementEntry", "CreateBatchRequest",
     "CreateFileRequest", "CreateVideoRequest", "CustomToolCallOutputItem", "DocumentObject",
-    "ErrorEvent", "ErrorEventError", "FileContentRequest", "FileExpiresAfter", "FileListPage",
-    "FileSearchCallCompletedEvent", "FileSearchCallInProgressEvent", "FileSearchCallSearchingEvent",
-    "FileSearchTool", "FileSearchToolParam", "FineTuningJobCreate", "Function",
+    "EmbeddingInput", "ErrorEvent", "ErrorEventError", "FileContent", "FileContentRequest",
+    "FileExpiresAfter", "FileListPage", "FileSearchCallCompletedEvent",
+    "FileSearchCallInProgressEvent", "FileSearchCallSearchingEvent", "FileSearchTool",
+    "FileSearchToolParam", "FileTypes", "FineTuningJobCreate", "Function",
     "FunctionCallArgumentsDeltaEvent", "FunctionCallArgumentsDoneEvent",
     "GenericChatCompletionMessage", "GenericEvent", "GenericResponseOutputItem", "Hyperparameters",
     "ImageFileObject", "ImageGenerationPartialImageEvent", "ImageGenerationRequestQuality",
@@ -246,27 +296,31 @@ __all__ = [
     "MCPCallArgumentsDoneEvent", "MCPCallCompletedEvent", "MCPCallFailedEvent",
     "MCPCallInProgressEvent", "MCPListToolsCompletedEvent", "MCPListToolsFailedEvent",
     "MCPListToolsInProgressEvent", "MessageContentImageFileObject", "MessageContentImageURLObject",
-    "MessageContentTextObject", "MessageData", "NotGiven", "OpenAIBatchResponse",
-    "OpenAIBatchResult", "OpenAIChatCompletionAssistantMessage", "OpenAIChatCompletionChoices",
-    "OpenAIChatCompletionChunk", "OpenAIChatCompletionDeveloperMessage",
+    "MessageContentTextObject", "MessageData", "NotGiven", "OpenAIAudioTranscriptionOptionalParams",
+    "OpenAIBatchResponse", "OpenAIBatchResult", "OpenAIChatCompletionAssistantMessage",
+    "OpenAIChatCompletionChoices", "OpenAIChatCompletionChunk",
+    "OpenAIChatCompletionDeveloperMessage", "OpenAIChatCompletionFinishReason",
     "OpenAIChatCompletionLogprobs", "OpenAIChatCompletionLogprobsContent",
     "OpenAIChatCompletionLogprobsContentTopLogprobs", "OpenAIChatCompletionResponse",
     "OpenAIChatCompletionSystemMessage", "OpenAIChatCompletionTextObject",
     "OpenAIChatCompletionToolParam", "OpenAIChatCompletionUserMessage",
-    "OpenAICreateThreadParamsToolResources", "OpenAIErrorBody", "OpenAIFileObject",
-    "OpenAIMcpServerTool", "OpenAIModerationResponse", "OpenAIModerationResult",
-    "OpenAIRealtimeCachedTokensDetails", "OpenAIRealtimeContentPartDone",
-    "OpenAIRealtimeConversationCreated", "OpenAIRealtimeConversationItemAdded",
-    "OpenAIRealtimeConversationItemCreated", "OpenAIRealtimeConversationItemDone",
-    "OpenAIRealtimeConversationObject", "OpenAIRealtimeDoneEvent", "OpenAIRealtimeErrorDetail",
-    "OpenAIRealtimeErrorEvent", "OpenAIRealtimeEventTypes",
-    "OpenAIRealtimeFunctionCallArgumentsDone", "OpenAIRealtimeInputAudioBufferSpeechEvent",
-    "OpenAIRealtimeInputAudioTranscriptionCompleted", "OpenAIRealtimeInputAudioTranscriptionDelta",
-    "OpenAIRealtimeOutputItemDone", "OpenAIRealtimeResponseAudioDone",
-    "OpenAIRealtimeResponseContentPart", "OpenAIRealtimeResponseContentPartAdded",
-    "OpenAIRealtimeResponseDelta", "OpenAIRealtimeResponseDoneObject",
-    "OpenAIRealtimeResponseTextDone", "OpenAIRealtimeResponseUsage",
-    "OpenAIRealtimeServerVadTurnDetection", "OpenAIRealtimeStreamResponseBaseObject",
+    "OpenAICreateFileRequestOptionalParams", "OpenAICreateThreadParamsToolResources",
+    "OpenAIErrorBody", "OpenAIFileObject", "OpenAIFilesPurpose", "OpenAIImageEditOptionalParams",
+    "OpenAIImageGenerationOptionalParams", "OpenAIImageVariationOptionalParams",
+    "OpenAIMcpServerTool", "OpenAIMessageContent", "OpenAIMessageContentListBlock",
+    "OpenAIModerationResponse", "OpenAIModerationResult", "OpenAIRealtimeCachedTokensDetails",
+    "OpenAIRealtimeContentPartDone", "OpenAIRealtimeConversationCreated",
+    "OpenAIRealtimeConversationItemAdded", "OpenAIRealtimeConversationItemCreated",
+    "OpenAIRealtimeConversationItemDone", "OpenAIRealtimeConversationObject",
+    "OpenAIRealtimeDoneEvent", "OpenAIRealtimeErrorDetail", "OpenAIRealtimeErrorEvent",
+    "OpenAIRealtimeEventTypes", "OpenAIRealtimeEvents", "OpenAIRealtimeFunctionCallArgumentsDone",
+    "OpenAIRealtimeInputAudioBufferSpeechEvent", "OpenAIRealtimeInputAudioTranscriptionCompleted",
+    "OpenAIRealtimeInputAudioTranscriptionDelta", "OpenAIRealtimeOutputItemDone",
+    "OpenAIRealtimeResponseAudioDone", "OpenAIRealtimeResponseContentPart",
+    "OpenAIRealtimeResponseContentPartAdded", "OpenAIRealtimeResponseDelta",
+    "OpenAIRealtimeResponseDoneObject", "OpenAIRealtimeResponseTextDone",
+    "OpenAIRealtimeResponseUsage", "OpenAIRealtimeServerVadTurnDetection",
+    "OpenAIRealtimeStreamList", "OpenAIRealtimeStreamResponseBaseObject",
     "OpenAIRealtimeStreamResponseOutputItem", "OpenAIRealtimeStreamResponseOutputItemAdded",
     "OpenAIRealtimeStreamResponseOutputItemContent", "OpenAIRealtimeStreamSession",
     "OpenAIRealtimeStreamSessionEvents", "OpenAIRealtimeTranscriptionAudio",
@@ -284,11 +338,14 @@ __all__ = [
     "ResponseCompletedEvent", "ResponseCreatedEvent", "ResponseFailedEvent",
     "ResponseInProgressEvent", "ResponseIncompleteEvent", "ResponsePartAddedEvent",
     "ResponsesAPIOptionalRequestParams", "ResponsesAPIRequestParams", "ResponsesAPIResponse",
-    "ResponsesAPIStreamEvents", "ResponsesAPIStreamOptions", "ResponsesToolUsage",
-    "RetrieveBatchRequest", "ShellToolParam", "Thread", "ToolResourcesCodeInterpreter",
-    "ToolResourcesFileSearch", "ToolResourcesFileSearchVectorStore",
-    "ValidAssistantMessageContentTypes", "ValidChatCompletionMessageContentTypes",
-    "ValidUserMessageContentTypes", "WebSearchCallCompletedEvent", "WebSearchCallInProgressEvent",
-    "WebSearchCallSearchingEvent", "WebSearchOptions", "WebSearchOptionsUserLocation",
-    "WebSearchOptionsUserLocationApproximate", "WebSearchToolUsage",
+    "ResponsesAPIStatus", "ResponsesAPIStreamEvents", "ResponsesAPIStreamOptions",
+    "ResponsesAPIStreamingResponse", "ResponsesTerminalEvent", "ResponsesToolUsage",
+    "RetrieveBatchRequest", "ShellToolParam", "Thread", "ToolMessageContentPart",
+    "ToolResourcesCodeInterpreter", "ToolResourcesFileSearch", "ToolResourcesFileSearchVectorStore",
+    "ValidAssistantMessageContentTypes", "ValidAssistantMessageContentTypesLiteral",
+    "ValidChatCompletionMessageContentTypes", "ValidChatCompletionMessageContentTypesLiteral",
+    "ValidUserMessageContentTypes", "ValidUserMessageContentTypesLiteral",
+    "WebSearchCallCompletedEvent", "WebSearchCallInProgressEvent", "WebSearchCallSearchingEvent",
+    "WebSearchOptions", "WebSearchOptionsUserLocation", "WebSearchOptionsUserLocationApproximate",
+    "WebSearchToolUsage",
 ]
