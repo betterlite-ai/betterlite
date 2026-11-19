@@ -1,0 +1,25 @@
+kind: helper
+name: s3-audit-logs-override-path-wins
+call:
+  b115:
+    global_params:
+      s3_bucket_name: global-bucket
+      s3_region_name: us-east-1
+      s3_path: global-logs
+    override_params:
+      s3_bucket_name: audit-bucket
+      s3_region_name: eu-west-1
+      s3_path: audit-logs
+    record:
+      id: req-5
+      updated_at: "2026-03-04T05:06:07Z"
+      changed_by: admin
+      changed_by_api_key: hashed-key
+      action: updated
+      table_name: LiteLLM_VerificationToken
+      object_id: object-5
+      before_value: "{}"
+      updated_values: "{}"
+    now: "2026-03-04T05:06:07+00:00"
+env: {}
+compare: {ignore: []}

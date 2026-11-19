@@ -1,14 +1,14 @@
 id: B1506
 milestone: M3 providers
 title: Execute hosted skill files through an owned sandbox session
-status: todo
+status: done
 depends_on: [B165, B171]
 file: tasks/B1506-skill-sandbox.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/sandbox_executor.py"
 parent: B044
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2567

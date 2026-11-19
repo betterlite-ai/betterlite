@@ -1,7 +1,7 @@
 id: B8143
 milestone: M11 distribution
 title: "AWS Terraform module: example root and README"
-status: todo
+status: done
 depends_on: [B8142]
 file: tasks/B8143-aws-example-readme.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "terraform/litellm/aws/README.md"
 parent: B154
 split_from: B154
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2566

@@ -323,7 +323,7 @@ pub(super) fn prepost_env<'env>(
     state: &LoggingState,
     redactor: &'env Redactor,
     sink: &'env DiscardingSink,
-    logger: &'env dyn Fn(&Json) -> Result<(), PrePostError>,
+    logger: &'env (dyn Fn(&Json) -> Result<(), PrePostError> + Sync),
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),

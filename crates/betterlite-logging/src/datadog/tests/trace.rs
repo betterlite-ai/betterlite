@@ -1,37 +1,12 @@
-use crate::datadog::apm::{NullTracer, Span, Tracer};
+use crate::datadog::apm::{NullTracer, Tracer};
 use crate::datadog::payloads::legacy::legacy_v1_logging_to_datadog;
 use crate::datadog::payloads::standard::standard_logging_to_datadog;
 use crate::datadog::payloads::status::DataDogStatus;
 use crate::datadog::payloads::types::DatadogPayload;
 
-use super::support::{default_environment, default_kwargs, json, legacy_event, standard_payload};
-
-struct TestSpan {
-    trace_id: Option<u128>,
-    span_id: Option<u64>,
-}
-
-impl Span for TestSpan {
-    fn trace_id(&self) -> Option<u128> {
-        self.trace_id
-    }
-
-    fn span_id(&self) -> Option<u64> {
-        self.span_id
-    }
-}
-
-struct TestTracer<'span>(Option<&'span dyn Span>, Option<&'span dyn Span>);
-
-impl Tracer for TestTracer<'_> {
-    fn current_span(&self) -> Option<&dyn Span> {
-        self.0
-    }
-
-    fn current_root_span(&self) -> Option<&dyn Span> {
-        self.1
-    }
-}
+use super::support::{
+    TestSpan, TestTracer, default_environment, default_kwargs, json, legacy_event, standard_payload,
+};
 
 fn standard(tracer: &dyn Tracer) -> DatadogPayload {
     standard_logging_to_datadog(

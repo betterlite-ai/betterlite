@@ -1,0 +1,22 @@
+kind: helper
+name: resolved-project
+call:
+  model_garden_target:
+    targets:
+      - model: '5464397967697903616'
+        api_base: null
+        vertex_location: null
+        vertex_project: null
+        resolved_project: auth-proj
+      - model: '5464397967697903616'
+        api_base: null
+        vertex_location: null
+        vertex_project: requested-proj
+        resolved_project: auth-proj
+      - model: meta/llama-3.3-70b-instruct-maas
+        api_base: null
+        vertex_location: us
+        vertex_project: null
+        resolved_project: auth-proj
+env: {}
+compare: {ignore: []}

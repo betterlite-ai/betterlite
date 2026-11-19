@@ -1,0 +1,36 @@
+kind: helper
+name: azure-file-client-inputs
+call:
+  azure_files:
+    steps:
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: v1, timeout: 600.0, max_retries: 2}
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: null, timeout: 600.0, max_retries: 2}
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2, litellm_params: {timeout: 30.0, max_retries: 5}}
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: azure_open_ai
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: open_ai
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: async_open_ai
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: async_azure_open_ai
+    - action: retrieve
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2, litellm_params: {azure_ad_token: ad-token}}
+      file_id: file-1
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "file-1", "object": "file", "bytes": 5, "created_at": 1700000000, "filename": "notes.txt", "purpose": "batch", "status": "processed"}'}
+    - action: retrieve
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      client: async_azure_open_ai
+      file_id: file-1
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"id": "file-1", "object": "file", "bytes": 5, "created_at": 1700000000, "filename": "notes.txt", "purpose": "batch", "status": "processed"}'}
+env: {}
+compare: {ignore: []}

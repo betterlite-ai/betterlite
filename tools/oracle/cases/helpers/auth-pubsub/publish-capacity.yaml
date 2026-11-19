@@ -1,0 +1,7 @@
+kind: helper
+name: auth-pubsub-publish-capacity
+call:
+  auth_pubsub:
+    capacity: true
+env: {}
+compare: {ignore: []}

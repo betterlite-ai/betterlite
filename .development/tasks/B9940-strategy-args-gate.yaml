@@ -30,6 +30,8 @@ scope:
   - crates/betterlite-config/src/sections/usage_routing/**
   - crates/betterlite-config/src/sections/lar1_routing.rs
   - crates/betterlite-config/src/sections/lar1_routing/**
+  - tools/oracle/src/router_probes/usage_routing/scenario.rs
+  - tools/oracle/src/router_probes/lar1_routing.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1338-L1379
