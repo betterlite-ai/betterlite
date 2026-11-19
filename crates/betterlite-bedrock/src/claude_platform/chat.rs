@@ -123,18 +123,43 @@ fn list_param<'params>(
     }
 }
 
-fn header_features(
-    messages: &[PromptJson],
-    params: &IndexMap<String, PromptJson>,
-    contract: &IndexMap<String, Json>,
-    effort_used: bool,
-) -> Result<HeaderFeatures, FeatureFlagsError> {
-    let tools = list_param(params, "tools").unwrap_or_default();
-    let mut features = BTreeSet::new();
+// The contract keys B570 reads through FeatureParams for the skills predicate.
+fn feature_params(contract: &IndexMap<String, Json>) -> FeatureParams {
+    FeatureParams {
+        compaction: None,
+        container: contract
+            .get("container")
+            .filter(|value| !matches!(value, Json::Null))
+            .cloned(),
+        output_config: None,
+        reasoning_effort: None,
+    }
+}
+
+// The predicates that read only the caller's messages.
+fn message_features(messages: &[PromptJson]) -> Result<BTreeSet<HeaderFeature>, FeatureFlagsError> {
     let detected = [
         (HeaderFeature::PromptCaching, is_cache_control_set(messages)),
         (HeaderFeature::Pdf, is_pdf_used(messages)),
         (HeaderFeature::FileId, is_file_id_used(messages)?),
+    ];
+    let mut features = BTreeSet::new();
+    for (feature, used) in detected {
+        if used {
+            features.insert(feature);
+        }
+    }
+    Ok(features)
+}
+
+// The predicates that read the caller's params through B2211's contract.
+fn param_features(
+    params: &IndexMap<String, PromptJson>,
+    contract: &IndexMap<String, Json>,
+    effort_used: bool,
+) -> BTreeSet<HeaderFeature> {
+    let tools = list_param(params, "tools").unwrap_or_default();
+    let detected = [
         (
             HeaderFeature::McpServer,
             is_mcp_server_used(list_param(params, "mcp_servers")),
@@ -151,23 +176,28 @@ fn header_features(
         ),
         (
             HeaderFeature::Skills,
-            is_container_with_skills_used(&FeatureParams {
-                compaction: None,
-                container: contract
-                    .get("container")
-                    .filter(|value| !matches!(value, Json::Null))
-                    .cloned(),
-                output_config: None,
-                reasoning_effort: None,
-            }),
+            is_container_with_skills_used(&feature_params(contract)),
         ),
         (HeaderFeature::Effort, effort_used),
     ];
+    let mut features = BTreeSet::new();
     for (feature, used) in detected {
         if used {
             features.insert(feature);
         }
     }
+    features
+}
+
+fn header_features(
+    messages: &[PromptJson],
+    params: &IndexMap<String, PromptJson>,
+    contract: &IndexMap<String, Json>,
+    effort_used: bool,
+) -> Result<HeaderFeatures, FeatureFlagsError> {
+    let tools = list_param(params, "tools").unwrap_or_default();
+    let mut features = message_features(messages)?;
+    features.extend(param_features(params, contract, effort_used));
     Ok(HeaderFeatures {
         features,
         computer_tool_used: tools.iter().find_map(computer_tool_version),
