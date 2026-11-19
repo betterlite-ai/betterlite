@@ -46,11 +46,13 @@ struct PendingTools {
 }
 
 impl ToolDiscoveryQueue {
-    pub fn new(capacity: i64) -> Result<Self, ToolDiscoveryError> {
-        let capacity = match usize::try_from(capacity) {
-            Ok(capacity) if capacity > 0 => capacity,
-            Ok(_empty) | Err(_range) => return Err(ToolDiscoveryError::ZeroCapacity),
+    pub fn new(queue_capacity: i64) -> Result<Self, ToolDiscoveryError> {
+        let Ok(capacity) = usize::try_from(queue_capacity) else {
+            return Err(ToolDiscoveryError::ZeroCapacity);
         };
+        if capacity == 0 {
+            return Err(ToolDiscoveryError::ZeroCapacity);
+        }
         Ok(Self {
             state: Mutex::new(PendingTools::default()),
             room: Notify::new(),
@@ -63,18 +65,18 @@ impl ToolDiscoveryQueue {
         let Some(tool_name) = item.tool_name.as_deref().filter(|name| !name.is_empty()) else {
             return;
         };
-        let tool_name = tool_name.to_owned();
+        let queued_name = tool_name.to_owned();
         loop {
             let room = self.room.notified();
             tokio::pin!(room);
             // register before the check, so a flush that frees a slot right after cannot miss this waiter
             room.as_mut().enable();
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if state.seen.contains(&tool_name) {
+            if state.seen.contains(&queued_name) {
                 return;
             }
             if state.pending.len() < self.capacity {
-                state.seen.insert(tool_name);
+                state.seen.insert(queued_name);
                 state.pending.push(item);
                 return;
             }

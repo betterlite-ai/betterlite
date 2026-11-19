@@ -24,10 +24,12 @@ impl WindowSpendUpdateQueue {
         aggregation_threshold: i64,
         flush_count: i64,
     ) -> Result<Self, WindowQueueError> {
-        let capacity = match usize::try_from(queue_capacity) {
-            Ok(capacity) if capacity > 0 => capacity,
-            Ok(_empty) | Err(_range) => return Err(WindowQueueError::ZeroCapacity),
+        let Ok(capacity) = usize::try_from(queue_capacity) else {
+            return Err(WindowQueueError::ZeroCapacity);
         };
+        if capacity == 0 {
+            return Err(WindowQueueError::ZeroCapacity);
+        }
         Ok(Self {
             state: Mutex::new(QueueState {
                 batches: VecDeque::new(),

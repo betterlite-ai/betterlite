@@ -3,10 +3,9 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{key, rollup, transaction};
-use crate::model_usage::rollup::model_usage_rollups;
+use crate::model_usage::rollup::{build_model_usage_transaction, model_usage_rollups};
 use crate::model_usage::{
     ModelUsageError, ModelUsagePayload, ModelUsageTransaction, UsageStartTime,
-    build_model_usage_transaction,
 };
 use crate::spend_queues::entity::SpendAmount;
 
