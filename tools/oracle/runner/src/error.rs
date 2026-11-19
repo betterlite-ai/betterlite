@@ -56,6 +56,12 @@ pub enum HelperRunError {
     PrismaGenerate(#[source] io::Error),
     #[error("prisma generate exited with {0}")]
     PrismaGenerateExited(ExitStatus),
+    #[error("cannot lock {path} for prisma generate: {source}")]
+    PrismaLock {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("cannot run prisma db execute: {0}")]
     PrismaExecute(#[source] io::Error),
     #[error("prisma db execute exited with {0}")]

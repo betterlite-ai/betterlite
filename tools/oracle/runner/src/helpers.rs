@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write as _};
@@ -224,6 +225,12 @@ pub fn generate_prisma_client(root: &Path) -> Result<(), HelperRunError> {
     if site_packages.join("prisma/client.py").is_file() {
         return Ok(());
     }
+    // the booted tests run as separate processes against one Prisma CLI cache, so a second process waits here for the first
+    let lock_path = env::temp_dir().join("betterlite-oracle-prisma-generate.lock");
+    let _lock = lock_prisma_generate(&lock_path)?;
+    if site_packages.join("prisma/client.py").is_file() {
+        return Ok(());
+    }
     let schema = site_packages.join("litellm/proxy/schema.prisma");
     if !schema.is_file() {
         return Err(HelperRunError::PrismaMissing { path: schema });
@@ -239,6 +246,25 @@ pub fn generate_prisma_client(root: &Path) -> Result<(), HelperRunError> {
     } else {
         Err(HelperRunError::PrismaGenerateExited(status))
     }
+}
+
+// prisma installs its CLI into one cache under the user's home, and concurrent npm installs there corrupt it
+fn lock_prisma_generate(path: &Path) -> Result<fs::File, HelperRunError> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|source| HelperRunError::PrismaLock {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.lock().map_err(|source| HelperRunError::PrismaLock {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(file)
 }
 
 // LiteLLM's key lookup reads a key's models as a list and rejects NULL, and the fixture's seed leaves that column empty

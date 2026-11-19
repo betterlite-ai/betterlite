@@ -7,6 +7,8 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -271,6 +273,29 @@ fn prisma_generate_reports_a_missing_schema() {
         super::generate_prisma_client(Path::new("/definitely-missing-betterlite-oracle-project"))
             .unwrap_err();
     assert!(matches!(error, HelperRunError::PrismaMissing { .. }));
+}
+
+#[test]
+fn prisma_generate_lock_serializes_its_holders() {
+    let root = env::temp_dir().join(format!("betterlite-lock-{}-venv", process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("generate.lock");
+    let held = super::lock_prisma_generate(&path).unwrap();
+    let (began, wait) = mpsc::sync_channel(0);
+    let (took, probe) = mpsc::sync_channel(0);
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            began.send(()).unwrap();
+            let second = super::lock_prisma_generate(&path).unwrap();
+            took.send(()).unwrap();
+            drop(second);
+        });
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(probe.recv_timeout(Duration::from_millis(200)).is_err());
+        drop(held);
+        probe.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
