@@ -25,6 +25,25 @@ pub(super) async fn bidirectional_runtime_target() {
     endpoint_precedence().await;
     default_endpoint_is_regional().await;
     model_id_is_passed_through().await;
+    connecting_log_names_the_endpoint_and_model().await;
+}
+
+async fn connecting_log_names_the_endpoint_and_model() {
+    let (captured, _guard) = capture();
+    let fixture = Fixture::new();
+    let result = fixture.run(region_options(REGION)).await;
+    assert!(result.outcome.is_ok(), "{:?}", result.outcome);
+    let logs = captured.text();
+    assert!(
+        logs.contains(
+            "Bedrock Realtime: Connecting to https://bedrock-runtime.us-east-1.amazonaws.com with model amazon.nova-sonic-v1:0"
+        ),
+        "{logs}"
+    );
+    assert!(
+        logs.contains("Bedrock Realtime: Bidirectional stream established"),
+        "{logs}"
+    );
 }
 
 async fn region_selection() {
