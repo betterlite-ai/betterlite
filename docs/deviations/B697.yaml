@@ -1,0 +1,42 @@
+task: B697
+deviations:
+  - what: >-
+      An empty thread id and the dot segments "." and ".." are refused with a value error before any request,
+      where LiteLLM's AzureOpenAI client quotes whatever string it is given and sends the request: an empty id
+      becomes a doubled slash in the path, and a dot segment is carried through as written or normalised by the
+      HTTP client.
+    why: >-
+      betterlite's shared assistant clients quote a thread id as one path segment and refuse the values that
+      cannot be one, so an id can never collapse or climb the message path; the same guard already covers
+      B520's thread calls and B686's assistant calls.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L269-L318
+  - what: >-
+      When a token provider resolves a token next to a non-empty api_key, the message request carries both an
+      Authorization bearer header and an api-key header; the OpenAI SDK's Azure client sends Authorization
+      alone whenever an AD token or token provider is present.
+    why: >-
+      Message calls reuse B686's client preparation and its header policy, so the assistant and message
+      surfaces authenticate the same way for the same inputs; B686 pins the both-headers behavior for a
+      provider token beside a key, and this module must not send a different pair of headers for the same
+      client. The SDK chooses one header in openai/lib/azure.py at v2.54.0.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L383-L421
+kept_bugs:
+  - what: >-
+      Only the literal True async flag selects the async SDK client: a value such as 1 or "yes" keeps the sync
+      client, exactly as LiteLLM's `is not None and is True` check does.
+    why: >-
+      A caller that passes a truthy flag other than True gets the sync client from LiteLLM today, so its
+      message calls run on the sync client here too; widening the check would silently move those calls.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L283
+  - what: >-
+      A successful attachments list is validated and then thrown away: the collected file ids are never
+      assigned to optional_params, so neither attachments nor file_ids reaches the client, and any values
+      already in optional_params stay untouched.
+    why: >-
+      LiteLLM's mapper builds a local file_ids list and never uses it, and callers of the Azure assistants
+      path depend on the mapper not forwarding the v2 attachments field; the task copies that behavior.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L91-L104

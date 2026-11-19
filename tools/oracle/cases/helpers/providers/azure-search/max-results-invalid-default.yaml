@@ -1,0 +1,62 @@
+kind: helper
+name: max-results-invalid-default
+call:
+  azure_search:
+    max_results:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: true}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: "3"}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 2.5}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: 0}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: -2}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: []}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          optional_params: {max_results: {}}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          query: q
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1, BING_GROUNDING_CONNECTION_ID: connection-1}
+          query: q
+          optional_params: {max_results: 0}
+          status: 200
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"claim","annotations":[{"type":"url_citation","url":"https://a.example"},{"type":"url_citation","url":"https://b.example"},{"type":"url_citation","url":"https://c.example"},{"type":"url_citation","url":"https://d.example"}]}]}]}
+env: {}
+compare:
+  ignore: []

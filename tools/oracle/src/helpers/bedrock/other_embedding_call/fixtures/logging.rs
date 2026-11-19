@@ -45,7 +45,7 @@ pub(crate) fn env<'env>(
     state: &LoggingState,
     redactor: &'env Redactor,
     sink: &'env DiscardingSink,
-    capture: &'env dyn Fn(&Json) -> Result<(), PrePostError>,
+    capture: &'env (dyn Fn(&Json) -> Result<(), PrePostError> + Sync),
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),

@@ -24,6 +24,8 @@ disallowed-types = [
   { path = "eyre::Report", reason = "errors are typed thiserror enums" },
   { path = "std::rc::Rc", reason = "ownership is checked at compile time; state shared across tasks is an Arc with a Mutex or a channel" },
   { path = "std::cell::RefCell", reason = "a runtime borrow check panics where the compiler would have refused; restructure ownership instead" },
+  { path = "futures_util::future::LocalBoxFuture", reason = "provider and logging futures must be Send for the gateway; give the trait objects they hold Send + Sync (decision 2026-11-18)" },
+  { path = "futures_util::stream::LocalBoxStream", reason = "provider and logging futures must be Send for the gateway; give the trait objects they hold Send + Sync (decision 2026-11-18)" },
 ]
 
 disallowed-methods = [

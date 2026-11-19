@@ -8,7 +8,7 @@ description: >-
 
   Registration. `vertex_routes_router(deps: VertexRouteDeps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path without a leading slash: `/vertex_ai/discovery/{endpoint}`, `/vertex_ai/{endpoint}` and `/vertex-ai/{endpoint}`. The hyphen path is an alias of the underscore one and is left out of the OpenAPI schema. B8608 adds the router to the app once beside B3629's WebSocket route.
   `VertexRouteDeps` holds the ports below, built once by B8608 from B8641's adapters. This task declares each port as a small trait with one async method, so tests use recording fakes and nothing global is read:
-  - `VertexKeyAuth`: B052's key authentication with an explicit api key string, returns the authenticated key or the auth error unchanged.
+  - `VertexKeyAuth`: the proxy key check (LiteLLM's user_api_key_auth) with an explicit api key string (B8641's KeyAuthAdapter is the real one), returns the authenticated key or the auth error unchanged.
   - `VertexStoreAccess`: `managed_store(vector_store_id)` and `assert_access(store, key)`, backed by B1061 (get_litellm_managed_vector_store and assert_user_can_access_vector_store in betterlite-core::api::vector_endpoint_access; read the merged names). A lookup failure is B1061's own 500 "Unable to validate vector store access"; a denied caller is its 403.
   - `VertexCredentialLookup`: `credentials(project, location) -> Option<VertexPassThroughCredentials>`, backed by B3602's get_vertex_credentials (record at `crate::pass_through_credentials::VertexPassThroughCredentials`).
   - B3622's `VertexDeploymentLookup`, as an Option (no router means no model resolution).

@@ -20,6 +20,8 @@ description: >-
   truthy (default false), mark authenticated_by_custom_auth=true and return. A string is invalid here;
   the enterprise-only bearer-replacement path is outside the MIT implementation. B052 owns typed
   custom/post-check ports and B054 supplies them; configured uninstalled hooks fail startup by name.
+  On success the middleware stores the resulting UserAPIKeyAuth (B2314) in the request extensions,
+  where route handlers read it; main stores only an AuthContext there today.
   No reverse dependency on B054. Public routes return INTERNAL_USER_VIEW_ONLY before backend dispatch,
   except B756's protected metrics override; B741 handles configured additional public routes.
 

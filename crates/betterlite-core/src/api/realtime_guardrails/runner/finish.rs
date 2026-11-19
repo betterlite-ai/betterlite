@@ -2,7 +2,7 @@ use std::error::Error;
 
 use betterlite_config::sections::guardrail_params::base::OnViolation;
 use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 
@@ -13,7 +13,7 @@ use super::RealtimeGuardrails;
 const LOGGED_TRANSCRIPT_CHARS: usize = 80;
 
 type UnitFuture<'call, ConfigError, CallbackError> =
-    LocalBoxFuture<'call, Result<(), RealtimeGuardrailsError<ConfigError, CallbackError>>>;
+    BoxFuture<'call, Result<(), RealtimeGuardrailsError<ConfigError, CallbackError>>>;
 
 // LiteLLM counts the violation after the frames, ends the session when the policy says so, and logs the first 80 characters
 pub(super) fn finish_block<'call, Config, CallbackError>(
@@ -23,7 +23,7 @@ pub(super) fn finish_block<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         runner.state.setup.violation_count = runner.state.setup.violation_count.saturating_add(1);
@@ -41,7 +41,7 @@ where
         tracing::warn!("[realtime guardrail] BLOCKED transcript (violation {count}): {logged:?}");
         Ok(())
     }
-    .boxed_local()
+    .boxed()
 }
 
 fn close_backend<'call, Config, CallbackError>(
@@ -49,7 +49,7 @@ fn close_backend<'call, Config, CallbackError>(
 ) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     async move {
         let backend = runner
@@ -62,5 +62,5 @@ where
             .await
             .map_err(RealtimeGuardrailsError::Close)
     }
-    .boxed_local()
+    .boxed()
 }

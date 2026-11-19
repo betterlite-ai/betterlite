@@ -7,7 +7,7 @@ description: >-
   POST /v1beta/interactions/{interaction_id}/cancel, and POST /interactions/{interaction_id}/cancel.
   Each route receives requests from LiteLLM API clients using the Google Interactions API.
   Parse the JSON body (using B1100's request decoder for create; no body for get/delete/cancel),
-  authenticate via B052's virtual key auth, extract the interaction_id from the path where needed,
+  take the caller's UserAPIKeyAuth (B2314) that the server's authentication middleware resolves, extract the interaction_id from the path where needed,
   set custom_llm_provider to "gemini" as default when not provided, and dispatch to B3499's create (routes(release) takes B3499's ReservationRelease port and hands it to acreate on the create path; B8774 passes B8660's interaction_release),
   B3495's get, B3500's delete, and B3500's cancel handlers via B014's base_process_llm_request.
   Return the same error status, type, param and code LiteLLM returns on provider errors (rule

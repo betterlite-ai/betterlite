@@ -1,0 +1,95 @@
+kind: sdk_http
+name: compression-interception-compression-savings-validation
+env: {}
+call:
+  compression_interception:
+    steps:
+      - settings: {litellm_settings: {}, callback_settings: {}}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: one}]
+        now: 0
+        compress:
+          messages: [{role: user, content: compressed one}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-1: original one}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: two}]
+        now: 10
+        compress:
+          messages: [{role: user, content: compressed two}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 0
+          compressed_tokens: 0
+          cache: {key-2: original two}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: three}]
+        now: 20
+        compress:
+          messages: [{role: user, content: compressed three}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: true
+          compressed_tokens: 400
+          cache: {key-3: original three}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: four}]
+        now: 30
+        compress:
+          messages: [{role: user, content: compressed four}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 1.5
+          cache: {key-4: original four}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: five}]
+        now: 40
+        compress:
+          messages: [{role: user, content: compressed five}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: -5
+          compressed_tokens: -10
+          cache: {key-5: original five}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: six}]
+        now: 50
+        compress:
+          messages: [{role: user, content: compressed six}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 10
+          compressed_tokens: 20
+          cache: {key-6: original six}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: seven}]
+          litellm_metadata: {spend_logs_metadata: kept}
+        now: 60
+        compress:
+          messages: [{role: user, content: compressed seven}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 2000
+          compressed_tokens: 500
+          cache: {key-7: original seven}
+      - request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: eight}]
+          litellm_metadata: [1, 2]
+        now: 70
+        compress:
+          messages: [{role: user, content: compressed eight}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 3000
+          compressed_tokens: 1000
+          cache: {key-8: original eight}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

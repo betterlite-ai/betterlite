@@ -1,0 +1,9 @@
+kind: helper
+name: chunk-utf8-text
+call:
+  b3451:
+    mode: chunk
+    options: {}
+    file_content_base64: aGVsbG8gY2h1bms=
+env: {}
+compare: {ignore: []}
