@@ -216,10 +216,10 @@ impl Scenario {
 }
 
 // the request a step names, or the adapter error naming the index it asked for
-fn request_slot<'reads>(
-    requests: &'reads mut [RequestReads<RouteValue>],
+fn request_slot(
+    requests: &mut [RequestReads<RouteValue>],
     index: usize,
-) -> Result<&'reads mut RequestReads<RouteValue>, ScenarioError> {
+) -> Result<&mut RequestReads<RouteValue>, ScenarioError> {
     requests
         .get_mut(index)
         .ok_or(ScenarioError::UnknownRequest { request: index })
