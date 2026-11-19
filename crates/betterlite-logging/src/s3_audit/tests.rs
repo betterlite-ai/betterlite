@@ -241,6 +241,7 @@ async fn audit_record_below_batch_size_waits_for_the_timer() {
         Some((&tracker, &shutdown)),
     );
     logger.log_audit_event(&record("a1"), now()).await;
+    yield_now().await;
     assert!(client.requests().is_empty());
     assert_eq!(logger.queue.snapshot().entries.len(), 1);
     advance(Duration::from_secs(10)).await;
