@@ -26,7 +26,11 @@ const KEY_ENV: &str = "PROBE_API_KEY";
 const BASE_ENV: &str = "PROBE_API_BASE";
 
 // the cases carry no thinking fields, so the fake never answers a capability question with data
-struct NoCapabilities;
+#[derive(Default)]
+struct NoCapabilities {
+    // the provider each transform asks its capability questions with
+    observed_provider: Option<String>,
+}
 
 impl ThinkingCapabilities for NoCapabilities {
     fn supports(
@@ -68,8 +72,9 @@ impl ThinkingCapabilities for NoCapabilities {
         &mut self,
         _model: &str,
         _params: &mut OptionalParams,
-        _provider: &str,
+        provider: &str,
     ) -> impl Future<Output = bool> + Send {
+        self.observed_provider = Some(provider.to_owned());
         ready(false)
     }
 
@@ -390,7 +395,7 @@ fn beta_spellings_collapse_and_merge_sorted() {
     };
     let headers = policy
         .validate_environment(
-            headers(&[("Anthropic-Beta", "prompt-caching-2024-07-31")]),
+            headers(&[("Anthropic-Beta", "probe-beta-2099-01-01")]),
             &credentials,
             &object(r#"{"speed":"fast"}"#),
             &messages("[]"),
@@ -398,7 +403,7 @@ fn beta_spellings_collapse_and_merge_sorted() {
         .expect("the headers build");
     assert_eq!(
         headers.get("anthropic-beta").map(String::as_str),
-        Some("fast-mode-2026-02-01,prompt-caching-2024-07-31")
+        Some("fast-mode-2026-02-01,probe-beta-2099-01-01")
     );
     assert_eq!(headers.get("Anthropic-Beta"), None);
 }
@@ -423,7 +428,7 @@ async fn json_transform_strips_billing_and_the_ttl_hint() {
     let policy = policy(ProviderId::Cortecs, "https://descriptor.invalid/v1");
     let body = policy
         .transform_request(
-            &mut NoCapabilities,
+            &mut NoCapabilities::default(),
             "example-model",
             messages(CACHED_MESSAGES),
             object(REQUEST_PARAMS),
@@ -442,7 +447,7 @@ async fn json_transform_keeps_the_ttl_when_the_descriptor_opts_in() {
     descriptor.config.constraints.cache_control_ttl = Some(true);
     let body = messages_policy(descriptor)
         .transform_request(
-            &mut NoCapabilities,
+            &mut NoCapabilities::default(),
             "example-model",
             messages(CACHED_MESSAGES),
             object(r#"{"max_tokens":32}"#),
@@ -458,7 +463,7 @@ async fn json_transform_keeps_the_ttl_when_the_descriptor_opts_in() {
 #[tokio::test]
 async fn generic_transform_keeps_billing_and_strips_the_ttl_hint() {
     let body = generic_transform_request(
-        &mut NoCapabilities,
+        &mut NoCapabilities::default(),
         "example-model",
         messages(CACHED_MESSAGES),
         object(REQUEST_PARAMS),
@@ -474,7 +479,7 @@ async fn generic_transform_keeps_billing_and_strips_the_ttl_hint() {
 #[tokio::test]
 async fn transform_without_max_tokens_is_an_error() {
     let error = generic_transform_request(
-        &mut NoCapabilities,
+        &mut NoCapabilities::default(),
         "example-model",
         messages("[]"),
         Object::new(),
@@ -484,5 +489,37 @@ async fn transform_without_max_tokens_is_an_error() {
     assert_eq!(
         error.to_string(),
         "max_tokens is required for Anthropic /v1/messages API"
+    );
+}
+
+// the JSON subclass asks capability questions with its provider slug; the generic class stays on anthropic
+#[tokio::test]
+async fn the_json_subclass_reports_its_slug_and_the_generic_class_anthropic() {
+    let mut json_capabilities = NoCapabilities::default();
+    policy(ProviderId::Cortecs, "https://descriptor.invalid/v1")
+        .transform_request(
+            &mut json_capabilities,
+            "example-model",
+            messages("[]"),
+            object(r#"{"max_tokens":32}"#),
+        )
+        .await
+        .expect("the request builds");
+    assert_eq!(
+        json_capabilities.observed_provider.as_deref(),
+        Some("cortecs")
+    );
+    let mut generic_capabilities = NoCapabilities::default();
+    generic_transform_request(
+        &mut generic_capabilities,
+        "example-model",
+        messages("[]"),
+        object(r#"{"max_tokens":32}"#),
+    )
+    .await
+    .expect("the request builds");
+    assert_eq!(
+        generic_capabilities.observed_provider.as_deref(),
+        Some("anthropic")
     );
 }

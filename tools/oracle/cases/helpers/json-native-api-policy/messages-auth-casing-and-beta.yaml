@@ -72,5 +72,20 @@ call:
         environment: {OPENAI_LIKE_API_KEY: sk-env}
         api_key: sk-openai-like
         headers: {X-Custom: "1"}
+      - kind: generic_messages_headers
+        model: anthropic/probe-model
+        environment: {}
+        headers: {anthropic-beta: probe-beta-2099-01-01}
+        optional_params: {}
+        messages: []
+      - kind: json_messages_headers
+        model: gmi/probe-model
+        environment: {}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+        headers: {anthropic-beta: probe-beta-2099-01-01}
+        optional_params: {}
+        messages: []
 env: {}
 compare: {ignore: []}
