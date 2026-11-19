@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use betterlite_openai::assistants::client::ClientKind;
-use betterlite_openai::threads::error::ThreadsError;
+use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::threads::records::ThreadMessagePage;
 
+use crate::azure_assistant_definitions::error::DefinitionsError;
 use crate::azure_assistant_definitions::operations::AssistantsApi;
 use crate::azure_message_attachments::error::MessagesError;
 use crate::azure_message_attachments::operations::{MessageCall, MessageReply, MessagesApi};
@@ -101,7 +102,7 @@ async fn async_kind(flag: Option<bool>, kind: ClientKind) {
     assert_eq!(reply.kind, kind);
 }
 
-// The SDK's failures propagate without conversion.
+// The assistant client's status and transport failures surface unchanged inside the facade error.
 async fn http_status_propagates() {
     let fixture = Fixture::new();
     let request = fixture.request();
@@ -112,7 +113,10 @@ async fn http_status_propagates() {
         .unwrap_err();
     assert!(matches!(
         error,
-        MessagesError::Threads(ThreadsError::Status { status: 404, .. })
+        MessagesError::Definitions(DefinitionsError::Assistants(AssistantsError::Status {
+            status: 404,
+            ..
+        }))
     ));
     assert_eq!(transport.requests().len(), 1);
 }
@@ -133,7 +137,9 @@ async fn transport_failure_propagates() {
         .unwrap_err();
     assert!(matches!(
         error,
-        MessagesError::Threads(ThreadsError::Transport { .. })
+        MessagesError::Definitions(DefinitionsError::Assistants(
+            AssistantsError::Transport { .. }
+        ))
     ));
     assert_eq!(
         transport.requests(),
