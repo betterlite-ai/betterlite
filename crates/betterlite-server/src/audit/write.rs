@@ -20,7 +20,7 @@ pub(super) struct AuditWriteTarget<'a> {
 
 // create_audit_log_for_update: recheck the policy, deliver to every callback, then insert and never fail the caller
 pub(super) async fn write_audit_log(target: AuditWriteTarget<'_>, record: AuditLogRecord) {
-    if !target.settings.is_audit_logging_enabled(None) {
+    if !target.settings.config.is_audit_logging_enabled(None) {
         return;
     }
     tracing::debug!("creating audit log for {record:?}");
@@ -28,7 +28,7 @@ pub(super) async fn write_audit_log(target: AuditWriteTarget<'_>, record: AuditL
     let loggers = selected_loggers(
         target.entries,
         &target.delivery.named,
-        target.settings.s3_audit_callback_params.as_ref(),
+        target.settings.config.s3_audit_callback_params.as_ref(),
     );
     target.delivery.dispatch(&loggers, &payload);
     if !target.repository.available() {

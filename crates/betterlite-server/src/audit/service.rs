@@ -73,7 +73,7 @@ impl AuditService {
     }
 
     pub async fn create_object_audit_log(&self, entry: ObjectAuditLog<'_>) {
-        if !self.settings.is_audit_logging_enabled(None) {
+        if !self.settings.config.is_audit_logging_enabled(None) {
             return;
         }
         match object_record(&entry, self.clock.as_ref(), self.new_id.as_ref()) {
@@ -102,7 +102,7 @@ impl AuditService {
 
     // A caller that cannot wait schedules the whole record: the queue's admission is synchronous, the write is not
     pub fn try_submit(&self, record: AuditLogRecord) -> AuditSubmission {
-        if !self.settings.is_audit_logging_enabled(None) {
+        if !self.settings.config.is_audit_logging_enabled(None) {
             return AuditSubmission::Disabled;
         }
         let job = AuditWriteJob {

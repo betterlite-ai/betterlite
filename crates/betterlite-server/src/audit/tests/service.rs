@@ -301,7 +301,7 @@ async fn the_configured_s3_parameters_build_the_dedicated_logger() {
     let params: betterlite_config::sections::settings::JsonValue =
         serde_json::from_str(r#"{"s3_bucket_name": "audit-bucket"}"#).unwrap();
     let mut settings = enabled();
-    settings.s3_audit_callback_params = Some(params.clone());
+    settings.config.s3_audit_callback_params = Some(params.clone());
     let service = Fixture {
         settings,
         callbacks: vec![AuditCallbackEntry::Named("s3_v2".to_owned())],

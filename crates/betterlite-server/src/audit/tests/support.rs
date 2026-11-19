@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::audit::Settings as AuditSettings;
+use betterlite_config::sections::audit_events::Settings as SectionSettings;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::audit::callbacks::{
     AuditLoggerBuildError, DedicatedAuditLoggerBuilder, NamedAuditCallbacks,
@@ -65,19 +66,20 @@ pub(super) fn record() -> AuditLogRecord {
 
 pub(super) fn enabled() -> AuditSettings {
     AuditSettings {
-        store_audit_logs: Some(true),
-        store_audit_logs_env: None,
-        audit_log_callbacks: vec!["otel".to_owned()],
+        config: SectionSettings {
+            store_audit_logs: Some(true),
+            store_audit_logs_env: None,
+            audit_log_callbacks: vec!["otel".to_owned()],
+            s3_audit_callback_params: None,
+        },
         audit_log_callbacks_present: true,
-        s3_audit_callback_params: None,
     }
 }
 
 pub(super) fn disabled() -> AuditSettings {
-    AuditSettings {
-        store_audit_logs: Some(false),
-        ..enabled()
-    }
+    let mut settings = enabled();
+    settings.config.store_audit_logs = Some(false);
+    settings
 }
 
 pub(super) fn worker_settings(queue: usize) -> WorkerSettings {

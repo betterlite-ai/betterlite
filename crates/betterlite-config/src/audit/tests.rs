@@ -28,22 +28,22 @@ fn parsed(text: &str) -> JsonValue {
 #[test]
 fn loads_audit_settings() {
     let absent = settings("");
-    assert_eq!(absent.store_audit_logs, None);
-    assert_eq!(absent.store_audit_logs_env, None);
-    assert!(absent.audit_log_callbacks.is_empty());
+    assert_eq!(absent.config.store_audit_logs, None);
+    assert_eq!(absent.config.store_audit_logs_env, None);
+    assert!(absent.config.audit_log_callbacks.is_empty());
     assert!(!absent.audit_log_callbacks_present);
-    assert_eq!(absent.s3_audit_callback_params, None);
+    assert_eq!(absent.config.s3_audit_callback_params, None);
 
     let empty_list = settings("litellm_settings:\n  audit_log_callbacks: []\n");
     assert!(empty_list.audit_log_callbacks_present);
-    assert!(empty_list.audit_log_callbacks.is_empty());
+    assert!(empty_list.config.audit_log_callbacks.is_empty());
 
     let listed = settings(
         "litellm_settings:\n  audit_log_callbacks:\n    - s3_v2\n    - otel\n    - module.object\n",
     );
     assert!(listed.audit_log_callbacks_present);
     assert_eq!(
-        listed.audit_log_callbacks,
+        listed.config.audit_log_callbacks,
         vec![
             "s3_v2".to_owned(),
             "otel".to_owned(),
@@ -55,15 +55,15 @@ fn loads_audit_settings() {
         "litellm_settings:\n  s3_audit_callback_params:\n    bucket_name: audit-bucket\n    prefix: audit/\n",
     );
     assert_eq!(
-        s3.s3_audit_callback_params,
+        s3.config.s3_audit_callback_params,
         Some(parsed(
             r#"{"bucket_name": "audit-bucket", "prefix": "audit/"}"#
         ))
     );
     let empty_s3 = settings("litellm_settings:\n  s3_audit_callback_params: {}\n");
-    assert_eq!(empty_s3.s3_audit_callback_params, Some(parsed("{}")));
+    assert_eq!(empty_s3.config.s3_audit_callback_params, Some(parsed("{}")));
     let null_s3 = settings("litellm_settings:\n  s3_audit_callback_params: null\n");
-    assert_eq!(null_s3.s3_audit_callback_params, None);
+    assert_eq!(null_s3.config.s3_audit_callback_params, None);
 }
 
 #[test]
@@ -73,35 +73,35 @@ fn loads_audit_settings_precedence() {
 
     let configured_false = load("litellm_settings:\n  store_audit_logs: false\n", &true_env)
         .expect("the settings load");
-    assert_eq!(configured_false.store_audit_logs, Some(false));
-    assert_eq!(configured_false.store_audit_logs_env, Some(true));
-    assert!(!configured_false.is_audit_logging_enabled(None));
-    assert!(configured_false.is_audit_logging_enabled(Some(true)));
+    assert_eq!(configured_false.config.store_audit_logs, Some(false));
+    assert_eq!(configured_false.config.store_audit_logs_env, Some(true));
+    assert!(!configured_false.config.is_audit_logging_enabled(None));
+    assert!(configured_false.config.is_audit_logging_enabled(Some(true)));
 
     let configured_true = load("litellm_settings:\n  store_audit_logs: true\n", &false_env)
         .expect("the settings load");
-    assert!(configured_true.is_audit_logging_enabled(None));
-    assert!(!configured_true.is_audit_logging_enabled(Some(false)));
+    assert!(configured_true.config.is_audit_logging_enabled(None));
+    assert!(!configured_true.config.is_audit_logging_enabled(Some(false)));
 
     let env_true = load("", &true_env).expect("the settings load");
-    assert_eq!(env_true.store_audit_logs, None);
-    assert!(env_true.is_audit_logging_enabled(None));
+    assert_eq!(env_true.config.store_audit_logs, None);
+    assert!(env_true.config.is_audit_logging_enabled(None));
 
     let env_false = load("", &false_env).expect("the settings load");
-    assert_eq!(env_false.store_audit_logs_env, Some(false));
-    assert!(!env_false.is_audit_logging_enabled(None));
+    assert_eq!(env_false.config.store_audit_logs_env, Some(false));
+    assert!(!env_false.config.is_audit_logging_enabled(None));
 
     let unset = settings("");
-    assert!(unset.is_audit_logging_enabled(None));
+    assert!(unset.config.is_audit_logging_enabled(None));
 
     for text in ["yes", "", " TRUE "] {
         let env = environment(&[("LITELLM_STORE_AUDIT_LOGS", text)]);
         let resolved = load("", &env).expect("the settings load");
         if text == " TRUE " {
-            assert_eq!(resolved.store_audit_logs_env, Some(true));
+            assert_eq!(resolved.config.store_audit_logs_env, Some(true));
         } else {
-            assert_eq!(resolved.store_audit_logs_env, None);
-            assert!(resolved.is_audit_logging_enabled(None));
+            assert_eq!(resolved.config.store_audit_logs_env, None);
+            assert!(resolved.config.is_audit_logging_enabled(None));
         }
     }
 }
@@ -126,7 +126,10 @@ fn decode_audit_settings_reads_the_same_keys() {
         "litellm_settings:\n  store_audit_logs: true\n  audit_log_callbacks: [s3_v2]\n",
     )
     .expect("the settings decode");
-    assert_eq!(settings.store_audit_logs, Some(true));
+    assert_eq!(settings.config.store_audit_logs, Some(true));
     assert!(settings.audit_log_callbacks_present);
-    assert_eq!(settings.audit_log_callbacks, vec!["s3_v2".to_owned()]);
+    assert_eq!(
+        settings.config.audit_log_callbacks,
+        vec!["s3_v2".to_owned()]
+    );
 }
