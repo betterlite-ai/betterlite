@@ -79,6 +79,33 @@ impl ImageDescriptionCompletion for Concurrent {
     }
 }
 
+struct TwoChoices;
+
+fn two_choices() -> ImageDescriptionResponse {
+    ImageDescriptionResponse {
+        choices: vec![
+            ImageDescriptionReply {
+                content: Some("first alpha".to_owned()),
+            },
+            ImageDescriptionReply {
+                content: Some("second beta".to_owned()),
+            },
+        ],
+    }
+}
+
+#[async_trait]
+impl ImageDescriptionCompletion for TwoChoices {
+    type Error = ScriptedError;
+
+    async fn describe(
+        &self,
+        _request: &ImageDescriptionRequest,
+    ) -> Result<ImageDescriptionResponse, Self::Error> {
+        Ok(two_choices())
+    }
+}
+
 struct NoChoices;
 
 #[async_trait]
@@ -273,6 +300,27 @@ async fn image_processing_skips_an_empty_image_list() {
             .is_empty()
     );
     assert!(detections.is_empty());
+}
+
+#[tokio::test]
+async fn image_description_uses_the_first_choice_only() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "alpha",
+        "alpha",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let images = ["img-1".to_owned()];
+    let scan = ImageScan {
+        images: &images,
+        image_model: Some("vision-model"),
+        source: &source,
+    };
+    let mut detections = Vec::new();
+    process_images(&scan, Some(&TwoChoices), &mut detections)
+        .await
+        .expect("the first choice filters");
+    assert_eq!(pattern_names(&detections), ["alpha"]);
 }
 
 #[tokio::test]
