@@ -8,12 +8,11 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::fixtures;
+use crate::auth_cache::payload;
 use crate::auth_prefetch::entries::{
     AuthObjectRefs, MEMBERSHIP_AUTH_TTL, PrefetchEntry, iter_entries,
 };
-use crate::auth_prefetch::identity::{
-    REGISTRY_ERROR_TTL, identity_cache_keys, identity_memory_ttl,
-};
+use crate::auth_prefetch::fill::{REGISTRY_ERROR_TTL, identity_cache_keys, identity_memory_ttl};
 use crate::auth_prefetch::rows::{RowKind, RowObject, validate_row};
 
 use super::support::{Logs, json};
@@ -281,7 +280,7 @@ fn team_project_timestamp_override() {
         panic!("the team row validates as a team");
     };
     assert_eq!(row.last_refreshed_at, Some(42.0));
-    let payload = validated.payload().expect("the team payload");
+    let payload = payload::encode(&validated).expect("the team payload");
     assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(42.0));
 
     let project = with_timestamp(fixtures::project_row("project-1"), 1.5);
@@ -291,7 +290,7 @@ fn team_project_timestamp_override() {
         panic!("the project row validates as a project");
     };
     assert_eq!(row.last_refreshed_at, Some(9.5));
-    let payload = validated.payload().expect("the project payload");
+    let payload = payload::encode(&validated).expect("the project payload");
     assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(9.5));
 }
 
@@ -302,7 +301,7 @@ fn team_project_timestamp_override() {
 fn other_rows_not_timestamped(#[case] kind: RowKind, #[case] row: JsonData) {
     let row = with_timestamp(row, 1.5);
     let validated = validate_row(kind, Some(&row), 42.0).expect("the row validates");
-    let payload = validated.payload().expect("the payload");
+    let payload = payload::encode(&validated).expect("the payload");
     assert!(
         object(&payload).get("last_refreshed_at").is_none(),
         "{kind:?} carries no timestamp"

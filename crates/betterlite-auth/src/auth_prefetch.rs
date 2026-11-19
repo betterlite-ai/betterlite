@@ -1,7 +1,6 @@
 pub mod db;
 pub mod entries;
 pub mod fill;
-pub mod identity;
 pub mod memory;
 pub mod orchestrator;
 pub mod permission;

@@ -8,81 +8,11 @@ use super::rows::{RowKind, RowValues};
 
 // the pinned SELECT keeps relations null and coalesces every scalar list to [], as prisma reads them
 const ROWS_SQL: &str = r#"SELECT
-  (SELECT to_jsonb(u) || jsonb_build_object(
-    'teams', COALESCE(to_jsonb(u.teams), '[]'::jsonb),
-    'models', COALESCE(to_jsonb(u.models), '[]'::jsonb),
-    'allowed_cache_controls', COALESCE(to_jsonb(u.allowed_cache_controls), '[]'::jsonb),
-    'policies', COALESCE(to_jsonb(u.policies), '[]'::jsonb),
-    'organization_memberships', COALESCE((
-      SELECT jsonb_agg(to_jsonb(om)) FROM "LiteLLM_OrganizationMembership" om WHERE om.user_id = u.user_id
-    ), '[]'::jsonb)
-  ) FROM "LiteLLM_UserTable" u WHERE u.user_id = $1)::text,
-  (SELECT to_jsonb(t) || jsonb_build_object(
-    'admins', COALESCE(to_jsonb(t.admins), '[]'::jsonb),
-    'members', COALESCE(to_jsonb(t.members), '[]'::jsonb),
-    'models', COALESCE(to_jsonb(t.models), '[]'::jsonb),
-    'team_member_permissions', COALESCE(to_jsonb(t.team_member_permissions), '[]'::jsonb),
-    'access_group_ids', COALESCE(to_jsonb(t.access_group_ids), '[]'::jsonb),
-    'policies', COALESCE(to_jsonb(t.policies), '[]'::jsonb),
-    'default_team_member_models', COALESCE(to_jsonb(t.default_team_member_models), '[]'::jsonb),
-    'litellm_model_table', (
-      SELECT (to_jsonb(m) - 'aliases') || jsonb_build_object('model_aliases', m.aliases)
-      FROM "LiteLLM_ModelTable" m WHERE m.id = t.model_id
-    ),
-    'object_permission', (SELECT to_jsonb(op) || jsonb_build_object(
-      'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb),
-      'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb),
-      'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb),
-      'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb),
-      'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb),
-      'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb),
-      'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb),
-      'models', COALESCE(to_jsonb(op.models), '[]'::jsonb),
-      'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb),
-      'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb)
-    ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = t.object_permission_id)
-  ) FROM "LiteLLM_TeamTable" t WHERE t.team_id = $2)::text,
-  (SELECT to_jsonb(tm) || jsonb_build_object('litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object(
-    'allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)
-  ) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = tm.budget_id))
-  FROM "LiteLLM_TeamMembership" tm WHERE tm.user_id = $3 AND tm.team_id = $2)::text,
-  (SELECT to_jsonb(o) || jsonb_build_object(
-    'models', COALESCE(to_jsonb(o.models), '[]'::jsonb),
-    'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object(
-      'allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)
-    ) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = o.budget_id),
-    'object_permission', (SELECT to_jsonb(op) || jsonb_build_object(
-      'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb),
-      'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb),
-      'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb),
-      'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb),
-      'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb),
-      'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb),
-      'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb),
-      'models', COALESCE(to_jsonb(op.models), '[]'::jsonb),
-      'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb),
-      'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb)
-    ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = o.object_permission_id)
-  ) FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $4)::text,
-  (SELECT to_jsonb(p) || jsonb_build_object(
-    'models', COALESCE(to_jsonb(p.models), '[]'::jsonb),
-    'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object(
-      'allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)
-    ) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = p.budget_id),
-    'object_permission', (SELECT to_jsonb(op) || jsonb_build_object(
-      'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb),
-      'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb),
-      'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb),
-      'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb),
-      'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb),
-      'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb),
-      'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb),
-      'models', COALESCE(to_jsonb(op.models), '[]'::jsonb),
-      'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb),
-      'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb)
-    ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = p.object_permission_id)
-  ) FROM "LiteLLM_ProjectTable" p WHERE p.project_id = $5)::text"#;
-
+  (SELECT to_jsonb(u) || jsonb_build_object( 'teams', COALESCE(to_jsonb(u.teams), '[]'::jsonb), 'models', COALESCE(to_jsonb(u.models), '[]'::jsonb), 'allowed_cache_controls', COALESCE(to_jsonb(u.allowed_cache_controls), '[]'::jsonb), 'policies', COALESCE(to_jsonb(u.policies), '[]'::jsonb), 'organization_memberships', COALESCE((SELECT jsonb_agg(to_jsonb(om)) FROM "LiteLLM_OrganizationMembership" om WHERE om.user_id = u.user_id), '[]'::jsonb) ) FROM "LiteLLM_UserTable" u WHERE u.user_id = $1)::text,
+  (SELECT to_jsonb(t) || jsonb_build_object( 'admins', COALESCE(to_jsonb(t.admins), '[]'::jsonb), 'members', COALESCE(to_jsonb(t.members), '[]'::jsonb), 'models', COALESCE(to_jsonb(t.models), '[]'::jsonb), 'team_member_permissions', COALESCE(to_jsonb(t.team_member_permissions), '[]'::jsonb), 'access_group_ids', COALESCE(to_jsonb(t.access_group_ids), '[]'::jsonb), 'policies', COALESCE(to_jsonb(t.policies), '[]'::jsonb), 'default_team_member_models', COALESCE(to_jsonb(t.default_team_member_models), '[]'::jsonb), 'litellm_model_table', (SELECT (to_jsonb(m) - 'aliases') || jsonb_build_object('model_aliases', m.aliases) FROM "LiteLLM_ModelTable" m WHERE m.id = t.model_id), 'object_permission', (SELECT to_jsonb(op) || jsonb_build_object( 'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb), 'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb), 'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb), 'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb), 'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb), 'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb), 'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb), 'models', COALESCE(to_jsonb(op.models), '[]'::jsonb), 'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb), 'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb) ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = t.object_permission_id) ) FROM "LiteLLM_TeamTable" t WHERE t.team_id = $2)::text,
+  (SELECT to_jsonb(tm) || jsonb_build_object('litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = tm.budget_id)) FROM "LiteLLM_TeamMembership" tm WHERE tm.user_id = $3 AND tm.team_id = $2)::text,
+  (SELECT to_jsonb(o) || jsonb_build_object( 'models', COALESCE(to_jsonb(o.models), '[]'::jsonb), 'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = o.budget_id), 'object_permission', (SELECT to_jsonb(op) || jsonb_build_object( 'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb), 'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb), 'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb), 'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb), 'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb), 'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb), 'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb), 'models', COALESCE(to_jsonb(op.models), '[]'::jsonb), 'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb), 'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb) ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = o.object_permission_id) ) FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $4)::text,
+  (SELECT to_jsonb(p) || jsonb_build_object( 'models', COALESCE(to_jsonb(p.models), '[]'::jsonb), 'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = p.budget_id), 'object_permission', (SELECT to_jsonb(op) || jsonb_build_object( 'mcp_servers', COALESCE(to_jsonb(op.mcp_servers), '[]'::jsonb), 'mcp_access_groups', COALESCE(to_jsonb(op.mcp_access_groups), '[]'::jsonb), 'mcp_toolsets', COALESCE(to_jsonb(op.mcp_toolsets), '[]'::jsonb), 'blocked_tools', COALESCE(to_jsonb(op.blocked_tools), '[]'::jsonb), 'vector_stores', COALESCE(to_jsonb(op.vector_stores), '[]'::jsonb), 'agents', COALESCE(to_jsonb(op.agents), '[]'::jsonb), 'agent_access_groups', COALESCE(to_jsonb(op.agent_access_groups), '[]'::jsonb), 'models', COALESCE(to_jsonb(op.models), '[]'::jsonb), 'search_tools', COALESCE(to_jsonb(op.search_tools), '[]'::jsonb), 'skills', COALESCE(to_jsonb(op.skills), '[]'::jsonb) ) FROM "LiteLLM_ObjectPermissionTable" op WHERE op.object_permission_id = p.object_permission_id) ) FROM "LiteLLM_ProjectTable" p WHERE p.project_id = $5)::text"#;
 #[derive(Debug, thiserror::Error)]
 pub enum PrefetchDatabaseError {
     #[error("the auth prefetch query failed")]
@@ -94,60 +24,39 @@ pub enum PrefetchDatabaseError {
         source: serde_json::Error,
     },
 }
-
+pub type RowsAnswer = Result<RowValues, PrefetchDatabaseError>;
 // one query for every requested kind; the kinds not requested bind SQL NULL
 #[async_trait]
 pub trait PrefetchDatabase: Send + Sync {
-    async fn fetch_rows(
-        &self,
-        refs: &AuthObjectRefs,
-        kinds: &[RowKind],
-    ) -> Result<RowValues, PrefetchDatabaseError>;
+    async fn fetch_rows(&self, refs: &AuthObjectRefs, kinds: &[RowKind]) -> RowsAnswer;
 }
-
 // the raw SELECT reads the writer, as LiteLLM's prisma client does: a replica can lag the row
 pub struct WriterRows {
     pub store: PostgresStore,
 }
-
 #[async_trait]
 impl PrefetchDatabase for WriterRows {
-    async fn fetch_rows(
-        &self,
-        refs: &AuthObjectRefs,
-        kinds: &[RowKind],
-    ) -> Result<RowValues, PrefetchDatabaseError> {
-        let user = refs
-            .user_id
-            .as_deref()
-            .filter(|_| kinds.contains(&RowKind::User));
-        let team = refs.team_id.as_deref().filter(|_| {
-            kinds
-                .iter()
-                .any(|kind| matches!(kind, RowKind::Team | RowKind::Membership))
-        });
-        let membership_user = refs
-            .membership_user_id
-            .as_deref()
-            .filter(|_| kinds.contains(&RowKind::Membership));
-        let organization = refs
-            .organization_id
-            .as_deref()
-            .filter(|_| kinds.contains(&RowKind::Organization));
-        let project = refs
-            .project_id
-            .as_deref()
-            .filter(|_| kinds.contains(&RowKind::Project));
+    async fn fetch_rows(&self, refs: &AuthObjectRefs, kinds: &[RowKind]) -> RowsAnswer {
+        let want = |kind: RowKind| kinds.contains(&kind);
+        let pick = |value: Option<&str>, requested: bool| value.filter(|_| requested);
+        let user = pick(refs.user_id.as_deref(), want(RowKind::User));
+        let team = pick(
+            refs.team_id.as_deref(),
+            want(RowKind::Team) || want(RowKind::Membership),
+        );
+        let membership = pick(
+            refs.membership_user_id.as_deref(),
+            want(RowKind::Membership),
+        );
+        let org = pick(refs.organization_id.as_deref(), want(RowKind::Organization));
+        let project = pick(refs.project_id.as_deref(), want(RowKind::Project));
         let client = self
             .store
             .session()
             .await
             .map_err(PrefetchDatabaseError::Database)?;
         let row = client
-            .query_opt(
-                ROWS_SQL,
-                &[&user, &team, &membership_user, &organization, &project],
-            )
+            .query_opt(ROWS_SQL, &[&user, &team, &membership, &org, &project])
             .await
             .map_err(|source| PrefetchDatabaseError::Database(backend(source)))?;
         let Some(row) = row else {
@@ -171,7 +80,6 @@ impl PrefetchDatabase for WriterRows {
         Ok(values)
     }
 }
-
 fn decode_column(
     row: &tokio_postgres::Row,
     index: usize,

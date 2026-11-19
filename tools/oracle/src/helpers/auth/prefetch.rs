@@ -1,5 +1,6 @@
+use betterlite_auth::auth_cache::payload;
 use betterlite_auth::auth_prefetch::entries::{AuthObjectRefs, iter_entries};
-use betterlite_auth::auth_prefetch::identity::{identity_cache_keys, identity_memory_ttl};
+use betterlite_auth::auth_prefetch::fill::{identity_cache_keys, identity_memory_ttl};
 use betterlite_auth::auth_prefetch::rows::{RowKind, RowObject, validate_row};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
@@ -78,29 +79,20 @@ fn references_and_entries(tokens: &[LiteLLMVerificationToken], management_ttl: f
             .iter()
             .map(|token| {
                 let refs = AuthObjectRefs::from_token(token);
-                let entries = iter_entries(&refs, management_ttl, DEFAULT_IN_MEMORY_TTL);
-                let entries: Vec<Value> = entries
-                    .iter()
-                    .map(|entry| {
-                        let (row, model) = entry.row.names();
-                        json!({
-                            "key": entry.key,
-                            "row": row,
-                            "model": model,
-                            "ttl": entry.ttl,
+                let entries: Vec<Value> =
+                    iter_entries(&refs, management_ttl, DEFAULT_IN_MEMORY_TTL)
+                        .iter()
+                        .map(|entry| {
+                            let (row, model) = entry.row.names();
+                            json!({
+                                "key": entry.key,
+                                "row": row,
+                                "model": model,
+                                "ttl": entry.ttl,
+                            })
                         })
-                    })
-                    .collect();
-                json!({
-                    "refs": {
-                        "user_id": refs.user_id,
-                        "team_id": refs.team_id,
-                        "membership_user_id": refs.membership_user_id,
-                        "organization_id": refs.organization_id,
-                        "project_id": refs.project_id,
-                    },
-                    "entries": entries,
-                })
+                        .collect();
+                json!({"refs": refs, "entries": entries})
             })
             .collect(),
     )
@@ -134,7 +126,7 @@ fn row_validation(rows: &[RowCall], refreshed_at: f64) -> Value {
 
 // model_dump_json()["last_refreshed_at"]: the validated model's own serialization carries the stamp
 fn stamp(object: Option<&RowObject>) -> Option<f64> {
-    let Json::Object(fields) = object?.payload().ok()? else {
+    let Json::Object(fields) = payload::encode(object?).ok()? else {
         return None;
     };
     let Some(Json::Number(number)) = fields.get("last_refreshed_at") else {

@@ -17,12 +17,10 @@ use tokio_util::task::TaskTracker;
 use super::fixtures;
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::payload::PayloadError;
-use crate::auth_prefetch::permission::cache::{ObjectPermissionCache, PermissionCacheError};
-use crate::auth_prefetch::permission::error::{
-    MISSING_PERMISSION_MESSAGE, MISSING_PERMISSION_STATUS, PermissionError,
-};
 use crate::auth_prefetch::permission::lookup::{
-    ObjectPermissionSource, PermissionStores, get_object_permission,
+    MISSING_PERMISSION_MESSAGE, MISSING_PERMISSION_STATUS, ObjectPermissionCache,
+    ObjectPermissionSource, PermissionCacheError, PermissionError, PermissionStores,
+    get_object_permission,
 };
 use crate::auth_prefetch::permission::store::{BoundedPermissionStore, ObjectPermissionStore};
 use crate::auth_read::table::{

@@ -11,7 +11,7 @@ use tokio::time::{sleep, timeout};
 use super::fixtures;
 use crate::auth_prefetch::db::PrefetchDatabase;
 use crate::auth_prefetch::entries::AuthObjectRefs;
-use crate::auth_prefetch::identity::IdentityPrefetch;
+use crate::auth_prefetch::fill::IdentityPrefetch;
 use crate::auth_prefetch::orchestrator::{OwnerPrefetch, ReferencedPrefetch};
 use crate::auth_prefetch::rows::RowKind;
 

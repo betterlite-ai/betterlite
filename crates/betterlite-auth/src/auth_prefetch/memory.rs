@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::dual_cache::{DualCache, MemoryMaxSize};
@@ -12,31 +12,23 @@ pub trait PrefetchMemory: Send + Sync {
     fn get(&self, key: &str) -> Option<CacheValue>;
     fn set(&self, key: &str, value: CacheValue, ttl: Option<f64>) -> Result<(), MemoryWriteError>;
 }
-
 #[derive(Debug, thiserror::Error)]
 #[error("the in-memory cache write failed")]
 pub struct MemoryWriteError(#[source] pub(crate) betterlite_cache::backend::BackendError);
-
 impl<Memory> PrefetchMemory for Memory
 where
     Memory: MemoryCacheOps + ?Sized,
 {
     fn get(&self, key: &str) -> Option<CacheValue> {
-        match self.get_cache(key) {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::error!(%error, "the in-memory cache read failed");
-                None
-            }
-        }
+        self.get_cache(key).unwrap_or_else(|error| {
+            tracing::error!(%error, "the in-memory cache read failed");
+            None
+        })
     }
-
     fn set(&self, key: &str, value: CacheValue, ttl: Option<f64>) -> Result<(), MemoryWriteError> {
         self.set_cache(key, value, ttl).map_err(MemoryWriteError)
     }
 }
-
-// the two memory partitions, their default ttl and the optional Redis the cache was built with
 pub trait PrefetchCache: Send + Sync {
     fn ordinary_memory(&self) -> &dyn PrefetchMemory;
     fn memory_for(&self, key: &str) -> &dyn PrefetchMemory;
@@ -44,7 +36,6 @@ pub trait PrefetchCache: Send + Sync {
     fn default_memory_ttl(&self) -> Option<f64>;
     fn redis(&self) -> Option<Arc<dyn PrefetchRedis>>;
 }
-
 impl<Memory> PrefetchCache for AuthCache<DualCache<Memory>>
 where
     Memory: MemoryCacheOps + MemoryMaxSize + Send + Sync + 'static,
@@ -52,27 +43,23 @@ where
     fn ordinary_memory(&self) -> &dyn PrefetchMemory {
         self.ordinary.in_memory_cache.as_ref()
     }
-
     fn memory_for(&self, key: &str) -> &dyn PrefetchMemory {
         self.in_memory_cache_for(key).as_ref()
     }
-
     fn management_ttl(&self) -> f64 {
         self.management_object_ttl()
     }
-
     fn default_memory_ttl(&self) -> Option<f64> {
-        match self.ordinary.default_in_memory_ttl.read() {
-            Ok(guard) => *guard,
-            Err(poisoned) => *poisoned.into_inner(),
-        }
+        let ttl = &self.ordinary.default_in_memory_ttl;
+        *ttl.read().unwrap_or_else(PoisonError::into_inner)
     }
-
     fn redis(&self) -> Option<Arc<dyn PrefetchRedis>> {
-        let client = match self.ordinary.redis_cache.read() {
-            Ok(guard) => guard.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }?;
+        let client = self
+            .ordinary
+            .redis_cache
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
         Some(Arc::new(RedisRows { client }))
     }
 }

@@ -5,8 +5,8 @@ use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
-use indexmap::IndexMap;
 
+const NUMBER_KEY: &str = "$serde_json::private::Number";
 #[derive(Debug, thiserror::Error)]
 pub enum RedisRowsError {
     #[error("the request Redis read failed: {message}")]
@@ -18,24 +18,19 @@ pub enum RedisRowsError {
     #[error("no request Redis batch is open")]
     NoBatch,
 }
-
+pub type RowWrite = (String, Json, Option<f64>);
 // one MGET result as the mapping the source validates; absent and JSON null both read as misses
 #[async_trait]
 pub trait PrefetchRedis: Send + Sync {
     async fn read(&self, keys: &[String]) -> Result<Json, RedisRowsError>;
     fn has_batch(&self) -> bool;
-    async fn set_pipeline(
-        &self,
-        entries: &[(String, Json, Option<f64>)],
-    ) -> Result<(), RedisRowsError>;
+    async fn set_pipeline(&self, entries: &[RowWrite]) -> Result<(), RedisRowsError>;
     fn queue_set(&self, key: &str, value: &Json, ttl: Option<f64>) -> Result<(), RedisRowsError>;
 }
-
 // the source prefers the request pipeline and falls back to one direct MGET of B126's cache
 pub struct RedisRows {
     pub client: Arc<RedisCache>,
 }
-
 #[async_trait]
 impl PrefetchRedis for RedisRows {
     async fn read(&self, keys: &[String]) -> Result<Json, RedisRowsError> {
@@ -58,15 +53,10 @@ impl PrefetchRedis for RedisRows {
             })?;
         Ok(rows_json(found.as_ref().clone()))
     }
-
     fn has_batch(&self) -> bool {
         active_request_redis_batch(&self.client).is_some()
     }
-
-    async fn set_pipeline(
-        &self,
-        entries: &[(String, Json, Option<f64>)],
-    ) -> Result<(), RedisRowsError> {
+    async fn set_pipeline(&self, entries: &[RowWrite]) -> Result<(), RedisRowsError> {
         self.client
             .values
             .async_set_cache_pipeline_with_ttls(entries)
@@ -75,7 +65,6 @@ impl PrefetchRedis for RedisRows {
                 message: error.to_string(),
             })
     }
-
     fn queue_set(&self, key: &str, value: &Json, ttl: Option<f64>) -> Result<(), RedisRowsError> {
         let Some(batch) = active_request_redis_batch(&self.client) else {
             return Err(RedisRowsError::NoBatch);
@@ -85,19 +74,16 @@ impl PrefetchRedis for RedisRows {
         Ok(())
     }
 }
-
 fn rows_json<Values>(values: Values) -> Json
 where
     Values: IntoIterator<Item = (String, Option<CachedValue>)>,
 {
-    Json::Object(
-        values
-            .into_iter()
-            .map(|(key, value)| (key, value_json(value)))
-            .collect::<IndexMap<_, _>>(),
-    )
+    let fields = values
+        .into_iter()
+        .map(|(key, value)| (key, value_json(value)))
+        .collect();
+    Json::Object(fields)
 }
-
 fn value_json(value: Option<CachedValue>) -> Json {
     match value {
         None | Some(CachedValue::Null) => Json::Null,
@@ -110,11 +96,28 @@ fn value_json(value: Option<CachedValue>) -> Json {
                 .map(|item| value_json(Some(item)))
                 .collect(),
         ),
-        Some(CachedValue::Object(entries)) => Json::Object(
-            entries
-                .into_iter()
-                .map(|(key, entry)| (key, value_json(Some(entry))))
-                .collect(),
-        ),
+        Some(CachedValue::Object(entries)) => {
+            // arbitrary_precision hands a bare JSON float to the untagged decoder as this one-key map
+            let number: Option<serde_json::Number> =
+                match (entries.len(), entries.first_key_value()) {
+                    (1, Some((key, CachedValue::Text(digits)))) if key == NUMBER_KEY => {
+                        digits.parse().ok()
+                    }
+                    _ => None,
+                };
+            number.map_or_else(
+                || {
+                    Json::Object(
+                        entries
+                            .into_iter()
+                            .map(|(key, entry)| (key, value_json(Some(entry))))
+                            .collect(),
+                    )
+                },
+                Json::Number,
+            )
+        }
     }
 }
+#[cfg(test)]
+mod tests;

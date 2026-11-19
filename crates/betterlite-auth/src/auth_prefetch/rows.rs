@@ -6,12 +6,8 @@ use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::resource_rows::project::ProjectTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
-use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::auth_cache::payload::{self, PayloadError};
-
-// the five columns the prefetch SELECT returns, named as LiteLLM's _RowKind
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum RowKind {
     #[serde(rename = "user_row")]
@@ -25,9 +21,7 @@ pub enum RowKind {
     #[serde(rename = "project_row")]
     Project,
 }
-
 impl RowKind {
-    // the column name and the model type it validates as, for the redacted diagnostic
     #[must_use]
     pub const fn names(self) -> (&'static str, &'static str) {
         match self {
@@ -39,10 +33,7 @@ impl RowKind {
         }
     }
 }
-
-// the query returns one nullable row per kind, keyed by that kind
 pub type RowValues = BTreeMap<RowKind, JsonData>;
-
 // LiteLLM's LiteLLM_ProjectTableCachedObj, which the shared row model does not carry
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CachedProject {
@@ -51,9 +42,9 @@ pub struct CachedProject {
     #[serde(default)]
     pub last_refreshed_at: Option<f64>,
 }
-
-// the validated object a row kind writes back; every variant serializes as its model
-#[derive(Clone, Debug)]
+// each variant dumps as its model, the way CacheCodec.serialize(model_type) does
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
 pub enum RowObject {
     User(LiteLLMUserTable),
     Team(LiteLLMTeamTableCachedObj),
@@ -61,20 +52,6 @@ pub enum RowObject {
     Organization(OrganizationTable),
     Project(CachedProject),
 }
-
-impl RowObject {
-    // CacheCodec.serialize(value, model_type) is the model's json dump
-    pub fn payload(&self) -> Result<Json, PayloadError> {
-        match self {
-            Self::User(row) => payload::encode(row),
-            Self::Team(row) => payload::encode(row),
-            Self::Membership(row) => payload::encode(row),
-            Self::Organization(row) => payload::encode(row),
-            Self::Project(row) => payload::encode(row),
-        }
-    }
-}
-
 // one validation per requested kind, stamping the post-query time onto team and project only
 #[must_use]
 pub fn validate_row(
@@ -98,8 +75,6 @@ pub fn validate_row(
         }
     }
 }
-
-// the model's own decoder validates the row; only the timestamp is forced to the query time
 fn decode(
     kind: RowKind,
     value: &JsonData,

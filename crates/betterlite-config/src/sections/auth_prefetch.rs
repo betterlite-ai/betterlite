@@ -9,13 +9,11 @@ const DEFAULT_ORGANIZATION_TTL: f64 = 5.0;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {}
-
 // only the organization entries read this; membership is fixed at 5 and the registry cap at 30
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub organization_ttl: f64,
 }
-
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -23,10 +21,8 @@ impl Default for Settings {
         }
     }
 }
-
 impl Section for Raw {
     type Settings = Settings;
-
     fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
@@ -38,7 +34,6 @@ impl Section for Raw {
         Ok(Settings { organization_ttl })
     }
 }
-
 // Python's int() accepts surrounding whitespace and a sign, and fails on an empty or fractional value
 fn integer_seconds(text: &str) -> Result<f64, ConfigError> {
     let parsed = text
