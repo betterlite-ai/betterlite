@@ -5,8 +5,7 @@ use betterlite_models::model_registration::JsonObject;
 use super::error::ComplexityConfigWriteError;
 use super::values::encode;
 
-// LiteLLM reads a tier pool written as a list as a list of entries, a model name or a tier model
-// entry, while serde would also read a one- or two-element list as one detailed entry positionally
+// LiteLLM reads a list pool entry by entry; serde could read a short list as one detailed entry
 pub(super) fn reject_swallowed_pools(
     fields: &JsonObject,
 ) -> Result<(), ComplexityConfigWriteError> {
