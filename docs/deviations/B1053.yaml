@@ -33,6 +33,16 @@ deviations:
       working setup can rely on it; betterlite keeps the declared field and drops it from the
       request instead of copying a Python signature into its contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L91
+  - what: >-
+      A plain or per-phase timeout no finite f64 can hold, such as the number 1e400 or the
+      string "inf", answers betterlite's Timeout error before any request, where LiteLLM parses
+      it as +inf and hands it to httpx, whose deadline arithmetic fails with OverflowError and
+      surfaces as APIConnectionError "Connection error.".
+    why: >-
+      The failure happens inside httpx on a value no declared timeout bounds, so no setup can
+      rely on the class; betterlite names the timeout as invalid where it reads it, and the
+      request is never sent either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L552-L553
 kept_bugs:
   - what: >-
       The list call's unsupported-provider message names 'create_batch' instead of the list
