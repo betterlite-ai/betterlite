@@ -44,21 +44,28 @@ fn assert_marker_without_id(result: Result<(), McpReplyError>) {
 #[test]
 fn integer_id() {
     let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
         Some(json!({"jsonrpc": "2.0", "id": 7, "result": {}}))
+    );
+    let large = json!({"jsonrpc": "2.0", "id": u64::MAX, "method": "tools/list"});
+    let mut large_reply = marked_answer();
+    correlate(&mut large_reply, &correlation(PATH, &large)).unwrap();
+    assert_eq!(
+        large_reply.body,
+        Some(json!({"jsonrpc": "2.0", "id": u64::MAX, "result": {}}))
     );
 }
 
 #[test]
 fn string_id() {
     let request = json!({"jsonrpc": "2.0", "id": "req-a", "method": "tools/list"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
         Some(json!({"jsonrpc": "2.0", "id": "req-a", "result": {}}))
@@ -68,13 +75,13 @@ fn string_id() {
 #[test]
 fn no_marker() {
     let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = scripted(
         200,
         Some(json!({"jsonrpc": "2.0", "id": 99, "result": {}})),
         None,
     );
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
         Some(json!({"jsonrpc": "2.0", "id": 99, "result": {}}))
@@ -84,11 +91,18 @@ fn no_marker() {
 #[test]
 fn wrong_path() {
     let request = json!({"jsonrpc": "2.0", "id": 7, "method": "chat"});
-    let correlation = correlation("/v1/chat/completions", &request);
+    let request_correlation = correlation("/v1/chat/completions", &request);
     let mut reply = marked_answer();
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
+        Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}}))
+    );
+    let near_miss = correlation("/__mcp_fixture", &request);
+    let mut near_miss_reply = marked_answer();
+    correlate(&mut near_miss_reply, &near_miss).unwrap();
+    assert_eq!(
+        near_miss_reply.body,
         Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}}))
     );
 }
@@ -96,7 +110,7 @@ fn wrong_path() {
 #[test]
 fn nested_marker_unchanged() {
     let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/call"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = scripted(
         200,
         Some(json!({
@@ -106,7 +120,7 @@ fn nested_marker_unchanged() {
         })),
         None,
     );
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
         Some(json!({
@@ -120,31 +134,72 @@ fn nested_marker_unchanged() {
 #[test]
 fn missing_id() {
     let request = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
-    let error = correlate(&mut reply, &correlation).unwrap_err();
+    let error = correlate(&mut reply, &request_correlation).unwrap_err();
     assert!(matches!(&error, McpReplyError::MarkerWithoutId { .. }));
     let message = error.to_string();
     assert!(message.contains(PATH));
     assert!(message.contains(MARKER));
 }
 
+fn assert_unusable_request(request: &Value) {
+    let mut reply = marked_answer();
+    assert_marker_without_id(correlate(&mut reply, &correlation(PATH, request)));
+}
+
 #[test]
 fn invalid_id() {
-    let float = json!({"jsonrpc": "2.0", "id": 1.5, "method": "tools/list"});
-    let mut float_reply = marked_answer();
-    assert_marker_without_id(correlate(&mut float_reply, &correlation(PATH, &float)));
-    let boolean = json!({"jsonrpc": "2.0", "id": true, "method": "tools/list"});
-    let mut boolean_reply = marked_answer();
-    assert_marker_without_id(correlate(&mut boolean_reply, &correlation(PATH, &boolean)));
+    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": 1.5, "method": "tools/list"}));
+    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": true, "method": "tools/list"}));
+    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": null, "method": "tools/list"}));
+    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": [7], "method": "tools/list"}));
+    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": {"value": 7}, "method": "tools/list"}));
+}
+
+#[test]
+fn unusable_body_gives_no_id() {
+    assert_unusable_request(&json!([{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}]));
+    assert_unusable_request(&Value::String("not json".to_owned()));
+}
+
+#[test]
+fn jsonrpc_not_2_0() {
+    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request_correlation = correlation(PATH, &request);
+    let mut missing = scripted(200, Some(json!({"id": MARKER, "result": {}})), None);
+    correlate(&mut missing, &request_correlation).unwrap();
+    assert_eq!(missing.body, Some(json!({"id": MARKER, "result": {}})));
+    let mut other = scripted(
+        200,
+        Some(json!({"jsonrpc": "1.0", "id": MARKER, "result": {}})),
+        None,
+    );
+    correlate(&mut other, &request_correlation).unwrap();
+    assert_eq!(
+        other.body,
+        Some(json!({"jsonrpc": "1.0", "id": MARKER, "result": {}}))
+    );
+}
+
+#[test]
+fn non_object_answer_unchanged() {
+    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request_correlation = correlation(PATH, &request);
+    let mut text = scripted(200, Some(Value::String(MARKER.to_owned())), None);
+    correlate(&mut text, &request_correlation).unwrap();
+    assert_eq!(text.body, Some(Value::String(MARKER.to_owned())));
+    let mut array = scripted(200, Some(json!([MARKER])), None);
+    correlate(&mut array, &request_correlation).unwrap();
+    assert_eq!(array.body, Some(json!([MARKER])));
 }
 
 #[test]
 fn notification_without_marker() {
     let request = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = scripted(202, None, Some(Vec::new()));
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(reply.status, 202);
     assert_eq!(reply.body, None);
     assert_eq!(reply.events, Some(Vec::new()));
@@ -153,7 +208,7 @@ fn notification_without_marker() {
 #[test]
 fn error_reply() {
     let request = json!({"jsonrpc": "2.0", "id": "req-a", "method": "tools/call"});
-    let correlation = correlation(PATH, &request);
+    let request_correlation = correlation(PATH, &request);
     let mut reply = scripted(
         200,
         Some(json!({
@@ -163,7 +218,7 @@ fn error_reply() {
         })),
         None,
     );
-    correlate(&mut reply, &correlation).unwrap();
+    correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
         Some(json!({
