@@ -5,6 +5,7 @@ use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
+use rstest::rstest;
 
 use crate::auth_cache::gateway_cache;
 use crate::auth_read::table::AuthReadError;
@@ -109,34 +110,30 @@ async fn batched_misses_take_count() {
     );
 }
 
-#[test]
-fn row_projection_precedence() {
-    let cases = [
-        (
-            r#"{"model_dump":{"vector_store_id":"dump","custom_llm_provider":"openai"},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-            Some("dump"),
-        ),
-        (
-            r#"{"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-            Some("dict"),
-        ),
-        // LiteLLM's empty model_dump() is falsy, so it falls straight to dict(row), the iterable form
-        (
-            r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-            Some("fields"),
-        ),
-        (
-            r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
-            Some("fields"),
-        ),
-        (r#"{"model_dump":"text","dict":{},"fields":{}}"#, None),
-        ("{}", None),
-    ];
-    for (fixture, expected) in cases {
-        let projected = project_row(&row(fixture)).expect("the projection reads");
-        let projected_id = projected.map(|store| store.vector_store_id);
-        assert_eq!(projected_id.as_deref(), expected, "{fixture}");
-    }
+#[rstest]
+#[case::model_dump_wins(
+    r#"{"model_dump":{"vector_store_id":"dump","custom_llm_provider":"openai"},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    Some("dump")
+)]
+#[case::dict_wins(
+    r#"{"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    Some("dict")
+)]
+// LiteLLM's empty model_dump() is falsy, so it falls straight to dict(row), the iterable form
+#[case::empty_dump_falls_through(
+    r#"{"model_dump":{},"dict":{"vector_store_id":"dict","custom_llm_provider":"openai"},"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    Some("fields")
+)]
+#[case::iterable_form(
+    r#"{"model_dump":null,"dict":null,"fields":{"vector_store_id":"fields","custom_llm_provider":"openai"}}"#,
+    Some("fields")
+)]
+#[case::unreadable_projection_skipped(r#"{"model_dump":"text","dict":{},"fields":{}}"#, None)]
+#[case::empty_row_skipped("{}", None)]
+fn row_projection_precedence(#[case] fixture: &str, #[case] expected: Option<&str>) {
+    let projected = project_row(&row(fixture)).expect("the projection reads");
+    let projected_id = projected.map(|store| store.vector_store_id);
+    assert_eq!(projected_id.as_deref(), expected, "{fixture}");
 }
 
 #[tokio::test]
