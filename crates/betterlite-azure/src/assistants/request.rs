@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
@@ -160,7 +159,7 @@ pub(super) async fn fetch<T>(
 where
     T: AssistantsTransport,
 {
-    let response: UpstreamResponse = client
+    let response = client
         .transport
         .send(request)
         .await
@@ -190,34 +189,32 @@ fn classify(source: serde_json::Error) -> ThreadRunsError {
     }
 }
 
-// With a token the SDK sends the bearer alone; the key rides along only when no token source answers.
+// The SDK sends a static token alone, the provider token next to a real key, otherwise only the key.
 fn auth_headers<T>(client: &AzureAssistantsClient<'_, T>) -> Result<HeaderMap, AssistantsRunError> {
     let mut headers = HeaderMap::new();
-    let token = match client.token.clone() {
-        Some(token) => Some(token),
-        None => client
+    let mut bearer = client.token.clone();
+    if bearer.is_none()
+        && let Some(provider) = client
             .inputs
             .as_ref()
             .and_then(|inputs| inputs.token_provider.as_ref())
-            .map(provider_token)
-            .transpose()?,
-    };
-    match token {
-        Some(bearer) => {
-            headers.insert(
-                AUTHORIZATION,
-                sensitive(format!("Bearer {}", bearer.expose_secret()))?,
-            );
-        }
-        None => {
-            let usable = client
-                .key
-                .as_ref()
-                .filter(|value| !value.expose_secret().is_empty());
-            if let Some(key) = usable {
-                headers.insert(API_KEY, sensitive(key.expose_secret().to_owned())?);
-            }
-        }
+    {
+        bearer = Some(provider_token(provider)?);
+    }
+    if let Some(token) = bearer.as_ref() {
+        headers.insert(
+            AUTHORIZATION,
+            sensitive(format!("Bearer {}", token.expose_secret()))?,
+        );
+    }
+    let api_key = client
+        .key
+        .as_ref()
+        .filter(|value| !value.expose_secret().is_empty());
+    if client.token.is_none()
+        && let Some(key) = api_key
+    {
+        headers.insert(API_KEY, sensitive(key.expose_secret().to_owned())?);
     }
     Ok(headers)
 }
