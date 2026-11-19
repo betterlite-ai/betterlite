@@ -26,23 +26,23 @@ impl Helper for Op {
         let rows = match input {
             Input::Responses { runs } => runs
                 .iter()
-                .map(runs::responses_row)
+                .map(runs::responses_run::responses_row)
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             Input::Passthrough { runs } => runs
                 .iter()
-                .map(runs::passthrough_row)
+                .map(runs::passthrough_run::passthrough_row)
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             Input::Search { runs } => runs
                 .iter()
-                .map(runs::search_row)
+                .map(runs::search_run::search_row)
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             Input::VectorRetrieve { runs } => runs
                 .iter()
-                .map(runs::vector_row)
+                .map(runs::vector_run::vector_row)
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             Input::RealtimeBridge { runs } => runs
                 .iter()
-                .map(runs::realtime_row)
+                .map(runs::realtime_run::realtime_row)
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
         };
         Ok(json!({ "runs": rows }))

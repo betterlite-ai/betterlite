@@ -729,10 +729,10 @@ fn search_case() {
     assert_eq!(outcome.response.results.len(), 1);
     assert_eq!(outcome.response.results[0].title, "Docs");
     assert_eq!(outcome.response.results[0].snippet, "snippet");
-    search_leaf_failure();
     search_reply_error();
 }
 
+#[test]
 fn search_leaf_failure() {
     let query = SearchInput::Single("q".to_owned());
     let optional = IndexMap::new();
@@ -863,9 +863,9 @@ fn vector_case() {
         Some(&Json::Text("doc.pdf".to_owned()))
     );
     assert_eq!(first.get("score"), Some(&json("0.9")));
-    vector_leaf_failure();
 }
 
+#[test]
 fn vector_leaf_failure() {
     let query = SearchQuery::Text("hello".to_owned());
     let optional = SearchOptionalParams {
