@@ -82,9 +82,7 @@ pub fn snippet(text: &str, annotation: &Annotation) -> String {
     let chars: Vec<char> = text.chars().collect();
     let marker_start = annotation
         .start_index
-        .and_then(|index| usize::try_from(index).ok())
-        .filter(|index| *index <= chars.len())
-        .unwrap_or(chars.len());
+        .map_or(chars.len(), |index| index.marker_start(chars.len()));
     let prefix: String = chars.iter().take(marker_start).copied().collect();
     let claim = prefix.rsplit('\n').next().unwrap_or_default().trim();
     if !claim.is_empty() {

@@ -13,6 +13,9 @@ call:
         - environment: {}
           body: |
             {"output":[{"type":"message","content":[{"type":"output_text","text":"012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé","annotations":[{"type":"url_citation","url":"https://long.example"}]},{"type":"output_text","text":"ééé claim ([x](https://unicode.example)).","annotations":[{"type":"url_citation","url":"https://unicode.example","start_index":10}]},{"type":"output_text","text":"éééééééééé","annotations":[{"type":"url_citation","url":"https://prefix.example"}]}]}]}
+        - environment: {}
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"Wide claim ([w](https://wide.example)).","annotations":[{"type":"url_citation","url":"https://above-i64.example","start_index":9223372036854775808},{"type":"url_citation","url":"https://above-u64.example","start_index":18446744073709551616}]}]}]}
 env: {}
 compare:
   ignore: []

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::support::{envelope, expect_result, indexed, results};
+use super::support::{envelope, expect_result, indexed, json_value, results};
 
 pub(super) fn citation_snippets() {
     filters_non_citations();
@@ -79,6 +79,16 @@ fn start_index_boundaries() {
         results(&at_zero),
         vec![expect_result("", "https://x.example", text)]
     );
+    let past_u64 = indexed(text, &json_value("18446744073709551616"));
+    assert_eq!(
+        results(&past_u64),
+        vec![expect_result("", "https://x.example", text)]
+    );
+    let above_i64 = indexed(text, &json_value("9223372036854775808"));
+    assert_eq!(
+        results(&above_i64),
+        vec![expect_result("", "https://x.example", text)]
+    );
 }
 
 fn empty_claim_falls_back() {
@@ -108,20 +118,20 @@ fn long_claims_keep_the_tail() {
 }
 
 fn unicode_indices_count_characters() {
-    let text = "Café([u](https://u.example))";
+    let text = "Caf\u{e9}([u](https://u.example))";
     let marker_bytes = text.find("([u]").unwrap();
     let marker_chars = text.get(..marker_bytes).unwrap().chars().count();
     let body = indexed(text, &json!(marker_chars));
     assert_eq!(
         results(&body),
-        vec![expect_result("", "https://x.example", "Café")]
+        vec![expect_result("", "https://x.example", "Caf\u{e9}")]
     );
-    let claim = "é".repeat(350);
+    let claim = "\u{e9}".repeat(350);
     let long = format!("{claim}([e](https://e.example))");
     let long_bytes = long.find("([e]").unwrap();
     let long_chars = long.get(..long_bytes).unwrap().chars().count();
     let long_results = results(&indexed(&long, &json!(long_chars)));
-    assert_eq!(long_results[0].snippet, "é".repeat(300));
+    assert_eq!(long_results[0].snippet, "\u{e9}".repeat(300));
 }
 
 fn duplicates_keep_first() {
