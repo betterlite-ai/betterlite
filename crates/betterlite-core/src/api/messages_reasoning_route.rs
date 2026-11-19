@@ -2,7 +2,6 @@ pub mod seams;
 
 mod route_steps;
 mod tests;
-mod values;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -13,8 +12,9 @@ use self::route_steps::{
 use self::seams::{
     BridgeRequest, ModelMetadata, ProviderLookup, ReasoningRouteError, ReasoningSeams,
 };
-use self::values::{normalize_model, object, text};
+use crate::api::chat_response_stream_tools::fields::object;
 use crate::api::messages_thinking::summary::auto_summary_enabled;
+use crate::meta_muse_realtime::events::text_field;
 
 const API_BASE: &str = "api_base";
 const API_KEY: &str = "api_key";
@@ -52,7 +52,7 @@ pub fn normalize_effort(kwargs: &mut CompletionKwargs, metadata: &dyn ModelMetad
         return;
     };
     let model = normalize_model(kwargs.fields.get(MODEL));
-    let provider = text(kwargs.fields.get(CUSTOM_LLM_PROVIDER));
+    let provider = text_field(kwargs.fields.get(CUSTOM_LLM_PROVIDER));
     match reasoning {
         Json::Text(effort) => {
             let normalized = normalized_effort(&effort, model, provider, metadata);
@@ -89,7 +89,7 @@ pub fn route_thinking(
     else {
         return;
     };
-    let Some(thinking) = object(thinking) else {
+    let Some(thinking) = thinking.and_then(object) else {
         return;
     };
     if !matches!(thinking.get(THINKING_TYPE), Some(Json::Text(kind)) if kind == ENABLED) {
@@ -97,7 +97,10 @@ pub fn route_thinking(
     }
     let refused = seams
         .metadata
-        .model_info(text(kwargs.fields.get(MODEL)), Some(provider.as_str()))
+        .model_info(
+            text_field(kwargs.fields.get(MODEL)),
+            Some(provider.as_str()),
+        )
         .is_some_and(|info| matches!(info.fields.get(SUPPORTS_REASONING), Some(Json::Bool(false))));
     if refused {
         return;
@@ -118,9 +121,9 @@ pub fn plain_effort(
     };
     let Some(target) = seams.provider.resolve(&ProviderLookup {
         model: Some(model),
-        custom_llm_provider: text(kwargs.fields.get(CUSTOM_LLM_PROVIDER)),
-        api_base: text(kwargs.fields.get(API_BASE)),
-        api_key: text(kwargs.fields.get(API_KEY)),
+        custom_llm_provider: text_field(kwargs.fields.get(CUSTOM_LLM_PROVIDER)),
+        api_base: text_field(kwargs.fields.get(API_BASE)),
+        api_key: text_field(kwargs.fields.get(API_KEY)),
     }) else {
         return Ok(None);
     };
@@ -145,4 +148,12 @@ pub fn plain_effort(
         return Ok(None);
     }
     Ok(Some(effort.to_owned()))
+}
+
+// normalize reads the model with its empty default for an absent key, and null stays the None get_model_info raises on
+fn normalize_model(value: Option<&Json>) -> Option<&str> {
+    match value {
+        None => Some(""),
+        Some(value) => text_field(value),
+    }
 }

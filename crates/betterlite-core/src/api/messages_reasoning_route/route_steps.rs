@@ -2,7 +2,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::seams::{ModelMetadata, ProviderLookup, ReasoningSeams};
-use super::values::text;
 use super::{
     CUSTOM_LLM_PROVIDER, DETAILED, EFFORT, GENERATE_SUMMARY, MODEL, REASONING_EFFORT,
     RESPONSES_PREFIX, SUMMARY,
@@ -10,6 +9,7 @@ use super::{
 use crate::api::messages_thinking::bridge::local_model_name;
 use crate::api::messages_thinking::effort::{degrade_effort, normalize_reasoning_effort};
 use crate::api::response_synthetic_events::python_value::has_content;
+use crate::meta_muse_realtime::events::text_field;
 
 // the enabled thinking map's summary reaches the reasoning dict the routed call is given
 pub(super) fn convert_effort(
@@ -80,7 +80,7 @@ pub(super) fn resolve_provider(
         None | Some(Json::Null) => seams
             .provider
             .resolve(&ProviderLookup {
-                model: text(kwargs.fields.get(MODEL)),
+                model: text_field(kwargs.fields.get(MODEL)),
                 custom_llm_provider: None,
                 api_base: None,
                 api_key: None,
