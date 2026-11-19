@@ -1,0 +1,4 @@
+router_settings:
+  routing_strategy: usage-based-routing
+  routing_strategy_args:
+    ttl: true

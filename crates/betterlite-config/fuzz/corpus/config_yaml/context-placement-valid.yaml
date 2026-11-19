@@ -1,0 +1,7 @@
+model_list:
+  - model_name: windowed-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        enable_context_window_escalation: true
+        context_window_escalation_buffer: 0.8
