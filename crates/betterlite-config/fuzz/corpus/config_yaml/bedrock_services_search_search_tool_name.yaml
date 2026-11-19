@@ -1,0 +1,8 @@
+# AGENTCORE_SEARCH_TOOL_NAME is the environment fallback for the deployment tool_name;
+# web-search-tool___WebSearch is the default when neither is set.
+model_list:
+  - model_name: agentcore-search
+    litellm_params:
+      tool_name: custom-target___WebSearch
+litellm_settings:
+  tool_name: global-target___WebSearch

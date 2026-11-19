@@ -26,7 +26,7 @@ description: >-
   then VERTEXAI_LOCATION, then VERTEX_LOCATION), and B1304's endpoint_target::region::select_region
   normalizes it per model; both are on main, and only vertex_ai-prefixed providers qualify.
   betterlite-core can't depend on betterlite-vertex, so CostRecorder takes the generateContent
-  conversion and the region normalization through its constructor, like its other dependencies. Bedrock Mantle uses B625's resolver only for the exact bedrock_mantle provider.
+  conversion and the region normalization through its constructor, like its other dependencies. Bedrock Mantle uses B2207's resolver (resolve_mantle_region, on main as mantle_inputs::region::resolve_region in betterlite-bedrock), taken through the constructor the same way, only for the exact bedrock_mantle provider.
   Failed argument preparation records the short failure diagnostic and returns null. A
   calculation failure records the full attempted pricing identity, invokes zero-cost
   diagnostics with calculation_failed=true and returns null. Positive numeric additional
