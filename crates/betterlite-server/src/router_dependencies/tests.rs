@@ -16,11 +16,7 @@ pub(crate) fn json(text: &str) -> Json {
 }
 
 pub(crate) fn params(text: &str) -> JsonObject {
-    object(json(text))
-}
-
-pub(crate) fn object(value: Json) -> JsonObject {
-    match value {
+    match json(text) {
         Json::Object(fields) => fields,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             panic!("the fixture is a JSON object")

@@ -37,7 +37,7 @@ pub fn defines_custom_prompt(complexity_router_config: Option<&JsonObject>) -> b
                 object(field(complexity_router_config, "jev_classifier_config")),
                 "instructions",
             ));
-            instructions.is_some_and(|instructions| instructions != DEFAULT_JEV_INSTRUCTIONS)
+            instructions.is_some_and(|written| written != DEFAULT_JEV_INSTRUCTIONS)
         }
         Some(kind) if kind.uses_llm() => {
             // an explicit null is not a written prompt, matching LiteLLM's "is not None" reads
@@ -67,9 +67,9 @@ pub fn carries_complexity_settings(model: Option<&str>, present_fields: &BTreeSe
         || complexity_router_fields().any(|name| present_fields.contains(name))
 }
 
-fn is_written(value: Option<&Json>) -> bool {
-    let Some(value) = value else {
-        return false;
-    };
-    !matches!(value, Json::Null)
+const fn is_written(value: Option<&Json>) -> bool {
+    match value {
+        Some(Json::Null) | None => false,
+        Some(_) => true,
+    }
 }

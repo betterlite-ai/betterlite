@@ -28,6 +28,14 @@ fn dependency_names(litellm_params: &JsonObject) -> Vec<(String, String)> {
         .collect()
 }
 
+fn assert_dependencies(litellm_params: &JsonObject, expected: &[(&str, &str)]) {
+    let wanted: Vec<(String, String)> = expected
+        .iter()
+        .map(|(model, role)| ((*model).to_owned(), (*role).to_owned()))
+        .collect();
+    assert_eq!(dependency_names(litellm_params), wanted);
+}
+
 fn heuristic_v2(config: &str) -> bool {
     uses_heuristic_v2_classifier(router_config(&configured(config)))
 }
@@ -110,18 +118,15 @@ fn an_adaptive_router_lists_its_available_models() {
     let pool = params(
         r#"{"model":"auto_router/adaptive_router","adaptive_router_config":{"available_models":["m1","m2"]}}"#,
     );
-    assert_eq!(dependency_names(&pool), [("m1", "tier"), ("m2", "tier")]);
+    assert_dependencies(&pool, &[("m1", "tier"), ("m2", "tier")]);
     let single = params(
         r#"{"model":"auto_router/adaptive_router","adaptive_router_config":{"available_models":"m1"}}"#,
     );
-    assert_eq!(dependency_names(&single), [("m1", "tier")]);
+    assert_dependencies(&single, &[("m1", "tier")]);
     let non_names = params(
         r#"{"model":"auto_router/adaptive_router","adaptive_router_config":{"available_models":["m1",5,"","m2"]}}"#,
     );
-    assert_eq!(
-        dependency_names(&non_names),
-        [("m1", "tier"), ("m2", "tier")]
-    );
+    assert_dependencies(&non_names, &[("m1", "tier"), ("m2", "tier")]);
     let absent = params(r#"{"model":"auto_router/adaptive_router","adaptive_router_config":{}}"#);
     assert!(dependency_names(&absent).is_empty());
 }
@@ -132,34 +137,25 @@ fn a_quality_router_falls_back_to_its_config_default() {
         r#"{"model":"auto_router/quality_router",
             "quality_router_config":{"available_models":["m1"],"default_model":"m2"}}"#,
     );
-    assert_eq!(
-        dependency_names(&config_default),
-        [("m1", "tier"), ("m2", "default")]
-    );
+    assert_dependencies(&config_default, &[("m1", "tier"), ("m2", "default")]);
     let null_default = params(
         r#"{"model":"auto_router/quality_router",
             "quality_router_config":{"available_models":["m1"],"default_model":"m2"},
             "quality_router_default_model":null}"#,
     );
-    assert_eq!(
-        dependency_names(&null_default),
-        [("m1", "tier"), ("m2", "default")]
-    );
+    assert_dependencies(&null_default, &[("m1", "tier"), ("m2", "default")]);
     let declared_default = params(
         r#"{"model":"auto_router/quality_router",
             "quality_router_config":{"available_models":["m1"],"default_model":"m2"},
             "quality_router_default_model":"m3"}"#,
     );
-    assert_eq!(
-        dependency_names(&declared_default),
-        [("m1", "tier"), ("m3", "default")]
-    );
+    assert_dependencies(&declared_default, &[("m1", "tier"), ("m3", "default")]);
     let blank_default = params(
         r#"{"model":"auto_router/quality_router",
             "quality_router_config":{"available_models":["m1"],"default_model":"m2"},
             "quality_router_default_model":""}"#,
     );
-    assert_eq!(dependency_names(&blank_default), [("m1", "tier")]);
+    assert_dependencies(&blank_default, &[("m1", "tier")]);
 }
 
 #[test]
@@ -193,29 +189,23 @@ fn a_complexity_router_lists_tiers_defaults_compactor_classifier_and_embedding()
 fn llm_classifiers_read_their_own_model() {
     let llm =
         configured(r#"{"classifier_type":"llm","classifier_llm_config":{"model":"classifier-x"}}"#);
-    assert_eq!(dependency_names(&llm), [("classifier-x", "classifier")]);
+    assert_dependencies(&llm, &[("classifier-x", "classifier")]);
     let capability = configured(
         r#"{"classifier_type":"capability","classifier_llm_config":{"model":"classifier-x"}}"#,
     );
-    assert_eq!(
-        dependency_names(&capability),
-        [("classifier-x", "classifier")]
-    );
+    assert_dependencies(&capability, &[("classifier-x", "classifier")]);
     let llm_v2 = configured(
         r#"{"classifier_type":"llm_v2","classifier_llm_config":{"model":"classifier-x"}}"#,
     );
-    assert_eq!(dependency_names(&llm_v2), [("classifier-x", "classifier")]);
+    assert_dependencies(&llm_v2, &[("classifier-x", "classifier")]);
     let heuristic_first = configured(
         r#"{"classifier_type":"heuristic_first","classifier_llm_config":{"model":"classifier-x"}}"#,
     );
-    assert_eq!(
-        dependency_names(&heuristic_first),
-        [("classifier-x", "classifier")]
-    );
+    assert_dependencies(&heuristic_first, &[("classifier-x", "classifier")]);
     let hybrid = configured(
         r#"{"classifier_type":"hybrid","classifier_llm_config":{"model":"classifier-x"}}"#,
     );
-    assert_eq!(dependency_names(&hybrid), [("classifier-x", "classifier")]);
+    assert_dependencies(&hybrid, &[("classifier-x", "classifier")]);
 }
 
 #[test]
@@ -240,38 +230,26 @@ fn local_classifiers_list_no_classifier_model() {
 #[test]
 fn a_jev_classifier_lists_exactly_one_dependency() {
     let bundled = configured(r#"{"classifier_type":"jev","jev_classifier_config":{}}"#);
-    assert_eq!(
-        dependency_names(&bundled),
-        [("typesafe/jev-latest", "evaluation")]
-    );
+    assert_dependencies(&bundled, &[("typesafe/jev-latest", "evaluation")]);
     let named_model =
         configured(r#"{"classifier_type":"jev","jev_classifier_config":{"model":"jev-2"}}"#);
-    assert_eq!(
-        dependency_names(&named_model),
-        [("typesafe/jev-2", "evaluation")]
-    );
+    assert_dependencies(&named_model, &[("typesafe/jev-2", "evaluation")]);
     let deployment = configured(
         r#"{"classifier_type":"jev","jev_classifier_config":{"deployment_name":"jev-prod"}}"#,
     );
-    assert_eq!(dependency_names(&deployment), [("jev-prod", "classifier")]);
+    assert_dependencies(&deployment, &[("jev-prod", "classifier")]);
     let blank_deployment =
         configured(r#"{"classifier_type":"jev","jev_classifier_config":{"deployment_name":""}}"#);
-    assert_eq!(
-        dependency_names(&blank_deployment),
-        [("typesafe/jev-latest", "evaluation")]
-    );
+    assert_dependencies(&blank_deployment, &[("typesafe/jev-latest", "evaluation")]);
     let blank_model =
         configured(r#"{"classifier_type":"jev","jev_classifier_config":{"model":""}}"#);
-    assert_eq!(
-        dependency_names(&blank_model),
-        [("typesafe/", "evaluation")]
-    );
+    assert_dependencies(&blank_model, &[("typesafe/", "evaluation")]);
 }
 
 #[test]
 fn the_embedding_model_is_a_dependency_only_when_semantic_matching_is_on() {
     let enabled = configured(r#"{"semantic_keyword_matching":true,"embedding_model":"embed-x"}"#);
-    assert_eq!(dependency_names(&enabled), [("embed-x", "embedding")]);
+    assert_dependencies(&enabled, &[("embed-x", "embedding")]);
     let disabled = configured(r#"{"semantic_keyword_matching":false,"embedding_model":"embed-x"}"#);
     assert!(dependency_names(&disabled).is_empty());
     let without_model = configured(r#"{"semantic_keyword_matching":true}"#);
@@ -283,11 +261,11 @@ fn the_embedding_model_is_a_dependency_only_when_semantic_matching_is_on() {
 #[test]
 fn tier_values_come_from_names_and_pools() {
     let single = configured(r#"{"tiers":{"SIMPLE":"mini"}}"#);
-    assert_eq!(dependency_names(&single), [("mini", "tier")]);
+    assert_dependencies(&single, &[("mini", "tier")]);
     let pools = configured(r#"{"tiers":{"SIMPLE":["one","two"]}}"#);
-    assert_eq!(dependency_names(&pools), [("one", "tier"), ("two", "tier")]);
+    assert_dependencies(&pools, &[("one", "tier"), ("two", "tier")]);
     let non_names = configured(r#"{"tiers":{"SIMPLE":["one",5,""]}}"#);
-    assert_eq!(dependency_names(&non_names), [("one", "tier")]);
+    assert_dependencies(&non_names, &[("one", "tier")]);
     let blank = configured(r#"{"tiers":{"SIMPLE":""}}"#);
     assert!(dependency_names(&blank).is_empty());
     let number = configured(r#"{"tiers":{"SIMPLE":7}}"#);
@@ -346,7 +324,7 @@ fn a_regular_deployment_lists_no_dependencies() {
 fn uses_heuristic_v2_classifier_reads_the_name() {
     assert!(heuristic_v2(r#"{"classifier_type":"heuristic_v2"}"#));
     assert!(!heuristic_v2(r#"{"classifier_type":"llm"}"#));
-    assert!(!heuristic_v2(r#"{}"#));
+    assert!(!heuristic_v2("{}"));
     assert!(!heuristic_v2(r#"{"classifier_type":5}"#));
     assert!(!heuristic_v2(r#"{"classifier_type":"nope"}"#));
 }
@@ -357,7 +335,7 @@ fn defines_custom_tiers_reads_an_actual_array() {
     assert!(custom_tiers(r#"{"tier_definitions":[{"name":"ECO"}]}"#));
     assert!(!custom_tiers(r#"{"tier_definitions":null}"#));
     assert!(!custom_tiers(r#"{"tier_definitions":{}}"#));
-    assert!(!custom_tiers(r#"{}"#));
+    assert!(!custom_tiers("{}"));
 }
 
 #[test]

@@ -71,7 +71,7 @@ struct Fields {
 }
 
 impl Fields {
-    fn blank(check: Check) -> Self {
+    const fn blank(check: Check) -> Self {
         Self {
             check,
             kind: None,

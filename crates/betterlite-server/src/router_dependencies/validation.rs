@@ -13,13 +13,13 @@ use super::{
 pub fn validate_config_placement(
     litellm_params: Option<&JsonObject>,
 ) -> Result<(), ComplexityPlacementError> {
-    let Some(litellm_params) = litellm_params else {
+    let Some(params) = litellm_params else {
         return Ok(());
     };
     let mut misplaced: Vec<&str> = COMPLEXITY_ROUTER_CONFIG_KEYS
         .iter()
         .copied()
-        .filter(|name| litellm_params.contains_key(*name))
+        .filter(|name| params.contains_key(*name))
         .collect();
     if misplaced.is_empty() {
         return Ok(());
@@ -35,33 +35,10 @@ pub fn validate_model_write(
     present_fields: &BTreeSet<String>,
 ) -> Result<(), StrategyRouterWriteError> {
     let Some(kind) = classify_strategy_router_model(model) else {
-        let mut offending: Vec<&str> = STRATEGY_ROUTER_PARAM_FIELDS
-            .iter()
-            .copied()
-            .filter(|name| present_fields.contains(*name))
-            .collect();
-        if offending.is_empty() {
-            return Ok(());
-        }
-        offending.sort_unstable();
-        return Err(StrategyRouterWriteError::UnexpectedSettings {
-            model: model.to_owned(),
-            settings: offending.join(", "),
-        });
+        return unexpected_settings(model, present_fields);
     };
-    let remainder = model
-        .strip_prefix(AUTO_ROUTER_MODEL_PREFIX)
-        .unwrap_or_default();
-    if remainder.starts_with(AUTO_ROUTER_MODEL_PREFIX) {
-        return Err(StrategyRouterWriteError::RepeatedPrefix {
-            model: model.to_owned(),
-            remainder: remainder.to_owned(),
-        });
-    }
-    if remainder.is_empty() {
-        return Err(StrategyRouterWriteError::MissingRouterName {
-            model: model.to_owned(),
-        });
+    if let Some(error) = name_error(model) {
+        return Err(error);
     }
     let mut missing = Vec::new();
     for &group in required_fields(kind) {
@@ -82,4 +59,42 @@ pub fn validate_model_write(
         },
         requirements: missing.join("; "),
     })
+}
+
+fn unexpected_settings(
+    model: &str,
+    present_fields: &BTreeSet<String>,
+) -> Result<(), StrategyRouterWriteError> {
+    let mut offending: Vec<&str> = STRATEGY_ROUTER_PARAM_FIELDS
+        .iter()
+        .copied()
+        .filter(|name| present_fields.contains(*name))
+        .collect();
+    if offending.is_empty() {
+        return Ok(());
+    }
+    offending.sort_unstable();
+    Err(StrategyRouterWriteError::UnexpectedSettings {
+        model: model.to_owned(),
+        settings: offending.join(", "),
+    })
+}
+
+// the prefix is a reserved name space, so a repeated or bare prefix cannot load as a router
+fn name_error(model: &str) -> Option<StrategyRouterWriteError> {
+    let remainder = model
+        .strip_prefix(AUTO_ROUTER_MODEL_PREFIX)
+        .unwrap_or_default();
+    if remainder.starts_with(AUTO_ROUTER_MODEL_PREFIX) {
+        return Some(StrategyRouterWriteError::RepeatedPrefix {
+            model: model.to_owned(),
+            remainder: remainder.to_owned(),
+        });
+    }
+    if remainder.is_empty() {
+        return Some(StrategyRouterWriteError::MissingRouterName {
+            model: model.to_owned(),
+        });
+    }
+    None
 }

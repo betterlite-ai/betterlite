@@ -30,7 +30,7 @@ pub fn validate_config_write(
         };
     };
     // a top-level null takes the field's default, the way the loader reads it
-    let fields = without_nulls(fields);
+    let declared_fields = without_nulls(fields);
     // the fields are destructured so the checks borrow them one by one instead of the whole record
     let Inputs {
         settings,
@@ -40,7 +40,7 @@ pub fn validate_config_write(
         raw,
         features,
         keyword_rule_tiers,
-    } = decode_declared(&fields)?;
+    } = decode_declared(&declared_fields)?;
     let checks = decode_checks(&raw, &features, &keyword_rule_tiers);
     let declared = Declared {
         settings,
@@ -143,7 +143,7 @@ fn order_features(raw: &RawChecks) -> Vec<Feature> {
 }
 
 // LiteLLM reports a field constraint at the field and a model-level rule at the model root
-fn field_location(error: &ComplexityConfigError) -> &'static str {
+const fn field_location(error: &ComplexityConfigError) -> &'static str {
     match error {
         ComplexityConfigError::BlankText { field }
         | ComplexityConfigError::TextTooLong { field, .. } => field,

@@ -102,7 +102,9 @@ const QUALITY_REQUIRED_FIELDS: [&[&str]; 1] =
 
 // each group is satisfied by any one of its names, and every group must be satisfied
 #[must_use]
-pub(crate) fn required_fields(kind: StrategyRouterKind) -> &'static [&'static [&'static str]] {
+pub(crate) const fn required_fields(
+    kind: StrategyRouterKind,
+) -> &'static [&'static [&'static str]] {
     match kind {
         StrategyRouterKind::Semantic => &SEMANTIC_REQUIRED_FIELDS,
         StrategyRouterKind::Complexity => &COMPLEXITY_REQUIRED_FIELDS,
