@@ -29,9 +29,9 @@ async fn the_engine_receives_the_mavvrik_defaults_and_the_destination_config() {
         .export_window(&window(), None)
         .await
         .expect("the fake export succeeds");
-    let settings = recorder.settings();
-    assert_eq!(settings.len(), 1);
-    let settings = &settings[0];
+    let recorded = recorder.settings();
+    assert_eq!(recorded.len(), 1);
+    let settings = &recorded[0];
     assert_eq!(settings.provider, "mavvrik");
     assert_eq!(settings.export_format, "csv");
     assert_eq!(settings.prefix, "mavvrik_focus_exports");
@@ -59,8 +59,8 @@ async fn no_other_destination_setting_reaches_the_engine() {
         .export_window(&window(), None)
         .await
         .expect("the fake export succeeds");
-    let settings = recorder.settings();
-    let settings = &settings[0];
+    let recorded = recorder.settings();
+    let settings = &recorded[0];
     assert_eq!(settings.bucket_name, None);
     assert_eq!(settings.region_name, None);
     assert_eq!(settings.endpoint_url, None);
@@ -88,8 +88,8 @@ async fn missing_and_empty_credentials_stay_none_for_the_destination_to_reject()
         .export_window(&window(), None)
         .await
         .expect("the fake export succeeds");
-    let settings = recorder.settings();
-    let settings = &settings[0];
+    let recorded = recorder.settings();
+    let settings = &recorded[0];
     assert_eq!(settings.api_key, None);
     assert_eq!(settings.api_endpoint, None);
     assert_eq!(settings.connection_id, None);

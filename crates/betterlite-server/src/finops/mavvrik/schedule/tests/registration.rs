@@ -25,7 +25,7 @@ fn the_job_runs_daily_at_the_configured_offset(
 ) {
     let recorder = Recorder::default();
     let entries: Vec<(&str, &str)> = offset
-        .map(|offset| vec![("FOCUS_CRON_OFFSET", offset)])
+        .map(|text| vec![("FOCUS_CRON_OFFSET", text)])
         .unwrap_or_default();
     let logger = Arc::new(build(&environment(&entries), &recorder, None));
     let registered = vec![RegisteredMavvrikLogger {

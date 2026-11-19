@@ -45,8 +45,8 @@ fn the_refusal_keeps_the_lowercased_value() {
 #[case::set(Some("DAILY"))]
 #[case::mixed(Some("Daily"))]
 fn daily_is_accepted_in_any_case_and_the_logger_keeps_it_lowercased(#[case] value: Option<&str>) {
-    let environment = value.map_or_else(BTreeMap::new, |value| {
-        environment(&[("MAVVRIK_FOCUS_FREQUENCY", value)])
+    let environment = value.map_or_else(BTreeMap::new, |frequency| {
+        environment(&[("MAVVRIK_FOCUS_FREQUENCY", frequency)])
     });
     let logger = build(&environment, &Recorder::default(), None);
     assert_eq!(logger.frequency, "daily");

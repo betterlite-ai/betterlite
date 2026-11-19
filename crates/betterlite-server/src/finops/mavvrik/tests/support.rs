@@ -96,28 +96,28 @@ pub(super) enum EngineCall {
 
 impl EngineCall {
     fn into_delivered(self) -> Option<Vec<u8>> {
-        let EngineCall::Deliver { content, .. } = self else {
+        let Self::Deliver { content, .. } = self else {
             return None;
         };
         Some(content)
     }
 
     fn into_window(self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
-        let EngineCall::Deliver { start, end, .. } = self else {
+        let Self::Deliver { start, end, .. } = self else {
             return None;
         };
         Some((start, end))
     }
 
     fn into_frequency(self) -> Option<String> {
-        let EngineCall::Deliver { frequency, .. } = self else {
+        let Self::Deliver { frequency, .. } = self else {
             return None;
         };
         Some(frequency)
     }
 
     fn into_limit(self) -> Option<i64> {
-        let EngineCall::Rows { limit, .. } = self else {
+        let Self::Rows { limit, .. } = self else {
             return None;
         };
         Some(limit)
@@ -284,8 +284,8 @@ impl MavvrikExporter for FakeEngine {
         let fail = self.recorder.fail;
         let marker = self.recorder.marker.clone();
         async move {
-            if let Some(gate) = gate {
-                gate.notify_one();
+            if let Some(notify) = gate {
+                notify.notify_one();
                 pending::<()>().await;
             }
             if fail {
@@ -298,10 +298,14 @@ impl MavvrikExporter for FakeEngine {
     fn usage_rows(
         &self,
         limit: i64,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<UsageRow>, TestError>> + Send {
-        self.recorder.record(EngineCall::Rows { limit, start, end });
+        self.recorder.record(EngineCall::Rows {
+            limit,
+            start: start_time,
+            end: end_time,
+        });
         let rows = self.recorder.rows.clone();
         ready(Ok::<Vec<UsageRow>, TestError>(rows))
     }
@@ -516,12 +520,12 @@ pub(super) struct Sink {
 }
 
 impl Write for Sink {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.bytes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(bytes);
-        Ok(bytes.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
