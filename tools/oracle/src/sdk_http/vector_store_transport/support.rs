@@ -6,7 +6,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::vector_store_http_write::config::WriteConfig;
-use betterlite_core::api::vector_store_http_write::error::{ClientError, WriteError};
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, PreparedWrite, WriteCall, WriteDeps, prepare,
 };
@@ -107,7 +107,7 @@ impl Fixture {
         deps: &'deps WriteDeps<'deps, C, S>,
         mode: ClientKind,
         call: &WriteCall<'_>,
-    ) -> Result<PreparedWrite<'deps, C, S>, WriteError>
+    ) -> Result<PreparedWrite<'deps, C, S>, SdkHttpError>
     where
         C: WriteConfig,
         S: ClientSource,
@@ -135,5 +135,6 @@ impl Fixture {
                 env: &env,
             },
         )
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))
     }
 }

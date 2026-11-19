@@ -39,9 +39,9 @@ pub(super) async fn execute(
         supplied: None,
     };
     let prepared = fixture.prepare(&deps, call.mode.client_kind(), &write)?;
-    let outcome = outcome(send(prepared).await)?;
+    let answer = outcome(send(prepared).await)?;
     Ok(SdkResult::VectorStoreTransport {
-        value: Box::new(outcome),
+        value: Box::new(answer),
     })
 }
 
