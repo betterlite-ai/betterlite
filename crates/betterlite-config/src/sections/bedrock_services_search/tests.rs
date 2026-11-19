@@ -55,10 +55,15 @@ fn bedrock_services_search_config_cases(#[case] key: Key) {
 // the deployment api_base beats the environment, the global api_base stays separate, and an
 // absent or empty environment value leaves the gateway unset
 fn assert_gateway_url() {
-    let environment = [("GATEWAY_FROM_ENV", "https://reference.example/mcp")];
-    let source = deployment("{api_base: 'https://deployment.example/mcp?x=1'}");
+    assert_deployment_base_wins();
+    assert_global_base_is_separate();
+    assert_environment_base_is_optional();
+    assert_missing_reference_is_reported();
+}
+
+fn assert_deployment_base_wins() {
     let settings = load(
-        &source,
+        &deployment("{api_base: 'https://deployment.example/mcp?x=1'}"),
         &[(GATEWAY_URL_VARIABLE, "https://environment.example/mcp")],
     )
     .expect("the config should load");
@@ -70,7 +75,9 @@ fn assert_gateway_url() {
         settings.environment.gateway_url.as_deref(),
         Some("https://environment.example/mcp")
     );
+}
 
+fn assert_global_base_is_separate() {
     let settings = load(&global("{api_base: 'https://global.example/mcp'}"), &[])
         .expect("the config should load");
     assert_eq!(
@@ -78,22 +85,25 @@ fn assert_gateway_url() {
         Some("https://global.example/mcp")
     );
     assert_eq!(settings.deployments.len(), 0);
-
     let settings = load(
         &deployment("{api_base: os.environ/GATEWAY_FROM_ENV}"),
-        &environment,
+        &[("GATEWAY_FROM_ENV", "https://reference.example/mcp")],
     )
     .expect("the reference resolves");
     assert_eq!(
         settings.deployments[0].api_base.as_deref(),
         Some("https://reference.example/mcp")
     );
+}
 
+fn assert_environment_base_is_optional() {
     let settings = load("", &[]).expect("the config should load");
     assert_eq!(settings.environment.gateway_url, None);
     let settings = load("", &[(GATEWAY_URL_VARIABLE, "")]).expect("an empty value counts as unset");
     assert_eq!(settings.environment.gateway_url, None);
+}
 
+fn assert_missing_reference_is_reported() {
     let error = load(&deployment("{api_base: os.environ/MISSING_GATEWAY}"), &[])
         .expect_err("the reference cannot resolve");
     let rendered = error.to_string();
@@ -195,6 +205,13 @@ fn agentcore_gateway_credentials_config_cases(#[case] credential: Credential) {
 // AGENTCORE_GATEWAY_TOKEN and a deployment api_key stay separate, an explicit api_key is never
 // rewritten by the environment, and neither Debug nor an error text exposes the token
 fn assert_gateway_token() {
+    assert_explicit_key_is_resolved();
+    assert_explicit_key_is_kept();
+    assert_environment_token_is_optional();
+    assert_token_is_not_debugged();
+}
+
+fn assert_explicit_key_is_resolved() {
     let source = deployment("{api_key: os.environ/GATEWAY_TOKEN_FIXTURE}");
     let settings = load(
         &source,
@@ -206,7 +223,9 @@ fn assert_gateway_token() {
         .as_ref()
         .expect("the deployment carries the key");
     assert_eq!(configured.expose_secret(), "fixture-explicit-token");
+}
 
+fn assert_explicit_key_is_kept() {
     let settings = load(
         &deployment("{api_key: explicit-token}"),
         &[(GATEWAY_TOKEN_VARIABLE, "fixture-environment-token")],
@@ -229,7 +248,9 @@ fn assert_gateway_token() {
             .expose_secret(),
         "fixture-environment-token"
     );
+}
 
+fn assert_environment_token_is_optional() {
     let settings = load("", &[(GATEWAY_TOKEN_VARIABLE, "fixture-environment-token")])
         .expect("the config should load");
     assert_eq!(
@@ -242,13 +263,15 @@ fn assert_gateway_token() {
         "fixture-environment-token"
     );
     assert_eq!(settings.deployments.len(), 0);
-
     let settings = load("", &[]).expect("the config should load");
     assert_eq!(settings.environment.gateway_token, None);
     let settings =
         load("", &[(GATEWAY_TOKEN_VARIABLE, "")]).expect("an empty value counts as unset");
     assert_eq!(settings.environment.gateway_token, None);
+}
 
+fn assert_token_is_not_debugged() {
+    let source = deployment("{api_key: os.environ/GATEWAY_TOKEN_FIXTURE}");
     let settings = load(
         &source,
         &[("GATEWAY_TOKEN_FIXTURE", "fixture-explicit-token")],

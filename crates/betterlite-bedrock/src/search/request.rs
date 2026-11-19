@@ -12,7 +12,6 @@ pub const AGENTCORE_TOOL_NAME_SUFFIX: &str = "___WebSearch";
 
 pub type Params = IndexMap<String, Json>;
 
-#[must_use]
 pub fn transform_search_request(
     query: &SearchQuery,
     optional_params: &Params,

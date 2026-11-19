@@ -78,18 +78,51 @@ where
     }
     let matched_region = gateway_region(request.api_base);
     let caller_base = matched_region.is_none().then_some(request.api_base);
-    if let Some(token) =
-        GATEWAY_CREDENTIAL.resolve(request.api_key.cloned(), caller_base, lookup)?
-    {
-        return Ok(bearer_signed(request, body, &token));
+    if let Some(signed) = resolve_bearer(request, body, caller_base, lookup)? {
+        return Ok(signed);
     }
-    let configured = lookup.lookup(GATEWAY_URL_VARIABLE);
-    if matched_region.is_none() && !is_configured_gateway(request.api_base, configured.as_deref()) {
-        return Err(SearchError::UntrustedSigningHost {
-            api_base: request.api_base.to_owned(),
-        });
-    }
+    check_signing_host(request.api_base, matched_region.as_deref(), lookup)?;
     let parameters = signing_parameters(request, matched_region.as_deref())?;
+    signed_request(request, body, &parameters, resolve_credentials).await
+}
+
+fn resolve_bearer(
+    request: &SignRequest<'_>,
+    body: &Params,
+    caller_base: Option<&str>,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Option<AwsSignedRequest>, SearchError> {
+    let Some(token) = GATEWAY_CREDENTIAL.resolve(request.api_key.cloned(), caller_base, lookup)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(bearer_signed(request, body, &token)))
+}
+
+fn check_signing_host(
+    api_base: &str,
+    matched_region: Option<&str>,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<(), SearchError> {
+    let configured = lookup.lookup(GATEWAY_URL_VARIABLE);
+    if matched_region.is_some() || is_configured_gateway(api_base, configured.as_deref()) {
+        return Ok(());
+    }
+    Err(SearchError::UntrustedSigningHost {
+        api_base: api_base.to_owned(),
+    })
+}
+
+async fn signed_request<F, Fut>(
+    request: &SignRequest<'_>,
+    body: &Params,
+    parameters: &BTreeMap<String, Box<RawValue>>,
+    resolve_credentials: F,
+) -> Result<AwsSignedRequest, SearchError>
+where
+    F: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
     let headers: Vec<(String, Option<String>)> = request
         .headers
         .iter()
@@ -98,11 +131,11 @@ where
     // api_key="" keeps BaseAWSLLM off the AWS_BEARER_TOKEN_BEDROCK fallback: that token belongs
     // to Bedrock Runtime and must never reach an AgentCore gateway
     let empty = SecretString::from(String::new());
-    let signed = sign_service_request(
+    sign_service_request(
         ServiceRequest {
             service: ServiceName::BedrockAgentcore,
             headers: &headers,
-            optional_params: &parameters,
+            optional_params: parameters,
             request_data: body,
             api_base: request.api_base,
             model: None,
@@ -113,8 +146,7 @@ where
         },
         resolve_credentials,
     )
-    .await?;
-    Ok(signed)
+    .await
 }
 
 fn bearer_signed(

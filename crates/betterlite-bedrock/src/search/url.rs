@@ -5,7 +5,6 @@ use url::{Host, Url};
 use super::error::SearchError;
 
 // LiteLLM takes the first truthy api_base and returns it untouched: no /mcp append and no trim
-#[must_use]
 pub fn complete_url(
     api_base: Option<&str>,
     configured_gateway_url: Option<&str>,
@@ -93,7 +92,6 @@ pub fn is_configured_gateway(api_base: &str, configured_gateway_url: Option<&str
 }
 
 // boto3's session region covers AWS_DEFAULT_REGION and the profile region; there is no default
-#[must_use]
 pub fn signing_region(
     api_base: &str,
     matched_region: Option<&str>,
