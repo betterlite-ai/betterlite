@@ -1,0 +1,11 @@
+kind: helper
+name: log-predicates-search-seed
+call:
+  log_predicates:
+    function: search
+    search: seed
+    start: "2024-02-29 12:00:00"
+    end: "2024-03-01 00:00:00"
+    next_param_index: 7
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+task: B1430
+deviations: []
+kept_bugs:
+  - what: >-
+      Tencent and MiniMax call the parent beta synthesis with no provider, so it runs under the default
+      "anthropic" tag and a compaction parameter adds compact-2026-09-04 to their requests.
+    why: >-
+      A working Tencent or MiniMax setup through LiteLLM receives that beta header, and the two subclasses never
+      pass their own provider tags, so the composition passes "anthropic" for them exactly as the parent call does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L278-L282
+  - what: >-
+      A MiniMax base that already ends in /v1 keeps it, so https://api.minimaxi.com/anthropic/v1 becomes
+      https://api.minimaxi.com/anthropic/v1/v1/messages.
+    why: >-
+      MiniMax only adjusts the separator before v1/messages and never strips an existing suffix, and a caller
+      that configures that base relies on the resulting URL, so the doubling is carried.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/messages/transformation.py#L92-L96
+  - what: >-
+      DeepSeek tests header names in exact lowercase, so an "Authorization" or "X-Api-Key" header does not stop
+      it from inserting a second x-api-key credential.
+    why: >-
+      LiteLLM's DeepSeek override checks bare dictionary keys where the inherited parent lowercases them, and a
+      working setup sends lowercase names, so the case-sensitive check is carried rather than widened.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/messages/transformation.py#L57
