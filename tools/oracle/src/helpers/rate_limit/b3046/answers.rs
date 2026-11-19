@@ -43,7 +43,7 @@ pub(crate) fn logging_answer(case: &Case, mirror: bool) -> Value {
         logging_hook(&fixture.slot, case.call_id.as_deref(), targets);
     }
     let mirror_headers = mirror.then_some(response_headers);
-    fixture.record(slp_headers.as_ref(), mirror_headers.as_ref())
+    fixture.record(Some(&slp_headers), mirror_headers.as_ref())
 }
 
 pub(crate) fn success_event_answer(case: &Case) -> HelperResult {
