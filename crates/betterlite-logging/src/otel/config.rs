@@ -222,5 +222,18 @@ fn exporter_owner(value: &str) -> Result<ExporterOwner, OTelConfigError> {
         .ok_or_else(|| OTelConfigError::ExporterOwner(value.to_owned()))
 }
 
+pub mod vendor_env {
+    pub const ARIZE_API_KEY: &str = "ARIZE_API_KEY";
+    pub const ARIZE_ENDPOINT: &str = "ARIZE_ENDPOINT";
+    pub const ARIZE_HTTP_ENDPOINT: &str = "ARIZE_HTTP_ENDPOINT";
+    pub const ARIZE_PROJECT_NAME: &str = "ARIZE_PROJECT_NAME";
+    pub const ARIZE_SPACE_ID: &str = "ARIZE_SPACE_ID";
+    pub const ARIZE_SPACE_KEY: &str = "ARIZE_SPACE_KEY";
+    pub const PHOENIX_API_KEY: &str = "PHOENIX_API_KEY";
+    pub const PHOENIX_COLLECTOR_ENDPOINT: &str = "PHOENIX_COLLECTOR_ENDPOINT";
+    pub const PHOENIX_COLLECTOR_HTTP_ENDPOINT: &str = "PHOENIX_COLLECTOR_HTTP_ENDPOINT";
+    pub const PHOENIX_PROJECT_NAME: &str = "PHOENIX_PROJECT_NAME";
+}
+
 #[path = "config/tests.rs"]
 mod tests;

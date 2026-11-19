@@ -1,0 +1,60 @@
+task: B3862
+deviations:
+  - what: An evicted Phoenix project TracerProvider is handed to the cache's background shutdown worker, which flushes and shuts it down. LiteLLM pops the least recently used provider and drops it unflushed.
+    why: >-
+      LiteLLM's flush_tracer_providers docstring says not to flush on LRU eviction, so every span a
+      batch exporter still held for the evicted project is lost once more than 64 projects are seen.
+      betterlite drains that queue on a worker, away from the request path. Covered by
+      phoenix_keeps_the_last_sixty_four_project_providers and phoenix_moves_a_hit_to_the_end_of_the_lru.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L172-L175
+  - what: Phoenix guardrail spans are parented to the request span. LiteLLM's _handle_phoenix_trace passes its own context to _create_guardrail_span, so the guardrail hangs off the proxy parent span or the incoming traceparent instead.
+    why: >-
+      The shared legacy lifecycle resolves the guardrail parent from the primary span before it asks
+      the tracer router, so the guardrail still lands on the project tracer and inside the request's
+      subtree. Covered by phoenix_routes_the_guardrail_to_the_project_provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L371
+  - what: Phoenix keeps the shared lifecycle's duplicate-success suppression. LiteLLM's _handle_phoenix_trace has no _emit_once call, so a sync and an async success for one request emit two traces there.
+    why: >-
+      The callback reuses LegacyLifecycle::handle, whose dedupe marker is part of the base success
+      flow; one request id emits one request span and one guardrail set here. Covered by
+      phoenix_suppresses_a_duplicate_success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L334-L384
+  - what: Each Phoenix project TracerProvider owns its own span processor and exporter. LiteLLM adds one shared span processor instance to every project provider.
+    why: >-
+      A processor in the Rust SDK belongs to exactly one provider, and handing the same pipeline to
+      several providers is not expressible. Every provider gets the same plan, endpoint, headers and
+      resource attributes, so the exported spans are the same. Covered by
+      phoenix_routes_the_request_to_its_project_provider and
+      phoenix_project_attributes_override_the_resource.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L145-L151
+  - what: The Arize sampling decision is cached in the callback's own bounded map, keyed by the request's call id and the rate variable. LiteLLM caches it in the request's _otel_internal_state dict under "arize_sampled:<var>".
+    why: >-
+      betterlite's typed kwargs carry no mutable per-request state, so the gate keeps the decision
+      next to itself. Success and failure hooks of one request still agree, and a call with no request
+      id draws per event, as a kwargs dict no hook shares would. Covered by
+      arize_caches_the_decision_per_request and arize_success_and_error_decisions_are_separate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L132-L149
+  - what: Arize's health check has no "Arize health check failed" catch-all branch. Its only outcomes are the two credential messages and the healthy one.
+    why: >-
+      get_arize_config cannot fail in betterlite, so there is no exception for the wrapper to catch.
+      The observable answers for every reachable configuration are unchanged. Covered by
+      arize_health_check_accepts_a_space_id_and_an_api_key,
+      arize_health_check_reports_the_missing_space and
+      arize_health_check_reports_the_missing_api_key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L235-L266
+  - what: Arize and Phoenix install no proxy registration of their own. The shared legacy init fills the proxy's open_telemetry_logger slot only when it is still empty, so a primary otel callback registered first keeps the slot, while a deployment that lists only arize leaves the arize registration in it where LiteLLM leaves None.
+    why: >-
+      LiteLLM's ArizeLogger._init_otel_logger_on_litellm_proxy is an empty override, so the callback never takes
+      proxy_server.open_telemetry_logger and proxy request spans always stay with the primary otel callback.
+      betterlite's shared init has no per-callback override point, and its first-wins guard keeps the primary logger
+      in place; only a proxy with no primary otel callback differs. Covered by
+      arize_coexists_with_the_primary_otel_registration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L151-L156
+kept_bugs:
+  - what: An empty PHOENIX_API_KEY still produces the header "Authorization=Bearer " and sends it, because LiteLLM tests "is not None" rather than truthiness.
+    why: >-
+      A deployment that exports PHOENIX_API_KEY empty keeps the same credential header it has today;
+      betterlite copies the check instead of turning the header into a missing credential. Covered by
+      phoenix_otel_config_points_at_the_configured_endpoint and
+      phoenix_health_check_accepts_an_api_key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L431-L434
