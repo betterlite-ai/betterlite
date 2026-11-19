@@ -204,3 +204,5 @@ impl BedrockPayloadPart for SdkPayloadPart {
         self.bytes.as_deref()
     }
 }
+
+mod tests;

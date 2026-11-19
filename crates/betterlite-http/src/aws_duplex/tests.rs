@@ -24,6 +24,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::AwsDuplexClient;
+use super::body::RequestBody;
 use crate::proxy::limits::TransportLimits;
 use crate::proxy::transport_error::TransportError;
 use crate::proxy::{ProxiedClient, base_builder};
@@ -96,6 +97,22 @@ async fn next_frame(body: &mut SdkBody) -> Option<Frame<Bytes>> {
 
 async fn next_chunk(body: &mut SdkBody) -> Bytes {
     next_frame(body).await.unwrap().into_data().unwrap()
+}
+
+#[test]
+fn request_body_keeps_the_inner_length_and_end() {
+    let sized = RequestBody {
+        body: SdkBody::from("hello"),
+        _io: tokio_util::task::TaskTracker::new().token(),
+    };
+    assert!(!sized.is_end_stream(), "a non-empty body is not ended");
+    assert_eq!(sized.size_hint().exact(), Some(5));
+    let empty = RequestBody {
+        body: SdkBody::empty(),
+        _io: tokio_util::task::TaskTracker::new().token(),
+    };
+    assert!(empty.is_end_stream(), "an empty body is ended");
+    assert_eq!(empty.size_hint().exact(), Some(0));
 }
 
 #[derive(Clone, Copy)]

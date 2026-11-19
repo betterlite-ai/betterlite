@@ -18,13 +18,16 @@ use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use crate::aws_settings::AuthError;
 use crate::credentials::error::CredentialError;
 use crate::realtime_transport::error::NO_CREDENTIALS_MESSAGE;
-use crate::realtime_transport::runtime::{RealtimeRuntime as _, RuntimeConfig, SdkRuntime};
+use crate::realtime_transport::runtime::{
+    RealtimeClient as _, RealtimeRuntime as _, RuntimeConfig, SdkRuntime,
+};
 use crate::signing::target::RegionInputs;
 
 pub(super) async fn python_sdk_boundary() {
     the_prepared_config_reaches_the_seam().await;
     the_sdk_client_keeps_the_injected_connector();
     the_sdk_request_is_signed_once().await;
+    a_closed_client_refuses_invocations().await;
 }
 
 async fn the_prepared_config_reaches_the_seam() {
@@ -170,6 +173,27 @@ async fn the_sdk_request_is_signed_once() {
     let (uri, headers) = &calls[0];
     assert_request_target(uri);
     assert_signed_headers(headers);
+}
+
+async fn a_closed_client_refuses_invocations() {
+    let boundary = boundary();
+    let client = boundary
+        .runtime
+        .connect(signed_config())
+        .await
+        .expect("the SDK client builds");
+    client.closable().close().await.expect("the close succeeds");
+    let error = client
+        .invoke("eu.amazon.nova-sonic-v1:0")
+        .await
+        .err()
+        .expect("a closed client has no stream");
+    assert_eq!(error.message, "the Bedrock SDK client is closed");
+    let calls = boundary
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert!(calls.is_empty(), "a closed client performs no exchange");
 }
 
 fn assert_request_target(uri: &str) {

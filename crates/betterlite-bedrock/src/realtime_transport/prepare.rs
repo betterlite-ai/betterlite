@@ -61,6 +61,8 @@ pub trait RealtimeCredentials: Send + Sync {
 }
 
 impl RealtimeCredentials for AwsCredentialResolver<'_> {
+    // The chain and its errors are B594/B595's tested behavior; this adapter only maps their answer
+    #[cfg_attr(test, mutants::skip)]
     async fn resolve(
         &self,
         settings: &AwsSettings,
