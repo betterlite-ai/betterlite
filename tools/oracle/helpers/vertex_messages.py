@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Final, Protocol, TypeAlias, TypedDict
 
 import litellm
@@ -17,6 +18,15 @@ JSON: Final = TypeAdapter(Json)
 STR: Final = TypeAdapter(str)
 BETA_VALUES: Final = TypeAdapter(list[Json])
 MESSAGES: Final = TypeAdapter(list[JsonObject])
+EnvironmentReply: TypeAlias = tuple[JsonObject, str | None]
+ValidateEnvironment: TypeAlias = Callable[
+    [JsonObject, str, list[Json], JsonObject, JsonObject, str | None, str | None],
+    EnvironmentReply,
+]
+TransformRequest: TypeAlias = Callable[
+    [str, list[JsonObject], JsonObject, GenericLiteLLMParams, JsonObject],
+    JsonObject,
+]
 
 
 class Input(TypedDict):
@@ -32,25 +42,15 @@ class Input(TypedDict):
 
 
 class Config(Protocol):
+    @property
     def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
         self,
-        headers: JsonObject,
-        model: str,
-        messages: list[Json],
-        optional_params: JsonObject,
-        litellm_params: JsonObject,
-        api_key: str | None = None,
-        api_base: str | None = None,
-    ) -> tuple[JsonObject, str | None]: ...
+    ) -> ValidateEnvironment: ...
 
+    @property
     def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        messages: list[JsonObject],
-        anthropic_messages_optional_request_params: JsonObject,  # ast-grep-ignore: no-long-names
-        litellm_params: GenericLiteLLMParams,
-        headers: JsonObject,
-    ) -> JsonObject: ...
+    ) -> TransformRequest: ...
 
     def get_complete_url(
         self,
@@ -59,7 +59,6 @@ class Config(Protocol):
         model: str,
         optional_params: JsonObject,
         litellm_params: JsonObject,
-        stream: bool | None = None,
     ) -> str: ...
 
 
