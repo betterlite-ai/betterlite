@@ -1,0 +1,22 @@
+name: cache-activity-post-not-allowed
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /global/activity/cache_hits?start_date=2024-01-01&end_date=2024-01-31
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice}]
+    teams: [{team_id: team-red}]
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

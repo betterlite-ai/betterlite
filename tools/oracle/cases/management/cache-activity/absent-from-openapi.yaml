@@ -1,0 +1,8 @@
+kind: helper
+name: cache-activity-absent-from-openapi
+call:
+  b3099:
+    path: /global/activity/cache_hits
+env: {}
+compare:
+  ignore: []

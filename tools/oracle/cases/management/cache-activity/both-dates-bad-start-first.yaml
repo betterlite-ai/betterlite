@@ -1,0 +1,22 @@
+name: cache-activity-both-dates-bad-start-first
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /global/activity/cache_hits?start_date=abc&end_date=def
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice}]
+    teams: [{team_id: team-red}]
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

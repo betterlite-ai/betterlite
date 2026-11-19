@@ -1,0 +1,17 @@
+name: cache-activity-no-database-missing-date
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /global/activity/cache_hits?end_date=2024-01-31
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
