@@ -53,7 +53,7 @@ async fn redis_success_returns_the_script_counts() {
 #[tokio::test]
 async fn redis_success_reports_each_gauge_in_order() {
     let cache = RecordingCache::new();
-    let (gauges, _script) = count_gauges(Arc::clone(&cache), vec![int_values(&[1, 4])]);
+    let (gauges, script) = count_gauges(Arc::clone(&cache), vec![int_values(&[1, 4])]);
     let response = check_read_only(
         &gauges,
         &[gauge("g1", 2), gauge("g2", 4)],
@@ -61,6 +61,16 @@ async fn redis_success_reports_each_gauge_in_order() {
     )
     .await
     .expect("a read-only gauge response");
+    assert_eq!(
+        script.calls(),
+        vec![(
+            key_list(&["g1", "g2"]),
+            vec![
+                RedisScalar::Text("3600".to_owned()),
+                RedisScalar::Text("3600".to_owned()),
+            ],
+        )]
+    );
     assert_eq!(response.overall_code, "OVER_LIMIT");
     let statuses = response.statuses;
     assert_eq!(statuses.len(), 2);

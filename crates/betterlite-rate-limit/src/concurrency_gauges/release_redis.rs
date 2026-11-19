@@ -1,7 +1,8 @@
+use betterlite_redis::cache_primitives::protocol::RedisScalar;
+
 use crate::limiter_records::{ParallelSlotAcquisition, counter_values_from_reply};
 
 use super::ConcurrencyGauges;
-use super::lua_scripts::release_script_args;
 use super::mirror_count::mirror_released_slots;
 use super::release_in_memory::release_slots_in_memory;
 
@@ -17,7 +18,7 @@ pub(super) async fn release_request_slots(
         return;
     }
     if let Some(script) = gauges.release_script.as_deref() {
-        let args = release_script_args(counter_keys, slot_id);
+        let args = vec![RedisScalar::Text(slot_id.clone()); counter_keys.len()];
         match script.run(counter_keys, &args).await {
             Ok(reply) => match counter_values_from_reply(&reply) {
                 Ok(remaining) => {

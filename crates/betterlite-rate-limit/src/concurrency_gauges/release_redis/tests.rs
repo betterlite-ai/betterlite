@@ -53,8 +53,18 @@ async fn success_mirrors_the_remaining_counts() {
 #[tokio::test]
 async fn success_mirrors_every_gauge_count() {
     let cache = RecordingCache::new();
-    let (gauges, _script) = release_gauges(Arc::clone(&cache), vec![int_values(&[1, 0])]);
+    let (gauges, script) = release_gauges(Arc::clone(&cache), vec![int_values(&[1, 0])]);
     release_request_slots(&gauges, &acquisition("slot-a", &["g1", "g2"])).await;
+    assert_eq!(
+        script.calls(),
+        vec![(
+            key_list(&["g1", "g2"]),
+            vec![
+                RedisScalar::Text("slot-a".to_owned()),
+                RedisScalar::Text("slot-a".to_owned()),
+            ],
+        )]
+    );
     assert_eq!(
         cache.writes(),
         vec![

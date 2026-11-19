@@ -1,11 +1,12 @@
+use betterlite_redis::cache_primitives::protocol::RedisScalar;
+
 use crate::limiter_records::{ParallelRequestGauge, RateLimitResponse, counter_values_from_reply};
 use crate::rate_limit_window_store::CounterScript;
 
 use super::batch_read::read_local_counts;
 use super::cache_value_conversion::whole_number;
-use super::lua_scripts::count_script_args;
 use super::status_builder::gauge_status;
-use super::{ConcurrencyGauges, GaugeError};
+use super::{ConcurrencyGauges, GaugeError, PARALLEL_SLOT_TTL};
 
 mod tests;
 
@@ -35,9 +36,9 @@ async fn script_counts(
     gauge_keys: &[String],
     requested: &[ParallelRequestGauge],
 ) -> Result<Vec<i64>, GaugeError> {
-    let reply = script
-        .run(gauge_keys, &count_script_args(requested))
-        .await?;
+    let ttl = RedisScalar::Text(PARALLEL_SLOT_TTL.as_secs().to_string());
+    let args = vec![ttl; requested.len()];
+    let reply = script.run(gauge_keys, &args).await?;
     let values = counter_values_from_reply(&reply)?;
     let mut counts = Vec::with_capacity(values.len());
     for value in &values {

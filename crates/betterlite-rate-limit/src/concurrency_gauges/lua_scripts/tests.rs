@@ -3,12 +3,11 @@
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
 use crate::concurrency_gauges::PARALLEL_SLOT_TTL;
-use crate::concurrency_gauges::tests::support::{gauge, key_list};
+use crate::concurrency_gauges::tests::support::gauge;
 use crate::limiter_records::PARALLEL_SLOT_TTL_SECONDS;
 
 use super::{
     PARALLEL_ACQUIRE_SCRIPT, PARALLEL_COUNT_SCRIPT, PARALLEL_RELEASE_SCRIPT, acquire_script_args,
-    count_script_args, release_script_args,
 };
 
 // LiteLLM's PARALLEL_ACQUIRE_SCRIPT at parallel_request_limiter_v3.py:337-369, verbatim
@@ -118,30 +117,6 @@ fn acquire_script_args_writes_limit_ttl_slot_triples() {
             RedisScalar::Text("slot-a".to_owned()),
             RedisScalar::Text("9".to_owned()),
             RedisScalar::Text("3600".to_owned()),
-            RedisScalar::Text("slot-a".to_owned()),
-        ]
-    );
-}
-
-#[test]
-fn count_script_args_are_one_ttl_per_gauge() {
-    let args = count_script_args(&[gauge("g1", 4), gauge("g2", 9)]);
-    assert_eq!(
-        args,
-        vec![
-            RedisScalar::Text("3600".to_owned()),
-            RedisScalar::Text("3600".to_owned()),
-        ]
-    );
-}
-
-#[test]
-fn release_script_args_repeat_the_slot_id_per_key() {
-    let args = release_script_args(&key_list(&["g1", "g2"]), "slot-a");
-    assert_eq!(
-        args,
-        vec![
-            RedisScalar::Text("slot-a".to_owned()),
             RedisScalar::Text("slot-a".to_owned()),
         ]
     );
