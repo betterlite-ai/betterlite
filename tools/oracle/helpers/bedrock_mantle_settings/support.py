@@ -221,7 +221,7 @@ class FrozenClock:
 @contextmanager
 def environment(values: Mapping[str, str]) -> Generator[None]:
     saved: dict[str, str | None] = {
-        name: os.environ[name] if name in os.environ else None for name in ENVIRONMENT_KEYS
+        name: os.environ.get(name) for name in ENVIRONMENT_KEYS
     }
     for name in ENVIRONMENT_KEYS:
         if name in os.environ:

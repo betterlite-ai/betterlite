@@ -32,7 +32,7 @@ class ChatApi(Protocol):
 
     def get_config(self) -> dict[str, JsonValue]: ...
 
-    def _get_openai_compatible_provider_info(
+    def _get_openai_compatible_provider_info(  # ast-grep-ignore: no-long-names  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L84
         self,
         api_base: str | None,
         api_key: str | None,
@@ -85,7 +85,7 @@ class MessagesApi(Protocol):
 
     def uses_get_llm_provider_api_base(self) -> bool: ...
 
-    def get_complete_url(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/messages/transformation.py#L58-L67
+    def get_complete_url(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/messages/transformation.py#L58-L67
         self,
         api_base: str | None,
         api_key: str | None,
