@@ -1,0 +1,33 @@
+task: B8142
+deviations:
+  - what: One ECS service, one container and one target group replace the gateway, backend and ui services, and the ALB carries no path-pattern listener rules. The service, target group and autoscaling policies are named after the stack instead of carrying LiteLLM's -gateway suffix, and the single container carries every secret the LiteLLM containers split between them, including UI_PASSWORD.
+    why: betterlite serves the API, the management routes and the admin UI from one process on port 4000.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/alb.tf#L80-L204
+  - what: OTEL_SERVICE_NAME is the stack name, not LiteLLM's "${local.name}-gateway".
+    why: There is one service, so the name on every span is the whole stack and a -gateway suffix would describe a container that does not exist.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L66-L68
+  - what: There is no num_workers variable, no --workers flag and no config download command; the container starts with --port 4000 only and reads the config itself through LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY, LITELLM_CONFIG_BUCKET_TYPE, AWS_DEFAULT_REGION and PROXY_CONFIG_HASH.
+    why: betterlite is one async process, and the bucket read belongs to the server rather than to a boto3 one-liner the entrypoint has to run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L192-L218
+  - what: The image variable has no default.
+    why: LiteLLM defaults to ghcr.io/berriai/litellm-*:main-stable. betterlite has no published image name yet, so the caller supplies one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/variables.tf#L142-L170
+  - what: There is no migrations_image variable; the migration task uses the same image with betterlite-db-admin as its entry point.
+    why: One image ships both binaries, so a second image has nothing to add.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf#L12-L45
+  - what: The token-rate autoscaling policy (gateway_target_tokens_per_second and gateway_tokens_metric) is not built.
+    why: It reads a CloudWatch metric published by the Prometheus metrics sidecar, which this module does not run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/autoscaling.tf#L73-L152
+  - what: Migration memory is 1024 MiB, not 4096.
+    why: The 4 GiB headroom in LiteLLM is for the Prisma Node and Rust engine, which betterlite does not use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf#L19-L24
+  - what: A caller's extra_env name replaces every module-set environment entry with that name, not only the OTEL_* ones.
+    why: ECS rejects a task definition with two entries of the same name, so filtering only the OTel names leaves a caller-supplied S3_BUCKET_NAME or DATABASE_HOST as a duplicate that fails the deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L66-L77
+  - what: OTEL_HEADERS is injected whenever otel_headers_secret_arn is set, even when otel_endpoint is empty.
+    why: The task description wires the secret on its own variable, and an unused OTEL_HEADERS is inert while the header list still comes from one place once OTel is switched on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L78-L80
+  - what: The migration task carries the full environment and secrets lists, not only the supplied-database secret.
+    why: The module defines one pair of lists and both task definitions read it, so the migration container sees exactly what the service sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf#L29-L37
+kept_bugs: []
