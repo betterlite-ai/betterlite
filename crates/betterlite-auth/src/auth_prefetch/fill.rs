@@ -15,8 +15,8 @@ use crate::auth_cache::payload::{self, PayloadError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PrefetchError {
-    #[error("the auth prefetch Redis read failed")]
-    Redis(#[source] RedisRowsError),
+    #[error("the auth prefetch Redis operation failed: {0}")]
+    Redis(#[from] RedisRowsError),
     #[error("the Redis result is not a JSON object")]
     Shape,
     #[error(transparent)]
@@ -177,7 +177,7 @@ impl PrefetchClock for SystemPrefetchClock {
 pub const REGISTRY_ERROR_TTL: f64 = 30.0;
 // a registry stored as a string is a sentinel, written with the shorter of the two registry TTLs
 #[must_use]
-pub fn identity_memory_ttl(value: &Json, management_ttl: f64) -> f64 {
+pub const fn identity_memory_ttl(value: &Json, management_ttl: f64) -> f64 {
     if matches!(value, Json::Text(_)) {
         REGISTRY_ERROR_TTL.min(management_ttl)
     } else {

@@ -74,13 +74,13 @@ async fn five_row_kinds_single_select() {
     .fetch_rows(&all_refs(), &all_kinds())
     .await
     .expect("the prefetch query");
-    let user = rows.get(RowKind::User).expect("the user row");
-    let team = rows.get(RowKind::Team).expect("the team row");
-    let membership = rows.get(RowKind::Membership).expect("the membership row");
+    let user = rows.get(&RowKind::User).expect("the user row");
+    let team = rows.get(&RowKind::Team).expect("the team row");
+    let membership = rows.get(&RowKind::Membership).expect("the membership row");
     let organization = rows
-        .get(RowKind::Organization)
+        .get(&RowKind::Organization)
         .expect("the organization row");
-    let project = rows.get(RowKind::Project).expect("the project row");
+    let project = rows.get(&RowKind::Project).expect("the project row");
     assert_eq!(text(user, "user_id"), "user-1");
     assert_eq!(strings(user, "teams"), ["team-b", "team-a", "team-b"]);
     assert_eq!(text(team, "team_id"), "team-1");
@@ -117,8 +117,8 @@ async fn absent_kinds_bind_sql_null() {
     .fetch_rows(&all_refs(), &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    assert!(rows.get(RowKind::User).is_none());
-    assert!(rows.get(RowKind::Team).is_some());
+    assert!(rows.get(&RowKind::User).is_none());
+    assert!(rows.get(&RowKind::Team).is_some());
 
     let without_team = AuthObjectRefs {
         team_id: None,
@@ -130,7 +130,7 @@ async fn absent_kinds_bind_sql_null() {
     .fetch_rows(&without_team, &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    assert!(team_absent_rows.get(RowKind::Team).is_none());
+    assert!(team_absent_rows.get(&RowKind::Team).is_none());
     close(database).await;
 }
 
@@ -148,7 +148,7 @@ async fn membership_requires_team_parameter() {
     .fetch_rows(&without_team, &[RowKind::Membership])
     .await
     .expect("the prefetch query");
-    assert!(rows.get(RowKind::Membership).is_none());
+    assert!(rows.get(&RowKind::Membership).is_none());
 
     let membership_rows = WriterRows {
         store: database.store.clone(),
@@ -156,7 +156,7 @@ async fn membership_requires_team_parameter() {
     .fetch_rows(&all_refs(), &[RowKind::Membership])
     .await
     .expect("the prefetch query");
-    assert!(membership_rows.get(RowKind::Membership).is_some());
+    assert!(membership_rows.get(&RowKind::Membership).is_some());
     close(database).await;
 }
 
@@ -174,11 +174,11 @@ async fn missing_scalar_rows_null() {
     .fetch_rows(&all_refs(), &all_kinds())
     .await
     .expect("the prefetch query");
-    assert!(rows.get(RowKind::User).is_some());
-    assert!(rows.get(RowKind::Team).is_none());
-    assert!(rows.get(RowKind::Membership).is_none());
-    assert!(rows.get(RowKind::Organization).is_none());
-    assert!(rows.get(RowKind::Project).is_none());
+    assert!(rows.get(&RowKind::User).is_some());
+    assert!(rows.get(&RowKind::Team).is_none());
+    assert!(rows.get(&RowKind::Membership).is_none());
+    assert!(rows.get(&RowKind::Organization).is_none());
+    assert!(rows.get(&RowKind::Project).is_none());
     close(database).await;
 }
 
@@ -197,7 +197,7 @@ async fn user_null_arrays_and_memberships() {
     .fetch_rows(&all_refs(), &[RowKind::User])
     .await
     .expect("the prefetch query");
-    let user = rows.get(RowKind::User).expect("the user row");
+    let user = rows.get(&RowKind::User).expect("the user row");
     assert!(strings(user, "teams").is_empty(), "teams normalizes to []");
     assert!(
         strings(user, "models").is_empty(),
@@ -235,7 +235,7 @@ async fn team_all_null_arrays() {
     .fetch_rows(&all_refs(), &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    let team = rows.get(RowKind::Team).expect("the team row");
+    let team = rows.get(&RowKind::Team).expect("the team row");
     assert!(
         strings(team, "admins").is_empty(),
         "admins normalizes to []"
@@ -287,7 +287,7 @@ INSERT INTO "LiteLLM_TeamTable" (team_id, model_id) VALUES ('team-1', 7);
     .fetch_rows(&all_refs(), &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    let team = rows.get(RowKind::Team).expect("the team row");
+    let team = rows.get(&RowKind::Team).expect("the team row");
     let table = object(team, "litellm_model_table");
     let aliases = object(&table, "model_aliases");
     let JsonData::Object(alias_map) = aliases else {
@@ -329,19 +329,19 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
     .await
     .expect("the prefetch query");
     assert!(is_null(
-        rows.get(RowKind::Membership).expect("the membership"),
+        rows.get(&RowKind::Membership).expect("the membership"),
         "litellm_budget_table"
     ));
     assert!(is_null(
-        rows.get(RowKind::Team).expect("the team"),
+        rows.get(&RowKind::Team).expect("the team"),
         "object_permission"
     ));
     assert!(is_null(
-        rows.get(RowKind::Organization).expect("the organization"),
+        rows.get(&RowKind::Organization).expect("the organization"),
         "object_permission"
     ));
     assert!(is_null(
-        rows.get(RowKind::Project).expect("the project"),
+        rows.get(&RowKind::Project).expect("the project"),
         "object_permission"
     ));
     close(database).await;
@@ -370,13 +370,13 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
     .await
     .expect("the prefetch query");
     let organization = rows
-        .get(RowKind::Organization)
+        .get(&RowKind::Organization)
         .expect("the organization row");
     assert!(
         strings(organization, "models").is_empty(),
         "organization models normalize to []"
     );
-    let project = rows.get(RowKind::Project).expect("the project row");
+    let project = rows.get(&RowKind::Project).expect("the project row");
     assert!(
         strings(project, "models").is_empty(),
         "project models normalize to []"
@@ -410,21 +410,21 @@ INSERT INTO "LiteLLM_ProjectTable" (project_id, team_id, budget_id, created_by, 
     .fetch_rows(&all_refs(), &all_kinds())
     .await
     .expect("the prefetch query");
-    let membership = rows.get(RowKind::Membership).expect("the membership row");
+    let membership = rows.get(&RowKind::Membership).expect("the membership row");
     let member_budget = object(membership, "litellm_budget_table");
     assert!(
         strings(&member_budget, "allowed_models").is_empty(),
         "membership allowed_models normalizes to []"
     );
     let organization = rows
-        .get(RowKind::Organization)
+        .get(&RowKind::Organization)
         .expect("the organization row");
     let organization_budget = object(organization, "litellm_budget_table");
     assert!(
         strings(&organization_budget, "allowed_models").is_empty(),
         "organization allowed_models normalizes to []"
     );
-    let project = rows.get(RowKind::Project).expect("the project row");
+    let project = rows.get(&RowKind::Project).expect("the project row");
     let project_budget = object(project, "litellm_budget_table");
     assert!(
         strings(&project_budget, "allowed_models").is_empty(),
@@ -454,7 +454,7 @@ INSERT INTO "LiteLLM_TeamTable" (team_id, object_permission_id)
     .fetch_rows(&all_refs(), &[RowKind::Team])
     .await
     .expect("the prefetch query");
-    let team = rows.get(RowKind::Team).expect("the team row");
+    let team = rows.get(&RowKind::Team).expect("the team row");
     let permission = object(team, "object_permission");
     assert!(
         strings(&permission, "mcp_servers").is_empty(),
@@ -521,10 +521,10 @@ INSERT INTO "LiteLLM_TeamTable" (team_id, members, object_permission_id)
     .await
     .expect("the prefetch query");
     assert_eq!(
-        strings(rows.get(RowKind::User).expect("the user"), "teams"),
+        strings(rows.get(&RowKind::User).expect("the user"), "teams"),
         ["team-b", "team-a", "team-b"]
     );
-    let team = rows.get(RowKind::Team).expect("the team");
+    let team = rows.get(&RowKind::Team).expect("the team");
     assert_eq!(
         strings(team, "members"),
         ["member-b", "member-a", "member-b"]
@@ -569,14 +569,14 @@ async fn raw_prefetch_uses_writer() {
         .await
         .expect("the writer query");
     assert_eq!(
-        text(found.get(RowKind::User).expect("the user row"), "user_id"),
+        text(found.get(&RowKind::User).expect("the user row"), "user_id"),
         "user-1"
     );
     let missing = reader_rows
         .fetch_rows(&refs, &[RowKind::User])
         .await
         .expect("the other database query");
-    assert!(missing.get(RowKind::User).is_none());
+    assert!(missing.get(&RowKind::User).is_none());
     close(writer).await;
     close(reader).await;
 }

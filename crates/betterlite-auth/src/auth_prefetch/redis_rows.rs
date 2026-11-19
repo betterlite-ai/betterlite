@@ -51,7 +51,7 @@ impl PrefetchRedis for RedisRows {
             .map_err(|error| RedisRowsError::Batch {
                 message: error.to_string(),
             })?;
-        Ok(rows_json(found.as_ref().clone()))
+        Ok(rows_json((*found).clone()))
     }
     fn has_batch(&self) -> bool {
         active_request_redis_batch(&self.client).is_some()

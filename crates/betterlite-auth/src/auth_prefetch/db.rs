@@ -46,18 +46,23 @@ pub struct WriterRows {
 impl PrefetchDatabase for WriterRows {
     async fn fetch_rows(&self, refs: &AuthObjectRefs, kinds: &[RowKind]) -> RowsAnswer {
         let want = |kind: RowKind| kinds.contains(&kind);
-        let pick = |value: Option<&str>, requested: bool| value.filter(|_| requested);
-        let user = pick(refs.user_id.as_deref(), want(RowKind::User));
-        let team = pick(
-            refs.team_id.as_deref(),
-            want(RowKind::Team) || want(RowKind::Membership),
-        );
-        let membership = pick(
-            refs.membership_user_id.as_deref(),
-            want(RowKind::Membership),
-        );
-        let org = pick(refs.organization_id.as_deref(), want(RowKind::Organization));
-        let project = pick(refs.project_id.as_deref(), want(RowKind::Project));
+        let user = refs.user_id.as_deref().filter(|_| want(RowKind::User));
+        let team = refs
+            .team_id
+            .as_deref()
+            .filter(|_| want(RowKind::Team) || want(RowKind::Membership));
+        let membership = refs
+            .membership_user_id
+            .as_deref()
+            .filter(|_| want(RowKind::Membership));
+        let org = refs
+            .organization_id
+            .as_deref()
+            .filter(|_| want(RowKind::Organization));
+        let project = refs
+            .project_id
+            .as_deref()
+            .filter(|_| want(RowKind::Project));
         let client = self
             .store
             .session()

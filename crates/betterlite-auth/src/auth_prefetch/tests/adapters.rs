@@ -26,7 +26,7 @@ use super::fixtures;
 use super::support::{auth, json};
 use crate::auth_cache::{AuthCache, gateway_cache};
 use crate::auth_prefetch::fill::{PrefetchClock, SystemPrefetchClock};
-use crate::auth_prefetch::memory::{PrefetchCache, PrefetchMemory};
+use crate::auth_prefetch::memory::PrefetchCache;
 use crate::auth_prefetch::orchestrator::AdmissionCounterBinding;
 use crate::auth_prefetch::permission::lookup::ObjectPermissionCache;
 use crate::auth_prefetch::redis_rows::{PrefetchRedis, RedisRows, RedisRowsError};
@@ -134,13 +134,19 @@ fn permission_model(permission_id: &str) -> LiteLLMObjectPermissionTable {
 #[test]
 fn real_cache_management_and_default_ttls() {
     let cache = real_cache(Some(MANAGEMENT_TTL));
-    assert_eq!(PrefetchCache::management_ttl(&cache), MANAGEMENT_TTL);
+    assert_eq!(
+        PrefetchCache::management_ttl(&cache).to_bits(),
+        MANAGEMENT_TTL.to_bits()
+    );
     assert_eq!(
         PrefetchCache::default_memory_ttl(&cache),
         Some(MANAGEMENT_TTL)
     );
     let fallback_cache = real_cache(None);
-    assert_eq!(PrefetchCache::management_ttl(&fallback_cache), FALLBACK_TTL);
+    assert_eq!(
+        PrefetchCache::management_ttl(&fallback_cache).to_bits(),
+        FALLBACK_TTL.to_bits()
+    );
     assert_eq!(PrefetchCache::default_memory_ttl(&fallback_cache), None);
 }
 
@@ -197,16 +203,16 @@ async fn real_cache_partitions_and_redis() {
 async fn real_cache_permission_roundtrip() {
     let cache = real_cache(Some(MANAGEMENT_TTL));
     let permission = permission_model("perm-1");
-    ObjectPermissionCache::set(&cache, "object_permission_id:perm-1", &permission, 90.0)
+    ObjectPermissionCache::write(&cache, "object_permission_id:perm-1", &permission, 90.0)
         .await
         .expect("the permission write");
-    let cached = ObjectPermissionCache::get(&cache, "object_permission_id:perm-1")
+    let cached = ObjectPermissionCache::read(&cache, "object_permission_id:perm-1")
         .await
         .expect("the permission read");
     assert_eq!(cached, Some(permission));
     assert_eq!(
-        ObjectPermissionCache::management_ttl(&cache),
-        MANAGEMENT_TTL
+        ObjectPermissionCache::management_ttl(&cache).to_bits(),
+        MANAGEMENT_TTL.to_bits()
     );
 }
 
@@ -252,14 +258,13 @@ fn system_clock_reads_unix_seconds() {
 #[tokio::test]
 async fn spend_scope_trait_binds_admission_counters() {
     let gate = Arc::new(RecordingGate::default());
-    let recording: Arc<dyn BreakerGate> = Arc::clone(&gate);
+    let concrete: Arc<RecordingGate> = Arc::clone(&gate);
+    let recording: Arc<dyn BreakerGate> = concrete;
     let cache = Arc::new(dead_redis(recording).await);
     let scope = SpendCounterScope::default();
     let _guard = scope.enter(Some(&cache), &BTreeSet::new());
     let api_key = auth(&[("user_id", json(r#""user-1""#))]);
-    <SpendCounterScope as AdmissionCounterBinding>::bind_admission_counter_keys(
-        &scope, &api_key, None,
-    );
+    <SpendCounterScope as AdmissionCounterBinding>::bind_admission_counters(&scope, &api_key, None);
     let value = scope
         .read_spend_counter("spend:user:user-1")
         .await

@@ -35,7 +35,7 @@ impl RowKind {
 }
 pub type RowValues = BTreeMap<RowKind, JsonData>;
 // LiteLLM's LiteLLM_ProjectTableCachedObj, which the shared row model does not carry
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct CachedProject {
     #[serde(flatten)]
     pub project: ProjectTable,

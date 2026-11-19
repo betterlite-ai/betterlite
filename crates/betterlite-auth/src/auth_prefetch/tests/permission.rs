@@ -180,7 +180,7 @@ impl FakePermissionCache {
 
 #[async_trait]
 impl ObjectPermissionCache for FakePermissionCache {
-    async fn get(
+    async fn read(
         &self,
         key: &str,
     ) -> Result<Option<LiteLLMObjectPermissionTable>, PermissionCacheError> {
@@ -198,7 +198,7 @@ impl ObjectPermissionCache for FakePermissionCache {
             .clone())
     }
 
-    async fn set(
+    async fn write(
         &self,
         key: &str,
         permission: &LiteLLMObjectPermissionTable,

@@ -114,7 +114,7 @@ impl AuthTable for PermissionTable {
     }
 }
 // ObjectPermissionRepository::table builds DbError<Infallible>, so only the source-free variants pass through
-fn widen(error: DbError) -> DbError<TableError> {
+const fn widen(error: DbError) -> DbError<TableError> {
     match error {
         DbError::NoDbConnected => DbError::NoDbConnected,
         DbError::Pool { source } => DbError::Pool { source },
@@ -135,7 +135,7 @@ fn widen(error: DbError) -> DbError<TableError> {
         },
     }
 }
-fn fault(error: TableError) -> DbError<TableError> {
+const fn fault(error: TableError) -> DbError<TableError> {
     match error {
         TableError::Database(source) => widen(source),
         other => DbError::InvalidRecord { source: other },

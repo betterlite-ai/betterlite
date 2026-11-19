@@ -18,11 +18,12 @@ pub const MISSING_PERMISSION_STATUS: u16 = 403;
 #[error(transparent)]
 pub struct PermissionCacheError(#[from] AuthCacheError);
 pub type PermissionAnswer = Result<Option<LiteLLMObjectPermissionTable>, PermissionCacheError>;
-// async_get_cache(key, model_type) and async_set_cache(key, value, model_type, ttl) over B733
+// async_get_cache(key, model_type) and async_set_cache(key, value, model_type, ttl) over B733;
+// the names skip get and set, which clippy's same_name_method refuses on AuthCache
 #[async_trait]
 pub trait ObjectPermissionCache: Send + Sync {
-    async fn get(&self, key: &str) -> PermissionAnswer;
-    async fn set(
+    async fn read(&self, key: &str) -> PermissionAnswer;
+    async fn write(
         &self,
         key: &str,
         permission: &LiteLLMObjectPermissionTable,
@@ -35,12 +36,12 @@ impl<Tier> ObjectPermissionCache for AuthCache<Tier>
 where
     Tier: AuthCacheTier,
 {
-    async fn get(&self, key: &str) -> PermissionAnswer {
+    async fn read(&self, key: &str) -> PermissionAnswer {
         self.async_get_typed::<LiteLLMObjectPermissionTable>(key, false)
             .await
             .map_err(|source| PermissionCacheError::from(AuthCacheError::from(source)))
     }
-    async fn set(
+    async fn write(
         &self,
         key: &str,
         permission: &LiteLLMObjectPermissionTable,
@@ -131,7 +132,7 @@ pub async fn get_object_permission(
     let cache = source.cache;
     let key = CacheKey::ObjectPermissionId(object_permission_id).render();
     if !check_db_only {
-        let cached = cache.get(&key).await.map_err(PermissionError::Cache)?;
+        let cached = cache.read(&key).await.map_err(PermissionError::Cache)?;
         if let Some(permission) = cached {
             return Ok(Some(permission));
         }
@@ -166,7 +167,7 @@ async fn lookup_permission(
         .map_err(PermissionError::Validation)?;
     let ttl = cache.management_ttl();
     cache
-        .set(key, &permission, ttl)
+        .write(key, &permission, ttl)
         .await
         .map_err(PermissionError::Cache)?;
     Ok(Some(permission))

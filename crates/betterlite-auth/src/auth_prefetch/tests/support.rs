@@ -610,7 +610,7 @@ impl RecordingBinder {
 }
 
 impl AdmissionCounterBinding for RecordingBinder {
-    fn bind_admission_counter_keys(&self, _auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
+    fn bind_admission_counters(&self, _auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
         self.bindings
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

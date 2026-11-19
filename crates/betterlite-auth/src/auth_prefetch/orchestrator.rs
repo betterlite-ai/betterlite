@@ -7,10 +7,11 @@ use crate::spend_counter_batch::scope::SpendCounterScope;
 
 // B2316 binds the admission counters this request will read; the falsey end user is not bound
 pub trait AdmissionCounterBinding: Send + Sync {
-    fn bind_admission_counter_keys(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>);
+    // clippy's same_name_method refuses the keys name while SpendCounterScope has an inherent one
+    fn bind_admission_counters(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>);
 }
 impl AdmissionCounterBinding for SpendCounterScope {
-    fn bind_admission_counter_keys(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
+    fn bind_admission_counters(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
         Self::bind_admission_counter_keys(self, auth, end_user_id);
     }
 }
@@ -53,7 +54,7 @@ pub struct ReferencedPrefetch<'context> {
 impl ReferencedPrefetch<'_> {
     pub async fn prefetch(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
         let end_user = end_user_id.filter(|id| !id.is_empty());
-        self.admission.bind_admission_counter_keys(auth, end_user);
+        self.admission.bind_admission_counters(auth, end_user);
         self.owner
             .prefetch(&AuthObjectRefs::from_token(&auth.view.token))
             .await;
