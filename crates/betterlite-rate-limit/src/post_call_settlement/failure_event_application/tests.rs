@@ -10,11 +10,8 @@ use crate::post_call_settlement::tests::support::{
 };
 use crate::request_stash::RequestStashSlot;
 
-#[tokio::test]
-async fn applies_combined_and_project_refunds_through_the_pipeline() {
-    let fixture = SettlementFixture::default();
-    let slot = RequestStashSlot::default();
-    install(&slot, |state| {
+fn install_combined_and_both_projects(slot: &RequestStashSlot) {
+    install(slot, |state| {
         state.reserved_tokens = 1000;
         state.reserved_scopes = scopes(&[("user", "alice")]);
         state.itpm_reserved_tokens = 200;
@@ -22,6 +19,13 @@ async fn applies_combined_and_project_refunds_through_the_pipeline() {
         state.otpm_reserved_tokens = 300;
         state.otpm_reserved_scopes = scopes(&[("project", "p2")]);
     });
+}
+
+#[tokio::test]
+async fn applies_combined_and_project_refunds_through_the_pipeline() {
+    let fixture = SettlementFixture::default();
+    let slot = RequestStashSlot::default();
+    install_combined_and_both_projects(&slot);
     let usage = token_usage(100, 40, 140);
     let event = FailureEvent {
         stash: &slot,

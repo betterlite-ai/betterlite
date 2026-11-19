@@ -78,13 +78,6 @@ pub(crate) fn number(value: i64) -> Json {
     Json::Number(serde_json::Number::from(value))
 }
 
-pub(crate) fn header_tuples(headers: &AdditionalHeaders) -> Vec<(String, Json)> {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
 pub(crate) fn scopes(pairs: &[(&str, &str)]) -> BTreeSet<(String, String)> {
     pairs
         .iter()
@@ -120,14 +113,6 @@ fn reservation_increment(
     }
 }
 
-pub(crate) fn guarded_operation(
-    key: &str,
-    increment_value: f64,
-    backend: ReservationBackend,
-) -> ReservationAwareIncrement {
-    reservation_increment(key, increment_value, Some(backend))
-}
-
 pub(crate) fn unguarded_operation(key: &str, increment_value: f64) -> ReservationAwareIncrement {
     reservation_increment(key, increment_value, None)
 }
@@ -154,8 +139,8 @@ where
     let stash = slot.get_or_create();
     {
         let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-        configure(&mut state);
-    }
+        configure(&mut state)
+    };
     stash
 }
 
@@ -320,10 +305,6 @@ impl FakeUsage {
     pub(crate) fn pipelines(&self) -> Vec<Vec<IncrementOperation>> {
         self.pipelines.lock().expect("the usage lock").clone()
     }
-
-    pub(crate) fn local_sets(&self) -> Vec<(String, f64, Option<i64>)> {
-        self.local_sets.lock().expect("the usage lock").clone()
-    }
 }
 
 #[async_trait::async_trait]
@@ -453,14 +434,6 @@ impl RecordingGaugeCache {
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
         })
-    }
-
-    pub(crate) fn reads(&self) -> Vec<(String, bool)> {
-        self.reads.lock().expect("the gauge lock").clone()
-    }
-
-    pub(crate) fn writes(&self) -> Vec<(String, GaugeCacheValue, u64, bool)> {
-        self.writes.lock().expect("the gauge lock").clone()
     }
 }
 

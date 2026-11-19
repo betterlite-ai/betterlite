@@ -12,12 +12,8 @@ use crate::post_call_settlement::tests::support::{
 };
 use crate::request_stash::RequestStashSlot;
 
-#[tokio::test]
-async fn logs_a_batch_error_and_still_publishes_headers() {
-    let capture = LogCapture::start();
-    let fixture = SettlementFixture::default();
-    let slot = RequestStashSlot::default();
-    install(&slot, |state| {
+fn install_failing_batch_slot(slot: &RequestStashSlot) {
+    install(slot, |state| {
         state.parallel_slot = Some(ParallelSlotAcquisition {
             slot_id: "slot-1".to_owned(),
             counter_keys: Vec::new(),
@@ -30,6 +26,14 @@ async fn logs_a_batch_error_and_still_publishes_headers() {
         )]));
         state.batch_enqueued_reservation = Some(reservation(500, &[("api_key", "k1")]));
     });
+}
+
+#[tokio::test]
+async fn logs_a_batch_error_and_still_publishes_headers() {
+    let capture = LogCapture::start();
+    let fixture = SettlementFixture::default();
+    let slot = RequestStashSlot::default();
+    install_failing_batch_slot(&slot);
     fixture.store.fail_only("pop");
     let view = BatchResponseView {
         id: "batch-1".to_owned(),

@@ -75,7 +75,7 @@ pub(crate) fn batch_tpd_refund_ops(stash: &RequestStash) -> Vec<ReservationAware
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .batch_tpd_refund_ops
-        .to_vec()
+        .clone()
 }
 
 pub(crate) fn clear_batch_tpd_refund_ops(stash: &RequestStash) {

@@ -17,30 +17,38 @@ pub struct SuccessCallback<'request> {
     pub io: IoTokenReconciliation<'request>,
 }
 
-impl PostCallSettlement<'_> {
-    pub async fn log_success_event(&self, callback: &SuccessCallback<'_>) {
-        if let Err(error) = self.settle_success(callback).await {
-            tracing::warn!(%error, "Error in rate limit success event");
-        }
+pub(super) async fn log_success_event(
+    settlement: &PostCallSettlement<'_>,
+    callback: &SuccessCallback<'_>,
+) {
+    if let Err(error) = settle_success(settlement, callback).await {
+        tracing::warn!(%error, "Error in rate limit success event");
     }
+}
 
-    pub(crate) async fn settle_success(
-        &self,
-        callback: &SuccessCallback<'_>,
-    ) -> Result<(), PostCallSettlementError> {
-        let event = &callback.event;
-        let stash = event.stash.for_call(event.call_id);
-        self.gauges
-            .release_stashed_parallel_slot(stash.as_deref(), true)
-            .await;
-        let tpm_operations = success_event_pipeline_ops(event)?;
-        if !tpm_operations.is_empty() {
-            increment_tokens_keeping_ttl(self.adjustments, &tpm_operations).await;
-        }
-        let io_operations = io_token_reservation_ops(event.stash, event.call_id, &callback.io)?;
-        apply_io_operations(self.adjustments, event.stash, event.call_id, io_operations).await?;
-        Ok(())
+pub(super) async fn settle_success(
+    settlement: &PostCallSettlement<'_>,
+    callback: &SuccessCallback<'_>,
+) -> Result<(), PostCallSettlementError> {
+    let event = &callback.event;
+    let stash = event.stash.for_call(event.call_id);
+    settlement
+        .gauges
+        .release_stashed_parallel_slot(stash.as_deref(), true)
+        .await;
+    let tpm_operations = success_event_pipeline_ops(event)?;
+    if !tpm_operations.is_empty() {
+        increment_tokens_keeping_ttl(settlement.adjustments, &tpm_operations).await;
     }
+    let io_operations = io_token_reservation_ops(event.stash, event.call_id, &callback.io)?;
+    apply_io_operations(
+        settlement.adjustments,
+        event.stash,
+        event.call_id,
+        io_operations,
+    )
+    .await?;
+    Ok(())
 }
 
 // the source applies a no-window io result as a plain TTL-preserving pipeline and the windowed one as guarded ops

@@ -37,32 +37,31 @@ pub struct BatchEnqueuedCall<'request> {
     pub response: Option<&'request BatchResponseView>,
 }
 
-impl PostCallSettlement<'_> {
-    // LiteLLM's batch post-call: save under the canonical batch id, then refund on a terminal status
-    pub async fn handle_batch_post_call(
-        &self,
-        call: &BatchEnqueuedCall<'_>,
-    ) -> Result<(), BatchEnqueuedRefundError> {
-        let Some(view) = call.response else {
-            return Ok(());
-        };
-        let batch_id = canonical_provider_batch_id(&view.id);
-        if let Some(stash) = call.stash.get() {
-            if let Some(reservation) = batch_enqueued_reservation(&stash) {
-                self.batch_store
-                    .save_reservation(&batch_id, &reservation)
-                    .await?;
-                clear_batch_reservation(&stash);
-            }
-        }
-        if !BATCH_ENQUEUED_REFUND_STATUSES.contains(&status_text(view.status)) {
-            return Ok(());
-        }
-        let Some(popped) = self.batch_store.pop_reservation(&batch_id).await? else {
-            return Ok(());
-        };
-        self.batch_store.refund(&popped).await
+// LiteLLM's batch post-call: save under the canonical batch id, then refund on a terminal status
+pub(super) async fn handle_batch_post_call(
+    settlement: &PostCallSettlement<'_>,
+    call: &BatchEnqueuedCall<'_>,
+) -> Result<(), BatchEnqueuedRefundError> {
+    let Some(view) = call.response else {
+        return Ok(());
+    };
+    let batch_id = canonical_provider_batch_id(&view.id);
+    if let Some(stash) = call.stash.get()
+        && let Some(reservation) = batch_enqueued_reservation(&stash)
+    {
+        settlement
+            .batch_store
+            .save_reservation(&batch_id, &reservation)
+            .await?;
+        clear_batch_reservation(&stash);
     }
+    if !BATCH_ENQUEUED_REFUND_STATUSES.contains(&status_text(view.status)) {
+        return Ok(());
+    }
+    let Some(popped) = settlement.batch_store.pop_reservation(&batch_id).await? else {
+        return Ok(());
+    };
+    settlement.batch_store.refund(&popped).await
 }
 
 // the declared status, spelled as the lowercase string BATCH_ENQUEUED_REFUND_STATUSES carries
