@@ -12,7 +12,7 @@ fn a_listed_model_reports_its_own_cost_map_entry() {
         object(vec![
             ("mode", text("chat")),
             ("max_input_tokens", number(128_000)),
-            ("max_output_tokens", number(16_384)),
+            ("max_output_tokens", number(0x4000)),
         ]),
     );
     let groups = ExpectedGroups::default();
@@ -28,7 +28,7 @@ fn a_listed_model_reports_its_own_cost_map_entry() {
             ("owned_by", text("openai")),
             ("mode", text("chat")),
             ("max_input_tokens", number(128_000)),
-            ("max_output_tokens", number(16_384)),
+            ("max_output_tokens", number(0x4000)),
         ])
     );
 }

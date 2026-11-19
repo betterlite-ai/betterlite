@@ -87,7 +87,7 @@ fn a_choice_without_the_sub_object_is_left_alone() {
 #[test]
 fn an_original_choice_without_the_sub_object_restores_nothing() {
     let dumped = dump(vec![choice("message", Vec::new())]);
-    let original = vec![Json::Object(JsonObject::new())];
+    let original = vec![JsonObject::new()];
     let restored = model_dump_with_preserved_fields(dumped, &original);
     assert_eq!(restored, dump(vec![choice("message", Vec::new())]));
 }
@@ -105,10 +105,8 @@ fn an_original_sub_object_without_the_field_restores_nothing() {
 
 #[test]
 fn a_dump_without_choices_is_returned_unchanged() {
-    let restored = model_dump_with_preserved_fields(
-        object(vec![("id", text("cmp"))]),
-        &[choice("message", Vec::new())],
-    );
+    let original = vec![object(vec![("message", Json::Object(object(Vec::new())))])];
+    let restored = model_dump_with_preserved_fields(object(vec![("id", text("cmp"))]), &original);
     assert_eq!(restored, object(vec![("id", text("cmp"))]));
 }
 
