@@ -265,7 +265,6 @@ fn chat_response(
                 error_type: failure.error_type,
                 param: failure.param,
                 message: failure.message,
-                provider_specific_fields: None,
             };
             render(&answer, call_id, state.include_call_id)
         }
