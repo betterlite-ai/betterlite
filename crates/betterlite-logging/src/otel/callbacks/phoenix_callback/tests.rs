@@ -407,7 +407,7 @@ fn phoenix_flushes_an_evicted_project_provider() {
     let env = env_map(&[("PHOENIX_COLLECTOR_ENDPOINT", "http://phoenix.test:6006")]);
     let config = otel_config(&env).expect("the phoenix config");
     let lifecycle = phoenix_lifecycle(rig.init_with(config), rig.options(), &BTreeMap::new());
-    fill_projects(&lifecycle.tracer_cache, MAX_PROJECT_PROVIDERS + 1);
+    fill_projects(&lifecycle.tracer_cache, 65);
     assert_eq!(lifecycle.tracer_cache.join_shutdowns(), 1);
 }
 
