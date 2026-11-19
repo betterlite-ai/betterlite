@@ -66,7 +66,7 @@ impl TryFrom<&ReadTimeoutValue> for TimeoutValue {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReadStructuredTimeout {
     pub connect: Option<Number>,

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
@@ -99,7 +99,8 @@ impl FineTuningReadDispatch for Fake {
             .error
             .as_ref()
             .map_or_else(|| Ok(state.reply.clone()), |error| Err(error.clone()));
-        std::future::ready(answer)
+        drop(state);
+        ready(answer)
     }
 }
 
