@@ -50,6 +50,7 @@ num-traits = "0.2.19"
 percent-encoding.workspace = true
 pyo3 = { version = "0.30.1", default-features = false }
 regex.workspace = true
+reqwest = { version = "0.13.5", default-features = false, features = ["stream"] }
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 selfie = "0.0.3"
@@ -78,6 +79,7 @@ workspace = true
 betterlite-http-fixture = { path = "../../tools/http-fixture" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres = { workspace = true }
 mutants = "0.0.4"
