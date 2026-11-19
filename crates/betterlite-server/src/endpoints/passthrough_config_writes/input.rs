@@ -59,8 +59,7 @@ fn guardrail_records(
 }
 
 impl EndpointInput {
-    // model_dump(exclude_unset=True, exclude_none=True, exclude={"is_from_config"}) over a base entry:
-    // the stored one on update, the body model's defaults on create
+    // the sent fields over a base entry: the stored one on update, the body model's defaults on create
     pub(super) fn merge_into(
         &self,
         stored: &PassThroughGenericEndpoint,
