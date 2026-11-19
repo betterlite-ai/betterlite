@@ -2,6 +2,8 @@
 
 pub(crate) mod support;
 
+use std::sync::Arc;
+
 use axum::http::StatusCode;
 use betterlite_roi::records::{ROISyncPhase, ROISyncStatus};
 use betterlite_roi::sample::sample_report;
@@ -12,8 +14,11 @@ use crate::roi_connections::gateway_key::MISSING_KEY;
 use crate::roi_routes::error::{
     ALREADY_RUNNING, INVALID_IDENTITY, MODE_LITERAL, NOT_READY, RESTART_BLOCKED, RoiRoutesError,
 };
+use crate::roi_routes::manager::StoreCoordinator;
+use crate::roi_routes::ports::SyncStorePort;
 use crate::roi_routes::schedule::{next_update, run_scheduled_sync};
 use crate::roi_routes::{IDENTITY_MAP_PATH, REPORT_PATH, SETUP_RESET_PATH, SYNC_PATH};
+use crate::roi_sync::coordinator::SyncCoordinator;
 
 use self::support::{
     Harness, IdentityReply, ReportReply, SEALED_ESTIMATOR, SEALED_TOKEN, SummaryPeek, admin, call,

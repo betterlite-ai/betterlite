@@ -98,9 +98,9 @@ pub async fn run_scheduled_sync(state: &RoiRouteState) -> Result<(), RoiRoutesEr
         store: Some(store),
         scheduled_interval: interval,
     };
-    let started = state.manager.start_run(run).await;
-    if !started {
-        tracing::debug!("the scheduled ROI sync did not start");
+    if state.manager.start_run(run).await {
+        return Ok(());
     }
+    tracing::debug!("the scheduled ROI sync did not start");
     Ok(())
 }

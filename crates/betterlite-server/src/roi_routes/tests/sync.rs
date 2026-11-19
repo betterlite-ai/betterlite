@@ -1,4 +1,36 @@
 #[tokio::test]
+async fn sync_coordinator_answers_the_store_status() {
+    let harness = Harness::new();
+    let store: Arc<dyn SyncStorePort> = Arc::clone(&harness.store);
+    let coordinator = StoreCoordinator { store };
+    assert!(coordinator.status().await.is_none());
+    harness
+        .store
+        .set_status(finished_status("2026-02-01T11:00:00+00:00"));
+    let status = coordinator.status().await.expect("a coordinator status");
+    assert_eq!(
+        status.finished_at.as_deref(),
+        Some("2026-02-01T11:00:00+00:00")
+    );
+}
+
+#[tokio::test]
+async fn sync_coordinator_answers_the_store_lease_calls() {
+    let harness = Harness::new();
+    let store: Arc<dyn SyncStorePort> = Arc::clone(&harness.store);
+    let coordinator = StoreCoordinator { store };
+    assert!(coordinator.acquire("owner", &idle_status(), 2.0_f64).await);
+    assert!(coordinator.heartbeat("owner", &idle_status()).await);
+    assert!(coordinator.finish("owner", &idle_status(), None).await);
+    harness.store.refuse_acquire();
+    harness.store.fail_heartbeat();
+    harness.store.fail_finish();
+    assert!(!coordinator.acquire("owner", &idle_status(), 2.0_f64).await);
+    assert!(!coordinator.heartbeat("owner", &idle_status()).await);
+    assert!(!coordinator.finish("owner", &idle_status(), None).await);
+}
+
+#[tokio::test]
 async fn sync_status_computes_next_update_from_the_finished_status() {
     let harness = Harness::new();
     harness.seed_settings(&ready_stored());

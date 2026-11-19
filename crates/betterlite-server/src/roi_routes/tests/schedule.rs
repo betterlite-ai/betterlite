@@ -270,6 +270,20 @@ async fn schedule_run_after_the_next_update_starts_the_sync() {
 }
 
 #[tokio::test]
+async fn schedule_run_starts_the_sync_exactly_at_the_next_update() {
+    let harness = Harness::new();
+    harness.seed_settings(&ready_stored());
+    let mut report = sample_report(fixed_now());
+    report.synced_at = "2026-02-01T11:00:00+00:00".to_owned();
+    harness.seed_report(&report_json(&report));
+    harness.manager.accept_start(running_status());
+    run_scheduled_sync(&harness.state())
+        .await
+        .expect("a scheduled sync at the next update");
+    assert_eq!(harness.manager.runs().len(), 1);
+}
+
+#[tokio::test]
 async fn schedule_run_uses_the_manager_status_without_a_store_status() {
     let harness = Harness::new();
     harness.seed_settings(&ready_stored());

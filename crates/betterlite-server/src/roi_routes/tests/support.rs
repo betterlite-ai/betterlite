@@ -207,6 +207,7 @@ pub(crate) struct FakeStore {
     fail_status: AtomicBool,
     fail_clear: AtomicBool,
     fail_finish: AtomicBool,
+    fail_heartbeat: AtomicBool,
     acquire_owner: Mutex<Option<String>>,
     acquire_status: Mutex<Option<ROISyncStatus>>,
     acquire_interval: Mutex<Option<f64>>,
@@ -223,6 +224,7 @@ impl FakeStore {
             fail_status: AtomicBool::new(false),
             fail_clear: AtomicBool::new(false),
             fail_finish: AtomicBool::new(false),
+            fail_heartbeat: AtomicBool::new(false),
             acquire_owner: Mutex::new(None),
             acquire_status: Mutex::new(None),
             acquire_interval: Mutex::new(None),
@@ -249,6 +251,10 @@ impl FakeStore {
 
     pub(crate) fn fail_finish(&self) {
         self.fail_finish.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn fail_heartbeat(&self) {
+        self.fail_heartbeat.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn acquired_owner(&self) -> Option<String> {
@@ -318,6 +324,9 @@ impl SyncStorePort for FakeStore {
             .lock()
             .expect("calls lock")
             .push("store.heartbeat".to_owned());
+        if self.fail_heartbeat.load(Ordering::SeqCst) {
+            return Err(RoiRoutesError::Store(DbError::NoDbConnected));
+        }
         Ok(true)
     }
 
