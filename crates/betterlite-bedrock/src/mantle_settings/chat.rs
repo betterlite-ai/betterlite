@@ -55,8 +55,7 @@ impl MantleChatConfig {
         }
     }
 
-    // get_config returns the inherited class attributes; this class holds only defaults, so the answer is empty.
-    // Defaults serialize to an empty object, so an empty Ok is the same answer; no test can tell them apart.
+    // The inherited attributes hold only defaults, so this answers an empty object and the empty-Ok mutant is equivalent.
     #[cfg_attr(test, mutants::skip)]
     pub fn get_config(&self) -> Result<Object, MantleSettingsError> {
         let attributes =
