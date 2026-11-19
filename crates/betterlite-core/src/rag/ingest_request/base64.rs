@@ -26,27 +26,31 @@ pub(super) fn decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
         let &[first, second, third, fourth] = quad else {
             continue;
         };
-        decoded.push((first << 2) | (second >> 4));
-        decoded.push(((second & 0x0f) << 4) | (third >> 2));
-        decoded.push(((third & 0x03) << 6) | fourth);
+        decoded.push((first << 2).saturating_add(second >> 4));
+        decoded.push(((second & 0x0f) << 4).saturating_add(third >> 2));
+        decoded.push(((third & 0x03) << 6).saturating_add(fourth));
     }
     match quads.remainder() {
         [] => Ok(decoded),
         [_] => Err(Base64DecodeError::OneModuloFour {
             characters: sextets.len(),
         }),
-        [first, second] if trailing_pads >= 2 => {
-            decoded.push((first << 2) | (second >> 4));
+        [first, second] => {
+            if trailing_pads < 2 {
+                return Err(Base64DecodeError::IncorrectPadding);
+            }
+            decoded.push((first << 2).saturating_add(second >> 4));
             Ok(decoded)
         }
-        [_, _] => Err(Base64DecodeError::IncorrectPadding),
-        [first, second, third] if trailing_pads >= 1 => {
-            decoded.push((first << 2) | (second >> 4));
-            decoded.push(((second & 0x0f) << 4) | (third >> 2));
+        [first, second, third] => {
+            if trailing_pads < 1 {
+                return Err(Base64DecodeError::IncorrectPadding);
+            }
+            decoded.push((first << 2).saturating_add(second >> 4));
+            decoded.push(((second & 0x0f) << 4).saturating_add(third >> 2));
             Ok(decoded)
         }
-        [_, _, _] => Err(Base64DecodeError::IncorrectPadding),
-        _ => Ok(decoded),
+        _ => Err(Base64DecodeError::IncorrectPadding),
     }
 }
 
