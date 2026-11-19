@@ -5,7 +5,7 @@ use std::time::Duration;
 use betterlite_pyhost::blocking_work::WorkError;
 use betterlite_pyhost::call_error::CallError;
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
-use pyo3::types::PyAnyMethods as _;
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _};
 
 use super::{HOOK_DEADLINE, LOAD_DEADLINE};
 use crate::python_hooks::PythonHooks;
@@ -20,16 +20,11 @@ fn release(service: &PythonHooks, hook: &LoadedHook) {
     // the loader execs the file without registering it, so release reaches the same module
     let runtime = service.inner.get().unwrap();
     runtime.host.attach(|py| {
-        hook.object
-            .loaded
-            .object
-            .bind(py)
-            .getattr("__globals__")
-            .unwrap()
-            .getattr("release")
-            .unwrap()
-            .call0()
-            .unwrap();
+        let loaded = hook.object.loaded.object.bind(py);
+        let globals = loaded.getattr("__globals__").unwrap();
+        let globals = globals.cast_into::<PyDict>().unwrap();
+        let release = globals.get_item("release").unwrap().unwrap();
+        release.call0().unwrap();
     });
 }
 

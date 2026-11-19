@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_pyhost::call_error::CallError;
 use betterlite_pyhost::json_values::JsonObject;
-use pyo3::types::PyAnyMethods as _;
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _};
 use tokio::task::yield_now;
 
 use crate::python_hooks::HooksRuntime;
@@ -20,16 +20,11 @@ const WAIT_LIMIT: Duration = Duration::from_secs(10);
 fn release(runtime: &HooksRuntime, hook: &LoadedHook) {
     // the loader execs the file without registering it, so release reaches the same module
     runtime.host.attach(|py| {
-        hook.object
-            .loaded
-            .object
-            .bind(py)
-            .getattr("__globals__")
-            .unwrap()
-            .getattr("release")
-            .unwrap()
-            .call0()
-            .unwrap();
+        let loaded = hook.object.loaded.object.bind(py);
+        let globals = loaded.getattr("__globals__").unwrap();
+        let globals = globals.cast_into::<PyDict>().unwrap();
+        let release = globals.get_item("release").unwrap().unwrap();
+        release.call0().unwrap();
     });
 }
 
