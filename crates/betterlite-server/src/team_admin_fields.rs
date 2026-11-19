@@ -4,7 +4,6 @@ pub mod error;
 pub mod fields;
 pub mod key;
 pub mod team;
-#[cfg(test)]
 mod tests;
 
 // LiteLLM folds these into team and key metadata, so a change to one is attributed to its own name.

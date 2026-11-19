@@ -49,49 +49,43 @@ pub(crate) fn column_changed(
     submitted: &Fields,
     stored: &Fields,
 ) -> Result<bool, TeamAdminError> {
-    match columns {
-        Columns::Team => Ok(team_column_changed(name, submitted, stored)),
-        Columns::Key => key_column_changed(name, submitted, stored),
+    match (columns, name) {
+        (Columns::Team, "model_aliases") => Ok(model_aliases_changed(submitted, stored)),
+        (Columns::Key, "budget_limits") => budget_limits_changed(submitted, stored),
+        (Columns::Team | Columns::Key, _) => Ok(stored_value_changed(name, submitted, stored)),
     }
 }
 
-fn team_column_changed(name: &str, submitted: &Fields, stored: &Fields) -> bool {
-    if name == "model_aliases" {
-        let aliases = match stored.get("litellm_model_table") {
-            Some(JsonData::Object(table)) => as_object(table.get("model_aliases")),
-            Some(
-                JsonData::Null
-                | JsonData::Bool(_)
-                | JsonData::Number(_)
-                | JsonData::String(_)
-                | JsonData::Array(_),
-            )
-            | None => Fields::new(),
-        };
-        return !object_eq(&as_object(submitted.get(name)), &aliases);
-    }
-    if stored.contains_key(name) {
-        return !value_eq(submitted.get(name), stored.get(name));
-    }
-    true
+// A team's model aliases are the ones inside its stored model table, not a top-level column.
+fn model_aliases_changed(submitted: &Fields, stored: &Fields) -> bool {
+    let aliases = match stored.get("litellm_model_table") {
+        Some(JsonData::Object(table)) => as_object(table.get("model_aliases")),
+        Some(
+            JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::String(_)
+            | JsonData::Array(_),
+        )
+        | None => Fields::new(),
+    };
+    !object_eq(&as_object(submitted.get("model_aliases")), &aliases)
 }
 
-fn key_column_changed(
-    name: &str,
-    submitted: &Fields,
-    stored: &Fields,
-) -> Result<bool, TeamAdminError> {
-    if name == "budget_limits" {
-        let sent = budget_windows(submitted.get(name))?;
-        let held = budget_windows(stored.get(name))?;
-        if let (Some(sent), Some(held)) = (&sent, &held) {
-            return Ok(!same_windows(sent, held));
-        }
+fn budget_limits_changed(submitted: &Fields, stored: &Fields) -> Result<bool, TeamAdminError> {
+    let sent = budget_windows(submitted.get("budget_limits"))?;
+    let held = budget_windows(stored.get("budget_limits"))?;
+    if let (Some(sent), Some(held)) = (&sent, &held) {
+        return Ok(!same_windows(sent, held));
     }
-    if stored.contains_key(name) {
-        return Ok(!value_eq(submitted.get(name), stored.get(name)));
+    Ok(stored_value_changed("budget_limits", submitted, stored))
+}
+
+fn stored_value_changed(name: &str, submitted: &Fields, stored: &Fields) -> bool {
+    match stored.get(name) {
+        Some(value) => !value_eq(submitted.get(name), Some(value)),
+        None => true,
     }
-    Ok(true)
 }
 
 // The caller-owned pairs of a window list, or None when the value needs a plain comparison.
