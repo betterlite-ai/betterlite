@@ -1,0 +1,121 @@
+kind: sdk_http
+name: fine-tuning-read-list-jobs-does-not-invent-limit
+env:
+  OPENAI_API_KEY: sk-env
+  OPENAI_ORGANIZATION: org-env
+  AZURE_OPENAI_API_KEY: sk-azure
+call:
+  fine_tuning_read:
+    steps:
+      - list:
+          call:
+            api_key: sk-request
+            organization: org-request
+      - list:
+          call:
+            after: ""
+            limit: 0
+      - list:
+          call:
+            after: ft_prev
+            limit: 7
+      - list:
+          call:
+            extra_headers: {X-Ignored: x}
+            extra_body: {limit: 99}
+      - alist:
+          call: {}
+      - list:
+          call:
+            provider: azure
+            api_version: "2024-08-01-preview"
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      object: list
+      data:
+        - id: ft_a
+          created_at: 1700000000
+          error: null
+          fine_tuned_model: null
+          finished_at: null
+          hyperparameters: {batch_size: 1, learning_rate_multiplier: 2.0, n_epochs: 3}
+          model: gpt-4o-mini-2024-07-18
+          object: fine_tuning.job
+          organization_id: org-a
+          result_files: [file-result]
+          seed: 42
+          status: running
+          trained_tokens: null
+          training_file: file-train
+          validation_file: null
+          estimated_finish: null
+          integrations: null
+          metadata: null
+          method: null
+      has_more: true
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      object: list
+      data:
+        - id: ft_a
+          created_at: 1700000000
+          error: null
+          fine_tuned_model: null
+          finished_at: null
+          hyperparameters: {batch_size: 1, learning_rate_multiplier: 2.0, n_epochs: 3}
+          model: gpt-4o-mini-2024-07-18
+          object: fine_tuning.job
+          organization_id: org-a
+          result_files: [file-result]
+          seed: 42
+          status: running
+          trained_tokens: null
+          training_file: file-train
+          validation_file: null
+          estimated_finish: null
+          integrations: null
+          metadata: null
+          method: null
+      has_more: true
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      object: list
+      data:
+        - id: ft_azure
+          created_at: 1700000001
+          error: null
+          fine_tuned_model: null
+          finished_at: null
+          hyperparameters: {batch_size: 1, learning_rate_multiplier: 2.0, n_epochs: 3}
+          model: gpt-4o-mini-2024-07-18
+          object: fine_tuning.job
+          organization_id: org-azure
+          result_files: []
+          seed: 7
+          status: canceling
+          trained_tokens: null
+          training_file: file-train
+          validation_file: null
+          estimated_finish: null
+          integrations: null
+          metadata: null
+          method: null
+      has_more: false
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-organization, api-key]
+  ignore: []

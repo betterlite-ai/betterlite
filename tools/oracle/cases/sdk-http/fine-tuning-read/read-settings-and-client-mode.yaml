@@ -1,0 +1,69 @@
+kind: sdk_http
+name: fine-tuning-read-read-settings-and-client-mode
+env:
+  OPENAI_API_KEY: sk-env
+  OPENAI_ORGANIZATION: org-env
+  AZURE_OPENAI_API_KEY: sk-azure
+  AZURE_API_VERSION: "2024-06-01"
+call:
+  fine_tuning_read:
+    steps:
+      - list:
+          call:
+            api_key: sk-request
+            organization: org-request
+      - list:
+          call: {}
+      - list:
+          call: {}
+          supplied_client: true
+      - alist:
+          call: {}
+      - list:
+          call:
+            extra_headers: {X-Ignored: x}
+            extra_body: {limit: 99}
+      - list:
+          call:
+            provider: azure
+            api_version: "2024-08-01-preview"
+            api_key: sk-azure-request
+            organization: org-request
+      - list:
+          call:
+            provider: azure
+            api_version: "2024-08-01-preview"
+          supplied_client: true
+      - alist:
+          call:
+            provider: azure
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-organization, api-key, x-ignored]
+  ignore: []

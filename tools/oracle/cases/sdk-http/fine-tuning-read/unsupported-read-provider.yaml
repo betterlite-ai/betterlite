@@ -1,0 +1,68 @@
+kind: sdk_http
+name: fine-tuning-read-unsupported-read-provider
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  fine_tuning_read:
+    steps:
+      - list:
+          call:
+            provider: vertex_ai
+      - retrieve:
+          call:
+            fine_tuning_job_id: ft_a
+            provider: vertex_ai
+      - aretrieve:
+          call:
+            fine_tuning_job_id: ft_a
+            provider: vertex_ai
+      - list:
+          call:
+            provider: null
+      - list:
+          call:
+            provider: unknown
+      - list:
+          call:
+            provider: vertex_ai
+            timeout: "bad"
+      - retrieve:
+          call:
+            fine_tuning_job_id: ft_a
+            provider: vertex_ai
+            timeout: "bad"
+      - list:
+          call: {}
+      - retrieve:
+          call:
+            fine_tuning_job_id: ft_missing
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: missing
+        type: invalid_request_error
+        param: null
+        code: null
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: missing
+        type: invalid_request_error
+        param: null
+        code: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /fine_tuning_read/value/steps/5/failure/message
+      why: Python's float() text and betterlite's field-naming text differ
+    - pointer: /fine_tuning_read/value/steps/6/failure/message
+      why: Python's float() text and betterlite's field-naming text differ
+    - pointer: /fine_tuning_read/value/steps/7/failure/message
+      why: the openai client prefixes the status and the body repr, betterlite reports the body message
+    - pointer: /fine_tuning_read/value/steps/8/failure/message
+      why: the openai client prefixes the status and the body repr, betterlite reports the body message

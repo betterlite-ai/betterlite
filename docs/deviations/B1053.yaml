@@ -1,0 +1,47 @@
+task: B1053
+deviations:
+  - what: >-
+      An unparsable timeout string answers ValueError with betterlite's own text,
+      "timeout is not a valid number: ...", where LiteLLM raises Python's float() ValueError
+      "could not convert string to float: 'bad'".
+    why: >-
+      The exception class, the zero requests and the absent status, type, param and code match;
+      docs/compatibility.md keeps Python's runtime str text out of betterlite and names the field
+      instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L552-L553
+  - what: >-
+      A provider HTTP error reports the body's error.message, while LiteLLM's openai client raises
+      a NotFoundError whose message is "Error code: 404 - {...}" with the whole body repr.
+    why: >-
+      The class, status and the type, param and code read from the body all match; the message text
+      is the openai client's repr of the response body, which docs/compatibility.md does not port.
+    link: ""
+  - what: >-
+      The unsupported-provider error carries the provider and the message but no synthetic
+      httpx response, where LiteLLM builds one with body "Unsupported provider" and method
+      "create_thread" or "retrieve_fine_tuning_job".
+    why: >-
+      A locally raised error never reached a provider, so betterlite has no response to attach;
+      the error kind maps to the same 400 the proxy returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L624-L634
+kept_bugs:
+  - what: >-
+      The list call's unsupported-provider message names 'create_batch' instead of the list
+      operation.
+    why: >-
+      Callers and tests match the text LiteLLM raises, and it is the string a working setup sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L624-L634
+  - what: >-
+      Azure read calls accept an organization and never send it; only the api-key header reaches
+      the provider.
+    why: >-
+      The azure branch forwards organization into a handler that never reads it, and Azure
+      authenticates with api-key, so a setup depends on the silent drop rather than an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L613-L623
+  - what: >-
+      An api_version given to an OpenAI read is accepted and never sent, since the plain OpenAI
+      client has no versioned URL surface.
+    why: >-
+      LiteLLM passes it into the OpenAI handler, which ignores it for a non-Azure client; a setup
+      that sets it globally relies on the request still succeeding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L201-L241
