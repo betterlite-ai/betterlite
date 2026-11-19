@@ -19,7 +19,7 @@ use super::support::{
 pub(super) async fn run(name: &str) {
     match name {
         "no_deployment_reports_every_loaded_deployment" => {
-            no_deployment_reports_every_loaded_deployment().await;
+            no_deployment_reports_every_loaded_deployment();
         }
         "the_async_facade_reports_the_same_pool" => {
             the_async_facade_reports_the_same_pool().await;
@@ -42,7 +42,7 @@ pub(super) async fn run(name: &str) {
     }
 }
 
-async fn no_deployment_reports_every_loaded_deployment() {
+fn no_deployment_reports_every_loaded_deployment() {
     let pool = [
         deployment("a", &[("tpm", number(10)), ("rpm", number(2))], &[], &[]),
         deployment("b", &[("tpm", number(1))], &[], &[]),
