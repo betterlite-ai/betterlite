@@ -17,7 +17,7 @@ fn savings(before: u64, after: u64) -> CompressionSavings {
     CompressionSavings {
         tokens_before: before,
         tokens_after: after,
-        tokens_saved: before - after,
+        tokens_saved: before.saturating_sub(after),
     }
 }
 

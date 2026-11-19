@@ -16,16 +16,24 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L110-L118
   - what: >-
       A litellm_call_id that is not a non-empty string is replaced by a generated id, where
-      LiteLLM keeps whatever value the request carried and keys the cache with it.
+      LiteLLM keeps a truthy value of any type and keys the cache with it.
     why: >-
       A cache keyed by a number or a list is never found again, because the retrieval hooks
       resolve the id as a string; generating an id keeps the compressed content reachable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L183-L187
   - what: >-
-      A _agentic_loop_depth that is not a number counts as 0, so compression runs, where
-      LiteLLM's int() accepts a numeric string and raises on any other text.
+      A _agentic_loop_depth that is not a whole number counts as 0, so compression runs, where
+      LiteLLM's int() truncates a float, accepts a numeric string and raises on any other text.
     why: >-
       docs/compatibility.md reads a field of the wrong type as an error or its default rather
       than Python's coercion, and a depth the caller did not send as a number is no depth.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L144
+  - what: >-
+      A tools field that is not a list fails the hook with an error naming the field when
+      compression appends tools, where LiteLLM treats it as no tools and replaces it with the
+      compressed list.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the field, and
+      silently dropping a caller's tools would lose data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L179-L182
 kept_bugs: []
