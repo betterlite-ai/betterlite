@@ -25,6 +25,7 @@ use tokio::runtime::Builder;
 use super::fixtures;
 use super::input::{FailureCase, FailureKind, Input, MessageCase, PassthroughCase, ReplyCase};
 use super::ops::{globals, object_with_region};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn failed_credentials(kind: FailureKind) -> Result<Credentials, CredentialError> {
@@ -121,6 +122,10 @@ fn failure_cases(cases: &[FailureCase]) -> HelperResult {
             .as_deref()
             .unwrap_or("https://bedrock-mantle.us-east-1.api.aws/v1");
         let kind = case.kind;
+        let now = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_700_000_000))
+            .ok_or("the fixture clock is out of range")
+            .or_value_error()?;
         let request = SignRequest {
             headers: &[],
             optional_params: &params,
@@ -131,7 +136,7 @@ fn failure_cases(cases: &[FailureCase]) -> HelperResult {
             stream: None,
             fake_stream: None,
             globals: &globals,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            now,
         };
         let outcome = runtime.block_on(sign_request(
             request,

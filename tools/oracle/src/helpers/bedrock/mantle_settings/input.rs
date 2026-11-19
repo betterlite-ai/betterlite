@@ -33,16 +33,6 @@ pub(crate) enum Input {
     ReplyShape { cases: Vec<ReplyCase> },
 }
 
-pub(super) const VARIANTS: [&str; 7] = [
-    "standalone_mantle_base",
-    "standalone_mantle_auth",
-    "chat_provider_prefix",
-    "messages_auth_and_url",
-    "mantle_passthrough_path",
-    "mantle_auth_failure",
-    "mantle_passthrough_reply_shape",
-];
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Catalog {

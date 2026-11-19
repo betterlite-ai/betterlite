@@ -8,7 +8,16 @@ use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 use super::Op;
-use super::input::VARIANTS;
+
+const VARIANTS: [&str; 7] = [
+    "standalone_mantle_base",
+    "standalone_mantle_auth",
+    "chat_provider_prefix",
+    "messages_auth_and_url",
+    "mantle_passthrough_path",
+    "mantle_auth_failure",
+    "mantle_passthrough_reply_shape",
+];
 
 #[test]
 fn helper_seeds_select_bedrock_mantle_settings() {

@@ -19,7 +19,7 @@ use tokio::runtime::Builder;
 use super::fixtures::{self, Policy};
 use super::input::{BaseCase, Catalog, ChatCase, ErrorProbe, Input, SignCase};
 use super::outcomes;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn globals(environment: &BTreeMap<String, String>) -> MantleGlobals {
@@ -118,7 +118,7 @@ fn scope(value: &str) -> &str {
 }
 
 fn signed_value(signed: AwsSignedRequest) -> Value {
-    let mut headers = serde_json::Map::new();
+    let mut headers = Object::new();
     let mut authorization = Value::Null;
     for (name, value) in &signed.headers {
         if name.eq_ignore_ascii_case("authorization") {
@@ -144,7 +144,11 @@ fn auth_cases(cases: &[SignCase]) -> HelperResult {
         let globals = globals(&case.environment);
         let api_key = case.api_key.as_deref().map(SecretString::from);
         let credentials = fixtures::credentials(&case.credentials);
-        let seconds = u64::try_from(case.now).unwrap_or_default();
+        let seconds = u64::try_from(case.now).or_value_error()?;
+        let now = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(seconds))
+            .ok_or("now is out of range")
+            .or_value_error()?;
         let request = SignRequest {
             headers: &case.headers,
             optional_params: &case.optional_params,
@@ -155,10 +159,9 @@ fn auth_cases(cases: &[SignCase]) -> HelperResult {
             stream: case.stream,
             fake_stream: case.fake_stream,
             globals: &globals,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
+            now,
         };
         let signed = runtime.block_on(sign_request(request, move |_settings, _region| {
-            let credentials = credentials.clone();
             async move { Ok::<Credentials, CredentialError>(credentials) }
         }));
         results.push(signed.map_or_else(|_error| json!({"error": true}), signed_value));

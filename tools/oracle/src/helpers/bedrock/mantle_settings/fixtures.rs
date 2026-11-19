@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::future::{Future, ready};
 use std::panic::panic_any;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,7 +18,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "MantleSettingsError".to_owned(),
@@ -54,8 +55,10 @@ pub(super) fn credential_cache() -> Result<Arc<CredentialCache>, Box<HelperError
     Ok(Arc::new(cache))
 }
 
+type SeenEntry = (String, Option<String>);
+
 #[derive(Clone, Default)]
-pub(super) struct Seen(Arc<Mutex<Vec<(String, Option<String>)>>>);
+pub(super) struct Seen(Arc<Mutex<Vec<SeenEntry>>>);
 
 impl Seen {
     pub(super) fn take(&self) -> Vec<Value> {
