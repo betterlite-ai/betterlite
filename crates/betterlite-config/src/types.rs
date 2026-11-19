@@ -15,6 +15,7 @@ pub struct Config {
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
+    // boxed: futures holding a loaded Config would otherwise carry all of Sections and cross clippy's 16384-byte large_futures limit
     pub sections: Box<Sections>,
 }
 
