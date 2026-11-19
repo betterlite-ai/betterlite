@@ -18,6 +18,15 @@ deviations:
   - what: A custom secret manager's optional_params.replica_regions is [] when replica_regions is not configured, where LiteLLM's KeyManagementSettings.model_dump() gives None.
     why: B4410's Settings stores replica_regions as Vec<String>, so an absent list and an empty list are the same value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/secret_managers/main.py#L74-L81
+  - what: hashicorp_vault installs the real Vault client without a license check, where LiteLLM raises ValueError("Hashicorp secret manager is only available for premium users. ...") when premium_user is not True.
+    why: betterlite has no paid tier, and a license gate would refuse every Vault setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L122-L125
+  - what: cyberark installs the real CyberArk client without a license check, where LiteLLM raises ValueError("CyberArk secret manager is only available for premium users. ...") when premium_user is not True.
+    why: betterlite has no paid tier, and a license gate would refuse every CyberArk setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L62-L65
+  - what: google_secret_manager validates GOOGLE_SECRET_MANAGER_PROJECT_ID without a license check, where LiteLLM raises ValueError("Google Secret Manager requires an Enterprise License ...") before it reads the project id when premium_user is not True.
+    why: betterlite has no paid tier, and a license gate would refuse every Google Secret Manager setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L28-L31
 kept_bugs:
   - what: A known alerting callback whose logger fails to initialize is logged with "[Non-Blocking Error] Error initializing custom logger: ..." and boot continues, where betterlite's error rules would surface it.
     why: _init_custom_logger_compatible_class catches every exception, logs it and returns None, and _load_alerting_settings keeps going, so a setup with one broken alerting integration still starts.
