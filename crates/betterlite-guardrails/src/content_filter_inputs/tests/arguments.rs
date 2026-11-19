@@ -165,6 +165,26 @@ fn tool_call_non_object_json_is_filtered_as_text() {
 }
 
 #[test]
+fn tool_call_bare_number_falls_back_to_text() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "digits",
+        r"\d+",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text("4111"))];
+    let mut detections = Vec::new();
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("a bare JSON number filters as text");
+    assert_eq!(arguments_of(&calls[0]), Some("[DIGITS_REDACTED]"));
+    assert_eq!(pattern_names(&detections), ["digits"]);
+}
+
+#[test]
 fn tool_call_skips_calls_without_usable_arguments() {
     let fixture = Fixture::with_patterns(vec![regex_pattern(
         "secret",

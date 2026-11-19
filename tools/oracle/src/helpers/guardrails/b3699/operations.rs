@@ -15,6 +15,7 @@ use betterlite_guardrails::content_filter_inputs::arguments::{
 use betterlite_guardrails::content_filter_inputs::competitor::{
     CompetitorMessageTemplates, apply_competitor_intent_policy,
 };
+use betterlite_guardrails::content_filter_inputs::error::ArgumentFilterError;
 use betterlite_guardrails::content_filter_inputs::images::{
     ImageDescriptionCompletion, ImageDescriptionReply, ImageDescriptionRequest,
     ImageDescriptionResponse, ImageScan, process_images,
@@ -22,6 +23,7 @@ use betterlite_guardrails::content_filter_inputs::images::{
 use betterlite_guardrails::content_filter_inputs::mcp::scan_mcp_tool_call_arguments;
 use serde_json::Value;
 
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::projection;
@@ -49,21 +51,37 @@ impl ImageDescriptionCompletion for ScriptedDescriptions {
     }
 }
 
-pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
+fn filtered_error(outcome: Result<(), ArgumentFilterError>) -> Value {
+    match outcome {
+        Ok(()) => Value::Null,
+        Err(failure) => projection::failure(&failure.into_failure()),
+    }
+}
+
+fn scan_images(
+    input: &ImagesInput,
+) -> Result<(Vec<ContentFilterDetection>, Value), Box<HelperError>> {
+    let completion = ScriptedDescriptions(input.image_description.clone());
+    let mut detections = Vec::new();
     let fixture = Fixture::new(&input.patterns, &input.blocked_words)?;
     let source = fixture.source();
-    let completion = ScriptedDescriptions(input.image_description.clone());
-    let scan = ImageScan {
-        images: &input.images,
-        image_model: Some(input.image_model.as_str()),
-        source: &source,
-    };
-    let mut detections = Vec::new();
-    let outcome = runtime()?.block_on(process_images(&scan, Some(&completion), &mut detections));
-    let error = match outcome {
+    let error = match runtime()?.block_on(process_images(
+        &ImageScan {
+            images: &input.images,
+            image_model: Some(input.image_model.as_str()),
+            source: &source,
+        },
+        Some(&completion),
+        &mut detections,
+    )) {
         Ok(()) => Value::Null,
         Err(failure) => projection::failure(&failure.into_failure()),
     };
+    Ok((detections, error))
+}
+
+pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
+    let (detections, error) = scan_images(input)?;
     Ok(output(&[], &detections, &[], &BTreeMap::new(), error))
 }
 
@@ -141,18 +159,18 @@ fn policy_error(
 }
 
 pub(super) fn run_tool_calls(input: &ToolCallsInput) -> HelperResult {
+    let mut calls = input.tool_calls.clone();
     let fixture = Fixture::new(&input.patterns, &input.blocked_words)?;
     let source = fixture.source();
-    let filter = ArgumentFilter {
-        source: &source,
-        max_depth: DEFAULT_RECURSE_DEPTH,
-    };
-    let mut calls = input.tool_calls.clone();
     let mut detections = Vec::new();
-    let error = match scan_tool_call_arguments(&filter, &mut calls, &mut detections) {
-        Ok(()) => Value::Null,
-        Err(failure) => projection::failure(&failure.into_failure()),
-    };
+    let error = filtered_error(scan_tool_call_arguments(
+        &ArgumentFilter {
+            source: &source,
+            max_depth: DEFAULT_RECURSE_DEPTH,
+        },
+        &mut calls,
+        &mut detections,
+    ));
     Ok(output(&[], &detections, &calls, &BTreeMap::new(), error))
 }
 
@@ -165,15 +183,12 @@ pub(super) fn run_mcp(input: &McpInput) -> HelperResult {
     };
     let mut request_data = input.request_data.clone();
     let mut detections = Vec::new();
-    let error = match scan_mcp_tool_call_arguments(
+    let error = filtered_error(scan_mcp_tool_call_arguments(
         &guardrail("pre_mcp_call"),
         &filter,
         None,
         &mut request_data,
         &mut detections,
-    ) {
-        Ok(()) => Value::Null,
-        Err(failure) => projection::failure(&failure.into_failure()),
-    };
+    ));
     Ok(output(&[], &detections, &[], &request_data, error))
 }

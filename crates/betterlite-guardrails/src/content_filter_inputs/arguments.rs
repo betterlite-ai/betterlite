@@ -27,11 +27,9 @@ pub fn filter_argument_value(
         return Err(ArgumentFilterError::Depth { context_label });
     }
     match value {
-        GuardrailValue::Text(text) => Ok(GuardrailValue::Text(filter_text(
-            filter.source,
-            text,
-            detections,
-        )?)),
+        GuardrailValue::Text(text) => {
+            filter_text(filter.source, text, detections).map(GuardrailValue::Text)
+        }
         GuardrailValue::SignedInteger(number) => {
             assert_argument_label_clean(filter, &number.to_string(), detections, context_label)?;
             Ok(value.clone())
@@ -46,9 +44,16 @@ pub fn filter_argument_value(
         }
         GuardrailValue::Object(entries) => {
             filter_object(filter, entries, detections, context_label, depth)
+                .map(GuardrailValue::Object)
         }
         GuardrailValue::Array(items) => {
-            filter_array(filter, items, detections, context_label, depth)
+            let filtered = items
+                .iter()
+                .map(|item| {
+                    filter_argument_value(filter, item, detections, context_label, depth + 1)
+                })
+                .collect::<Result<Vec<_>, ArgumentFilterError>>()?;
+            Ok(GuardrailValue::Array(filtered))
         }
         GuardrailValue::Null | GuardrailValue::Boolean(_) => Ok(value.clone()),
     }
@@ -95,7 +100,7 @@ fn filter_object(
     detections: &mut Vec<ContentFilterDetection>,
     context_label: &'static str,
     depth: i64,
-) -> Result<GuardrailValue, ArgumentFilterError> {
+) -> Result<BTreeMap<String, GuardrailValue>, ArgumentFilterError> {
     for key in entries.keys() {
         assert_argument_label_clean(filter, key, detections, context_label)?;
     }
@@ -106,27 +111,7 @@ fn filter_object(
             filter_argument_value(filter, item, detections, context_label, depth + 1)?,
         );
     }
-    Ok(GuardrailValue::Object(filtered))
-}
-
-fn filter_array(
-    filter: &ArgumentFilter<'_>,
-    items: &[GuardrailValue],
-    detections: &mut Vec<ContentFilterDetection>,
-    context_label: &'static str,
-    depth: i64,
-) -> Result<GuardrailValue, ArgumentFilterError> {
-    let mut filtered = Vec::with_capacity(items.len());
-    for item in items {
-        filtered.push(filter_argument_value(
-            filter,
-            item,
-            detections,
-            context_label,
-            depth + 1,
-        )?);
-    }
-    Ok(GuardrailValue::Array(filtered))
+    Ok(filtered)
 }
 
 fn assert_argument_label_clean(

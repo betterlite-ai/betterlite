@@ -73,23 +73,22 @@ where
 {
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
-        if let Self::Blocked {
+        let Self::Blocked {
             detail,
             description,
         } = &self
-        {
-            return GuardrailFailure::HttpObject {
-                status: BLOCKED_STATUS,
-                detail: image_block_detail(detail, description),
-            };
-        }
-        let message = match &self {
-            Self::NoChoices => self.to_string(),
+        else {
+            return GuardrailFailure::Other(self.failure_message());
+        };
+        image_block_failure(detail, description)
+    }
+
+    fn failure_message(&self) -> String {
+        match self {
             Self::Completion { source } => source.to_string(),
             Self::Filter(source) => source.to_string(),
-            Self::Blocked { .. } => self.to_string(),
-        };
-        GuardrailFailure::Other(message)
+            Self::NoChoices | Self::Blocked { .. } => self.to_string(),
+        }
     }
 }
 
@@ -146,10 +145,10 @@ fn detail_map_entries(entries: &[(&str, &String)]) -> IndexMap<String, Guardrail
 }
 
 // The error a blocked image description carries keeps the raw description for debugging
-pub(super) fn image_block_detail(
+pub(super) fn image_block_failure(
     detail: &ContentFilterBlockDetail,
     description: &str,
-) -> IndexMap<String, GuardrailValue> {
+) -> GuardrailFailure {
     let mut map = block_detail_map(detail);
     let appended = if let Some(GuardrailValue::Text(error)) = map.get("error") {
         format!("{error} (Image description): {description}")
@@ -157,5 +156,8 @@ pub(super) fn image_block_detail(
         format!("Content blocked: Image description detected{description}")
     };
     map.insert("error".to_owned(), GuardrailValue::Text(appended));
-    map
+    GuardrailFailure::HttpObject {
+        status: BLOCKED_STATUS,
+        detail: map,
+    }
 }

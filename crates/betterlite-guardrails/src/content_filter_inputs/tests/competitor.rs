@@ -127,8 +127,8 @@ fn competitor_refuse_uses_the_configured_template() {
 #[rstest]
 #[case::missing(None)]
 #[case::empty(Some(""))]
-fn competitor_refuse_falls_back_to_the_default_message(#[case] configured: Option<&str>) {
-    let error = apply_competitor_intent_policy(
+fn competitor_messages_fall_back_to_the_defaults(#[case] configured: Option<&str>) {
+    let refusal = apply_competitor_intent_policy(
         &base(None),
         &competitor_result("refuse"),
         &templates(configured, None),
@@ -136,10 +136,22 @@ fn competitor_refuse_falls_back_to_the_default_message(#[case] configured: Optio
         &mut Vec::new(),
     )
     .unwrap_err();
-    let GuardrailFailure::HttpObject { detail, .. } = error else {
+    let GuardrailFailure::HttpObject { detail, .. } = refusal else {
         panic!("a refused intent raises the HTTP detail");
     };
     assert_eq!(detail.get("error"), Some(&text(DEFAULT_REFUSE_MESSAGE)));
+    let reframed = apply_competitor_intent_policy(
+        &base(None),
+        &competitor_result("reframe"),
+        &templates(None, configured),
+        &request_data(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    let GuardrailFailure::ModifyResponse(failure) = reframed else {
+        panic!("a reframed intent passes the response through");
+    };
+    assert_eq!(failure.message, DEFAULT_REFRAME_MESSAGE);
 }
 
 #[test]
@@ -213,24 +225,6 @@ fn assert_evidence(info: &BTreeMap<String, GuardrailValue>) {
     };
     assert_eq!(signal.get("value"), None);
     assert_eq!(signal.get("match"), Some(&text("better than")));
-}
-
-#[rstest]
-#[case::missing(None)]
-#[case::empty(Some(""))]
-fn competitor_reframe_falls_back_to_the_default_message(#[case] configured: Option<&str>) {
-    let error = apply_competitor_intent_policy(
-        &base(None),
-        &competitor_result("reframe"),
-        &templates(None, configured),
-        &request_data(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    let GuardrailFailure::ModifyResponse(failure) = error else {
-        panic!("a reframed intent passes the response through");
-    };
-    assert_eq!(failure.message, DEFAULT_REFRAME_MESSAGE);
 }
 
 #[test]

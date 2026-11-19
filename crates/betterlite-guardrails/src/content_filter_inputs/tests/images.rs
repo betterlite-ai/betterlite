@@ -36,6 +36,13 @@ struct Scripted {
     requests: Mutex<Vec<ImageDescriptionRequest>>,
 }
 
+impl Scripted {
+    fn record_request(&self, request: &ImageDescriptionRequest) {
+        let mut requests = self.requests.lock().expect("the request list lock");
+        requests.push(request.clone());
+    }
+}
+
 #[async_trait]
 impl ImageDescriptionCompletion for Scripted {
     type Error = ScriptedError;
@@ -44,10 +51,7 @@ impl ImageDescriptionCompletion for Scripted {
         &self,
         request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
-        self.requests
-            .lock()
-            .expect("the request list lock")
-            .push(request.clone());
+        self.record_request(request);
         Ok(reply(self.content.as_deref()))
     }
 }
@@ -85,9 +89,7 @@ impl ImageDescriptionCompletion for NoChoices {
         &self,
         _request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
-        Ok(ImageDescriptionResponse {
-            choices: Vec::new(),
-        })
+        Ok(reply(None))
     }
 }
 
@@ -106,10 +108,8 @@ impl ImageDescriptionCompletion for Failing {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{message}")]
-struct OrderedError {
-    message: String,
-}
+#[error("{0}")]
+struct OrderedError(String);
 
 struct FailingInOrder;
 
@@ -122,9 +122,7 @@ impl ImageDescriptionCompletion for FailingInOrder {
         request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
         let image_url = request.image_url.clone();
-        Err(OrderedError {
-            message: format!("failed for {image_url}"),
-        })
+        Err(OrderedError(format!("failed for {image_url}")))
     }
 }
 
@@ -321,11 +319,10 @@ async fn image_processing_completion_failure_propagates() {
 
 #[tokio::test]
 async fn image_processing_skips_empty_descriptions() {
-    let fixture = Fixture::with_patterns(vec![regex_pattern(
-        "leak",
-        "alpha",
-        ContentFilterAction::Block,
-    )]);
+    let fixture = Fixture::with_patterns(vec![
+        regex_pattern("leak", "alpha", ContentFilterAction::Block),
+        regex_pattern("blank", "^$", ContentFilterAction::Mask),
+    ]);
     let source = fixture.source();
     let images = ["img-1".to_owned()];
     let scan = ImageScan {
