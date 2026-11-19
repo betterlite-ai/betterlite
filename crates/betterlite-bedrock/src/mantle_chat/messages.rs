@@ -1,16 +1,18 @@
+use betterlite_core::api::anthropic_beta_config::matrix::{BetaMatrix, BetaNode};
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::{Json as BodyJson, Object};
 use indexmap::IndexMap;
 use serde_json::Number;
 
+use crate::bedrock_messages_beta::provider::CUSTOM_LLM_PROVIDER;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::messages::transform::{
     MessagesRequest, TransformSources, transform_request as transform_bedrock_request,
 };
 
-use super::MANTLE_PREFIX;
 use super::error::MantleMessagesError;
+use super::{BETA_HEADERS_PROVIDER, MANTLE_PREFIX};
 
 const ANTHROPIC_BETA_BODY_FIELD: &str = "anthropic_beta";
 const ANTHROPIC_BETA_HEADER: &str = "anthropic-beta";
@@ -39,7 +41,16 @@ where
         model_cost: request.model_cost,
         drop_params: request.drop_params,
     };
-    let mut body = transform_bedrock_request(&stripped, sources).await?;
+    let mantle_matrix = mantle_beta_matrix(sources.matrix);
+    let mut mantle_sources = TransformSources {
+        environment: &mut *sources.environment,
+        catalogs: sources.catalogs,
+        budgets: sources.budgets,
+        matrix: &mantle_matrix,
+        lookup: sources.lookup,
+        packaged: sources.packaged,
+    };
+    let mut body = transform_bedrock_request(&stripped, &mut mantle_sources).await?;
     move_betas_into_header(&body, headers)?;
     restore_messages_fields(
         &mut body,
@@ -47,6 +58,20 @@ where
         request.optional_params.get(STREAM_FIELD),
     );
     Ok(body)
+}
+
+// AmazonMantleMessagesConfig.beta_headers_provider: B622 filters the beta list under the bedrock provider name, so
+// the mantle transform hands it a matrix where that name resolves to the bedrock_mantle mapping, one hop like LiteLLM.
+fn mantle_beta_matrix(matrix: &BetaMatrix) -> BetaMatrix {
+    let mut providers = matrix.0.clone();
+    let mantle = matrix.provider_name(BETA_HEADERS_PROVIDER).to_owned();
+    let mut aliases = match providers.get("provider_aliases") {
+        Some(BetaNode::Map(entries)) => entries.clone(),
+        Some(_) | None => IndexMap::new(),
+    };
+    aliases.insert(CUSTOM_LLM_PROVIDER.to_owned(), BetaNode::Text(mantle));
+    providers.insert("provider_aliases".to_owned(), BetaNode::Map(aliases));
+    BetaMatrix(providers)
 }
 
 // The body keeps neither the version nor the beta list, gets the model back only when it has one, and streams

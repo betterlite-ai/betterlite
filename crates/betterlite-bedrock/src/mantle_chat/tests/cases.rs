@@ -34,7 +34,7 @@ pub(super) const LIMITS: ApiLimits = ApiLimits {
 
 const USER_MESSAGES: &str = r#"[{"role": "user", "content": "hi"}]"#;
 const BETA_PARAMS: &str = r#"{"max_tokens":512,"tools":[{"type":"tool_search_tool_regex_20251119","name":"tool_search"},{"name":"geo","description":"geo","input_schema":{"type":"object","properties":{"q":{"type":"string"}}},"eager_input_streaming":true}],"safeguards":[]}"#;
-const BETA_HEADER: &str = "dangerous-tool-use-2026-09-03,fine-grained-tool-streaming-2025-05-14,tool-search-tool-2025-10-19";
+const BETA_HEADER: &str = "dangerous-tool-use-2026-09-03,fine-grained-tool-streaming-2025-05-14,tool-examples-2025-10-29,tool-search-tool-2025-10-19";
 pub(super) const IMAGE_BODY: &str =
     r#"{"data":"iVBORw0KGgo=","media_type":"image/png","type":"base64"}"#;
 const STRUCTURED_PARAMS: &str = r#"{"max_tokens":256,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"a":{"type":"string"}}}}}}"#;
@@ -358,8 +358,35 @@ fn message_environment_cases() {
 
 pub(super) fn beta_header_not_body() {
     moved_betas_through_transform();
+    beta_provider_is_mantle();
     beta_shapes();
     restored_message_copy_semantics();
+}
+
+// The bedrock mapping nulls structured-outputs-2025-11-13, so the token surviving proves the transform filters
+// the list under AmazonMantleMessagesConfig's bedrock_mantle provider rather than the parent's bedrock one.
+fn beta_provider_is_mantle() {
+    let fixture = Fixture::new();
+    let mut session = MessagesSession::new(&fixture);
+    let mut headers = IndexMap::new();
+    headers.insert(
+        "anthropic-beta".to_owned(),
+        "structured-outputs-2025-11-13".to_owned(),
+    );
+    let call = messages_call(
+        "mantle/fixture-plain",
+        USER_MESSAGES,
+        r#"{"max_tokens":8}"#,
+        r#"{"anthropic-beta":"structured-outputs-2025-11-13"}"#,
+    );
+    let body = session
+        .transform(&call, &mut headers)
+        .expect("the user beta survives under the mantle mapping");
+    assert_eq!(
+        headers.get("anthropic-beta").map(String::as_str),
+        Some("structured-outputs-2025-11-13")
+    );
+    assert!(!body.contains_key("anthropic_beta"));
 }
 
 fn moved_betas_through_transform() {
