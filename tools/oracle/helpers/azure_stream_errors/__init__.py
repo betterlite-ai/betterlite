@@ -6,14 +6,14 @@ from litellm.llms.azure.common_utils import AzureOpenAIError
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from pydantic import JsonValue
 
-from azure_stream_errors_fakes import (
+from .fakes import (
     Fixture,
     ScriptedChatCompletion,
     ScriptedError,
     TokenEndpoint,
     client_for,
 )
-from azure_stream_errors_records import (
+from .records import (
     CHUNK,
     CREATED_FLOOR,
     JSON,
@@ -27,8 +27,8 @@ from azure_stream_errors_records import (
     SyncStream,
     WrapperView,
 )
-from azure_stream_errors_reports import azure_error_view
-from azure_stream_errors_views import (
+from .reports import azure_error_view
+from .views import (
     Recorder,
     scripted_error_view,
     stored_headers,

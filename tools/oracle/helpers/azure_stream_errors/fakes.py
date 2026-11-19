@@ -4,7 +4,7 @@ from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue
 from typing_extensions import override
 
-from azure_stream_errors_records import (
+from .records import (
     API_BASE,
     JSON,
     OPTIONAL_HEADER_MAP,

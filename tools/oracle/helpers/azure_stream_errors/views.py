@@ -6,15 +6,15 @@ from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue
 from typing_extensions import override
 
-from azure_stream_errors_fakes import ScriptedError, scripted_provider
-from azure_stream_errors_records import (
+from .fakes import ScriptedError, scripted_provider
+from .records import (
     JSON,
     MODEL,
     PRE_ARGS,
     StreamCase,
     StreamKwargs,
 )
-from azure_stream_errors_reports import header_map
+from .reports import header_map
 
 
 def pre_view(params: dict[str, JsonValue]) -> JsonValue:

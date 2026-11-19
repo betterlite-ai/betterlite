@@ -4,7 +4,7 @@ import httpx
 from litellm.llms.azure.common_utils import AzureOpenAIError
 from pydantic import JsonValue
 
-from azure_stream_errors_records import JSON, ErrorView
+from .records import JSON, ErrorView
 
 
 def header_map(headers: httpx.Headers | dict[str, str] | None) -> JsonValue:
