@@ -493,11 +493,7 @@ fn a_non_json_chunk_is_skipped() {
     assert!(
         collected(
             &passthrough_config(None, None),
-            &[
-                "not json",
-                r#"data: {oops}"#,
-                r#"{"choices":[{"index":0}]}"#
-            ]
+            &["not json", "data: {oops}", r#"{"choices":[{"index":0}]}"#]
         )
         .is_some()
     );

@@ -193,7 +193,7 @@ fn rewrite_item_usage(fields: &mut Object) -> Result<u64, GigaChatEmbeddingError
 
 fn usage_object(total: u64) -> Object {
     let total = u32::try_from(total).unwrap_or(u32::MAX);
-    Object::from([
+    Object::from_iter([
         (String::from("prompt_tokens"), Value::from(total)),
         (String::from("total_tokens"), Value::from(total)),
     ])
