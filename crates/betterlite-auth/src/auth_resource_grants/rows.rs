@@ -228,7 +228,7 @@ macro_rules! grant_including {
 grant_including!(ObjectPermissionTable, object_permission_listed);
 grant_including!(ManagedVectorStoreTable, managed_store_list);
 
-// the object permission table has no filter, so its listed read binds the limit alone
+// the grant macro passes both tables a filter; this one has none, so only the limit binds
 fn object_permission_listed<'query>(
     _filter: Option<&'query Infallible>,
     limit: &'query Option<i64>,
