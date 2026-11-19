@@ -16,25 +16,21 @@ pub fn classify(error: HttpError) -> TransportFailure {
         other => TransportFailure::new(TransportKind::HttpError, &other.to_string()),
     }
 }
-
 #[derive(Debug)]
 pub enum SourceFailure {
     Transport(TransportFailure),
     // the SSE frame itself could not be read, which LiteLLM never produces
     Decode(String),
 }
-
 #[async_trait]
 pub trait PayloadSource: Send {
     async fn next_payload(&mut self) -> Option<Result<Vec<u8>, SourceFailure>>;
 }
-
 // collecting the body first lets a sync step run without an executor
 #[derive(Default)]
 pub struct PrefetchedSource {
     items: VecDeque<Result<Vec<u8>, SourceFailure>>,
 }
-
 impl PrefetchedSource {
     #[must_use]
     pub fn new(items: Vec<Result<Vec<u8>, SourceFailure>>) -> Self {
@@ -43,7 +39,6 @@ impl PrefetchedSource {
         }
     }
 }
-
 #[async_trait]
 impl PayloadSource for PrefetchedSource {
     async fn next_payload(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {

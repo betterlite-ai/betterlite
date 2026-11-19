@@ -41,7 +41,6 @@ where
     pub details: IndexMap<String, Json>,
     pub limits: &'stream ApiLimits,
 }
-
 pub struct LiveStream<'stream, Transform, Tokenization, Calculator>
 where
     Transform: ResponsesEventTransform + Sync,
@@ -53,7 +52,6 @@ where
     pub callback: ResponsesStreamHookState,
     source: Box<dyn PayloadSource>,
 }
-
 impl<'stream, Transform, Tokenization, Calculator>
     LiveStream<'stream, Transform, Tokenization, Calculator>
 where
@@ -74,7 +72,6 @@ where
             source,
         }
     }
-
     // The async iterator awaits the hook directly and waits for pending logging on every exit.
     pub async fn next_event(&mut self) -> Result<Option<Event>, DriverError> {
         let outcome = self.drive(Dispatch::Spawned).await;
@@ -83,7 +80,6 @@ where
         }
         outcome
     }
-
     // both iterators share this pipeline and only the dispatch differs
     pub async fn drive(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         match self.pull(dispatch).await {
@@ -102,7 +98,6 @@ where
             }
         }
     }
-
     async fn pull(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         self.check_duration()?;
         loop {
@@ -162,7 +157,6 @@ where
             }
         }
     }
-
     fn check_duration(&self) -> Result<(), DriverError> {
         self.state
             .check_max_streaming_duration(self.clock_seconds())
@@ -170,7 +164,6 @@ where
                 class: timeout_class(&timeout),
             })
     }
-
     fn clock_seconds(&self) -> f64 {
         self.engine
             .hooks
@@ -181,7 +174,6 @@ where
             .map(|micros| micros.mul_add(1e-6, 0.0_f64))
             .unwrap_or(f64::INFINITY)
     }
-
     async fn raise_if_ended(&mut self) -> Result<(), DriverError> {
         if self.state.completed_response.is_some() {
             return Ok(());
@@ -204,7 +196,6 @@ where
             class: fallback_error(&self.state, &class_message, 500),
         })
     }
-
     async fn transport_failed(
         &mut self,
         failure: TransportFailure,

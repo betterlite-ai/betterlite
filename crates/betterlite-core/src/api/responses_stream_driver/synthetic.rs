@@ -28,7 +28,6 @@ pub struct SyntheticSetup<'setup> {
     pub cache_hit: Option<bool>,
     pub persist_before_logging: bool,
 }
-
 // one event per call keeps a caller's step boundary, as an iterator does
 pub struct SyntheticStream<'stream> {
     hooks: &'stream ResponsesStreamHooks<'stream>,
@@ -38,7 +37,6 @@ pub struct SyntheticStream<'stream> {
     pub callback: ResponsesStreamHookState,
     details: IndexMap<String, Json>,
 }
-
 impl<'stream> SyntheticStream<'stream> {
     pub fn build<Calculator>(
         mut transformed: ResponsesApiResponse,
@@ -62,7 +60,6 @@ impl<'stream> SyntheticStream<'stream> {
             details: IndexMap::new(),
         })
     }
-
     pub async fn advance(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         let Some(event) = self.events.get(self.index).cloned() else {
             return Ok(None);
@@ -87,7 +84,6 @@ impl<'stream> SyntheticStream<'stream> {
         Ok(Some(event))
     }
 }
-
 pub(super) fn is_completed(event: &Event) -> bool {
     match event {
         ResponsesAPIStreamingResponse::Known(known) => {

@@ -8,14 +8,12 @@ pub enum TransportKind {
     RemoteProtocolError,
     HttpError,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct TransportFailure {
     pub kind: TransportKind,
     pub message: String,
 }
-
 impl TransportFailure {
     #[must_use]
     pub fn new(kind: TransportKind, message: &str) -> Self {
@@ -24,7 +22,6 @@ impl TransportFailure {
             message: message.to_owned(),
         }
     }
-
     #[must_use]
     pub fn is_transport(&self) -> bool {
         matches!(
@@ -33,7 +30,6 @@ impl TransportFailure {
         )
     }
 }
-
 #[derive(Debug, Error)]
 pub enum DriverError {
     #[error("the responses stream failed")]

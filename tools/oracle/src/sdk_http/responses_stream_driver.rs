@@ -21,7 +21,6 @@ impl CallKind for Call {
         send(self, api_base, env)
     }
 }
-
 async fn send(
     call: &Call,
     api_base: &str,

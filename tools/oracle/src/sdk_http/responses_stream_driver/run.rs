@@ -26,7 +26,6 @@ enum Stream<'stream> {
     Live(Box<LiveStream<'stream, Decoder, NoTokenization, NoCost>>),
     Synthetic(SyntheticStream<'stream>),
 }
-
 impl Stream<'_> {
     async fn next_async(&mut self) -> Result<Option<Event>, DriverError> {
         match self {
@@ -34,14 +33,12 @@ impl Stream<'_> {
             Self::Synthetic(stream) => stream.advance(Dispatch::Spawned).await,
         }
     }
-
     fn next_blocking(&mut self) -> Result<Option<Event>, DriverError> {
         match self {
             Self::Live(stream) => futures_executor::block_on(stream.drive(Dispatch::Inline)),
             Self::Synthetic(stream) => futures_executor::block_on(stream.advance(Dispatch::Inline)),
         }
     }
-
     async fn drain_logging(&mut self) {
         match self {
             Self::Live(stream) => await_pending_logging(&mut stream.callback).await,
@@ -52,7 +49,6 @@ impl Stream<'_> {
         }
     }
 }
-
 pub(super) async fn run(
     client: &ProxiedClient,
     call: &Call,
@@ -145,7 +141,6 @@ pub(super) async fn run(
         logged,
     })
 }
-
 async fn drive_stream(
     stream: &mut Stream<'_>,
     spec: &RunSpec,
@@ -185,7 +180,6 @@ async fn drive_stream(
     }
     Ok((steps, None))
 }
-
 fn times() -> StreamTimes {
     StreamTimes {
         now: DateTime::UNIX_EPOCH.fixed_offset(),

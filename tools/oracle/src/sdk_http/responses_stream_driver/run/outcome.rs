@@ -13,7 +13,6 @@ pub(super) fn view(event: &Event) -> Result<Json, SdkHttpError> {
     let typed = serde_json::from_value(value).map_err(SdkHttpError::ResultParse)?;
     Ok(drop_nulls(typed))
 }
-
 fn drop_nulls(value: Json) -> Json {
     match value {
         Json::Object(fields) => Json::Object(
@@ -29,7 +28,6 @@ fn drop_nulls(value: Json) -> Json {
         other => other,
     }
 }
-
 pub(super) fn failure_of(error: &DriverError) -> Result<Failure, SdkHttpError> {
     match error {
         DriverError::Class { class } => {
@@ -53,7 +51,6 @@ pub(super) fn failure_of(error: &DriverError) -> Result<Failure, SdkHttpError> {
         }),
     }
 }
-
 fn wire(field: &WireField) -> Nullable {
     match field {
         WireField::Missing(_) => None,
@@ -61,7 +58,6 @@ fn wire(field: &WireField) -> Nullable {
         WireField::Text(text) => Some(Some(text.clone())),
     }
 }
-
 // native::class_name stays private to its module, so the classes this driver raises are named here
 fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     match class {
@@ -73,7 +69,6 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
         other => Err(SdkHttpError::Unprojected(format!("{other:?}"))),
     }
 }
-
 // the only read failure a scripted case injects outside the transport pair is httpx.ReadTimeout
 fn transport_class(kind: TransportKind) -> &'static str {
     match kind {
@@ -82,7 +77,6 @@ fn transport_class(kind: TransportKind) -> &'static str {
         TransportKind::HttpError => "ReadTimeout",
     }
 }
-
 fn message_of(class: &ErrorClass) -> String {
     let Ok(value) = serde_json::to_value(class) else {
         return String::new();

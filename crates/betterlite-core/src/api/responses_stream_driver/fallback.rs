@@ -1,3 +1,8 @@
+use super::errors::DriverError;
+use super::live::Event;
+use super::source::SourceFailure;
+use crate::api::responses_stream_events::ResponsesStreamBaseState;
+use crate::api::responses_stream_primitives::duration::StreamDurationTimeout;
 use betterlite_error::error::details::{
     MidStreamFallbackDetails, MidStreamStatus, TimeoutDetails, TimeoutStatus,
 };
@@ -5,12 +10,6 @@ use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
-
-use super::errors::DriverError;
-use super::live::Event;
-use super::source::SourceFailure;
-use crate::api::responses_stream_events::ResponsesStreamBaseState;
-use crate::api::responses_stream_primitives::duration::StreamDurationTimeout;
 
 // LiteLLM's PRE_OUTPUT_LIFECYCLE_EVENT_TYPES, the three events before a response body starts.
 const PRE_OUTPUT_EVENT_TYPES: [&str; 3] = [
@@ -27,7 +26,6 @@ pub(super) fn source_error(failure: SourceFailure) -> DriverError {
         },
     }
 }
-
 pub(super) fn unclassified(message: String) -> ErrorClass {
     ErrorClass::Unclassified(Box::new(ErrorContext {
         message,
@@ -40,7 +38,6 @@ pub(super) fn unclassified(message: String) -> ErrorClass {
         body_code: None,
     }))
 }
-
 pub(super) fn timeout_class(timeout: &StreamDurationTimeout) -> ErrorClass {
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: ErrorContext {
@@ -56,7 +53,6 @@ pub(super) fn timeout_class(timeout: &StreamDurationTimeout) -> ErrorClass {
         original_status: TimeoutStatus(timeout.status_code),
     }))
 }
-
 pub(super) fn context(message: String, state: &ResponsesStreamBaseState) -> ErrorContext {
     ErrorContext {
         message,
@@ -69,7 +65,6 @@ pub(super) fn context(message: String, state: &ResponsesStreamBaseState) -> Erro
         body_code: None,
     }
 }
-
 pub(super) fn stream_ended_early_message(state: &ResponsesStreamBaseState) -> String {
     let provider = state
         .custom_llm_provider
@@ -80,7 +75,6 @@ pub(super) fn stream_ended_early_message(state: &ResponsesStreamBaseState) -> St
         "{provider} closed the responses stream before any terminal event (response.completed, response.incomplete or response.failed)"
     )
 }
-
 pub(super) fn fallback_error(
     state: &ResponsesStreamBaseState,
     original: &str,
@@ -93,14 +87,12 @@ pub(super) fn fallback_error(
         is_pre_first_chunk: !state.yielded_first_chunk,
     }))
 }
-
 pub(super) fn note_yielded_event(state: &mut ResponsesStreamBaseState, event: &Event) {
     state.yielded_first_chunk = true;
     if !is_lifecycle(event) {
         state.output_started = true;
     }
 }
-
 fn is_lifecycle(event: &Event) -> bool {
     match event {
         ResponsesAPIStreamingResponse::Known(known) => matches!(

@@ -36,7 +36,6 @@ pub(super) struct Recorder {
     hooks: Mutex<Vec<String>>,
     logging: Mutex<Vec<String>>,
 }
-
 impl Recorder {
     fn push(calls: &Mutex<Vec<String>>, label: &str) {
         calls
@@ -44,7 +43,6 @@ impl Recorder {
             .unwrap_or_else(PoisonError::into_inner)
             .push(label.to_owned());
     }
-
     pub(super) fn take(&self) -> (Vec<String>, Vec<String>) {
         let hooks = std::mem::take(&mut *self.hooks.lock().unwrap_or_else(PoisonError::into_inner));
         let mut logging =
@@ -53,36 +51,30 @@ impl Recorder {
         (hooks, logging)
     }
 }
-
 #[async_trait]
 impl ResponsesStreamSuccessTarget for Recorder {
     async fn dispatch_success_handlers(&self, _request: SuccessRequest) {
         Self::push(&self.logging, "success");
     }
-
     async fn async_success_handler(&self, _request: &SuccessRequest) {
         Self::push(&self.logging, "success");
     }
-
     fn success_handler(&self, _request: &SuccessRequest) {}
 
     fn deferred_armed(&self) -> bool {
         false
     }
 }
-
 #[async_trait]
 impl ResponsesStreamFailureTarget for Recorder {
     async fn async_failure_handler(&self, _delivery: &FailureDelivery) -> Result<(), PortFailure> {
         Self::push(&self.logging, "failure");
         Ok(())
     }
-
     fn failure_handler(&self, _delivery: &FailureDelivery) -> Result<(), PortFailure> {
         Ok(())
     }
 }
-
 // LiteLLM runs the callbacks' streaming deployment hook once per yielded event, in order
 #[async_trait]
 impl ChunkDeploymentHook for Recorder {
@@ -94,14 +86,12 @@ impl ChunkDeploymentHook for Recorder {
         Ok(None)
     }
 }
-
 pub(super) struct NoDispatch;
 
 #[async_trait]
 impl StreamSuccessDispatch for NoDispatch {
     async fn dispatch_success(&self, _call: StreamSuccessCall<'_>) {}
 }
-
 pub(super) struct FixedClock;
 
 impl SuccessClock for FixedClock {
@@ -109,7 +99,6 @@ impl SuccessClock for FixedClock {
         DateTime::UNIX_EPOCH.fixed_offset()
     }
 }
-
 pub(super) struct NoApiBase;
 
 impl ResponsesApiBase for NoApiBase {
@@ -121,7 +110,6 @@ impl ResponsesApiBase for NoApiBase {
         Ok(None)
     }
 }
-
 // B509's provider transform decodes the OpenAI wire event; the driver under test only needs a decode
 pub(super) struct Decoder;
 
@@ -137,7 +125,6 @@ impl ResponsesEventTransform for Decoder {
         serde_json::from_value(serde_json::to_value(chunk)?)
     }
 }
-
 pub(super) struct NoTokenization;
 
 impl UsageTokenization for NoTokenization {
@@ -146,12 +133,10 @@ impl UsageTokenization for NoTokenization {
     fn messages(&self, _request: &EstimateRequest<'_>) -> Result<Vec<Json>, Self::Error> {
         Ok(Vec::new())
     }
-
     fn count(&self, _request: TokenCountRequest<'_>) -> Result<i64, Self::Error> {
         Ok(0)
     }
 }
-
 pub(super) struct NoCost;
 
 impl ResponsesCostCalculator for NoCost {
@@ -161,7 +146,6 @@ impl ResponsesCostCalculator for NoCost {
         Ok(None)
     }
 }
-
 // Everything one run's hooks report, rebuilt per run so no state leaks between drivers
 pub(super) struct Environment {
     pub(super) recorder: Arc<Recorder>,
@@ -169,7 +153,6 @@ pub(super) struct Environment {
     pub(super) logging: StreamLoggingObject,
     pub(super) limits: ApiLimits,
 }
-
 impl Environment {
     pub(super) fn new() -> Result<Self, SdkHttpError> {
         Ok(Self {
@@ -182,7 +165,6 @@ impl Environment {
             limits: ApiLimits::default(),
         })
     }
-
     pub(super) fn hooks(&self) -> ResponsesStreamHooks<'_> {
         let success: Arc<dyn ResponsesStreamSuccessTarget> = Arc::clone(&self.recorder);
         let failure: Arc<dyn ResponsesStreamFailureTarget> = Arc::clone(&self.recorder);
