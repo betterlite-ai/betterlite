@@ -37,7 +37,7 @@ class Input(TypedDict, total=False):
     optional_params: dict[str, JsonValue]
     api_base: str | None
     env_base: str | None
-    # messages fields; the caller base is untrusted and discarded
+    # messages fields; LiteLLM discards the untrusted caller base it is handed
     messages: list[JsonValue]
     caller_api_base: str | None
 
