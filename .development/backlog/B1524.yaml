@@ -1,7 +1,7 @@
 id: B1524
 milestone: M3 providers
 title: Prepare Topaz enhancement uploads and encode binary image replies
-status: todo
+status: blocked
 depends_on: [B002, B997, B1000, B1087, B171]
 file: tasks/B1524-topaz-variations.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B046
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): niche, Topaz image enhancement"
 pr: null

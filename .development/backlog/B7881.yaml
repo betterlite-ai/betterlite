@@ -1,7 +1,7 @@
 id: B7881
 milestone: M12 python
 title: Python container files, endpoint factory and the containers package
-status: todo
+status: blocked
 depends_on: [B7880, B6040, B158, B3366, B3367, B3368, B3360, B3361]
 file: tasks/B7881-python-container-files.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B161
 split_from: B161
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null
