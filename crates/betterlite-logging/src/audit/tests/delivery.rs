@@ -47,9 +47,8 @@ async fn dispatch_submits_every_callback_and_flush_waits_for_delivery() {
         }
     );
     delivery.worker.flush().await;
-    for recorder in &recorders {
-        assert_eq!(*recorder.delivered.lock().unwrap(), vec![audit.clone()]);
-    }
+    assert_eq!(*recorders[0].delivered.lock().unwrap(), vec![audit.clone()]);
+    assert_eq!(*recorders[1].delivered.lock().unwrap(), vec![audit.clone()]);
 }
 
 #[tokio::test]

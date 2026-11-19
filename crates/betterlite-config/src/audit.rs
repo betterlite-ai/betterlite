@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
@@ -46,8 +44,4 @@ where
         config,
         audit_log_callbacks_present: presence.litellm_settings.audit_log_callbacks.is_some(),
     })
-}
-
-pub fn decode_audit_settings(source: &str) -> Result<Settings, AuditSettingsError> {
-    load_audit_settings(source, &BTreeMap::<String, String>::new())
 }

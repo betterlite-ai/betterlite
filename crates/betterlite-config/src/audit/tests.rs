@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use super::{AuditSettingsError, Settings, decode_audit_settings, load_audit_settings};
+use rstest::rstest;
+
+use super::{AuditSettingsError, Settings, load_audit_settings};
 use crate::loader::ConfigError;
 use crate::sections::settings::JsonValue;
 
@@ -93,17 +95,20 @@ fn loads_audit_settings_precedence() {
 
     let unset = settings("");
     assert!(unset.config.is_audit_logging_enabled(None));
+}
 
-    for text in ["yes", "", " TRUE "] {
-        let env = environment(&[("LITELLM_STORE_AUDIT_LOGS", text)]);
-        let resolved = load("", &env).expect("the settings load");
-        if text == " TRUE " {
-            assert_eq!(resolved.config.store_audit_logs_env, Some(true));
-        } else {
-            assert_eq!(resolved.config.store_audit_logs_env, None);
-            assert!(resolved.config.is_audit_logging_enabled(None));
-        }
-    }
+#[rstest]
+#[case::invalid("yes", None)]
+#[case::empty("", None)]
+#[case::padded(" TRUE ", Some(true))]
+fn loads_audit_settings_env_text(#[case] text: &str, #[case] expected: Option<bool>) {
+    let env = environment(&[("LITELLM_STORE_AUDIT_LOGS", text)]);
+    let resolved = load("", &env).expect("the settings load");
+    assert_eq!(resolved.config.store_audit_logs_env, expected);
+    assert_eq!(
+        resolved.config.is_audit_logging_enabled(None),
+        expected != Some(false)
+    );
 }
 
 #[test]
@@ -118,18 +123,4 @@ fn loads_audit_settings_refuses_a_non_scalar_store_flag() {
         error,
         AuditSettingsError::Config(ConfigError::InvalidScalar { .. })
     ));
-}
-
-#[test]
-fn decode_audit_settings_reads_the_same_keys() {
-    let settings = decode_audit_settings(
-        "litellm_settings:\n  store_audit_logs: true\n  audit_log_callbacks: [s3_v2]\n",
-    )
-    .expect("the settings decode");
-    assert_eq!(settings.config.store_audit_logs, Some(true));
-    assert!(settings.audit_log_callbacks_present);
-    assert_eq!(
-        settings.config.audit_log_callbacks,
-        vec!["s3_v2".to_owned()]
-    );
 }

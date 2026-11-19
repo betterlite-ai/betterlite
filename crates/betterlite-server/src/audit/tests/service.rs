@@ -9,7 +9,7 @@ use secrecy::SecretString;
 
 use super::support::{
     Fixture, MapBuilder, MapResolver, PanickingRepository, RecordingLogger, RecordingRepository,
-    capture, disabled, enabled, logger_entry, record,
+    capture, disabled, enabled, fixture, logger_entry, record,
 };
 use crate::audit::callbacks::AuditCallbackEntry;
 use crate::audit::service::{AuditService, AuditSubmission};
@@ -84,7 +84,7 @@ async fn object_events_emit_the_pinned_payload_shape() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     let caller = identity(
@@ -122,7 +122,7 @@ async fn only_a_boolean_metadata_flag_permits_the_changed_by_header() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     let truthy = identity(
@@ -151,7 +151,7 @@ async fn a_disabled_policy_keeps_callbacks_and_storage_quiet() {
         settings: disabled(),
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     let caller = identity(Some("user-1"), None);
@@ -174,7 +174,7 @@ async fn an_object_value_that_is_not_json_is_logged_and_skipped() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     let caller = identity(Some("user-1"), None);
@@ -194,7 +194,7 @@ async fn the_debug_line_withholds_the_actor_key() {
     let repository = Arc::new(RecordingRepository::new(true, false));
     let service = Fixture {
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     let mut stored = record();
@@ -215,7 +215,7 @@ async fn the_callback_runs_while_the_database_write_is_pending() {
     let service = Fixture {
         callbacks: vec![logger_callback(&recorder)],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -235,7 +235,7 @@ async fn a_missing_database_is_logged_after_delivery() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -257,7 +257,7 @@ async fn a_failed_insert_does_not_cancel_delivery() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -274,7 +274,7 @@ async fn unknown_named_callbacks_are_skipped_and_the_database_still_writes() {
     let service = Fixture {
         callbacks: vec![AuditCallbackEntry::Named("missing".to_owned())],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -307,7 +307,7 @@ async fn the_configured_s3_parameters_build_the_dedicated_logger() {
         callbacks: vec![AuditCallbackEntry::Named("s3_v2".to_owned())],
         resolver: resolver_dyn,
         dedicated: builder.clone(),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -328,7 +328,7 @@ async fn without_s3_audit_parameters_the_shared_resolver_answers() {
         callbacks: vec![AuditCallbackEntry::Named("s3_v2".to_owned())],
         resolver: resolver_dyn,
         dedicated: builder.clone(),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -350,7 +350,7 @@ async fn clearing_and_appending_callbacks_follow_the_configured_list() {
         callbacks: vec![entry],
         resolver: resolver_dyn,
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -378,7 +378,7 @@ async fn try_submit_accepts_the_record_and_writes_it_in_the_background() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);
@@ -397,7 +397,7 @@ async fn try_submit_reports_a_full_queue_and_the_record_reaches_nothing() {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
         queue: 1,
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);
@@ -424,7 +424,7 @@ async fn a_rejected_callback_delivery_still_inserts_the_record() {
         callbacks: vec![first, second],
         repository: trait_repository(&repository),
         queue: 1,
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     service.create_audit_log_for_update(record()).await;
@@ -447,7 +447,7 @@ async fn shutdown_drains_accepted_writes_and_callback_deliveries() {
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);
@@ -462,7 +462,7 @@ async fn a_panicking_write_is_reported_under_the_audit_write_job_name() {
     let (captured, guard) = capture();
     let service = Fixture {
         repository: Arc::new(PanickingRepository),
-        ..Fixture::new()
+        ..fixture()
     }
     .start();
     assert_eq!(service.try_submit(record()), AuditSubmission::Accepted);

@@ -234,13 +234,16 @@ pub(super) struct RecordingRepository {
 
 impl RecordingRepository {
     pub(super) fn new(available: bool, fails: bool) -> Self {
+        let inserted = Mutex::default();
+        let callback_reached = Arc::default();
+        let order = Arc::default();
         Self {
             available,
             fails,
             require_callback_first: false,
-            inserted: Mutex::new(Vec::new()),
-            callback_reached: Arc::new(AtomicBool::new(false)),
-            order: Arc::new(Mutex::new(Vec::new())),
+            inserted,
+            callback_reached,
+            order,
         }
     }
 }
@@ -299,18 +302,22 @@ pub(super) struct Fixture {
     pub(super) queue: usize,
 }
 
-impl Fixture {
-    pub(super) fn new() -> Self {
-        Self {
-            settings: enabled(),
-            callbacks: Vec::new(),
-            resolver: Arc::new(MapResolver::default()),
-            dedicated: Arc::new(MapBuilder::default()),
-            repository: Arc::new(RecordingRepository::new(true, false)),
-            queue: 8,
-        }
+pub(super) fn fixture() -> Fixture {
+    let resolver: Arc<dyn LoggerResolver> = Arc::new(MapResolver::default());
+    let dedicated: Arc<dyn DedicatedAuditLoggerBuilder> = Arc::new(MapBuilder::default());
+    let repository: Arc<dyn AuditLogRepository> = Arc::new(RecordingRepository::new(true, false));
+    let settings = enabled();
+    Fixture {
+        settings,
+        callbacks: Vec::new(),
+        resolver,
+        dedicated,
+        repository,
+        queue: 8,
     }
+}
 
+impl Fixture {
     pub(super) fn start(self) -> AuditService {
         let queue = self.queue;
         let delivery = Arc::new(AuditDelivery {
