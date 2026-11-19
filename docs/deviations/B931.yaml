@@ -1,0 +1,51 @@
+task: B931
+deviations:
+  - what: >-
+      An encrypted-task request against a provider without native support raises
+      APIConnectionError with status 500 and null SDK type/param/code, carrying bounded
+      public wording, while the literal ValueError cause "Encrypted task classification
+      requires a compatible native Responses deployment" is kept and asserted separately.
+    why: >-
+      LiteLLM passes the raw ValueError through exception_type, which builds its message
+      from the Python traceback text. betterlite's B184/B187 diagnostic policy bounds the
+      public message and keeps the original cause for the log, so the class and status a
+      caller sees still match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L473-L487
+kept_bugs:
+  - what: >-
+      The bridged prompt context always removes _litellm_carry_unmatched_cache_control_points
+      in its finally block, so a value the caller supplied beforehand is gone after the hook
+      even though the request never carried it as a signal of its own.
+    why: >-
+      LiteLLM's context manager pops the key unconditionally, and the task pins that behavior.
+      A working setup expects the key to exist only while the hook runs, so betterlite copies
+      the pop instead of restoring an earlier value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L548-L570
+  - what: >-
+      get_complete_url appends /responses after any query string, doubles a base that
+      already ends in /responses, and accepts a whitespace-only base, so
+      https://provider.test/v1?x=1 becomes https://provider.test/v1?x=1/responses and
+      base " " becomes " /responses".
+    why: >-
+      LiteLLM only strips trailing slashes before appending the path, and the task pins these
+      exact results. A working setup points api_base at a plain base URL and relies on the
+      append, so betterlite copies the construction and leaves URL validity to the transport.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L41-L51
+  - what: >-
+      use_chat_completions_api is read with Python truthiness, so a string "false" or "0"
+      selects the chat-completions bridge while 0, "" and an empty list or object do not.
+    why: >-
+      LiteLLM pops the kwarg and calls bool() on it, and the task's named rows pin "false" to
+      true. A working setup that sends the flag as a JSON string relies on that reading, so
+      betterlite copies it rather than rejecting the wrong type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L894-L897
+  - what: >-
+      Deployment model_info is dropped after a prompt swap whenever the resolved provider
+      differs from the requested one, including when the caller named no provider at all
+      and the original model itself names one.
+    why: >-
+      LiteLLM compares the requested custom_llm_provider with the resolved provider, so a
+      request without custom_llm_provider loses the deployment metadata even when the prompt
+      manager kept the same provider. betterlite copies the comparison because the metadata is
+      only trusted when both names agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L497-L502
