@@ -1,0 +1,21 @@
+task: B1338
+deviations:
+  - what: >-
+      The vertexai package availability checks are not part of the native path: LiteLLM
+      raises a Vertex 400 when google-cloud-aiplatform is missing or too old, and
+      betterlite makes the Model Garden call without a Python package to check.
+    why: >-
+      betterlite performs the call natively and never imports LiteLLM's Python
+      dependencies, so there is no installed package version to verify.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_model_garden/main.py#L79-L93
+kept_bugs:
+  - what: >-
+      A caller-supplied headers argument is dropped: VertexAIModelGardenModels.completion
+      declares headers but never forwards it to OpenAILikeChatHandler.
+    why: >-
+      Copied because a working Model Garden setup sends no custom headers today, and
+      forwarding them would change what reaches the provider; the native composition
+      has no headers input on this route.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_model_garden/main.py#L122-L139
