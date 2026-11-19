@@ -389,15 +389,10 @@ pub(super) fn batch_body() -> String {
 }
 
 pub(super) fn page_body() -> String {
-    concat!(
-        r#"{"object":"list","data":[{"id":"batch_1","completion_window":"24h","created_at":1700000000,"#,
-        r#""endpoint":"/v1/embeddings","input_file_id":"file-1","object":"batch","status":"completed","#,
-        r#""cancelled_at":null,"cancelling_at":null,"completed_at":1700000100,"error_file_id":null,"errors":null,"#,
-        r#""expired_at":null,"expires_at":null,"failed_at":null,"finalizing_at":null,"in_progress_at":null,"#,
-        r#""metadata":null,"model":null,"output_file_id":"file-2","request_counts":null,"usage":null}],"#,
-        r#""has_more":false,"first_id":"batch_1","last_id":"batch_1"}"#
+    format!(
+        r#"{{"object":"list","data":[{}],"has_more":false,"first_id":"batch_1","last_id":"batch_1"}}"#,
+        batch_body()
     )
-    .to_owned()
 }
 
 pub(super) fn step(action: Action) -> Step {
@@ -571,10 +566,10 @@ fn project_through(
     mut connection: Connection<'_, '_, Materializer>,
     _step: &Step,
 ) -> Result<Projection, Raised> {
-    connection
+    let outcome = connection
         .get_openai_client()
-        .map(|outcome| projection(&outcome))
-        .map_err(|error| raised(&error))
+        .map_err(|error| raised(&error))?;
+    Ok(projection(&outcome))
 }
 
 fn raised(error: &AzureBatchesError) -> Raised {
