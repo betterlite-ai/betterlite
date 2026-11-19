@@ -1,18 +1,35 @@
 import asyncio
-from typing import Literal
+from typing import Literal, Protocol, TypedDict, Unpack, cast
 
-import litellm
+import litellm.images.main as images_main
 import openai
 from litellm.types.utils import ImageResponse
-from openai.types.images_response import Image as OpenAIImage
+from openai.types.image import Image as OpenAIImage
 from pydantic import BaseModel, ConfigDict, Field
 
 from openai_chat import Failure, optional_text, status_code
 
 
-class UnexpectedResponseError(TypeError):
-    def __init__(self) -> None:
-        super().__init__("litellm.image_variation returned no ImageResponse")
+class VariationParams(TypedDict):
+    image: tuple[str, bytes, str | None]
+    model: str
+    n: int
+    response_format: Literal["url", "b64_json"]
+    size: str | None
+    user: str | None
+    api_base: str
+    api_key: str | None
+    timeout: float | None
+    custom_llm_provider: str | None
+
+
+class ImageVariationEntry(Protocol):
+    def image_variation(self, /, **kwargs: Unpack[VariationParams]) -> ImageResponse: ...
+
+    async def aimage_variation(self, /, **kwargs: Unpack[VariationParams]) -> ImageResponse: ...
+
+
+ENTRY = cast("ImageVariationEntry", images_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
 
 
 class Image(BaseModel):
@@ -104,10 +121,13 @@ def datum(image: OpenAIImage) -> Datum:
 
 
 def project_success(response: ImageResponse) -> Outcome:
+    data = response.data
+    if data is None:
+        data = []
     return Outcome(
         success=Success(
             created=response.created,
-            data=[datum(image) for image in response.data or []],
+            data=[datum(image) for image in data],
         )
     )
 
@@ -124,7 +144,7 @@ def run_variation(call: Call, api_base: str) -> Outcome:
     try:
         if call.asynchronous:
             response = asyncio.run(
-                litellm.aimage_variation(
+                ENTRY.aimage_variation(
                     image=image,
                     model=model,
                     n=n,
@@ -138,7 +158,7 @@ def run_variation(call: Call, api_base: str) -> Outcome:
                 )
             )
         else:
-            response = litellm.image_variation(
+            response = ENTRY.image_variation(
                 image=image,
                 model=model,
                 n=n,
@@ -154,6 +174,4 @@ def run_variation(call: Call, api_base: str) -> Outcome:
         return Outcome(failure=Failure(cls="ValueError", status=0, message=str(error)))
     except openai.APIError as error:
         return Outcome(failure=api_failure(error))
-    if not isinstance(response, ImageResponse):
-        raise UnexpectedResponseError
     return project_success(response)

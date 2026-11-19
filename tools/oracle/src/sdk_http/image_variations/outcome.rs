@@ -61,14 +61,32 @@ pub(super) fn error_failure(error: &ImageVariationError) -> SdkResult {
 
 // aimage_variation re-raises through exception_type, so the class and its fields come from the mapping
 pub(super) fn exception_failure(error: &VariationException) -> Result<SdkResult, SdkHttpError> {
-    let metadata = error.metadata();
+    let metadata = error.class.metadata();
+    mapped_failure(
+        &error.class,
+        metadata.status_code,
+        field(metadata.error_type),
+        field(metadata.param),
+        Some(metadata.openai_code),
+        error.message.clone(),
+    )
+}
+
+fn mapped_failure(
+    class: &ErrorClass,
+    status: u16,
+    kind: Nullable,
+    param: Nullable,
+    code: Nullable,
+    message: String,
+) -> Result<SdkResult, SdkHttpError> {
     Ok(SdkResult::Failure(Failure {
-        class: class_name(error.class())?.to_owned(),
-        status: metadata.status_code,
-        kind: field(metadata.error_type),
-        param: field(metadata.param),
-        code: Some(metadata.openai_code),
-        message: error.message.clone(),
+        class: class_name(class)?.to_owned(),
+        status,
+        kind,
+        param,
+        code,
+        message,
     }))
 }
 
