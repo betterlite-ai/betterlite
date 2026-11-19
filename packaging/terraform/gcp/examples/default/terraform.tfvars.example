@@ -1,0 +1,26 @@
+# Sample values for every variable this root declares. Copy it and edit:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is yours, never commit it: it holds the master key.
+
+project_id = "my-gcp-project"
+region     = "us-central1"
+
+# Every resource is named <tenant>-<env>-betterlite, plus a per-resource suffix.
+# Two deployments share a project as long as the (tenant, env) pair differs.
+tenant = "demo"
+env    = "dev"
+
+# Any registry Cloud Run can pull from: Artifact Registry, gcr.io or Docker Hub.
+image = "us-central1-docker.pkg.dev/my-gcp-project/betterlite/betterlite:v0.1.0"
+
+# Replace this before the first apply. Pick your own secret, never a shared one,
+# and keep it out of version control.
+litellm_master_key = "sk-change-me"
+
+# TLS. Leave lb_domains empty for a trial and set allow_plaintext_lb = true to
+# serve plain HTTP; for anything else point DNS at lb_ip (terraform output -raw
+# lb_ip) and list the names here.
+lb_domains         = []
+allow_plaintext_lb = false

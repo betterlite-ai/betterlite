@@ -1,0 +1,22 @@
+{
+  "title": "betterlite on GCP (Cloud Run)",
+  "name": "betterlite-gcp",
+  "description": "Deploys the betterlite proxy on GCP: a Cloud Run service behind an external load balancer, Cloud SQL with a read replica, Memorystore Redis, two GCS buckets, Secret Manager entries and a Cloud Run migration job. Takes about 20 minutes on the first apply.",
+  "duration": 20,
+  "collect_project": true,
+  "collect_region": true,
+  "region_type": "run",
+  "region_default": "us-central1",
+  "collect_zone": false,
+  "custom_settings": [
+    {
+      "name": "image",
+      "description": "Container image holding betterlite and betterlite-db-admin, from a registry Cloud Run can pull: Artifact Registry, gcr.io or Docker Hub. Format: <region>-docker.pkg.dev/<project>/<repo>/betterlite:<tag>"
+    },
+    {
+      "name": "litellm_master_key",
+      "description": "Master key betterlite accepts as LITELLM_MASTER_KEY. Enter a secret of your own (an sk-... string); it is written to terraform.tfvars, so delete that file when you are done with it",
+      "default": "sk-change-me"
+    }
+  ]
+}

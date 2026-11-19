@@ -1,0 +1,18 @@
+task: B8147
+deviations:
+  - what: The example root exposes eight inputs (project_id, region, tenant, env, image, litellm_master_key, lb_domains, allow_plaintext_lb) in one module call, and image and litellm_master_key have no default. LiteLLM's example passes about twenty inputs, defaults image_registry and image_tag, and treats the master key as optional because its module generates one.
+    why: The betterlite module takes one image instead of composing four from a registry and a tag, and betterlite does not generate a master key, so the caller has to supply one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/variables.tf#L55-L89
+  - what: The example configures only the google provider. LiteLLM's example configures google and google-beta and hands both to the module.
+    why: The betterlite module declares and uses only the google provider, so a google-beta block in the example would configure a provider no resource reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/providers.tf#L14-L17
+  - what: deploystack.json prompts for image and litellm_master_key and drops LiteLLM's tenant, env, image_tag, image_registry and allow_plaintext_lb prompts. tenant and env keep the module defaults demo and dev, and TLS stays off until the caller sets lb_domains.
+    why: The image and the master key are required by the module, while tenant, env and TLS posture are already variables with defaults in the example.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/deploystack.json#L12-L41
+  - what: TUTORIAL.md has no Artifact Registry remote repository step and no TF_VAR_ secret exports; it copies terraform.tfvars.example, sets the image and a master key of the caller's own, and applies.
+    why: The example takes a ready image instead of a registry prefix and tag, and the module does not generate a master key to fall back on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/TUTORIAL.md#L32-L57
+  - what: The README documents the module's own input and output surface in per-file tables and leaves out LiteLLM's Image pulls, Database authentication, Configuring the proxy, Autoscaling, Collector sidecar and Tenant deployment sections.
+    why: The behavior those sections describe belongs to the module tasks (B8144, B8145, B8146) and is documented in their deviation logs; this README describes the inputs a caller sets and the pieces the one-service module does not build.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/README.md#L25-L123
+kept_bugs: []
