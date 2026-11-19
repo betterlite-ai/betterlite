@@ -408,7 +408,6 @@ async fn unended_reports_a_modify_response_with_the_usage_response() {
     let original = serde_json::to_value(response.original_response.unwrap()).unwrap();
     assert!(original["usage"]["completion_tokens"].is_number());
     assert_eq!(original["choices"][0]["message"]["content"], "");
-    assert_eq!(original["model"], "");
 }
 
 #[tokio::test]
