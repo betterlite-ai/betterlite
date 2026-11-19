@@ -1,17 +1,19 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
 import openai
 from litellm.fine_tuning import main as fine_tuning_main
-from litellm.integrations.gcs_bucket.gcs_bucket_mock_client import mock_vertex_auth_methods
+from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.utils import LiteLLMFineTuningJob
-from openai_chat import Failure, project_failure
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
+from typing_extensions import override
+
+from openai_chat import Failure, project_failure
 
 
 class RunParams(BaseModel):
@@ -72,6 +74,30 @@ class Outcome(TypedDict):
     fine_tuning_create: dict[Literal["value"], dict[Literal["runs"], list[RunOutcome]]]
 
 
+class CreateOptions(TypedDict):
+    model: str
+    training_file: str
+    hyperparameters: dict[str, Json] | None
+    suffix: str | None
+    validation_file: str | None
+    integrations: list[str] | None
+    seed: int | None
+    custom_llm_provider: str
+    extra_headers: dict[str, str] | None
+    extra_body: dict[str, Json] | None
+    api_base: str
+    api_key: str | None
+    api_version: str | None
+    organization: str | None
+    vertex_project: str | None
+    vertex_location: str | None
+    vertex_credentials: str | None
+    timeout: float | str | None
+    request_timeout: float | None
+    max_retries: int | None
+    trainingType: NotRequired[int | float | str | bool]
+
+
 class FineTuningCreateCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -87,12 +113,17 @@ class FineTuningCreateRequest(BaseModel):
         return run_fine_tuning_create(self.fine_tuning_create, api_base)
 
 
+class VertexAuth(Protocol):
+    def mock_vertex_auth_methods(self) -> None: ...
+
+
 class VertexRecorder(httpx.AsyncBaseTransport):
     def __init__(self, origin: httpx.URL, urls: list[str]) -> None:
         self.origin = origin
         self.urls = urls
         self.inner = httpx.AsyncHTTPTransport()
 
+    @override
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.urls.append(str(request.url))
         forwarded = httpx.Request(
@@ -106,8 +137,8 @@ class VertexRecorder(httpx.AsyncBaseTransport):
         return await self.inner.handle_async_request(forwarded)
 
 
-def request_options(run: Run, api_base: str) -> dict[str, object]:
-    options: dict[str, object] = {
+def request_options(run: Run, api_base: str) -> CreateOptions:
+    options: CreateOptions = {
         "model": run.model,
         "training_file": run.training_file,
         "hyperparameters": run.hyperparameters,
@@ -136,17 +167,13 @@ def request_options(run: Run, api_base: str) -> dict[str, object]:
 
 def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
     options = request_options(run, api_base)
-    answer: object
     if run.is_async:
-        held: Coroutine[object, object, LiteLLMFineTuningJob] = litellm.acreate_fine_tuning_job(
+        held: Coroutine[None, None, LiteLLMFineTuningJob] = litellm.acreate_fine_tuning_job(
             **options
         )
-        answer = asyncio.run(held)
-    else:
-        answer = litellm.create_fine_tuning_job(**options)
-    if isinstance(answer, LiteLLMFineTuningJob):
-        return answer
-    raise TypeError("create_fine_tuning_job returned no fine-tuning job")
+        return asyncio.run(held)
+    answer: LiteLLMFineTuningJob = litellm.create_fine_tuning_job(**options)
+    return answer
 
 
 def run_one(run: Run, api_base: str) -> RunOutcome:
@@ -170,6 +197,8 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
 
 
 def run_fine_tuning_create(call: FineTuningCreateCall, api_base: str) -> str:
-    mock_vertex_auth_methods()
-    outcome: Outcome = {"fine_tuning_create": {"value": {"runs": [run_one(run, api_base) for run in call.runs]}}}
+    vertex_auth: VertexAuth = gcs_bucket_mock_client
+    vertex_auth.mock_vertex_auth_methods()
+    runs = [run_one(run, api_base) for run in call.runs]
+    outcome: Outcome = {"fine_tuning_create": {"value": {"runs": runs}}}
     return TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True).decode()
