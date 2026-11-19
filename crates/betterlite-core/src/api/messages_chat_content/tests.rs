@@ -123,6 +123,14 @@ async fn run(
     r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":[{"type":"image","source":{"type":"url","url":"https://example.test/a.png"}}],"cache_control":{"type":"ephemeral"}}]}]"#,
     r#"[{"role":"tool","tool_call_id":"t","content":[{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}],"cache_control":{"type":"ephemeral"}}]"#
 )]
+#[case::non_object_entries(
+    r#"[{"role":"user","content":["hello",{"type":"text","text":"kept"}]},"bare"]"#,
+    r#"[{"role":"user","content":[{"type":"text","text":"kept"}]}]"#
+)]
+#[case::non_string_values(
+    r#"[{"role":"user","content":[{"type":"text","text":7},{"type":"tool_result","tool_use_id":9,"content":"ok"}]}]"#,
+    r#"[{"role":"tool","tool_call_id":"","content":"ok"},{"role":"user","content":[{"type":"text","text":""}]}]"#
+)]
 #[tokio::test]
 async fn user_and_tool_order(#[case] input: &str, #[case] expected: &str) {
     let (translated, probes) = run(input, "claude-sonnet-5", false, &[]).await;
@@ -186,6 +194,11 @@ async fn user_media_markers(#[case] model: &str, #[case] input: &str, #[case] ex
 )]
 #[case::empty_list_emits_nothing("claude-sonnet-5", r#"[{"role":"assistant","content":[]}]"#, "[]")]
 #[case::missing_content_emits_nothing("claude-sonnet-5", r#"[{"role":"assistant"}]"#, "[]")]
+#[case::ignores_other_values(
+    "claude-sonnet-5",
+    r#"[{"role":"assistant","content":[7,null,{"type":"text","text":"d"}]}]"#,
+    r#"[{"role":"assistant","content":"d","thinking_blocks":null}]"#
+)]
 #[tokio::test]
 async fn assistant_text_representation(
     #[case] model: &str,
@@ -233,6 +246,11 @@ async fn assistant_text_representation(
     r#"[{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"lookup","input":{},"cache_control":{"type":"ephemeral"}}]}]"#,
     r#"[{"role":"assistant","content":null,"thinking_blocks":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]"#
 )]
+#[case::non_string_fields(
+    "claude-sonnet-5",
+    r#"[{"role":"assistant","content":[{"type":"tool_use","id":5,"name":7,"input":{},"provider_specific_fields":{"signature":9}}]}]"#,
+    r#"[{"role":"assistant","content":null,"thinking_blocks":null,"tool_calls":[{"id":"","type":"function","function":{"name":"","arguments":"{}"}}]}]"#
+)]
 #[tokio::test]
 async fn assistant_tool_signatures(
     #[case] model: &str,
@@ -268,6 +286,10 @@ async fn assistant_tool_signatures(
 #[case::encrypted_only_message_removed(
     r#"[{"role":"assistant","content":[{"type":"thinking","thinking":"leak","signature":"litellm_encrypted_reasoning:abc"}]}]"#,
     "[]"
+)]
+#[case::non_string_fields(
+    r#"[{"role":"assistant","content":[{"type":"thinking","thinking":5,"signature":6},{"type":"redacted_thinking","data":7}]}]"#,
+    r#"[{"role":"assistant","content":null,"thinking_blocks":[{"type":"thinking","thinking":"","signature":""},{"type":"redacted_thinking","data":""}]}]"#
 )]
 #[tokio::test]
 async fn assistant_thinking_history(#[case] input: &str, #[case] expected: &str) {
