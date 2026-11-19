@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Coroutine
+from collections.abc import Coroutine
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
@@ -16,7 +16,7 @@ from typing_extensions import override
 from openai_chat import Failure, project_failure
 
 # LiteLLM's sync create returns the job, or a coroutine of it on its internal async path
-CreateAnswer: TypeAlias = LiteLLMFineTuningJob | Awaitable[LiteLLMFineTuningJob]
+CreateAnswer: TypeAlias = LiteLLMFineTuningJob | Coroutine[None, None, LiteLLMFineTuningJob]
 
 
 class RunParams(BaseModel):
