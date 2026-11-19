@@ -2,8 +2,8 @@ from collections.abc import MutableMapping
 from typing import Final, Literal, NotRequired, TypedDict, cast
 
 from litellm.proxy.management_helpers.utils import (
-    _redact_env_var_values,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650
-    _redact_record_env_vars,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
+    _redact_env_var_values,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650
+    _redact_record_env_vars,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
 )
 from litellm.types.mcp import MCPTransport, MCPTransportType
 from litellm.types.mcp_server.mcp_server_manager import MCPServer
@@ -58,8 +58,9 @@ REDACTED_MODEL: TypeAdapter[RedactedModel] = TypeAdapter(RedactedModel)
 def env_vars_answer(call: RedactEnvVarsCall) -> JsonValue:
     result = call["response"]
     response = dict(result)
-    _redact_env_var_values(cast(MutableMapping[str, object], response))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650
-    return JSON.validate_python({"response": response, "result": result})
+    _redact_env_var_values(cast(MutableMapping[str, object], response))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650
+    answer: dict[str, JsonValue] = {"response": response, "result": result}
+    return JSON.validate_python(answer)
 
 
 def model_answer(call: RedactModelCall) -> JsonValue:
@@ -69,9 +70,9 @@ def model_answer(call: RedactModelCall) -> JsonValue:
         transport=TRANSPORTS[call["transport"]],
         env_vars=call.get("env_vars"),
     )
-    redacted = cast(MCPServer, _redact_record_env_vars(server))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
+    redacted = cast(MCPServer, _redact_record_env_vars(server))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629
     projected = REDACTED_MODEL.validate_json(redacted.model_dump_json())
-    return JSON.validate_python({"env_vars": projected["env_vars"]})
+    return {"env_vars": JSON.validate_python(projected["env_vars"])}
 
 
 def run(input_value: Input) -> JsonValue:
@@ -80,10 +81,10 @@ def run(input_value: Input) -> JsonValue:
         return env_vars_answer(REDACT_ENV_VARS.validate_python(input_value))
     if function == "redact_mapping":
         mapping = REDACT_MAPPING.validate_python(input_value)
-        return JSON.validate_python({"record": _redact_record_env_vars(mapping["record"])})
+        return {"record": JSON.validate_python(_redact_record_env_vars(mapping["record"]))}
     if function == "redact_model":
         return model_answer(REDACT_MODEL.validate_python(input_value))
     if function == "redact_other":
         other = REDACT_OTHER.validate_python(input_value)
-        return JSON.validate_python({"record": _redact_record_env_vars(other["record"])})
+        return {"record": JSON.validate_python(_redact_record_env_vars(other["record"]))}
     raise ValueError(f"unknown function {function}")
