@@ -97,15 +97,22 @@ impl VantageLoggers {
     // the callers drop the lock before they await: every call hands out its own ordered copy
     #[must_use]
     pub fn snapshot(&self) -> Vec<Arc<dyn VantageExportLogger>> {
-        let lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
-        lists.ordered()
+        self.lists
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .ordered()
     }
 
     // LiteLLM's remove_callbacks_by_type over one list: the instances in the other lists stay selectable
     #[must_use]
     pub fn remove_from_list(&self, list: VantageCallbackList) -> usize {
-        let mut lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
-        take(lists.slot(list)).len()
+        take(
+            self.lists
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .slot(list),
+        )
+        .len()
     }
 }
 
