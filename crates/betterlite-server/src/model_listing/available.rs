@@ -60,11 +60,16 @@ async fn listing_grant<'grant>(
 ) -> Result<ListingGrant<'grant>, ModelListingError> {
     let requested = requested_team(key, request.team_id, access).await?;
     let key_grants = key_models(fields, requested.as_ref(), request.flags.groups, catalog);
-    let team_grants = team_models(
-        fields,
-        requested.as_ref(),
+    // the validated requested team's models stand in for the key's stored team models
+    let team_source = requested.as_ref().map_or_else(
+        || model_names(&fields.team_models),
+        |team| team.models.clone(),
+    );
+    let team_grants = get_team_models(
+        &team_source,
+        &catalog.model_names,
+        &catalog.access_groups,
         request.flags.groups.include,
-        catalog,
     );
     let effective_team_id = request.team_id.or(fields.team_id.as_deref());
     let group_models = if key_grants.is_empty() && team_grants.is_empty() {
@@ -115,25 +120,6 @@ fn key_models(
         &catalog.model_names,
         &catalog.access_groups,
         scope,
-    )
-}
-
-// get_team_models: the requested team's models replace the key's team models, then access groups expand.
-fn team_models(
-    fields: &KeyModelFields,
-    requested_team: Option<&TeamListing>,
-    include_access_groups: bool,
-    catalog: &RouterCatalog,
-) -> Vec<String> {
-    let models = requested_team.map_or_else(
-        || model_names(&fields.team_models),
-        |team| team.models.clone(),
-    );
-    get_team_models(
-        &models,
-        &catalog.model_names,
-        &catalog.access_groups,
-        include_access_groups,
     )
 }
 
