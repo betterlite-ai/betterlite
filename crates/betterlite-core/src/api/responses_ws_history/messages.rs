@@ -115,9 +115,7 @@ pub fn extract_output_messages(
         };
         match fields.get("type") {
             Some(Json::Text(item_type)) if item_type == MESSAGE => {
-                if let Some(message) = message_item(fields)? {
-                    messages.push(message);
-                }
+                messages.extend(message_item(fields)?);
             }
             Some(Json::Text(item_type)) if item_type == FUNCTION_CALL => {
                 messages.push(fields.clone());

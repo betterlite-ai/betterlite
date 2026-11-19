@@ -49,11 +49,13 @@ pub fn serialize_chunk(chunk: Chunk<'_>) -> Option<String> {
     }
 }
 
-pub async fn send_error<Sink: FrameSink>(
+pub async fn send_error<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     message: &str,
     error_type: Option<&str>,
-) {
+) where
+    Sink: FrameSink,
+{
     let mut error = IndexMap::new();
     let class = Json::Text(error_type.unwrap_or(SERVER_ERROR).to_owned());
     error.insert("type".to_owned(), class);

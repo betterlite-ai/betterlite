@@ -58,10 +58,13 @@ pub fn apply_history(
 }
 
 #[must_use]
-pub fn get_history_messages<Sink: FrameSink>(
+pub fn get_history_messages<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     previous_response_id: &str,
-) -> Vec<IndexMap<String, Json>> {
+) -> Vec<IndexMap<String, Json>>
+where
+    Sink: FrameSink,
+{
     let raw_id = decode_previous_response_id(previous_response_id);
     let stored = handler.session_history.get(&raw_id);
     stored.cloned().unwrap_or_default()

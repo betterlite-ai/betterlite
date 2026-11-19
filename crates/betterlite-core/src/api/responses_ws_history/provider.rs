@@ -14,21 +14,24 @@ pub trait ProviderResolution: Send + Sync {
 }
 
 #[must_use]
-pub fn resolve_provider<Sink: FrameSink>(
+pub fn resolve_provider<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     model: Option<&str>,
-) -> Option<String> {
+) -> Option<String>
+where
+    Sink: FrameSink,
+{
     if model.is_none_or(str::is_empty) {
         return None;
     }
-    model.and_then(|candidate| handler.resolver.resolve(candidate).ok())
+    handler.resolver.resolve(model?).ok()
 }
 
 #[must_use]
-pub fn same_provider<Sink: FrameSink>(
-    handler: &ManagedResponsesWebSocket<Sink>,
-    model: Option<&str>,
-) -> bool {
+pub fn same_provider<Sink>(handler: &ManagedResponsesWebSocket<Sink>, model: Option<&str>) -> bool
+where
+    Sink: FrameSink,
+{
     let Some(candidate) = model else {
         return true;
     };

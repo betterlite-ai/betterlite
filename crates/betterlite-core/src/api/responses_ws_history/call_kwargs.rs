@@ -96,11 +96,14 @@ pub fn update_proxy_request(
     Ok(())
 }
 
-pub fn inject_credentials<Sink: FrameSink>(
+pub fn inject_credentials<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     call_kwargs: &mut IndexMap<String, Json>,
     model: Option<&str>,
-) -> Result<(), ResponsesWsHistoryError> {
+) -> Result<(), ResponsesWsHistoryError>
+where
+    Sink: FrameSink,
+{
     if let Some(api_key) = &handler.api_key {
         let key = Json::Text(api_key.expose_secret().to_owned());
         call_kwargs.insert("api_key".to_owned(), key);

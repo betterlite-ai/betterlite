@@ -43,12 +43,14 @@ pub fn is_warmup_response_id(response_id: Option<&str>) -> bool {
 }
 
 #[must_use]
-pub fn build_warmup_response<Sink: FrameSink>(
+pub fn build_warmup_response<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     message: &IndexMap<String, Json>,
-) -> IndexMap<String, Json> {
-    let source = warmup_source_params(message);
-    let wire_model = source
+) -> IndexMap<String, Json>
+where
+    Sink: FrameSink,
+{
+    let wire_model = warmup_source_params(message)
         .get("model")
         .filter(|value| has_content(value))
         .cloned()
@@ -74,7 +76,10 @@ pub fn build_warmup_response<Sink: FrameSink>(
     response
 }
 
-fn warmup_model<Sink: FrameSink>(handler: &ManagedResponsesWebSocket<Sink>) -> Json {
+fn warmup_model<Sink>(handler: &ManagedResponsesWebSocket<Sink>) -> Json
+where
+    Sink: FrameSink,
+{
     let groups = handler.model_group.as_ref();
     let kept = groups.filter(|group| !group.is_empty());
     kept.map_or_else(
@@ -83,10 +88,13 @@ fn warmup_model<Sink: FrameSink>(handler: &ManagedResponsesWebSocket<Sink>) -> J
     )
 }
 
-pub async fn send_warmup_ack<Sink: FrameSink>(
+pub async fn send_warmup_ack<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     message: &IndexMap<String, Json>,
-) -> Result<(), ResponsesWsHistoryError> {
+) -> Result<(), ResponsesWsHistoryError>
+where
+    Sink: FrameSink,
+{
     let response = build_warmup_response(handler, message);
     for (event_type, status) in [
         ("response.created", "in_progress"),
