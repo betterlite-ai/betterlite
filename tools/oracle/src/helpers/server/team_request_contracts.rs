@@ -139,8 +139,10 @@ fn supplied<T>(built: Result<T, TeamContractError>) -> HelperResult
 where
     T: RequestProjection,
 {
-    let request = built.map_err(invalid)?;
-    answered(request.supplied())
+    match built {
+        Ok(request) => answered(request.supplied()),
+        Err(error) => Err(invalid(error)),
+    }
 }
 
 const fn clocks() -> ResetClocks<'static> {
