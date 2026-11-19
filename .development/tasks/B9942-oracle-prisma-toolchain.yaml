@@ -58,6 +58,8 @@ description: >-
   tests, plus the lock file uv writes, within 400.
 scope:
   paths:
+    - "tools/oracle/runner/src/helpers/prisma.rs"
+    - "tools/oracle/runner/src/helpers/**"
     - tools/oracle/litellm/pyproject.toml
     - tools/oracle/litellm/uv.lock
     - tools/oracle/runner/src/helpers.rs
