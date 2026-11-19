@@ -38,43 +38,79 @@ fn args(low: Option<&str>, medium: Option<&str>, high: Option<&str>) -> Args {
 #[rstest]
 #[case::absent("model_list: []\n", None)]
 #[case::empty_args(
-    "router_settings:\n  routing_strategy_args: {}\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args: {}\n",
     Some(args(None, None, None))
 )]
 #[case::float_args(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: 0.35\n    confidence_threshold_medium: 0.45\n    confidence_threshold_high: 0.85\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: 0.35\n    confidence_threshold_medium: 0.45\n    confidence_threshold_high: 0.85\n",
     Some(args(Some("0.35"), Some("0.45"), Some("0.85")))
 )]
 #[case::one_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: 0.9\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_high: 0.9\n",
     Some(args(None, None, Some("0.9")))
 )]
 #[case::integer_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: 1\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_high: 1\n",
     Some(args(None, None, Some("1")))
 )]
 #[case::null_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: null\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: null\n",
     Some(args(None, None, None))
 )]
 #[case::text_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: low\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: low\n",
     Some(args(None, None, None))
 )]
 #[case::numeric_text_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: \"0.2\"\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: \"0.2\"\n",
     Some(args(None, None, None))
 )]
 #[case::boolean_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_medium: true\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_medium: true\n",
     Some(args(None, None, None))
 )]
 #[case::list_arg(
-    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: [0.9]\n",
+    "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_high: [0.9]\n",
     Some(args(None, None, None))
 )]
 fn lar1_routing_args_load(#[case] source: &str, #[case] expected: Option<Args>) {
     assert_eq!(load(source).args, expected);
+}
+
+// apply_lar1_routing_strategy reads routing_strategy_args only when the strategy is lar1
+#[rstest]
+#[case::no_strategy_words(
+    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::no_strategy_out_of_scale(
+    "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
+#[case::simple_shuffle_words(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::simple_shuffle_out_of_scale(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
+#[case::latency_words(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::latency_out_of_scale(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
+#[case::usage_words(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::usage_out_of_scale(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
+#[case::usage_v2_words(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    confidence_threshold_low: words\n"
+)]
+#[case::usage_v2_out_of_scale(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    confidence_threshold_low: 1e-30\n"
+)]
+fn ignores_the_args_of_another_strategy(#[case] source: &str) {
+    assert!(load(source).args.is_none());
 }
 
 // a finite YAML number the declared Decimal cannot hold is a load error that names the field
@@ -83,7 +119,7 @@ fn lar1_routing_args_load(#[case] source: &str, #[case] expected: Option<Args>) 
 #[case::over_the_decimal_range("1e30")]
 fn lar1_routing_rejects_a_float_it_cannot_represent(#[case] value: &str) {
     let source = format!(
-        "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: {value}\n"
+        "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: {value}\n"
     );
     let error = load_with(&source, &[]).unwrap_err();
     assert!(matches!(
@@ -103,21 +139,21 @@ fn lar1_routing_rejects_a_non_finite_threshold() {
 
 #[test]
 fn lar1_routing_reads_an_environment_reference() {
-    let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
+    let source = "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let settings = load_with(source, &[("LAR1_LOW", "0.35")]).unwrap();
     assert_eq!(settings.args, Some(args(Some("0.35"), None, None)));
 }
 
 #[test]
 fn lar1_routing_treats_an_empty_environment_value_as_unset() {
-    let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
+    let source = "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let settings = load_with(source, &[("LAR1_LOW", "")]).unwrap();
     assert_eq!(settings.args, Some(args(None, None, None)));
 }
 
 #[test]
 fn lar1_routing_reports_a_missing_environment_variable() {
-    let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
+    let source = "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let error = load_with(source, &[]).unwrap_err();
     assert!(matches!(
         error,
@@ -129,7 +165,7 @@ fn lar1_routing_reports_a_missing_environment_variable() {
 
 #[test]
 fn lar1_routing_reports_a_non_numeric_environment_value() {
-    let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
+    let source = "router_settings:\n  routing_strategy: lar1\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let error = load_with(source, &[("LAR1_LOW", "low")]).unwrap_err();
     assert!(matches!(error, ConfigError::Environment { .. }));
 }

@@ -22,17 +22,59 @@ fn load(source: &str) -> Settings {
     load_with(source, &[]).unwrap()
 }
 
-const ARGS: &str = "router_settings:\n  routing_strategy_args:\n    ttl: ";
+const ARGS: &str = "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: ";
 
 #[rstest]
 #[case::absent("model_list: []\n", 60)]
-#[case::empty_args("router_settings:\n  routing_strategy_args: {}\n", 60)]
-#[case::configured_seconds("router_settings:\n  routing_strategy_args:\n    ttl: 120\n", 120)]
-#[case::zero_is_used_as_given("router_settings:\n  routing_strategy_args:\n    ttl: 0\n", 0)]
-#[case::null_takes_the_default("router_settings:\n  routing_strategy_args:\n    ttl: null\n", 60)]
-#[case::numeric_text("router_settings:\n  routing_strategy_args:\n    ttl: \"90\"\n", 90)]
+#[case::empty_args(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args: {}\n",
+    60
+)]
+#[case::configured_seconds(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120\n",
+    120
+)]
+#[case::zero_is_used_as_given(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 0\n",
+    0
+)]
+#[case::null_takes_the_default(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: null\n",
+    60
+)]
+#[case::numeric_text(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: \"90\"\n",
+    90
+)]
 fn converts_the_window_ttl(#[case] source: &str, #[case] seconds: u64) {
     assert_eq!(load(source).ttl, Duration::from_secs(seconds));
+}
+
+// Router._build_strategy_selector passes routing_strategy_args only to the v2 handler
+#[rstest]
+#[case::no_strategy_fraction("router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n")]
+#[case::no_strategy_words("router_settings:\n  routing_strategy_args:\n    ttl: words\n")]
+#[case::no_strategy_list("router_settings:\n  routing_strategy_args:\n    ttl: [60]\n")]
+#[case::simple_shuffle_fraction(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::simple_shuffle_words(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: words\n"
+)]
+#[case::simple_shuffle_list(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: [60]\n"
+)]
+#[case::latency_fraction(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::latency_whole_seconds(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: 120\n"
+)]
+#[case::usage_whole_seconds(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: 120\n"
+)]
+fn ignores_the_args_of_another_strategy(#[case] source: &str) {
+    assert_eq!(load(source).ttl, Duration::from_secs(60));
 }
 
 #[rstest]
@@ -95,7 +137,7 @@ fn reports_a_non_numeric_environment_value() {
 
 #[test]
 fn rejects_an_unknown_argument() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl_window: 60\n";
+    let source = "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl_window: 60\n";
     let error = load_with(source, &[]).unwrap_err();
     let ConfigError::Unsupported { paths } = error else {
         panic!("an unknown argument names its path");
@@ -107,17 +149,17 @@ fn rejects_an_unknown_argument() {
 }
 
 #[test]
-fn loads_beside_the_lar1_arguments() {
+fn leaves_the_lar1_arguments_to_their_strategy() {
     let config = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(
-        "router_settings:\n  routing_strategy_args:\n    ttl: 45\n    confidence_threshold_low: 0.35\n",
+        "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 45\n    confidence_threshold_low: 0.35\n",
     )
     .unwrap();
     assert_eq!(
         config.sections.usage_v2_accounting.ttl,
         Duration::from_secs(45)
     );
-    assert!(config.sections.lar1_routing.args.is_some());
+    assert!(config.sections.lar1_routing.args.is_none());
 }

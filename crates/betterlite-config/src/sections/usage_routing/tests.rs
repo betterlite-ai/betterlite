@@ -5,8 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::{Settings, UsageRoutingSettings};
-use crate::loader::{ConfigError, ConfigLoader, parse_view};
-use crate::sections::Section as _;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::types::RoutingStrategy;
 
 fn lookup(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -24,12 +23,6 @@ fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Settings, Confi
     .map(|config| config.sections.usage_routing)
 }
 
-// this section alone parses and converts, so no other section that reads the same key can supply the error
-fn convert(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
-    let (raw, _ignored) = parse_view::<super::Raw>(source)?;
-    raw.convert(&lookup(variables))
-}
-
 fn load(source: &str) -> UsageRoutingSettings {
     *load_with(source, &[]).unwrap()
 }
@@ -40,21 +33,66 @@ fn ttl(source: &str) -> Option<i64> {
 
 #[rstest]
 #[case::absent("model_list: []\n", None)]
-#[case::empty_args("router_settings:\n  routing_strategy_args: {}\n", None)]
-#[case::integer("router_settings:\n  routing_strategy_args:\n    ttl: 45\n", Some(45))]
-#[case::zero("router_settings:\n  routing_strategy_args:\n    ttl: 0\n", Some(0))]
+#[case::empty_args(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args: {}\n",
+    None
+)]
+#[case::integer(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: 45\n",
+    Some(45)
+)]
+#[case::zero(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: 0\n",
+    Some(0)
+)]
 #[case::whole_float(
-    "router_settings:\n  routing_strategy_args:\n    ttl: 45.0\n",
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: 45.0\n",
     Some(45)
 )]
 #[case::numeric_text(
-    "router_settings:\n  routing_strategy_args:\n    ttl: \"45\"\n",
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: \"45\"\n",
     Some(45)
 )]
-#[case::null("router_settings:\n  routing_strategy_args:\n    ttl: null\n", None)]
-#[case::null_args("router_settings:\n  routing_strategy_args: null\n", None)]
+#[case::null(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: null\n",
+    None
+)]
+#[case::null_args(
+    "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args: null\n",
+    None
+)]
 fn usage_routing_reads_the_declared_ttl(#[case] source: &str, #[case] expected: Option<i64>) {
     assert_eq!(ttl(source), expected);
+}
+
+// Router._build_strategy_selector passes routing_strategy_args only to the legacy usage handler
+#[rstest]
+#[case::no_strategy_fraction("router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n")]
+#[case::no_strategy_words("router_settings:\n  routing_strategy_args:\n    ttl: words\n")]
+#[case::no_strategy_list("router_settings:\n  routing_strategy_args:\n    ttl: [60]\n")]
+#[case::simple_shuffle_fraction(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::simple_shuffle_words(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: words\n"
+)]
+#[case::simple_shuffle_list(
+    "router_settings:\n  routing_strategy: simple-shuffle\n  routing_strategy_args:\n    ttl: [60]\n"
+)]
+#[case::latency_fraction(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: 1.5\n"
+)]
+#[case::latency_whole_seconds(
+    "router_settings:\n  routing_strategy: latency-based-routing\n  routing_strategy_args:\n    ttl: 120\n"
+)]
+#[case::usage_v2_whole_seconds(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120\n"
+)]
+#[case::usage_v2_whole_float(
+    "router_settings:\n  routing_strategy: usage-based-routing-v2\n  routing_strategy_args:\n    ttl: 120.0\n"
+)]
+fn ignores_the_args_of_another_strategy(#[case] source: &str) {
+    assert_eq!(ttl(source), None);
 }
 
 // the shared key holds whole non-negative seconds, so text, a fraction and a negative name the key's path
@@ -64,8 +102,10 @@ fn usage_routing_reads_the_declared_ttl(#[case] source: &str, #[case] expected: 
 #[case::empty("\"\"")]
 #[case::negative("-1")]
 fn usage_routing_rejects_a_ttl_it_cannot_read(#[case] value: &str) {
-    let source = format!("router_settings:\n  routing_strategy_args:\n    ttl: {value}\n");
-    let error = convert(&source, &[]).unwrap_err();
+    let source = format!(
+        "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: {value}\n"
+    );
+    let error = load_with(&source, &[]).unwrap_err();
     assert!(
         matches!(
             error,
@@ -79,8 +119,8 @@ fn usage_routing_rejects_a_ttl_it_cannot_read(#[case] value: &str) {
 // a list is not the int RoutingArgs declares, so the value must reach convert and be named there
 #[test]
 fn usage_routing_rejects_a_ttl_of_another_type() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl: [60]\n";
-    let error = convert(source, &[]).unwrap_err();
+    let source = "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: [60]\n";
+    let error = load_with(source, &[]).unwrap_err();
     assert!(matches!(
         error,
         ConfigError::InvalidScalar { path, value: false }
@@ -90,8 +130,8 @@ fn usage_routing_rejects_a_ttl_of_another_type() {
 
 #[test]
 fn usage_routing_rejects_a_boolean_ttl() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl: true\n";
-    let error = convert(source, &[]).unwrap_err();
+    let source = "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: true\n";
+    let error = load_with(source, &[]).unwrap_err();
     assert!(matches!(
         error,
         ConfigError::InvalidScalar { path, value: true }
@@ -101,22 +141,22 @@ fn usage_routing_rejects_a_boolean_ttl() {
 
 #[test]
 fn usage_routing_reads_an_environment_reference() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
-    let settings = convert(source, &[("USAGE_TTL", "90")]).unwrap();
+    let source = "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
+    let settings = load_with(source, &[("USAGE_TTL", "90")]).unwrap();
     assert_eq!(settings.ttl_seconds, Some(90));
 }
 
 #[test]
 fn usage_routing_treats_an_empty_environment_value_as_unset() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
-    let settings = convert(source, &[("USAGE_TTL", "")]).unwrap();
+    let source = "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
+    let settings = load_with(source, &[("USAGE_TTL", "")]).unwrap();
     assert_eq!(settings.ttl_seconds, None);
 }
 
 #[test]
 fn usage_routing_reports_a_missing_environment_variable() {
-    let source = "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
-    let error = convert(source, &[]).unwrap_err();
+    let source = "router_settings:\n  routing_strategy: usage-based-routing\n  routing_strategy_args:\n    ttl: os.environ/USAGE_TTL\n";
+    let error = load_with(source, &[]).unwrap_err();
     assert!(matches!(
         error,
         ConfigError::MissingEnvironment { variable, path }
