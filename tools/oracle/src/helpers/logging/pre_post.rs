@@ -1,18 +1,16 @@
-use betterlite_logging::logging_pre_post::args::AdditionalArgs;
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv,
+use betterlite_logging::logging_pre_post::{
+    args::AdditionalArgs,
+    env::{DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv},
+    error::PrePostError,
+    hooks::{ApiCallLogger, InputCallback, PostCallEvent, PreCallEvent},
+    post_call::{PostCall, post_call},
+    pre_call::{PreCall, pre_call},
 };
-use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_logging::logging_pre_post::hooks::{
-    ApiCallLogger, InputCallback, PostCallEvent, PreCallEvent,
-};
-use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
-use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
+use betterlite_logging::logging_state::{
+    LoggingInit, LoggingState,
+    correlation::{CorrelationContext, CorrelationSettings, CorrelationSetup},
 };
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -32,17 +30,6 @@ enum Action {
     #[default]
     Pre,
     Post,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct Flags {
-    #[serde(flatten)]
-    debug: DebugFlags,
-    #[serde(flatten)]
-    raw: RawFlags,
-    #[serde(flatten)]
-    failures: FailureFlags,
 }
 
 #[derive(Default, Deserialize)]
@@ -70,34 +57,23 @@ struct FailureFlags {
 pub(crate) struct Input {
     #[serde(default)]
     action: Action,
-    #[serde(default = "default_call_type")]
-    call_type: String,
+    call_type: Option<String>,
     messages: Option<Json>,
     #[serde(default)]
     litellm_params: IndexMap<String, Json>,
     #[serde(flatten)]
-    flags: Flags,
+    debug: DebugFlags,
+    #[serde(flatten)]
+    raw: RawFlags,
+    #[serde(flatten)]
+    failures: FailureFlags,
     #[serde(default)]
     turn_off_message_logging: bool,
-    #[serde(rename = "input", default = "default_input")]
-    payload: Json,
+    input: Option<Json>,
     model: Option<String>,
-    #[serde(default = "default_original_response")]
-    original_response: Json,
+    original_response: Option<Json>,
     #[serde(default)]
     additional_args: AdditionalArgs,
-}
-
-fn default_call_type() -> String {
-    "completion".to_owned()
-}
-
-const fn default_input() -> Json {
-    Json::Null
-}
-
-const fn default_original_response() -> Json {
-    Json::Null
 }
 
 struct Recorder {
@@ -187,11 +163,11 @@ impl Helper for Op {
         let scrubber =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
         let mut state = build_state(input, &scrubber)?;
-        state.litellm_request_debug = input.flags.debug.request_debug;
+        state.litellm_request_debug = input.debug.request_debug;
         let recorder = Recorder {
             events: Mutex::new(Vec::new()),
-            failing_callback: input.flags.failures.failing_callback,
-            failing_logger_fn: input.flags.failures.failing_logger_fn,
+            failing_callback: input.failures.failing_callback,
+            failing_logger_fn: input.failures.failing_logger_fn,
         };
         let error = dispatch(input, &mut state, &recorder, &scrubber)?;
         Ok(output(&state, &recorder, &error))
@@ -212,7 +188,7 @@ fn failure(message: String) -> Box<HelperError> {
 fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
     let init: LoggingInit = serde_json::from_value(serde_json::json!({
         "model": "gpt-4o",
-        "call_type": input.call_type,
+        "call_type": input.call_type.as_deref().unwrap_or("completion"),
         "start_time": "2026-01-01T00:00:00+00:00",
         "litellm_call_id": "call-1",
         "function_id": "fn-1",
@@ -220,8 +196,8 @@ fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<H
         "messages": input.messages,
         "litellm_params": input.litellm_params,
         "request_logging": {
-            "log_raw_request_response": input.flags.raw.log_raw_request_response,
-            "raw_request_only": input.flags.raw.raw_request_only,
+            "log_raw_request_response": input.raw.log_raw_request_response,
+            "raw_request_only": input.raw.raw_request_only,
         },
     }))
     .map_err(|error| failure(error.to_string()))?;
@@ -247,7 +223,7 @@ fn dispatch(
     let callbacks = [InputCallback::Logger(recorder)];
     let logger_fn = |details: &Json| recorder.log_fn(details);
     let debug = DebugSettings {
-        verbose: input.flags.debug.verbose,
+        verbose: input.debug.verbose,
         json_logs: false,
     };
     let globals = GlobalFlags {
@@ -277,15 +253,15 @@ fn dispatch(
 fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Value {
     if matches!(input.action, Action::Post) {
         let call = PostCall {
-            original_response: input.original_response.clone(),
-            input: input.payload.clone(),
+            original_response: input.original_response.clone().unwrap_or(Json::Null),
+            input: input.input.clone().unwrap_or(Json::Null),
             additional_args: input.additional_args.clone(),
         };
         post_call(state, &call, env);
         return Value::Null;
     }
     let call = PreCall {
-        input: input.payload.clone(),
+        input: input.input.clone().unwrap_or(Json::Null),
         model: input.model.clone(),
         additional_args: input.additional_args.clone(),
     };
