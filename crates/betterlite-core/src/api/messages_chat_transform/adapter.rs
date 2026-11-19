@@ -47,15 +47,12 @@ impl AnthropicAdapter {
     }
 
     // ast-grep-ignore: no-long-names
-    pub async fn translate_completion_input_params<Predicates>(
+    pub async fn translate_completion_input_params<Predicates: CapabilityPredicates + Send>(
         &self,
         kwargs: &mut Object,
         settings: &AdapterSettings<'_>,
         predicates: &mut Predicates,
-    ) -> Result<Object, TransformError>
-    where
-        Predicates: CapabilityPredicates + Send,
-    {
+    ) -> Result<Object, TransformError> {
         // LiteLLM's convenience method takes no provider keyword, so it composes as if none was named.
         let mut unrouted = *settings;
         unrouted.custom_llm_provider = None;

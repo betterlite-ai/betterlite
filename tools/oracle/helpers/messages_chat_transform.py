@@ -3,6 +3,8 @@ from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 from litellm.llms.anthropic.pass_through.adapters.transformation import (
     AnthropicAdapter,
+)
+from litellm.llms.anthropic.pass_through.adapters.transformation import (
     LiteLLMAnthropicMessagesAdapter as MessagesAdapter,
 )
 from litellm.llms.anthropic.pass_through.context_management.result import PolyfillResult
@@ -114,61 +116,47 @@ def polyfill_result(value: PolyfillInput | None) -> PolyfillResult | None:
     )
 
 
-def answer_input_params(call: InputParamsCall) -> JsonValue:
-    kwargs: dict[str, JsonValue] = dict(call["kwargs"])
-    request, mapping = INPUT_VIEW.translate_completion_input_params_with_tool_mapping(
-        kwargs, custom_llm_provider=call["custom_llm_provider"]
-    )
-    payload: dict[str, JsonValue] = {
-        "request": request,
-        "tool_name_mapping": mapping,
-        "kwargs": kwargs,
-    }
-    return ANSWER.validate_json(json.dumps(payload))
-
-
-def answer_convenience(call: ConvenienceCall) -> JsonValue:
-    kwargs: dict[str, JsonValue] = dict(call["kwargs"])
-    request = INPUT_VIEW.translate_completion_input_params(kwargs)
-    payload: dict[str, JsonValue] = {
-        "request": request,
-        "tool_name_mapping": None,
-        "kwargs": kwargs,
-    }
-    return ANSWER.validate_json(json.dumps(payload))
-
-
-def answer_compose(call: ComposeCall) -> JsonValue:
-    request: dict[str, JsonValue] = dict(call["request"])
-    translated, mapping = COMPOSE_VIEW.translate_anthropic_to_openai(
-        request,
-        custom_llm_provider=call["custom_llm_provider"],
-        preserve_midturn_system=call["preserve_midturn_system"],
-    )
-    payload: dict[str, JsonValue] = {
-        "request": translated,
-        "tool_name_mapping": mapping,
-        "anthropic_request": request,
-    }
-    return ANSWER.validate_json(json.dumps(payload))
-
-
-def answer_response(call: ResponseCall) -> JsonValue:
-    translated = OUTPUT_VIEW.translate_completion_output_params(
-        RESPONSE.validate_python(call["response"]),
-        tool_name_mapping=call["tool_name_mapping"],
-        polyfill_result=polyfill_result(call["polyfill_result"]),
-    )
-    return ANSWER.validate_json(json.dumps(translated))
-
-
 def run(input_value: Input) -> JsonValue:
     match input_value["operation"]:
         case "input_params":
-            return answer_input_params(input_value)
+            kwargs: dict[str, JsonValue] = dict(input_value["kwargs"])
+            request, mapping = INPUT_VIEW.translate_completion_input_params_with_tool_mapping(
+                kwargs, custom_llm_provider=input_value["custom_llm_provider"]
+            )
+            payload = {"request": request, "tool_name_mapping": mapping, "kwargs": kwargs}
+            return ANSWER.validate_json(json.dumps(payload))
         case "convenience":
-            return answer_convenience(input_value)
+            convenience_kwargs: dict[str, JsonValue] = dict(input_value["kwargs"])
+            convenience_request = INPUT_VIEW.translate_completion_input_params(convenience_kwargs)
+            return ANSWER.validate_json(
+                json.dumps(
+                    {
+                        "request": convenience_request,
+                        "tool_name_mapping": None,
+                        "kwargs": convenience_kwargs,
+                    }
+                )
+            )
         case "compose":
-            return answer_compose(input_value)
+            anthropic_request: dict[str, JsonValue] = dict(input_value["request"])
+            translated, tool_mapping = COMPOSE_VIEW.translate_anthropic_to_openai(
+                anthropic_request,
+                custom_llm_provider=input_value["custom_llm_provider"],
+                preserve_midturn_system=input_value["preserve_midturn_system"],
+            )
+            return ANSWER.validate_json(
+                json.dumps(
+                    {
+                        "request": translated,
+                        "tool_name_mapping": tool_mapping,
+                        "anthropic_request": anthropic_request,
+                    }
+                )
+            )
         case "response":
-            return answer_response(input_value)
+            translated_response = OUTPUT_VIEW.translate_completion_output_params(
+                RESPONSE.validate_python(input_value["response"]),
+                tool_name_mapping=input_value["tool_name_mapping"],
+                polyfill_result=polyfill_result(input_value["polyfill_result"]),
+            )
+            return ANSWER.validate_json(json.dumps(translated_response))

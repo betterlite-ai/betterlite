@@ -1,7 +1,7 @@
 import asyncio
 import re
 from collections.abc import AsyncIterator, Iterator
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
@@ -22,12 +22,28 @@ from messages_sync_stream import (
     frames,
 )
 
+ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
 NO_MESSAGES: Final[list[dict[str, JsonValue]]] = []
-ANSWER: Final = TypeAdapter(JsonValue)
 MESSAGE_ID: Final = re.compile(
     r"msg_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
 Step = Literal["next", "drain", "close"]
+
+
+@runtime_checkable
+class StreamView(Protocol):
+    # LiteLLM types messages as AllMessageValues, which carries Any, so the view names only what a case reads
+    @property
+    def model(self) -> str: ...
+
+    @property
+    def messages(self) -> JsonValue: ...
+
+    @property
+    def chunks(self) -> list[ModelResponseStream] | None: ...
+
+
+VIEW: Final = TypeAdapter[StreamView](StreamView, config=ARBITRARY)
 
 
 class RunSpec(BaseModel):
@@ -76,9 +92,7 @@ class Outcome(TypedDict):
 
 class ProviderStream(ProviderChunks):
     # the wrapper reports its source's collected chunks and messages for disconnect-time billing
-    def __init__(
-        self, payloads: list[bytes], messages: list[JsonValue]
-    ) -> None:
+    def __init__(self, payloads: list[bytes], messages: list[JsonValue]) -> None:
         super().__init__(payloads)
         self.chunks: list[ModelResponseStream] = []
         self.messages = messages
@@ -106,22 +120,41 @@ class ProviderStream(ProviderChunks):
             raise StopAsyncIteration from None
 
 
-def view_outcome(view: AnthropicSSEStream) -> ViewOutcome:
+class SyncFrames(AsyncIterator[bytes]):
+    # the sync factory mode returns a plain Iterator, so the step loop drives it as an async one
+    def __init__(self, stream: Iterator[bytes]) -> None:
+        self.stream = stream
+
+    @override
+    async def __anext__(self) -> bytes:
+        try:
+            return next(self.stream)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    async def aclose(self) -> None:
+        raise ValueError("a sync run cannot be closed")
+
+
+def view_outcome(view: StreamView) -> ViewOutcome:
     chunks = view.chunks
-    raw_messages = view.messages
     return ViewOutcome(
         model=view.model,
-        messages=None if raw_messages is None else ANSWER.validate_python(raw_messages),
+        messages=view.messages,
         chunks=None if chunks is None else [chunk.id for chunk in chunks],
     )
 
 
-async def async_steps(stream: AnthropicSSEStream, steps: list[Step]) -> list[StepOutcome]:
+async def steps(
+    stream: AnthropicSSEStream | SyncFrames,
+    view: StreamView | None,
+    specs: list[Step],
+) -> list[StepOutcome]:
     outcomes: list[StepOutcome] = []
-    for step in steps:
+    for spec in specs:
         written: list[str] = []
         end = False
-        match step:
+        match spec:
             case "close":
                 await stream.aclose()
             case "next":
@@ -136,29 +169,13 @@ async def async_steps(stream: AnthropicSSEStream, steps: list[Step]) -> list[Ste
                     written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
                     frame = await anext(stream, None)
                 end = True
-        outcomes.append(StepOutcome(frames=written, end=end, view=view_outcome(stream)))
-    return outcomes
-
-
-def sync_steps(stream: Iterator[bytes], steps: list[Step]) -> list[StepOutcome]:
-    outcomes: list[StepOutcome] = []
-    for step in steps:
-        written: list[str] = []
-        end = False
-        match step:
-            case "close":
-                raise ValueError("a sync run cannot be closed")
-            case "next":
-                frame = next(stream, None)
-                if frame is None:
-                    end = True
-                else:
-                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
-            case "drain":
-                for frame in stream:
-                    written.append(MESSAGE_ID.sub(NORMALIZED_ID, frame.decode()))
-                end = True
-        outcomes.append(StepOutcome(frames=written, end=end, view=None))
+        outcomes.append(
+            StepOutcome(
+                frames=written,
+                end=end,
+                view=None if view is None else view_outcome(view),
+            )
+        )
     return outcomes
 
 
@@ -178,21 +195,6 @@ def polyfill_result(call: MessagesChatTransformCall) -> PolyfillResult | None:
     )
 
 
-def factory_result(
-    call: MessagesChatTransformCall, spec: RunSpec, source: ProviderStream
-) -> AsyncIterator[bytes] | Iterator[bytes]:
-    result = AnthropicAdapter().translate_completion_output_params_streaming(
-        completion_stream=source,
-        model=call.model,
-        tool_name_mapping=dict(call.tool_name_mapping),
-        polyfill_result=polyfill_result(call),
-        is_async=spec.is_async,
-    )
-    if result is None:
-        raise ValueError("the streaming factory returned no iterator")
-    return result
-
-
 async def run_one(
     call: MessagesChatTransformCall, spec: RunSpec, api_base: str, client: httpx.AsyncClient
 ) -> RunOutcome:
@@ -207,14 +209,25 @@ async def run_one(
     }
     response = await client.post(f"{api_base}/chat/completions", json=request)
     source = ProviderStream(frames(response.content), messages)
-    result = factory_result(call, spec, source)
+    result = AnthropicAdapter().translate_completion_output_params_streaming(
+        completion_stream=source,
+        model=call.model,
+        tool_name_mapping=dict(call.tool_name_mapping),
+        polyfill_result=polyfill_result(call),
+        is_async=spec.is_async,
+    )
+    if result is None:
+        raise ValueError("the streaming factory returned no iterator")
     match result:
         case AnthropicSSEStream():
-            steps = await async_steps(result, spec.steps)
-            return RunOutcome(is_async=True, steps=steps)
+            view = VIEW.validate_python(result)
+            return RunOutcome(is_async=True, steps=await steps(result, view, spec.steps))
         case Iterator():
-            return RunOutcome(is_async=False, steps=sync_steps(result, spec.steps))
-    raise TypeError("the streaming factory returned no iterator")
+            sync = SyncFrames(result)
+            return RunOutcome(is_async=False, steps=await steps(sync, None, spec.steps))
+        # the factory returns the view or the iterator above, so any other async iterator is a bug
+        case object():
+            raise TypeError("the streaming factory returned an unknown iterator")
 
 
 async def run_all(

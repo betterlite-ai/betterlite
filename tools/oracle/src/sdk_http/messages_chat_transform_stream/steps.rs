@@ -6,103 +6,89 @@ use betterlite_core::api::messages_chat_stream::sse::SyncFrames;
 use betterlite_core::api::messages_chat_stream::view::AnthropicSseStream;
 use betterlite_models::decisions;
 
-pub(super) async fn async_steps(
-    mut view: AnthropicSseStream<Prefetched, UuidV4>,
-    steps: &[Step],
-) -> Result<RunOutcome, SdkHttpError> {
+// One step loop drives both factory modes; each variant hands over its next frame and its view.
+pub(super) enum Pump {
+    Async(AnthropicSseStream<Prefetched, UuidV4>),
+    Sync(SyncFrames<Prefetched, UuidV4>),
+}
+
+impl Pump {
+    async fn pull(&mut self) -> Option<Result<Vec<u8>, SdkHttpError>> {
+        match self {
+            Self::Async(view) => view.next_frame().await.map(Ok),
+            Self::Sync(frames) => frames
+                .next()
+                .map(|item| item.map_err(|error| SdkHttpError::Invalid(error.to_string()))),
+        }
+    }
+
+    async fn close(&mut self) -> Result<(), SdkHttpError> {
+        let Self::Async(view) = self else {
+            return Err(SdkHttpError::Invalid(
+                "a sync run cannot be closed".to_owned(),
+            ));
+        };
+        view.aclose();
+        Ok(())
+    }
+
+    fn message_id(&self) -> String {
+        match self {
+            Self::Async(view) => view.stream.state.message_id.clone(),
+            Self::Sync(frames) => frames.driver.state.message_id.clone(),
+        }
+    }
+
+    fn view(&self) -> Option<ViewOutcome> {
+        match self {
+            Self::Async(view) => Some(view_outcome(view)),
+            Self::Sync(_) => None,
+        }
+    }
+}
+
+pub(super) async fn run_steps(mut pump: Pump, steps: &[Step]) -> Result<RunOutcome, SdkHttpError> {
     let mut outcomes = Vec::with_capacity(steps.len());
     for step in steps {
-        let (frames, end) = async_step(&mut view, *step).await?;
+        let (frames, end) = one_step(&mut pump, *step).await?;
         outcomes.push(StepOutcome {
             frames,
             end,
-            view: Some(view_outcome(&view)),
+            view: pump.view(),
         });
     }
     Ok(RunOutcome {
-        is_async: true,
+        // The wrapper's sync generator has no close, so a case never asks the sync mode to close.
+        is_async: matches!(pump, Pump::Async(_)),
         steps: outcomes,
     })
 }
 
-async fn async_step(
-    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
-    step: Step,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
+async fn one_step(pump: &mut Pump, step: Step) -> Result<(Vec<String>, bool), SdkHttpError> {
     match step {
         Step::Close => {
-            view.aclose();
+            pump.close().await?;
             Ok((Vec::new(), false))
         }
-        Step::Next => match view.next_frame().await {
-            Some(frame) => {
-                let frame = normalized_frame(&frame, &view.stream.state.message_id)?;
-                Ok((vec![frame], false))
+        Step::Next => {
+            let pulled = pump.pull().await;
+            match pulled {
+                Some(frame) => Ok((vec![normalized_frame(&frame?, &pump.message_id())?], false)),
+                None => Ok((Vec::new(), true)),
             }
-            None => Ok((Vec::new(), true)),
-        },
-        Step::Drain => drain_async(view).await,
+        }
+        Step::Drain => Ok((drain(pump).await?, true)),
     }
 }
 
-async fn drain_async(
-    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
+async fn drain(pump: &mut Pump) -> Result<Vec<String>, SdkHttpError> {
     let mut frames = Vec::new();
-    while let Some(frame) = view.next_frame().await {
-        frames.push(normalized_frame(&frame, &view.stream.state.message_id)?);
+    loop {
+        let Some(item) = pump.pull().await else {
+            return Ok(frames);
+        };
+        frames.push(normalized_frame(&item?, &pump.message_id())?);
     }
-    Ok((frames, true))
-}
-
-pub(super) fn sync_steps(
-    mut frames: SyncFrames<Prefetched, UuidV4>,
-    steps: &[Step],
-) -> Result<RunOutcome, SdkHttpError> {
-    let mut outcomes = Vec::with_capacity(steps.len());
-    for step in steps {
-        let (collected, end) = sync_step(&mut frames, *step)?;
-        outcomes.push(StepOutcome {
-            frames: collected,
-            end,
-            view: None,
-        });
-    }
-    Ok(RunOutcome {
-        is_async: false,
-        steps: outcomes,
-    })
-}
-
-fn sync_step(
-    frames: &mut SyncFrames<Prefetched, UuidV4>,
-    step: Step,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    match step {
-        Step::Next => match frames.next() {
-            Some(Ok(frame)) => {
-                let frame = normalized_frame(&frame, &frames.driver.state.message_id)?;
-                Ok((vec![frame], false))
-            }
-            Some(Err(error)) => Err(SdkHttpError::Invalid(error.to_string())),
-            None => Ok((Vec::new(), true)),
-        },
-        Step::Drain => drain_sync(frames),
-        Step::Close => Err(SdkHttpError::Invalid(
-            "a sync run cannot be closed".to_owned(),
-        )),
-    }
-}
-
-fn drain_sync(
-    frames: &mut SyncFrames<Prefetched, UuidV4>,
-) -> Result<(Vec<String>, bool), SdkHttpError> {
-    let mut collected = Vec::new();
-    while let Some(item) = frames.next() {
-        let frame = item.map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-        collected.push(normalized_frame(&frame, &frames.driver.state.message_id)?);
-    }
-    Ok((collected, true))
 }
 
 // The message id is a fresh uuid4 on each side, so both replace it before comparing

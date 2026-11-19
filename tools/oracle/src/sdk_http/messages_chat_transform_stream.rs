@@ -243,8 +243,14 @@ async fn run(
     let output = AnthropicAdapter::new()
         .translate_completion_output_params_streaming(source, options, UuidV4);
     match output {
-        StreamOutput::Async(view) => self::steps::async_steps(*view, &spec.steps).await,
-        StreamOutput::Sync(frames) => self::steps::sync_steps(*frames, &spec.steps),
+        StreamOutput::Async(view) => {
+            let pump = self::steps::Pump::Async(*view);
+            self::steps::run_steps(pump, &spec.steps).await
+        }
+        StreamOutput::Sync(frames) => {
+            let pump = self::steps::Pump::Sync(*frames);
+            self::steps::run_steps(pump, &spec.steps).await
+        }
     }
 }
 
