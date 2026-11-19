@@ -569,6 +569,20 @@ fn phoenix_proxy_mode_ignores_a_blank_auth_project() {
     assert_eq!(resolve_project_name(&kwargs, &env), "env-project");
 }
 
+// LiteLLM tests bool(proxy_server_request), and an empty request object is falsy
+#[test]
+fn phoenix_proxy_mode_ignores_an_empty_proxy_request() {
+    let mut kwargs = base_kwargs("call-empty-proxy");
+    let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
+        panic!("litellm_params must be an object");
+    };
+    params.insert(
+        "proxy_server_request".to_owned(),
+        serde_json::from_str(r#"{}"#).expect("the empty proxy request"),
+    );
+    assert!(!is_proxy_request(&kwargs));
+}
+
 #[test]
 fn phoenix_sdk_mode_starts_a_root_span() {
     let rig = Rig::new();

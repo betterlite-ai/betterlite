@@ -663,6 +663,12 @@ fn arize_otel_config_keeps_the_traces_header_without_credentials() {
 }
 
 #[test]
+fn arize_otel_config_treats_an_empty_traces_header_as_unset() {
+    let config = otel_config(&env_map(&[("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")]));
+    assert!(config.headers.is_none());
+}
+
+#[test]
 fn arize_otel_config_ignores_the_signal_switches() {
     let config = otel_config(&env_map(&[
         ("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "true"),
