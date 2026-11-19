@@ -60,8 +60,10 @@ fn identity_constants_mark_the_messages_proxy() {
     assert_eq!(<&'static str>::from(CUSTOM_LLM_PROVIDER), "github_copilot");
     assert_eq!(API_VERSION, "2026-06-01");
     assert_eq!(MESSAGES_PATH, "/v1/messages");
-    assert!(!HANDLES_WEB_SEARCH_NATIVELY);
-    assert!(!FILTERS_ANTHROPIC_BETA_HEADERS);
+    assert_eq!(
+        (HANDLES_WEB_SEARCH_NATIVELY, FILTERS_ANTHROPIC_BETA_HEADERS),
+        (false, false)
+    );
 }
 
 #[tokio::test]
