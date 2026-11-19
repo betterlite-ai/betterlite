@@ -220,12 +220,12 @@ fn marker_kwargs(value: Json) -> JsonObject {
 
 #[test]
 fn the_session_marker_ttl_takes_positive_integers_up_to_the_u32_limit() {
-    let at_limit = marker_kwargs(Json::Number(Number::from(4_294_967_295_u64)));
+    let at_limit = marker_kwargs(Json::Number(Number::from(0xFFFF_FFFF_u64)));
     assert_eq!(
         marker_session_affinity_ttl(&at_limit).unwrap(),
         Some(u32::MAX)
     );
-    let past_limit = marker_kwargs(Json::Number(Number::from(4_294_967_296_u64)));
+    let past_limit = marker_kwargs(Json::Number(Number::from(0x1_0000_0000_u64)));
     assert_eq!(
         marker_session_affinity_ttl(&past_limit)
             .unwrap_err()

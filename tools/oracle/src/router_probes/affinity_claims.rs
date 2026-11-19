@@ -11,7 +11,7 @@ use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
 // twice the parser's 1 MiB bound, so one case reaches the rejection without a 1 MiB case file
-pub(super) const MAX_PARSE_PAD: u64 = 2_097_152;
+pub(super) const MAX_PARSE_PAD: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

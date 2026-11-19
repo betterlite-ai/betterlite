@@ -1,7 +1,8 @@
-use std::collections::{BTreeSet, IndexMap};
+use std::collections::BTreeSet;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use indexmap::IndexMap;
 use sha2::{Digest as _, Sha256};
 
 use super::error::AffinityError;
@@ -269,10 +270,10 @@ pub fn shorten_for_logs(value: &str) -> String {
 }
 
 #[must_use]
-pub fn find_deployment_by_model_id<'a>(
-    deployments: &'a [DeploymentSpec],
+pub fn find_deployment_by_model_id<'deployments>(
+    deployments: &'deployments [DeploymentSpec],
     model_id: &str,
-) -> Option<&'a DeploymentSpec> {
+) -> Option<&'deployments DeploymentSpec> {
     let index = deployments
         .iter()
         .position(|deployment| deployment.id() == Some(model_id))?;

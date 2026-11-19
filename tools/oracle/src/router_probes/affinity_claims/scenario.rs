@@ -63,7 +63,12 @@ async fn apply_step(step: &Step, scenario: &Scenario) -> Result<Observation, Ope
             ttl_seconds,
             down,
             eligible,
-        } => claim(scenario, key, pin, *ttl_seconds, *down, eligible).await,
+        } => {
+            if let Some(server) = &scenario.server {
+                server.set_down(*down);
+            }
+            claim(scenario, key, pin, *ttl_seconds, eligible.as_deref()).await
+        }
         Step::Seed {
             target,
             key,
@@ -109,12 +114,8 @@ async fn claim(
     key: &str,
     fields: &[PinField],
     ttl_seconds: u32,
-    down: bool,
-    eligible: &Option<Vec<Vec<PinField>>>,
+    eligible: Option<&[Vec<PinField>]>,
 ) -> Result<Observation, OperationError> {
-    if let Some(server) = &scenario.server {
-        server.set_down(down);
-    }
     let mut candidates = None;
     if let Some(sets) = eligible {
         let mut pins = Vec::with_capacity(sets.len());
@@ -147,6 +148,7 @@ async fn seed(
     raw: &str,
     ttl_seconds: u32,
 ) -> Result<Observation, OperationError> {
+    let parsed = AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?;
     match target {
         SeedTarget::Local => {
             let stored =
@@ -154,19 +156,13 @@ async fn seed(
             scenario
                 .service
                 .local
-                .set(
-                    &AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?,
-                    &stored,
-                    ttl_seconds,
-                )
+                .set(&parsed, &stored, ttl_seconds)
                 .map_err(|error| invalid(&error.to_string()))?;
         }
         SeedTarget::Shared => {
-            let store = scenario
-                .service
-                .shared
-                .as_ref()
-                .ok_or_else(|| invalid("the shared store is not configured"))?;
+            let Some(store) = scenario.service.shared.as_ref() else {
+                return Err(invalid("the shared store is not configured"));
+            };
             let route = RouteKey::parse(key).map_err(|error| invalid(&error.to_string()))?;
             let value = RouteValue::Pin(PinValue {
                 model_id: raw.to_owned(),

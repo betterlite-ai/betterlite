@@ -170,9 +170,9 @@ impl StoredPin {
     }
 }
 
-enum Fields<'a> {
-    TextMap(&'a IndexMap<String, String>),
-    JsonMap(&'a IndexMap<String, Json>),
+enum Fields<'map> {
+    TextMap(&'map IndexMap<String, String>),
+    JsonMap(&'map IndexMap<String, Json>),
 }
 
 impl Fields<'_> {

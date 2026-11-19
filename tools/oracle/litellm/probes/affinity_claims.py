@@ -117,7 +117,8 @@ class FakeStore(RedisCache):
     failed: bool
 
     @override
-    def async_register_script(self, _script: str) -> Callable[..., Awaitable[object]]:
+    def async_register_script(self, script: str) -> Callable[..., Awaitable[object]]:
+        _ = script
         return self.run_claim
 
     async def run_claim(self, keys: tuple[str, ...], args: tuple[str | int, ...]) -> object:
@@ -144,7 +145,7 @@ class FakeStore(RedisCache):
         except ValidationError:
             return False
         candidates = ELIGIBLE.validate_json(eligible_text)
-        return any(stored == candidate for candidate in candidates)
+        return any(dict(stored) == candidate for candidate in candidates)
 
 
 @dataclass
@@ -161,10 +162,11 @@ def pin_value(fields: list[PinField]) -> dict[str, str]:
 def claim_summary(winner: object) -> tuple[str, str | None, str | None]:
     if isinstance(winner, str):
         return ("text", None, winner)
-    if isinstance(winner, dict):
+    try:
         fields = PIN_MAP.validate_python(winner)
-        return ("pin", fields.get("model_id"), None)
-    return ("other", None, None)
+    except ValidationError:
+        return ("other", None, None)
+    return ("pin", fields.get("model_id"), None)
 
 
 def key_step(step: KeyStep) -> KeyOutput:
@@ -219,15 +221,16 @@ async def parse_step(step: ParseStep) -> ParseOutput:
     winner = await claim_affinity_pin(cache, PARSE_KEY, {"model_id": "__probe__"}, PROBE_TTL)
     if isinstance(winner, str):
         return ParseOutput(shape="text", byte_count=len(winner.encode("utf-8")), reason=None)
-    if isinstance(winner, dict):
+    try:
         fields = PIN_MAP.validate_python(winner)
-        model_id = fields.get("model_id")
-        return ParseOutput(
-            shape="pin",
-            byte_count=0 if model_id is None else len(model_id.encode("utf-8")),
-            reason=None,
-        )
-    return ParseOutput(shape="other", byte_count=0, reason=None)
+    except ValidationError:
+        return ParseOutput(shape="other", byte_count=0, reason=None)
+    model_id = fields.get("model_id")
+    return ParseOutput(
+        shape="pin",
+        byte_count=0 if model_id is None else len(model_id.encode("utf-8")),
+        reason=None,
+    )
 
 
 async def apply_step(step: Step, context: Context) -> Observation:
@@ -240,13 +243,6 @@ async def apply_step(step: Step, context: Context) -> Observation:
     return await parse_step(step)
 
 
-async def run_scenario(operation: AffinityClaims) -> Output:
-    store = FakeStore(values={}, down=False, failed=False)
-    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=store if operation.shared else None)
-    context = Context(cache=cache, store=store, shared=operation.shared)
-    return Output(steps=[await apply_step(step, context) for step in operation.steps])
-
-
 class AffinityClaims(Operation):
     shared: bool
     steps: list[Step]
@@ -256,3 +252,10 @@ class AffinityClaims(Operation):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return asyncio.run(run_scenario(self))
+
+
+async def run_scenario(operation: AffinityClaims) -> Output:
+    store = FakeStore(values={}, down=False, failed=False)
+    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=store if operation.shared else None)
+    context = Context(cache=cache, store=store, shared=operation.shared)
+    return Output(steps=[await apply_step(step, context) for step in operation.steps])

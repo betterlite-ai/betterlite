@@ -105,7 +105,7 @@ impl LocalPins {
             {
                 existing.clone()
             }
-            Some(_existing) | None => StoredPin::Pin(pin.clone()),
+            Some(_) | None => StoredPin::Pin(pin.clone()),
         };
         self.set(key, &winner, ttl_seconds)?;
         Ok(winner)
