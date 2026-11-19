@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_pyhost::owned_temp::{OwnedTempDir, TempError};
 use thiserror::Error;
+use tokio::fs;
 use tokio::time::timeout;
 
 use crate::api::skills::hook::execution::SkillFiles;
@@ -114,21 +115,21 @@ async fn drive(
             .copy_to_runtime(&local, &format!("{SANDBOX_ROOT}/{path}"))
             .await?;
     }
-    if let Some(result) = install_requirements(session, &request).await? {
-        if result.exit_code != 0 {
-            return Ok(SandboxOutcome {
-                success: false,
-                output: result.stdout.unwrap_or_default(),
-                error: result.stderr.unwrap_or_default(),
-                files: Vec::new(),
-            });
-        }
+    if let Some(result) = install_requirements(session, &request).await?
+        && result.exit_code != 0_i32
+    {
+        return Ok(SandboxOutcome {
+            success: false,
+            output: result.stdout.unwrap_or_default(),
+            error: result.stderr.unwrap_or_default(),
+            files: Vec::new(),
+        });
     }
     let result = session.run(&wrapped_code(request.code)).await?;
     let downloads = OwnedTempDir::new()?;
     let files = collect_generated_files(session, request.skill_files, downloads.path()).await;
     Ok(SandboxOutcome {
-        success: result.exit_code == 0,
+        success: result.exit_code == 0_i32,
         output: result.stdout.unwrap_or_default(),
         error: result.stderr.unwrap_or_default(),
         files,
@@ -143,7 +144,7 @@ async fn install_requirements(
         Some(text) if !text.is_empty() => {
             let folder = OwnedTempDir::new()?;
             let local = folder.path().join(SKILL_REQUIREMENTS_FILE);
-            tokio::fs::write(&local, text)
+            fs::write(&local, text)
                 .await
                 .map_err(|source| StageError::Write {
                     path: local.clone(),

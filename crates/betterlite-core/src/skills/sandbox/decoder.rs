@@ -14,6 +14,7 @@ pub struct DecodedPaths {
     pub refusal: Option<ListingRefusal>,
 }
 
+#[must_use]
 pub fn decode_generated_paths(stdout: &str) -> DecodedPaths {
     if stdout.len() > MAX_LISTING_BYTES {
         return DecodedPaths {

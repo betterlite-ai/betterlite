@@ -3,6 +3,7 @@ use std::path::Path;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use tokio::fs;
 
 use crate::api::skills::hook::execution::SkillFiles;
 
@@ -42,7 +43,7 @@ async fn listing_paths(session: &dyn SandboxSession) -> Option<Vec<String>> {
         }
     };
     let stdout = listing.stdout?;
-    if listing.exit_code != 0 || stdout.is_empty() {
+    if listing.exit_code != 0_i32 || stdout.is_empty() {
         return None;
     }
     let decoded = decode_generated_paths(&stdout);
@@ -112,12 +113,12 @@ fn generated_relative(path: &str, original: &SkillFiles) -> Option<String> {
 
 // None ends the walk so the collected prefix stays under the byte cap
 pub(super) async fn content_of(path: &Path, collected: u64) -> Result<Option<Vec<u8>>, io::Error> {
-    let metadata = tokio::fs::metadata(path).await?;
+    let metadata = fs::metadata(path).await?;
     if collected.saturating_add(metadata.len()) > MAX_COLLECTED_BYTES {
         tracing::warn!(
             "SkillsSandboxExecutor: The collected files are past {MAX_COLLECTED_BYTES} bytes, so the rest is dropped"
         );
         return Ok(None);
     }
-    tokio::fs::read(path).await.map(Some)
+    fs::read(path).await.map(Some)
 }

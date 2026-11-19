@@ -2,6 +2,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use thiserror::Error;
+use tokio::fs;
 
 #[derive(Debug, Error)]
 pub enum StageError {
@@ -28,14 +29,14 @@ pub async fn stage_file(
         return Ok(None);
     };
     if let Some(parent) = local.parent() {
-        tokio::fs::create_dir_all(parent)
+        fs::create_dir_all(parent)
             .await
             .map_err(|source| StageError::CreateDir {
                 path: parent.to_path_buf(),
                 source,
             })?;
     }
-    tokio::fs::write(&local, content)
+    fs::write(&local, content)
         .await
         .map_err(|source| StageError::Write {
             path: local.clone(),
@@ -53,7 +54,12 @@ fn resolved_inside(root: &Path, raw: &str) -> Option<PathBuf> {
             Component::ParentDir => {
                 resolved.pop();
             }
-            other => resolved.push(other.as_os_str()),
+            Component::Normal(_)
+            | Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir => {
+                resolved.push(component.as_os_str());
+            }
         }
     }
     let relative = resolved.strip_prefix(root).ok()?;
