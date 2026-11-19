@@ -151,6 +151,7 @@ impl OwnedRouter {
 }
 
 // The settings and router state a payload request is assembled from.
+#[derive(Clone, Copy)]
 struct Record<'record> {
     policy: &'record SpendPayloadSettings,
     completion_start_time: CompletionStart,
