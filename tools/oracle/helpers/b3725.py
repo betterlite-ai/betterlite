@@ -1,12 +1,12 @@
 import asyncio
-from typing import Literal, TypedDict, cast
+from typing import Final, Literal, TypedDict, cast
 
 import httpx
-from litellm import ModelResponse
 from litellm.exceptions import ModifyResponseException
 from litellm.proxy.guardrails.guardrail_hooks.bedrock_guardrails import BedrockGuardrail
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.llms.openai import AllMessageValues
+from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
@@ -14,9 +14,11 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 DICT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 LIST: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
 GUARDRAIL_NAME = "bedrock-checks"
-REGION = "us-west-2"
-ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
-SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+SIGNING: Final = {
+    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "aws_region_name": "us-west-2",
+}
 PROJECTED = (
     "guardrail_name",
     "guardrail_provider",
@@ -85,9 +87,9 @@ def build_guardrail(input_value: Checks) -> BedrockGuardrail:
         prompt_attack_threshold=input_value["prompt_attack_threshold"],
         pii_confidence_threshold=input_value["pii_confidence_threshold"],
         disable_exception_on_block=input_value["disable_exception_on_block"],
-        aws_access_key_id=ACCESS_KEY,
-        aws_secret_access_key=SECRET_KEY,
-        aws_region_name=REGION,
+        aws_access_key_id=SIGNING["aws_access_key_id"],
+        aws_secret_access_key=SIGNING["aws_secret_access_key"],
+        aws_region_name=SIGNING["aws_region_name"],
     )
 
 
@@ -108,7 +110,7 @@ async def invoke(
     guardrail: BedrockGuardrail, input_value: Checks, data: dict[str, JsonValue]
 ) -> JsonValue:
     try:
-        result = await guardrail.make_bedrock_api_request(
+        result = await guardrail.make_bedrock_api_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L863-L870
             source=input_value["source"],
             messages=cast("list[AllMessageValues] | None", input_value["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
             response=response_of(input_value["response"]),
@@ -121,7 +123,7 @@ async def invoke(
             "status_code": error.status_code,
             "detail": JSON.validate_python(error.detail),
         }
-    except ModifyResponseException as error:
+    except ModifyResponseException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201-L1233
         return {"kind": "modify", "message": error.message, "model": error.model}
     return {"kind": "allowed", "result": JSON.validate_python(result)}
 
