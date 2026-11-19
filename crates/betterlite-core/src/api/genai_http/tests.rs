@@ -358,6 +358,10 @@ async fn a_sync_stream_returns_the_iterator_and_its_metadata_before_the_first_ev
     };
     assert_eq!(stream.metadata.model, MODEL);
     assert_eq!(
+        stream.metadata.request_body.get("model"),
+        Some(&decision(r#""gemini-2.0-flash""#))
+    );
+    assert_eq!(
         stream.metadata.hidden_params.get("model_id"),
         Some(&decision(r#""deployment-7""#))
     );
@@ -453,6 +457,44 @@ async fn an_async_stream_returns_the_iterator_and_its_metadata_before_the_first_
     }
     assert!(config.auth_calls()[0].stream);
     assert!(fixture.state.httpx_response.is_none());
+    assert_eq!(
+        iterator
+            .next_event()
+            .await
+            .expect("the first event")
+            .expect("a good event"),
+        SSE.as_bytes()
+    );
+    assert!(iterator.next_event().await.expect("the end").is_none());
+}
+
+#[tokio::test]
+async fn an_async_stream_over_a_buffered_reply_still_yields_its_events() {
+    let events = Events::new();
+    let wire = Wire::replying("async", Reply::json(200, SSE), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, true, None);
+    let mut fixture = Fixture::new("agenerate_content");
+
+    let outcome = fixture
+        .async_call(&deps, &target, &events)
+        .await
+        .expect("the stream starts");
+
+    let AsyncGenerateContentOutcome::Stream(stream) = outcome else {
+        panic!("a streaming call answers an iterator");
+    };
+    let AsyncStream { mut iterator, .. } = *stream;
     assert_eq!(
         iterator
             .next_event()
