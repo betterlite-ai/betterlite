@@ -12,7 +12,6 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::callback_logger::CallbackLogger as _;
 use crate::cold_storage_key::{ColdStorageLocator as _, ColdStorageTarget};
 use crate::cold_storage_locator::CatalogColdStorage;
 use crate::registry::catalog::{CatalogInputs, LoggerCatalog};

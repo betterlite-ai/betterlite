@@ -427,13 +427,13 @@ async fn dedicated_logger_redacts_credentials_at_debug() {
     let guard = subscribe(&buffer, Level::DEBUG);
     let logger = build_audit_logger(&inputs, &audit_source).expect("the audit logger builds");
     drop(guard);
-    let logged = buffer.contents();
+    let output = buffer.contents();
     assert!(
-        logged.contains("in init s3 logger (audit override)"),
-        "{logged}"
+        output.contains("in init s3 logger (audit override)"),
+        "{output}"
     );
-    assert!(!logged.contains("SOURCEKEYID"), "{logged}");
-    assert!(!logged.contains("sourcesecret"), "{logged}");
+    assert!(!output.contains("SOURCEKEYID"), "{output}");
+    assert!(!output.contains("sourcesecret"), "{output}");
     inputs.shutdown.cancel();
     inputs.tracker.close();
     timeout(Duration::from_secs(1), inputs.tracker.wait())
