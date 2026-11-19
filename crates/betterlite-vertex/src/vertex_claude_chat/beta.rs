@@ -55,6 +55,24 @@ impl BetaError {
     }
 }
 
+// The context_management shape failures shared by the chat and native request paths; each path's BetaError wraps this one.
+#[derive(Debug, Error)]
+pub(crate) enum ContextManagementError {
+    #[error("context_management must be an object")]
+    NotObject,
+    #[error(transparent)]
+    Context(#[from] BetaHeaderError),
+}
+
+impl From<ContextManagementError> for BetaError {
+    fn from(error: ContextManagementError) -> Self {
+        match error {
+            ContextManagementError::NotObject => Self::ContextManagementNotObject,
+            ContextManagementError::Context(error) => Self::Context(error),
+        }
+    }
+}
+
 // The whole set: B568's automatic betas, tool search, context edits and the caller's extras, since the parent header step is skipped.
 pub async fn compose<Source, Transport>(
     model: &str,
@@ -90,7 +108,7 @@ where
         betas.insert(tool_search_beta_header(PROVIDER).to_owned());
     }
     if let Some(context_management) = params.get("context_management") {
-        add_context_management(&mut betas, context_management)?;
+        add_context_management_betas(&mut betas, &prompt_json(context_management))?;
     }
     if let Some(extra_headers) = params.get("extra_headers") {
         merge_extra_headers(&mut betas, extra_headers)?;
@@ -128,33 +146,22 @@ fn beta_params(params: &IndexMap<String, Json>) -> FeatureParams {
 }
 
 // Only compact_20260112 selects the compact beta; every other edit type, "compaction" included, selects context management.
-fn add_context_management(
+pub(crate) fn add_context_management_betas(
     betas: &mut BTreeSet<String>,
-    context_management: &Json,
-) -> Result<(), BetaError> {
+    context_management: &PromptJson,
+) -> Result<(), ContextManagementError> {
     let edits = match context_management {
-        Json::Null => return Ok(()),
-        Json::Object(fields) => match fields.get(EDITS) {
-            None | Some(Json::Null) => return Ok(()),
-            Some(Json::List(edits)) => edits.as_slice(),
-            Some(_) => return Err(BetaError::Context(BetaHeaderError::EditsNotList)),
+        PromptJson::Null => return Ok(()),
+        PromptJson::Object(fields) => match fields.get(EDITS) {
+            None | Some(PromptJson::Null) => return Ok(()),
+            Some(PromptJson::List(edits)) => edits.as_slice(),
+            Some(_) => return Err(BetaHeaderError::EditsNotList.into()),
         },
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(BetaError::ContextManagementNotObject);
+        PromptJson::Bool(_) | PromptJson::Number(_) | PromptJson::Text(_) | PromptJson::List(_) => {
+            return Err(ContextManagementError::NotObject);
         }
     };
-    let mut compact = false;
-    let mut managed = false;
-    for (index, edit) in edits.iter().enumerate() {
-        let Json::Object(fields) = edit else {
-            return Err(BetaError::Context(BetaHeaderError::EditNotObject { index }));
-        };
-        if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == COMPACT_EDIT) {
-            compact = true;
-        } else {
-            managed = true;
-        }
-    }
+    let (compact, managed) = classify_context_edits(edits)?;
     if compact {
         betas.insert(COMPACT_BETA.to_owned());
     }
@@ -162,6 +169,22 @@ fn add_context_management(
         betas.insert(CONTEXT_MANAGEMENT_BETA.to_owned());
     }
     Ok(())
+}
+
+fn classify_context_edits(edits: &[PromptJson]) -> Result<(bool, bool), BetaHeaderError> {
+    let mut compact = false;
+    let mut managed = false;
+    for (index, edit) in edits.iter().enumerate() {
+        let PromptJson::Object(fields) = edit else {
+            return Err(BetaHeaderError::EditNotObject { index });
+        };
+        if matches!(fields.get("type"), Some(PromptJson::Text(kind)) if kind == COMPACT_EDIT) {
+            compact = true;
+        } else {
+            managed = true;
+        }
+    }
+    Ok((compact, managed))
 }
 
 fn merge_extra_headers(

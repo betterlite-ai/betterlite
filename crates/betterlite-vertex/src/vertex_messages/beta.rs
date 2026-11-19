@@ -5,21 +5,18 @@ use betterlite_anthropic::feature_flags::messages::has_output_config;
 use betterlite_anthropic::feature_flags::tools::{is_tool_search_used, is_web_search_tool_used};
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::headers::request::WEB_SEARCH_BETA;
-use betterlite_anthropic::request::beta_headers::{
-    ANTHROPIC_BETA_HEADER, BetaHeaderError, COMPACT_BETA, CONTEXT_MANAGEMENT_BETA,
-};
+use betterlite_anthropic::request::beta_headers::{ANTHROPIC_BETA_HEADER, BetaHeaderError};
 use betterlite_prompts::arguments::json::{Json, Object};
 use thiserror::Error;
 
 use super::PROVIDER;
+use crate::vertex_claude_chat::beta::{ContextManagementError, add_context_management_betas};
 
 // The ANTHROPIC_BETA_HEADER_VALUES entries LiteLLM's Vertex override adds itself.
 pub const DANGEROUS_TOOL_USE_BETA: &str = "dangerous-tool-use-2026-09-03";
 pub const PER_TURN_CONTROL_BETA: &str = "per-turn-control-2026-07-01";
 
-const COMPACT_EDIT: &str = "compact_20260112";
 const CONTEXT_MANAGEMENT: &str = "context_management";
-const EDITS: &str = "edits";
 const SAFEGUARDS: &str = "safeguards";
 const TOOLS: &str = "tools";
 
@@ -41,6 +38,15 @@ impl BetaError {
     }
 }
 
+impl From<ContextManagementError> for BetaError {
+    fn from(error: ContextManagementError) -> Self {
+        match error {
+            ContextManagementError::NotObject => Self::ContextManagementNotObject,
+            ContextManagementError::Context(error) => Self::Context(error),
+        }
+    }
+}
+
 // LiteLLM's beta set: the caller's header, context edits, hosted web search, tool search, safeguards and per-turn control.
 pub fn beta_tokens(
     headers: &AnthropicHeaders,
@@ -48,7 +54,9 @@ pub fn beta_tokens(
     optional_params: &Object,
 ) -> Result<BTreeSet<String>, BetaError> {
     let mut betas = existing_tokens(headers);
-    add_context_management(&mut betas, optional_params.get(CONTEXT_MANAGEMENT))?;
+    if let Some(context_management) = optional_params.get(CONTEXT_MANAGEMENT) {
+        add_context_management_betas(&mut betas, context_management)?;
+    }
     let tools = match optional_params.get(TOOLS) {
         Some(Json::List(tools)) => tools.as_slice(),
         _ => &[],
@@ -80,44 +88,4 @@ fn existing_tokens(headers: &AnthropicHeaders) -> BTreeSet<String> {
         .split(',')
         .map(|beta| beta.trim().to_owned())
         .collect()
-}
-
-// Only compact_20260112 selects the compact beta; every other edit type selects context management.
-fn add_context_management(
-    betas: &mut BTreeSet<String>,
-    context_management: Option<&Json>,
-) -> Result<(), BetaError> {
-    let fields = match context_management {
-        None | Some(Json::Null) => return Ok(()),
-        Some(Json::Object(fields)) => fields,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(BetaError::ContextManagementNotObject);
-        }
-    };
-    let edits = match fields.get(EDITS) {
-        None | Some(Json::Null) => return Ok(()),
-        Some(Json::List(edits)) => edits.as_slice(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(BetaError::Context(BetaHeaderError::EditsNotList));
-        }
-    };
-    let mut compact = false;
-    let mut managed = false;
-    for (index, edit) in edits.iter().enumerate() {
-        let Json::Object(edit_fields) = edit else {
-            return Err(BetaError::Context(BetaHeaderError::EditNotObject { index }));
-        };
-        if matches!(edit_fields.get("type"), Some(Json::Text(kind)) if kind == COMPACT_EDIT) {
-            compact = true;
-        } else {
-            managed = true;
-        }
-    }
-    if compact {
-        betas.insert(COMPACT_BETA.to_owned());
-    }
-    if managed {
-        betas.insert(CONTEXT_MANAGEMENT_BETA.to_owned());
-    }
-    Ok(())
 }
