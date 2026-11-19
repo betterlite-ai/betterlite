@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, TypeAlias, TypedDict
 
 from litellm.proxy.spend_tracking import spend_management_endpoints
@@ -29,9 +29,9 @@ Input: TypeAlias = SearchInput | StatusInput | SpanInput
 
 
 def search_value(call: SearchInput) -> JsonValue:
-    start = datetime.fromisoformat(call["start"].strip()).replace(tzinfo=timezone.utc)
-    end = datetime.fromisoformat(call["end"].strip()).replace(tzinfo=timezone.utc)
-    condition = spend_management_endpoints._build_spend_log_search_condition(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2438
+    start = datetime.fromisoformat(call["start"].strip()).replace(tzinfo=UTC)
+    end = datetime.fromisoformat(call["end"].strip()).replace(tzinfo=UTC)
+    condition = spend_management_endpoints._build_spend_log_search_condition(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2438
         call["search"], start, end, call["next_param_index"]
     )
     params: list[JsonValue] = [
@@ -43,14 +43,14 @@ def search_value(call: SearchInput) -> JsonValue:
 
 
 def status_value(call: StatusInput) -> JsonValue:
-    condition = spend_management_endpoints._build_status_filter_condition(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4810
+    condition = spend_management_endpoints._build_status_filter_condition(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4810
         call["status_filter"]
     )
     return STATUS_CONDITION.validate_python(condition)
 
 
 def span_value(call: SpanInput) -> JsonValue:
-    return spend_management_endpoints._span_type_sql_condition(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4829
+    return spend_management_endpoints._span_type_sql_condition(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4829
         call["span_type"]
     )
 
