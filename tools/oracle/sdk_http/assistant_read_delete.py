@@ -240,23 +240,15 @@ def run_mode(
 def entry_sync(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
     args = call_args(invocation, client, api_base)
     if invocation.operation == "list":
-        page: SyncCursorPage[Assistant] = get_assistants(**args)
-        return page
-    deleted: AssistantDeleted | Coroutine[None, None, AssistantDeleted] = delete_assistant(
-        **args, assistant_id=required_assistant_id(invocation)
-    )
-    return deleted
+        return get_assistants(**args)
+    return delete_assistant(**args, assistant_id=required_assistant_id(invocation))
 
 
 async def entry_async(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
     args = call_args(invocation, client, api_base)
     if invocation.operation == "list":
-        page: AsyncCursorPage[Assistant] = await aget_assistants(**args)
-        return page
-    deleted: AssistantDeleted = await adelete_assistant(
-        **args, assistant_id=required_assistant_id(invocation)
-    )
-    return deleted
+        return await aget_assistants(**args)
+    return await adelete_assistant(**args, assistant_id=required_assistant_id(invocation))
 
 
 def run_async(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> Answer:
