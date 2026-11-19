@@ -1,7 +1,7 @@
 id: B656
 milestone: M3 providers
 title: Bedrock Claude Platform workspace routes
-status: todo
+status: done
 depends_on: [B2211, B577, B570, B568, B688, B960, B962, B581, B8500, B171]
 file: tasks/B656-bedrock-services-claude-platform.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/bedrock/claude_platform/messages_transformation.py"
 parent: B030
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2569
