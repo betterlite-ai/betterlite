@@ -176,7 +176,10 @@ fn synthesized_values(keys_to_fetch: &[String], now_int: i64) -> CounterValues {
         .collect()
 }
 
-fn pair_error(keys_to_fetch: &[String], values: &[CacheCounterValue]) -> WindowedAdmissionError {
+const fn pair_error(
+    keys_to_fetch: &[String],
+    values: &[CacheCounterValue],
+) -> WindowedAdmissionError {
     WindowedAdmissionError::WindowPairCount {
         keys: keys_to_fetch.len(),
         values: values.len(),

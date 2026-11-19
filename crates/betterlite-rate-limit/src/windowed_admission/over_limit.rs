@@ -82,7 +82,11 @@ fn limit_for(counter_key: &str, metadata: &WindowKeyMetadata) -> Option<(i64, Ra
     None
 }
 
-fn over_limit_code(counter: Option<i64>, current_limit: i64, read_only: bool) -> &'static str {
+const fn over_limit_code(
+    counter: Option<i64>,
+    current_limit: i64,
+    read_only: bool,
+) -> &'static str {
     let Some(count) = counter else {
         return OK_CODE;
     };
@@ -95,7 +99,10 @@ fn over_limit_code(counter: Option<i64>, current_limit: i64, read_only: bool) ->
     if over_limit { OVER_LIMIT_CODE } else { OK_CODE }
 }
 
-fn unpaired(keys_to_fetch: &[String], cache_values: &CounterValues) -> WindowedAdmissionError {
+const fn unpaired(
+    keys_to_fetch: &[String],
+    cache_values: &CounterValues,
+) -> WindowedAdmissionError {
     WindowedAdmissionError::WindowPairCount {
         keys: keys_to_fetch.len(),
         values: cache_values.len(),
