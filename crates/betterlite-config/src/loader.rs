@@ -207,11 +207,11 @@ fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Con
     }
     Ok(Config {
         model_list,
-        general_settings: convert_general(raw.general_settings, lookup)?,
-        router_settings: convert_router(raw.router_settings, lookup)?,
+        general_settings: Box::new(convert_general(raw.general_settings, lookup)?),
+        router_settings: Box::new(convert_router(raw.router_settings, lookup)?),
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
-        sections,
+        sections: Box::new(sections),
     })
 }
 fn convert_general(raw: RawGeneral, lookup: Lookup<'_>) -> Result<GeneralSettings, ConfigError> {

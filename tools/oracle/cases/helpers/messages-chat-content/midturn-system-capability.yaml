@@ -1,0 +1,106 @@
+kind: helper
+name: messages-chat-content-midturn-system-capability
+call:
+  messages_chat_content:
+    messages:
+    - role: system
+      content: lead
+    - role: user
+      content: ask
+    - role: assistant
+      content:
+      - type: tool_use
+        id: t
+        name: lookup
+        input: {}
+    - role: system
+      content:
+      - type: text
+        text: reminder
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: t
+        content: ok
+    model: gpt-4o
+    custom_llm_provider: openai
+    preserve_midturn_system: false
+    supported: []
+calls:
+- messages_chat_content:
+    messages:
+    - role: system
+      content: lead
+    - role: user
+      content: ask
+    - role: assistant
+      content:
+      - type: tool_use
+        id: t
+        name: lookup
+        input: {}
+    - role: system
+      content:
+      - type: text
+        text: reminder
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: t
+        content: ok
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: [claude-sonnet-5]
+- messages_chat_content:
+    messages:
+    - role: system
+      content: lead
+    - role: user
+      content: ask
+    - role: assistant
+      content:
+      - type: tool_use
+        id: t
+        name: lookup
+        input: {}
+    - role: system
+      content:
+      - type: text
+        text: reminder
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: t
+        content: ok
+    model: gpt-4o
+    custom_llm_provider: openai
+    preserve_midturn_system: true
+    supported: []
+- messages_chat_content:
+    messages:
+    - role: system
+      content: lead
+    - role: user
+      content: ask
+    model: gpt-4o
+    custom_llm_provider: openai
+    preserve_midturn_system: false
+    supported: []
+- messages_chat_content:
+    messages:
+    - role: user
+      content: ask
+    - role: system
+      content: ''
+    - role: system
+      content:
+      - type: image
+    - role: user
+      content: go
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: true
+    supported: []
+env: {}
+compare: {ignore: []}

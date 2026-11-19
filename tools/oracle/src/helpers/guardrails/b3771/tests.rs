@@ -3,7 +3,7 @@ use std::net::TcpListener;
 
 use betterlite_guardrails::generic_guardrail_api::GenericGuardrailAPIError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailExtraValue;
-use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
+use betterlite_guardrails::grayswan::error::{GraySwanFailure, GraySwanGuardrailAPIError};
 use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 
@@ -21,8 +21,8 @@ fn connection_refused() -> reqwest::Error {
         .unwrap_err()
 }
 
-fn blocked() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::Blocked {
+fn blocked() -> GraySwanFailure {
+    GraySwanFailure::Blocked {
         reason: String::new(),
         violation_location: "input",
         violation: 0.9_f64,
@@ -32,48 +32,69 @@ fn blocked() -> GraySwanGuardrailAPIError {
     }
 }
 
-fn timeout() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::Timeout {
+fn timeout() -> GraySwanFailure {
+    GraySwanFailure::Timeout {
         source: connection_refused(),
     }
 }
 
-fn http_status() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::HttpStatus {
+fn http_status() -> GraySwanFailure {
+    GraySwanFailure::HttpStatus {
         status: StatusCode::NOT_FOUND,
     }
 }
 
-fn request() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::Request {
+fn request() -> GraySwanFailure {
+    GraySwanFailure::Request {
         source: connection_refused(),
     }
 }
 
-fn invalid_header() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::InvalidHeader {
+fn invalid_header() -> GraySwanFailure {
+    GraySwanFailure::InvalidHeader {
         source: HeaderValue::from_str("\u{0}").unwrap_err(),
     }
 }
 
-fn response_json() -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::ResponseJson {
+fn response_json() -> GraySwanFailure {
+    GraySwanFailure::ResponseJson {
         source: serde_json::from_str::<serde_json::Value>("not json").unwrap_err(),
     }
 }
 
 #[test]
 fn grayswan_failures_carry_the_python_status() {
-    assert_eq!(failure(&blocked()).status, Some(400));
-    assert_eq!(failure(&timeout()).status, Some(408));
-    assert_eq!(failure(&http_status()).status, Some(404));
-    assert_eq!(failure(&request()).status, None);
-    assert_eq!(failure(&invalid_header()).status, None);
     assert_eq!(
-        failure(&GraySwanGuardrailAPIError::ResponseTooLarge { limit: 10 }).status,
+        failure(&GraySwanGuardrailAPIError::from_failure(blocked())).status,
+        Some(400)
+    );
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(timeout())).status,
+        Some(408)
+    );
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(http_status())).status,
+        Some(404)
+    );
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(request())).status,
         None
     );
-    assert_eq!(failure(&response_json()).status, None);
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(invalid_header())).status,
+        None
+    );
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(
+            GraySwanFailure::ResponseTooLarge { limit: 10 }
+        ))
+        .status,
+        None
+    );
+    assert_eq!(
+        failure(&GraySwanGuardrailAPIError::from_failure(response_json())).status,
+        None
+    );
 }
 
 #[test]

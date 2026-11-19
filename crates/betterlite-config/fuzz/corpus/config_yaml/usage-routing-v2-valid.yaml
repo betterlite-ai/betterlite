@@ -1,0 +1,19 @@
+model_list:
+  - model_name: usage-routing-v2-group
+    litellm_params:
+      model: openai/gpt-4o-mini
+      tpm: 100000
+      rpm: 1000
+    model_info:
+      id: usage-routing-v2-primary
+      tpm: 50000
+  - model_name: usage-routing-v2-group
+    litellm_params:
+      model: openai/gpt-4o-mini
+      rpm: 500
+    model_info:
+      id: usage-routing-v2-secondary
+      rpm: 250
+
+router_settings:
+  routing_strategy: usage-based-routing-v2

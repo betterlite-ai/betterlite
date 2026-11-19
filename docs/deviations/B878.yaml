@@ -1,0 +1,47 @@
+task: B878
+deviations:
+  - what: >-
+      Redis invalidation payloads over 1048576 bytes and JSON nested deeper than 64 containers are rejected with a typed
+      decode error instead of being parsed.
+    why: >-
+      The decoder consumes bytes from Redis, so an unbounded payload or nesting depth is a denial-of-service vector.
+      LiteLLM inherits Python's recursion limit and has no byte cap.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L53-L71
+  - what: >-
+      A set invalidation whose numeric value is NaN or an infinity is warned about and dropped; it neither stores the
+      value nor deletes the key.
+    why: >-
+      Monetary counters use Decimal and cannot represent nonfinite values. LiteLLM's _finite_number_or_none accepts
+      them, and a working setup that publishes counters never sends one.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L47-L50
+  - what: >-
+      Shutdown cancels and drains pending publications and closes the subscription.
+    why: >-
+      LiteLLM leaves its publish tasks detached and the subscriber task cancelled without awaiting its close. The
+      async-hygiene rule requires server-owned work, and normal publication stays asynchronous and best-effort.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L117-L123
+  - what: >-
+      A subscriber that fails to subscribe does not attempt to close the pubsub, and its close failure is not reported.
+    why: >-
+      The Redis transport owns the connection until subscribe returns it; there is no subscription handle to close.
+      LiteLLM's finally block calls aclose on the partially set up pubsub.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L177-L198
+  - what: >-
+      JSON escapes encoding an unpaired UTF-16 surrogate are rejected as malformed; Python's json.loads accepts them
+      and produces a lone surrogate in the string.
+    why: >-
+      Rust strings cannot hold unpaired surrogates, and a cache key containing one cannot match any stored key.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L53-L71
+  - what: >-
+      A JSON integer too large for f64 decodes as an infinity and is dropped by the nonfinite policy; LiteLLM raises
+      OverflowError while converting it, which tears down the subscription and reconnects.
+    why: >-
+      Both drop the invalidation and warn; ours keeps the subscription and the other workers' deliveries alive.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L47-L50
+kept_bugs: []

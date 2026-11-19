@@ -107,7 +107,17 @@ where
 #[case::stage_fallback_attempts(boundaries::stage_skips(RouteStage::FallbackAttempts))]
 #[case::stage_chat_stream_fallback(boundaries::stage_skips(RouteStage::ChatStreamFallback))]
 #[case::stage_native_stream_fallback(boundaries::stage_skips(RouteStage::NativeStreamFallback))]
-#[case::stage_model_rate_limits(boundaries::stage_skips(RouteStage::ModelRateLimits))]
+#[case::model_rate_limit_rejects_the_pick(boundaries::model_rate_limit_rejects_the_pick())]
+#[case::model_rate_limit_counts_the_pick(boundaries::model_rate_limit_counts_the_pick())]
+#[case::model_rate_limit_rejects_the_named_deployment(
+    boundaries::model_rate_limit_rejects_the_named_deployment()
+)]
+#[case::model_rate_limit_unconfigured_keeps_the_pick(
+    boundaries::model_rate_limit_unconfigured_keeps_the_pick()
+)]
+#[case::model_rate_limit_unreadable_limit_keeps_the_pick(
+    boundaries::model_rate_limit_unreadable_limit_keeps_the_pick()
+)]
 #[case::stage_tag_routing(boundaries::stage_skips(RouteStage::TagRouting))]
 #[case::stage_access_windows(boundaries::stage_skips(RouteStage::AccessWindows))]
 #[case::routing_group_priority_reaches_the_pick(
@@ -126,14 +136,6 @@ where
 #[case::latency_routing(boundaries::strategy_unbuilt(
     RoutingStrategy::LatencyBasedRouting,
     "latency_routing"
-))]
-#[case::usage_routing(boundaries::strategy_unbuilt(
-    RoutingStrategy::UsageBasedRouting,
-    "usage_routing"
-))]
-#[case::usage_routing_v2(boundaries::strategy_unbuilt(
-    RoutingStrategy::UsageBasedRoutingV2,
-    "usage_routing_v2"
 ))]
 #[case::no_deployment_rate_limit(boundaries::no_deployment_rate_limit())]
 #[case::no_deployment_all_in_cooldown(boundaries::no_deployment_all_in_cooldown())]

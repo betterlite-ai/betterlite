@@ -1,14 +1,14 @@
 id: B152
 milestone: M11 distribution
 title: Helm charts
-status: todo
+status: done
 depends_on: [B8130, B8131, B8132, B8133, B8135]
 file: tasks/B152-helm-charts.yaml
 covers:
   - "helm/**"
 parent: B151
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2561
