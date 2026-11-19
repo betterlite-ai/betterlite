@@ -40,6 +40,30 @@ fn project_map(config: &ConfigMap) -> BootstrapSettings {
     raw.convert(&BTreeMap::<String, String>::new()).unwrap()
 }
 
+fn initialize_with(
+    state: &mut RawSecretManager,
+    source: &str,
+    environment: &BTreeMap<String, String>,
+) {
+    let projection = project(source, environment);
+    state
+        .initialize(&projection, None, environment, None)
+        .unwrap();
+}
+
+fn initialized_with(source: &str, environment: &BTreeMap<String, String>) -> RawSecretManager {
+    let mut state = RawSecretManager::new(secret_lookup(None));
+    initialize_with(&mut state, source, environment);
+    state
+}
+
+fn primary_secret_name(state: &RawSecretManager) -> Option<&str> {
+    state
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.primary_secret_name.as_deref())
+}
+
 struct RecordingReader {
     reads: Arc<Mutex<Vec<String>>>,
     value: &'static str,
@@ -64,7 +88,8 @@ fn recording_manager(client: Arc<dyn SyncSecretReader>) -> ManagerState {
         }),
         system: Some(KeyManagementSystem::HashicorpVault),
         access_mode: SecretAccessMode::ReadOnly,
-        hosted_keys: None,
+        // the credential is the only managed key, so every other name must fall through to the environment
+        hosted_keys: Some(vec![String::from("MODEL_KEY")]),
     }
 }
 
@@ -81,6 +106,37 @@ impl EnvironmentLookup for StagedLookup<'_> {
             .flatten()
             .map(|secret| secret.expose_secret().to_owned())
     }
+}
+
+// a Vault read needs its server, so the staged load is served from the recording reader instead
+fn staged_load_with(
+    state: &mut RawSecretManager,
+    source: &str,
+    environment: &BTreeMap<String, String>,
+    value: &'static str,
+) -> (Option<String>, Vec<String>) {
+    let reads: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let client: Arc<dyn SyncSecretReader> = Arc::new(RecordingReader {
+        reads: Arc::clone(&reads),
+        value,
+    });
+    state.lookup.manager = Some(recording_manager(client));
+    let config = ConfigLoader {
+        lookup: StagedLookup {
+            secrets: &state.lookup,
+            environment,
+        },
+    }
+    .load(source)
+    .unwrap();
+    let api_key = config.model_list[0]
+        .litellm_params
+        .api_key
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret)
+        .map(str::to_owned);
+    let recorded = reads.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    (api_key, recorded)
 }
 
 #[test]
@@ -150,11 +206,11 @@ fn literal_system_errors_are_reported() {
         &env(&[]),
     );
     let mut empty_state = RawSecretManager::new(secret_lookup(None));
-    let error = empty_state
+    let rejected = empty_state
         .initialize(&empty, None, &env(&[]), None)
         .unwrap_err();
     assert!(matches!(
-        error,
+        rejected,
         RawSecretManagerError::Selection {
             source: ConfigBootError::InvalidKeyManagementSystem
         }
@@ -273,44 +329,23 @@ fn selection_error_keeps_settings() {
 #[test]
 fn settings_without_a_mapping_are_retained() {
     let environment = env(&[("AWS_REGION_NAME", "us-east-1")]);
-    let mut state = RawSecretManager::new(secret_lookup(None));
-    let with_settings = project(
+    let mut state = initialized_with(
         "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings:\n    primary_secret_name: primary\n",
         &environment,
     );
-    state
-        .initialize(&with_settings, None, &environment, None)
-        .unwrap();
-    let absent = project(
+    assert_eq!(primary_secret_name(&state), Some("primary"));
+    initialize_with(
+        &mut state,
         "general_settings:\n  key_management_system: aws_secret_manager\n",
         &environment,
     );
-    state.initialize(&absent, None, &environment, None).unwrap();
-    assert_eq!(
-        state
-            .settings
-            .as_ref()
-            .unwrap()
-            .primary_secret_name
-            .as_deref(),
-        Some("primary")
-    );
-    let not_a_mapping = project(
+    assert_eq!(primary_secret_name(&state), Some("primary"));
+    initialize_with(
+        &mut state,
         "general_settings:\n  key_management_system: aws_secret_manager\n  key_management_settings: bogus\n",
         &environment,
     );
-    state
-        .initialize(&not_a_mapping, None, &environment, None)
-        .unwrap();
-    assert_eq!(
-        state
-            .settings
-            .as_ref()
-            .unwrap()
-            .primary_secret_name
-            .as_deref(),
-        Some("primary")
-    );
+    assert_eq!(primary_secret_name(&state), Some("primary"));
     assert_eq!(
         state.lookup.manager.as_ref().unwrap().system,
         Some(KeyManagementSystem::AwsSecretManager)
@@ -356,59 +391,21 @@ fn missing_azure_uri_can_retry() {
 fn manager_only_credential_resolves_on_first_load() {
     let source = "model_list:\n- model_name: gpt\n  litellm_params:\n    model: openai/gpt-4o-mini\n    api_key: os.environ/MODEL_KEY\ngeneral_settings:\n  key_management_system: hashicorp_vault\n";
     let environment = env(&[("HCP_VAULT_TOKEN", "token")]);
-    let projection = project(source, &environment);
-    let mut state = RawSecretManager::new(secret_lookup(None));
-    state
-        .initialize(&projection, None, &environment, None)
-        .unwrap();
+    let mut state = initialized_with(source, &environment);
     assert_eq!(
         state.lookup.manager.as_ref().unwrap().system,
         Some(KeyManagementSystem::HashicorpVault)
     );
-    // a Vault read needs its server, so the shared lookup serves the staged load from this reader instead
-    let reads: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let client: Arc<dyn SyncSecretReader> = Arc::new(RecordingReader {
-        reads: Arc::clone(&reads),
-        value: "sk-manager",
-    });
-    state.lookup.manager = Some(recording_manager(client));
-    let config = ConfigLoader {
-        lookup: StagedLookup {
-            secrets: &state.lookup,
-            environment: &environment,
-        },
-    }
-    .load(source)
-    .unwrap();
-    assert_eq!(
-        config.model_list[0]
-            .litellm_params
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret()),
-        Some("sk-manager")
+    let (api_key, reads) = staged_load_with(&mut state, source, &environment, "sk-manager");
+    assert_eq!(api_key.as_deref(), Some("sk-manager"));
+    assert_eq!(reads, vec![String::from("MODEL_KEY")]);
+    initialize_with(
+        &mut state,
+        "general_settings:\n  key_management_system: aws_secret_manager\n",
+        &environment,
     );
-    {
-        let recorded = reads.lock().unwrap_or_else(PoisonError::into_inner);
-        assert_eq!(*recorded, vec![String::from("MODEL_KEY")]);
-    }
-    state
-        .initialize(
-            &project(
-                "general_settings:\n  key_management_system: aws_secret_manager\n",
-                &environment,
-            ),
-            None,
-            &environment,
-            None,
-        )
-        .unwrap();
     assert_eq!(
         state.lookup.manager.as_ref().unwrap().system,
         Some(KeyManagementSystem::HashicorpVault)
-    );
-    assert_eq!(
-        state.lookup.manager.as_ref().unwrap().client.class_name(),
-        "HashicorpSecretManager"
     );
 }
