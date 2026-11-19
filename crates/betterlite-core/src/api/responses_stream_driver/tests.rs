@@ -965,4 +965,25 @@ fn a_body_too_large_failure_is_not_a_transport_read_error() {
     assert_eq!(failure.message, "the response body is larger than 8 bytes");
 }
 
+#[tokio::test]
+async fn a_prefetched_source_yields_each_payload_once_then_ends() {
+    let mut source = PrefetchedSource::new(vec![
+        Ok(b"first".to_vec()),
+        Err(SourceFailure::Decode(
+            "the frame could not be read".to_owned(),
+        )),
+    ]);
+    source
+        .next_payload()
+        .await
+        .expect("the first payload is returned")
+        .expect("the first payload decodes");
+    source
+        .next_payload()
+        .await
+        .expect("the failure payload is returned")
+        .expect_err("the failure payload is an error");
+    assert!(source.next_payload().await.is_none());
+}
+
 mod terminal;
