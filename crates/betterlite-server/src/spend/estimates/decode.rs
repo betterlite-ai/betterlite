@@ -97,10 +97,10 @@ impl FieldValue for Json {
     const KIND: &'static str = "dict_type";
     const MESSAGE: &'static str = DICTIONARY;
 
-    fn from_json(value: &Json) -> Option<Self> {
+    fn from_json(value: &Self) -> Option<Self> {
         match value {
-            object @ Json::Object(_) => Some(object.clone()),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+            object @ Self::Object(_) => Some(object.clone()),
+            Self::Null | Self::Bool(_) | Self::Number(_) | Self::Text(_) | Self::List(_) => None,
         }
     }
 }
