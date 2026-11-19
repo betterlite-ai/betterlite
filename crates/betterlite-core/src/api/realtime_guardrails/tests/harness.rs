@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
 
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};

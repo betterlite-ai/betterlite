@@ -8,7 +8,7 @@ mod tests;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future;
 use std::convert::Infallible;
 use std::error::Error;
 
@@ -19,8 +19,10 @@ use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_session_state::RealtimeStreaming;
 
 // Private helpers borrowing the connection state share the same local future and error type as the send interface.
+#[rustfmt::skip]
+#[expect(clippy::disallowed_types, reason = "the realtime relay state holds connection trait objects that are not Send yet")]
 pub type SenderFuture<'sender, Output, ConfigError, CallbackError> =
-    LocalBoxFuture<'sender, Result<Output, RealtimeSenderError<ConfigError, CallbackError>>>;
+    future::LocalBoxFuture<'sender, Result<Output, RealtimeSenderError<ConfigError, CallbackError>>>;
 
 // LiteLLM's socket send boundary: B1006's connection state, B1004's provider config and B2455's guardrail callbacks
 pub struct RealtimeSender<'sender, Config, CallbackError = Infallible>

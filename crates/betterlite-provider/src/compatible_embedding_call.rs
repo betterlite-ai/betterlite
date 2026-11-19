@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_config::sections::compatible_embedding_settings::{
@@ -18,7 +19,6 @@ use betterlite_openai::compatible_wire::header_map;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -92,19 +92,18 @@ impl SharedEmbedding<'_> {
 }
 
 // main.py's shared arm: the pre-call log runs with the env, the send leaves it alone, and the post-call log sees the answer
-#[must_use]
 pub fn shared_embedding<'source>(
     embedding: &'source SharedEmbedding<'_>,
     client: &'source ProxiedClient,
     state: &'source mut LoggingState,
     env: &'source PrePostEnv<'_>,
-) -> LocalBoxFuture<'source, Result<EmbeddingResponse, EmbeddingError>> {
+) -> impl Future<Output = Result<EmbeddingResponse, EmbeddingError>> + Send + 'source {
     let call = embedding.handler_call();
-    Box::pin(async move {
+    async move {
         let plan = plan_embedding(call, state, env)?;
         let sent = send_embedding(client, &plan).await;
         finish_embedding(&plan, sent, state, env)
-    })
+    }
 }
 
 pub struct CometapiEmbedding<'source> {

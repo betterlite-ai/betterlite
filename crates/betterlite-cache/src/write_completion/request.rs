@@ -32,7 +32,7 @@ pub(crate) fn merged_request_kwargs(
 }
 
 // LiteLLM stores the span it found back into the kwargs under parent_otel_span; betterlite writes the W3C traceparent it can carry
-pub(crate) fn add_parent_otel_span(kwargs: &mut KeyObject) {
+pub fn add_parent_otel_span(kwargs: &mut KeyObject) {
     let metadata = metadata_with_parent_span(kwargs.get(METADATA_KWARG));
     let params = params_with_parent_span(kwargs.get(LITELLM_PARAMS_KWARG));
     let span = kwargs.get(PARENT_SPAN_KEY).map(otel_value);

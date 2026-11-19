@@ -1,0 +1,11 @@
+kind: helper
+name: missing_sdk
+call:
+  skill_sandbox:
+    code: "print('hello')"
+    files: {}
+    requirements: null
+    image: null
+    missing_sdk: true
+env: {}
+compare: {ignore: []}
