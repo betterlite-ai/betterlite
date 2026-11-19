@@ -58,8 +58,7 @@ async fn completion_caller_maps_an_error_status() {
     let caller = completion_caller(&settings(), &harness.state()).expect("caller");
     let error = caller(completion_request(None))
         .await
-        .err()
-        .expect("completion failure");
+        .expect_err("completion failure");
     assert!(matches!(error, SourceError::Http { status: 500, .. }));
 }
 
@@ -69,8 +68,7 @@ async fn completion_caller_rejects_a_non_json_answer() {
     let caller = completion_caller(&settings(), &harness.state()).expect("caller");
     let error = caller(completion_request(None))
         .await
-        .err()
-        .expect("completion failure");
+        .expect_err("completion failure");
     assert!(matches!(error, SourceError::Pagination { .. }));
 }
 
@@ -82,8 +80,7 @@ async fn completion_caller_maps_an_invalid_credential() {
     let caller = completion_caller(&roi, &harness.state()).expect("caller");
     let error = caller(completion_request(None))
         .await
-        .err()
-        .expect("completion failure");
+        .expect_err("completion failure");
     assert!(matches!(error, SourceError::Token(_)));
 }
 

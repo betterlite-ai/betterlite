@@ -29,7 +29,7 @@ async fn gateway_http_client_posts_the_bearer_credential() {
         Some("Bearer sk-estimator")
     );
     assert_eq!(seen[0].deadline, GATEWAY_TIMEOUT);
-    assert_eq!(seen[0].body, "{}".as_bytes().to_vec());
+    assert_eq!(seen[0].body, b"{}".to_vec());
 }
 
 #[tokio::test]
@@ -45,8 +45,7 @@ async fn gateway_http_client_reports_a_redirect_status() {
             RequestBody::Empty,
         )
         .await
-        .err()
-        .expect("gateway failure");
+        .expect_err("gateway failure");
     assert!(matches!(error, GatewayError::Status { status: 302 }));
     assert_eq!(wire.seen().len(), 1);
 }
@@ -62,8 +61,7 @@ async fn gateway_http_client_reports_an_error_status() {
             RequestBody::Empty,
         )
         .await
-        .err()
-        .expect("gateway failure");
+        .expect_err("gateway failure");
     assert!(matches!(error, GatewayError::Status { status: 500 }));
 }
 
@@ -73,8 +71,7 @@ async fn gateway_http_client_reports_a_transport_failure() {
     let error = gateway(&wire)
         .request(Method::GET, "/v1/models", &secret("sk"), RequestBody::Empty)
         .await
-        .err()
-        .expect("gateway failure");
+        .expect_err("gateway failure");
     assert!(matches!(
         error,
         GatewayError::Transport(TransportError::Closed)
@@ -87,8 +84,7 @@ async fn gateway_http_client_reports_an_unreachable_path() {
     let error = gateway(&wire)
         .request(Method::GET, "http://[", &secret("sk"), RequestBody::Empty)
         .await
-        .err()
-        .expect("gateway failure");
+        .expect_err("gateway failure");
     assert!(matches!(error, GatewayError::Url(_)));
 }
 
@@ -103,7 +99,6 @@ async fn gateway_http_client_reports_an_invalid_credential() {
             RequestBody::Empty,
         )
         .await
-        .err()
-        .expect("gateway failure");
+        .expect_err("gateway failure");
     assert!(matches!(error, GatewayError::Header(_)));
 }

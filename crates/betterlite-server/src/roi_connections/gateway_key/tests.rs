@@ -26,7 +26,7 @@ fn gateway_key_falls_back_to_the_master_key() {
 fn gateway_key_without_a_credential_is_a_conflict() {
     let mut roi = settings();
     roi.estimator_key = secret("");
-    let error = gateway_key(&roi, None).err().expect("no credential");
+    let error = gateway_key(&roi, None).expect_err("no credential");
     assert!(matches!(error, RoiConnectionsError::Conflict(MISSING_KEY)));
 }
 
@@ -35,8 +35,6 @@ fn gateway_key_treats_an_empty_master_key_as_absent() {
     let mut roi = settings();
     roi.estimator_key = secret("");
     let master = secret("");
-    let error = gateway_key(&roi, Some(&master))
-        .err()
-        .expect("no credential");
+    let error = gateway_key(&roi, Some(&master)).expect_err("no credential");
     assert!(matches!(error, RoiConnectionsError::Conflict(MISSING_KEY)));
 }

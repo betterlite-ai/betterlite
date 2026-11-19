@@ -25,6 +25,7 @@ use betterlite_secrets::error::SecretError;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::task::yield_now;
 use tower::ServiceExt as _;
 use url::Url;
 
@@ -144,6 +145,7 @@ impl Wire {
 
 impl Transport for Wire {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+        yield_now().await;
         self.seen.lock().expect("wire lock").push(record(&request));
         let next = self.answers.lock().expect("wire lock").pop_front();
         let Some(answer) = next else {

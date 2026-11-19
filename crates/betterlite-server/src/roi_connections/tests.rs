@@ -2,6 +2,7 @@
 
 pub(crate) mod support;
 
+use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use rstest::rstest;
 
@@ -43,7 +44,7 @@ async fn oneshot_routes_refuse_the_other_method(#[case] path: &str, #[case] meth
     let request = Request::builder()
         .method(method)
         .uri(path)
-        .body(axum::body::Body::empty())
+        .body(Body::empty())
         .expect("request");
     let reply = call(harness.app(), request).await;
     assert_eq!(reply.status, StatusCode::METHOD_NOT_ALLOWED);

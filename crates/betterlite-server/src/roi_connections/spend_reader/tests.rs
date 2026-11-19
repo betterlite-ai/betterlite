@@ -21,6 +21,6 @@ async fn spend_reader_reads_through_the_repository_store() {
     };
     let start = NaiveDate::from_ymd_opt(2026, 1, 1).expect("start date");
     let end = NaiveDate::from_ymd_opt(2026, 1, 31).expect("end date");
-    let error = reader.read(start, end).await.err().expect("no database");
+    let error = reader.read(start, end).await.expect_err("no database");
     assert!(matches!(error, DbError::NoDbConnected));
 }
