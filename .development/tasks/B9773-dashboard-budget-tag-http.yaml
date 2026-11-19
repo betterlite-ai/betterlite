@@ -7,7 +7,7 @@ description: >-
   update and validation cases; the missing coverage is the combined page filters, modal
   projections and create/edit/delete reloads. Add only HTTP YAML, around 600 lines.
 
-  A B1630 transcript starts with B860/B5076's independent databases and seeded admin/viewer
+  A B1630 transcript starts with B860/B9942's independent databases and seeded admin/viewer
   credentials. Use the real POST /budget/new and /tag/new for setup that their typed fixtures
   cannot seed, capturing generated IDs inside each proxy execution. GET
   /management/v1/budgets initially sends page=1&page_size=50&sort=-created_at. Subsequent

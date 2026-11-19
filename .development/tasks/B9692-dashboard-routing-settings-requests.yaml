@@ -42,7 +42,7 @@ description: >-
   List field is cleared; the Prompt Caching tab uses the same two calls for
   enable_anthropic_prompt_caching, anthropic_prompt_caching_ttl and openai_system_messages_first.
 
-  Cases use B860's Postgres fixture and B5076's bootstrap with store_model_in_db true, so
+  Cases use B860's Postgres fixture and B9942's bootstrap with store_model_in_db true, so
   /config/update persists to the config table, and a config with two model groups behind the
   mock upstream. Compare the write status and body and the following read projection; the
   router_settings envelope must not grow keys the page never sent. Add a non-admin case: an

@@ -1,0 +1,22 @@
+kind: helper
+name: no-serving-on-this-pod
+call:
+  model_reload:
+    environment: {LITELLM_ENVIRONMENT: production}
+    calls:
+      - function: reload_serving_verdict
+        obligation: must_serve
+        before: []
+        written:
+          - {id: inactive, model_info: {supported_environments: [development]}}
+        still_desired: null
+        live: {captured: null, router_ids: []}
+      - function: raise_if_reload_degraded_serving
+        action: create
+        before: []
+        written:
+          - {id: inactive, model_info: {supported_environments: [development]}}
+        still_desired: null
+        live: {captured: null, router_ids: []}
+env: {LITELLM_ENVIRONMENT: production}
+compare: {ignore: []}
