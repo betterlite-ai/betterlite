@@ -107,6 +107,12 @@ fn record(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
+    // float_arithmetic is denied; the elapsed duration comes from the clock directly
+    let duration = call
+        .now
+        .duration_since(call.start_time)
+        .unwrap_or_default()
+        .as_secs_f64();
     add_guardrail_record(
         context,
         GuardrailRecordInput {
@@ -114,7 +120,7 @@ fn record(
             guardrail_status: status,
             start_time: Some(started),
             end_time: Some(ended),
-            duration: Some(ended - started),
+            duration: Some(duration),
             masked_entity_count: None,
             guardrail_provider: Some(call.guardrail_provider.to_owned()),
             event_type: call.event_type,
