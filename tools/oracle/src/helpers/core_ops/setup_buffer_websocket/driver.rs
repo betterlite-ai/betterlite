@@ -168,25 +168,34 @@ fn apply<'driver>(
                 state.setup.flushing_pending_messages.0 = *value;
                 Ok(json!({ "ok": true }))
             }
-            // The Python relay buffers the arrival while the failing send is in flight; here it joins a queue the failure already restored
-            Operation::Flush | Operation::FlushWithArrival { .. } => {
-                let callbacks: Callbacks<'_> = &[];
-                let mut sender = RealtimeSender {
-                    state,
-                    provider,
-                    guardrails: callbacks,
-                };
-                let result = sender.flush_pending_messages().await;
-                if let Operation::FlushWithArrival { text } = operation {
-                    sender
-                        .state
-                        .buffer_pending_message(text)
-                        .map_err(|error| failure("ValueError", error.to_string()))?;
-                }
-                Ok(judgement(result))
+            Operation::Flush => flush(state, provider, None).await,
+            Operation::FlushWithArrival { text } => {
+                flush(state, provider, Some(text.as_str())).await
             }
         }
     })
+}
+
+// The Python relay buffers the arrival while the failing send is in flight; here it joins a queue the failure already restored
+async fn flush(
+    state: &mut RealtimeStreaming,
+    provider: Option<&ScriptedProvider>,
+    arrival: Option<&str>,
+) -> Result<Value, Failure> {
+    let callbacks: Callbacks<'_> = &[];
+    let mut sender = RealtimeSender {
+        state,
+        provider,
+        guardrails: callbacks,
+    };
+    let result = sender.flush_pending_messages().await;
+    if let Some(text) = arrival {
+        sender
+            .state
+            .buffer_pending_message(text)
+            .map_err(|error| failure("ValueError", error.to_string()))?;
+    }
+    Ok(judgement(result))
 }
 
 fn judgement(result: Result<bool, RealtimeSetupBufferError>) -> Value {
