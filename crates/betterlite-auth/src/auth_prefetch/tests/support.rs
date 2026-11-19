@@ -153,22 +153,22 @@ impl PrefetchMemory for FakeMemory {
     }
 
     fn set(&self, key: &str, value: CacheValue, ttl: Option<f64>) -> Result<(), MemoryWriteError> {
-        if self
+        let refused = self
             .failing
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .contains(key)
-        {
+            .contains(key);
+        if refused {
             return Err(MemoryWriteError(BackendError::Unsupported(
                 "the test memory refuses this key",
             )));
         }
+        self.seed(key, value.clone());
         self.writes.push(MemoryWrite {
             key: key.to_owned(),
-            value: value.clone(),
+            value,
             ttl,
         });
-        self.seed(key, value);
         Ok(())
     }
 }
@@ -376,15 +376,16 @@ impl PrefetchRedis for FakeRedis {
             .queue_failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .filter(|failure| failure == key);
-        if failure.is_some() {
-            return Err(RedisRowsError::Write(RedisCacheValuesError::Decode(
-                DecodeError::UnsupportedLiteral,
-            )));
+            .clone();
+        match failure {
+            Some(refused) if refused == key => Err(RedisRowsError::Write(
+                RedisCacheValuesError::Decode(DecodeError::UnsupportedLiteral),
+            )),
+            _ => {
+                self.queued.push(QueueWrite::new(key, value, ttl));
+                Ok(())
+            }
         }
-        self.queued.push(QueueWrite::new(key, value, ttl));
-        Ok(())
     }
 }
 
