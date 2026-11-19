@@ -251,6 +251,7 @@ async fn deferred_audio_flush_retry() {
     );
     captured_warning(&logs, FAILED_FLUSH_LOG);
     assert_eq!(fixture.backend_log.sent_text(), vec![first.clone()]);
+    assert_arrival_restores_behind_unsent(&unsent, &late);
     assert_retry_sends_the_rest(&mut sender, &fixture, &unsent, &late).await;
     assert_eq!(
         fixture.script().seen,
@@ -264,6 +265,18 @@ async fn deferred_audio_flush_retry() {
     );
     assert_dropped_transform_flushes_the_rest().await;
     assert_empty_flush_sends_nothing().await;
+}
+
+// A frame that lands in the queue while the failing batch is in flight ends up behind the restored unsent frames, and the byte total follows the merge
+fn assert_arrival_restores_behind_unsent(unsent: &[String], late: &str) {
+    let fixture = Fixture::new(false);
+    let mut state = fixture.state();
+    state.buffer_pending_message(late).unwrap();
+    restore_unsent_messages(&mut state.setup, unsent);
+    let mut retained = unsent.to_vec();
+    retained.push(late.to_owned());
+    assert_eq!(state.setup.pending_messages_until_setup, retained);
+    assert_eq!(state.setup.pending_messages_byte_total, byte_sum(&retained));
 }
 
 async fn assert_retry_sends_the_rest(
