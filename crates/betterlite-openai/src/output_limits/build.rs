@@ -105,6 +105,8 @@ fn chunk(response: ChatResponse) -> Chunk {
                 refusal: choice.message.refusal,
                 tool_calls: None,
                 function_call: None,
+                reasoning_content: None,
+                thinking_blocks: None,
             },
             finish_reason: choice.finish_reason,
             logprobs: None,
